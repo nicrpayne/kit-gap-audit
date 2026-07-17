@@ -1,0 +1,48 @@
+@import "tailwindcss";
+
+:root {
+  --color-paper: #f1f0e8;
+  --color-ink: #10201b;
+  --color-ink-soft: #3c4b45;
+  --color-accent: #0d7a5f;
+  --color-accent-dark: #0a6049;
+  --color-accent-soft: #e4efe9;
+  --color-line: #dedcd0;
+  --color-card: #fbfaf5;
+  --color-danger: #b3402f;
+  --color-danger-soft: #f6e7e2;
+  --color-amber: #a5760a;
+  --color-amber-soft: #f5eddb;
+}
+
+@theme inline {
+  --color-paper: var(--color-paper);
+  --color-ink: var(--color-ink);
+  --color-ink-soft: var(--color-ink-soft);
+  --color-accent: var(--color-accent);
+  --color-accent-dark: var(--color-accent-dark);
+  --color-accent-soft: var(--color-accent-soft);
+  --color-line: var(--color-line);
+  --color-card: var(--color-card);
+  --color-danger: var(--color-danger);
+  --color-danger-soft: var(--color-danger-soft);
+  --color-amber: var(--color-amber);
+  --color-amber-soft: var(--color-amber-soft);
+  --font-display: "Iowan Old Style", "Palatino Linotype", "URW Palladio L", Georgia, "Times New Roman", serif;
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, Helvetica, Arial, sans-serif;
+}
+
+body {
+  background: var(--color-paper);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+}
+
+.font-display {
+  font-family: var(--font-display);
+}
+
+::selection {
+  background: var(--color-accent-soft);
+  color: var(--color-ink);
+}

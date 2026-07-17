@@ -1,0 +1,47 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Source {
+  id        String    @id @default(cuid())
+  kind      String // "transcript" | "notes" | "estimates"
+  title     String
+  content   String
+  createdAt DateTime  @default(now())
+  findings  Finding[]
+}
+
+model Finding {
+  id            String   @id @default(cuid())
+  sourceId      String
+  source        Source   @relation(fields: [sourceId], references: [id])
+  type          String // "missing_work" | "decision" | "risk" | "contradiction"
+  title         String
+  quote         String
+  rationale     String
+  severity      String // "high" | "medium" | "low"
+  estimateHint  String?
+  owner         String? // for decisions: who seems to own the call
+  blocks        String? // for decisions/risks: what this is holding up
+  blocking      Boolean  @default(false) // true = actively blocks scoped work
+  matchedIssues String[]
+  status        String   @default("open") // open | ticketed | dismissed | resolved
+  linearIssueId String?
+  dismissReason String?
+  resolution    String? // for decisions: what was decided, when marked resolved
+  createdAt     DateTime @default(now())
+}
+
+model AuditRun {
+  id           String   @id @default(cuid())
+  sourceId     String
+  issueCount   Int
+  findingCount Int
+  model        String
+  createdAt    DateTime @default(now())
+}
