@@ -78,8 +78,20 @@ export default function Nav() {
         })}
       </nav>
 
+      <div className="px-3 py-3 border-t border-white/10">
+        <Link
+          href="/scopes"
+          className={`block px-3 py-2 rounded-md text-xs transition-colors ${
+            isActive(pathname, "/scopes")
+              ? "bg-white/10 text-white font-medium"
+              : "text-[var(--color-paper)]/50 hover:bg-white/5 hover:text-white/80"
+          }`}
+        >
+          Scopes settings
+        </Link>
+      </div>
       <div className="px-6 py-5 border-t border-white/10 text-[11px] text-[var(--color-paper)]/40">
-        JSA Mobile · Gap Audit v0
+        Gap Audit v0
       </div>
     </aside>
   );

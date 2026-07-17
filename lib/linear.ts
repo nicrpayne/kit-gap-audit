@@ -1,4 +1,4 @@
-import { LinearClient } from "@linear/sdk";
+import { LinearClient, LinearDocument } from "@linear/sdk";
 
 const KIT_FOUND_LABEL = "kit-found";
 
@@ -13,10 +13,10 @@ function getClient(): LinearClient {
   return cachedClient;
 }
 
-function requireTeamKey(teamKey?: string): string {
-  const key = teamKey ?? process.env.LINEAR_TEAM_KEY;
-  if (!key) throw new Error("LINEAR_TEAM_KEY is not set");
-  return key;
+export interface ScopeFilter {
+  teamKey: string;
+  projectName?: string | null;
+  labelFilter?: string | null;
 }
 
 export interface LinearIssueSummary {
@@ -29,20 +29,25 @@ export interface LinearIssueSummary {
   labels: string[];
 }
 
-// All non-canceled issues for the configured team: identifier, title,
-// truncated description, state, estimate, assignee, labels.
-export async function getTeamIssues(teamKey?: string): Promise<LinearIssueSummary[]> {
-  const key = requireTeamKey(teamKey);
+// All non-canceled issues matching a Scope: team key, optionally narrowed by
+// Linear project name and/or a label. Scopes are data (see Scope model), not
+// env vars, so a new module (Precon, Design, ...) is a new row, not a redeploy.
+export async function getScopedIssues(scope: ScopeFilter): Promise<LinearIssueSummary[]> {
   const client = getClient();
 
+  const filter: LinearDocument.IssueFilter = {
+    team: { key: { eq: scope.teamKey } },
+    state: { type: { nin: ["canceled"] } },
+  };
+  if (scope.projectName) {
+    filter.project = { name: { eq: scope.projectName } };
+  }
+  if (scope.labelFilter) {
+    filter.labels = { some: { name: { eq: scope.labelFilter } } };
+  }
+
   const issues: LinearIssueSummary[] = [];
-  let connection = await client.issues({
-    filter: {
-      team: { key: { eq: key } },
-      state: { type: { nin: ["canceled"] } },
-    },
-    first: 100,
-  });
+  let connection = await client.issues({ filter, first: 100 });
 
   while (true) {
     const details = await Promise.all(
@@ -101,7 +106,7 @@ async function ensureKitFoundLabelId(teamId: string): Promise<string> {
 export interface CreateLinearIssueInput {
   title: string;
   description: string;
-  teamKey?: string;
+  teamKey: string;
 }
 
 export interface CreatedLinearIssue {
@@ -114,9 +119,8 @@ export interface CreatedLinearIssue {
 export async function createLinearIssue(
   input: CreateLinearIssueInput
 ): Promise<CreatedLinearIssue> {
-  const teamKey = requireTeamKey(input.teamKey);
   const client = getClient();
-  const teamId = await getTeamId(teamKey);
+  const teamId = await getTeamId(input.teamKey);
   const labelId = await ensureKitFoundLabelId(teamId);
 
   const payload = await client.createIssue({

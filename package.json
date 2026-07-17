@@ -9,12 +9,12 @@
     "lint": "eslint"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.32",
+    "@linear/sdk": "^42",
+    "@prisma/client": "^6",
     "next": "^15",
     "react": "^19",
-    "react-dom": "^19",
-    "@linear/sdk": "^42",
-    "@anthropic-ai/sdk": "^0.32",
-    "@prisma/client": "^6"
+    "react-dom": "^19"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
@@ -25,6 +25,10 @@
     "eslint-config-next": "^15",
     "prisma": "^6",
     "tailwindcss": "^4",
+    "tsx": "^4.23.1",
     "typescript": "^5"
+  },
+  "prisma": {
+    "seed": "tsx prisma/seed.ts"
   }
 }

@@ -7,11 +7,23 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+model Scope {
+  id          String   @id @default(cuid())
+  name        String // e.g. "JSA", "iTrack", "Precon"
+  teamKey     String // e.g. "SOF" -- will repeat across scopes
+  projectName String? // Linear project to filter to, e.g. "KIT Safety (JSA and iTrack)"
+  labelFilter String? // optional label name to further narrow, e.g. "JSA"
+  createdAt   DateTime @default(now())
+  sources     Source[]
+}
+
 model Source {
   id        String    @id @default(cuid())
   kind      String // "transcript" | "notes" | "estimates"
   title     String
   content   String
+  scopeId   String?
+  scope     Scope?    @relation(fields: [scopeId], references: [id])
   createdAt DateTime  @default(now())
   findings  Finding[]
 }
