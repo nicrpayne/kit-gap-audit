@@ -74,6 +74,69 @@ standard pattern is to chain the migration into the start command:
 on every deploy, is a no-op when there's nothing new to migrate, and keeps
 the schema and the running app in lockstep.
 
+## API: running an audit programmatically
+
+`POST /api/audit` is the same endpoint the `/audit/new` form submits to —
+it's a real API, not a UI-only action. An external agent (e.g. a personal
+automation agent monitoring calls) can call it directly to submit a
+transcript and get findings back as JSON, without touching the browser.
+
+**Auth**: either the browser's cookie session, or, for programmatic callers,
+an `Authorization: Bearer <APP_PASSWORD>` header. Same shared secret as the
+UI login for now — no separate API keys yet.
+
+```
+POST /api/audit
+Authorization: Bearer <APP_PASSWORD>
+Content-Type: application/json
+
+{
+  "scopeId": "cmrod5o1s0000os1y75kwumnh",  // required, see GET below
+  "kind": "transcript",                     // required: transcript | notes | estimates
+  "title": "JSA Status Quick Sync 7-16",    // optional, defaults to "<Kind> — <date>"
+  "content": "Maya: ... Nic: ..."           // required, the raw text to audit
+}
+```
+
+Response (`200`):
+
+```
+{
+  "source": { "id": "...", "kind": "...", "title": "...", "content": "...", "scopeId": "...", "createdAt": "..." },
+  "findings": [
+    {
+      "id": "...",
+      "type": "missing_work",        // missing_work | decision | risk | contradiction
+      "title": "...",
+      "quote": "...",                // verbatim from content
+      "rationale": "...",
+      "severity": "high",            // high | medium | low
+      "estimateHint": "needs scoping" | null,
+      "owner": "Priya" | null,       // decisions only
+      "blocks": "..." | null,        // decisions/risks
+      "blocking": true,
+      "matchedIssues": ["SOF-497"],
+      "status": "open",
+      "linearIssueId": null,
+      "dismissReason": null,
+      "createdAt": "..."
+    }
+  ]
+}
+```
+
+Errors are `400` (bad input), `401` (missing/wrong auth), `404` (unknown
+`scopeId`), or `502` (Linear or Anthropic call failed) — always
+`{ "error": "..." }`.
+
+To find a `scopeId`, call `GET /api/scopes` (same auth) and match on `name`.
+
+Not built yet, and deliberately deferred: Hermes doesn't have a way to know
+*which* Scope a given transcript belongs to, or to be notified that a run
+happened without someone checking the UI. That routing/notification layer
+is a real design question once both sides exist to actually talk to each
+other — this endpoint is just the entry point it would call.
+
 ## Project structure
 
 - `lib/model.ts` — single wrapper for Anthropic calls (model/tokens from

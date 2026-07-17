@@ -24,7 +24,14 @@ export async function middleware(req: NextRequest) {
     return NextResponse.next();
   }
 
+  // Programmatic access (e.g. an external agent submitting a transcript):
+  // API routes also accept `Authorization: Bearer <APP_PASSWORD>` in place
+  // of the cookie session. Page routes stay cookie-only.
   if (pathname.startsWith("/api/")) {
+    const authHeader = req.headers.get("authorization");
+    if (authHeader === `Bearer ${appPassword}`) {
+      return NextResponse.next();
+    }
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
