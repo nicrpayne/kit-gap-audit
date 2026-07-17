@@ -1,36 +1,87 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# KIT Gap Audit
 
-## Getting Started
+Turn messy context into clarity: what's missing, what's undecided, who owns
+it, and what it blocks. Paste a transcript, notes, or a list of developer
+estimates; KIT compares it against Linear tickets and previously handled
+findings and surfaces the gaps.
 
-First, run the development server:
+See `BUILDPACK.md` for the full spec this was built against, and
+`ROADMAP.md` for what's next.
+
+## Stack
+
+Next.js 15 (App Router, TypeScript) · Postgres via Prisma · Anthropic
+(`claude-sonnet-4-6` by default) · `@linear/sdk` · single-password auth via
+an httpOnly cookie in `middleware.ts`.
+
+## Local development
 
 ```bash
+npm install
+cp .env.example .env   # fill in real values
+npx prisma migrate dev
+npx prisma db seed     # seeds one Scope (JSA)
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open http://localhost:3000 — you'll be asked for `APP_PASSWORD`.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+### Scopes
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+There's no hardcoded Linear team. Each audit runs against a **Scope**
+(Linear team key + optional project name + optional label), managed at
+`/scopes`. Adding a new KIT module (iTrack, Precon, ...) is a new Scope
+row, not a redeploy.
 
-## Learn More
+## Deploying to Railway
 
-To learn more about Next.js, take a look at the following resources:
+1. **New project.** In Railway, create a new project. Keep it separate from
+   any other projects on your account.
+2. **Add Postgres.** In the project, click **+ New → Database → Add
+   PostgreSQL**. Once it's up, open its **Variables** tab and copy the
+   `DATABASE_URL` value (or reference it directly in step 4 below).
+3. **Add the app service.** Click **+ New → GitHub Repo** and select this
+   repo (`kit-gap-audit`). Point it at the branch you want deployed.
+4. **Set environment variables** on the app service (Variables tab):
+   - `DATABASE_URL` — reference the Postgres service's `DATABASE_URL`
+     (Railway lets you do this with a variable reference,
+     `${{Postgres.DATABASE_URL}}`, so it stays in sync)
+   - `LINEAR_API_KEY`
+   - `ANTHROPIC_API_KEY`
+   - `AUDIT_MODEL` — `claude-sonnet-4-6`
+   - `APP_PASSWORD` — pick something real; this gates the whole app
+5. **Deploy.** Railway builds with Nixpacks and reads `railway.json`, whose
+   start command runs `npx prisma migrate deploy` before `next start` — so
+   every deploy applies any new migrations automatically. No separate
+   release step to configure.
+6. **Seed the first Scope.** Once the service is up, run once from your
+   machine (with Railway's `DATABASE_URL` in your shell), or via
+   `railway run npx prisma db seed`:
+   ```bash
+   DATABASE_URL="<railway postgres url>" npx prisma db seed
+   ```
+   Or just add it by hand at `/scopes` in the running app — same result,
+   no CLI needed.
+7. **Verify.** Visit the deployed URL, log in with `APP_PASSWORD`, and hit
+   `/api/debug/linear` (while logged in) to confirm the Linear read works.
+   Then run a real audit from `/audit/new`.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+### Why the start command handles migrations
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+Railway doesn't have a separate "release phase" the way Heroku does, so the
+standard pattern is to chain the migration into the start command:
+`npx prisma migrate deploy && npm run start` (see `railway.json`). This runs
+on every deploy, is a no-op when there's nothing new to migrate, and keeps
+the schema and the running app in lockstep.
 
-## Deploy on Vercel
+## Project structure
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- `lib/model.ts` — single wrapper for Anthropic calls (model/tokens from
+  env, defensive JSON parsing)
+- `lib/linear.ts` — all Linear reads/writes, driven by Scope
+- `lib/audit/prompts/audit-v1.ts` — the extraction prompt as a versioned
+  template
+- `lib/audit/normalize.ts` — defensive parsing/validation of raw findings
+- `prisma/schema.prisma` — `Scope`, `Source`, `Finding`, `AuditRun`
+- Nav ships with Forecast / Timeline / Reports as placeholders — see
+  `ROADMAP.md` for what they'll become.

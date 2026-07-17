@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import AuditNewForm from "@/components/AuditNewForm";
 
@@ -20,7 +21,17 @@ export default async function NewAuditPage() {
         compare it against the Linear tickets in scope and previously handled
         findings, and surface what&apos;s missing, undecided, or contradicted.
       </p>
-      <AuditNewForm scopes={scopes} />
+      {scopes.length === 0 ? (
+        <div className="text-sm text-[var(--color-ink-soft)] py-12 text-center border border-dashed border-[var(--color-line)] rounded-xl">
+          No Scope configured yet.{" "}
+          <Link href="/scopes" className="text-[var(--color-accent)] hover:underline">
+            Add one
+          </Link>{" "}
+          to point KIT at a Linear team before running an audit.
+        </div>
+      ) : (
+        <AuditNewForm scopes={scopes} />
+      )}
     </div>
   );
 }
