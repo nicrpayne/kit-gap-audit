@@ -1,18 +1,42 @@
 # ROADMAP
 
-Read this file, then continue. v0 (Audit + Decisions) is built and deployed.
-Everything below is v1+.
+Read this file, then continue. v0 (Audit + Decisions) and v1's Forecast are
+built and deployed. Timeline and Reports are next.
 
 ## Where things stand
 
-- `Finding` already carries `estimateHint`, `blocks`, and `blocking` — the
-  Forecast engine below can consume findings + Linear estimates directly.
-  **No schema migration needed to start v1.**
-- Nav already has Forecast / Timeline / Reports wired in as placeholder
-  pages (`app/forecast`, `app/timeline`, `app/reports`) — turning them on
-  is additive, not structural.
+- **Forecast is live** (`/forecast`, `lib/forecast/`). Monte Carlo
+  simulation over three-point estimates (Linear issue estimate -> points
+  treated as likely days with a ±heuristic spread; `Finding.estimateHint`
+  parsed for un-ticketed work; open *blocking* decisions modeled as a
+  serial delay, not divided by capacity). `Scope.targetDate` and
+  `Scope.teamCapacity` are user-editable inline on the page (team capacity
+  defaults to inferred distinct-assignee count if unset). Confidence =
+  % of simulated outcomes landing on or before the target date, per spec.
+  Math verified numerically (triangular-mean convergence, date ordering,
+  monotonic confidence vs. target, ~2x capacity scaling, gate delay) and
+  the data-assembly logic verified against a 13-case fixture (done/canceled
+  exclusion, ticketed-finding exclusion, decision-vs-item routing, hint
+  parsing). UI verified via a mocked `/api/forecast` response since this
+  sandbox can't reach Linear -- real production numbers not yet eyeballed.
+- **Programmatic API access**: `POST /api/audit` (and every other API
+  route) now accepts `Authorization: Bearer <APP_PASSWORD>` as an
+  alternative to the cookie session, for Nic's separate Hermes agent to
+  call directly later. Documented in README.md. Explicitly NOT built:
+  Scope routing (which scopeId a transcript belongs to) or a
+  run-completed notification -- real design questions once Hermes exists
+  to actually integrate with.
+- `Finding` already carries `estimateHint`, `blocks`, and `blocking` --
+  Forecast already consumes these directly, no further schema change
+  needed for Timeline's first pass either.
+- Nav has Timeline / Reports still as placeholder pages (`app/timeline`,
+  `app/reports`) -- turning them on is additive, not structural.
 - Linear access is Scope-driven (`/scopes`), not an env var — adding a new
   module (iTrack, Precon, ...) is a data row, not a redeploy.
+- `/audit` is a paginated index of every audit ever run (not just the
+  dashboard's 5 most recent), and each source page has a collapsible
+  "view original transcript" section -- full traceability, nothing is
+  ever deleted.
 - Known gap: `Finding.linearIssueId` currently stores the Linear
   *identifier* (e.g. `SOF-123`), not a clickable URL — there's no stored
   workspace slug to build a link from. If that starts to matter, either
@@ -26,22 +50,7 @@ Everything below is v1+.
 
 ## v1 plan
 
-### 1. Forecast (`/forecast`)
-
-Three-point estimates (best/likely/worst) on open work items → a simple
-Monte Carlo or triangular-distribution simulation → a likely/earliest/latest
-release date view, in the visual language of the KIT mockup (the confidence
-ring, the date range bar).
-
-Inputs: Linear issue estimates for scoped, un-done issues, plus
-`estimateHint` from open findings for work that has no ticket yet. Decisions
-with `blocking: true` should visibly gate the forecast (a blocking decision
-with no resolution means "this date isn't real yet," same as the mockup's
-readiness warning).
-
-Where it plugs in: a new `lib/forecast/` module (simulation logic), reading
-from `lib/linear.ts` and Prisma directly. No new tables needed for the first
-pass.
+### 1. Forecast (`/forecast`) -- done, see "Where things stand"
 
 ### 2. Timeline (`/timeline`)
 
@@ -71,3 +80,9 @@ to fetch.
   link starts to bite (see "known gap" above).
 - The JSA/iTrack Linear labeling ask (see above) — small, but unblocks
   cleaner Scope filtering.
+- Forecast's estimate heuristics (`lib/forecast/build.ts`) are a
+  documented placeholder, not calibrated to real team velocity: Linear
+  points are treated as literal days with a fixed ±spread, and
+  un-estimated issues/findings get flat placeholder ranges. Worth
+  revisiting once there's enough completed-issue history to fit a real
+  points-to-days conversion instead of guessing.

@@ -8,6 +8,8 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     teamKey?: string;
     projectName?: string | null;
     labelFilter?: string | null;
+    targetDate?: string | null;
+    teamCapacity?: number | null;
   };
 
   const scope = await prisma.scope.update({
@@ -17,6 +19,12 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       ...(body.teamKey !== undefined ? { teamKey: body.teamKey } : {}),
       ...(body.projectName !== undefined ? { projectName: body.projectName || null } : {}),
       ...(body.labelFilter !== undefined ? { labelFilter: body.labelFilter || null } : {}),
+      ...(body.targetDate !== undefined
+        ? { targetDate: body.targetDate ? new Date(body.targetDate) : null }
+        : {}),
+      ...(body.teamCapacity !== undefined
+        ? { teamCapacity: body.teamCapacity && body.teamCapacity > 0 ? body.teamCapacity : null }
+        : {}),
     },
   });
 

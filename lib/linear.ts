@@ -24,6 +24,10 @@ export interface LinearIssueSummary {
   title: string;
   description: string | null;
   state: string;
+  // Workflow state type: triage | backlog | unstarted | started | completed
+  // | canceled. Distinct from `state` (the display name, e.g. "In Review")
+  // -- needed to tell "done" from "remaining" work for the Forecast engine.
+  stateType: string;
   estimate: number | null;
   assignee: string | null;
   labels: string[];
@@ -62,6 +66,7 @@ export async function getScopedIssues(scope: ScopeFilter): Promise<LinearIssueSu
           title: issue.title,
           description: issue.description ? issue.description.slice(0, 500) : null,
           state: state?.name ?? "Unknown",
+          stateType: state?.type ?? "unstarted",
           estimate: issue.estimate ?? null,
           assignee: assignee?.name ?? null,
           labels: labelConnection.nodes.map((l) => l.name),

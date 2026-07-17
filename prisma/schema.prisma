@@ -8,13 +8,15 @@ datasource db {
 }
 
 model Scope {
-  id          String   @id @default(cuid())
-  name        String // e.g. "JSA", "iTrack", "Precon"
-  teamKey     String // e.g. "SOF" -- will repeat across scopes
-  projectName String? // Linear project to filter to, e.g. "KIT Safety (JSA and iTrack)"
-  labelFilter String? // optional label name to further narrow, e.g. "JSA"
-  createdAt   DateTime @default(now())
-  sources     Source[]
+  id           String    @id @default(cuid())
+  name         String // e.g. "JSA", "iTrack", "Precon"
+  teamKey      String // e.g. "SOF" -- will repeat across scopes
+  projectName  String? // Linear project to filter to, e.g. "KIT Safety (JSA and iTrack)"
+  labelFilter  String? // optional label name to further narrow, e.g. "JSA"
+  targetDate   DateTime? // release target the Forecast confidence is measured against
+  teamCapacity Float? // parallel "developer equivalents"; null = infer from assignees
+  createdAt    DateTime  @default(now())
+  sources      Source[]
 }
 
 model Source {
