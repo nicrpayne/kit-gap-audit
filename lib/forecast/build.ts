@@ -21,7 +21,19 @@ function round1(n: number): number {
 // exists -- the estimate-quality panel reports how much of the forecast
 // rests on these, since tightening them is the cheapest way to narrow the
 // date range.
-export type EstimateSource = "points" | "issue_placeholder" | "hint" | "finding_placeholder";
+export type EstimateSource = "ai" | "points" | "issue_placeholder" | "hint" | "finding_placeholder";
+
+// A stored AI estimate for one work item (see the WorkEstimate model).
+export interface WorkEstimateLike {
+  externalId: string;
+  contentHash: string;
+  lowDays: number;
+  likelyDays: number;
+  highDays: number;
+  relevance: string; // "core" | "peripheral" | "unrelated"
+  flags: string[];
+  rationale: string;
+}
 
 export interface SourcedWorkItem extends WorkItem {
   estimateSource: EstimateSource;
@@ -80,11 +92,27 @@ const DECISION_GATE_ESTIMATE: ThreePoint = { low: 1, likely: 4, high: 10 };
 
 // How much of the forecast rests on real estimates vs. placeholder guesses.
 export interface EstimateQuality {
+  aiCount: number; // items with a fresh AI estimate (best available signal)
   pointsIssueCount: number; // issues with a real Linear estimate
   placeholderIssueCount: number; // issues with no estimate (wide placeholder)
   hintFindingCount: number; // findings with a parseable day range
   placeholderFindingCount: number; // findings with no usable hint
   placeholderEffortSharePct: number; // % of likely effort-days from placeholders
+}
+
+// What the AI estimator contributed and surfaced for this forecast.
+export interface AiEstimateStats {
+  aiItemCount: number;
+  staleCount: number; // ticket content changed since its estimate -- re-run to refresh
+  unrelatedExcluded: { id: string; label: string; rationale: string }[];
+  flagged: {
+    id: string;
+    label: string;
+    flags: string[];
+    rationale: string;
+    aiLikelyDays: number;
+    teamPoints: number | null;
+  }[];
 }
 
 // What the in-scope Linear issues look like by workflow state, so the
@@ -108,6 +136,7 @@ export interface ForecastInputs {
   unticketedFindingCount: number;
   estimateQuality: EstimateQuality;
   composition: ScopeComposition;
+  ai: AiEstimateStats;
 }
 
 // Assembles the Monte Carlo inputs from raw Linear issues + Findings for a
@@ -120,9 +149,11 @@ export function buildForecastInputs(
   issues: LinearIssueSummary[],
   findings: FindingLike[],
   configuredCapacity: number | null,
-  options?: { includeTriage?: boolean }
+  options?: { includeTriage?: boolean; estimates?: Map<string, WorkEstimateLike>; hashFor?: (issue: LinearIssueSummary) => string }
 ): ForecastInputs {
   const includeTriage = options?.includeTriage ?? false;
+  const estimates = options?.estimates ?? new Map<string, WorkEstimateLike>();
+  const hashFor = options?.hashFor;
 
   const composition: ScopeComposition = {
     triage: 0,
@@ -146,10 +177,54 @@ export function buildForecastInputs(
     composition.excludedTriageCount = composition.triage;
   }
 
-  const items: SourcedWorkItem[] = remainingIssues.map((issue) => {
+  // Prefer a fresh AI estimate (content-hash still matching) over the
+  // points heuristic. An estimate whose ticket has changed since is stale:
+  // fall back to points and count it, so the UI can prompt a re-run.
+  // AI-judged "unrelated" tickets are excluded from the simulation but
+  // listed loudly -- content-based scope filtering, no labels required.
+  const ai: AiEstimateStats = { aiItemCount: 0, staleCount: 0, unrelatedExcluded: [], flagged: [] };
+  const items: SourcedWorkItem[] = [];
+
+  for (const issue of remainingIssues) {
+    const label = `${issue.identifier} ${issue.title}`;
+    const estimate = estimates.get(issue.identifier);
+    const fresh = estimate && (!hashFor || estimate.contentHash === hashFor(issue));
+
+    if (estimate && !fresh) ai.staleCount += 1;
+
+    if (fresh) {
+      if (estimate.relevance === "unrelated") {
+        ai.unrelatedExcluded.push({ id: issue.identifier, label, rationale: estimate.rationale });
+        continue;
+      }
+      ai.aiItemCount += 1;
+      if (estimate.flags.length > 0) {
+        ai.flagged.push({
+          id: issue.identifier,
+          label,
+          flags: estimate.flags,
+          rationale: estimate.rationale,
+          aiLikelyDays: estimate.likelyDays,
+          teamPoints: issue.estimate,
+        });
+      }
+      items.push({
+        id: issue.identifier,
+        label,
+        estimateSource: "ai",
+        low: estimate.lowDays,
+        likely: estimate.likelyDays,
+        high: estimate.highDays,
+      });
+      continue;
+    }
+
     const { tp, source } = issueEstimateToThreePoint(issue.estimate);
-    return { id: issue.identifier, label: `${issue.identifier} ${issue.title}`, estimateSource: source, ...tp };
-  });
+    items.push({ id: issue.identifier, label, estimateSource: source, ...tp });
+  }
+
+  ai.flagged.sort((a, b) => b.aiLikelyDays - a.aiLikelyDays);
+  ai.flagged = ai.flagged.slice(0, 8);
 
   const openWorkFindings = findings.filter((f) => f.type !== "decision" && f.status === "open");
   for (const f of openWorkFindings) {
@@ -182,6 +257,7 @@ export function buildForecastInputs(
     .reduce((sum, i) => sum + i.likely, 0);
 
   const estimateQuality: EstimateQuality = {
+    aiCount: items.filter((i) => i.estimateSource === "ai").length,
     pointsIssueCount: items.filter((i) => i.estimateSource === "points").length,
     placeholderIssueCount: items.filter((i) => i.estimateSource === "issue_placeholder").length,
     hintFindingCount: items.filter((i) => i.estimateSource === "hint").length,
@@ -194,9 +270,11 @@ export function buildForecastInputs(
     gates,
     teamCapacity,
     teamCapacityInferred,
-    remainingIssueCount: remainingIssues.length,
+    // Only what actually feeds the simulation -- AI-excluded tickets are not counted here.
+    remainingIssueCount: remainingIssues.length - ai.unrelatedExcluded.length,
     unticketedFindingCount: openWorkFindings.length,
     estimateQuality,
     composition,
+    ai,
   };
 }

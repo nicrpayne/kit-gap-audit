@@ -16,8 +16,31 @@ model Scope {
   targetDate   DateTime? // release target the Forecast confidence is measured against
   teamCapacity Float? // parallel "developer equivalents"; null = infer from assignees
   includeTriage Boolean  @default(false) // count Triage-state tickets in the Forecast (audit always sees them)
+  estimationContext String? // free text fed to the AI estimator: team makeup, stack, what this release is
   createdAt    DateTime  @default(now())
   sources      Source[]
+}
+
+// An AI-produced three-point estimate for one work item, cached by content
+// hash so unchanged tickets are never re-estimated. Keyed by (source,
+// externalId) rather than anything Linear-specific so a Notion requirement
+// row can flow through the same pipeline later.
+model WorkEstimate {
+  id          String   @id @default(cuid())
+  scopeId     String
+  source      String   @default("linear") // "linear" | future: "notion"
+  externalId  String // e.g. "SOF-123"
+  contentHash String // hash of title+description+points at estimation time
+  lowDays     Float
+  likelyDays  Float
+  highDays    Float
+  rationale   String
+  relevance   String   @default("core") // "core" | "peripheral" | "unrelated" (to this release)
+  flags       String[] // "unclear_scope" | "bigger_than_pointed" | "smaller_than_pointed" | "hidden_work"
+  model       String
+  createdAt   DateTime @default(now())
+
+  @@unique([scopeId, source, externalId])
 }
 
 model Source {

@@ -5,6 +5,27 @@ built and deployed. Timeline and Reports are next.
 
 ## Where things stand
 
+- **AI estimation is live** (`lib/estimate/`, `POST /api/estimate`,
+  "Estimate tickets with AI" on /forecast). The model reads each ticket's
+  actual content and produces its own three-point day estimate with a
+  one-line rationale, judges release *relevance* from content (core /
+  peripheral / unrelated -- unrelated tickets are excluded from the
+  forecast, listed visibly), and flags tickets whose scope is unclear,
+  imply hidden work, or disagree 2x+ with the team's own points
+  ("Worth a look" panel). Estimates are cached in WorkEstimate keyed by
+  (scopeId, source, externalId) with a content hash -- unchanged tickets
+  are never re-sent to the model; changed ones show as "stale" until
+  re-run. Keyed by source (not Linear-specific) deliberately: Nic plans a
+  Notion-requirements-as-source-of-truth workflow later, and a Notion row
+  can flow through the identical pipeline. Scope.estimationContext (free
+  text, editable on /forecast) feeds team/stack/release context into the
+  estimator. Verified end-to-end with real Anthropic calls against Nic's
+  real tickets: caught a deliberately sandbagged 1-point ticket at ~18
+  likely days flagged bigger_than_pointed, and correctly judged an iTrack
+  ticket unrelated with no labels involved. Forecast prefers fresh AI
+  estimates over points; provenance shows in "Where the estimates come
+  from."
+
 - **Forecast scenarios are live** (`lib/forecast/scenarios.ts`): a "Paths
   to a sooner date" panel re-runs the simulation per lever (resolve
   blocking decisions / +1 or +2 developers / descope each of the top 3

@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { getScopedIssues } from "@/lib/linear";
 import { buildForecastInputs } from "@/lib/forecast/build";
 import { buildScenarios } from "@/lib/forecast/scenarios";
+import { estimateContentHash } from "@/lib/estimate/run";
 
 export async function GET(req: NextRequest) {
   const scopeId = req.nextUrl.searchParams.get("scopeId");
@@ -32,8 +33,15 @@ export async function GET(req: NextRequest) {
     select: { id: true, type: true, title: true, status: true, blocking: true, estimateHint: true },
   });
 
+  const workEstimates = await prisma.workEstimate.findMany({
+    where: { scopeId: scope.id, source: "linear" },
+  });
+  const estimates = new Map(workEstimates.map((e) => [e.externalId, e]));
+
   const inputs = buildForecastInputs(issues, findings, scope.teamCapacity ?? null, {
     includeTriage: scope.includeTriage,
+    estimates,
+    hashFor: estimateContentHash,
   });
 
   // Base run and scenario runs share a fixed RNG seed (see scenarios.ts),
@@ -53,6 +61,7 @@ export async function GET(req: NextRequest) {
       targetDate: scope.targetDate,
       teamCapacity: scope.teamCapacity,
       includeTriage: scope.includeTriage,
+      estimationContext: scope.estimationContext,
     },
     likelyDate: base.likelyDate,
     earliestDate: base.earliestDate,
@@ -76,6 +85,7 @@ export async function GET(req: NextRequest) {
       topItems,
       estimateQuality: inputs.estimateQuality,
       composition: inputs.composition,
+      ai: inputs.ai,
     },
   });
 }

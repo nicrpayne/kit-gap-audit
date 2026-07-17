@@ -18,6 +18,7 @@ interface ForecastData {
     targetDate: string | null;
     teamCapacity: number | null;
     includeTriage: boolean;
+    estimationContext: string | null;
   };
   likelyDate: string;
   earliestDate: string;
@@ -33,7 +34,21 @@ interface ForecastData {
     decisionDelayDays: { low: number; likely: number; high: number };
     blockingGates: { id: string; label: string }[];
     topItems: { id: string; label: string; likelyDays: number }[];
+    ai: {
+      aiItemCount: number;
+      staleCount: number;
+      unrelatedExcluded: { id: string; label: string; rationale: string }[];
+      flagged: {
+        id: string;
+        label: string;
+        flags: string[];
+        rationale: string;
+        aiLikelyDays: number;
+        teamPoints: number | null;
+      }[];
+    };
     estimateQuality: {
+      aiCount: number;
       pointsIssueCount: number;
       placeholderIssueCount: number;
       hintFindingCount: number;
@@ -55,6 +70,13 @@ interface ForecastData {
 function confidenceColor(pct: number): string {
   return pct >= 70 ? "var(--color-accent)" : pct >= 35 ? "var(--color-amber)" : "var(--color-danger)";
 }
+
+const FLAG_LABELS: Record<string, string> = {
+  unclear_scope: "unclear scope",
+  bigger_than_pointed: "bigger than your points say",
+  smaller_than_pointed: "smaller than your points say",
+  hidden_work: "hidden work implied",
+};
 
 function formatDate(iso: string): string {
   return new Date(iso).toLocaleDateString(undefined, { month: "short", day: "numeric" });
@@ -92,10 +114,38 @@ export default function ForecastView({ scopeId }: { scopeId: string }) {
     load();
   }, [load]);
 
+  const [estimating, setEstimating] = useState(false);
+  const [estimateStatus, setEstimateStatus] = useState<string | null>(null);
+
+  async function runAiEstimation() {
+    setEstimating(true);
+    setEstimateStatus("Reading tickets and estimating — this can take a couple of minutes…");
+    try {
+      const res = await fetch("/api/estimate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ scopeId }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body.error ?? "Estimation failed.");
+      setEstimateStatus(
+        `Estimated ${body.estimated} ticket${body.estimated === 1 ? "" : "s"}` +
+          (body.cached > 0 ? ` (${body.cached} unchanged, reused)` : "") +
+          (body.failed > 0 ? ` — ${body.failed} failed, re-run to retry` : "")
+      );
+      await load();
+    } catch (err) {
+      setEstimateStatus(err instanceof Error ? err.message : "Estimation failed.");
+    } finally {
+      setEstimating(false);
+    }
+  }
+
   async function updateScopeSetting(patch: {
     targetDate?: string | null;
     teamCapacity?: number | null;
     includeTriage?: boolean;
+    estimationContext?: string | null;
   }) {
     setSavingSettings(true);
     try {
@@ -165,6 +215,39 @@ export default function ForecastView({ scopeId }: { scopeId: string }) {
         </div>
       </div>
 
+      <div className="border border-[var(--color-line)] rounded-xl bg-[var(--color-card)] p-4 mb-6">
+        <div className="flex items-center gap-3 flex-wrap">
+          <button
+            onClick={runAiEstimation}
+            disabled={estimating}
+            className="rounded-md bg-[var(--color-ink)] text-white px-3.5 py-2 text-xs font-medium hover:bg-black disabled:opacity-50"
+          >
+            {estimating ? "Estimating…" : "Estimate tickets with AI"}
+          </button>
+          <span className="text-xs text-[var(--color-ink-soft)]">
+            {estimateStatus ??
+              (breakdown.ai.aiItemCount > 0
+                ? `${breakdown.ai.aiItemCount} of ${breakdown.remainingIssueCount} tickets have AI estimates` +
+                  (breakdown.ai.staleCount > 0
+                    ? ` · ${breakdown.ai.staleCount} changed since — re-run to refresh`
+                    : "")
+                : "Reads every ticket's content and estimates it directly — no points or labels required.")}
+          </span>
+        </div>
+        <details className="mt-3">
+          <summary className="text-xs cursor-pointer select-none text-[var(--color-ink-soft)] hover:text-[var(--color-ink)]">
+            Team &amp; release context the estimator uses
+          </summary>
+          <textarea
+            defaultValue={data.scope.estimationContext ?? ""}
+            onBlur={(e) => updateScopeSetting({ estimationContext: e.target.value || null })}
+            rows={3}
+            placeholder="e.g. Flutter mobile app + Node backend for construction-site safety inspections. 4 full-time devs, a manager covering infra, one part-time consultant. This release is the JSA product only — iTrack tickets are a separate product."
+            className="mt-2 w-full rounded-md border border-[var(--color-line)] bg-white px-3 py-2 text-xs leading-relaxed"
+          />
+        </details>
+      </div>
+
       <div className="border border-[var(--color-line)] rounded-xl bg-[var(--color-card)] p-6 mb-6">
         <div className="flex items-center justify-between mb-6">
           <div>
@@ -230,6 +313,50 @@ export default function ForecastView({ scopeId }: { scopeId: string }) {
                 </div>
               ))}
             </div>
+          </div>
+        </details>
+      )}
+
+      {(breakdown.ai.flagged.length > 0 || breakdown.ai.unrelatedExcluded.length > 0) && (
+        <details open className="border border-[var(--color-line)] rounded-xl bg-[var(--color-card)] mb-6">
+          <summary className="px-5 py-3 text-sm cursor-pointer select-none font-medium hover:text-[var(--color-accent-dark)]">
+            Worth a look — what the estimator noticed
+          </summary>
+          <div className="px-5 pb-5 pt-1 space-y-4">
+            {breakdown.ai.flagged.length > 0 && (
+              <div className="divide-y divide-[var(--color-line)]">
+                {breakdown.ai.flagged.map((f) => (
+                  <div key={f.id} className="py-2.5">
+                    <div className="flex items-center gap-2 flex-wrap mb-1">
+                      <span className="text-sm truncate">{f.label}</span>
+                      {f.flags.map((flag) => (
+                        <span
+                          key={flag}
+                          className="text-[10px] uppercase tracking-wide bg-[var(--color-amber-soft)] text-[var(--color-amber)] px-1.5 py-0.5 rounded whitespace-nowrap"
+                        >
+                          {FLAG_LABELS[flag] ?? flag}
+                        </span>
+                      ))}
+                    </div>
+                    <div className="text-xs text-[var(--color-ink-soft)]">
+                      {f.rationale} — AI estimate ~{f.aiLikelyDays}d
+                      {f.teamPoints != null && `, your points: ${f.teamPoints}`}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+            {breakdown.ai.unrelatedExcluded.length > 0 && (
+              <div className="text-xs text-[var(--color-ink-soft)] pt-2 border-t border-[var(--color-line)]">
+                <strong className="text-[var(--color-ink)]">
+                  {breakdown.ai.unrelatedExcluded.length}
+                </strong>{" "}
+                ticket{breakdown.ai.unrelatedExcluded.length === 1 ? "" : "s"} judged unrelated to this
+                release from their content and left out of the forecast:{" "}
+                {breakdown.ai.unrelatedExcluded.map((u) => u.id).join(", ")}. If any of these are wrong,
+                fix the ticket description and re-run the estimator.
+              </div>
+            )}
           </div>
         </details>
       )}
@@ -308,6 +435,12 @@ export default function ForecastView({ scopeId }: { scopeId: string }) {
               Where the estimates come from
             </div>
             <ul className="space-y-1 text-xs text-[var(--color-ink-soft)]">
+              {breakdown.estimateQuality.aiCount > 0 && (
+                <li>
+                  <strong className="text-[var(--color-ink)]">{breakdown.estimateQuality.aiCount}</strong>{" "}
+                  tickets estimated by AI from their content (used ahead of points where both exist)
+                </li>
+              )}
               <li>
                 <strong className="text-[var(--color-ink)]">{breakdown.estimateQuality.pointsIssueCount}</strong>{" "}
                 tickets with a real Linear estimate
