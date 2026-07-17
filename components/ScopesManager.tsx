@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 
 export interface ScopeRow {
@@ -9,6 +9,16 @@ export interface ScopeRow {
   teamKey: string;
   projectName: string | null;
   labelFilter: string | null;
+}
+
+interface LinearTeam {
+  key: string;
+  name: string;
+}
+
+interface LinearProject {
+  id: string;
+  name: string;
 }
 
 const inputClass =
@@ -20,6 +30,42 @@ export default function ScopesManager({ initialScopes }: { initialScopes: ScopeR
   const [form, setForm] = useState({ name: "", teamKey: "", projectName: "", labelFilter: "" });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const [teams, setTeams] = useState<LinearTeam[]>([]);
+  const [teamsError, setTeamsError] = useState<string | null>(null);
+  const [teamsLoading, setTeamsLoading] = useState(true);
+
+  const [projects, setProjects] = useState<LinearProject[]>([]);
+  const [projectsError, setProjectsError] = useState<string | null>(null);
+  const [projectsLoading, setProjectsLoading] = useState(false);
+
+  useEffect(() => {
+    fetch("/api/linear/teams")
+      .then(async (res) => {
+        if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error ?? "Couldn't load Linear teams.");
+        return res.json();
+      })
+      .then((body) => setTeams(body.teams))
+      .catch((err) => setTeamsError(err instanceof Error ? err.message : "Couldn't load Linear teams."))
+      .finally(() => setTeamsLoading(false));
+  }, []);
+
+  useEffect(() => {
+    if (!form.teamKey) {
+      setProjects([]);
+      return;
+    }
+    setProjectsLoading(true);
+    setProjectsError(null);
+    fetch(`/api/linear/teams/${encodeURIComponent(form.teamKey)}/projects`)
+      .then(async (res) => {
+        if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error ?? "Couldn't load projects.");
+        return res.json();
+      })
+      .then((body) => setProjects(body.projects))
+      .catch((err) => setProjectsError(err instanceof Error ? err.message : "Couldn't load projects."))
+      .finally(() => setProjectsLoading(false));
+  }, [form.teamKey]);
 
   async function onCreate(e: React.FormEvent) {
     e.preventDefault();
@@ -113,25 +159,73 @@ export default function ScopesManager({ initialScopes }: { initialScopes: ScopeR
               onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
             />
           </div>
+
           <div className="flex flex-col gap-1">
-            <label className="text-xs text-[var(--color-ink-soft)]">Linear team key</label>
-            <input
-              required
-              className={inputClass}
-              placeholder="SOF"
-              value={form.teamKey}
-              onChange={(e) => setForm((f) => ({ ...f, teamKey: e.target.value }))}
-            />
+            <label className="text-xs text-[var(--color-ink-soft)]">Linear team</label>
+            {teamsError ? (
+              <>
+                <input
+                  required
+                  className={inputClass}
+                  placeholder="SOF"
+                  value={form.teamKey}
+                  onChange={(e) => setForm((f) => ({ ...f, teamKey: e.target.value }))}
+                />
+                <span className="text-[11px] text-[var(--color-danger)]">
+                  {teamsError} — enter the team key manually.
+                </span>
+              </>
+            ) : (
+              <select
+                required
+                disabled={teamsLoading}
+                className={inputClass}
+                value={form.teamKey}
+                onChange={(e) => setForm((f) => ({ ...f, teamKey: e.target.value, projectName: "" }))}
+              >
+                <option value="">{teamsLoading ? "Loading teams…" : "Select a team"}</option>
+                {teams.map((t) => (
+                  <option key={t.key} value={t.key}>
+                    {t.name} ({t.key})
+                  </option>
+                ))}
+              </select>
+            )}
           </div>
+
           <div className="flex flex-col gap-1">
-            <label className="text-xs text-[var(--color-ink-soft)]">Project name (optional)</label>
-            <input
-              className={inputClass}
-              placeholder="KIT Safety (JSA and iTrack)"
-              value={form.projectName}
-              onChange={(e) => setForm((f) => ({ ...f, projectName: e.target.value }))}
-            />
+            <label className="text-xs text-[var(--color-ink-soft)]">Project (optional)</label>
+            {projectsError ? (
+              <>
+                <input
+                  className={inputClass}
+                  placeholder="KIT Safety (JSA and iTrack)"
+                  value={form.projectName}
+                  onChange={(e) => setForm((f) => ({ ...f, projectName: e.target.value }))}
+                />
+                <span className="text-[11px] text-[var(--color-danger)]">
+                  {projectsError} — enter the project name manually.
+                </span>
+              </>
+            ) : (
+              <select
+                disabled={!form.teamKey || projectsLoading}
+                className={inputClass}
+                value={form.projectName}
+                onChange={(e) => setForm((f) => ({ ...f, projectName: e.target.value }))}
+              >
+                <option value="">
+                  {!form.teamKey ? "Select a team first" : projectsLoading ? "Loading projects…" : "Any project"}
+                </option>
+                {projects.map((p) => (
+                  <option key={p.id} value={p.name}>
+                    {p.name}
+                  </option>
+                ))}
+              </select>
+            )}
           </div>
+
           <div className="flex flex-col gap-1">
             <label className="text-xs text-[var(--color-ink-soft)]">Label filter (optional)</label>
             <input

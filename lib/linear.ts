@@ -77,6 +77,50 @@ export async function getScopedIssues(scope: ScopeFilter): Promise<LinearIssueSu
   return issues;
 }
 
+export interface LinearTeamSummary {
+  key: string;
+  name: string;
+}
+
+export interface LinearProjectSummary {
+  id: string;
+  name: string;
+}
+
+// Powers the Scope form's dropdowns so team key / project name can't be
+// mistyped -- both are exact-match filters in getScopedIssues above.
+export async function listTeams(): Promise<LinearTeamSummary[]> {
+  const client = getClient();
+  const teams: LinearTeamSummary[] = [];
+  let connection = await client.teams({ first: 100 });
+
+  while (true) {
+    teams.push(...connection.nodes.map((t) => ({ key: t.key, name: t.name })));
+    if (!connection.pageInfo.hasNextPage) break;
+    connection = await connection.fetchNext();
+  }
+
+  return teams.sort((a, b) => a.name.localeCompare(b.name));
+}
+
+export async function listTeamProjects(teamKey: string): Promise<LinearProjectSummary[]> {
+  const client = getClient();
+  const teams = await client.teams({ filter: { key: { eq: teamKey } } });
+  const team = teams.nodes[0];
+  if (!team) throw new Error(`No Linear team found with key "${teamKey}"`);
+
+  const projects: LinearProjectSummary[] = [];
+  let connection = await team.projects({ first: 100 });
+
+  while (true) {
+    projects.push(...connection.nodes.map((p) => ({ id: p.id, name: p.name })));
+    if (!connection.pageInfo.hasNextPage) break;
+    connection = await connection.fetchNext();
+  }
+
+  return projects.sort((a, b) => a.name.localeCompare(b.name));
+}
+
 async function getTeamId(teamKey: string): Promise<string> {
   const client = getClient();
   const teams = await client.teams({ filter: { key: { eq: teamKey } } });
