@@ -3,12 +3,21 @@
 import { useCallback, useEffect, useState } from "react";
 import ConfidenceRing from "./ConfidenceRing";
 
+interface ScenarioRow {
+  id: string;
+  label: string;
+  likelyDate: string;
+  deltaDays: number;
+  confidenceAtTarget: number | null;
+}
+
 interface ForecastData {
   scope: { id: string; name: string; targetDate: string | null; teamCapacity: number | null };
   likelyDate: string;
   earliestDate: string;
   latestDate: string;
   confidenceAtTarget: number | null;
+  scenarios: ScenarioRow[];
   breakdown: {
     remainingIssueCount: number;
     unticketedFindingCount: number;
@@ -18,7 +27,18 @@ interface ForecastData {
     decisionDelayDays: { low: number; likely: number; high: number };
     blockingGates: { id: string; label: string }[];
     topItems: { id: string; label: string; likelyDays: number }[];
+    estimateQuality: {
+      pointsIssueCount: number;
+      placeholderIssueCount: number;
+      hintFindingCount: number;
+      placeholderFindingCount: number;
+      placeholderEffortSharePct: number;
+    };
   };
+}
+
+function confidenceColor(pct: number): string {
+  return pct >= 70 ? "var(--color-accent)" : pct >= 35 ? "var(--color-amber)" : "var(--color-danger)";
 }
 
 function formatDate(iso: string): string {
@@ -147,6 +167,44 @@ export default function ForecastView({ scopeId }: { scopeId: string }) {
         </div>
       </div>
 
+      {data.scenarios.length > 0 && (
+        <details open className="border border-[var(--color-line)] rounded-xl bg-[var(--color-card)] mb-6">
+          <summary className="px-5 py-3 text-sm cursor-pointer select-none font-medium hover:text-[var(--color-accent-dark)]">
+            Paths to a sooner date
+          </summary>
+          <div className="px-5 pb-5 pt-1">
+            <p className="text-xs text-[var(--color-ink-soft)] mb-4">
+              Each row re-runs the same simulation with one change, so these are directly comparable
+              to the date above — use them to decide what to descope, staff, or push to a decision.
+            </p>
+            <div className="divide-y divide-[var(--color-line)]">
+              {data.scenarios.map((s) => (
+                <div key={s.id} className="flex items-center gap-4 py-2.5 text-sm">
+                  <span className="flex-1 min-w-0 truncate">{s.label}</span>
+                  <span className="font-medium whitespace-nowrap">{formatDate(s.likelyDate)}</span>
+                  <span
+                    className={`text-xs whitespace-nowrap w-16 text-right ${
+                      s.deltaDays < 0 ? "text-[var(--color-accent-dark)]" : "text-[var(--color-ink-soft)]"
+                    }`}
+                  >
+                    {s.deltaDays < 0 ? `${s.deltaDays} days` : s.deltaDays === 0 ? "no change" : `+${s.deltaDays} days`}
+                  </span>
+                  {s.confidenceAtTarget !== null && (
+                    <span
+                      className="text-xs font-medium w-24 text-right whitespace-nowrap"
+                      style={{ color: confidenceColor(s.confidenceAtTarget) }}
+                      title="Chance of landing on or before your target date under this scenario"
+                    >
+                      {s.confidenceAtTarget}% at target
+                    </span>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        </details>
+      )}
+
       <details className="border border-[var(--color-line)] rounded-xl bg-[var(--color-card)]">
         <summary className="px-5 py-3 text-sm cursor-pointer select-none text-[var(--color-ink-soft)] hover:text-[var(--color-ink)]">
           Why this date?
@@ -193,10 +251,45 @@ export default function ForecastView({ scopeId }: { scopeId: string }) {
             </div>
           )}
 
+          <div className="pt-2 border-t border-[var(--color-line)]">
+            <div className="text-xs uppercase tracking-wider text-[var(--color-ink-soft)] mb-2">
+              Where the estimates come from
+            </div>
+            <ul className="space-y-1 text-xs text-[var(--color-ink-soft)]">
+              <li>
+                <strong className="text-[var(--color-ink)]">{breakdown.estimateQuality.pointsIssueCount}</strong>{" "}
+                tickets with a real Linear estimate
+              </li>
+              {breakdown.estimateQuality.hintFindingCount > 0 && (
+                <li>
+                  <strong className="text-[var(--color-ink)]">{breakdown.estimateQuality.hintFindingCount}</strong>{" "}
+                  findings with a day range from the audit
+                </li>
+              )}
+              {(breakdown.estimateQuality.placeholderIssueCount > 0 ||
+                breakdown.estimateQuality.placeholderFindingCount > 0) && (
+                <li>
+                  <strong className="text-[var(--color-ink)]">
+                    {breakdown.estimateQuality.placeholderIssueCount + breakdown.estimateQuality.placeholderFindingCount}
+                  </strong>{" "}
+                  items with no estimate at all — carried as deliberately wide guesses, and together they
+                  make up{" "}
+                  <strong className="text-[var(--color-ink)]">
+                    {breakdown.estimateQuality.placeholderEffortSharePct}%
+                  </strong>{" "}
+                  of the projected effort. Estimating these is usually the fastest way to tighten this
+                  date range.
+                </li>
+              )}
+            </ul>
+          </div>
+
           <p className="text-xs text-[var(--color-ink-soft)] pt-2 border-t border-[var(--color-line)]">
-            Estimates come from Linear ticket points where set, and rough ranges parsed from finding
-            estimate hints where not — both are visible assumptions, not hidden math. This simulates
-            thousands of possible outcomes to produce the range above.
+            Everything above is computed from this team&apos;s own tickets and findings — no generic
+            industry benchmarks are baked in, because &ldquo;apps like this take N weeks&rdquo; figures
+            aren&apos;t reliable enough to price a date on. As completed-ticket history accumulates,
+            the day-per-point conversion can be calibrated to this team&apos;s actual pace, which is
+            the credible version of that idea.
           </p>
         </div>
       </details>

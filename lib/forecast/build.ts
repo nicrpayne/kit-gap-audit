@@ -16,55 +16,85 @@ function round1(n: number): number {
   return Math.round(n * 10) / 10;
 }
 
+// Where a work item's three-point range came from. "placeholder" sources
+// mean we're guessing with a deliberately wide range because nothing better
+// exists -- the estimate-quality panel reports how much of the forecast
+// rests on these, since tightening them is the cheapest way to narrow the
+// date range.
+export type EstimateSource = "points" | "issue_placeholder" | "hint" | "finding_placeholder";
+
+export interface SourcedWorkItem extends WorkItem {
+  estimateSource: EstimateSource;
+}
+
 // Linear issue estimate (points) -> three-point day estimate. There's no
 // team-specific velocity data yet, so this treats the point value as a
 // likely day count with a fixed uncertainty spread -- a documented
 // assumption surfaced in the Forecast page's explainer, not hidden magic.
-function issueEstimateToThreePoint(estimate: number | null): ThreePoint {
+function issueEstimateToThreePoint(estimate: number | null): { tp: ThreePoint; source: EstimateSource } {
   if (estimate == null || estimate <= 0) {
     // No estimate on the ticket -- common on a fresh Linear team. Wide
     // placeholder rather than pretending to know.
-    return { low: 1, likely: 3, high: 7 };
+    return { tp: { low: 1, likely: 3, high: 7 }, source: "issue_placeholder" };
   }
-  return { low: round1(estimate * 0.7), likely: estimate, high: round1(estimate * 1.6) };
+  return {
+    tp: { low: round1(estimate * 0.7), likely: estimate, high: round1(estimate * 1.6) },
+    source: "points",
+  };
 }
 
 const DAY_RANGE_RE = /(\d+(?:\.\d+)?)\s*-\s*(\d+(?:\.\d+)?)\s*d/i;
 const SINGLE_DAY_RE = /(\d+(?:\.\d+)?)\s*d/i;
 
+const HINT_PLACEHOLDER: ThreePoint = { low: 2, likely: 5, high: 12 };
+
 // Parses free-text estimateHint strings like "1-3 days", "2 days",
 // "needs scoping" into a three-point range. Unparseable or missing hints
 // get the same wide placeholder as an un-estimated Linear issue.
 export function parseEstimateHint(hint: string | null): ThreePoint {
-  if (!hint) return { low: 2, likely: 5, high: 12 };
+  return classifyEstimateHint(hint).tp;
+}
+
+function classifyEstimateHint(hint: string | null): { tp: ThreePoint; source: EstimateSource } {
+  if (!hint) return { tp: HINT_PLACEHOLDER, source: "finding_placeholder" };
 
   const range = hint.match(DAY_RANGE_RE);
   if (range) {
     const low = parseFloat(range[1]);
     const high = parseFloat(range[2]);
-    return { low, likely: round1((low + high) / 2), high };
+    return { tp: { low, likely: round1((low + high) / 2), high }, source: "hint" };
   }
 
   const single = hint.match(SINGLE_DAY_RE);
   if (single) {
     const n = parseFloat(single[1]);
-    return { low: round1(n * 0.7), likely: n, high: round1(n * 1.6) };
+    return { tp: { low: round1(n * 0.7), likely: n, high: round1(n * 1.6) }, source: "hint" };
   }
 
-  return { low: 2, likely: 5, high: 12 };
+  return { tp: HINT_PLACEHOLDER, source: "finding_placeholder" };
 }
 
 // Serial time-to-decide for a blocking decision -- doesn't shrink with
 // more developers, so it's a gate, not a divisible work item.
 const DECISION_GATE_ESTIMATE: ThreePoint = { low: 1, likely: 4, high: 10 };
 
+// How much of the forecast rests on real estimates vs. placeholder guesses.
+export interface EstimateQuality {
+  pointsIssueCount: number; // issues with a real Linear estimate
+  placeholderIssueCount: number; // issues with no estimate (wide placeholder)
+  hintFindingCount: number; // findings with a parseable day range
+  placeholderFindingCount: number; // findings with no usable hint
+  placeholderEffortSharePct: number; // % of likely effort-days from placeholders
+}
+
 export interface ForecastInputs {
-  items: WorkItem[];
+  items: SourcedWorkItem[];
   gates: DecisionGate[];
   teamCapacity: number;
   teamCapacityInferred: boolean;
   remainingIssueCount: number;
   unticketedFindingCount: number;
+  estimateQuality: EstimateQuality;
 }
 
 // Assembles the Monte Carlo inputs from raw Linear issues + Findings for a
@@ -77,15 +107,15 @@ export function buildForecastInputs(
 ): ForecastInputs {
   const remainingIssues = issues.filter((i) => !DONE_STATE_TYPES.has(i.stateType));
 
-  const items: WorkItem[] = remainingIssues.map((issue) => ({
-    id: issue.identifier,
-    label: `${issue.identifier} ${issue.title}`,
-    ...issueEstimateToThreePoint(issue.estimate),
-  }));
+  const items: SourcedWorkItem[] = remainingIssues.map((issue) => {
+    const { tp, source } = issueEstimateToThreePoint(issue.estimate);
+    return { id: issue.identifier, label: `${issue.identifier} ${issue.title}`, estimateSource: source, ...tp };
+  });
 
   const openWorkFindings = findings.filter((f) => f.type !== "decision" && f.status === "open");
   for (const f of openWorkFindings) {
-    items.push({ id: f.id, label: f.title, ...parseEstimateHint(f.estimateHint) });
+    const { tp, source } = classifyEstimateHint(f.estimateHint);
+    items.push({ id: f.id, label: f.title, estimateSource: source, ...tp });
   }
 
   const blockingDecisions = findings.filter(
@@ -107,6 +137,19 @@ export function buildForecastInputs(
     teamCapacityInferred = true;
   }
 
+  const totalLikely = items.reduce((sum, i) => sum + i.likely, 0);
+  const placeholderLikely = items
+    .filter((i) => i.estimateSource === "issue_placeholder" || i.estimateSource === "finding_placeholder")
+    .reduce((sum, i) => sum + i.likely, 0);
+
+  const estimateQuality: EstimateQuality = {
+    pointsIssueCount: items.filter((i) => i.estimateSource === "points").length,
+    placeholderIssueCount: items.filter((i) => i.estimateSource === "issue_placeholder").length,
+    hintFindingCount: items.filter((i) => i.estimateSource === "hint").length,
+    placeholderFindingCount: items.filter((i) => i.estimateSource === "finding_placeholder").length,
+    placeholderEffortSharePct: totalLikely > 0 ? Math.round((placeholderLikely / totalLikely) * 100) : 0,
+  };
+
   return {
     items,
     gates,
@@ -114,5 +157,6 @@ export function buildForecastInputs(
     teamCapacityInferred,
     remainingIssueCount: remainingIssues.length,
     unticketedFindingCount: openWorkFindings.length,
+    estimateQuality,
   };
 }

@@ -5,6 +5,17 @@ built and deployed. Timeline and Reports are next.
 
 ## Where things stand
 
+- **Forecast scenarios are live** (`lib/forecast/scenarios.ts`): a "Paths
+  to a sooner date" panel re-runs the simulation per lever (resolve
+  blocking decisions / +1 or +2 developers / descope each of the top 3
+  items) with a fixed RNG seed so deltas are lever-only, showing the new
+  likely date, delta days, and confidence-at-target per row. The explainer
+  also reports estimate provenance (real Linear points vs. parsed hints
+  vs. wide placeholders, and placeholders' share of projected effort).
+  Deliberate call, per Nic's ask about industry benchmarks: no generic
+  "Flutter apps of this size take N weeks" figures are baked in -- no
+  credible dataset exists, and invented numbers would undermine trust.
+  The calibration path is the team's own completed-ticket history (below).
 - **Forecast is live** (`/forecast`, `lib/forecast/`). Monte Carlo
   simulation over three-point estimates (Linear issue estimate -> points
   treated as likely days with a ±heuristic spread; `Finding.estimateHint`
