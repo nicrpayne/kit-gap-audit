@@ -32,7 +32,9 @@ export async function GET(req: NextRequest) {
     select: { id: true, type: true, title: true, status: true, blocking: true, estimateHint: true },
   });
 
-  const inputs = buildForecastInputs(issues, findings, scope.teamCapacity ?? null);
+  const inputs = buildForecastInputs(issues, findings, scope.teamCapacity ?? null, {
+    includeTriage: scope.includeTriage,
+  });
 
   // Base run and scenario runs share a fixed RNG seed (see scenarios.ts),
   // so scenario deltas are lever-only and the page is stable on refresh.
@@ -50,6 +52,7 @@ export async function GET(req: NextRequest) {
       name: scope.name,
       targetDate: scope.targetDate,
       teamCapacity: scope.teamCapacity,
+      includeTriage: scope.includeTriage,
     },
     likelyDate: base.likelyDate,
     earliestDate: base.earliestDate,
@@ -72,6 +75,7 @@ export async function GET(req: NextRequest) {
       blockingGates: inputs.gates.map((g) => ({ id: g.id, label: g.label })),
       topItems,
       estimateQuality: inputs.estimateQuality,
+      composition: inputs.composition,
     },
   });
 }

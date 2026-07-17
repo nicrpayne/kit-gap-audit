@@ -1,4 +1,4 @@
-import { LinearClient, LinearDocument } from "@linear/sdk";
+import { LinearClient, LinearDocument, type LinearRawResponse } from "@linear/sdk";
 
 const KIT_FOUND_LABEL = "kit-found";
 
@@ -33,10 +33,59 @@ export interface LinearIssueSummary {
   labels: string[];
 }
 
+// One GraphQL query per 100 issues with state/assignee/labels inlined.
+// The SDK's issue.state / issue.assignee / issue.labels() are each a lazy
+// follow-up request -- the first version of this function used them and
+// cost ~3 requests *per issue* (~770 calls for a 255-issue scope), which
+// blew Linear's 2500/hour rate limit within a few page loads.
+const SCOPED_ISSUES_QUERY = `
+  query ScopedIssues($filter: IssueFilter, $after: String) {
+    issues(filter: $filter, first: 100, after: $after) {
+      pageInfo { hasNextPage endCursor }
+      nodes {
+        identifier
+        title
+        description
+        estimate
+        state { name type }
+        assignee { name }
+        labels { nodes { name } }
+      }
+    }
+  }
+`;
+
+interface ScopedIssuesQueryData {
+  issues: {
+    pageInfo: { hasNextPage: boolean; endCursor: string | null };
+    nodes: {
+      identifier: string;
+      title: string;
+      description: string | null;
+      estimate: number | null;
+      state: { name: string; type: string } | null;
+      assignee: { name: string } | null;
+      labels: { nodes: { name: string }[] };
+    }[];
+  };
+}
+
+// Refreshing the Forecast page shouldn't cost a fresh Linear read every
+// time -- issues don't change minute to minute. Small in-process TTL cache;
+// fine on Railway where next start is one long-lived process.
+const ISSUE_CACHE_TTL_MS = 2 * 60 * 1000;
+const issueCache = new Map<string, { at: number; issues: LinearIssueSummary[] }>();
+
 // All non-canceled issues matching a Scope: team key, optionally narrowed by
 // Linear project name and/or a label. Scopes are data (see Scope model), not
 // env vars, so a new module (Precon, Design, ...) is a new row, not a redeploy.
 export async function getScopedIssues(scope: ScopeFilter): Promise<LinearIssueSummary[]> {
+  const cacheKey = `${scope.teamKey}::${scope.projectName ?? ""}::${scope.labelFilter ?? ""}`;
+  const cached = issueCache.get(cacheKey);
+  if (cached && Date.now() - cached.at < ISSUE_CACHE_TTL_MS) {
+    return cached.issues;
+  }
+
   const client = getClient();
 
   const filter: LinearDocument.IssueFilter = {
@@ -51,34 +100,34 @@ export async function getScopedIssues(scope: ScopeFilter): Promise<LinearIssueSu
   }
 
   const issues: LinearIssueSummary[] = [];
-  let connection = await client.issues({ filter, first: 100 });
+  let after: string | null = null;
 
   while (true) {
-    const details = await Promise.all(
-      connection.nodes.map(async (issue) => {
-        const [state, assignee, labelConnection] = await Promise.all([
-          issue.state,
-          issue.assignee,
-          issue.labels(),
-        ]);
-        return {
-          identifier: issue.identifier,
-          title: issue.title,
-          description: issue.description ? issue.description.slice(0, 500) : null,
-          state: state?.name ?? "Unknown",
-          stateType: state?.type ?? "unstarted",
-          estimate: issue.estimate ?? null,
-          assignee: assignee?.name ?? null,
-          labels: labelConnection.nodes.map((l) => l.name),
-        };
-      })
-    );
-    issues.push(...details);
+    const response: LinearRawResponse<ScopedIssuesQueryData> = await client.client.rawRequest<
+      ScopedIssuesQueryData,
+      Record<string, unknown>
+    >(SCOPED_ISSUES_QUERY, { filter, after });
+    const page = response.data?.issues;
+    if (!page) throw new Error("Linear returned no issue data");
 
-    if (!connection.pageInfo.hasNextPage) break;
-    connection = await connection.fetchNext();
+    for (const node of page.nodes) {
+      issues.push({
+        identifier: node.identifier,
+        title: node.title,
+        description: node.description ? node.description.slice(0, 500) : null,
+        state: node.state?.name ?? "Unknown",
+        stateType: node.state?.type ?? "unstarted",
+        estimate: node.estimate ?? null,
+        assignee: node.assignee?.name ?? null,
+        labels: node.labels.nodes.map((l) => l.name),
+      });
+    }
+
+    if (!page.pageInfo.hasNextPage) break;
+    after = page.pageInfo.endCursor;
   }
 
+  issueCache.set(cacheKey, { at: Date.now(), issues });
   return issues;
 }
 

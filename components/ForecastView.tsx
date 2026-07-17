@@ -12,7 +12,13 @@ interface ScenarioRow {
 }
 
 interface ForecastData {
-  scope: { id: string; name: string; targetDate: string | null; teamCapacity: number | null };
+  scope: {
+    id: string;
+    name: string;
+    targetDate: string | null;
+    teamCapacity: number | null;
+    includeTriage: boolean;
+  };
   likelyDate: string;
   earliestDate: string;
   latestDate: string;
@@ -33,6 +39,15 @@ interface ForecastData {
       hintFindingCount: number;
       placeholderFindingCount: number;
       placeholderEffortSharePct: number;
+    };
+    composition: {
+      triage: number;
+      backlog: number;
+      unstarted: number;
+      started: number;
+      completed: number;
+      canceled: number;
+      excludedTriageCount: number;
     };
   };
 }
@@ -77,7 +92,11 @@ export default function ForecastView({ scopeId }: { scopeId: string }) {
     load();
   }, [load]);
 
-  async function updateScopeSetting(patch: { targetDate?: string | null; teamCapacity?: number | null }) {
+  async function updateScopeSetting(patch: {
+    targetDate?: string | null;
+    teamCapacity?: number | null;
+    includeTriage?: boolean;
+  }) {
     setSavingSettings(true);
     try {
       await fetch(`/api/scopes/${scopeId}`, {
@@ -133,6 +152,16 @@ export default function ForecastView({ scopeId }: { scopeId: string }) {
             disabled={savingSettings}
             className="rounded-md border border-[var(--color-line)] bg-white px-2 py-1 text-xs w-32"
           />
+          <label className="ml-4 flex items-center gap-1.5 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={data.scope.includeTriage}
+              onChange={(e) => updateScopeSetting({ includeTriage: e.target.checked })}
+              disabled={savingSettings}
+              className="rounded border-[var(--color-line)]"
+            />
+            Include Triage tickets
+          </label>
         </div>
       </div>
 
@@ -223,6 +252,29 @@ export default function ForecastView({ scopeId }: { scopeId: string }) {
             , split across <strong>{breakdown.teamCapacity}</strong> parallel developer
             {breakdown.teamCapacity === 1 ? "" : "s"}
             {breakdown.teamCapacityInferred && " (inferred from assignees — set your own above for a more accurate date)"}.
+          </p>
+
+          <p className="text-xs text-[var(--color-ink-soft)]">
+            Everything in this scope right now:{" "}
+            {[
+              breakdown.composition.triage > 0 ? `${breakdown.composition.triage} in Triage` : null,
+              breakdown.composition.backlog > 0 ? `${breakdown.composition.backlog} in Backlog` : null,
+              breakdown.composition.unstarted > 0 ? `${breakdown.composition.unstarted} to do` : null,
+              breakdown.composition.started > 0 ? `${breakdown.composition.started} in progress` : null,
+              breakdown.composition.completed > 0 ? `${breakdown.composition.completed} done` : null,
+            ]
+              .filter(Boolean)
+              .join(" · ")}
+            .
+            {breakdown.composition.excludedTriageCount > 0 && (
+              <>
+                {" "}
+                The <strong className="text-[var(--color-ink)]">{breakdown.composition.excludedTriageCount} Triage</strong>{" "}
+                tickets are <strong className="text-[var(--color-ink)]">not counted</strong> in this forecast —
+                they haven&apos;t been accepted as real work yet. Tick &ldquo;Include Triage tickets&rdquo; above to
+                count them.
+              </>
+            )}
           </p>
 
           {breakdown.blockingGates.length > 0 && (

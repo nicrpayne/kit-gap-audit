@@ -10,6 +10,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     labelFilter?: string | null;
     targetDate?: string | null;
     teamCapacity?: number | null;
+    includeTriage?: boolean;
   };
 
   const scope = await prisma.scope.update({
@@ -25,6 +26,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       ...(body.teamCapacity !== undefined
         ? { teamCapacity: body.teamCapacity && body.teamCapacity > 0 ? body.teamCapacity : null }
         : {}),
+      ...(body.includeTriage !== undefined ? { includeTriage: body.includeTriage } : {}),
     },
   });
 

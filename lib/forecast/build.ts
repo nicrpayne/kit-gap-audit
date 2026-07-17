@@ -87,6 +87,18 @@ export interface EstimateQuality {
   placeholderEffortSharePct: number; // % of likely effort-days from placeholders
 }
 
+// What the in-scope Linear issues look like by workflow state, so the
+// Forecast page can show what it's counting (and what it's leaving out).
+export interface ScopeComposition {
+  triage: number;
+  backlog: number;
+  unstarted: number;
+  started: number;
+  completed: number;
+  canceled: number;
+  excludedTriageCount: number; // > 0 when triage is excluded from the forecast
+}
+
 export interface ForecastInputs {
   items: SourcedWorkItem[];
   gates: DecisionGate[];
@@ -95,17 +107,44 @@ export interface ForecastInputs {
   remainingIssueCount: number;
   unticketedFindingCount: number;
   estimateQuality: EstimateQuality;
+  composition: ScopeComposition;
 }
 
 // Assembles the Monte Carlo inputs from raw Linear issues + Findings for a
 // Scope. Ticketed findings are excluded from the finding pass since
-// they're already counted via the Linear issue they became.
+// they're already counted via the Linear issue they became. Triage-state
+// issues are excluded from the forecast by default (they're unaccepted
+// work, not release scope) unless includeTriage is set -- the audit is
+// unaffected either way and always matches against every ticket.
 export function buildForecastInputs(
   issues: LinearIssueSummary[],
   findings: FindingLike[],
-  configuredCapacity: number | null
+  configuredCapacity: number | null,
+  options?: { includeTriage?: boolean }
 ): ForecastInputs {
-  const remainingIssues = issues.filter((i) => !DONE_STATE_TYPES.has(i.stateType));
+  const includeTriage = options?.includeTriage ?? false;
+
+  const composition: ScopeComposition = {
+    triage: 0,
+    backlog: 0,
+    unstarted: 0,
+    started: 0,
+    completed: 0,
+    canceled: 0,
+    excludedTriageCount: 0,
+  };
+  for (const issue of issues) {
+    if (issue.stateType in composition) {
+      composition[issue.stateType as keyof Omit<ScopeComposition, "excludedTriageCount">] += 1;
+    }
+  }
+
+  const remainingIssues = issues.filter(
+    (i) => !DONE_STATE_TYPES.has(i.stateType) && (includeTriage || i.stateType !== "triage")
+  );
+  if (!includeTriage) {
+    composition.excludedTriageCount = composition.triage;
+  }
 
   const items: SourcedWorkItem[] = remainingIssues.map((issue) => {
     const { tp, source } = issueEstimateToThreePoint(issue.estimate);
@@ -158,5 +197,6 @@ export function buildForecastInputs(
     remainingIssueCount: remainingIssues.length,
     unticketedFindingCount: openWorkFindings.length,
     estimateQuality,
+    composition,
   };
 }

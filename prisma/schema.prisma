@@ -15,6 +15,7 @@ model Scope {
   labelFilter  String? // optional label name to further narrow, e.g. "JSA"
   targetDate   DateTime? // release target the Forecast confidence is measured against
   teamCapacity Float? // parallel "developer equivalents"; null = infer from assignees
+  includeTriage Boolean  @default(false) // count Triage-state tickets in the Forecast (audit always sees them)
   createdAt    DateTime  @default(now())
   sources      Source[]
 }
