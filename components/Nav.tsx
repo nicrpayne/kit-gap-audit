@@ -5,7 +5,7 @@ import { usePathname } from "next/navigation";
 
 const PRIMARY_TABS = [
   { href: "/", label: "Dashboard" },
-  { href: "/audit/new", label: "Audit" },
+  { href: "/audit", label: "Audit" },
   { href: "/decisions", label: "Decisions" },
 ];
 

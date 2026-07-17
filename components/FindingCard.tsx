@@ -30,9 +30,15 @@ const TYPE_LABELS: Record<string, string> = {
 export default function FindingCard({
   finding,
   onChange,
+  selectable = false,
+  selected = false,
+  onToggleSelect,
 }: {
   finding: FindingData;
   onChange: (updated: FindingData) => void;
+  selectable?: boolean;
+  selected?: boolean;
+  onToggleSelect?: () => void;
 }) {
   const [dismissing, setDismissing] = useState(false);
   const [reason, setReason] = useState("");
@@ -85,6 +91,15 @@ export default function FindingCard({
     <div className="border border-[var(--color-line)] rounded-xl bg-[var(--color-card)] p-5">
       <div className="flex items-start justify-between gap-4 mb-2">
         <div className="flex items-center gap-2 min-w-0">
+          {selectable && (
+            <input
+              type="checkbox"
+              checked={selected}
+              onChange={onToggleSelect}
+              className="rounded border-[var(--color-line)]"
+              aria-label={`Select "${finding.title}"`}
+            />
+          )}
           <SeverityDot severity={finding.severity} />
           <span className="text-[11px] uppercase tracking-wide text-[var(--color-ink-soft)]">
             {TYPE_LABELS[finding.type] ?? finding.type}

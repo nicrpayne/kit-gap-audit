@@ -66,9 +66,16 @@ export default async function DashboardPage() {
       </div>
 
       <div>
-        <h2 className="text-xs uppercase tracking-wider text-[var(--color-ink-soft)] mb-3">
-          Recent sources
-        </h2>
+        <div className="flex items-center justify-between mb-3">
+          <h2 className="text-xs uppercase tracking-wider text-[var(--color-ink-soft)]">
+            Recent sources
+          </h2>
+          {recentSources.length > 0 && (
+            <Link href="/audit" className="text-xs text-[var(--color-accent)] hover:underline">
+              View all →
+            </Link>
+          )}
+        </div>
         {recentSources.length === 0 ? (
           <div className="text-sm text-[var(--color-ink-soft)] py-12 text-center border border-dashed border-[var(--color-line)] rounded-xl">
             No audits yet.{" "}
