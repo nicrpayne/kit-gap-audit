@@ -3,7 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { getScopedIssues } from "@/lib/linear";
 import { buildForecastInputs } from "@/lib/forecast/build";
 import { buildScenarios } from "@/lib/forecast/scenarios";
-import { estimateContentHash } from "@/lib/estimate/run";
+import { estimateContentHash, findingContentHash } from "@/lib/estimate/run";
 
 export async function GET(req: NextRequest) {
   const scopeId = req.nextUrl.searchParams.get("scopeId");
@@ -33,15 +33,20 @@ export async function GET(req: NextRequest) {
     select: { id: true, type: true, title: true, status: true, blocking: true, estimateHint: true },
   });
 
-  const workEstimates = await prisma.workEstimate.findMany({
-    where: { scopeId: scope.id, source: "linear" },
-  });
-  const estimates = new Map(workEstimates.map((e) => [e.externalId, e]));
+  const workEstimates = await prisma.workEstimate.findMany({ where: { scopeId: scope.id } });
+  const estimates = new Map(
+    workEstimates.filter((e) => e.source === "linear").map((e) => [e.externalId, e])
+  );
+  const findingEstimates = new Map(
+    workEstimates.filter((e) => e.source === "finding").map((e) => [e.externalId, e])
+  );
 
   const inputs = buildForecastInputs(issues, findings, scope.teamCapacity ?? null, {
     includeTriage: scope.includeTriage,
     estimates,
     hashFor: estimateContentHash,
+    findingEstimates,
+    findingHashFor: findingContentHash,
   });
 
   // Base run and scenario runs share a fixed RNG seed (see scenarios.ts),

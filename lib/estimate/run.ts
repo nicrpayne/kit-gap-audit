@@ -23,6 +23,25 @@ export function estimateContentHash(issue: {
     .slice(0, 24);
 }
 
+// Findings are immutable once the audit writes them (title/quote/rationale
+// never change), so title + hint is a stable identity for cache purposes.
+export function findingContentHash(finding: { title: string; estimateHint: string | null }): string {
+  return estimateContentHash({ title: finding.title, description: finding.estimateHint, estimate: null });
+}
+
+// One unit of work to estimate, from any source -- a Linear issue today, a
+// Finding from an audit, a Notion requirement row later.
+export interface EstimateWorkInput {
+  source: string; // "linear" | "finding" | future: "notion"
+  externalId: string;
+  contentHash: string;
+  title: string;
+  description: string | null;
+  state: string;
+  points: number | null;
+  labels: string[];
+}
+
 interface RawEstimate {
   externalId?: unknown;
   lowDays?: unknown;
@@ -44,34 +63,69 @@ export interface EstimateRunSummary {
   failed: number;
 }
 
-// Estimates every issue that has no fresh cached estimate, in batches.
+// Turns Linear issues into estimator inputs.
+export function issueEstimateInputs(issues: LinearIssueSummary[]): EstimateWorkInput[] {
+  return issues.map((i) => ({
+    source: "linear",
+    externalId: i.identifier,
+    contentHash: estimateContentHash(i),
+    title: i.title,
+    description: i.description,
+    state: i.state,
+    points: i.estimate,
+    labels: i.labels,
+  }));
+}
+
+// Turns open audit findings (un-ticketed work) into estimator inputs --
+// the finding's verbatim quote + rationale are the content the model reads.
+export function findingEstimateInputs(
+  findings: { id: string; title: string; quote: string; rationale: string; estimateHint: string | null }[]
+): EstimateWorkInput[] {
+  return findings.map((f) => ({
+    source: "finding",
+    externalId: f.id,
+    contentHash: findingContentHash(f),
+    title: f.title,
+    description: `From a meeting transcript (no ticket exists yet). Evidence: "${f.quote}"\n${f.rationale}${
+      f.estimateHint ? `\nTeam's rough hint: ${f.estimateHint}` : ""
+    }`,
+    state: "un-ticketed finding",
+    points: null,
+    labels: [],
+  }));
+}
+
+// Estimates every work item that has no fresh cached estimate, in batches.
 // Defensive per-item: a malformed entry drops that item, not the batch.
 export async function runEstimation(
   scopeId: string,
   releaseContext: string,
-  issues: LinearIssueSummary[]
+  workInputs: EstimateWorkInput[]
 ): Promise<EstimateRunSummary> {
   const existing = await prisma.workEstimate.findMany({
-    where: { scopeId, source: "linear" },
-    select: { externalId: true, contentHash: true },
+    where: { scopeId },
+    select: { source: true, externalId: true, contentHash: true },
   });
-  const freshHashes = new Map(existing.map((e) => [e.externalId, e.contentHash]));
+  const freshHashes = new Map(existing.map((e) => [`${e.source}:${e.externalId}`, e.contentHash]));
 
-  const toEstimate = issues.filter((i) => freshHashes.get(i.identifier) !== estimateContentHash(i));
-  const cached = issues.length - toEstimate.length;
+  const toEstimate = workInputs.filter(
+    (w) => freshHashes.get(`${w.source}:${w.externalId}`) !== w.contentHash
+  );
+  const cached = workInputs.length - toEstimate.length;
 
   let estimated = 0;
   let failed = 0;
 
   for (let start = 0; start < toEstimate.length; start += BATCH_SIZE) {
     const batch = toEstimate.slice(start, start + BATCH_SIZE);
-    const candidates: EstimateCandidate[] = batch.map((i) => ({
-      externalId: i.identifier,
-      title: i.title,
-      description: i.description,
-      state: i.state,
-      points: i.estimate,
-      labels: i.labels,
+    const candidates: EstimateCandidate[] = batch.map((w) => ({
+      externalId: w.externalId,
+      title: w.title,
+      description: w.description,
+      state: w.state,
+      points: w.points,
+      labels: w.labels,
     }));
 
     let raw: RawEstimate[];
@@ -92,8 +146,8 @@ export async function runEstimation(
         .map((r) => [r.externalId, r])
     );
 
-    for (const issue of batch) {
-      const r = byId.get(issue.identifier);
+    for (const work of batch) {
+      const r = byId.get(work.externalId);
       const low = num(r?.lowDays);
       const likely = num(r?.likelyDays);
       const high = num(r?.highDays);
@@ -109,36 +163,26 @@ export async function runEstimation(
         ? r.flags.filter((f): f is string => typeof f === "string" && VALID_FLAGS.has(f))
         : [];
 
+      const fields = {
+        contentHash: work.contentHash,
+        lowDays: low,
+        likelyDays: likely,
+        highDays: high,
+        relevance,
+        flags,
+        rationale,
+        model: AUDIT_MODEL,
+      };
       await prisma.workEstimate.upsert({
-        where: { scopeId_source_externalId: { scopeId, source: "linear", externalId: issue.identifier } },
-        create: {
-          scopeId,
-          source: "linear",
-          externalId: issue.identifier,
-          contentHash: estimateContentHash(issue),
-          lowDays: low,
-          likelyDays: likely,
-          highDays: high,
-          relevance,
-          flags,
-          rationale,
-          model: AUDIT_MODEL,
+        where: {
+          scopeId_source_externalId: { scopeId, source: work.source, externalId: work.externalId },
         },
-        update: {
-          contentHash: estimateContentHash(issue),
-          lowDays: low,
-          likelyDays: likely,
-          highDays: high,
-          relevance,
-          flags,
-          rationale,
-          model: AUDIT_MODEL,
-          createdAt: new Date(),
-        },
+        create: { scopeId, source: work.source, externalId: work.externalId, ...fields },
+        update: { ...fields, createdAt: new Date() },
       });
       estimated += 1;
     }
   }
 
-  return { total: issues.length, estimated, cached, failed };
+  return { total: workInputs.length, estimated, cached, failed };
 }

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getScopedIssues } from "@/lib/linear";
-import { runEstimation } from "@/lib/estimate/run";
+import { runEstimation, issueEstimateInputs, findingEstimateInputs } from "@/lib/estimate/run";
 
 const DONE_STATE_TYPES = new Set(["completed", "canceled"]);
 
@@ -38,6 +38,13 @@ export async function POST(req: NextRequest) {
   // include-Triage toggle later doesn't require a new estimation run.
   const openIssues = issues.filter((i) => !DONE_STATE_TYPES.has(i.stateType));
 
+  // Un-ticketed findings from audits are work too -- "all the inputs":
+  // the model reads their quote + rationale the same way it reads tickets.
+  const openFindings = await prisma.finding.findMany({
+    where: { source: { scopeId: scope.id }, status: "open", type: { not: "decision" } },
+    select: { id: true, title: true, quote: true, rationale: true, estimateHint: true },
+  });
+
   const releaseContext = [
     `Scope: ${scope.name} (Linear team ${scope.teamKey}${scope.projectName ? `, project "${scope.projectName}"` : ""}).`,
     scope.estimationContext?.trim() ||
@@ -45,7 +52,10 @@ export async function POST(req: NextRequest) {
   ].join("\n");
 
   try {
-    const summary = await runEstimation(scope.id, releaseContext, openIssues);
+    const summary = await runEstimation(scope.id, releaseContext, [
+      ...issueEstimateInputs(openIssues),
+      ...findingEstimateInputs(openFindings),
+    ]);
     return NextResponse.json({ ok: true, ...summary });
   } catch (error) {
     return NextResponse.json(

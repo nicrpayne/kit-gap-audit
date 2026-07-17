@@ -149,11 +149,19 @@ export function buildForecastInputs(
   issues: LinearIssueSummary[],
   findings: FindingLike[],
   configuredCapacity: number | null,
-  options?: { includeTriage?: boolean; estimates?: Map<string, WorkEstimateLike>; hashFor?: (issue: LinearIssueSummary) => string }
+  options?: {
+    includeTriage?: boolean;
+    estimates?: Map<string, WorkEstimateLike>;
+    hashFor?: (issue: LinearIssueSummary) => string;
+    findingEstimates?: Map<string, WorkEstimateLike>;
+    findingHashFor?: (finding: { title: string; estimateHint: string | null }) => string;
+  }
 ): ForecastInputs {
   const includeTriage = options?.includeTriage ?? false;
   const estimates = options?.estimates ?? new Map<string, WorkEstimateLike>();
   const hashFor = options?.hashFor;
+  const findingEstimates = options?.findingEstimates ?? new Map<string, WorkEstimateLike>();
+  const findingHashFor = options?.findingHashFor;
 
   const composition: ScopeComposition = {
     triage: 0,
@@ -223,14 +231,41 @@ export function buildForecastInputs(
     items.push({ id: issue.identifier, label, estimateSource: source, ...tp });
   }
 
-  ai.flagged.sort((a, b) => b.aiLikelyDays - a.aiLikelyDays);
-  ai.flagged = ai.flagged.slice(0, 8);
-
   const openWorkFindings = findings.filter((f) => f.type !== "decision" && f.status === "open");
   for (const f of openWorkFindings) {
+    const estimate = findingEstimates.get(f.id);
+    const fresh = estimate && (!findingHashFor || estimate.contentHash === findingHashFor(f));
+    if (estimate && !fresh) ai.staleCount += 1;
+
+    if (fresh) {
+      ai.aiItemCount += 1;
+      if (estimate.flags.length > 0) {
+        ai.flagged.push({
+          id: f.id,
+          label: f.title,
+          flags: estimate.flags,
+          rationale: estimate.rationale,
+          aiLikelyDays: estimate.likelyDays,
+          teamPoints: null,
+        });
+      }
+      items.push({
+        id: f.id,
+        label: f.title,
+        estimateSource: "ai",
+        low: estimate.lowDays,
+        likely: estimate.likelyDays,
+        high: estimate.highDays,
+      });
+      continue;
+    }
+
     const { tp, source } = classifyEstimateHint(f.estimateHint);
     items.push({ id: f.id, label: f.title, estimateSource: source, ...tp });
   }
+
+  ai.flagged.sort((a, b) => b.aiLikelyDays - a.aiLikelyDays);
+  ai.flagged = ai.flagged.slice(0, 8);
 
   const blockingDecisions = findings.filter(
     (f) => f.type === "decision" && f.status === "open" && f.blocking
