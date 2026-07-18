@@ -12,21 +12,29 @@ const VALID_FLAGS = new Set(["unclear_scope", "bigger_than_pointed", "smaller_th
 // Hash of the fields that affect an estimate. If a ticket's content hasn't
 // changed since it was last estimated, the stored estimate is still valid
 // and the model is never called for it again.
-export function estimateContentHash(issue: {
-  title: string;
-  description: string | null;
-  estimate: number | null;
-}): string {
+// contextHash (see lib/estimate/context.ts) is mixed in when provided:
+// a change to the release context or its Notion docs invalidates every
+// estimate, since context legitimately changes every estimate.
+export function estimateContentHash(
+  issue: { title: string; description: string | null; estimate: number | null },
+  contextHash?: string
+): string {
   return createHash("sha256")
-    .update(`${issue.title}\n${issue.description ?? ""}\n${issue.estimate ?? ""}`)
+    .update(`${issue.title}\n${issue.description ?? ""}\n${issue.estimate ?? ""}\n${contextHash ?? ""}`)
     .digest("hex")
     .slice(0, 24);
 }
 
 // Findings are immutable once the audit writes them (title/quote/rationale
 // never change), so title + hint is a stable identity for cache purposes.
-export function findingContentHash(finding: { title: string; estimateHint: string | null }): string {
-  return estimateContentHash({ title: finding.title, description: finding.estimateHint, estimate: null });
+export function findingContentHash(
+  finding: { title: string; estimateHint: string | null },
+  contextHash?: string
+): string {
+  return estimateContentHash(
+    { title: finding.title, description: finding.estimateHint, estimate: null },
+    contextHash
+  );
 }
 
 // One unit of work to estimate, from any source -- a Linear issue today, a
@@ -64,11 +72,11 @@ export interface EstimateRunSummary {
 }
 
 // Turns Linear issues into estimator inputs.
-export function issueEstimateInputs(issues: LinearIssueSummary[]): EstimateWorkInput[] {
+export function issueEstimateInputs(issues: LinearIssueSummary[], contextHash?: string): EstimateWorkInput[] {
   return issues.map((i) => ({
     source: "linear",
     externalId: i.identifier,
-    contentHash: estimateContentHash(i),
+    contentHash: estimateContentHash(i, contextHash),
     title: i.title,
     description: i.description,
     state: i.state,
@@ -80,12 +88,13 @@ export function issueEstimateInputs(issues: LinearIssueSummary[]): EstimateWorkI
 // Turns open audit findings (un-ticketed work) into estimator inputs --
 // the finding's verbatim quote + rationale are the content the model reads.
 export function findingEstimateInputs(
-  findings: { id: string; title: string; quote: string; rationale: string; estimateHint: string | null }[]
+  findings: { id: string; title: string; quote: string; rationale: string; estimateHint: string | null }[],
+  contextHash?: string
 ): EstimateWorkInput[] {
   return findings.map((f) => ({
     source: "finding",
     externalId: f.id,
-    contentHash: findingContentHash(f),
+    contentHash: findingContentHash(f, contextHash),
     title: f.title,
     description: `From a meeting transcript (no ticket exists yet). Evidence: "${f.quote}"\n${f.rationale}${
       f.estimateHint ? `\nTeam's rough hint: ${f.estimateHint}` : ""

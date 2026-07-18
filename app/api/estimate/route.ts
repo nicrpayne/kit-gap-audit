@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getScopedIssues } from "@/lib/linear";
 import { runEstimation, issueEstimateInputs, findingEstimateInputs } from "@/lib/estimate/run";
+import { buildReleaseContext } from "@/lib/estimate/context";
 
 const DONE_STATE_TYPES = new Set(["completed", "canceled"]);
 
@@ -45,18 +46,22 @@ export async function POST(req: NextRequest) {
     select: { id: true, title: true, quote: true, rationale: true, estimateHint: true },
   });
 
-  const releaseContext = [
-    `Scope: ${scope.name} (Linear team ${scope.teamKey}${scope.projectName ? `, project "${scope.projectName}"` : ""}).`,
-    scope.estimationContext?.trim() ||
-      "No further team context provided -- assume a small, competent product team.",
-  ].join("\n");
+  // Context includes any linked Notion requirements docs; its hash is
+  // mixed into every item's estimate hash so context edits (including doc
+  // changes) mark all estimates stale for the next run.
+  const ctx = await buildReleaseContext(scope);
 
   try {
-    const summary = await runEstimation(scope.id, releaseContext, [
-      ...issueEstimateInputs(openIssues),
-      ...findingEstimateInputs(openFindings),
+    const summary = await runEstimation(scope.id, ctx.context, [
+      ...issueEstimateInputs(openIssues, ctx.contextHash),
+      ...findingEstimateInputs(openFindings, ctx.contextHash),
     ]);
-    return NextResponse.json({ ok: true, ...summary });
+    return NextResponse.json({
+      ok: true,
+      ...summary,
+      notionDocs: ctx.notionDocs,
+      notionWarning: ctx.notionWarning,
+    });
   } catch (error) {
     return NextResponse.json(
       { error: `Estimation failed: ${error instanceof Error ? error.message : "unknown error"}` },

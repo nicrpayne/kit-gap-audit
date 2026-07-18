@@ -4,6 +4,7 @@ import { getScopedIssues } from "@/lib/linear";
 import { buildForecastInputs } from "@/lib/forecast/build";
 import { buildScenarios } from "@/lib/forecast/scenarios";
 import { estimateContentHash, findingContentHash } from "@/lib/estimate/run";
+import { buildReleaseContext } from "@/lib/estimate/context";
 
 export async function GET(req: NextRequest) {
   const scopeId = req.nextUrl.searchParams.get("scopeId");
@@ -41,12 +42,28 @@ export async function GET(req: NextRequest) {
     workEstimates.filter((e) => e.source === "finding").map((e) => [e.externalId, e])
   );
 
+  // Same context hash the estimator used, so freshness checks agree. If
+  // Notion is unreachable right now, fall back to a context-free hash
+  // rather than failing the whole forecast -- estimates may show as stale
+  // until Notion is reachable again, which is honest.
+  let contextHash: string | undefined;
+  let notionDocs: { id: string; title: string; chars: number }[] = [];
+  let notionWarning: string | null = null;
+  try {
+    const ctx = await buildReleaseContext(scope);
+    contextHash = ctx.contextHash;
+    notionDocs = ctx.notionDocs;
+    notionWarning = ctx.notionWarning;
+  } catch (error) {
+    notionWarning = error instanceof Error ? error.message : "Couldn't build release context";
+  }
+
   const inputs = buildForecastInputs(issues, findings, scope.teamCapacity ?? null, {
     includeTriage: scope.includeTriage,
     estimates,
-    hashFor: estimateContentHash,
+    hashFor: (i) => estimateContentHash(i, contextHash),
     findingEstimates,
-    findingHashFor: findingContentHash,
+    findingHashFor: (f) => findingContentHash(f, contextHash),
   });
 
   // Base run and scenario runs share a fixed RNG seed (see scenarios.ts),
@@ -67,7 +84,9 @@ export async function GET(req: NextRequest) {
       teamCapacity: scope.teamCapacity,
       includeTriage: scope.includeTriage,
       estimationContext: scope.estimationContext,
+      notionPageIds: scope.notionPageIds,
     },
+    notion: { docs: notionDocs, warning: notionWarning },
     likelyDate: base.likelyDate,
     earliestDate: base.earliestDate,
     latestDate: base.latestDate,

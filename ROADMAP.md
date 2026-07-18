@@ -118,3 +118,16 @@ to fetch.
   un-estimated issues/findings get flat placeholder ranges. Worth
   revisiting once there's enough completed-issue history to fit a real
   points-to-days conversion instead of guessing.
+
+## Notion integration (shipped)
+
+Scopes can link Notion pages (requirements/scoping docs) whose content is
+pulled as estimator context: `lib/notion.ts` (raw REST, no SDK; page ->
+plain text with pagination + depth-2 nesting, 15k chars/page, 20k total),
+`lib/estimate/context.ts` (assembles scope + estimationContext + Notion
+docs; its hash is mixed into every item's estimate hash so context/doc
+edits mark all estimates stale). Setup documented in README (integration
+token + per-page Connections sharing). NOT yet fed into audits -- worth
+doing next: transcripts compared against requirements, not just tickets.
+Live Notion API verification pending first production use (sandbox
+blocks api.notion.com, same as Linear).

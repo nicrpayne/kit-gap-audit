@@ -19,6 +19,11 @@ interface ForecastData {
     teamCapacity: number | null;
     includeTriage: boolean;
     estimationContext: string | null;
+    notionPageIds: string[];
+  };
+  notion: {
+    docs: { id: string; title: string; chars: number }[];
+    warning: string | null;
   };
   likelyDate: string;
   earliestDate: string;
@@ -146,6 +151,7 @@ export default function ForecastView({ scopeId }: { scopeId: string }) {
     teamCapacity?: number | null;
     includeTriage?: boolean;
     estimationContext?: string | null;
+    notionPageUrls?: string[];
   }) {
     setSavingSettings(true);
     try {
@@ -245,6 +251,30 @@ export default function ForecastView({ scopeId }: { scopeId: string }) {
             placeholder="e.g. Flutter mobile app + Node backend for construction-site safety inspections. 4 full-time devs, a manager covering infra, one part-time consultant. This release is the JSA product only — iTrack tickets are a separate product."
             className="mt-2 w-full rounded-md border border-[var(--color-line)] bg-white px-3 py-2 text-xs leading-relaxed"
           />
+          <div className="mt-3">
+            <div className="text-xs text-[var(--color-ink-soft)] mb-1">
+              Notion requirements / scoping docs (one page URL per line) —{" "}
+              {data.notion.docs.length > 0 ? (
+                <span className="text-[var(--color-accent-dark)]">
+                  {data.notion.docs.length} connected: {data.notion.docs.map((d) => d.title).join(", ")}
+                </span>
+              ) : (
+                "read as estimator context"
+              )}
+            </div>
+            <textarea
+              defaultValue={data.scope.notionPageIds.join("\n")}
+              onBlur={(e) =>
+                updateScopeSetting({ notionPageUrls: e.target.value.split("\n").filter((l) => l.trim()) })
+              }
+              rows={2}
+              placeholder="https://www.notion.so/yourteam/JSA-Requirements-abc123…"
+              className="w-full rounded-md border border-[var(--color-line)] bg-white px-3 py-2 text-xs leading-relaxed font-mono"
+            />
+            {data.notion.warning && (
+              <div className="text-xs text-[var(--color-danger)] mt-1">{data.notion.warning}</div>
+            )}
+          </div>
         </details>
       </div>
 

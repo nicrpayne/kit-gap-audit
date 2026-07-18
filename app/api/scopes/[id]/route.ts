@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { parseNotionPageId } from "@/lib/notion";
 
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -12,7 +13,26 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     teamCapacity?: number | null;
     includeTriage?: boolean;
     estimationContext?: string | null;
+    notionPageUrls?: string[]; // page URLs or raw IDs; normalized server-side
   };
+
+  let notionPageIds: string[] | undefined;
+  if (body.notionPageUrls !== undefined) {
+    notionPageIds = [];
+    const bad: string[] = [];
+    for (const raw of body.notionPageUrls) {
+      if (!raw.trim()) continue;
+      const parsed = parseNotionPageId(raw);
+      if (parsed) notionPageIds.push(parsed);
+      else bad.push(raw.trim());
+    }
+    if (bad.length > 0) {
+      return NextResponse.json(
+        { error: `These don't look like Notion page URLs or IDs: ${bad.join(", ")}` },
+        { status: 400 }
+      );
+    }
+  }
 
   const scope = await prisma.scope.update({
     where: { id },
@@ -31,6 +51,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       ...(body.estimationContext !== undefined
         ? { estimationContext: body.estimationContext?.trim() || null }
         : {}),
+      ...(notionPageIds !== undefined ? { notionPageIds } : {}),
     },
   });
 

@@ -74,6 +74,27 @@ standard pattern is to chain the migration into the start command:
 on every deploy, is a no-op when there's nothing new to migrate, and keeps
 the schema and the running app in lockstep.
 
+## Notion requirements as estimator input
+
+Optional: link Notion pages (requirements docs, scoping docs) to a Scope
+and their content is pulled in as context for the AI estimator — the model
+reads the requirements alongside each ticket when estimating.
+
+Setup:
+
+1. Create an **internal integration** at
+   [notion.so/my-integrations](https://www.notion.so/my-integrations) and
+   copy its secret into `NOTION_API_KEY` (Railway env var).
+2. **Share each page with the integration** — open the page in Notion, ⋯
+   menu → Connections → add your integration. Without this step the API
+   returns 404 for that page (Notion's way of saying "not shared").
+3. On `/forecast` → "Team & release context" → paste the page URLs (one
+   per line).
+
+Changing the linked docs (or their content) marks all estimates stale —
+context legitimately changes every estimate — so the next "Estimate
+tickets with AI" run re-estimates everything against the new context.
+
 ## API: running an audit programmatically
 
 `POST /api/audit` is the same endpoint the `/audit/new` form submits to —
