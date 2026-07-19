@@ -49,11 +49,15 @@ export async function GET(req: NextRequest) {
   let contextHash: string | undefined;
   let notionDocs: { id: string; title: string; chars: number }[] = [];
   let notionWarning: string | null = null;
+  let figmaRefs: { fileName: string; pageName: string; chars: number }[] = [];
+  let figmaWarning: string | null = null;
   try {
     const ctx = await buildReleaseContext(scope);
     contextHash = ctx.contextHash;
     notionDocs = ctx.notionDocs;
     notionWarning = ctx.notionWarning;
+    figmaRefs = ctx.figmaRefs;
+    figmaWarning = ctx.figmaWarning;
   } catch (error) {
     notionWarning = error instanceof Error ? error.message : "Couldn't build release context";
   }
@@ -85,8 +89,10 @@ export async function GET(req: NextRequest) {
       includeTriage: scope.includeTriage,
       estimationContext: scope.estimationContext,
       notionPageIds: scope.notionPageIds,
+      figmaRefs: scope.figmaRefs,
     },
     notion: { docs: notionDocs, warning: notionWarning },
+    figma: { refs: figmaRefs, warning: figmaWarning },
     likelyDate: base.likelyDate,
     earliestDate: base.earliestDate,
     latestDate: base.latestDate,

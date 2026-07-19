@@ -20,9 +20,14 @@ interface ForecastData {
     includeTriage: boolean;
     estimationContext: string | null;
     notionPageIds: string[];
+    figmaRefs: string[];
   };
   notion: {
     docs: { id: string; title: string; chars: number }[];
+    warning: string | null;
+  };
+  figma: {
+    refs: { fileName: string; pageName: string; chars: number }[];
     warning: string | null;
   };
   likelyDate: string;
@@ -97,6 +102,7 @@ export default function ForecastView({ scopeId }: { scopeId: string }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [savingSettings, setSavingSettings] = useState(false);
+  const [settingsError, setSettingsError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -152,15 +158,23 @@ export default function ForecastView({ scopeId }: { scopeId: string }) {
     includeTriage?: boolean;
     estimationContext?: string | null;
     notionPageUrls?: string[];
+    figmaUrls?: string[];
   }) {
     setSavingSettings(true);
+    setSettingsError(null);
     try {
-      await fetch(`/api/scopes/${scopeId}`, {
+      const res = await fetch(`/api/scopes/${scopeId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(patch),
       });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error ?? "Couldn't save that setting.");
+      }
       await load();
+    } catch (err) {
+      setSettingsError(err instanceof Error ? err.message : "Couldn't save that setting.");
     } finally {
       setSavingSettings(false);
     }
@@ -275,6 +289,38 @@ export default function ForecastView({ scopeId }: { scopeId: string }) {
               <div className="text-xs text-[var(--color-danger)] mt-1">{data.notion.warning}</div>
             )}
           </div>
+          <div className="mt-3">
+            <div className="text-xs text-[var(--color-ink-soft)] mb-1">
+              Figma design references (one frame/page URL per line, with a node selected) —{" "}
+              {data.figma.refs.length > 0 ? (
+                <span className="text-[var(--color-accent-dark)]">
+                  {data.figma.refs.length} connected: {data.figma.refs.map((r) => r.pageName).join(", ")}
+                </span>
+              ) : (
+                "read as structural/visual context, weighted below written requirements"
+              )}
+            </div>
+            <textarea
+              defaultValue={data.scope.figmaRefs
+                .map((r) => {
+                  const [fileKey, n1, n2] = r.split(":");
+                  return `https://www.figma.com/design/${fileKey}?node-id=${n1}-${n2}`;
+                })
+                .join("\n")}
+              onBlur={(e) =>
+                updateScopeSetting({ figmaUrls: e.target.value.split("\n").filter((l) => l.trim()) })
+              }
+              rows={2}
+              placeholder="https://www.figma.com/design/E7gFtwPUmAkCO6bAXewdlG/Power-Portal-Flutter-App?node-id=399-9068…"
+              className="w-full rounded-md border border-[var(--color-line)] bg-white px-3 py-2 text-xs leading-relaxed font-mono"
+            />
+            {data.figma.warning && (
+              <div className="text-xs text-[var(--color-danger)] mt-1">{data.figma.warning}</div>
+            )}
+          </div>
+          {settingsError && (
+            <div className="text-xs text-[var(--color-danger)] mt-2">{settingsError}</div>
+          )}
         </details>
       </div>
 

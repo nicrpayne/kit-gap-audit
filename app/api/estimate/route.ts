@@ -61,6 +61,8 @@ export async function POST(req: NextRequest) {
       ...summary,
       notionDocs: ctx.notionDocs,
       notionWarning: ctx.notionWarning,
+      figmaRefs: ctx.figmaRefs,
+      figmaWarning: ctx.figmaWarning,
     });
   } catch (error) {
     return NextResponse.json(

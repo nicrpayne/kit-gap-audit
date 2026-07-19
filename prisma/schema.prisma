@@ -18,6 +18,7 @@ model Scope {
   includeTriage Boolean  @default(false) // count Triage-state tickets in the Forecast (audit always sees them)
   estimationContext String? // free text fed to the AI estimator: team makeup, stack, what this release is
   notionPageIds String[] @default([]) // Notion requirements/scoping pages pulled in as estimator context
+  figmaRefs     String[] @default([]) // "fileKey:nodeId" design pages/frames pulled in as estimator context
   createdAt    DateTime  @default(now())
   sources      Source[]
 }

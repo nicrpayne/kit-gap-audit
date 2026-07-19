@@ -95,6 +95,29 @@ Changing the linked docs (or their content) marks all estimates stale —
 context legitimately changes every estimate — so the next "Estimate
 tickets with AI" run re-estimates everything against the new context.
 
+## Figma design references as estimator input
+
+Optional, same idea as Notion but for design: link Figma frames/pages to a
+Scope and their screen names, flow names, and on-canvas text are pulled in
+as estimator context — useful for scope that's still in design with no
+written requirements doc yet.
+
+Setup:
+
+1. Generate a **personal access token** at figma.com → account settings →
+   Security → Personal access tokens, and set `FIGMA_API_KEY` (Railway env
+   var). No per-file sharing step like Notion — the token's owner just
+   needs their own access to the file.
+2. In Figma, click the specific page or frame you want (not just the file
+   root) so the URL includes a `node-id`, then copy that link.
+3. On `/forecast` → "Team & release context" → paste the URL(s), one per
+   line.
+
+The estimator is told to treat Figma content as *current design intent* —
+useful for judging structural scope and relevance — not as committed
+requirements the way a written Notion doc is. That distinction matters
+most for anything still in active design.
+
 ## API: running an audit programmatically
 
 `POST /api/audit` is the same endpoint the `/audit/new` form submits to —

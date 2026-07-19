@@ -10,7 +10,13 @@ export interface EstimateCandidate {
 }
 
 const RULES = `You are an experienced software delivery estimator. You will receive:
-(A) context about the team, stack, and what this release is, and
+(A) context about the team, stack, and what this release is -- which may
+include written requirements docs (treat as committed scope) and/or
+design references pulled from Figma (screen/flow names and on-canvas
+text -- treat as CURRENT DESIGN INTENT, useful for judging structural
+scope and relevance, but not committed requirements the way a written
+requirements doc is, especially for anything explicitly still in
+design), and
 (B) a batch of work tickets (title, description, workflow state, the team's
 own point estimate if any, labels).
 
