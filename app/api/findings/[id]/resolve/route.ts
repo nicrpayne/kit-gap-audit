@@ -11,7 +11,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
   const finding = await prisma.finding.update({
     where: { id },
-    data: { status: "resolved", resolution: body.resolution.trim() },
+    data: { status: "resolved", resolution: body.resolution.trim(), resolvedAt: new Date() },
   });
 
   return NextResponse.json({ finding });

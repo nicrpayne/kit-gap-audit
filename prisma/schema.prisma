@@ -21,6 +21,28 @@ model Scope {
   figmaRefs     String[] @default([]) // "fileKey:nodeId" design pages/frames pulled in as estimator context
   createdAt    DateTime  @default(now())
   sources      Source[]
+  reports      Report[]
+}
+
+// A generated leadership update, immutable once created -- rendered text
+// is stored (not recomputed on view) so past reports stay exactly what was
+// actually reported even as the underlying logic changes later, and
+// "since last report" diffing has a stable prior snapshot to compare to.
+model Report {
+  id                 String   @id @default(cuid())
+  scopeId            String
+  scope              Scope    @relation(fields: [scopeId], references: [id])
+  generatedAt        DateTime @default(now())
+  targetDate         DateTime?
+  likelyDate         DateTime
+  earliestDate       DateTime
+  latestDate         DateTime
+  confidenceAtTarget Int?
+  likelyDateDeltaDays Int?    // vs. the previous report for this scope, null if first
+  shippedCount       Int
+  blockingCount      Int
+  resolvedSinceLastCount Int
+  summaryMarkdown    String  // the full rendered report -- the historical record
 }
 
 // An AI-produced three-point estimate for one work item, cached by content
@@ -74,6 +96,7 @@ model Finding {
   linearIssueId String?
   dismissReason String?
   resolution    String? // for decisions: what was decided, when marked resolved
+  resolvedAt    DateTime? // set when status -> resolved; powers "resolved since last report"
   createdAt     DateTime @default(now())
 }
 

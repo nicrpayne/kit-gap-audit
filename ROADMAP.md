@@ -1,9 +1,36 @@
 # ROADMAP
 
-Read this file, then continue. v0 (Audit + Decisions) and v1's Forecast are
-built and deployed. Timeline and Reports are next.
+Read this file, then continue. v0 (Audit + Decisions), V1 (Forecast, with
+AI estimation + Notion + Figma), and V3 (Reports) are built and deployed.
+Timeline (V2) is the one piece left from the original plan -- deferred on
+purpose since Reports was the actually-needed leadership deliverable.
+Highest-priority next thing per Nic: make the Forecast scenario panel
+interactive (live levers/sliders during a conversation), not the next
+numbered milestone.
 
 ## Where things stand
+
+- **Reports is live** (`/reports`, `lib/reports/`, `POST /api/reports`).
+  Composes the same Forecast pipeline as `/forecast` (so numbers always
+  agree) into a stored, immutable leadership update: likely date +
+  confidence, what shipped since the last report (needs `completedAt` on
+  Linear issues, now fetched), what's blocking (from the Decision Queue),
+  what got resolved since last time (`Finding.resolvedAt`, new field, set
+  on resolve), and the single best available "fastest path to a sooner
+  date" lever. Each generated report is stored verbatim
+  (`Report.summaryMarkdown`) rather than recomputed on view, specifically
+  so historical reports don't silently change if the underlying logic
+  changes later, and so "what did I report last week" has a stable
+  answer. History list + copy-to-clipboard on the page. Rendering is a
+  small dependency-free line parser (`components/ReportView.tsx`) rather
+  than pulling in a markdown library, since the format is fully
+  controlled by `lib/reports/render.ts`. Verified: 14-assertion fixture
+  suite against the pure render function (first-report framing, delta
+  phrasing both directions, section omission when there's nothing to
+  show), a real-browser check of the React rendering against a mocked API
+  response, and the real unmocked pipeline against local Postgres --
+  correct empty state, and the same graceful Linear-blocked error path
+  everything else hits in this sandbox.
 
 - **AI estimation is live** (`lib/estimate/`, `POST /api/estimate`,
   "Estimate tickets with AI" on /forecast). The model reads each ticket's
@@ -92,17 +119,19 @@ from Forecast. Reuse the workstream-row visual pattern from the KIT mockup.
 
 Depends on Forecast existing (for the target date and confidence band).
 
-### 3. Reports (`/reports`)
+### 3. Reports (`/reports`) -- done, see "Where things stand"
 
-A one-click leadership summary generator: what shipped since the last
-report, what's blocked (pulls straight from the Decision Queue), and the
-current Forecast headline. Render as a clean, screenshot-able page — same
-job the Decision Queue already does for decisions specifically, generalized
-to a full status report.
+### 4. Interactive scenario levers (Nic's next priority, not V2)
 
-Likely a `lib/reports/` module that composes existing data (AuditRun
-history, open/resolved Findings, Forecast output) rather than anything new
-to fetch.
+Turn "Paths to a sooner date" from static pre-computed rows into live
+levers: drag team capacity, toggle which decisions are treated as
+resolved, toggle which tickets are in/out of scope, and see the date and
+confidence recompute in place -- meant to facilitate an actual
+conversation (dragging a slider while someone watches), not just generate
+a static report. The simulation engine and API already support arbitrary
+overrides in spirit (`buildScenarios` already re-runs with one changed
+input per row); this is mostly a generalized "recompute with overrides"
+endpoint plus an interactive UI layer, not new simulation logic.
 
 ## Smaller things worth doing alongside v1
 

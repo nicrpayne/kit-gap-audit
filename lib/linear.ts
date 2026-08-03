@@ -31,6 +31,9 @@ export interface LinearIssueSummary {
   estimate: number | null;
   assignee: string | null;
   labels: string[];
+  // Null unless the issue is in a "completed" state. Powers "what shipped
+  // since the last report" without a second fetch.
+  completedAt: string | null;
 }
 
 // One GraphQL query per 100 issues with state/assignee/labels inlined.
@@ -47,6 +50,7 @@ const SCOPED_ISSUES_QUERY = `
         title
         description
         estimate
+        completedAt
         state { name type }
         assignee { name }
         labels { nodes { name } }
@@ -63,6 +67,7 @@ interface ScopedIssuesQueryData {
       title: string;
       description: string | null;
       estimate: number | null;
+      completedAt: string | null;
       state: { name: string; type: string } | null;
       assignee: { name: string } | null;
       labels: { nodes: { name: string }[] };
@@ -120,6 +125,7 @@ export async function getScopedIssues(scope: ScopeFilter): Promise<LinearIssueSu
         estimate: node.estimate ?? null,
         assignee: node.assignee?.name ?? null,
         labels: node.labels.nodes.map((l) => l.name),
+        completedAt: node.completedAt ?? null,
       });
     }
 
