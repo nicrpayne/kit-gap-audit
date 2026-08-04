@@ -8,7 +8,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   const body = (await req.json()) as {
     name?: string;
     teamKey?: string;
-    projectName?: string | null;
+    projectNames?: string[];
     labelFilter?: string | null;
     targetDate?: string | null;
     teamCapacity?: number | null;
@@ -61,7 +61,9 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     data: {
       ...(body.name !== undefined ? { name: body.name } : {}),
       ...(body.teamKey !== undefined ? { teamKey: body.teamKey } : {}),
-      ...(body.projectName !== undefined ? { projectName: body.projectName || null } : {}),
+      ...(body.projectNames !== undefined
+        ? { projectNames: body.projectNames.filter((p) => p.trim()) }
+        : {}),
       ...(body.labelFilter !== undefined ? { labelFilter: body.labelFilter || null } : {}),
       ...(body.targetDate !== undefined
         ? { targetDate: body.targetDate ? new Date(body.targetDate) : null }

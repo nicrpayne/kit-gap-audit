@@ -10,7 +10,7 @@ export async function POST(req: NextRequest) {
   const body = (await req.json()) as {
     name?: string;
     teamKey?: string;
-    projectName?: string | null;
+    projectNames?: string[];
     labelFilter?: string | null;
   };
 
@@ -22,7 +22,7 @@ export async function POST(req: NextRequest) {
     data: {
       name: body.name,
       teamKey: body.teamKey,
-      projectName: body.projectName || null,
+      projectNames: body.projectNames?.filter((p) => p.trim()) ?? [],
       labelFilter: body.labelFilter || null,
     },
   });

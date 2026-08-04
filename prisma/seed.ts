@@ -10,7 +10,7 @@ async function main() {
       id: "jsa-seed",
       name: "JSA",
       teamKey: "SOF",
-      projectName: "KIT Safety (JSA and iTrack)",
+      projectNames: ["KIT Safety (JSA and iTrack)"],
       labelFilter: null,
     },
   });

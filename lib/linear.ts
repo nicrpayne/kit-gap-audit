@@ -15,7 +15,7 @@ function getClient(): LinearClient {
 
 export interface ScopeFilter {
   teamKey: string;
-  projectName?: string | null;
+  projectNames?: string[];
   labelFilter?: string | null;
 }
 
@@ -82,10 +82,13 @@ const ISSUE_CACHE_TTL_MS = 2 * 60 * 1000;
 const issueCache = new Map<string, { at: number; issues: LinearIssueSummary[] }>();
 
 // All non-canceled issues matching a Scope: team key, optionally narrowed by
-// Linear project name and/or a label. Scopes are data (see Scope model), not
-// env vars, so a new module (Precon, Design, ...) is a new row, not a redeploy.
+// one or more Linear project names (union -- e.g. a product Scope pulling
+// its own project plus shared Platform work) and/or a label. Scopes are
+// data (see Scope model), not env vars, so a new module (Precon, Design,
+// ...) is a new row, not a redeploy.
 export async function getScopedIssues(scope: ScopeFilter): Promise<LinearIssueSummary[]> {
-  const cacheKey = `${scope.teamKey}::${scope.projectName ?? ""}::${scope.labelFilter ?? ""}`;
+  const projectNames = scope.projectNames ?? [];
+  const cacheKey = `${scope.teamKey}::${[...projectNames].sort().join(",")}::${scope.labelFilter ?? ""}`;
   const cached = issueCache.get(cacheKey);
   if (cached && Date.now() - cached.at < ISSUE_CACHE_TTL_MS) {
     return cached.issues;
@@ -97,8 +100,8 @@ export async function getScopedIssues(scope: ScopeFilter): Promise<LinearIssueSu
     team: { key: { eq: scope.teamKey } },
     state: { type: { nin: ["canceled"] } },
   };
-  if (scope.projectName) {
-    filter.project = { name: { eq: scope.projectName } };
+  if (projectNames.length > 0) {
+    filter.project = { name: { in: projectNames } };
   }
   if (scope.labelFilter) {
     filter.labels = { some: { name: { eq: scope.labelFilter } } };

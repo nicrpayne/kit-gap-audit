@@ -20,7 +20,7 @@ export async function GET(req: NextRequest) {
 
     return NextResponse.json({
       ok: true,
-      scope: { id: scope.id, name: scope.name, teamKey: scope.teamKey, projectName: scope.projectName },
+      scope: { id: scope.id, name: scope.name, teamKey: scope.teamKey, projectNames: scope.projectNames },
       issueCount: issues.length,
       sample: issues.slice(0, 3),
     });

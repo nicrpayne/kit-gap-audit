@@ -172,6 +172,37 @@ present, decorative shapes and empty-default-named frames correctly
 absent from output, 404 gives an actionable message. Live api.figma.com
 calls untested (sandbox blocks it, same as Linear/Notion).
 
+## Scope: multi-project support (shipped)
+
+Nic's ask, once the Cowork Linear split (JSA / iTrack / Platform / Legacy)
+was underway: JSA and iTrack need to be forecast separately *and*
+together, and both real products depend on shared Platform work that
+neither's own Linear project alone would surface. `Scope.projectName`
+(single, exact-match) is now `Scope.projectNames` (array, union match) --
+`getScopedIssues` filters with Linear's `project: { name: { in: [...] } }`
+instead of `eq`, so one Scope can pull "KIT JSA" + "KIT Platform" while
+another pulls "KIT iTrack" + "KIT Platform" and a third pulls all of "KIT
+JSA" + "KIT iTrack" + "KIT Platform" for the combined view -- three
+independent Scopes, three independent simulations, no cross-Scope
+arithmetic to get wrong. The two per-product Scopes should be read as "if
+we only worked on this" (full capacity dedicated), and the Combined Scope
+as the realistic date given the team's actual capacity split across both
+-- worth surfacing that distinction in the UI copy so a JSA-only date and
+the Combined date don't read as contradicting each other.
+Migration backfills every existing `projectName` into a one-element
+`projectNames` array before dropping the old column -- verified against
+local Postgres, the existing JSA scope kept its one project correctly.
+`/scopes` UI is now a checkbox list per team (was a single dropdown) --
+verified with a real create-scope round trip against local Postgres
+(mocked team/project lookups), multi-select shows as a joined list in the
+table. Deliberately not built yet: cross-project dependency modeling
+(e.g. a specific Platform ticket blocking a specific JSA ticket, pulled
+from Linear's native issue-blocking relations and shown as a critical-path
+gate the way blocking decisions already are) -- the three-Scope split
+answers "what are the numbers," dependency modeling would answer "why do
+they move," and that's a real feature, not a field addition. Next in line
+on the roadmap, after interactive scenario levers.
+
 ## Pasted context docs (shipped)
 
 Nic's ask: "How can we make it so I can add sheets like this for context,"

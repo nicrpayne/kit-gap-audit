@@ -7,7 +7,7 @@ export interface ScopeRow {
   id: string;
   name: string;
   teamKey: string;
-  projectName: string | null;
+  projectNames: string[];
   labelFilter: string | null;
 }
 
@@ -27,7 +27,12 @@ const inputClass =
 export default function ScopesManager({ initialScopes }: { initialScopes: ScopeRow[] }) {
   const router = useRouter();
   const [scopes, setScopes] = useState(initialScopes);
-  const [form, setForm] = useState({ name: "", teamKey: "", projectName: "", labelFilter: "" });
+  const [form, setForm] = useState<{
+    name: string;
+    teamKey: string;
+    projectNames: string[];
+    labelFilter: string;
+  }>({ name: "", teamKey: "", projectNames: [], labelFilter: "" });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -83,7 +88,7 @@ export default function ScopesManager({ initialScopes }: { initialScopes: ScopeR
       }
       const { scope } = await res.json();
       setScopes((prev) => [...prev, scope]);
-      setForm({ name: "", teamKey: "", projectName: "", labelFilter: "" });
+      setForm({ name: "", teamKey: "", projectNames: [], labelFilter: "" });
       router.refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong.");
@@ -124,7 +129,7 @@ export default function ScopesManager({ initialScopes }: { initialScopes: ScopeR
                 <td className="px-4 py-3 font-medium">{scope.name}</td>
                 <td className="px-4 py-3">{scope.teamKey}</td>
                 <td className="px-4 py-3 text-[var(--color-ink-soft)]">
-                  {scope.projectName || <span className="italic">any</span>}
+                  {scope.projectNames.length > 0 ? scope.projectNames.join(", ") : <span className="italic">any</span>}
                 </td>
                 <td className="px-4 py-3 text-[var(--color-ink-soft)]">
                   {scope.labelFilter || <span className="italic">none</span>}
@@ -181,7 +186,7 @@ export default function ScopesManager({ initialScopes }: { initialScopes: ScopeR
                 disabled={teamsLoading}
                 className={inputClass}
                 value={form.teamKey}
-                onChange={(e) => setForm((f) => ({ ...f, teamKey: e.target.value, projectName: "" }))}
+                onChange={(e) => setForm((f) => ({ ...f, teamKey: e.target.value, projectNames: [] }))}
               >
                 <option value="">{teamsLoading ? "Loading teams…" : "Select a team"}</option>
                 {teams.map((t) => (
@@ -193,36 +198,57 @@ export default function ScopesManager({ initialScopes }: { initialScopes: ScopeR
             )}
           </div>
 
-          <div className="flex flex-col gap-1">
-            <label className="text-xs text-[var(--color-ink-soft)]">Project (optional)</label>
+          <div className="flex flex-col gap-1 col-span-2">
+            <label className="text-xs text-[var(--color-ink-soft)]">
+              Projects (optional — none selected reads the whole team)
+            </label>
             {projectsError ? (
               <>
                 <input
                   className={inputClass}
-                  placeholder="KIT Safety (JSA and iTrack)"
-                  value={form.projectName}
-                  onChange={(e) => setForm((f) => ({ ...f, projectName: e.target.value }))}
+                  placeholder="KIT JSA, KIT Platform (comma-separated)"
+                  value={form.projectNames.join(", ")}
+                  onChange={(e) =>
+                    setForm((f) => ({
+                      ...f,
+                      projectNames: e.target.value.split(",").map((p) => p.trim()).filter(Boolean),
+                    }))
+                  }
                 />
                 <span className="text-[11px] text-[var(--color-danger)]">
-                  {projectsError} — enter the project name manually.
+                  {projectsError} — enter project names manually.
                 </span>
               </>
             ) : (
-              <select
-                disabled={!form.teamKey || projectsLoading}
-                className={inputClass}
-                value={form.projectName}
-                onChange={(e) => setForm((f) => ({ ...f, projectName: e.target.value }))}
-              >
-                <option value="">
-                  {!form.teamKey ? "Select a team first" : projectsLoading ? "Loading projects…" : "Any project"}
-                </option>
+              <div className="flex flex-wrap gap-3 rounded-md border border-[var(--color-line)] bg-white px-3 py-2">
+                {!form.teamKey && (
+                  <span className="text-sm text-[var(--color-ink-soft)]">Select a team first</span>
+                )}
+                {form.teamKey && projectsLoading && (
+                  <span className="text-sm text-[var(--color-ink-soft)]">Loading projects…</span>
+                )}
+                {form.teamKey && !projectsLoading && projects.length === 0 && (
+                  <span className="text-sm text-[var(--color-ink-soft)]">No projects on this team</span>
+                )}
                 {projects.map((p) => (
-                  <option key={p.id} value={p.name}>
+                  <label key={p.id} className="flex items-center gap-1.5 text-sm cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={form.projectNames.includes(p.name)}
+                      onChange={(e) =>
+                        setForm((f) => ({
+                          ...f,
+                          projectNames: e.target.checked
+                            ? [...f.projectNames, p.name]
+                            : f.projectNames.filter((n) => n !== p.name),
+                        }))
+                      }
+                      className="rounded border-[var(--color-line)]"
+                    />
                     {p.name}
-                  </option>
+                  </label>
                 ))}
-              </select>
+              </div>
             )}
           </div>
 

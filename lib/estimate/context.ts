@@ -23,7 +23,7 @@ export interface ReleaseContext {
 interface ScopeForContext {
   name: string;
   teamKey: string;
-  projectName: string | null;
+  projectNames: string[];
   estimationContext: string | null;
   notionPageIds: string[];
   figmaRefs: string[];
@@ -32,7 +32,7 @@ interface ScopeForContext {
 
 export async function buildReleaseContext(scope: ScopeForContext): Promise<ReleaseContext> {
   const parts: string[] = [
-    `Scope: ${scope.name} (Linear team ${scope.teamKey}${scope.projectName ? `, project "${scope.projectName}"` : ""}).`,
+    `Scope: ${scope.name} (Linear team ${scope.teamKey}${scope.projectNames.length > 0 ? `, project${scope.projectNames.length > 1 ? "s" : ""} ${scope.projectNames.map((p) => `"${p}"`).join(", ")}` : ""}).`,
     scope.estimationContext?.trim() ||
       "No further team context provided -- assume a small, competent product team.",
   ];
