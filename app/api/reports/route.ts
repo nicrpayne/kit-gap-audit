@@ -75,7 +75,11 @@ export async function POST(req: NextRequest) {
 
   let contextHash: string | undefined;
   try {
-    contextHash = (await buildReleaseContext(scope)).contextHash;
+    const contextDocs = await prisma.contextDoc.findMany({
+      where: { scopeId: scope.id },
+      select: { label: true, content: true },
+    });
+    contextHash = (await buildReleaseContext({ ...scope, contextDocs })).contextHash;
   } catch {
     // Same fallback as /api/forecast: proceed without context rather than
     // failing the whole report if Notion/Figma are unreachable right now.

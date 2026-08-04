@@ -30,6 +30,7 @@ interface ForecastData {
     refs: { fileName: string; pageName: string; chars: number }[];
     warning: string | null;
   };
+  contextDocs: { label: string; chars: number }[];
   likelyDate: string;
   earliestDate: string;
   latestDate: string;
@@ -103,6 +104,70 @@ export default function ForecastView({ scopeId }: { scopeId: string }) {
   const [error, setError] = useState<string | null>(null);
   const [savingSettings, setSavingSettings] = useState(false);
   const [settingsError, setSettingsError] = useState<string | null>(null);
+
+  interface ContextDocRow {
+    id: string;
+    label: string;
+    chars: number;
+    createdAt: string;
+  }
+  const [contextDocs, setContextDocs] = useState<ContextDocRow[]>([]);
+  const [newDocLabel, setNewDocLabel] = useState("");
+  const [newDocContent, setNewDocContent] = useState("");
+  const [addingDoc, setAddingDoc] = useState(false);
+  const [docsError, setDocsError] = useState<string | null>(null);
+
+  const loadContextDocs = useCallback(async () => {
+    try {
+      const res = await fetch(`/api/context-docs?scopeId=${encodeURIComponent(scopeId)}`);
+      if (!res.ok) return;
+      const body = await res.json();
+      setContextDocs(body.docs ?? []);
+    } catch {
+      // Non-fatal -- the section just shows as empty.
+    }
+  }, [scopeId]);
+
+  useEffect(() => {
+    loadContextDocs();
+  }, [loadContextDocs]);
+
+  async function addContextDoc() {
+    if (!newDocLabel.trim() || !newDocContent.trim()) return;
+    setAddingDoc(true);
+    setDocsError(null);
+    try {
+      const res = await fetch("/api/context-docs", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ scopeId, label: newDocLabel.trim(), content: newDocContent }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error ?? "Couldn't add that.");
+      }
+      setNewDocLabel("");
+      setNewDocContent("");
+      await loadContextDocs();
+      await load();
+    } catch (err) {
+      setDocsError(err instanceof Error ? err.message : "Couldn't add that.");
+    } finally {
+      setAddingDoc(false);
+    }
+  }
+
+  async function deleteContextDoc(id: string) {
+    setDocsError(null);
+    try {
+      const res = await fetch(`/api/context-docs/${id}`, { method: "DELETE" });
+      if (!res.ok) throw new Error("Couldn't remove that.");
+      await loadContextDocs();
+      await load();
+    } catch (err) {
+      setDocsError(err instanceof Error ? err.message : "Couldn't remove that.");
+    }
+  }
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -317,6 +382,56 @@ export default function ForecastView({ scopeId }: { scopeId: string }) {
             {data.figma.warning && (
               <div className="text-xs text-[var(--color-danger)] mt-1">{data.figma.warning}</div>
             )}
+          </div>
+          <div className="mt-3">
+            <div className="text-xs text-[var(--color-ink-soft)] mb-1">
+              Other context (pasted spreadsheets, notes — anything without a live source) —{" "}
+              {contextDocs.length > 0
+                ? `${contextDocs.length} added`
+                : "paste a sheet's contents below to use it as estimator context"}
+            </div>
+            {contextDocs.length > 0 && (
+              <ul className="space-y-1 mb-2">
+                {contextDocs.map((doc) => (
+                  <li
+                    key={doc.id}
+                    className="flex items-center justify-between gap-2 text-xs bg-white border border-[var(--color-line)] rounded-md px-2.5 py-1.5"
+                  >
+                    <span className="truncate">
+                      {doc.label} <span className="text-[var(--color-ink-soft)]">· {doc.chars} chars</span>
+                    </span>
+                    <button
+                      onClick={() => deleteContextDoc(doc.id)}
+                      className="text-[var(--color-danger)] hover:underline whitespace-nowrap"
+                    >
+                      Remove
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+            <input
+              type="text"
+              value={newDocLabel}
+              onChange={(e) => setNewDocLabel(e.target.value)}
+              placeholder="Label, e.g. JSA task tracker (2026-08-04)"
+              className="w-full rounded-md border border-[var(--color-line)] bg-white px-3 py-2 text-xs leading-relaxed mb-1.5"
+            />
+            <textarea
+              value={newDocContent}
+              onChange={(e) => setNewDocContent(e.target.value)}
+              rows={4}
+              placeholder="Paste the sheet's rows here (copy from Excel/SharePoint and paste as text) — status, owner, and any effort estimates included are read as team signal alongside Linear."
+              className="w-full rounded-md border border-[var(--color-line)] bg-white px-3 py-2 text-xs leading-relaxed font-mono"
+            />
+            <button
+              onClick={addContextDoc}
+              disabled={addingDoc || !newDocLabel.trim() || !newDocContent.trim()}
+              className="mt-1.5 rounded-md bg-[var(--color-ink)] text-white px-3 py-1.5 text-xs font-medium hover:bg-black disabled:opacity-50"
+            >
+              {addingDoc ? "Adding…" : "Add"}
+            </button>
+            {docsError && <div className="text-xs text-[var(--color-danger)] mt-1">{docsError}</div>}
           </div>
           {settingsError && (
             <div className="text-xs text-[var(--color-danger)] mt-2">{settingsError}</div>

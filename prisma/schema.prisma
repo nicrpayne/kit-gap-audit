@@ -22,6 +22,21 @@ model Scope {
   createdAt    DateTime  @default(now())
   sources      Source[]
   reports      Report[]
+  contextDocs  ContextDoc[]
+}
+
+// Pasted/uploaded context that doesn't have a live API to sync from
+// (spreadsheet exports, meeting notes, anything else) -- same role as a
+// Notion doc in the estimator context, just not kept in sync automatically.
+// Re-paste to update; the updated content re-triggers estimate staleness
+// the same way an edited Notion doc does.
+model ContextDoc {
+  id        String   @id @default(cuid())
+  scopeId   String
+  scope     Scope    @relation(fields: [scopeId], references: [id])
+  label     String // e.g. "JSA Infra Alignment working doc (2026-07-30)"
+  content   String
+  createdAt DateTime @default(now())
 }
 
 // A generated leadership update, immutable once created -- rendered text

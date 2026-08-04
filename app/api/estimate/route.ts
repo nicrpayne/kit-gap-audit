@@ -49,7 +49,11 @@ export async function POST(req: NextRequest) {
   // Context includes any linked Notion requirements docs; its hash is
   // mixed into every item's estimate hash so context edits (including doc
   // changes) mark all estimates stale for the next run.
-  const ctx = await buildReleaseContext(scope);
+  const contextDocs = await prisma.contextDoc.findMany({
+    where: { scopeId: scope.id },
+    select: { label: true, content: true },
+  });
+  const ctx = await buildReleaseContext({ ...scope, contextDocs });
 
   try {
     const summary = await runEstimation(scope.id, ctx.context, [
@@ -63,6 +67,7 @@ export async function POST(req: NextRequest) {
       notionWarning: ctx.notionWarning,
       figmaRefs: ctx.figmaRefs,
       figmaWarning: ctx.figmaWarning,
+      contextDocs: ctx.contextDocs,
     });
   } catch (error) {
     return NextResponse.json(

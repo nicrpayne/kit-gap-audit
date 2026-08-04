@@ -118,6 +118,24 @@ useful for judging structural scope and relevance — not as committed
 requirements the way a written Notion doc is. That distinction matters
 most for anything still in active design.
 
+## Pasted context (spreadsheets, notes) as estimator input
+
+For team-tracking data that doesn't have a live API to sync from — a
+SharePoint/Excel task list, meeting notes, anything else — paste its
+content directly rather than linking it:
+
+1. On `/forecast` → "Team & release context" → "Other context" → give it a
+   short label (e.g. the sheet's filename and date) and paste the rows as
+   text (copy out of Excel/SharePoint and paste — no export step needed).
+2. Click **Add**. It's included in the estimator's context immediately,
+   same as a Notion doc.
+3. To update it, remove the old one and paste the new version — re-pasting
+   marks affected estimates stale, same as an edited Notion doc.
+
+Treated as a signal alongside Linear's own points and estimates, not
+automatically correct — the model is told a team's own tracking sheet can
+be as rough as its Linear pointing.
+
 ## API: running an audit programmatically
 
 `POST /api/audit` is the same endpoint the `/audit/new` form submits to —

@@ -51,13 +51,19 @@ export async function GET(req: NextRequest) {
   let notionWarning: string | null = null;
   let figmaRefs: { fileName: string; pageName: string; chars: number }[] = [];
   let figmaWarning: string | null = null;
+  let contextDocsInfo: { label: string; chars: number }[] = [];
   try {
-    const ctx = await buildReleaseContext(scope);
+    const contextDocs = await prisma.contextDoc.findMany({
+      where: { scopeId: scope.id },
+      select: { label: true, content: true },
+    });
+    const ctx = await buildReleaseContext({ ...scope, contextDocs });
     contextHash = ctx.contextHash;
     notionDocs = ctx.notionDocs;
     notionWarning = ctx.notionWarning;
     figmaRefs = ctx.figmaRefs;
     figmaWarning = ctx.figmaWarning;
+    contextDocsInfo = ctx.contextDocs;
   } catch (error) {
     notionWarning = error instanceof Error ? error.message : "Couldn't build release context";
   }
@@ -93,6 +99,7 @@ export async function GET(req: NextRequest) {
     },
     notion: { docs: notionDocs, warning: notionWarning },
     figma: { refs: figmaRefs, warning: figmaWarning },
+    contextDocs: contextDocsInfo,
     likelyDate: base.likelyDate,
     earliestDate: base.earliestDate,
     latestDate: base.latestDate,

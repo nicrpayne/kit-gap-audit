@@ -172,6 +172,52 @@ present, decorative shapes and empty-default-named frames correctly
 absent from output, 404 gives an actionable message. Live api.figma.com
 calls untested (sandbox blocks it, same as Linear/Notion).
 
+## Pasted context docs (shipped)
+
+Nic's ask: "How can we make it so I can add sheets like this for context,"
+showing a SharePoint/Excel task-tracker spreadsheet with per-row owner,
+effort estimate, status, and notes -- real team-maintained tracking data
+that isn't in Linear or Notion. Live SharePoint/Graph sync was judged too
+big to build blind (Azure AD OAuth, a new credential type, a fourth
+external API) versus Notion/Figma's simple personal-token REST calls, so
+this ships as paste/upload instead: a `ContextDoc` model
+(`scopeId, label, content, createdAt`) via `POST /api/context-docs` (list:
+`GET`, remove: `DELETE /api/context-docs/:id`), fed into
+`lib/estimate/context.ts` as a fourth context source alongside
+`estimationContext`, Notion, and Figma, budgeted at 20k chars total and
+mixed into the same `contextHash` -- editing or re-pasting a doc marks
+every estimate stale the same way an edited Notion doc does. Told to the
+model explicitly as a signal alongside Linear's own points, not
+automatically correct (the team's own effort estimates in a sheet like
+this can be as rough as Linear's points). UI: a third block in the
+"Team & release context" section on `/forecast`, same paste-and-save
+pattern as Notion/Figma URLs but for raw text instead of a link -- copy a
+sheet's rows out of Excel/SharePoint and paste as text, no export format
+required. Verified: a 10-assertion fixture on `buildReleaseContext`
+(inclusion, per-doc and cross-doc char-budget truncation, doc content
+change flips the contextHash, empty state), and a real-browser check
+against local Postgres (add appears in the list with its char count,
+remove returns to the empty state) -- this path needed no Linear/Notion/
+Figma mocking since it's pure local data.
+
+Also asked, not yet built: pulling context from "Hermes" (Nic's separate
+agent), which keeps a decision/commitment ledger (`~/.hermes/ledger.db`,
+e.g. "LED-004 Keep funding Pancho...", "LED-008 JSA/iTrack design
+ownership: Lucy vs. Maru") plus a wiki. Recommendation given, not
+implemented: treat it as a fifth *scoped, attributed* context source the
+same shape as Notion/Figma/ContextDoc -- specific relevant ledger rows
+tagged to a Scope -- not "the whole wiki," since dumping unscoped context
+into the estimator prompt dilutes signal rather than adding it (the model
+can't tell what's relevant from what's ambient). The real blocker is
+reachability: the ledger is a local SQLite file on Nic's machine, not
+reachable by the Railway-hosted app, so Hermes would need to expose an
+API or push relevant rows -- mirroring the Bearer-token pattern already
+built for Hermes calling `/api/audit`. Daily re-estimation is already
+cheap thanks to content-hash caching (unchanged tickets/context are never
+re-sent to the model); what's missing for "estimate changes almost daily"
+isn't a redesign, just a cron trigger once there's a stable Hermes->Gap
+App integration to trigger against.
+
 ## Notion integration (shipped)
 
 Scopes can link Notion pages (requirements/scoping docs) whose content is
