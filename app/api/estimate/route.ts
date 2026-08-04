@@ -1,10 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { getScopedIssues } from "@/lib/linear";
-import { runEstimation, issueEstimateInputs, findingEstimateInputs } from "@/lib/estimate/run";
-import { buildReleaseContext } from "@/lib/estimate/context";
-
-const DONE_STATE_TYPES = new Set(["completed", "canceled"]);
+import { runEstimationForScope } from "@/lib/estimate/runForScope";
 
 // Runs the AI estimation pass for a Scope's open tickets. Content-hash
 // cached: unchanged tickets are never re-sent to the model, so re-running
@@ -25,53 +21,20 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Scope not found" }, { status: 404 });
   }
 
-  let issues;
   try {
-    issues = await getScopedIssues(scope);
-  } catch (error) {
-    return NextResponse.json(
-      { error: `Couldn't read tickets from Linear: ${error instanceof Error ? error.message : "unknown error"}` },
-      { status: 502 }
-    );
-  }
-
-  // Estimate everything not done -- including Triage, so flipping the
-  // include-Triage toggle later doesn't require a new estimation run.
-  const openIssues = issues.filter((i) => !DONE_STATE_TYPES.has(i.stateType));
-
-  // Un-ticketed findings from audits are work too -- "all the inputs":
-  // the model reads their quote + rationale the same way it reads tickets.
-  const openFindings = await prisma.finding.findMany({
-    where: { source: { scopeId: scope.id }, status: "open", type: { not: "decision" } },
-    select: { id: true, title: true, quote: true, rationale: true, estimateHint: true },
-  });
-
-  // Context includes any linked Notion requirements docs; its hash is
-  // mixed into every item's estimate hash so context edits (including doc
-  // changes) mark all estimates stale for the next run.
-  const contextDocs = await prisma.contextDoc.findMany({
-    where: { scopeId: scope.id },
-    select: { label: true, content: true },
-  });
-  const ctx = await buildReleaseContext({ ...scope, contextDocs });
-
-  try {
-    const summary = await runEstimation(scope.id, ctx.context, [
-      ...issueEstimateInputs(openIssues, ctx.contextHash),
-      ...findingEstimateInputs(openFindings, ctx.contextHash),
-    ]);
+    const { summary, context } = await runEstimationForScope(scope);
     return NextResponse.json({
       ok: true,
       ...summary,
-      notionDocs: ctx.notionDocs,
-      notionWarning: ctx.notionWarning,
-      figmaRefs: ctx.figmaRefs,
-      figmaWarning: ctx.figmaWarning,
-      contextDocs: ctx.contextDocs,
+      notionDocs: context.notionDocs,
+      notionWarning: context.notionWarning,
+      figmaRefs: context.figmaRefs,
+      figmaWarning: context.figmaWarning,
+      contextDocs: context.contextDocs,
     });
   } catch (error) {
     return NextResponse.json(
-      { error: `Estimation failed: ${error instanceof Error ? error.message : "unknown error"}` },
+      { error: error instanceof Error ? error.message : "Estimation failed" },
       { status: 502 }
     );
   }

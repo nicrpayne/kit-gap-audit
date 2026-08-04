@@ -172,6 +172,42 @@ present, decorative shapes and empty-default-named frames correctly
 absent from output, 404 gives an actionable message. Live api.figma.com
 calls untested (sandbox blocks it, same as Linear/Notion).
 
+## Programmatic refresh (shipped)
+
+Nic's ask: a single call Hermes/Cowork can make to trigger a full
+refresh, instead of sequencing `/api/audit`, `/api/estimate`, and
+`/api/forecast` itself. `POST /api/refresh` (see README) does: push
+context docs -> optionally audit a transcript -> re-run AI estimation ->
+re-run the forecast -> optionally generate a Report, all through the
+exact same pipeline the individual routes use (no duplicated logic to
+drift out of sync -- `computeForecast` in `lib/forecast/compute.ts` is
+now the one place Forecast math happens, used by `GET /api/forecast`,
+`generateReport`, and `/api/refresh`; `runAudit` and
+`runEstimationForScope` are the equivalent extractions for Audit and
+Estimate). Context docs are pushed before anything Linear-dependent, so a
+Linear outage doesn't lose freshly-pushed context along with the failed
+refresh -- verified for real against local Postgres (Linear blocked in
+this sandbox, same as always): the push landed and `contextDocsUpdated`
+came back correctly on a request that still 502'd on the Linear call.
+Also verified: identical 502 error text from all four now-refactored
+routes (audit/estimate/forecast/reports) before and after the extraction,
+confirming the refactor didn't change behavior; pushing the same
+`label` twice updates in place rather than duplicating.
+
+Answers the second half of Nic's context question too: this is a *push*,
+not a pull -- the app can't reach into Hermes' local ledger, so
+`contextComplete`/`contextIssues` in the response is the hardening for
+that. A human on `/forecast` sees a Notion/Figma failure inline; an
+unattended Hermes-triggered refresh has no one watching, so
+`contextComplete: false` makes a fully-failed configured context source
+explicit in the response instead of a silent degrade only visible if
+someone happens to read a warning string.
+
+Not built: the reverse direction (the app notifying Hermes when a refresh
+finishes, or Hermes discovering which Scope a transcript belongs to) --
+same "real design question once both sides exist" note as the audit API
+already carries.
+
 ## Scope: multi-project support (shipped)
 
 Nic's ask, once the Cowork Linear split (JSA / iTrack / Platform / Legacy)

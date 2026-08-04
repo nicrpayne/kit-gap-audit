@@ -199,6 +199,82 @@ happened without someone checking the UI. That routing/notification layer
 is a real design question once both sides exist to actually talk to each
 other — this endpoint is just the entry point it would call.
 
+## API: triggering a full refresh (audit + estimate + forecast + report)
+
+`POST /api/refresh` is the "here's the context, work your magic" entry
+point — one call that does everything a manual pass through the UI would:
+push fresh context, optionally audit a new transcript, re-run AI
+estimation, re-run the forecast, and optionally generate a leadership
+report. Built for Hermes/Cowork to trigger a refresh without sequencing
+four separate calls itself. Same Bearer auth as `/api/audit`.
+
+**This is a push, not a pull.** The app has no way to reach into Hermes'
+local ledger or wiki — it can only act on what's sent to it in the
+request body. If you want a refresh to include Hermes' context (its
+decision ledger, recent notes, whatever), Hermes has to generate that
+scoped brief itself and include it as a `contextDocs` entry in the call —
+same shape as pasting into "Other context" on `/forecast` manually, just
+automated. There's no scheduled or automatic pull in either direction.
+
+```
+POST /api/refresh
+Authorization: Bearer <APP_PASSWORD>
+Content-Type: application/json
+
+{
+  "scopeId": "cmrod5o1s0000os1y75kwumnh",     // required
+  "transcript": {                              // optional — audits a new transcript first
+    "kind": "notes",                            // transcript | notes | estimates
+    "title": "...",                             // optional
+    "content": "..."
+  },
+  "contextDocs": [                              // optional — pushed/updated before anything else
+    { "label": "Hermes brief — JSA", "content": "..." }
+  ],
+  "generateReport": false                       // optional — also creates a Report if true
+}
+```
+
+Response (`200`):
+
+```
+{
+  "ok": true,
+  "scopeId": "...", "scopeName": "...",
+  "contextDocsUpdated": ["Hermes brief — JSA"],  // labels pushed this call, created or updated
+  "audit": { "sourceId": "...", "findingCount": 3 } | undefined,
+  "estimate": { "total": 40, "estimated": 6, "cached": 34, "failed": 0 },
+  "forecast": {
+    "likelyDate": "...", "earliestDate": "...", "latestDate": "...",
+    "confidenceAtTarget": 62,
+    "breakdown": { ... }                          // same shape as GET /api/forecast
+  },
+  "contextComplete": true,                       // false if a configured Notion/Figma source failed to load
+  "contextIssues": [],                           // human-readable reasons when contextComplete is false
+  "report": { "id": "...", "summaryMarkdown": "..." } | undefined
+}
+```
+
+**Check `contextComplete` before trusting the result.** On the `/forecast`
+page a human sees the warning text inline if Notion or Figma fails to
+load; an unattended refresh has no one watching, so a silently degraded
+context could drift the number for days unnoticed. `contextComplete:
+false` means treat this run's numbers as unreliable and surface
+`contextIssues` back to Nic rather than reporting them as a normal
+refresh.
+
+Context docs are pushed *before* the transcript/estimate/forecast steps,
+which need Linear — so if Linear is unreachable, freshly pushed context
+still lands and shows up in `contextDocsUpdated` even though the call
+returns a `502`. Pushing the same `label` again replaces that doc's
+content rather than creating a duplicate.
+
+Errors are `400` (bad input), `401` (missing/wrong auth), `404` (unknown
+`scopeId`), or `502` (Linear or Anthropic call failed) — same shape as
+`/api/audit`, with whatever partial progress (`contextDocsUpdated`,
+`audit`, `estimate`) completed before the failure included in the error
+body.
+
 ## Project structure
 
 - `lib/model.ts` — single wrapper for Anthropic calls (model/tokens from
