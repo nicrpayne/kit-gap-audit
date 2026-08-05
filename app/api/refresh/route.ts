@@ -53,7 +53,7 @@ export async function POST(req: NextRequest) {
     }
     if (!VALID_AUDIT_KINDS.includes(body.transcript.kind)) {
       return NextResponse.json(
-        { error: "transcript.kind must be transcript, notes, or estimates" },
+        { error: `transcript.kind must be one of: ${VALID_AUDIT_KINDS.join(", ")}` },
         { status: 400 }
       );
     }

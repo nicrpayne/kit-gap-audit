@@ -16,7 +16,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "content is required" }, { status: 400 });
   }
   if (!kind || !VALID_AUDIT_KINDS.includes(kind)) {
-    return NextResponse.json({ error: "kind must be transcript, notes, or estimates" }, { status: 400 });
+    return NextResponse.json({ error: `kind must be one of: ${VALID_AUDIT_KINDS.join(", ")}` }, { status: 400 });
   }
   if (!scopeId) {
     return NextResponse.json({ error: "scopeId is required" }, { status: 400 });

@@ -6,7 +6,18 @@ import { buildAuditPrompt } from "@/lib/audit/prompts/audit-v1";
 import { normalizeFindings } from "@/lib/audit/normalize";
 
 const HANDLED_STATUSES = ["dismissed", "ticketed", "resolved"];
-export const VALID_AUDIT_KINDS = ["transcript", "notes", "estimates"];
+
+// Purely descriptive -- shown to the model as "(C) NEW CONTEXT (<kind>):"
+// so it knows what shape of text follows, stored on Source.kind for
+// display, and used for the auto-generated title if none is given.
+// Nothing branches on the value beyond that.
+const KIND_LABELS: Record<string, string> = {
+  transcript: "Transcript",
+  notes: "Notes",
+  estimates: "Estimates",
+  spreadsheet: "Spreadsheet",
+};
+export const VALID_AUDIT_KINDS = Object.keys(KIND_LABELS);
 
 export interface AuditInput {
   kind: string;
@@ -21,8 +32,7 @@ export interface AuditRunResult {
 
 function defaultSourceTitle(kind: string): string {
   const date = new Date().toISOString().slice(0, 10);
-  const label = kind === "transcript" ? "Transcript" : kind === "notes" ? "Notes" : "Estimates";
-  return `${label} — ${date}`;
+  return `${KIND_LABELS[kind] ?? "Context"} — ${date}`;
 }
 
 // Runs one audit pass: transcript/notes text -> findings, checked against

@@ -13,6 +13,7 @@ const KIND_OPTIONS: { value: string; label: string }[] = [
   { value: "transcript", label: "Meeting transcript" },
   { value: "notes", label: "Notes" },
   { value: "estimates", label: "Developer estimates" },
+  { value: "spreadsheet", label: "Spreadsheet / task list" },
 ];
 
 export default function AuditNewForm({ scopes }: { scopes: ScopeOption[] }) {
@@ -40,6 +41,10 @@ export default function AuditNewForm({ scopes }: { scopes: ScopeOption[] }) {
       const result = await readUploadedFile(file);
       setContent(result.text);
       if (!title) setTitle(file.name.replace(/\.(txt|md|csv|xlsx)$/i, ""));
+      // .xlsx/.csv is unambiguously spreadsheet-shaped content -- the
+      // upload itself is a stronger signal than whatever the Kind
+      // dropdown happened to be sitting on.
+      if (/\.(csv|xlsx)$/i.test(file.name)) setKind("spreadsheet");
       if (result.sheets && result.sheets.length > 1) {
         setSheets(result.sheets);
         setSelectedSheet(result.sheets[0].name);

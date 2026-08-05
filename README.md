@@ -158,7 +158,7 @@ Content-Type: application/json
 
 {
   "scopeId": "cmrod5o1s0000os1y75kwumnh",  // required, see GET below
-  "kind": "transcript",                     // required: transcript | notes | estimates
+  "kind": "transcript",                     // required: transcript | notes | estimates | spreadsheet
   "title": "JSA Status Quick Sync 7-16",    // optional, defaults to "<Kind> — <date>"
   "content": "Maya: ... Nic: ..."           // required, the raw text to audit
 }
@@ -228,7 +228,7 @@ Content-Type: application/json
 {
   "scopeId": "cmrod5o1s0000os1y75kwumnh",     // required
   "transcript": {                              // optional — audits a new transcript first
-    "kind": "notes",                            // transcript | notes | estimates
+    "kind": "notes",                            // transcript | notes | estimates | spreadsheet
     "title": "...",                             // optional
     "content": "..."
   },
