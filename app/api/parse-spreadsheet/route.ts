@@ -13,16 +13,28 @@ interface FormulaCell {
   result: unknown;
 }
 
+// Never throws -- an unexpected cell shape (formula error, malformed rich
+// text, whatever a real-world workbook throws at us) degrades to an empty
+// string instead of taking down the whole request. A first version of
+// this let a bad cell anywhere in the workbook produce an uncaught 500
+// with no error body.
 function cellToText(value: unknown): string {
-  if (value == null) return "";
-  if (value instanceof Date) return value.toISOString().slice(0, 10);
-  if (typeof value === "object") {
-    if ("richText" in value) return (value as RichTextCell).richText.map((r) => r.text).join("");
-    if ("result" in value) return cellToText((value as FormulaCell).result);
-    if ("text" in value) return cellToText((value as HyperlinkCell).text);
+  try {
+    if (value == null) return "";
+    if (value instanceof Date) return value.toISOString().slice(0, 10);
+    if (typeof value === "object") {
+      if ("error" in value) return ""; // formula error cell (#DIV/0!, #N/A, ...)
+      if ("richText" in value && Array.isArray((value as RichTextCell).richText)) {
+        return (value as RichTextCell).richText.map((r) => String(r?.text ?? "")).join("");
+      }
+      if ("result" in value) return cellToText((value as FormulaCell).result);
+      if ("text" in value) return cellToText((value as HyperlinkCell).text);
+      return "";
+    }
+    return String(value);
+  } catch {
     return "";
   }
-  return String(value);
 }
 
 // Parses an uploaded .xlsx into plain text per sheet, formatted as
@@ -59,28 +71,60 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const sheets = workbook.worksheets
-    .map((ws) => {
-      const lines: string[] = [];
-      ws.eachRow((row) => {
-        const cells: string[] = [];
-        // A merged cell's value shows up on every cell in the merge range
-        // via row.values -- only take it at the anchor (cell.master ===
-        // cell), otherwise a banner row repeats itself once per column.
-        row.eachCell({ includeEmpty: true }, (cell) => {
-          cells.push(cell.isMerged && cell.master !== cell ? "" : cellToText(cell.value).trim());
-        });
-        if (cells.some((c) => c !== "")) {
-          lines.push(cells.join(" | "));
+  // Each sheet is parsed in isolation: one malformed sheet (unsupported
+  // feature, corrupt row) shouldn't sink every other sheet in the same
+  // workbook. Logged server-side since this sandbox can't reach
+  // production to reproduce a failure directly from a bug report.
+  const sheetErrors: string[] = [];
+  let sheets: { name: string; text: string }[];
+  try {
+    sheets = workbook.worksheets
+      .map((ws) => {
+        try {
+          const lines: string[] = [];
+          ws.eachRow((row) => {
+            const cells: string[] = [];
+            // A merged cell's value shows up on every cell in the merge
+            // range via row.values -- only take it at the anchor
+            // (cell.master === cell), otherwise a banner row repeats
+            // itself once per spanned column.
+            row.eachCell({ includeEmpty: true }, (cell) => {
+              cells.push(cell.isMerged && cell.master !== cell ? "" : cellToText(cell.value).trim());
+            });
+            if (cells.some((c) => c !== "")) {
+              lines.push(cells.join(" | "));
+            }
+          });
+          return { name: ws.name, text: lines.join("\n") };
+        } catch (error) {
+          const message = error instanceof Error ? error.message : "unknown error";
+          console.error(`[parse-spreadsheet] sheet "${ws.name}" failed to parse:`, error);
+          sheetErrors.push(`${ws.name}: ${message}`);
+          return { name: ws.name, text: "" };
         }
-      });
-      return { name: ws.name, text: lines.join("\n") };
-    })
-    .filter((s) => s.text.trim() !== "");
-
-  if (sheets.length === 0) {
-    return NextResponse.json({ error: "That spreadsheet has no readable content" }, { status: 400 });
+      })
+      .filter((s) => s.text.trim() !== "");
+  } catch (error) {
+    console.error("[parse-spreadsheet] workbook-level failure:", error);
+    return NextResponse.json(
+      {
+        error: `Couldn't read that workbook's sheets: ${error instanceof Error ? error.message : "unknown error"}`,
+      },
+      { status: 400 }
+    );
   }
 
-  return NextResponse.json({ sheets });
+  if (sheets.length === 0) {
+    return NextResponse.json(
+      {
+        error:
+          sheetErrors.length > 0
+            ? `Couldn't extract readable content -- every sheet failed to parse (${sheetErrors.join("; ")})`
+            : "That spreadsheet has no readable content",
+      },
+      { status: 400 }
+    );
+  }
+
+  return NextResponse.json({ sheets, sheetErrors: sheetErrors.length > 0 ? sheetErrors : undefined });
 }
