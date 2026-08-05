@@ -122,15 +122,19 @@ most for anything still in active design.
 
 For team-tracking data that doesn't have a live API to sync from — a
 SharePoint/Excel task list, meeting notes, anything else — paste its
-content directly rather than linking it:
+content directly rather than linking it, or upload the file:
 
 1. On `/forecast` → "Team & release context" → "Other context" → give it a
-   short label (e.g. the sheet's filename and date) and paste the rows as
-   text (copy out of Excel/SharePoint and paste — no export step needed).
+   short label (e.g. the sheet's filename and date) and either paste the
+   rows as text, or click **Upload .txt / .md / .csv / .xlsx** and pick the
+   file directly — `.xlsx` workbooks are parsed server-side into the same
+   pipe-delimited row format as a manual paste; a multi-sheet workbook
+   shows a sheet picker so you choose which tab matters. The Audit form
+   (`/audit/new`) has the same upload option for transcripts/notes.
 2. Click **Add**. It's included in the estimator's context immediately,
    same as a Notion doc.
-3. To update it, remove the old one and paste the new version — re-pasting
-   marks affected estimates stale, same as an edited Notion doc.
+3. To update it, remove the old one and paste/upload the new version —
+   re-adding marks affected estimates stale, same as an edited Notion doc.
 
 Treated as a signal alongside Linear's own points and estimates, not
 automatically correct — the model is told a team's own tracking sheet can

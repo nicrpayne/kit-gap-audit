@@ -172,6 +172,50 @@ present, decorative shapes and empty-default-named frames correctly
 absent from output, 404 gives an actionable message. Live api.figma.com
 calls untested (sandbox blocks it, same as Linear/Notion).
 
+## Spreadsheet upload + audit truncation fix (shipped)
+
+Two bugs hit in the same production session, from the same underlying
+cause: Nic pasted the full "Task List" tab of a working doc into the
+Audit form and got a cryptic `Model did not return parseable JSON
+(Unexpected end of JSON input)` error with a wall of cut-off JSON dumped
+into the error text.
+
+**Root cause**: the model's response hit `max_tokens` (8000) before
+finishing the JSON array -- a dense, already-structured input (30+ rows,
+several already flagged GAP/OPEN/BLOCKER) legitimately produces a lot of
+findings. `completeJson` (`lib/model.ts`) never checked
+`response.stop_reason`, so it tried to parse a truncated string and threw
+whatever `JSON.parse` said, which is meaningless to a user. Fixed two
+ways: `completeJson` now checks `stop_reason === "max_tokens"` first and
+throws a clear "input was likely too large, try a shorter paste" error
+instead of a parse-error dump (verified against the real Anthropic API
+in this sandbox, deliberately forcing truncation with a tiny `maxTokens`
+-- Anthropic is the one external API this sandbox can actually reach);
+and the audit call's `maxTokens` went from 8000 to 16000 for headroom.
+
+**Also requested in the same breath**: real spreadsheet upload, not just
+copy/paste. `.txt/.md/.csv` were already plain text (`file.text()`
+worked fine); `.xlsx` needs real parsing. Chose `exceljs` over the more
+common `xlsx` (SheetJS) package deliberately -- `xlsx` on npm has two
+high-severity unpatched vulnerabilities (prototype pollution, ReDoS,
+"no fix available"); `exceljs`'s own footprint is clean, its only flagged
+issue is a moderate transitive one with a fix path. Parsing happens
+server-side (`POST /api/parse-spreadsheet`, exceljs is Node-oriented
+anyway) rather than shipping a spreadsheet-parsing library into the
+client bundle. Converts to the same pipe-delimited text Nic's already
+been pasting manually, dropping blank rows; merged cells (common in
+these working docs -- banner rows, notes) are de-duplicated to their
+anchor cell using `cell.isMerged`/`cell.master`, otherwise a merged
+banner row repeats itself once per spanned column. Multi-sheet workbooks
+get a sheet picker (defaults to the first sheet) instead of guessing
+which tab matters -- both the Audit form and the Forecast page's "Other
+context" uploader share one client helper (`lib/client/uploadFile.ts`)
+and the same server route. Verified against the real multi-sheet working
+doc from this session (6 sheets, merged banner rows, formulas, date
+cells) and a real classification workbook with hyperlink cells, plus
+error paths (corrupt file, oversized file, wrong extension) -- all via a
+real browser upload through both UI surfaces.
+
 ## Programmatic refresh (shipped)
 
 Nic's ask: a single call Hermes/Cowork can make to trigger a full

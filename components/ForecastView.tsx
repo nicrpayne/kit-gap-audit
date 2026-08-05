@@ -1,7 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import ConfidenceRing from "./ConfidenceRing";
+import { readUploadedFile, type ParsedSheet } from "@/lib/client/uploadFile";
 
 interface ScenarioRow {
   id: string;
@@ -116,6 +117,38 @@ export default function ForecastView({ scopeId }: { scopeId: string }) {
   const [newDocContent, setNewDocContent] = useState("");
   const [addingDoc, setAddingDoc] = useState(false);
   const [docsError, setDocsError] = useState<string | null>(null);
+  const [uploadingDoc, setUploadingDoc] = useState(false);
+  const [docSheets, setDocSheets] = useState<ParsedSheet[] | null>(null);
+  const [selectedDocSheet, setSelectedDocSheet] = useState("");
+  const docFileInputRef = useRef<HTMLInputElement>(null);
+
+  async function onDocFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploadingDoc(true);
+    setDocsError(null);
+    setDocSheets(null);
+    try {
+      const result = await readUploadedFile(file);
+      setNewDocContent(result.text);
+      if (!newDocLabel.trim()) setNewDocLabel(file.name.replace(/\.(txt|md|csv|xlsx)$/i, ""));
+      if (result.sheets && result.sheets.length > 1) {
+        setDocSheets(result.sheets);
+        setSelectedDocSheet(result.sheets[0].name);
+      }
+    } catch (err) {
+      setDocsError(err instanceof Error ? err.message : "Couldn't read that file.");
+    } finally {
+      setUploadingDoc(false);
+      e.target.value = "";
+    }
+  }
+
+  function onDocSheetChange(name: string) {
+    setSelectedDocSheet(name);
+    const sheet = docSheets?.find((s) => s.name === name);
+    if (sheet) setNewDocContent(sheet.text);
+  }
 
   const loadContextDocs = useCallback(async () => {
     try {
@@ -148,6 +181,7 @@ export default function ForecastView({ scopeId }: { scopeId: string }) {
       }
       setNewDocLabel("");
       setNewDocContent("");
+      setDocSheets(null);
       await loadContextDocs();
       await load();
     } catch (err) {
@@ -384,12 +418,48 @@ export default function ForecastView({ scopeId }: { scopeId: string }) {
             )}
           </div>
           <div className="mt-3">
-            <div className="text-xs text-[var(--color-ink-soft)] mb-1">
-              Other context (pasted spreadsheets, notes — anything without a live source) —{" "}
-              {contextDocs.length > 0
-                ? `${contextDocs.length} added`
-                : "paste a sheet's contents below to use it as estimator context"}
+            <div className="flex items-center justify-between mb-1">
+              <div className="text-xs text-[var(--color-ink-soft)]">
+                Other context (pasted or uploaded spreadsheets, notes — anything without a live source) —{" "}
+                {contextDocs.length > 0
+                  ? `${contextDocs.length} added`
+                  : "paste or upload a sheet below to use it as estimator context"}
+              </div>
+              <button
+                type="button"
+                onClick={() => docFileInputRef.current?.click()}
+                disabled={uploadingDoc}
+                className="text-xs text-[var(--color-accent)] hover:underline disabled:opacity-50 whitespace-nowrap"
+              >
+                {uploadingDoc ? "Reading…" : "Upload .txt / .md / .csv / .xlsx"}
+              </button>
+              <input
+                ref={docFileInputRef}
+                type="file"
+                accept=".txt,.md,.csv,.xlsx,text/plain,text/markdown,text/csv"
+                onChange={onDocFileChange}
+                className="hidden"
+              />
             </div>
+            {docSheets && docSheets.length > 1 && (
+              <div className="flex items-center gap-2 mb-1.5">
+                <label className="text-xs text-[var(--color-ink-soft)]">Sheet</label>
+                <select
+                  value={selectedDocSheet}
+                  onChange={(e) => onDocSheetChange(e.target.value)}
+                  className="rounded-md border border-[var(--color-line)] bg-white px-2 py-1 text-xs"
+                >
+                  {docSheets.map((s) => (
+                    <option key={s.name} value={s.name}>
+                      {s.name}
+                    </option>
+                  ))}
+                </select>
+                <span className="text-[11px] text-[var(--color-ink-soft)]">
+                  {docSheets.length} sheets found — pick the one that matters
+                </span>
+              </div>
+            )}
             {contextDocs.length > 0 && (
               <ul className="space-y-1 mb-2">
                 {contextDocs.map((doc) => (

@@ -33,6 +33,17 @@ export async function completeJson<T = unknown>(options: JsonCompletionOptions):
     .map((block) => block.text)
     .join("\n");
 
+  // A truncated response can't be parsed as JSON no matter how loose the
+  // parser is -- catching this before parsing gives a clear, actionable
+  // error ("input was too large") instead of a confusing mid-string
+  // "Unexpected end of JSON input" dump of the cut-off output.
+  if (response.stop_reason === "max_tokens") {
+    throw new Error(
+      "Model output was cut off before it finished (hit the response length limit) -- the input was " +
+        "likely too large for one pass. Try a shorter paste, or split it into smaller chunks."
+    );
+  }
+
   return parseJsonLoose<T>(text);
 }
 

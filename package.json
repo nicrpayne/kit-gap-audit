@@ -14,6 +14,7 @@
     "@anthropic-ai/sdk": "^0.32",
     "@linear/sdk": "^42",
     "@prisma/client": "^6",
+    "exceljs": "^4.4.0",
     "next": "^15",
     "react": "^19",
     "react-dom": "^19"

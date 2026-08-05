@@ -59,7 +59,11 @@ export async function runAudit(scope: Scope, input: AuditInput): Promise<AuditRu
 
   let rawFindings: unknown;
   try {
-    rawFindings = await completeJson({ prompt, maxTokens: 8000 });
+    // Dense inputs (a full spreadsheet dump, a long transcript) can produce
+    // many findings -- 8000 was tight enough to truncate mid-response on a
+    // ~40-row spreadsheet paste. 16000 gives real headroom; completeJson
+    // still surfaces a clear error if even that isn't enough.
+    rawFindings = await completeJson({ prompt, maxTokens: 16000 });
   } catch (error) {
     throw new Error(`Audit model call failed: ${error instanceof Error ? error.message : "unknown error"}`);
   }

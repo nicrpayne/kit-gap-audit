@@ -2,6 +2,7 @@
 
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { readUploadedFile, type ParsedSheet } from "@/lib/client/uploadFile";
 
 interface ScopeOption {
   id: string;
@@ -25,13 +26,36 @@ export default function AuditNewForm({ scopes }: { scopes: ScopeOption[] }) {
   const [running, setRunning] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [status, setStatus] = useState<string | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const [sheets, setSheets] = useState<ParsedSheet[] | null>(null);
+  const [selectedSheet, setSelectedSheet] = useState("");
 
   async function onFileChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
-    const text = await file.text();
-    setContent(text);
-    if (!title) setTitle(file.name.replace(/\.(txt|md)$/i, ""));
+    setUploading(true);
+    setError(null);
+    setSheets(null);
+    try {
+      const result = await readUploadedFile(file);
+      setContent(result.text);
+      if (!title) setTitle(file.name.replace(/\.(txt|md|csv|xlsx)$/i, ""));
+      if (result.sheets && result.sheets.length > 1) {
+        setSheets(result.sheets);
+        setSelectedSheet(result.sheets[0].name);
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Couldn't read that file.");
+    } finally {
+      setUploading(false);
+      e.target.value = "";
+    }
+  }
+
+  function onSheetChange(name: string) {
+    setSelectedSheet(name);
+    const sheet = sheets?.find((s) => s.name === name);
+    if (sheet) setContent(sheet.text);
   }
 
   async function onSubmit(e: React.FormEvent) {
@@ -119,18 +143,38 @@ export default function AuditNewForm({ scopes }: { scopes: ScopeOption[] }) {
           <button
             type="button"
             onClick={() => fileInputRef.current?.click()}
-            className="text-xs text-[var(--color-accent)] hover:underline"
+            disabled={uploading}
+            className="text-xs text-[var(--color-accent)] hover:underline disabled:opacity-50"
           >
-            Upload .txt / .md
+            {uploading ? "Reading…" : "Upload .txt / .md / .csv / .xlsx"}
           </button>
           <input
             ref={fileInputRef}
             type="file"
-            accept=".txt,.md,text/plain,text/markdown"
+            accept=".txt,.md,.csv,.xlsx,text/plain,text/markdown,text/csv"
             onChange={onFileChange}
             className="hidden"
           />
         </div>
+        {sheets && sheets.length > 1 && (
+          <div className="flex items-center gap-2">
+            <label className="text-xs text-[var(--color-ink-soft)]">Sheet</label>
+            <select
+              value={selectedSheet}
+              onChange={(e) => onSheetChange(e.target.value)}
+              className="rounded-md border border-[var(--color-line)] bg-white px-2 py-1 text-xs"
+            >
+              {sheets.map((s) => (
+                <option key={s.name} value={s.name}>
+                  {s.name}
+                </option>
+              ))}
+            </select>
+            <span className="text-[11px] text-[var(--color-ink-soft)]">
+              {sheets.length} sheets found — pick the one that matters
+            </span>
+          </div>
+        )}
         <textarea
           value={content}
           onChange={(e) => setContent(e.target.value)}
