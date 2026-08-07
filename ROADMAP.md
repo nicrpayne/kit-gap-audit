@@ -4,13 +4,20 @@ Read this file, then continue. v0 (Audit + Decisions), V1 (Forecast, with
 AI estimation + Notion + Figma), and V3 (Reports) are built and deployed.
 Timeline (V2) is the one piece left from the original plan -- deferred on
 purpose since Reports was the actually-needed leadership deliverable.
-Active work: **shared capacity pool + portfolio forecasting**, on branch
-`claude/portfolio-capacity-pool` (see "Where things stand" -- Phases 1,
-1.5, 2, and 3 are all done, all still on this one unmerged branch. Next:
-Phases 4-6 (provenance badges, MCP server, outbound webhook) are
-planned but not yet approved to start -- check recent conversation for
-Nic's go-ahead before beginning any of them, or before merging this
-branch).
+The shared capacity pool + portfolio forecasting work (Phases 1-3, plus a
+post-review bug fix) is merged into the base branch
+(`claude/product-timeline-audit-a72dmg`) -- see "Where things stand" for
+the full history. Phases 4-6 (provenance badges, MCP server, outbound
+webhook) are planned but not yet approved to start.
+
+Active work: **design language + momentum**
+(`DESIGN_LANGUAGE_AND_MOMENTUM_BUILD_BRIEF.md`), on branch
+`claude/design-momentum`, cut from the base branch after the above
+merged. `/forecast` and `/reports` are done (see "Where things stand");
+`/portfolio`'s compact momentum strip is next, gated on Nic's explicit
+go-ahead per the brief's own recommended sequencing (prove the pattern
+on the simpler pages first) -- check recent conversation before starting
+it.
 
 ## Where things stand
 
@@ -518,6 +525,102 @@ branch).
   Decision Queue: ask whoever owns Linear structure (Lucas? Colton?) for a
   consistent `jsa` / `itrack` label so Scopes can split cleanly instead of
   guessing from title text.
+
+- **Design language + momentum, `/forecast` and `/reports` done (branch
+  `claude/design-momentum`, not yet merged)** — implements
+  `DESIGN_LANGUAGE_AND_MOMENTUM_BUILD_BRIEF.md`, in the brief's own
+  recommended order (`/forecast` first, then `/reports`; `/portfolio`'s
+  compact strip is next, gated on Nic's go-ahead). No mockup screenshots
+  were available (none attached), so this was built from the written
+  spec. Doesn't touch `lib/forecast/simulate.ts`'s core math -- everything
+  here is presentation and history-diffing on top of data that's already
+  computed or stored, per the brief's own non-goal, so it didn't need the
+  capacity-pool work's math-proof checkpoint.
+
+  New shared data layer, built once and reused by both pages (and by the
+  new Ask-chip endpoint):
+  - `lib/reports/changes.ts` (`computeChangesSince`) -- extracted from
+    `generateReport`'s previously-inline logic so report generation and
+    live momentum can never compute "what shipped/resolved since X" two
+    different ways. Also derives `freshEstimateCount` (WorkEstimate rows
+    created/refreshed since a point in time) as a new signal --
+    WorkEstimate rows only ever exist for AI-produced estimates (see
+    `lib/estimate/run.ts`), so this count directly means "tickets that
+    got a real estimate instead of a placeholder guess," no cross-
+    referencing needed.
+  - `lib/momentum/compute.ts` (pure, no DB): `computeMomentum` (date/
+    confidence deltas + a stalled threshold: <1 day AND <5 points of
+    confidence movement -- either one moving enough counts as
+    real movement), `dateDeltaPhrase`, `bettingOddsPhrase` ("you'd win
+    this bet N times out of 100").
+  - `lib/momentum/attribution.ts` (pure): `attributionSentence` (live
+    /forecast path -- priority order resolved blocking decision > fresh
+    estimates > shipped count, same "pick the biggest lever" instinct as
+    the existing scenario picker) and `reportAttributionSentence` (the
+    /reports path -- reuses each Report row's own already-stored
+    `resolvedSinceLastCount`/`shippedCount` rather than re-deriving from
+    live data, which is both cheaper AND more correct for a pair of
+    *historical* reports, since live Linear/estimate state has moved on
+    since both of them).
+
+  `/forecast` (`components/ForecastView.tsx`, `GET /api/forecast`
+  extended with a `momentum`/`calibration` payload computed alongside the
+  existing pipeline -- no second round trip): hero date at `text-6xl`
+  (was competing with a side-by-side confidence ring before -- ring
+  removed, `ConfidenceRing.tsx` deleted as dead code), betting-odds pill
+  replaces the raw percentage, collapsed/expanded `MomentumChip`
+  (sparkline + one-liner collapsed; attribution + confidence-momentum
+  lines only on expand, per progressive disclosure), a neutral gray
+  "Unchanged for N days" pill when stalled, a 🎯 icon on each existing
+  scenario row so it reads as a "Try" chip pairing with the new 💬 "Ask"
+  chips row (`components/AskChips.tsx`, hitting new
+  `POST /api/forecast/ask`), and a muted `components/CalibrationLink.tsx`
+  stub ("See how past forecasts held up" -- honestly says "not enough
+  history yet" below a 4-reports/28-days threshold, or "not built yet"
+  above it, never a fabricated comparison).
+
+  The Ask-chip endpoint is the one new LLM-calling surface this phase
+  adds -- explicitly allowed under the standing rule (only ever
+  user-triggered by a click, never automatic on a recompute/drag/load).
+  Two fixed question types (`why_moved`, `hit_target` -- the latter
+  hidden when the Scope has no target date), reuses
+  `lib/model.ts`'s existing `completeJson` pattern, prompt in
+  `lib/momentum/askPrompt.ts` with the same "cite the real numbers,
+  never invent a fact" rules as the estimator prompt.
+
+  `/reports` (`components/ReportsPageClient.tsx`) reuses the exact same
+  `MomentumChip` component and `computeMomentum` function -- confirmed
+  "mostly free" per the brief, since `Report` was already storing
+  everything needed. Comparison is against whichever report is
+  immediately before the SELECTED one chronologically (not always "vs.
+  today"), all computed client-side from the already-fetched report
+  history with zero new network calls; the oldest report in history
+  correctly shows no momentum chip at all (nothing to compare against).
+
+  Verified: fixture assertions on `computeMomentum` (stalled threshold
+  both ways, a null-confidence scope not forcing "not stalled"),
+  `attributionSentence` (priority ordering, singular/plural phrasing),
+  and `reportAttributionSentence`. `computeChangesSince` verified against
+  real local Postgres with seeded `WorkEstimate`/`Finding` rows (only
+  post-`since` rows counted, `since = null` correctly includes
+  everything). Both new/changed routes re-verified live: validation
+  branches on `POST /api/forecast/ask` (bad question type, unknown
+  scope, `hit_target` correctly rejected when no target date is set) all
+  return the right code without touching Linear; a fully valid request
+  on both routes falls through to the same standard Linear-blocked
+  signature as every other Forecast entry point. `/forecast` exercised
+  end-to-end with Playwright (Linear mocked, both a clear-movement and a
+  stalled fixture): hero, odds pill, collapsed/expanded momentum,
+  stalled-pill styling, Ask-chip round-trip, and the calibration stub
+  all confirmed rendering correctly. `/reports` exercised with Playwright
+  against **real, unmocked** local Postgres (seeded two real `Report`
+  rows for a throwaway Scope, since `GET /api/reports` never touches
+  Linear at all) -- confirmed the momentum chip, attribution, and
+  confidence-momentum line all render from genuine stored data, and that
+  browsing to the oldest report correctly shows no chip. `npx tsc
+  --noEmit`, `npm run lint`, `npm run build` all clean; re-ran the
+  standard Linear-blocked regression check plus `GET /api/reports` and
+  `GET /api/scopes` to confirm nothing else moved.
 
 ## v1 plan
 

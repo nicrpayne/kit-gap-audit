@@ -1,8 +1,11 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useMemo } from "react";
 import Link from "next/link";
 import ReportView, { CopyMarkdownButton } from "./ReportView";
+import MomentumChip from "./MomentumChip";
+import { computeMomentum } from "@/lib/momentum/compute";
+import { reportAttributionSentence } from "@/lib/momentum/attribution";
 
 interface ScopeOption {
   id: string;
@@ -12,6 +15,7 @@ interface ScopeOption {
 interface ReportRow {
   id: string;
   generatedAt: string;
+  targetDate: string | null;
   likelyDate: string;
   confidenceAtTarget: number | null;
   likelyDateDeltaDays: number | null;
@@ -32,6 +36,32 @@ export default function ReportsPageClient() {
   const [selected, setSelected] = useState<ReportRow | null>(null);
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Momentum for the selected report: comparison is against the report
+  // immediately BEFORE it chronologically (`reports` is sorted newest
+  // first, so that's the next array entry) -- not necessarily the very
+  // latest report, so browsing history shows each report's own momentum
+  // at the time, not always "vs. today". Uses only fields already on the
+  // fetched Report rows (see reportAttributionSentence) -- no extra
+  // network calls, per the brief's "mostly free" expectation for this page.
+  const momentum = useMemo(() => {
+    if (!selected || !reports) return null;
+    const index = reports.findIndex((r) => r.id === selected.id);
+    const previous = index >= 0 ? reports[index + 1] : undefined;
+    if (!previous) return null;
+    const m = computeMomentum(
+      { generatedAt: new Date(selected.generatedAt), likelyDate: new Date(selected.likelyDate), confidenceAtTarget: selected.confidenceAtTarget },
+      { generatedAt: new Date(previous.generatedAt), likelyDate: new Date(previous.likelyDate), confidenceAtTarget: previous.confidenceAtTarget }
+    );
+    return {
+      ...m,
+      previousGeneratedAt: previous.generatedAt,
+      attribution: reportAttributionSentence(selected),
+      sparkline: [...reports]
+        .reverse()
+        .map((r) => ({ generatedAt: r.generatedAt, likelyDate: r.likelyDate, targetDate: r.targetDate })),
+    };
+  }, [selected, reports]);
 
   useEffect(() => {
     fetch("/api/scopes")
@@ -120,7 +150,10 @@ export default function ReportsPageClient() {
       <div className="grid grid-cols-[1fr_16rem] gap-6 items-start">
         <div className="border border-[var(--color-line)] rounded-xl bg-[var(--color-card)] p-6">
           {selected ? (
-            <ReportView markdown={selected.summaryMarkdown} />
+            <>
+              {momentum && <MomentumChip momentum={momentum} currentConfidence={selected.confidenceAtTarget} />}
+              <ReportView markdown={selected.summaryMarkdown} />
+            </>
           ) : (
             <div className="text-sm text-[var(--color-ink-soft)] py-8 text-center">
               No reports yet for this scope — click &ldquo;Generate report&rdquo;.

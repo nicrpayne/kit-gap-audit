@@ -1,8 +1,11 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import ConfidenceRing from "./ConfidenceRing";
 import { readUploadedFile, type ParsedSheet } from "@/lib/client/uploadFile";
+import { bettingOddsPhrase } from "@/lib/momentum/compute";
+import MomentumChip, { type MomentumData } from "./MomentumChip";
+import AskChips from "./AskChips";
+import CalibrationLink, { type CalibrationData } from "./CalibrationLink";
 
 interface ScenarioRow {
   id: string;
@@ -36,6 +39,8 @@ interface ForecastData {
   earliestDate: string;
   latestDate: string;
   confidenceAtTarget: number | null;
+  momentum: MomentumData | null;
+  calibration: CalibrationData;
   scenarios: ScenarioRow[];
   breakdown: {
     remainingIssueCount: number;
@@ -510,24 +515,20 @@ export default function ForecastView({ scopeId }: { scopeId: string }) {
       </div>
 
       <div className="border border-[var(--color-line)] rounded-xl bg-[var(--color-card)] p-6 mb-6">
-        <div className="flex items-center justify-between mb-6">
-          <div>
-            <div className="text-[11px] uppercase tracking-wider text-[var(--color-ink-soft)] mb-1">
-              Likely release date
-            </div>
-            <div className="font-display text-4xl">{formatDate(data.likelyDate)}</div>
-          </div>
-          {data.confidenceAtTarget !== null && (
-            <div className="flex items-center gap-3">
-              <ConfidenceRing percent={data.confidenceAtTarget} />
-              <div className="text-sm text-[var(--color-ink-soft)] max-w-[10rem]">
-                chance of landing on or before your target date
-              </div>
-            </div>
-          )}
+        <div className="text-[11px] uppercase tracking-wider text-[var(--color-ink-soft)] mb-1">
+          Likely release date
         </div>
+        <div className="font-display text-6xl mb-3">{formatDate(data.likelyDate)}</div>
+        {data.confidenceAtTarget !== null && (
+          <div className="inline-flex items-center rounded-full bg-[var(--color-accent-soft)] text-[var(--color-accent-dark)] px-3 py-1 text-xs font-medium mb-5">
+            {bettingOddsPhrase(data.confidenceAtTarget)}
+          </div>
+        )}
 
-        <div className="flex items-center gap-4 text-xs text-[var(--color-ink-soft)]">
+        {data.momentum && <MomentumChip momentum={data.momentum} currentConfidence={data.confidenceAtTarget} />}
+        <CalibrationLink calibration={data.calibration} />
+
+        <div className="flex items-center gap-4 text-xs text-[var(--color-ink-soft)] mt-5">
           <span>Earliest {formatDate(data.earliestDate)}</span>
           <div className="flex-1 h-2 rounded-full bg-[var(--color-line)] relative">
             <div
@@ -553,7 +554,12 @@ export default function ForecastView({ scopeId }: { scopeId: string }) {
             <div className="divide-y divide-[var(--color-line)]">
               {data.scenarios.map((s) => (
                 <div key={s.id} className="flex items-center gap-4 py-2.5 text-sm">
-                  <span className="flex-1 min-w-0 truncate">{s.label}</span>
+                  <span className="flex-1 min-w-0 truncate flex items-center gap-1.5">
+                    <span aria-hidden className="text-[var(--color-ink-soft)]">
+                      🎯
+                    </span>
+                    {s.label}
+                  </span>
                   <span className="font-medium whitespace-nowrap">{formatDate(s.likelyDate)}</span>
                   <span
                     className={`text-xs whitespace-nowrap w-16 text-right ${
@@ -577,6 +583,10 @@ export default function ForecastView({ scopeId }: { scopeId: string }) {
           </div>
         </details>
       )}
+
+      <div className="mb-6">
+        <AskChips scopeId={scopeId} hasTargetDate={!!data.scope.targetDate} />
+      </div>
 
       {(breakdown.ai.flagged.length > 0 || breakdown.ai.unrelatedExcluded.length > 0) && (
         <details open className="border border-[var(--color-line)] rounded-xl bg-[var(--color-card)] mb-6">

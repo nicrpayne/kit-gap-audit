@@ -2,6 +2,7 @@ import type { Scope, Report } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { computeForecast, type ForecastResult } from "@/lib/forecast/compute";
 import { renderReportMarkdown, type ReportData } from "@/lib/reports/render";
+import { computeChangesSince } from "@/lib/reports/changes";
 
 export interface GeneratedReport {
   report: Report;
@@ -15,7 +16,7 @@ export interface GeneratedReport {
 // failure -- callers convert to a 502, same message used everywhere else.
 export async function generateReport(scope: Scope): Promise<GeneratedReport> {
   const forecast = await computeForecast(scope);
-  const { issues, findings, likelyDate, earliestDate, latestDate, confidenceAtTarget, scenarios } = forecast;
+  const { findings, likelyDate, earliestDate, latestDate, confidenceAtTarget, scenarios } = forecast;
 
   const previousReport = await prisma.report.findFirst({
     where: { scopeId: scope.id },
@@ -24,9 +25,9 @@ export async function generateReport(scope: Scope): Promise<GeneratedReport> {
   const since = previousReport?.generatedAt ?? null;
   const startDate = new Date();
 
-  const shipped = issues
-    .filter((i) => i.stateType === "completed" && i.completedAt && (!since || new Date(i.completedAt) > since))
-    .map((i) => ({ identifier: i.identifier, title: i.title }));
+  const changes = await computeChangesSince(scope, forecast, since);
+  const shipped = changes.shipped;
+  const resolvedSinceLast = changes.resolvedDecisions.map((d) => ({ title: d.title, resolution: d.resolution ?? "" }));
 
   const blockingDecisions = findings
     .filter((f) => f.type === "decision" && f.status === "open" && f.blocking)
@@ -35,16 +36,6 @@ export async function generateReport(scope: Scope): Promise<GeneratedReport> {
   const nonBlockingDecisions = findings
     .filter((f) => f.type === "decision" && f.status === "open" && !f.blocking)
     .map((f) => ({ title: f.title, owner: f.owner, blocks: f.blocks, quote: f.quote }));
-
-  const resolvedSinceLast = findings
-    .filter(
-      (f) =>
-        f.type === "decision" &&
-        f.status === "resolved" &&
-        f.resolvedAt &&
-        (!since || f.resolvedAt > since)
-    )
-    .map((f) => ({ title: f.title, resolution: f.resolution ?? "" }));
 
   const bestScenario = scenarios.reduce<{ label: string; deltaDays: number } | null>(
     (best, s) => (best === null || s.deltaDays < best.deltaDays ? { label: s.label, deltaDays: s.deltaDays } : best),
