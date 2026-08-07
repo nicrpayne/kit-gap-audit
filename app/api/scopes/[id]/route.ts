@@ -119,8 +119,60 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   return NextResponse.json({ scope });
 }
 
+// Report, Source, WorkEstimate, and ContextDoc all reference Scope
+// WITHOUT onDelete: Cascade (unlike Allocation, which cascades on
+// purpose -- allocations are live current-state, not history) --
+// deleting a Scope that has any of that attached would previously throw
+// an uncaught Prisma foreign-key error (a bare 500). Checked up front so
+// the caller gets a clear, actionable reason instead of a crash, and
+// consistent with "nothing here is ever auto-deleted" for real history.
 export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  await prisma.scope.delete({ where: { id } });
-  return NextResponse.json({ ok: true });
+
+  const [reportCount, sourceCount, estimateCount, contextDocCount, allocationCount, dependents] = await Promise.all([
+    prisma.report.count({ where: { scopeId: id } }),
+    prisma.source.count({ where: { scopeId: id } }),
+    prisma.workEstimate.count({ where: { scopeId: id } }),
+    prisma.contextDoc.count({ where: { scopeId: id } }),
+    prisma.allocation.count({ where: { scopeId: id } }),
+    prisma.scope.findMany({ where: { dependsOnScopeIds: { has: id } }, select: { name: true } }),
+  ]);
+
+  const blockers: string[] = [];
+  if (reportCount > 0) blockers.push(`${reportCount} report${reportCount === 1 ? "" : "s"}`);
+  if (sourceCount > 0) blockers.push(`${sourceCount} audit source${sourceCount === 1 ? "" : "s"}`);
+  if (estimateCount > 0) blockers.push(`${estimateCount} AI estimate${estimateCount === 1 ? "" : "s"}`);
+  if (contextDocCount > 0) blockers.push(`${contextDocCount} context doc${contextDocCount === 1 ? "" : "s"}`);
+
+  if (blockers.length > 0) {
+    return NextResponse.json(
+      {
+        error:
+          `Can't delete this Scope -- it still has ${blockers.join(", ")} attached, and none of that is ` +
+          `ever auto-deleted. Use PATCH to edit this Scope in place instead (rename it, change its project ` +
+          `filter, or set dependsOnScopeIds) if you're trying to fix its setup rather than remove it entirely.`,
+      },
+      { status: 409 }
+    );
+  }
+
+  if (dependents.length > 0) {
+    return NextResponse.json(
+      {
+        error: `Can't delete this Scope -- ${dependents.map((d) => d.name).join(", ")} still list it in dependsOnScopeIds. Remove that dependency first.`,
+      },
+      { status: 409 }
+    );
+  }
+
+  try {
+    await prisma.scope.delete({ where: { id } });
+  } catch (error) {
+    return NextResponse.json(
+      { error: `Couldn't delete that Scope: ${error instanceof Error ? error.message : "unknown error"}` },
+      { status: 500 }
+    );
+  }
+
+  return NextResponse.json({ ok: true, allocationsRemoved: allocationCount });
 }

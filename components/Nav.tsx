@@ -7,14 +7,16 @@ const PRIMARY_TABS = [
   { href: "/", label: "Dashboard" },
   { href: "/audit", label: "Audit" },
   { href: "/decisions", label: "Decisions" },
-];
-
-const COMING_NEXT_TABS = [
   { href: "/forecast", label: "Forecast" },
   { href: "/portfolio", label: "Portfolio" },
-  { href: "/timeline", label: "Timeline" },
   { href: "/reports", label: "Reports" },
 ];
+
+// Timeline is still the one genuine placeholder left from the original
+// v1 plan (see ROADMAP.md) -- app/timeline/page.tsx just renders
+// <ComingNext>, nothing has built it yet. Keep it labeled honestly
+// rather than folding it into PRIMARY_TABS with the others.
+const COMING_NEXT_TABS = [{ href: "/timeline", label: "Timeline" }];
 
 function isActive(pathname: string, href: string) {
   if (href === "/") return pathname === "/";

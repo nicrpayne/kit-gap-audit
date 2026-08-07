@@ -707,6 +707,81 @@ merging.
     flows through the existing lockstep machinery to JSA/iTrack, same as
     any other capacity change, no changes needed there.
 
+- **Scopes cleanup + Nav fix (branch `claude/scopes-fix`, cut from the
+  base branch, not yet merged)** — two real issues found in testing,
+  fixed before starting the scenario-levers brief.
+
+  **Duplicate "JSA" Scopes.** Nic confirmed this was his own manual
+  experimentation (duplicating a Scope to try different project-filter
+  setups), not a bug -- but it surfaced a real product gap: `/scopes` had
+  no way to EDIT an existing Scope's identity fields at all, only create
+  or delete. `dependsOnScopeIds` in particular has had zero UI since it
+  shipped in Phase 1.5 -- the original plan's own text ("re-point the
+  JSA/iTrack Scopes... at `/scopes`") assumed an edit surface that was
+  never actually built, so delete-and-recreate looked like the only
+  option even though it isn't. Confirmed target end state (structural
+  reasoning from the schema + Nic's own confirmation that KIT JSA/
+  iTrack/Platform are now separate Linear projects, no live data access
+  needed or possible from this sandbox): one Scope per product, one
+  project each -- Platform standalone, JSA and iTrack each with
+  `dependsOnScopeIds: [platform.id]` instead of folding Platform's
+  project into their own filter (which is exactly what double-counts
+  Platform's tickets, the original motivating bug for the whole
+  capacity-pool brief).
+
+  Fixed: `ScopesManager.tsx` gained a full inline Edit control per row
+  (name, team, project, label filter, AND `dependsOnScopeIds` -- not
+  just the "rename control" asked for, since rename alone can't actually
+  fix a project-filter/dependency setup) wired to the existing
+  `PATCH /api/scopes/:id` (built during the duplicate-name-guard fix,
+  never had UI). Shares one `ScopeFormFields` component with the "Add
+  scope" form so create and edit can't drift apart. Also fixed the
+  page's own description text and the project-field placeholder, which
+  were BOTH actively suggesting the double-counting pattern ("pick more
+  than one project... e.g. JSA + Platform") -- i.e. the UI itself
+  taught the mistake that caused this. `DELETE /api/scopes/:id` had zero
+  error handling -- `Report`/`Source`/`WorkEstimate`/`ContextDoc` all
+  reference Scope WITHOUT cascading (unlike `Allocation`, which cascades
+  on purpose), so deleting a Scope with any real history threw an
+  uncaught Prisma FK error, a bare 500. Now checks up front and returns
+  a clear 409 naming exactly what's attached (and separately, whether
+  another Scope still lists it in `dependsOnScopeIds`), consistent with
+  "nothing here is ever auto-deleted" for real history -- directly
+  relevant since Nic is about to delete one of the duplicate Scopes
+  himself. This sandbox still can't reach the deployed app or the
+  Railway DB (both blocked at the network layer, confirmed again), so
+  the actual production consolidation is Nic's to do -- now doable
+  entirely through `/scopes` rather than needing raw API calls.
+
+  **Stale "Coming next" label.** Was sitting over Forecast/Portfolio/
+  Timeline/Reports -- Nic's report said all four were built, but
+  `app/timeline/page.tsx` still just renders `<ComingNext>` (unchanged
+  since the very first scaffold commit) -- flagged that discrepancy
+  rather than silently going along with it. Moved Forecast/Portfolio/
+  Reports into `PRIMARY_TABS`; `COMING_NEXT_TABS` now correctly contains
+  only Timeline.
+
+  Verified: the hardened DELETE checked live against real Postgres (no
+  history -> clean 200; a Scope with a seeded `Report` row -> clean 409
+  naming it, not a crash; a Scope another Scope depends on -> clean 409;
+  clears correctly once the dependency is removed). The new edit UI
+  exercised end-to-end with Playwright against real Postgres (`/scopes`
+  never touches Linear): rename, project-filter change, and
+  `dependsOnScopeIds` all confirmed persisted via a fresh server-side
+  read (not just DOM text, which caught a false positive in the first
+  pass -- a rename attempt had silently collided with the pre-existing
+  seed Scope's name and been correctly rejected by the duplicate-name
+  guard, which the DOM-only assertion didn't distinguish from success).
+  The manual-entry fallback for the team/project pickers (Linear
+  blocked) confirmed working. Nav text confirmed "Coming next" appears
+  exactly once, over Timeline only, with Forecast/Portfolio/Reports
+  above it as primary tabs. `npx tsc --noEmit`, `npm run lint`,
+  `npm run build` all clean; standard regression re-swept.
+
+  Not yet merged into the base branch -- no explicit go-ahead for that
+  this time (unlike the design-momentum merge), so the scenario-levers
+  branch is cut from `claude/scopes-fix` directly rather than waiting.
+
 ## v1 plan
 
 ### 1. Forecast (`/forecast`) -- done, see "Where things stand"

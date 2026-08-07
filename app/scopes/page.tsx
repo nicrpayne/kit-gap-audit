@@ -13,10 +13,12 @@ export default async function ScopesPage() {
       </div>
       <h1 className="font-display text-3xl mb-2">Scopes</h1>
       <p className="text-[var(--color-ink-soft)] mb-8">
-        A Scope maps a KIT module (JSA, iTrack, Precon, …) to a Linear team, and
-        optionally one or more projects and a label, so adding a new module is
-        a data row here — not a redeploy. Pick more than one project when a
-        module depends on shared work (e.g. JSA + Platform).
+        A Scope maps a KIT module (JSA, iTrack, Precon, …) to a Linear team,
+        one project, and optionally a label, so adding a new module is a data
+        row here — not a redeploy. When a module depends on shared work (e.g.
+        JSA and iTrack both need Platform), give Platform its own Scope and
+        set it as a dependency below rather than adding its project to both —
+        otherwise its tickets get counted twice.
       </p>
       <ScopesManager initialScopes={scopes} />
     </div>
