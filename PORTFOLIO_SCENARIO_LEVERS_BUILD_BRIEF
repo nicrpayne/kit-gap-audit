@@ -1,0 +1,136 @@
+# Build brief: portfolio scenario levers (scope, date, dependency, focus)
+
+Written for a Claude Code session on `nicrpayne/kit-gap-audit`. Third
+brief in this series — read `CAPACITY_POOL_AND_PORTFOLIO_BUILD_BRIEF.md`
+and `DESIGN_LANGUAGE_AND_MOMENTUM_BUILD_BRIEF.md` first, since this one
+assumes both exist and builds on the preview/override mechanism from the
+first and, ideally, the visual language from the second.
+
+## The motivating gap
+
+`/portfolio` currently lets Nic pull one lever live on a call: who's
+allocated where. That answers "what if we hired/moved people." It
+doesn't answer the other questions that actually come up in the same
+conversations: "what if we cut this feature," "what if we just accepted
+a later date," "what if Platform wasn't blocking us," or "what if people
+weren't split three ways." Those are all real, common asks, and none of
+them are currently possible without leaving the app.
+
+## When to build this
+
+**Not yet.** Do not start this until the design/momentum brief has
+landed — at minimum on `/forecast`, ideally further along — and has been
+checked in with Nic. Same reasoning as before: two large efforts on one
+branch at once is how things get hard to review, and these levers should
+visually adopt whatever chip/pill language the design brief establishes
+(the "Try" chip pattern it uses for existing scenario presets) rather
+than inventing a second visual style that then has to be reconciled
+later. When Nic says go, build this as its own branch off the
+then-current base.
+
+## Levers to build, recommended order (cheapest/lowest-risk first)
+
+### 1. Target-date lever, both directions
+
+Two views of the same already-computed data — neither needs a new
+simulation run, just a different read of the sorted trial-days array
+`computeForecast`/`runPortfolioSimulation` already produces:
+
+- **Given a hypothetical target date, what's the confidence?** Re-run
+  the existing confidence-at-target calculation against a different
+  date. Useful for "what if we just accepted [date]."
+- **Given a target confidence, what date does that require?** The
+  inverse — look up the Nth percentile day-count in the same sorted
+  array and convert to a calendar date. Useful for "what can I safely
+  promise if I want to be 85% sure, not 50%."
+
+Both are pure reads against results that already exist post the Phase
+1.5 lockstep fix — for a scope with dependencies, its own trial-days
+array already has the correlated dependency effect baked in, so this
+lever doesn't need to touch `portfolio.ts` or `simulate.ts` at all,
+dependent or not. Confirm that's still true before writing code; don't
+assume without checking the current shape of what those functions
+return.
+
+### 2. Context-switch / focus toggle
+
+Before building anything new here, **check what already exists** —
+`PortfolioSettings.contextSwitchCost` and `resolve.ts`'s capacity-penalty
+math for split allocations were both built in Phase 1, and a
+"Context-switch cost" slider was already visible in the Allocations
+panel during testing. This lever may be mostly UI framing, not new
+plumbing: a clear before/after comparison ("this person split three ways
+vs. focused on one") rather than new calculation. Confirm the current
+behavior against real data first, then figure out what's actually
+missing — likely just making the effect legible (a delta shown when the
+slider moves), not the underlying math.
+
+### 3. Dependency-relief preview
+
+"What if Platform's blocking piece went away" — a hypothetical,
+preview-only removal (or resolution) of one scope's entry in another's
+`dependsOnScopeIds`, run through the exact same `runPortfolioSimulation`
+lockstep orchestration used for the real preview endpoint, just with a
+modified dependency edge for that one call. Nothing persisted. This
+should be a thin extension of the existing `/api/portfolio/preview`
+override shape (add an optional dependency-override alongside the
+existing allocation overrides), not new orchestration — the lockstep
+math, cycle detection, and topological ordering are already built and
+proven; reuse them exactly as they are.
+
+### 4. Scope-cut lever (ticket include/exclude)
+
+The most involved of the four. Needs:
+
+- A UI surface listing the tickets/items feeding a given scope's
+  forecast (likely per-scope on `/forecast`, or inline on `/portfolio`
+  — your call on placement, but flag which you chose and why), with a
+  toggle per ticket and visible context on whether it has a real
+  estimate or a placeholder, since that's relevant to whether excluding
+  it is a real scope decision or just removing noise.
+- Extending the override system so a preview can carry an optional
+  excluded-ticket-ids set per scope alongside allocation and dependency
+  overrides, and confirming exactly where in `buildForecastInputs`/
+  `buildScopeSimInputs` the item list gets assembled so exclusion can be
+  applied there without touching the Monte Carlo sampling itself.
+- Same preview-not-persisted default as everything else, with an
+  explicit save step if Nic wants to actually commit to descoping
+  something (this one has real product implications if saved, more than
+  a hypothetical allocation does, so don't make save the default path
+  or make it too easy to fat-finger).
+
+## Where these live in the UI
+
+Follow the existing "Try" chip pattern (changes something, shows a
+result) established by the allocation presets and formalized by the
+design brief — these are all "Try" levers, not "Ask" levers. Don't
+invent a fifth interaction pattern for four features that are all the
+same shape: pick a hypothetical, see the portfolio recompute, decide
+whether to save.
+
+## Non-goals
+
+- Don't touch `lib/forecast/simulate.ts`'s core Monte Carlo math for any
+  of these — all four are either pure reads of existing results, or
+  reuses of the existing lockstep orchestration with different inputs.
+- Don't build ticket-level editing (renaming, re-estimating, reassigning
+  a ticket to a different scope) — the scope-cut lever is include/exclude
+  only, not a ticket editor.
+- Don't build automatic "here's what I'd recommend cutting" suggestions
+  — that's Ask-chip/explain-endpoint territory from the design brief,
+  a separate capability, not this brief.
+- Don't make any of these four persist by default — preview-first,
+  explicit save, same pattern as the allocation lever from Phase 2.
+
+## Acceptance test
+
+On a call, Nic should be able to: exclude two placeholder-estimate
+tickets from JSA and watch the date pull in; push iTrack's target date
+out a month and watch confidence jump with no capacity change; preview
+Platform's blocking piece going away and watch JSA and iTrack realign
+together (same lockstep correlation proof style as Phase 1.5 — prove
+this one explicitly, don't assume reuse guarantees it); and flip a
+split-allocated person to single-project focus and watch the
+context-switch penalty visibly disappear from that scope's forecast.
+None of the four should require a page reload or leaving `/portfolio` or
+`/forecast`.
