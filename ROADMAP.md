@@ -55,8 +55,29 @@ without checking recent conversation for approval).
   1 split 0.5/0.5 across two more, confirming the split person's total
   across every scope is exactly 1.0 -- never more -- and that over-
   allocation, negative fractions, and unknown person IDs are all
-  rejected with no partial writes). Full `npm run build` + `npx eslint`
-  clean throughout. **Stopped here per Nic's explicit checkpoint** --
+  rejected with no partial writes).
+
+  Post-review fix: Nic's spot-check on whether `PUT /api/allocations`'
+  `prisma.$transaction([...])` batch was a real atomic transaction (vs.
+  an in-memory pre-check followed by unprotected writes) led to finding
+  a real gap while confirming it -- a payload listing the same
+  `(personId, scopeId)` pair twice hit the DB's unique constraint
+  *inside* the transaction, uncaught, surfacing as a bare 500 with no
+  error body (same failure class as the `/api/parse-spreadsheet` bug
+  fixed earlier). Fixed with an explicit duplicate-pair check before the
+  transaction (clean 400) plus a try/catch around the transaction itself
+  as defense in depth. Reproduced the original bug live against real
+  Postgres before fixing it, then proved the atomicity claim for real:
+  a script calling `prisma.$transaction` directly (bypassing the route's
+  new guard entirely) with a `deleteMany` followed by a guaranteed
+  constraint violation confirmed the pre-existing allocation was still
+  present afterward -- the `deleteMany`, despite running first in the
+  batch, was rolled back along with the failed creates. Also confirmed,
+  by re-running with explicitly named cases, that the switch-cost-at-0%/
+  20% and `unallocatedCapacity` fixture coverage Nic asked about was
+  real and not folded invisibly into an aggregate pass count.
+
+  **Stopped here per Nic's explicit checkpoint** --
   Phase 1.5 (splitting Platform into its own Scope + scope-level
   dependency gates in the simulation trial loop, so JSA/iTrack still
   correctly reflect waiting on shared Platform work) touches the actual

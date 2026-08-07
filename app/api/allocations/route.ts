@@ -39,6 +39,7 @@ export async function PUT(req: NextRequest) {
     return NextResponse.json({ error: "allocations must be an array" }, { status: 400 });
   }
 
+  const seenPairs = new Set<string>();
   for (const a of body.allocations) {
     if (!a.personId || !a.scopeId || typeof a.fraction !== "number") {
       return NextResponse.json(
@@ -49,6 +50,17 @@ export async function PUT(req: NextRequest) {
     if (a.fraction < 0) {
       return NextResponse.json({ error: "fraction cannot be negative" }, { status: 400 });
     }
+    // (personId, scopeId) is unique per the Allocation model -- a payload
+    // listing the same pair twice would otherwise hit that constraint
+    // mid-transaction as an uncaught P2002, surfacing as a bare 500.
+    const pairKey = `${a.personId}::${a.scopeId}`;
+    if (seenPairs.has(pairKey)) {
+      return NextResponse.json(
+        { error: `Duplicate allocation for the same person and scope in one request: personId=${a.personId}, scopeId=${a.scopeId}` },
+        { status: 400 }
+      );
+    }
+    seenPairs.add(pairKey);
   }
 
   const personIds = [...new Set(body.allocations.map((a) => a.personId!))];
@@ -84,12 +96,19 @@ export async function PUT(req: NextRequest) {
     );
   }
 
-  await prisma.$transaction([
-    prisma.allocation.deleteMany({ where: { personId: { in: personIds } } }),
-    ...toWrite.map((a) =>
-      prisma.allocation.create({ data: { personId: a.personId, scopeId: a.scopeId, fraction: a.fraction } })
-    ),
-  ]);
+  try {
+    await prisma.$transaction([
+      prisma.allocation.deleteMany({ where: { personId: { in: personIds } } }),
+      ...toWrite.map((a) =>
+        prisma.allocation.create({ data: { personId: a.personId, scopeId: a.scopeId, fraction: a.fraction } })
+      ),
+    ]);
+  } catch (error) {
+    return NextResponse.json(
+      { error: `Couldn't save allocations: ${error instanceof Error ? error.message : "unknown error"}` },
+      { status: 500 }
+    );
+  }
 
   const allocations = await prisma.allocation.findMany({ where: { personId: { in: personIds } } });
   return NextResponse.json({ allocations });
