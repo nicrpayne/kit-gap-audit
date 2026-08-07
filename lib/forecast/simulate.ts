@@ -67,10 +67,28 @@ export function sampleTriangular(low: number, mode: number, high: number, random
   return b - Math.sqrt((1 - u) * (b - a) * (b - c));
 }
 
-function percentile(sorted: number[], p: number): number {
+// The inverse pair the target-date scenario lever needs (see ROADMAP.md
+// "portfolio scenario levers"): given a SORTED completion-days array
+// (SimulationResult.completionDaysSorted -- for a Scope with
+// dependencies, the correlated dependency effect is already baked into
+// each entry post-lockstep, so these two functions don't need to know
+// or care whether the Scope has dependencies), percentileDay answers
+// "what day-count do I need for N% confidence" and confidenceAtDay
+// answers "what's my confidence by day N" -- both pure reads over
+// already-computed trial output, no new simulation run. Exported so a
+// caller (a UI control, later an API route) can look either direction
+// up without re-deriving this logic; summarizeCompletionDays below uses
+// both instead of duplicating them inline.
+export function percentileDay(sorted: number[], p: number): number {
   if (sorted.length === 0) return 0;
   const idx = Math.min(sorted.length - 1, Math.max(0, Math.floor((p / 100) * sorted.length)));
   return sorted[idx];
+}
+
+export function confidenceAtDay(sorted: number[], targetDays: number): number {
+  if (sorted.length === 0) return 0;
+  const withinTarget = sorted.filter((d) => d <= targetDays).length;
+  return Math.round((withinTarget / sorted.length) * 100);
 }
 
 function addDays(date: Date, days: number): Date {
@@ -126,18 +144,17 @@ export function summarizeCompletionDays(
   const sorted = [...completionDays].sort((a, b) => a - b);
 
   const percentiles = {
-    p10: percentile(sorted, 10),
-    p50: percentile(sorted, 50),
-    p70: percentile(sorted, 70),
-    p85: percentile(sorted, 85),
-    p90: percentile(sorted, 90),
+    p10: percentileDay(sorted, 10),
+    p50: percentileDay(sorted, 50),
+    p70: percentileDay(sorted, 70),
+    p85: percentileDay(sorted, 85),
+    p90: percentileDay(sorted, 90),
   };
 
   let confidenceAtTarget: number | null = null;
   if (targetDate && sorted.length > 0) {
     const targetDays = (targetDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24);
-    const withinTarget = sorted.filter((d) => d <= targetDays).length;
-    confidenceAtTarget = Math.round((withinTarget / sorted.length) * 100);
+    confidenceAtTarget = confidenceAtDay(sorted, targetDays);
   }
 
   return {

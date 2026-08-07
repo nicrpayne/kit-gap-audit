@@ -12,6 +12,7 @@ import { runPortfolioSimulation, type ScopeSimulationSpec } from "@/lib/forecast
 import type { SimulationResult, WorkItem, DecisionGate } from "@/lib/forecast/simulate";
 import { computePortfolioInsights, type ScopeInsightInput } from "@/lib/portfolio/insights";
 import { computeMomentum, dateDeltaPhrase } from "@/lib/momentum/compute";
+import { percentileDay, confidenceAtDay } from "@/lib/forecast/simulate";
 
 // This entire file is the "cheap, every slider frame" half of Phase 2's
 // performance split (see ROADMAP.md): GET /api/portfolio/inputs is the one
@@ -85,6 +86,101 @@ function addDays(date: Date, days: number): Date {
 
 function dayOffset(startDate: Date, date: Date): number {
   return (date.getTime() - startDate.getTime()) / 86400000;
+}
+
+function toDateStr(iso: string | null): string {
+  return iso ? iso.slice(0, 10) : "";
+}
+
+// Scenario lever #1 (target date, both directions -- see
+// PORTFOLIO_SCENARIO_LEVERS_BUILD_BRIEF): a hypothetical date and a
+// hypothetical confidence percentage, kept in sync purely by looking
+// either up on `sortedDays` -- the SAME per-scope SimulationResult.
+// completionDaysSorted the rest of this page already has in memory, via
+// the exact percentileDay/confidenceAtDay functions simulate.ts uses
+// internally. No new simulation run, no network call while previewing;
+// confidencePct is a derived value (not separate state) so editing
+// either field can never drift out of sync with the other -- there is
+// exactly one source of truth (dateStr) and one pure read of it.
+function TargetDateLever({
+  scopeId,
+  savedTargetDate,
+  sortedDays,
+  startDate,
+  onSave,
+}: {
+  scopeId: string;
+  savedTargetDate: string | null;
+  sortedDays: number[];
+  startDate: Date;
+  onSave: (scopeId: string, targetDate: string | null) => Promise<void>;
+}) {
+  const [dateStr, setDateStr] = useState(toDateStr(savedTargetDate));
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const confidencePct = useMemo(() => {
+    if (!dateStr) return null;
+    const days = dayOffset(startDate, new Date(dateStr + "T00:00:00Z"));
+    return confidenceAtDay(sortedDays, days);
+  }, [dateStr, sortedDays, startDate]);
+
+  function onConfidenceChange(raw: string) {
+    if (raw === "") {
+      setDateStr("");
+      return;
+    }
+    const pct = Math.max(0, Math.min(100, parseInt(raw, 10) || 0));
+    const days = percentileDay(sortedDays, pct);
+    setDateStr(addDays(startDate, days).toISOString().slice(0, 10));
+  }
+
+  const dirty = dateStr !== toDateStr(savedTargetDate);
+
+  async function handleSave() {
+    setSaving(true);
+    setError(null);
+    try {
+      await onSave(scopeId, dateStr || null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Couldn't save.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="flex items-center gap-2 text-xs flex-wrap">
+      <span className="text-[var(--color-ink-soft)]">Target date</span>
+      <input
+        type="date"
+        value={dateStr}
+        onChange={(e) => setDateStr(e.target.value)}
+        className="rounded-md border border-[var(--color-line)] px-2 py-1"
+      />
+      <span className="text-[var(--color-ink-soft)]">for</span>
+      <input
+        type="number"
+        min={0}
+        max={100}
+        value={confidencePct ?? ""}
+        onChange={(e) => onConfidenceChange(e.target.value)}
+        placeholder="—"
+        className="w-14 rounded-md border border-[var(--color-line)] px-2 py-1"
+      />
+      <span className="text-[var(--color-ink-soft)]">% confidence</span>
+      {dirty && (
+        <button
+          onClick={handleSave}
+          disabled={saving}
+          className="rounded-md border border-[var(--color-accent)] text-[var(--color-accent-dark)] px-2 py-1 hover:bg-[var(--color-accent-soft)] disabled:opacity-50"
+        >
+          {saving ? "Saving…" : "Save target date"}
+        </button>
+      )}
+      {error && <span className="text-[var(--color-danger)]">{error}</span>}
+    </div>
+  );
 }
 
 // Month-boundary ticks for the shared axis, e.g. "Jan '26", "Feb '26" --
@@ -401,6 +497,28 @@ export default function PortfolioPageClient() {
     }
   }
 
+  // Target-date lever's Save: unlike the allocation grid's big Save
+  // (which batches everything behind one explicit action), this saves
+  // ONE Scope's targetDate immediately when its own "Save target date"
+  // button is clicked -- reuses the existing PATCH /api/scopes/:id
+  // (already supports targetDate) rather than a new endpoint. Updates
+  // `data` in place so the axis/confidence badges elsewhere on the page
+  // pick up the new saved value without a full reload.
+  async function saveTargetDate(scopeId: string, targetDate: string | null) {
+    const res = await fetch(`/api/scopes/${scopeId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ targetDate }),
+    });
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(body.error ?? "Couldn't save the target date.");
+    setData((prev) =>
+      prev
+        ? { ...prev, scopes: prev.scopes.map((s) => (s.scopeId === scopeId ? { ...s, targetDate } : s)) }
+        : prev
+    );
+  }
+
   function discard() {
     if (!data) return;
     const initial = new Map<string, number>();
@@ -680,6 +798,18 @@ export default function PortfolioPageClient() {
                       </span>
                     )}
                   </div>
+
+                  {p && (
+                    <div className="mt-2">
+                      <TargetDateLever
+                        scopeId={s.scopeId}
+                        savedTargetDate={s.targetDate}
+                        sortedDays={p.completionDaysSorted}
+                        startDate={startDateObj!}
+                        onSave={saveTargetDate}
+                      />
+                    </div>
+                  )}
                 </div>
               );
             })}

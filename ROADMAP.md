@@ -11,13 +11,18 @@ the full history. Phases 4-6 (provenance badges, MCP server, outbound
 webhook) are planned but not yet approved to start.
 
 **Design language + momentum**
-(`DESIGN_LANGUAGE_AND_MOMENTUM_BUILD_BRIEF.md`) is done -- `/forecast`,
-`/reports`, and `/portfolio` all shipped -- on branch
-`claude/design-momentum`, not yet merged into the base branch (see
-"Where things stand"). Next up: a not-yet-written brief for scenario
-levers (target date + scope cut) alongside the existing allocation
-lever -- check recent conversation for Nic's go-ahead before starting or
-merging.
+(`DESIGN_LANGUAGE_AND_MOMENTUM_BUILD_BRIEF.md`) and a follow-up
+**scopes-editing + Nav fix** are both merged into the base branch --
+see "Where things stand" for the full history.
+
+Active work: **portfolio scenario levers**
+(`PORTFOLIO_SCENARIO_LEVERS_BUILD_BRIEF`), on branch
+`claude/portfolio-scenario-levers`, cut from the base branch. Lever 1 of
+4 (target date, both directions) is done, not yet merged. Levers 2-4
+(context-switch/focus toggle, dependency-relief preview, scope-cut) are
+still ahead, same branch, report-as-you-go per the brief's own
+checkpoint -- check recent conversation for where things actually stand
+before continuing.
 
 ## Where things stand
 
@@ -778,9 +783,63 @@ merging.
   above it as primary tabs. `npx tsc --noEmit`, `npm run lint`,
   `npm run build` all clean; standard regression re-swept.
 
-  Not yet merged into the base branch -- no explicit go-ahead for that
-  this time (unlike the design-momentum merge), so the scenario-levers
-  branch is cut from `claude/scopes-fix` directly rather than waiting.
+  **Merged into the base branch** (`claude/product-timeline-audit-a72dmg`,
+  clean fast-forward, no conflicts) once Nic explicitly asked for it.
+
+- **Portfolio scenario levers, lever 1 of 4: target date, both
+  directions (branch `claude/portfolio-scenario-levers`, cut from the
+  updated base, not yet merged)** — implements
+  `PORTFOLIO_SCENARIO_LEVERS_BUILD_BRIEF`'s cheapest/lowest-risk lever
+  first, per its own recommended order. Confirmed before writing code
+  (the brief explicitly asked for this, not to be assumed): a Scope's
+  `SimulationResult.completionDaysSorted` already has any correlated
+  dependency effect baked in post-lockstep, so both directions are pure
+  reads over already-computed trial output -- zero changes to
+  `portfolio.ts` or `simulate.ts`'s actual Monte Carlo sampling.
+
+  `lib/forecast/simulate.ts` gained two exported pure functions,
+  `percentileDay` (was already there as a private `percentile`, just
+  exported and renamed for clarity) and `confidenceAtDay` (extracted
+  from what was inline logic inside `summarizeCompletionDays`, which now
+  calls it too instead of duplicating it -- one implementation, not two
+  that could drift). New `TargetDateLever` component in
+  `PortfolioPageClient.tsx`: a date input and a confidence-percent input
+  per Scope, kept in sync with exactly one source of truth (the date;
+  confidence is a derived `useMemo`, never separate state, so the two
+  can't drift apart from each other). Editing the date recomputes
+  confidence via `confidenceAtDay`; typing a confidence percentage
+  computes the required date via `percentileDay` -- both purely
+  client-side against data already in memory (`preview`/`baseline`'s
+  `SimulationResult` per Scope), zero new network call while previewing.
+  Preview-only by default with an explicit "Save target date" button
+  (only appears once the date actually differs from the Scope's saved
+  value) that reuses the existing `PATCH /api/scopes/:id` -- no new
+  endpoint, and a smaller/separate save action from the allocation
+  grid's big Save, since a target-date change is its own decision.
+
+  Placement: `/portfolio` only, not `/forecast` -- the brief left this
+  open: it's the same lever mechanism as everywhere else in this brief,
+  and this brief's own motivating-gap section frames all four levers
+  around `/portfolio`'s live preview specifically, not the single-scope
+  page.
+
+  Verified: a fixture script proved the refactor is behavior-preserving
+  (summarizeCompletionDays' own `confidenceAtTarget`/`percentiles` match
+  calling `confidenceAtDay`/`percentileDay` directly on the same sorted
+  array) and proved the actual new capability (percentileDay monotonic
+  non-decreasing in the requested confidence; confidence read back at
+  the computed date is always >= the percentage that was asked for,
+  never less; empty-array edge cases return 0, not a crash). Playwright
+  against the dev server (Linear mocked): initial fields correctly
+  default from the Scope's saved target date; editing the date updates
+  confidence; typing a confidence percentage updates the date and the
+  confidence shown afterward correctly reflects the REAL achieved value
+  at that computed date (can overshoot the ask slightly due to
+  percentile flooring, by design, never undershoot); the Save button
+  only appears once dirty and disappears again after a successful save;
+  `PATCH /api/scopes/:id` confirmed called with the right payload.
+  `npx tsc --noEmit`, `npm run lint`, `npm run build` all clean;
+  standard regression re-swept.
 
 ## v1 plan
 
