@@ -207,6 +207,13 @@ export interface PortfolioScopeInput {
   // "explicit" fallback rung when a preview removes every Allocation for
   // a Scope, rather than re-deriving it from scratch.
   explicitTeamCapacity: number | null;
+  // The most recently STORED Report for this Scope, if any -- the
+  // portfolio dashboard's compact momentum pill (design brief #9) needs
+  // exactly this as its comparison point, same "vs. last time we told
+  // someone a number" semantics as /forecast and /reports. Null means no
+  // Report has ever been generated for this Scope, in which case the UI
+  // shows no momentum pill at all (nothing to compare against).
+  lastReport: { generatedAt: Date; likelyDate: Date; confidenceAtTarget: number | null } | null;
 }
 
 export interface PortfolioInputs {
@@ -238,6 +245,11 @@ export async function buildPortfolioInputs(): Promise<PortfolioInputs> {
   const scopeInputs: PortfolioScopeInput[] = [];
   for (const scope of scopes) {
     const bundle = await buildScopeSimInputs(scope);
+    const lastReport = await prisma.report.findFirst({
+      where: { scopeId: scope.id },
+      orderBy: { generatedAt: "desc" },
+      select: { generatedAt: true, likelyDate: true, confidenceAtTarget: true },
+    });
     scopeInputs.push({
       scopeId: scope.id,
       name: scope.name,
@@ -249,6 +261,7 @@ export async function buildPortfolioInputs(): Promise<PortfolioInputs> {
       capacitySource: bundle.inputs.capacitySource,
       capacityContributors: bundle.capacityContributors,
       explicitTeamCapacity: scope.teamCapacity,
+      lastReport,
     });
   }
 

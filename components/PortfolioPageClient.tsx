@@ -11,6 +11,7 @@ import {
 import { runPortfolioSimulation, type ScopeSimulationSpec } from "@/lib/forecast/portfolio";
 import type { SimulationResult, WorkItem, DecisionGate } from "@/lib/forecast/simulate";
 import { computePortfolioInsights, type ScopeInsightInput } from "@/lib/portfolio/insights";
+import { computeMomentum, dateDeltaPhrase } from "@/lib/momentum/compute";
 
 // This entire file is the "cheap, every slider frame" half of Phase 2's
 // performance split (see ROADMAP.md): GET /api/portfolio/inputs is the one
@@ -33,6 +34,7 @@ interface ScopeInputRow {
   teamCapacity: number;
   capacitySource: "allocations" | "explicit" | "inferred";
   explicitTeamCapacity: number | null;
+  lastReport: { generatedAt: string; likelyDate: string; confidenceAtTarget: number | null } | null;
 }
 
 interface PersonRow {
@@ -309,6 +311,36 @@ export default function PortfolioPageClient() {
     return computePortfolioInsights(scopeInputs, overAllocated, unallocated);
   }, [data, baseline, preview, overAllocated, unallocated]);
 
+  // Compact per-scope momentum (design brief #9): "vs. the last time we
+  // told someone a number" -- the SAVED-allocations baseline against the
+  // most recent stored Report, same semantics and the same computeMomentum
+  // function /forecast and /reports use. Deliberately NOT the live
+  // preview: an in-progress unsaved drag already has its own "vs saved"
+  // delta text right next to this; this pill answers a different
+  // question (has this Scope actually moved since it was last reported
+  // on) and shouldn't flicker while dragging.
+  const reportMomentum = useMemo(() => {
+    if (!data) return new Map<string, ReturnType<typeof computeMomentum>>();
+    const out = new Map<string, ReturnType<typeof computeMomentum>>();
+    for (const s of data.scopes) {
+      if (!s.lastReport) continue;
+      const b = baseline?.get(s.scopeId);
+      if (!b) continue;
+      out.set(
+        s.scopeId,
+        computeMomentum(
+          { generatedAt: new Date(), likelyDate: b.likelyDate, confidenceAtTarget: b.confidenceAtTarget },
+          {
+            generatedAt: new Date(s.lastReport.generatedAt),
+            likelyDate: new Date(s.lastReport.likelyDate),
+            confidenceAtTarget: s.lastReport.confidenceAtTarget,
+          }
+        )
+      );
+    }
+    return out;
+  }, [data, baseline]);
+
   function setFraction(personId: string, scopeId: string, pct: number) {
     setFractions((prev) => {
       const next = new Map(prev);
@@ -556,6 +588,29 @@ export default function PortfolioPageClient() {
                           )}
                         </>
                       )}
+                      {(() => {
+                        const rm = reportMomentum.get(s.scopeId);
+                        if (!rm) return null;
+                        const daysSinceReport = Math.max(
+                          0,
+                          Math.round((Date.now() - rm.previousGeneratedAt.getTime()) / 86400000)
+                        );
+                        return (
+                          <span
+                            title={`Since the last report (${formatDate(rm.previousGeneratedAt)})`}
+                            className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium whitespace-nowrap ${
+                              rm.stalled
+                                ? "bg-[var(--color-line)]/60 text-[var(--color-ink-soft)]"
+                                : rm.dateDeltaDays < 0
+                                ? "bg-[var(--color-accent-soft)] text-[var(--color-accent-dark)]"
+                                : "bg-[var(--color-danger-soft)] text-[var(--color-danger)]"
+                            }`}
+                          >
+                            <span aria-hidden>{rm.stalled ? "●" : rm.dateDeltaDays < 0 ? "↓" : "↑"}</span>
+                            {rm.stalled ? `unchanged ${daysSinceReport}d` : dateDeltaPhrase(rm.dateDeltaDays)}
+                          </span>
+                        );
+                      })()}
                     </div>
                   </div>
 

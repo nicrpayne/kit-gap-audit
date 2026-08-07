@@ -10,14 +10,14 @@ post-review bug fix) is merged into the base branch
 the full history. Phases 4-6 (provenance badges, MCP server, outbound
 webhook) are planned but not yet approved to start.
 
-Active work: **design language + momentum**
-(`DESIGN_LANGUAGE_AND_MOMENTUM_BUILD_BRIEF.md`), on branch
-`claude/design-momentum`, cut from the base branch after the above
-merged. `/forecast` and `/reports` are done (see "Where things stand");
-`/portfolio`'s compact momentum strip is next, gated on Nic's explicit
-go-ahead per the brief's own recommended sequencing (prove the pattern
-on the simpler pages first) -- check recent conversation before starting
-it.
+**Design language + momentum**
+(`DESIGN_LANGUAGE_AND_MOMENTUM_BUILD_BRIEF.md`) is done -- `/forecast`,
+`/reports`, and `/portfolio` all shipped -- on branch
+`claude/design-momentum`, not yet merged into the base branch (see
+"Where things stand"). Next up: a not-yet-written brief for scenario
+levers (target date + scope cut) alongside the existing allocation
+lever -- check recent conversation for Nic's go-ahead before starting or
+merging.
 
 ## Where things stand
 
@@ -621,6 +621,91 @@ it.
   --noEmit`, `npm run lint`, `npm run build` all clean; re-ran the
   standard Linear-blocked regression check plus `GET /api/reports` and
   `GET /api/scopes` to confirm nothing else moved.
+
+  **`/portfolio` done too** -- the brief's #9, the compact strip, and the
+  last of its three target pages. `buildPortfolioInputs()`
+  (`lib/forecast/compute.ts`) now also fetches each Scope's most
+  recently STORED Report (one extra `findFirst` in the existing per-
+  Scope loop, same "expensive, once" fetch this function already does --
+  no new network round trip). `PortfolioPageClient` reuses the exact
+  same `computeMomentum`/`dateDeltaPhrase` functions /forecast and
+  /reports already use -- literally the same pure module, not a
+  reimplementation -- comparing the live client-side BASELINE
+  (saved-allocations) simulation against that stored Report, same
+  semantics as everywhere else. Deliberately compared against baseline,
+  not the live in-progress preview: an unsaved drag already has its own
+  "vs saved" delta text right next to this, and this pill answers a
+  different question (has this Scope moved since it was last reported
+  on) that shouldn't flicker while dragging. Per the brief, no sparkline
+  and no expansion at this density -- just an icon + short phrase pill
+  next to each Scope's date (a compact `MomentumChip`-equivalent was
+  deliberately NOT built; the full component's sparkline/expand
+  mechanics don't fit here, only its underlying computation does).
+  Attribution is intentionally left out too, since it's expand-only
+  content in every other surface and there's no expand state here to put
+  it in -- would need a `computeChangesSince` call per Scope for no
+  visible payoff.
+
+  Also confirmed (asked explicitly before starting): the target-date
+  lever planned for the next brief covers both directions --
+  date-to-confidence (already how `confidenceAtTarget` works) and
+  confidence-to-date (a `percentile()` lookup on `completionDaysSorted`,
+  which every client-side `SimulationResult` already carries in memory
+  right now, unused past the 5 fixed percentiles) -- both a pure lookup
+  on already-computed simulation output, zero new simulation math either
+  direction.
+
+  Verified: the new `prisma.report.findFirst(...)` query checked
+  directly against real Postgres (returns null with no Report, correctly
+  picks the NEWER of two seeded Reports by `generatedAt`) --
+  `buildPortfolioInputs()` itself still can't be exercised end-to-end
+  live here, same Linear-blocks-first constraint as always, so
+  `GET /api/portfolio/inputs` was re-confirmed to still fall through to
+  the standard Linear-blocked signature (proves the new code executes
+  without crashing up to that point). Playwright with `/api/portfolio/
+  inputs` mocked (three scopes: one that moved a lot -> a green
+  "N days sooner" pill, one that barely moved -> the neutral "unchanged
+  Nd" pill, one with no prior Report at all -> confirmed NO pill
+  renders) plus an explicit check that no chevron/expand affordance
+  leaked in from the other surfaces. `npx tsc --noEmit`, `npm run lint`,
+  `npm run build` all clean; standard regression re-confirmed across all
+  three pages.
+
+  This closes out every item in
+  `DESIGN_LANGUAGE_AND_MOMENTUM_BUILD_BRIEF.md`. Reported back to Nic per
+  his explicit checkpoint before the next brief (the scenario levers)
+  goes out.
+
+  **Next brief, not yet written: scenario levers (target date + scope
+  cut) alongside the existing allocation lever, same preview/what-if
+  system.** Discussed with Nic but not yet built -- noted here so the
+  reuse-vs-new-work split isn't lost before that brief lands:
+  - **Target date -- cheap.** `confidenceAtTarget` is already a pure
+    per-trial check against whatever `targetDate` a `ScopeSimulationSpec`
+    carries; the reverse ("what date for N% confidence") is an equally
+    pure `percentile()` lookup on `completionDaysSorted`, which every
+    client-side `SimulationResult` already carries in memory today (see
+    `PortfolioPageClient`'s `preview`/`baseline` state) -- both
+    directions, zero new simulation math. New work: a hypothetical
+    `targetDateOverrides` map threaded through the same override pattern
+    allocations already use, both client-side and as an optional param
+    on `POST /api/portfolio/preview`. Saving reuses the existing
+    `PATCH /api/scopes/:id` (already accepts `targetDate`) -- no new
+    endpoint.
+  - **Scope cut -- the live-preview half is cheap too, the persistence
+    half is real new work.** `GET /api/portfolio/inputs` already returns
+    every Scope's individual items, so filtering them client-side before
+    a resimulation is the same shape as the capacity lever -- no backend
+    change needed for the drag/toggle interaction itself. What's
+    genuinely new: (1) the UI is a different pattern, a per-ticket
+    checklist rather than a slider; (2) there's no DB concept today of
+    "this ticket is manually excluded" -- exclusion currently only
+    happens implicitly via Linear ticket state or AI-judged relevance,
+    so persisting a manual cut needs real new schema (e.g. an
+    `excludedIssueIds` field or a small new model); (3) dependency
+    propagation is free -- cutting Platform's items already correctly
+    flows through the existing lockstep machinery to JSA/iTrack, same as
+    any other capacity change, no changes needed there.
 
 ## v1 plan
 
