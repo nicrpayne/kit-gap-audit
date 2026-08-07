@@ -151,10 +151,77 @@ without checking recent conversation for approval).
   `npx eslint` clean throughout; local Postgres confirmed back to its
   exact pre-test state after every verification pass.
 
+  **Post-review correction: the dependency mechanism above was replaced
+  before Phase 2 started.** Nic's spot-check ("in a single portfolio
+  trial, do JSA and iTrack draw from the SAME Platform trial index, or
+  does each independently resample?") surfaced that the bootstrap-
+  resampling design described above does NOT model correlated risk --
+  confirmed empirically, not just reasoned about: with realistically
+  different-shaped dependent scopes (different item counts), only ~1.5%
+  of sorted-position pairs matched across 5000 trials, and the ~27% that
+  were "close" was a sorting artifact (small values cluster near the
+  front of any ascending array), not real shared-scenario correlation.
+  Root cause was structural, not an RNG detail: the old design ran each
+  scope's FULL simulation to completion (all N trials, then sorted)
+  before its dependents' simulations even began, so there was never a
+  shared "trial i" concept across scopes to correlate in the first
+  place -- and sorting would have destroyed trial identity even if
+  timing weren't sequential.
+
+  Replaced with a genuine **lockstep joint simulation**: a single outer
+  loop of N trials shared across the whole dependency component;
+  within each trial, scopes are processed in topological order and a
+  dependency's day for THAT SAME trial is read directly out of the
+  array being built for it, not re-sampled. `lib/forecast/simulate.ts`
+  was split into two reusable pure primitives -- `sampleOwnDays` (one
+  trial's own item/gate sampling, capacity-clamped) and
+  `summarizeCompletionDays` (raw days array -> the full percentile/date
+  summary) -- so `runSimulation` (standalone, single-scope) and the new
+  `lib/forecast/portfolio.ts` (`runPortfolioTrials` for raw per-scope
+  arrays, `runPortfolioSimulation` summarizing on top) share the exact
+  same math instead of two competing implementations.
+  `dependencySamples`/bootstrap-resampling was removed outright rather
+  than left as dead code alongside the new mechanism.
+
+  Verified with the same rigor as the original build, plus the two
+  proofs Nic asked for specifically: (1) **the direct, non-aggregate
+  proof** -- found a real trial (#2 in one run: Platform drew 407.0d
+  against its own 366.5d p90) and confirmed JSA's and iTrack's values at
+  that exact same trial index both showed 407.0d too, not an
+  approximation -- then checked this holds across every one of 500+ bad
+  trials in the run, not just the one cherry-picked example, plus a
+  converse sanity check that a *good* Platform trial does NOT force
+  dependents up (proving the relationship is conditional, not a
+  constant floor); (2) **the diamond "computed once" proof, re-run
+  under lockstep**, now strengthened to check exact per-trial value
+  equality, not just aggregate stats -- both dependents equal the exact
+  same shared value at every trial where it dominates their own small
+  item, not two independent approximations of it. Both the no-dependency
+  regression proof and the comparable-magnitude max-vs-add case from the
+  original build were re-run against the new code and still pass.
+  Mutation-tested the rewrite itself: patched `Math.max` to `+` in the
+  new lockstep loop and confirmed exactly the two tests built to catch
+  that bug class failed (the diamond exact-equality check and the
+  comparable-magnitude case) while the other seven -- testing different
+  properties like cycle detection and no-op regression -- correctly kept
+  passing, then reverted and re-confirmed clean. Re-ran the same live
+  Linear-blocked regression check against real Postgres to confirm
+  nothing else in the wiring moved.
+
+  Also flagged, not yet acted on: this project has no persistent
+  automated test suite at all (no Jest/Vitest, nothing in CI) -- every
+  verification this session, correction included, was a temp script run
+  once and deleted after passing. Three subtle invariants have surfaced
+  and been caught this way in one session alone (duplicate-allocation-
+  pair rejection, max-not-sum in the dependency trial loop, and this
+  trial-index correlation property) with nothing currently protecting
+  against any of them regressing later. Nic wants this raised again once
+  the portfolio math stabilizes post-Phase-2, as its own conversation.
+
   **Stopped here per Nic's explicit checkpoint** -- Phase 2 (portfolio-
   scoped interactive allocation levers) is real UI/endpoint work on top
-  of both capacity pooling and dependency gates now landed, and gets its
-  own go-ahead per the same pacing as Phases 1 and 1.5.
+  of both capacity pooling and now-correlated dependency gates, and gets
+  its own go-ahead per the same pacing as every phase so far.
 
 - **Reports is live** (`/reports`, `lib/reports/`, `POST /api/reports`).
   Composes the same Forecast pipeline as `/forecast` (so numbers always
