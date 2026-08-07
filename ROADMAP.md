@@ -4,11 +4,68 @@ Read this file, then continue. v0 (Audit + Decisions), V1 (Forecast, with
 AI estimation + Notion + Figma), and V3 (Reports) are built and deployed.
 Timeline (V2) is the one piece left from the original plan -- deferred on
 purpose since Reports was the actually-needed leadership deliverable.
-Highest-priority next thing per Nic: make the Forecast scenario panel
-interactive (live levers/sliders during a conversation), not the next
-numbered milestone.
+Active work: **shared capacity pool + portfolio forecasting**, on branch
+`claude/portfolio-capacity-pool` (see "Where things stand" for Phase 1,
+done; Phases 1.5-3 still ahead, each with an explicit go-ahead checkpoint
+per Nic before starting -- do not proceed past Phase 1 on that branch
+without checking recent conversation for approval).
 
 ## Where things stand
+
+- **Shared capacity pool, Phase 1 of 3 (branch `claude/portfolio-
+  capacity-pool`, not yet merged)** — the structural fix for a real bug:
+  each Scope's `teamCapacity` was independent, so "hire 5, put 3 on JSA,
+  1 on iTrack, 1 on Platform" had no way to be modeled without
+  double-counting a person's hours across separate simulations. New
+  `Person` (`id, name, fte, active`) and `Allocation` (`personId,
+  scopeId, fraction` -- share of *that person's* time, unique per
+  person+scope) models, plus a singleton `PortfolioSettings` row holding
+  `contextSwitchCostPct` (0 by default -- a visible, user-set lever for
+  the productivity cost of being split across scopes, never an inferred
+  or baked-in number, same "no invented benchmarks" rule as Forecast's
+  estimate math). `lib/capacity/resolve.ts` is pure and isomorphic (no
+  Prisma import) since it's designed to run client-side too once the
+  portfolio dashboard re-simulates on every slider drag (Phase 2/3):
+  `resolveCapacity` implements stage 1 of the fallback chain
+  (allocations -> explicit `Scope.teamCapacity` -> null), stage 2
+  (null -> inferred from distinct Linear assignees) stays exactly where
+  it already lived in `lib/forecast/build.ts` since it needs Linear
+  issue data `resolveCapacity` doesn't have. `validateAllocations`
+  rejects (never silently clamps) a person's fractions summing past
+  1.0. `lib/forecast/compute.ts` loads people/allocations/settings and
+  resolves capacity before calling `buildForecastInputs` -- **with zero
+  `Person` rows (every existing Scope today), this is a proven no-op**:
+  verified directly against real Postgres that the exact Prisma query
+  shapes `compute.ts` uses return empty arrays and `resolveCapacity`
+  degrades to `{capacity: null, source: null}`, letting
+  `scope.teamCapacity` flow through completely unchanged. New CRUD
+  routes: `POST/GET /api/people`, `PATCH/DELETE /api/people/:id`,
+  `GET/PUT /api/allocations` (PUT does a full replace scoped to
+  whichever people are named in the payload -- not the whole table --
+  and validates before writing anything, so a rejected over-allocation
+  never partially lands), `GET/PATCH /api/portfolio-settings`. Verified:
+  41 fixture assertions on the pure capacity math (fractional splits
+  across scopes summing to exactly the person's total with no double-
+  count, unallocated capacity, the fallback chain's rungs, context-
+  switch factor at 0% and 20% with a floor at 0.1x, `build.ts`'s new
+  `capacitySource` field including explicit regression checks that the
+  old call shape behaves identically) plus a 46-assertion live
+  acceptance test against real local Postgres over real HTTP (the
+  brief's own scenario: 3 people full-time on one scope, 1 on another,
+  1 split 0.5/0.5 across two more, confirming the split person's total
+  across every scope is exactly 1.0 -- never more -- and that over-
+  allocation, negative fractions, and unknown person IDs are all
+  rejected with no partial writes). Full `npm run build` + `npx eslint`
+  clean throughout. **Stopped here per Nic's explicit checkpoint** --
+  Phase 1.5 (splitting Platform into its own Scope + scope-level
+  dependency gates in the simulation trial loop, so JSA/iTrack still
+  correctly reflect waiting on shared Platform work) touches the actual
+  Monte Carlo math and needs its own go-ahead before starting, same as
+  Phase 1 did. See the plan this was built from for the full six-phase
+  scope (portfolio dashboard, provenance badges, an MCP server wrapper,
+  outbound webhooks) -- Phases 2-3 (interactive allocation levers, the
+  portfolio dashboard) are the next actually-scoped work once 1.5 lands
+  and is confirmed good.
 
 - **Reports is live** (`/reports`, `lib/reports/`, `POST /api/reports`).
   Composes the same Forecast pipeline as `/forecast` (so numbers always

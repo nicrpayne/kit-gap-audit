@@ -127,11 +127,20 @@ export interface ScopeComposition {
   excludedTriageCount: number; // > 0 when triage is excluded from the forecast
 }
 
+// Where teamCapacity actually came from -- "inferred" subsumes the old
+// teamCapacityInferred boolean (kept alongside for existing callers) with
+// one more rung: capacity resolved from named-person Allocations (see
+// lib/capacity/resolve.ts) takes priority over a Scope's own explicit
+// teamCapacity, which takes priority over inferring from distinct
+// assignees on remaining issues.
+export type CapacitySource = "allocations" | "explicit" | "inferred";
+
 export interface ForecastInputs {
   items: SourcedWorkItem[];
   gates: DecisionGate[];
   teamCapacity: number;
   teamCapacityInferred: boolean;
+  capacitySource: CapacitySource;
   remainingIssueCount: number;
   unticketedFindingCount: number;
   estimateQuality: EstimateQuality;
@@ -155,6 +164,11 @@ export function buildForecastInputs(
     hashFor?: (issue: LinearIssueSummary) => string;
     findingEstimates?: Map<string, WorkEstimateLike>;
     findingHashFor?: (finding: { title: string; estimateHint: string | null }) => string;
+    // Caller's classification of configuredCapacity when it's non-null --
+    // "allocations" if resolved from named-person Allocations, otherwise
+    // "explicit" (a Scope's own teamCapacity, today's only source).
+    // Irrelevant when configuredCapacity is null (falls to "inferred").
+    capacitySource?: "allocations" | "explicit";
   }
 ): ForecastInputs {
   const includeTriage = options?.includeTriage ?? false;
@@ -278,12 +292,14 @@ export function buildForecastInputs(
 
   let teamCapacity = configuredCapacity ?? 0;
   let teamCapacityInferred = false;
+  let capacitySource: CapacitySource = options?.capacitySource ?? "explicit";
   if (teamCapacity <= 0) {
     const distinctAssignees = new Set(
       remainingIssues.map((i) => i.assignee).filter((a): a is string => !!a)
     );
     teamCapacity = distinctAssignees.size > 0 ? distinctAssignees.size : 1;
     teamCapacityInferred = true;
+    capacitySource = "inferred";
   }
 
   const totalLikely = items.reduce((sum, i) => sum + i.likely, 0);
@@ -305,6 +321,7 @@ export function buildForecastInputs(
     gates,
     teamCapacity,
     teamCapacityInferred,
+    capacitySource,
     // Only what actually feeds the simulation -- AI-excluded tickets are not counted here.
     remainingIssueCount: remainingIssues.length - ai.unrelatedExcluded.length,
     unticketedFindingCount: openWorkFindings.length,

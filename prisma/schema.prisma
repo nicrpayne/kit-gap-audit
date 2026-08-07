@@ -23,6 +23,49 @@ model Scope {
   sources      Source[]
   reports      Report[]
   contextDocs  ContextDoc[]
+  allocations  Allocation[]
+}
+
+// A named team member. Deliberately lightweight (not a generic HR/user
+// system) -- Nic explicitly wants to model "Sam is 60% JSA," not just an
+// anonymous headcount integer, since that's what makes the portfolio
+// capacity pool answerable ("if we hire 5 and put 3 on JSA...").
+model Person {
+  id          String       @id @default(cuid())
+  name        String
+  fte         Float        @default(1.0) // 1.0 = full-time; e.g. 0.5 for a part-time consultant
+  active      Boolean      @default(true)
+  createdAt   DateTime     @default(now())
+  allocations Allocation[]
+}
+
+// What share of one Person's time goes to one Scope. `fraction` is out of
+// that person's own time (not a global FTE number -- multiply by
+// Person.fte to get an FTE contribution). A person's fractions across all
+// their Allocations should sum to <= 1.0 -- validated in
+// lib/capacity/resolve.ts, never silently clamped.
+model Allocation {
+  id       String @id @default(cuid())
+  personId String
+  scopeId  String
+  fraction Float
+  person   Person @relation(fields: [personId], references: [id], onDelete: Cascade)
+  scope    Scope  @relation(fields: [scopeId], references: [id], onDelete: Cascade)
+
+  @@unique([personId, scopeId])
+}
+
+// Single-row settings table for portfolio-wide knobs. Not per-Scope
+// because context-switching cost is a property of how people split their
+// time, not of any one Scope.
+model PortfolioSettings {
+  id                   String   @id @default("singleton")
+  // % capacity lost per additional scope a person is split across, applied
+  // to that person's allocations everywhere. 0 (default) = no penalty --
+  // never inferred or defaulted to a nonzero value; if Nic sets it, it's
+  // his stated assumption, not a baked-in industry number.
+  contextSwitchCostPct Int      @default(0)
+  updatedAt            DateTime @updatedAt
 }
 
 // Pasted/uploaded context that doesn't have a live API to sync from

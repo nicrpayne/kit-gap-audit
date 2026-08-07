@@ -1,10 +1,11 @@
 import type { Scope } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { getScopedIssues, type LinearIssueSummary } from "@/lib/linear";
-import { buildForecastInputs } from "@/lib/forecast/build";
+import { buildForecastInputs, type CapacitySource } from "@/lib/forecast/build";
 import { buildScenarios } from "@/lib/forecast/scenarios";
 import { estimateContentHash, findingContentHash } from "@/lib/estimate/run";
 import { buildReleaseContext } from "@/lib/estimate/context";
+import { resolveCapacity, type CapacityContributor } from "@/lib/capacity/resolve";
 
 export interface ForecastFinding {
   id: string;
@@ -53,6 +54,8 @@ export interface ForecastResult {
     unticketedFindingCount: number;
     teamCapacity: number;
     teamCapacityInferred: boolean;
+    capacitySource: CapacitySource;
+    capacityContributors: CapacityContributor[];
     remainingEffortDays: { low: number; likely: number; high: number };
     decisionDelayDays: { low: number; likely: number; high: number };
     blockingGates: { id: string; label: string }[];
@@ -127,12 +130,34 @@ export async function computeForecast(scope: Scope): Promise<ForecastResult> {
   const contextIssues = [notionWarning, figmaWarning].filter((w): w is string => !!w);
   const contextComplete = !notionFailed && !figmaFailed && contextIssues.length === 0;
 
-  const inputs = buildForecastInputs(issues, findings, scope.teamCapacity ?? null, {
+  // Capacity fallback chain, stage 1: named-person Allocations override a
+  // Scope's own explicit teamCapacity. Stage 2 (explicit-or-null ->
+  // inferred from assignees) happens inside buildForecastInputs, which is
+  // the only place with the Linear issue data that inference needs.
+  // With zero Person rows anywhere (every Scope predating this feature),
+  // resolveCapacity always returns { capacity: null, source: null },
+  // making this whole block a no-op -- scope.teamCapacity flows through
+  // exactly as it did before Allocations existed.
+  const [people, allocations, portfolioSettings] = await Promise.all([
+    prisma.person.findMany({ where: { active: true } }),
+    prisma.allocation.findMany(),
+    prisma.portfolioSettings.findUnique({ where: { id: "singleton" } }),
+  ]);
+  const resolved = resolveCapacity(
+    scope.id,
+    scope.teamCapacity ?? null,
+    people,
+    allocations,
+    portfolioSettings?.contextSwitchCostPct ?? 0
+  );
+
+  const inputs = buildForecastInputs(issues, findings, resolved.capacity, {
     includeTriage: scope.includeTriage,
     estimates,
     hashFor: (i) => estimateContentHash(i, contextHash),
     findingEstimates,
     findingHashFor: (f) => findingContentHash(f, contextHash),
+    capacitySource: resolved.source ?? undefined,
   });
 
   // Base run and scenario runs share a fixed RNG seed (see scenarios.ts),
@@ -171,6 +196,8 @@ export async function computeForecast(scope: Scope): Promise<ForecastResult> {
       unticketedFindingCount: inputs.unticketedFindingCount,
       teamCapacity: inputs.teamCapacity,
       teamCapacityInferred: inputs.teamCapacityInferred,
+      capacitySource: inputs.capacitySource,
+      capacityContributors: resolved.contributors,
       remainingEffortDays: base.remainingEffortDays,
       decisionDelayDays: base.decisionDelayDays,
       blockingGates: inputs.gates.map((g) => ({ id: g.id, label: g.label })),
