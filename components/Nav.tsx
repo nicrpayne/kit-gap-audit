@@ -11,6 +11,7 @@ const PRIMARY_TABS = [
 
 const COMING_NEXT_TABS = [
   { href: "/forecast", label: "Forecast" },
+  { href: "/portfolio", label: "Portfolio" },
   { href: "/timeline", label: "Timeline" },
   { href: "/reports", label: "Reports" },
 ];

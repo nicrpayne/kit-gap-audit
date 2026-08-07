@@ -5,11 +5,10 @@ AI estimation + Notion + Figma), and V3 (Reports) are built and deployed.
 Timeline (V2) is the one piece left from the original plan -- deferred on
 purpose since Reports was the actually-needed leadership deliverable.
 Active work: **shared capacity pool + portfolio forecasting**, on branch
-`claude/portfolio-capacity-pool` (see "Where things stand" for Phase 1
-and Phase 1.5, both done; Phases 2-3 still ahead, each with an explicit
-go-ahead checkpoint per Nic before starting -- do not proceed past 1.5
-on that branch
-without checking recent conversation for approval).
+`claude/portfolio-capacity-pool` (see "Where things stand" for Phases 1,
+1.5, and 2, all done; Phase 3 -- the portfolio dashboard -- is next, on
+a report-as-you-go cadence per Nic, not a stop-and-wait checkpoint --
+still check recent conversation before starting in case that's changed).
 
 ## Where things stand
 
@@ -222,6 +221,99 @@ without checking recent conversation for approval).
   scoped interactive allocation levers) is real UI/endpoint work on top
   of both capacity pooling and now-correlated dependency gates, and gets
   its own go-ahead per the same pacing as every phase so far.
+
+- **Shared capacity pool, Phase 2 of 3 (branch `claude/portfolio-
+  capacity-pool`, not yet merged)** — the live "what if we moved
+  someone?" lever: turns every Scope's forecast into something Nic can
+  recompute in real time by dragging an allocation, before saving
+  anything. Nic's one binding requirement going in: the new preview path
+  must call `lib/forecast/portfolio.ts`'s lockstep orchestration for any
+  Scope in a dependency component, never a second "recompute this scope"
+  implementation built fresh for the preview case -- reintroducing the
+  exact bootstrap-resample correlation bug Phase 1.5's post-review
+  correction just fixed, just in the preview path instead of the saved
+  one.
+
+  Two new endpoints, both thin wrappers with zero simulation math of
+  their own:
+  - `GET /api/portfolio/inputs` -- the one expensive fetch per page load
+    (Linear + findings + release context, per Scope). New
+    `buildPortfolioInputs()` in `lib/forecast/compute.ts` reuses
+    `buildScopeSimInputs` verbatim across every Scope (the same function
+    `computeForecast` already calls for the saved path) rather than a
+    second Linear-fetch implementation, and returns each Scope's
+    items/gates/resolved-capacity plus every Person, Allocation, and the
+    portfolio switch-cost setting.
+  - `POST /api/portfolio/preview` -- accepts a hypothetical allocation
+    set (optionally including people who don't exist yet, via
+    `hypotheticalPeople`, for "what if we hired one more developer"),
+    persists nothing. Cheap DB-only checks (unknown person/scope ids,
+    over-allocation) run first and fail fast with a 400 before the
+    Linear-touching fetch, rather than paying for every Scope's ticket
+    fetch just to reject a typo. Both the saved baseline and the
+    hypothetical preview are produced by calling
+    `runPortfolioSimulation` from `lib/forecast/portfolio.ts` **once
+    each**, over every Scope together -- provably identical to
+    simulating a no-dependency Scope alone (see Phase 1.5 above), so
+    running every Scope through the same call, dependencies or not, is
+    both simpler and the only way the preview path structurally can't
+    drift from the saved path's correlated-risk behavior.
+
+  The actual live-drag UI (`/portfolio`, in "Coming next") never even
+  calls the preview endpoint: `lib/capacity/resolve.ts` and
+  `lib/forecast/portfolio.ts` are both pure and isomorphic by design
+  (see Phase 1), so `PortfolioPageClient` imports `resolveCapacity`,
+  `validateAllocations`, `unallocatedCapacity`, and
+  `runPortfolioSimulation` directly and re-runs them in the browser on
+  every allocation edit (debounced 120ms), with zero network round-trips
+  during a drag. `POST /api/portfolio/preview` exists for programmatic /
+  non-JS callers (MCP later, curl, an external agent) where that's not
+  an option. A person x Scope allocation grid (slider per cell, running
+  totals, red on over-allocation), a context-switch-cost slider, "+1
+  developer" / "+2 developers" preset buttons per Scope that add a
+  hypothetical person at 1.0 FTE fully allocated to that Scope (the
+  generalized version of the old scenario-lever presets, per the brief
+  -- "resolve blocking decisions" and "descope" levers are unrelated to
+  allocations and deliberately untouched, still living in
+  `scenarios.ts`), and "Save this allocation" (creates any used
+  hypothetical person for real via `POST /api/people`, then a full
+  per-person allocation replace via the existing `PUT /api/allocations`)
+  / "Discard preview" actions round it out.
+
+  Verified: a fixture script mirroring the preview endpoint's exact
+  algorithm (two `runPortfolioSimulation` calls, baseline specs vs
+  override specs, both built through `resolveCapacity`) proved starving
+  a shared Platform dependency's capacity via a hypothetical allocation
+  still pushes JSA's and iTrack's preview dates together, plus a direct
+  per-trial-index check (Platform's bad trials showing up in both
+  dependents' arrays at the same index) under the *preview* allocation
+  set specifically, not just the already-proven saved path. Both new
+  routes exercised live against real Postgres: `GET /api/portfolio/
+  inputs` reaches the same Linear-blocked signature every other Forecast
+  entry point hits in this sandbox (confirms the whole wiring path);
+  `POST /api/portfolio/preview`'s validation branches (bad JSON, missing
+  fields, duplicate pairs, bad `contextSwitchCostPct`, unknown person/
+  scope ids, real over-allocation using a seeded Person and two Scopes)
+  all return the right 400s without touching Linear, and a fully valid
+  override correctly falls through to the same 502. UI exercised end-to-
+  end with Playwright against the running dev server (network call to
+  `/api/portfolio/inputs` mocked with fixture data, since Linear is
+  blocked here): dragging the Platform allocation down from 100% to 20%
+  correctly moved JSA's and iTrack's displayed dates together (+374d,
+  identical delta on both, 0% confidence at target); the "+1 developer"
+  preset correctly added a preview-only person row and pulled the date
+  back in (-15d vs saved); pushing a person past 100% correctly showed
+  the over-allocation warning and disabled Save. `npx tsc --noEmit`,
+  `npm run lint`, and `npm run build` all clean; re-ran the standard
+  Linear-blocked regression check plus `GET /api/allocations` and
+  `GET /api/portfolio-settings` to confirm nothing else moved.
+
+  No math-proof checkpoint required before merging this phase per Nic
+  (API + UI wiring on top of already-verified simulation math, not new
+  math itself) -- flagged as a phase-completion report rather than a
+  stop-and-wait gate. Phase 3 (portfolio dashboard: confidence bands,
+  shared date axis, overlay toggle, auto-surfaced portfolio insights) is
+  next, on a report-as-you-go cadence.
 
 - **Reports is live** (`/reports`, `lib/reports/`, `POST /api/reports`).
   Composes the same Forecast pipeline as `/forecast` (so numbers always

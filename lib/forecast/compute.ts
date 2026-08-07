@@ -191,6 +191,76 @@ async function buildScopeSimInputs(scope: Scope): Promise<ScopeSimBundle> {
   };
 }
 
+export interface PortfolioScopeInput {
+  scopeId: string;
+  name: string;
+  targetDate: Date | null;
+  dependsOnScopeIds: string[];
+  items: ForecastInputs["items"];
+  gates: ForecastInputs["gates"];
+  teamCapacity: number;
+  capacitySource: CapacitySource;
+  capacityContributors: CapacityContributor[];
+  // Raw Scope.teamCapacity (or null), separate from the fully-resolved
+  // `teamCapacity` above -- a hypothetical-override recompute (see
+  // POST /api/portfolio/preview) needs this as resolveCapacity's own
+  // "explicit" fallback rung when a preview removes every Allocation for
+  // a Scope, rather than re-deriving it from scratch.
+  explicitTeamCapacity: number | null;
+}
+
+export interface PortfolioInputs {
+  startDate: Date;
+  scopes: PortfolioScopeInput[];
+  people: Awaited<ReturnType<typeof prisma.person.findMany>>;
+  allocations: Awaited<ReturnType<typeof prisma.allocation.findMany>>;
+  contextSwitchCostPct: number;
+}
+
+// The "expensive, once per page load" half of the Phase 2 performance
+// split (see ROADMAP.md): fetches every Scope's Linear issues, findings,
+// and release context -- exactly buildScopeSimInputs, reused verbatim,
+// never a second implementation of that fetch -- plus every Person,
+// Allocation, and the portfolio-wide switch-cost setting. The "cheap,
+// every slider frame" half lives entirely client-side: lib/capacity/
+// resolve.ts and lib/forecast/portfolio.ts are both pure/isomorphic, so
+// the browser re-runs resolveCapacity + runPortfolioSimulation directly
+// against this payload rather than round-tripping to a server route.
+export async function buildPortfolioInputs(): Promise<PortfolioInputs> {
+  const [scopes, people, allocations, portfolioSettings] = await Promise.all([
+    prisma.scope.findMany({ orderBy: { createdAt: "asc" } }),
+    prisma.person.findMany({ orderBy: { name: "asc" } }),
+    prisma.allocation.findMany(),
+    prisma.portfolioSettings.findUnique({ where: { id: "singleton" } }),
+  ]);
+
+  const startDate = new Date();
+  const scopeInputs: PortfolioScopeInput[] = [];
+  for (const scope of scopes) {
+    const bundle = await buildScopeSimInputs(scope);
+    scopeInputs.push({
+      scopeId: scope.id,
+      name: scope.name,
+      targetDate: scope.targetDate,
+      dependsOnScopeIds: scope.dependsOnScopeIds,
+      items: bundle.inputs.items,
+      gates: bundle.inputs.gates,
+      teamCapacity: bundle.inputs.teamCapacity,
+      capacitySource: bundle.inputs.capacitySource,
+      capacityContributors: bundle.capacityContributors,
+      explicitTeamCapacity: scope.teamCapacity,
+    });
+  }
+
+  return {
+    startDate,
+    scopes: scopeInputs,
+    people,
+    allocations,
+    contextSwitchCostPct: portfolioSettings?.contextSwitchCostPct ?? 0,
+  };
+}
+
 // Collects a Scope's full transitive dependency closure (itself + every
 // Scope it (in)directly depends on via dependsOnScopeIds), so
 // runPortfolioSimulation has everything it needs to detect a cycle
