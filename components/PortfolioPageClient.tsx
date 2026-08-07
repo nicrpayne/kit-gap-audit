@@ -10,6 +10,7 @@ import {
 } from "@/lib/capacity/resolve";
 import { runPortfolioSimulation, type ScopeSimulationSpec } from "@/lib/forecast/portfolio";
 import type { SimulationResult, WorkItem, DecisionGate } from "@/lib/forecast/simulate";
+import { computePortfolioInsights, type ScopeInsightInput } from "@/lib/portfolio/insights";
 
 // This entire file is the "cheap, every slider frame" half of Phase 2's
 // performance split (see ROADMAP.md): GET /api/portfolio/inputs is the one
@@ -74,6 +75,50 @@ function confidenceColor(pct: number): string {
   return pct >= 70 ? "var(--color-accent)" : pct >= 35 ? "var(--color-amber)" : "var(--color-danger)";
 }
 
+function addDays(date: Date, days: number): Date {
+  const d = new Date(date);
+  d.setUTCDate(d.getUTCDate() + Math.round(days));
+  return d;
+}
+
+function dayOffset(startDate: Date, date: Date): number {
+  return (date.getTime() - startDate.getTime()) / 86400000;
+}
+
+// Month-boundary ticks for the shared axis, e.g. "Jan '26", "Feb '26" --
+// only the ones that actually fall inside [minDay, maxDay].
+function monthTicks(startDate: Date, minDay: number, maxDay: number): { day: number; label: string }[] {
+  const ticks: { day: number; label: string }[] = [];
+  const first = addDays(startDate, minDay);
+  const cursor = new Date(Date.UTC(first.getUTCFullYear(), first.getUTCMonth(), 1));
+  let guard = 0;
+  while (guard++ < 240) {
+    const day = dayOffset(startDate, cursor);
+    if (day > maxDay) break;
+    if (day >= minDay) {
+      ticks.push({
+        day,
+        label: cursor.toLocaleDateString(undefined, { month: "short", year: "2-digit", timeZone: "UTC" }),
+      });
+    }
+    cursor.setUTCMonth(cursor.getUTCMonth() + 1);
+  }
+  return ticks;
+}
+
+// A small, fixed palette drawn from existing design tokens (no charting
+// library, no categorical-color system in this app) -- cycles if there
+// are more Scopes than colors.
+const SCOPE_COLORS = [
+  "var(--color-accent)",
+  "var(--color-amber)",
+  "var(--color-danger)",
+  "var(--color-accent-dark)",
+  "var(--color-ink-soft)",
+];
+
+const BAND_GRID_COLS = "180px 1fr";
+
 let ghostCounter = 0;
 
 export default function PortfolioPageClient() {
@@ -88,6 +133,8 @@ export default function PortfolioPageClient() {
 
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+
+  const [overlay, setOverlay] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -204,6 +251,61 @@ export default function PortfolioPageClient() {
       if (debounceRef.current) clearTimeout(debounceRef.current);
     };
   }, [data, allPeople, currentAllocations, switchCostPct, specsFor, overAllocated.length]);
+
+  const startDateObj = useMemo(() => (data ? new Date(data.startDate) : null), [data]);
+
+  // Shared date axis across every Scope's band: the union of every known
+  // percentile extent (baseline AND preview, so the axis doesn't jump
+  // around mid-drag more than necessary) plus any target dates, padded a
+  // little for breathing room.
+  const axis = useMemo(() => {
+    if (!data || !startDateObj) return null;
+    const days: number[] = [0];
+    for (const s of data.scopes) {
+      for (const r of [baseline?.get(s.scopeId), preview?.get(s.scopeId)]) {
+        if (!r) continue;
+        days.push(r.percentiles.p10, r.percentiles.p90);
+      }
+      if (s.targetDate) days.push(dayOffset(startDateObj, new Date(s.targetDate)));
+    }
+    const minDay = Math.min(0, ...days);
+    const maxDayRaw = Math.max(...days);
+    const maxDay = maxDayRaw + Math.max(5, maxDayRaw * 0.05);
+    return { minDay, maxDay, ticks: monthTicks(startDateObj, minDay, maxDay) };
+  }, [data, startDateObj, baseline, preview]);
+
+  function axisPct(day: number): number {
+    if (!axis) return 0;
+    const span = Math.max(1, axis.maxDay - axis.minDay);
+    return Math.min(100, Math.max(0, ((day - axis.minDay) / span) * 100));
+  }
+
+  // Live effective capacity per Scope for the grid's column-totals row --
+  // deliberately NOT read off `preview`/`baseline` (SimulationResult
+  // doesn't carry capacity), just resolveCapacity again directly. Cheap
+  // (no simulation trials), so it updates on every keystroke, not
+  // debounced like the band recompute above.
+  const capacityByScope = useMemo(() => {
+    if (!data) return new Map<string, number>();
+    const out = new Map<string, number>();
+    for (const s of data.scopes) {
+      const resolved = resolveCapacity(s.scopeId, s.explicitTeamCapacity, allPeople, currentAllocations, switchCostPct);
+      out.set(s.scopeId, resolved.capacity ?? s.teamCapacity);
+    }
+    return out;
+  }, [data, allPeople, currentAllocations, switchCostPct]);
+
+  const insights = useMemo(() => {
+    if (!data) return [];
+    const scopeInputs: ScopeInsightInput[] = data.scopes
+      .map((s) => {
+        const r = preview?.get(s.scopeId) ?? baseline?.get(s.scopeId);
+        if (!r) return null;
+        return { scopeId: s.scopeId, name: s.name, dependsOnScopeIds: s.dependsOnScopeIds, likelyDays: r.percentiles.p50 };
+      })
+      .filter((x): x is ScopeInsightInput => x !== null);
+    return computePortfolioInsights(scopeInputs, overAllocated, unallocated);
+  }, [data, baseline, preview, overAllocated, unallocated]);
 
   function setFraction(personId: string, scopeId: string, pct: number) {
     setFractions((prev) => {
@@ -338,76 +440,228 @@ export default function PortfolioPageClient() {
 
   return (
     <div>
-      {/* Per-scope forecast: baseline vs live preview */}
-      <div className="border border-[var(--color-line)] rounded-xl bg-[var(--color-card)] mb-6 divide-y divide-[var(--color-line)]">
-        {data.scopes.map((s) => {
-          const b = baseline?.get(s.scopeId);
-          const p = preview?.get(s.scopeId) ?? b;
-          const deltaDays =
-            b && p ? Math.round((p.likelyDate.getTime() - b.likelyDate.getTime()) / 86400000) : 0;
-          return (
-            <div key={s.scopeId} className="px-5 py-4">
-              <div className="flex items-center justify-between gap-4 flex-wrap">
-                <div className="font-medium">{s.name}</div>
-                <div className="flex items-center gap-4 text-sm">
-                  {p && (
-                    <>
-                      <span className="font-display text-lg">{formatDate(p.likelyDate)}</span>
-                      {dirty && b && (
-                        <span
-                          className={`text-xs whitespace-nowrap ${
-                            deltaDays < 0
-                              ? "text-[var(--color-accent-dark)]"
-                              : deltaDays > 0
-                              ? "text-[var(--color-danger)]"
-                              : "text-[var(--color-ink-soft)]"
-                          }`}
-                        >
-                          {deltaDays === 0 ? "no change" : deltaDays < 0 ? `${deltaDays}d` : `+${deltaDays}d`} vs
-                          saved
-                        </span>
+      {/* Per-scope forecast: baseline vs live preview, confidence bands on
+          a shared date axis. */}
+      <div className="border border-[var(--color-line)] rounded-xl bg-[var(--color-card)] mb-6">
+        <div className="flex items-center justify-between px-5 pt-4">
+          <div className="text-sm font-medium">Release dates</div>
+          <button
+            onClick={() => setOverlay((v) => !v)}
+            className={`text-xs rounded-md border px-2 py-1 ${
+              overlay
+                ? "border-[var(--color-accent)] text-[var(--color-accent-dark)] bg-[var(--color-accent-soft)]"
+                : "border-[var(--color-line)] hover:bg-white"
+            }`}
+          >
+            {overlay ? "Show separate rows" : "Overlay all on one axis"}
+          </button>
+        </div>
+
+        {axis && (
+          <div className="px-5 pt-3" style={{ display: "grid", gridTemplateColumns: BAND_GRID_COLS }}>
+            <div />
+            <div className="relative h-4">
+              {axis.ticks.map((t) => (
+                <div
+                  key={t.day}
+                  className="absolute text-[10px] text-[var(--color-ink-soft)] -translate-x-1/2 whitespace-nowrap"
+                  style={{ left: `${axisPct(t.day)}%` }}
+                >
+                  {t.label}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {!overlay ? (
+          <div className="divide-y divide-[var(--color-line)] mt-2">
+            {data.scopes.map((s, i) => {
+              const b = baseline?.get(s.scopeId);
+              const p = preview?.get(s.scopeId) ?? b;
+              const deltaDays =
+                b && p ? Math.round((p.likelyDate.getTime() - b.likelyDate.getTime()) / 86400000) : 0;
+              const targetDay = s.targetDate && startDateObj ? dayOffset(startDateObj, new Date(s.targetDate)) : null;
+              const color = SCOPE_COLORS[i % SCOPE_COLORS.length];
+              return (
+                <div key={s.scopeId} className="px-5 py-4">
+                  <div className="flex items-center justify-between gap-4 flex-wrap">
+                    <div className="font-medium">{s.name}</div>
+                    <div className="flex items-center gap-4 text-sm">
+                      {p && (
+                        <>
+                          <span className="font-display text-lg">{formatDate(p.likelyDate)}</span>
+                          {dirty && b && (
+                            <span
+                              className={`text-xs whitespace-nowrap ${
+                                deltaDays < 0
+                                  ? "text-[var(--color-accent-dark)]"
+                                  : deltaDays > 0
+                                  ? "text-[var(--color-danger)]"
+                                  : "text-[var(--color-ink-soft)]"
+                              }`}
+                            >
+                              {deltaDays === 0 ? "no change" : deltaDays < 0 ? `${deltaDays}d` : `+${deltaDays}d`} vs
+                              saved
+                            </span>
+                          )}
+                          {p.confidenceAtTarget !== null && (
+                            <span
+                              className="text-xs font-medium whitespace-nowrap"
+                              style={{ color: confidenceColor(p.confidenceAtTarget) }}
+                            >
+                              {p.confidenceAtTarget}% at target
+                            </span>
+                          )}
+                        </>
                       )}
-                      {p.confidenceAtTarget !== null && (
-                        <span
-                          className="text-xs font-medium whitespace-nowrap"
-                          style={{ color: confidenceColor(p.confidenceAtTarget) }}
-                        >
-                          {p.confidenceAtTarget}% at target
-                        </span>
-                      )}
-                    </>
+                    </div>
+                  </div>
+
+                  {axis && p && (
+                    <div className="mt-2" style={{ display: "grid", gridTemplateColumns: BAND_GRID_COLS }}>
+                      <div className="text-[10px] text-[var(--color-ink-soft)] pr-3 self-center">
+                        P10&ndash;P90 / P50&ndash;P85
+                      </div>
+                      <div className="relative h-6">
+                        <div
+                          className="absolute top-1/2 -translate-y-1/2 h-1.5 rounded-full"
+                          style={{
+                            left: `${axisPct(p.percentiles.p10)}%`,
+                            right: `${100 - axisPct(p.percentiles.p90)}%`,
+                            background: color,
+                            opacity: 0.25,
+                          }}
+                          title={`P10 ${formatDate(addDays(startDateObj!, p.percentiles.p10))} -- P90 ${formatDate(addDays(startDateObj!, p.percentiles.p90))}`}
+                        />
+                        <div
+                          className="absolute top-1/2 -translate-y-1/2 h-1.5 rounded-full"
+                          style={{
+                            left: `${axisPct(p.percentiles.p50)}%`,
+                            right: `${100 - axisPct(p.percentiles.p85)}%`,
+                            background: color,
+                            opacity: 0.6,
+                          }}
+                        />
+                        <div
+                          className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 h-3 w-3 rounded-full border-2 border-white shadow"
+                          style={{ left: `${axisPct(p.percentiles.p50)}%`, background: color }}
+                          title={`P50: ${formatDate(p.likelyDate)}`}
+                        />
+                        {targetDay !== null && (
+                          <div
+                            className="absolute inset-y-0 border-l border-dashed"
+                            style={{ left: `${axisPct(targetDay)}%`, borderColor: "var(--color-ink-soft)" }}
+                            title={`Target: ${formatDate(new Date(s.targetDate!))}`}
+                          />
+                        )}
+                      </div>
+                    </div>
                   )}
+
+                  <div className="flex items-center gap-2 mt-2">
+                    <button
+                      onClick={() => addHypotheticalDeveloper(s.scopeId)}
+                      className="text-xs rounded-md border border-[var(--color-line)] px-2 py-1 hover:bg-[var(--color-accent-soft)]"
+                    >
+                      +1 developer
+                    </button>
+                    <button
+                      onClick={() => {
+                        addHypotheticalDeveloper(s.scopeId);
+                        addHypotheticalDeveloper(s.scopeId);
+                      }}
+                      className="text-xs rounded-md border border-[var(--color-line)] px-2 py-1 hover:bg-[var(--color-accent-soft)]"
+                    >
+                      +2 developers
+                    </button>
+                    {s.dependsOnScopeIds.length > 0 && (
+                      <span className="text-[11px] text-[var(--color-ink-soft)]">
+                        depends on{" "}
+                        {s.dependsOnScopeIds
+                          .map((id) => data.scopes.find((x) => x.scopeId === id)?.name ?? id)
+                          .join(", ")}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+          <div className="px-5 py-4">
+            {axis && startDateObj && (
+              <div style={{ display: "grid", gridTemplateColumns: BAND_GRID_COLS }}>
+                <div />
+                <div className="relative" style={{ height: `${Math.max(28, data.scopes.length * 14 + 14)}px` }}>
+                  {data.scopes.map((s, i) => {
+                    const p = preview?.get(s.scopeId) ?? baseline?.get(s.scopeId);
+                    if (!p) return null;
+                    const color = SCOPE_COLORS[i % SCOPE_COLORS.length];
+                    const topPx = 6 + i * 14;
+                    return (
+                      <div key={s.scopeId} className="absolute h-1.5" style={{ top: `${topPx}px`, left: 0, right: 0 }}>
+                        <div
+                          className="absolute h-1.5 rounded-full"
+                          style={{
+                            left: `${axisPct(p.percentiles.p10)}%`,
+                            right: `${100 - axisPct(p.percentiles.p90)}%`,
+                            background: color,
+                            opacity: 0.3,
+                          }}
+                        />
+                        <div
+                          className="absolute h-1.5 rounded-full"
+                          style={{
+                            left: `${axisPct(p.percentiles.p50)}%`,
+                            right: `${100 - axisPct(p.percentiles.p85)}%`,
+                            background: color,
+                            opacity: 0.75,
+                          }}
+                        />
+                        <div
+                          className="absolute -translate-x-1/2 h-2.5 w-2.5 rounded-full border-2 border-white shadow"
+                          style={{ left: `${axisPct(p.percentiles.p50)}%`, top: "-2px", background: color }}
+                          title={`${s.name} P50: ${formatDate(p.likelyDate)}`}
+                        />
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
-              <div className="flex items-center gap-2 mt-2">
-                <button
-                  onClick={() => addHypotheticalDeveloper(s.scopeId)}
-                  className="text-xs rounded-md border border-[var(--color-line)] px-2 py-1 hover:bg-[var(--color-accent-soft)]"
-                >
-                  +1 developer
-                </button>
-                <button
-                  onClick={() => {
-                    addHypotheticalDeveloper(s.scopeId);
-                    addHypotheticalDeveloper(s.scopeId);
-                  }}
-                  className="text-xs rounded-md border border-[var(--color-line)] px-2 py-1 hover:bg-[var(--color-accent-soft)]"
-                >
-                  +2 developers
-                </button>
-                {s.dependsOnScopeIds.length > 0 && (
-                  <span className="text-[11px] text-[var(--color-ink-soft)]">
-                    depends on{" "}
-                    {s.dependsOnScopeIds
-                      .map((id) => data.scopes.find((x) => x.scopeId === id)?.name ?? id)
-                      .join(", ")}
-                  </span>
-                )}
-              </div>
+            )}
+            <div className="flex items-center gap-4 flex-wrap mt-3 pt-3 border-t border-[var(--color-line)]">
+              {data.scopes.map((s, i) => (
+                <div key={s.scopeId} className="flex items-center gap-1.5 text-xs">
+                  <span
+                    className="h-2.5 w-2.5 rounded-full inline-block"
+                    style={{ background: SCOPE_COLORS[i % SCOPE_COLORS.length] }}
+                  />
+                  {s.name}
+                </div>
+              ))}
             </div>
-          );
-        })}
+          </div>
+        )}
       </div>
+
+      {insights.length > 0 && (
+        <div className="border border-[var(--color-line)] rounded-xl bg-[var(--color-card)] p-5 mb-6">
+          <div className="text-sm font-medium mb-3">Portfolio insights</div>
+          <ul className="space-y-1.5">
+            {insights.map((insight) => (
+              <li
+                key={insight.id}
+                className="text-xs flex items-start gap-2"
+                style={{ color: insight.tone === "warning" ? "var(--color-danger)" : "var(--color-ink)" }}
+              >
+                <span aria-hidden>{insight.tone === "warning" ? "⚠" : "•"}</span>
+                <span>{insight.text}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       {/* Allocation grid */}
       <div className="border border-[var(--color-line)] rounded-xl bg-[var(--color-card)] p-5 mb-6">
@@ -495,9 +749,25 @@ export default function PortfolioPageClient() {
                   );
                 })}
               </tbody>
+              <tfoot>
+                <tr className="border-t-2 border-[var(--color-line)]">
+                  <td className="py-1.5 pr-3 font-medium">Effective capacity</td>
+                  {data.scopes.map((s) => (
+                    <td key={s.scopeId} className="py-1.5 px-2 font-medium">
+                      {(capacityByScope.get(s.scopeId) ?? 0).toFixed(2)}
+                    </td>
+                  ))}
+                  <td />
+                </tr>
+              </tfoot>
             </table>
           </div>
         )}
+
+        <p className="mt-3 text-[11px] text-[var(--color-ink-soft)]">
+          Capacity scales linearly here (2x the people, half the time) -- real teams rarely hit that in
+          practice, so treat these as an optimistic floor, not a promise.
+        </p>
 
         {overAllocated.length > 0 && (
           <div className="mt-3 text-xs text-[var(--color-danger)]">

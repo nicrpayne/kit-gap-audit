@@ -5,10 +5,12 @@ AI estimation + Notion + Figma), and V3 (Reports) are built and deployed.
 Timeline (V2) is the one piece left from the original plan -- deferred on
 purpose since Reports was the actually-needed leadership deliverable.
 Active work: **shared capacity pool + portfolio forecasting**, on branch
-`claude/portfolio-capacity-pool` (see "Where things stand" for Phases 1,
-1.5, and 2, all done; Phase 3 -- the portfolio dashboard -- is next, on
-a report-as-you-go cadence per Nic, not a stop-and-wait checkpoint --
-still check recent conversation before starting in case that's changed).
+`claude/portfolio-capacity-pool` (see "Where things stand" -- Phases 1,
+1.5, 2, and 3 are all done, all still on this one unmerged branch. Next:
+Phases 4-6 (provenance badges, MCP server, outbound webhook) are
+planned but not yet approved to start -- check recent conversation for
+Nic's go-ahead before beginning any of them, or before merging this
+branch).
 
 ## Where things stand
 
@@ -311,9 +313,74 @@ still check recent conversation before starting in case that's changed).
   No math-proof checkpoint required before merging this phase per Nic
   (API + UI wiring on top of already-verified simulation math, not new
   math itself) -- flagged as a phase-completion report rather than a
-  stop-and-wait gate. Phase 3 (portfolio dashboard: confidence bands,
-  shared date axis, overlay toggle, auto-surfaced portfolio insights) is
-  next, on a report-as-you-go cadence.
+  stop-and-wait gate.
+
+- **Shared capacity pool, Phase 3 of 3 (branch `claude/portfolio-
+  capacity-pool`, not yet merged)** — the portfolio dashboard: `/portfolio`
+  (already routed and navved in Phase 2) grows confidence bands, a shared
+  date axis, an overlay view, and auto-surfaced insights on top of the
+  allocation grid. Zero changes to `lib/forecast/simulate.ts` or
+  `lib/forecast/portfolio.ts` were needed -- `SimulationResult.percentiles`
+  (`p10/p50/p70/p85/p90`, already returned by `runPortfolioSimulation`
+  since the Phase 1.5 lockstep rewrite) was already everything the bands
+  need; this phase is presentation only.
+
+  - **Confidence bands + shared axis**: each Scope's row gets a light
+    P10-P90 band, a denser P50-P85 band, a P50 marker dot, and a dashed
+    target-date marker (when the Scope has one), all positioned as
+    percentages against ONE shared day-offset axis (computed from the
+    union of every Scope's baseline-and-preview P10/P90 extents plus any
+    target dates, so the axis grows to fit a big preview swing rather
+    than clipping it) with real month-boundary tick labels. Percentiles
+    are read directly off `SimulationResult.percentiles` -- the same
+    values `runPortfolioSimulation` already returns -- so a band's
+    position is provably the same number already shown as text
+    elsewhere on the page, not a separately-computed approximation.
+  - **Overlay toggle**: collapses every Scope's band onto one shared
+    strip (color-coded, thin per-Scope lanes, a legend underneath)
+    instead of one row each, so a call can see directly whether two
+    products are competing for the same window rather than reading two
+    separate rows and doing the comparison mentally.
+  - **Portfolio insights**: new pure module `lib/portfolio/insights.ts`
+    (`computePortfolioInsights`), deterministic and isomorphic like the
+    rest of `lib/capacity`/`lib/forecast/portfolio` -- no model call
+    anywhere in it, per the standing no-LLM-in-the-simulation-path rule.
+    Surfaces, unprompted: the single biggest gap between any two Scopes'
+    likely dates (above a 7-day noise floor -- "X finishes N days before
+    Y"), any Scope more than one other Scope depends on ("X is on the
+    critical path for N scopes"), every over-allocated person, and total
+    unallocated FTE. All computed from data the page already has (percentiles,
+    `dependsOnScopeIds`, `validateAllocations`/`unallocatedCapacity` --
+    both already built in Phase 1).
+  - **Grid polish**: an "Effective capacity" column-totals row (live,
+    recomputed on every keystroke via `resolveCapacity` directly --
+    cheap, no simulation trials, so it isn't debounced like the band
+    recompute) and a persistent linear-scaling caveat near the capacity
+    controls (the model treats 2x people as 2x speed; real teams rarely
+    achieve that).
+
+  Verified: 6 fixture assertions on `computePortfolioInsights` (biggest-
+  gap selection among multiple candidate pairs, the 7-day noise floor
+  correctly suppressing a 3-day gap, critical-path detection requiring
+  more than one dependent, over-allocation and unallocated-FTE pass-
+  through formatting). End-to-end with Playwright against the running
+  dev server (Linear mocked, same approach as Phase 2's UI check):
+  confirmed all three Scopes' P50 markers render at the mathematically
+  correct shared position (identical, since Platform dominates both
+  dependents in the fixture), the shared month-tick axis renders real
+  calendar labels, the target-date dashed marker appears for the one
+  Scope with a target date, the overlay toggle's legend renders, and --
+  the one property that actually matters for this phase -- dragging
+  Platform's capacity down still moved JSA's and iTrack's bands together
+  (identical +374d) and the axis auto-expanded to fit the new range
+  without clipping. The critical-path insight ("Platform is on the
+  critical path for 2 scopes") appeared correctly; the unallocated-FTE
+  insight appeared correctly after the drag freed up capacity; the
+  Effective-capacity row updated live. Save still correctly round-
+  tripped through the existing (unmodified) `PUT /api/allocations` with
+  the new fraction. `npx tsc --noEmit`, `npm run lint`, and
+  `npm run build` all clean; re-ran the standard Linear-blocked
+  regression check against real Postgres.
 
 - **Reports is live** (`/reports`, `lib/reports/`, `POST /api/reports`).
   Composes the same Forecast pipeline as `/forecast` (so numbers always
