@@ -382,6 +382,46 @@ branch).
   `npm run build` all clean; re-ran the standard Linear-blocked
   regression check against real Postgres.
 
+  **Post-Phase-3 bug fixes** (found live, on `/portfolio`, after real
+  Scopes existed): two rows both labeled "JSA" (which also broke the
+  insights panel -- "JSA finishes 75 days before JSA"), and a pile of
+  stray "New developer N PREVIEW" rows in the allocation grid. Code
+  review of the render path (`buildPortfolioInputs` in `compute.ts`,
+  `PortfolioPageClient`) found no way for the code itself to duplicate a
+  Scope's name -- `prisma.scope.findMany()` renders each row's own
+  `name` directly -- so this had to be two real Scope rows sharing a
+  name, and `POST /api/scopes` / `PATCH /api/scopes/:id` had nothing
+  stopping that. Fixed: both routes now reject a case-insensitive
+  duplicate name with a 400, verified live against real Postgres
+  (case-variant create rejected, rename-to-existing-name rejected,
+  rename-to-its-own-current-name correctly NOT flagged as a false-
+  positive collision). Renaming the actual mislabeled Scope in
+  production is Nic's to do at `/scopes` -- this sandbox can't reach the
+  Railway DB or the deployed app to do it directly (both blocked at the
+  network layer, confirmed by testing the TCP proxy and the app URL
+  directly, same allowlist that already blocks Linear).
+
+  For the ghost-person pileup: root cause found in
+  `PortfolioPageClient` -- every "+1 developer" / "+2 developers" click
+  adds a hypothetical person to local state that's never removed except
+  by a full page reload (module-scoped `ghostCounter` never resets
+  either), and there was no way to remove a single one. If any of those
+  were still allocated when Save was clicked, they'd have become real,
+  permanent `Person` rows with no UI path to undo it -- `DELETE
+  /api/people/:id` already existed server-side (built in Phase 1) but
+  was never wired to any button. Added a "Remove" action per grid row:
+  for a preview-only ghost it's pure local cleanup; for a real person it
+  calls the existing DELETE endpoint and reloads, so either way -- stale
+  client state or an actual persisted row -- there's now a one-click fix
+  directly in the tool, without needing direct DB access. Verified with
+  Playwright: two "+1 developer" clicks produce two ghost rows, removing
+  one leaves exactly one; removing a real person correctly calls
+  `DELETE /api/people/:id` with the right id. `npx tsc --noEmit`,
+  `npm run lint`, `npm run build` all clean; standard Linear-blocked
+  regression re-confirmed. Landed on a short-lived
+  `claude/portfolio-bugfixes` branch, merged straight back into
+  `claude/product-timeline-audit-a72dmg`.
+
 - **Reports is live** (`/reports`, `lib/reports/`, `POST /api/reports`).
   Composes the same Forecast pipeline as `/forecast` (so numbers always
   agree) into a stored, immutable leadership update: likely date +

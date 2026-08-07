@@ -135,6 +135,8 @@ export default function PortfolioPageClient() {
   const [saveError, setSaveError] = useState<string | null>(null);
 
   const [overlay, setOverlay] = useState(false);
+  const [removingId, setRemovingId] = useState<string | null>(null);
+  const [removeError, setRemoveError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -326,6 +328,45 @@ export default function PortfolioPageClient() {
       return next;
     });
     setDirty(true);
+  }
+
+  // Removes a person from the grid entirely. A ghost (never persisted --
+  // see the addHypotheticalDeveloper comment) is just local-state
+  // cleanup: drop it from `ghosts` and clear its fraction entries so it
+  // can't leak into a later Save. A real Person is actually deleted via
+  // the existing DELETE /api/people/:id (cascades to their Allocations)
+  // and the page reloads from the server -- this is the one place in the
+  // UI that can clean up a person who got persisted by mistake (e.g. an
+  // exploratory "+1 developer" click that was still allocated when Save
+  // was pressed), since there was previously no way to undo that short
+  // of a raw API call.
+  async function removePerson(personId: string, isGhost: boolean) {
+    setRemoveError(null);
+    if (isGhost) {
+      setGhosts((prev) => prev.filter((g) => g.id !== personId));
+      setFractions((prev) => {
+        const next = new Map(prev);
+        for (const key of next.keys()) {
+          if (key.startsWith(`${personId}::`)) next.delete(key);
+        }
+        return next;
+      });
+      setDirty(true);
+      return;
+    }
+    setRemovingId(personId);
+    try {
+      const res = await fetch(`/api/people/${personId}`, { method: "DELETE" });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error ?? "Couldn't remove that person.");
+      }
+      await load();
+    } catch (err) {
+      setRemoveError(err instanceof Error ? err.message : "Couldn't remove that person.");
+    } finally {
+      setRemovingId(null);
+    }
   }
 
   function discard() {
@@ -700,6 +741,7 @@ export default function PortfolioPageClient() {
                     </th>
                   ))}
                   <th className="text-left font-medium py-1.5 px-2">Total</th>
+                  <th className="py-1.5 px-2" />
                 </tr>
               </thead>
               <tbody>
@@ -745,6 +787,15 @@ export default function PortfolioPageClient() {
                       >
                         {Math.round(total * 100)}%
                       </td>
+                      <td className="py-1.5 px-2 text-right">
+                        <button
+                          onClick={() => removePerson(person.id, isGhost)}
+                          disabled={removingId === person.id}
+                          className="text-[var(--color-danger)] hover:underline whitespace-nowrap disabled:opacity-50"
+                        >
+                          {removingId === person.id ? "Removing…" : "Remove"}
+                        </button>
+                      </td>
                     </tr>
                   );
                 })}
@@ -757,6 +808,7 @@ export default function PortfolioPageClient() {
                       {(capacityByScope.get(s.scopeId) ?? 0).toFixed(2)}
                     </td>
                   ))}
+                  <td />
                   <td />
                 </tr>
               </tfoot>
@@ -783,6 +835,8 @@ export default function PortfolioPageClient() {
             {unallocated.map((u) => `${u.name} (${u.unallocatedFte.toFixed(2)} FTE free)`).join(", ")}
           </div>
         )}
+
+        {removeError && <div className="mt-3 text-xs text-[var(--color-danger)]">{removeError}</div>}
 
         <div className="flex items-center gap-3 mt-4">
           <button

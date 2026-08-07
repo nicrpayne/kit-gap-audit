@@ -57,6 +57,21 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     }
   }
 
+  if (body.name !== undefined) {
+    const trimmed = body.name.trim();
+    if (!trimmed) {
+      return NextResponse.json({ error: "name cannot be empty" }, { status: 400 });
+    }
+    const existing = await prisma.scope.findMany({ where: { id: { not: id } }, select: { name: true } });
+    if (existing.some((s) => s.name.trim().toLowerCase() === trimmed.toLowerCase())) {
+      return NextResponse.json(
+        { error: `A Scope named "${trimmed}" already exists -- pick a distinct name.` },
+        { status: 400 }
+      );
+    }
+    body.name = trimmed;
+  }
+
   // Basic sanity, not full cycle detection -- a self-reference is a
   // trivial always-a-cycle case cheap to catch here; a longer cycle
   // (A -> B -> A) is caught at simulate time by
