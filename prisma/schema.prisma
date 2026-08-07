@@ -19,6 +19,13 @@ model Scope {
   estimationContext String? // free text fed to the AI estimator: team makeup, stack, what this release is
   notionPageIds String[] @default([]) // Notion requirements/scoping pages pulled in as estimator context
   figmaRefs     String[] @default([]) // "fileKey:nodeId" design pages/frames pulled in as estimator context
+  // Other Scope ids this Scope's forecast can't finish ahead of -- e.g.
+  // JSA/iTrack depending on shared Platform work. Modeled per trial as
+  // max(this scope's own days, a draw from each dependency's own
+  // completion-day samples), see lib/forecast/portfolio.ts. Empty (the
+  // default, true for every Scope before this field existed) means a
+  // Scope's forecast is computed exactly as it always was.
+  dependsOnScopeIds String[] @default([])
   createdAt    DateTime  @default(now())
   sources      Source[]
   reports      Report[]

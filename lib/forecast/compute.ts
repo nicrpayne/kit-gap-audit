@@ -1,8 +1,10 @@
 import type { Scope } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { getScopedIssues, type LinearIssueSummary } from "@/lib/linear";
-import { buildForecastInputs, type CapacitySource } from "@/lib/forecast/build";
+import { buildForecastInputs, type CapacitySource, type ForecastInputs } from "@/lib/forecast/build";
 import { buildScenarios } from "@/lib/forecast/scenarios";
+import { runPortfolioSimulation, type ScopeSimulationSpec } from "@/lib/forecast/portfolio";
+import type { SimulationResult } from "@/lib/forecast/simulate";
 import { estimateContentHash, findingContentHash } from "@/lib/estimate/run";
 import { buildReleaseContext } from "@/lib/estimate/context";
 import { resolveCapacity, type CapacityContributor } from "@/lib/capacity/resolve";
@@ -66,13 +68,27 @@ export interface ForecastResult {
   };
 }
 
-// The single Forecast pipeline: Linear issues + Findings + AI estimates +
-// release context -> Monte Carlo simulation. Used by GET /api/forecast,
-// report generation, and POST /api/refresh so all three always agree --
-// there is exactly one place this math happens.
-export async function computeForecast(scope: Scope): Promise<ForecastResult> {
-  // Throws on Linear failure -- callers convert to a 502, same message
-  // used everywhere else in the app.
+interface ScopeSimBundle {
+  inputs: ForecastInputs;
+  capacityContributors: CapacityContributor[];
+  issues: LinearIssueSummary[];
+  findings: ForecastFinding[];
+  notionDocs: ForecastResult["notionDocs"];
+  notionWarning: string | null;
+  figmaRefs: ForecastResult["figmaRefs"];
+  figmaWarning: string | null;
+  contextDocs: ForecastResult["contextDocs"];
+  contextComplete: boolean;
+  contextIssues: string[];
+}
+
+// Everything needed to simulate ONE Scope: Linear issues + Findings +
+// resolved capacity + release context -> ForecastInputs. Extracted so
+// computeForecast can reuse it both for the Scope being forecast and
+// (when it has dependencies) for every Scope in its dependency closure,
+// without duplicating the Linear-fetch / capacity-resolution / context-
+// build logic. Throws on Linear failure -- callers convert to a 502.
+async function buildScopeSimInputs(scope: Scope): Promise<ScopeSimBundle> {
   const issues = await getScopedIssues(scope);
 
   const findings = await prisma.finding.findMany({
@@ -160,17 +176,9 @@ export async function computeForecast(scope: Scope): Promise<ForecastResult> {
     capacitySource: resolved.source ?? undefined,
   });
 
-  // Base run and scenario runs share a fixed RNG seed (see scenarios.ts),
-  // so scenario deltas are lever-only and repeat calls are stable.
-  const startDate = new Date();
-  const { base, scenarios } = buildScenarios(inputs, startDate, scope.targetDate);
-
-  const topItems = [...inputs.items]
-    .sort((a, b) => b.likely - a.likely)
-    .slice(0, 6)
-    .map((i) => ({ id: i.id, label: i.label, likelyDays: i.likely }));
-
   return {
+    inputs,
+    capacityContributors: resolved.contributors,
     issues,
     findings,
     notionDocs,
@@ -180,11 +188,109 @@ export async function computeForecast(scope: Scope): Promise<ForecastResult> {
     contextDocs: contextDocsInfo,
     contextComplete,
     contextIssues,
+  };
+}
+
+// Collects a Scope's full transitive dependency closure (itself + every
+// Scope it (in)directly depends on via dependsOnScopeIds), so
+// runPortfolioSimulation has everything it needs to detect a cycle
+// across the whole graph, not just a direct edge. Exported for testing
+// against real Postgres without needing Linear (this only touches
+// prisma.scope). Throws a clear error naming the unknown id rather than
+// letting a later lookup silently produce undefined.
+export async function collectDependencyClosure(rootScope: Scope): Promise<Scope[]> {
+  const byId = new Map<string, Scope>();
+  byId.set(rootScope.id, rootScope);
+  const queue: Scope[] = [rootScope];
+
+  while (queue.length > 0) {
+    const current = queue.shift()!;
+    for (const depId of current.dependsOnScopeIds) {
+      if (byId.has(depId)) continue;
+      const dep = await prisma.scope.findUnique({ where: { id: depId } });
+      if (!dep) {
+        throw new Error(`Scope "${current.name}" depends on an unknown Scope id: ${depId}`);
+      }
+      byId.set(depId, dep);
+      queue.push(dep);
+    }
+  }
+
+  return [...byId.values()];
+}
+
+// The single Forecast pipeline: Linear issues + Findings + AI estimates +
+// release context -> Monte Carlo simulation. Used by GET /api/forecast,
+// report generation, and POST /api/refresh so all three always agree --
+// there is exactly one place this math happens.
+//
+// A Scope with no dependsOnScopeIds (every Scope before Phase 1.5, and
+// every Scope that doesn't opt in afterward) takes EXACTLY the code path
+// this function always ran: buildScenarios computes both the base result
+// and the scenario rows in one call, untouched. Only a Scope that
+// explicitly sets dependsOnScopeIds takes the portfolio-aware branch,
+// which threads its dependencies' own simulated completion days into its
+// base result via lib/forecast/portfolio.ts. Scenario levers ("Paths to
+// a sooner date") are NOT yet dependency-aware in either branch -- a
+// known, deliberate limitation, since making the interactive levers
+// respect dependencies too is Phase 2 territory, not this one.
+export async function computeForecast(scope: Scope): Promise<ForecastResult> {
+  const own = await buildScopeSimInputs(scope);
+  const { inputs } = own;
+  const startDate = new Date();
+
+  let base: SimulationResult;
+  let rawScenarios: ForecastScenario[];
+
+  if (scope.dependsOnScopeIds.length === 0) {
+    const scenarioRun = buildScenarios(inputs, startDate, scope.targetDate);
+    base = scenarioRun.base;
+    rawScenarios = scenarioRun.scenarios;
+  } else {
+    const closure = await collectDependencyClosure(scope);
+    const specs: ScopeSimulationSpec[] = [];
+    for (const s of closure) {
+      const bundle = s.id === scope.id ? own : await buildScopeSimInputs(s);
+      specs.push({
+        scopeId: s.id,
+        items: bundle.inputs.items,
+        gates: bundle.inputs.gates,
+        teamCapacity: bundle.inputs.teamCapacity,
+        dependsOnScopeIds: s.dependsOnScopeIds,
+        startDate,
+        targetDate: s.targetDate,
+      });
+    }
+    // Throws DependencyCycleError / MissingDependencyError on a bad
+    // configuration -- surfaces to the caller the same way a Linear
+    // failure does today (see route handlers), not yet given its own
+    // distinct error status. Worth doing once a real UI can create a
+    // cycle; today nothing can, since no Scope has a dependency set yet.
+    const results = runPortfolioSimulation(specs);
+    base = results.get(scope.id)!;
+    rawScenarios = buildScenarios(inputs, startDate, scope.targetDate).scenarios;
+  }
+
+  const topItems = [...inputs.items]
+    .sort((a, b) => b.likely - a.likely)
+    .slice(0, 6)
+    .map((i) => ({ id: i.id, label: i.label, likelyDays: i.likely }));
+
+  return {
+    issues: own.issues,
+    findings: own.findings,
+    notionDocs: own.notionDocs,
+    notionWarning: own.notionWarning,
+    figmaRefs: own.figmaRefs,
+    figmaWarning: own.figmaWarning,
+    contextDocs: own.contextDocs,
+    contextComplete: own.contextComplete,
+    contextIssues: own.contextIssues,
     likelyDate: base.likelyDate,
     earliestDate: base.earliestDate,
     latestDate: base.latestDate,
     confidenceAtTarget: base.confidenceAtTarget,
-    scenarios: scenarios.map((s) => ({
+    scenarios: rawScenarios.map((s) => ({
       id: s.id,
       label: s.label,
       likelyDate: s.likelyDate,
@@ -197,7 +303,7 @@ export async function computeForecast(scope: Scope): Promise<ForecastResult> {
       teamCapacity: inputs.teamCapacity,
       teamCapacityInferred: inputs.teamCapacityInferred,
       capacitySource: inputs.capacitySource,
-      capacityContributors: resolved.contributors,
+      capacityContributors: own.capacityContributors,
       remainingEffortDays: base.remainingEffortDays,
       decisionDelayDays: base.decisionDelayDays,
       blockingGates: inputs.gates.map((g) => ({ id: g.id, label: g.label })),

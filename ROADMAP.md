@@ -5,9 +5,10 @@ AI estimation + Notion + Figma), and V3 (Reports) are built and deployed.
 Timeline (V2) is the one piece left from the original plan -- deferred on
 purpose since Reports was the actually-needed leadership deliverable.
 Active work: **shared capacity pool + portfolio forecasting**, on branch
-`claude/portfolio-capacity-pool` (see "Where things stand" for Phase 1,
-done; Phases 1.5-3 still ahead, each with an explicit go-ahead checkpoint
-per Nic before starting -- do not proceed past Phase 1 on that branch
+`claude/portfolio-capacity-pool` (see "Where things stand" for Phase 1
+and Phase 1.5, both done; Phases 2-3 still ahead, each with an explicit
+go-ahead checkpoint per Nic before starting -- do not proceed past 1.5
+on that branch
 without checking recent conversation for approval).
 
 ## Where things stand
@@ -77,16 +78,83 @@ without checking recent conversation for approval).
   20% and `unallocatedCapacity` fixture coverage Nic asked about was
   real and not folded invisibly into an aggregate pass count.
 
-  **Stopped here per Nic's explicit checkpoint** --
-  Phase 1.5 (splitting Platform into its own Scope + scope-level
-  dependency gates in the simulation trial loop, so JSA/iTrack still
-  correctly reflect waiting on shared Platform work) touches the actual
-  Monte Carlo math and needs its own go-ahead before starting, same as
-  Phase 1 did. See the plan this was built from for the full six-phase
-  scope (portfolio dashboard, provenance badges, an MCP server wrapper,
-  outbound webhooks) -- Phases 2-3 (interactive allocation levers, the
-  portfolio dashboard) are the next actually-scoped work once 1.5 lands
-  and is confirmed good.
+- **Shared capacity pool, Phase 1.5 of 3 (branch `claude/portfolio-
+  capacity-pool`, not yet merged)** — scope-level dependency gates, so a
+  Scope depending on shared work (JSA/iTrack on Platform) reflects it in
+  the actual Monte Carlo math instead of silently ignoring it once
+  Platform becomes its own Scope. `Scope.dependsOnScopeIds String[]`
+  (additive, defaults to `[]` -- true for every existing Scope).
+  `lib/forecast/simulate.ts`'s `SimulationInput` gains
+  `dependencySamples?: number[][]`: per trial, a random index is drawn
+  from each dependency's own (already-simulated) sorted completion-days
+  array (empirical bootstrap), and this scope's day for that trial
+  becomes `max(own, every drawn dependency day)` -- "can't finish before
+  what you depend on finishes," the same idea as `DecisionGate`'s serial
+  delay, applied at scope granularity. Absent/empty `dependencySamples`
+  is provably a no-op (the loop simply doesn't run), and `SimulationResult`
+  gains `completionDaysSorted` + `percentiles` (p10/p50/p70/p85/p90) as
+  pure additions -- existing fields' *values* are computed identically to
+  before. New `lib/forecast/portfolio.ts` (pure, no Prisma) topologically
+  orders a set of Scope simulation specs and runs each one exactly once,
+  threading a shared dependency's samples into every scope that depends
+  on it -- so a diamond (two products both depending on Platform) draws
+  from one simulated Platform, not two independently-simulated copies of
+  it. Throws `DependencyCycleError` (naming the exact cycle) or
+  `MissingDependencyError` rather than looping forever or silently
+  mis-ordering. `lib/forecast/compute.ts` branches on
+  `dependsOnScopeIds.length`: **a Scope with no dependencies takes the
+  exact pre-1.5 code path, byte-for-byte** (verified: bit-identical
+  `completionDaysSorted` between calling `runSimulation` directly and
+  going through the single-node `runPortfolioSimulation` path, same
+  seed); only a Scope that explicitly opts in takes the new
+  `collectDependencyClosure` (BFS the transitive dependency graph via
+  Prisma, throws a clear error on a dangling reference) ->
+  `runPortfolioSimulation` branch. New: `POST/PATCH /api/scopes/:id`
+  accepts `dependsOnScopeIds` (self-reference rejected at write time;
+  a longer cycle is legal to *write* but caught at simulate time by
+  `portfolio.ts` -- verified directly: constructed a real 2-cycle via two
+  PATCH calls and confirmed `runPortfolioSimulation` throws
+  `DependencyCycleError` on it, not a silent bad ordering).
+
+  Known, deliberate limitation: "Paths to a sooner date" scenario levers
+  are **not yet dependency-aware** in either branch -- they still compute
+  against a Scope's own items/gates/capacity only. Making the interactive
+  levers (Phase 2) respect dependencies too is that phase's job, not
+  this one's.
+
+  Verified: 15 fixture assertions on `simulate.ts`'s extension (explicit
+  regression cases proving `dependencySamples` absent/empty is bit-
+  identical to before; a dominant dependency provably pushes every trial
+  to at least its own value; multiple dependencies correctly take the
+  max across all of them, not just the last one) plus 19 on
+  `portfolio.ts` (the single-node case is bit-identical to calling
+  `runSimulation` directly; a diamond dependency's two dependents are
+  proven to draw from the exact same simulated shared-dependency array,
+  not two separate copies of it; a direct cycle, a self-cycle, and a
+  3-scope cycle all throw `DependencyCycleError`; a missing dependency
+  throws `MissingDependencyError`) -- 34 total, all on the pure math, no
+  DB or Linear involved. Plus 16 live assertions against real Postgres
+  over real HTTP (self-reference and unknown-id rejection on the new
+  PATCH field; a dependency persisting through a fresh GET, not just
+  echoed back; deduping; **the regression proof that a 0-dependency
+  Scope's `/api/forecast` call still hits the byte-identical
+  Linear-blocked error this sandbox always produces**; confirmation that
+  the dependency-aware branch also fails gracefully at the same Linear
+  wall rather than crashing) and 7 more directly exercising
+  `collectDependencyClosure` against real Scope rows (a real transitive
+  A->B->C chain; a dangling dependency after its target was deleted,
+  correctly throwing rather than crashing, since `dependsOnScopeIds`
+  isn't a real foreign key; a real 2-cycle constructed via two PATCH
+  calls, confirming closure-collection itself doesn't infinite-loop on it
+  and that the actual safety net is `runPortfolioSimulation`'s cycle
+  detection downstream, not closure collection). Full `npm run build` +
+  `npx eslint` clean throughout; local Postgres confirmed back to its
+  exact pre-test state after every verification pass.
+
+  **Stopped here per Nic's explicit checkpoint** -- Phase 2 (portfolio-
+  scoped interactive allocation levers) is real UI/endpoint work on top
+  of both capacity pooling and dependency gates now landed, and gets its
+  own go-ahead per the same pacing as Phases 1 and 1.5.
 
 - **Reports is live** (`/reports`, `lib/reports/`, `POST /api/reports`).
   Composes the same Forecast pipeline as `/forecast` (so numbers always

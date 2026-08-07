@@ -16,6 +16,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     estimationContext?: string | null;
     notionPageUrls?: string[]; // page URLs or raw IDs; normalized server-side
     figmaUrls?: string[]; // design URLs with a node-id selected; normalized server-side
+    dependsOnScopeIds?: string[]; // other Scope ids this Scope's forecast can't finish ahead of
   };
 
   let notionPageIds: string[] | undefined;
@@ -56,6 +57,25 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     }
   }
 
+  // Basic sanity, not full cycle detection -- a self-reference is a
+  // trivial always-a-cycle case cheap to catch here; a longer cycle
+  // (A -> B -> A) is caught at simulate time by
+  // lib/forecast/portfolio.ts's topological sort, which names the exact
+  // cycle in its error.
+  if (body.dependsOnScopeIds !== undefined) {
+    const deduped = [...new Set(body.dependsOnScopeIds.filter((s) => s.trim()))];
+    if (deduped.includes(id)) {
+      return NextResponse.json({ error: "A Scope can't depend on itself" }, { status: 400 });
+    }
+    if (deduped.length > 0) {
+      const found = await prisma.scope.count({ where: { id: { in: deduped } } });
+      if (found !== deduped.length) {
+        return NextResponse.json({ error: "One or more dependsOnScopeIds values don't exist" }, { status: 400 });
+      }
+    }
+    body.dependsOnScopeIds = deduped;
+  }
+
   const scope = await prisma.scope.update({
     where: { id },
     data: {
@@ -77,6 +97,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
         : {}),
       ...(notionPageIds !== undefined ? { notionPageIds } : {}),
       ...(figmaRefs !== undefined ? { figmaRefs } : {}),
+      ...(body.dependsOnScopeIds !== undefined ? { dependsOnScopeIds: body.dependsOnScopeIds } : {}),
     },
   });
 

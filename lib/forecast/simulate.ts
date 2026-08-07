@@ -28,6 +28,16 @@ export interface SimulationInput {
   startDate?: Date;
   now?: () => number; // injectable for tests
   random?: () => number; // injectable for tests
+  // One array per Scope this simulation depends on, each the OTHER
+  // scope's own completionDaysSorted from its already-run simulation
+  // (see lib/forecast/portfolio.ts). Per trial, a random index is drawn
+  // from each array (empirical bootstrap) and this scope's own days for
+  // that trial become max(own, every drawn dependency day) -- "can't
+  // finish before what you depend on finishes," the same idea as
+  // DecisionGate's serial delay, applied at scope granularity. Absent or
+  // empty (true for every call site before this field existed) leaves
+  // the trial loop byte-for-byte what it always was.
+  dependencySamples?: number[][];
 }
 
 export interface SimulationResult {
@@ -37,6 +47,11 @@ export interface SimulationResult {
   confidenceAtTarget: number | null; // 0-100, null if no target date given
   remainingEffortDays: ThreePoint;
   decisionDelayDays: ThreePoint;
+  // Full sorted trial outcomes (calendar days from startDate), exposed so
+  // a dependent scope's simulation can bootstrap-sample from this one --
+  // see dependencySamples above. Not used by any existing caller.
+  completionDaysSorted: number[];
+  percentiles: { p10: number; p50: number; p70: number; p85: number; p90: number };
 }
 
 // Samples one value from a triangular(low, mode, high) distribution via
@@ -84,6 +99,7 @@ export function runSimulation(input: SimulationInput, targetDate?: Date | null):
   const random = input.random ?? Math.random;
   const startDate = input.startDate ?? new Date();
 
+  const dependencySamples = input.dependencySamples?.filter((s) => s.length > 0) ?? [];
   const completionDays: number[] = [];
 
   for (let i = 0; i < trials; i++) {
@@ -95,15 +111,23 @@ export function runSimulation(input: SimulationInput, targetDate?: Date | null):
     for (const gate of input.gates) {
       decisionDelay += sampleTriangular(gate.low, gate.likely, gate.high, random);
     }
-    const calendarDays = effort / capacity + decisionDelay;
+    let calendarDays = effort / capacity + decisionDelay;
+    for (const depSamples of dependencySamples) {
+      const draw = depSamples[Math.floor(random() * depSamples.length)];
+      calendarDays = Math.max(calendarDays, draw);
+    }
     completionDays.push(calendarDays);
   }
 
   completionDays.sort((a, b) => a - b);
 
-  const likelyDays = percentile(completionDays, 50);
-  const earliestDays = percentile(completionDays, 10);
-  const latestDays = percentile(completionDays, 90);
+  const percentiles = {
+    p10: percentile(completionDays, 10),
+    p50: percentile(completionDays, 50),
+    p70: percentile(completionDays, 70),
+    p85: percentile(completionDays, 85),
+    p90: percentile(completionDays, 90),
+  };
 
   let confidenceAtTarget: number | null = null;
   if (targetDate) {
@@ -113,11 +137,13 @@ export function runSimulation(input: SimulationInput, targetDate?: Date | null):
   }
 
   return {
-    likelyDate: addDays(startDate, likelyDays),
-    earliestDate: addDays(startDate, earliestDays),
-    latestDate: addDays(startDate, latestDays),
+    likelyDate: addDays(startDate, percentiles.p50),
+    earliestDate: addDays(startDate, percentiles.p10),
+    latestDate: addDays(startDate, percentiles.p90),
     confidenceAtTarget,
     remainingEffortDays: sumThreePoint(input.items),
     decisionDelayDays: sumThreePoint(input.gates),
+    completionDaysSorted: completionDays,
+    percentiles,
   };
 }
