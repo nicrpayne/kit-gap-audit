@@ -185,12 +185,29 @@ function TargetDateLever({
 
 // Month-boundary ticks for the shared axis, e.g. "Jan '26", "Feb '26" --
 // only the ones that actually fall inside [minDay, maxDay].
+// Step size adapts to how wide the axis actually is -- a fixed
+// one-tick-per-month pace looked fine against this page's original
+// ~1-year test fixtures, but a Scope simulating years out (a
+// misconfigured Scope pulling in far more effort than intended, or
+// legitimately just a long way off) pushed the range wide enough that
+// one label per month piled into an unreadable overlapping mess. Aim
+// for roughly 6-12 ticks regardless of how wide the range is.
+function monthStep(spanDays: number): number {
+  const spanMonths = spanDays / 30.44;
+  if (spanMonths <= 10) return 1;
+  if (spanMonths <= 24) return 2;
+  if (spanMonths <= 48) return 3;
+  if (spanMonths <= 96) return 6;
+  return 12;
+}
+
 function monthTicks(startDate: Date, minDay: number, maxDay: number): { day: number; label: string }[] {
+  const step = monthStep(Math.max(1, maxDay - minDay));
   const ticks: { day: number; label: string }[] = [];
   const first = addDays(startDate, minDay);
   const cursor = new Date(Date.UTC(first.getUTCFullYear(), first.getUTCMonth(), 1));
   let guard = 0;
-  while (guard++ < 240) {
+  while (guard++ < 200) {
     const day = dayOffset(startDate, cursor);
     if (day > maxDay) break;
     if (day >= minDay) {
@@ -199,7 +216,7 @@ function monthTicks(startDate: Date, minDay: number, maxDay: number): { day: num
         label: cursor.toLocaleDateString(undefined, { month: "short", year: "2-digit", timeZone: "UTC" }),
       });
     }
-    cursor.setUTCMonth(cursor.getUTCMonth() + 1);
+    cursor.setUTCMonth(cursor.getUTCMonth() + step);
   }
   return ticks;
 }
