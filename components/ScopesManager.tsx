@@ -193,6 +193,32 @@ function ScopeFormFields({
                 {p.name}
               </label>
             ))}
+            {/* A saved projectNames entry that doesn't match any project
+                Linear returns for this team -- a renamed/archived/stale
+                project -- would otherwise be silently invisible here:
+                nothing to uncheck it with, so editing could only ever
+                ADD projects, never remove a stale one. Surfaced
+                explicitly so it can actually be cleared. */}
+            {value.teamKey &&
+              !projectsLoading &&
+              value.projectNames
+                .filter((name) => !projects.some((p) => p.name === name))
+                .map((name) => (
+                  <span
+                    key={name}
+                    className="inline-flex items-center gap-1.5 text-sm bg-[var(--color-danger-soft)] text-[var(--color-danger)] rounded-md px-2 py-1"
+                  >
+                    {name}
+                    <span className="text-[10px] uppercase tracking-wide">not a current Linear project</span>
+                    <button
+                      type="button"
+                      onClick={() => onChange({ ...value, projectNames: value.projectNames.filter((n) => n !== name) })}
+                      className="hover:underline font-medium"
+                    >
+                      Remove
+                    </button>
+                  </span>
+                ))}
           </div>
         )}
       </div>
