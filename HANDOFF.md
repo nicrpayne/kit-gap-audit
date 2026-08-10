@@ -421,6 +421,79 @@ Instrument-Mode redesign, a Forecast Canvas, the resource mixer, saved
 A/B/C/D scenarios, target-seeking as a first-class lever, any Hermes
 changes, and Scenario Levers 2-4 from the brief above.
 
+**Follow-on: capacity-scenario correctness fix** (same branch,
+`claude/scenario-input-delta`, commit after Phase 1) — Nic's hands-on
+click-through of Phase 1 found a real, reproducible bug: the "+1
+developer" / "+2 developers" quick actions on `/portfolio` could make a
+scope's forecast date *later*, non-monotonically, the more capacity you
+added. Root cause traced (not assumed) to `resolveCapacity`
+(`lib/capacity/resolve.ts`, **left completely unchanged** by the fix):
+its three-rung fallback chain (allocations > explicit > inferred) is
+correct for authoritative Reality but is mutually exclusive — the instant
+*any* allocation-shaped entry exists for a scope (a hypothetical ghost,
+or an existing real person moved in from another scope), the chain
+switches that scope's capacity source to "allocations" and computes
+*only* from that entry, silently discarding whatever aggregate number
+(explicit or inferred) was there a moment before. Confirmed present on
+the base branch too (not a Phase 1 regression) via byte-identical-file
+diffs and independent reproduction on both branches.
+
+**The fix** (fully implemented, `lib/scenario/inputDelta.ts` +
+`lib/scenario/namedTransfer.ts` (new) + `PortfolioPageClient.tsx`'s
+`save()` + a new server-side check in `app/api/allocations/route.ts`):
+`ScenarioInputScope` gained one field, `capacitySource`, carrying
+Reality's own capacity source for that scope (fixed before any scenario
+is applied). `applyScenarioInputDelta` now branches on it: an
+allocations-sourced scope behaves exactly as before (unchanged); an
+aggregate (explicit/inferred) scope preserves its resolved baseline
+untouched and adds the scenario's contribution on top via a second
+`resolveCapacity` call. Commit rules (approved product decisions, not
+just an implementation choice): anonymous/net-new capacity added to an
+aggregate scope commits by updating `explicitTeamCapacity` (deliberately
+converting `inferred → explicit`, surfaced to the user via a live
+"Saving this will..." summary, never silent) — never a fabricated
+`Person`/`Allocation` row. A **named, real person's** reallocation
+commits only when every scope they touch is allocations-sourced; if any
+touched scope is aggregate-sourced, that person's **entire** allocation
+set is excluded from that Save (both legs of a move, not just the
+aggregate-destination leg) so Reality never ends up with, e.g., a person
+shown reduced on their source scope while the corresponding increase at
+an untracked destination silently vanishes. Preview still shows the full
+hypothetical trade either way — only *commit* is restricted; Scenario is
+explicitly allowed to model things Reality can't yet persist. Server-side
+defense-in-depth: `PUT /api/allocations` independently rejects (409) any
+write that would create the first-ever `Allocation` row on a scope that
+currently has none, regardless of caller (UI, script, Hermes, a future
+client) — a single cheap Postgres query, no Linear dependency.
+
+Verified: 14 pure-math fixture checks (all four capacity-source cases +
+the mixed case + determinism + dependency preservation), real-Postgres
+persistence tests (server 409 rejection, valid allocations-sourced
+writes, explicit/inferred-to-explicit conversion with zero stray
+Person/Allocation rows), and three real-browser Playwright runs
+(full save() flow through real persistence including the named-move
+atomicity proof, the unaffected allocations-sourced happy path, and
+Discard). Full detail: `docs/SCENARIO-MODEL.md`. **Not yet merged, not
+yet clicked through by Nic** — do not merge without explicit instruction.
+
+Deliberately NOT touched: `resolveCapacity`'s fallback semantics,
+`simulate.ts`, `portfolio.ts`, the Prisma schema, the visual design, and
+(flagged, not fixed) whether a ghost added to an *already*
+allocations-sourced scope should also stay anonymous rather than minting
+a "New developer N" `Person` row — evidence strongly suggests it should,
+but it's a data-hygiene question, not a correctness bug, and was
+explicitly kept out of this fix's scope.
+
+**Known trade-off worth knowing about**: the new server-side invariant on
+`PUT /api/allocations` means there is currently no supported way — client
+or direct API — to set up person-level tracking for a scope **for the
+first time**, even as one deliberate, complete, multi-person request. It
+rejects the first allocation onto any scope with zero existing ones,
+unconditionally, because it can't distinguish a legitimate one-shot setup
+from the same partial-write bug via a different call shape. That's a real
+capability gap, not an oversight — converting an aggregate scope to
+tracked people needs its own deliberate mechanism, not built yet.
+
 ## Linear access — an important sandbox capability correction
 
 This sandbox has **two separate network paths to Linear**, discovered
@@ -567,10 +640,11 @@ commits `7ba2d43` (Lever 1: target date), `9977b20` (axis fix), `c4a7923`
 (stale-project-name fix), `ad458dd` (HANDOFF.md rewrite), all pushed to
 `origin/claude/portfolio-scenario-levers`. **Also open, not merged**:
 `claude/scenario-input-delta`, cut from `claude/portfolio-scenario-levers`
-HEAD, carrying the scenario-foundation Phase 1 refactor (see the section
-above and `docs/SCENARIO-MODEL.md`). **Do not merge any branch into base
-without an explicit instruction to do so** — every merge this session was
-explicitly requested first, and that pattern should continue. Check
+HEAD, carrying (in order) the scenario-foundation Phase 1 refactor and the
+capacity-scenario correctness fix described above (see both sections and
+`docs/SCENARIO-MODEL.md`). **Do not merge any branch into base without an
+explicit instruction to do so** — every merge this session was explicitly
+requested first, and that pattern should continue. Check
 `git log --oneline -15` and `ROADMAP.md`'s top summary for anything more
 recent than this doc.
 

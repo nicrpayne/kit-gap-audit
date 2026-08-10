@@ -20,6 +20,7 @@
 import { resolveCapacity, type PersonLike, type AllocationLike } from "@/lib/capacity/resolve";
 import type { ScopeSimulationSpec } from "@/lib/forecast/portfolio";
 import type { WorkItem, DecisionGate } from "@/lib/forecast/simulate";
+import type { CapacitySource } from "@/lib/forecast/build";
 
 export interface ScenarioInputDelta {
   // The COMPLETE hypothetical allocation set to simulate against -- not a
@@ -52,6 +53,16 @@ export interface ScenarioInputScope {
   // re-deriving THAT inference would need Linear issue data this pure,
   // isomorphic module deliberately doesn't have.
   teamCapacity: number;
+  // Reality's OWN capacity source for this Scope, computed from Reality's
+  // saved allocations/explicit value/inference -- BEFORE anything in this
+  // scenario is applied. This is the fact that decides how a scenario's
+  // allocation-shaped changes may be applied (see applyScenarioInputDelta
+  // below); it never changes as a result of the scenario itself, which is
+  // exactly the invariant that fixes the "+1 developer makes the date
+  // later" bug: a scenario must not be able to switch a Scope's
+  // authoritative capacity source merely by introducing an allocation-
+  // shaped entry.
+  capacitySource: CapacitySource;
   startDate: Date;
   targetDate: Date | null;
 }
@@ -59,16 +70,40 @@ export interface ScenarioInputScope {
 // Reality + ScenarioInputDelta -> the exact ScopeSimulationSpec[] shape
 // lib/forecast/portfolio.ts's runPortfolioSimulation takes. Pure -- calls
 // the existing resolveCapacity (lib/capacity/resolve.ts) per scope rather
-// than reimplementing any part of the capacity fallback chain.
+// than reimplementing any part of the capacity fallback chain -- and
+// NEVER changes resolveCapacity's own fallback semantics, which stay
+// correct for authoritative Reality (see docs/SCENARIO-MODEL.md).
+//
+// The branch below is keyed on s.capacitySource -- Reality's OWN,
+// scenario-independent source for this Scope -- not on whether a given
+// allocation entry belongs to a real or hypothetical person. That
+// distinction matters: a scope's authoritative source must never flip
+// merely because the scenario introduces an allocation-shaped change,
+// whether that change is a net-new hypothetical person or an existing
+// real person moved in from another scope. Both are handled identically
+// here, additively, once the Scope is aggregate-sourced.
+//
+// - capacitySource === "allocations": Reality already tracks this Scope
+//   at person level, so every allocation-shaped change (real reallocation
+//   AND net-new hypothetical people) is folded into ONE resolveCapacity
+//   call against the full current allocation picture -- identical to how
+//   this always worked, and correct, because there's no aggregate number
+//   at risk of being silently discarded.
+// - capacitySource === "explicit" | "inferred": Reality is an aggregate
+//   number with no enumerable contributor list. s.teamCapacity (the
+//   already-resolved aggregate baseline) is preserved untouched, and a
+//   SECOND resolveCapacity call -- with explicitTeamCapacity forced to
+//   null so it can never itself resolve to "explicit" -- computes only
+//   the scenario's ADDITIVE contribution for this one Scope, correctly
+//   switch-cost-adjusted (it still receives the full, unfiltered,
+//   cross-scope delta.allocations array, so a multi-scope contributor's
+//   switchFactor is computed from their whole picture, not a per-scope
+//   slice). That contribution is added on top of the preserved baseline.
 //
 // Passing a delta built from Reality's own saved allocations/people/
 // contextSwitchCostPct (hypotheticalPeople: []) reproduces the baseline
-// forecast exactly: resolveCapacity is the same pure function used
-// originally to compute each Scope's stored `teamCapacity`, so re-running
-// it here against the same saved inputs returns the same capacity number
-// for the "allocations" and "explicit" fallback rungs, and the `??
-// s.teamCapacity` fallback below reproduces the "inferred" rung without
-// needing to re-infer anything.
+// forecast exactly in both branches -- see docs/SCENARIO-MODEL.md for the
+// proof.
 export function applyScenarioInputDelta(
   scopes: ScenarioInputScope[],
   realityPeople: PersonLike[],
@@ -76,18 +111,19 @@ export function applyScenarioInputDelta(
 ): ScopeSimulationSpec[] {
   const people = [...realityPeople, ...delta.hypotheticalPeople];
   return scopes.map((s) => {
-    const resolved = resolveCapacity(
-      s.scopeId,
-      s.explicitTeamCapacity,
-      people,
-      delta.allocations,
-      delta.contextSwitchCostPct
-    );
+    let teamCapacity: number;
+    if (s.capacitySource === "allocations") {
+      const resolved = resolveCapacity(s.scopeId, s.explicitTeamCapacity, people, delta.allocations, delta.contextSwitchCostPct);
+      teamCapacity = resolved.capacity ?? s.teamCapacity;
+    } else {
+      const additive = resolveCapacity(s.scopeId, null, people, delta.allocations, delta.contextSwitchCostPct);
+      teamCapacity = s.teamCapacity + (additive.capacity ?? 0);
+    }
     return {
       scopeId: s.scopeId,
       items: s.items,
       gates: s.gates,
-      teamCapacity: resolved.capacity ?? s.teamCapacity,
+      teamCapacity,
       dependsOnScopeIds: s.dependsOnScopeIds,
       startDate: s.startDate,
       targetDate: s.targetDate,

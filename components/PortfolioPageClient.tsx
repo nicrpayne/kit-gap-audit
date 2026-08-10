@@ -15,6 +15,7 @@ import { computeMomentum, dateDeltaPhrase } from "@/lib/momentum/compute";
 import { percentileDay, confidenceAtDay } from "@/lib/forecast/simulate";
 import { applyScenarioInputDelta, type ScenarioInputDelta, type ScenarioInputScope } from "@/lib/scenario/inputDelta";
 import { compareToBaseline } from "@/lib/scenario/compare";
+import { detectNamedPersonMoves, type NamedTransferScope } from "@/lib/scenario/namedTransfer";
 
 // This entire file is the "cheap, every slider frame" half of Phase 2's
 // performance split (see ROADMAP.md): GET /api/portfolio/inputs is the one
@@ -250,6 +251,7 @@ export default function PortfolioPageClient() {
 
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [saveSummary, setSaveSummary] = useState<{ text: string; hadBlocks: boolean } | null>(null);
 
   const [overlay, setOverlay] = useState(false);
   const [removingId, setRemovingId] = useState<string | null>(null);
@@ -272,6 +274,7 @@ export default function PortfolioPageClient() {
       setSwitchCostPct(body.contextSwitchCostPct);
       setGhosts([]);
       setDirty(false);
+      setSaveSummary(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong.");
     } finally {
@@ -297,6 +300,7 @@ export default function PortfolioPageClient() {
       dependsOnScopeIds: s.dependsOnScopeIds,
       explicitTeamCapacity: s.explicitTeamCapacity,
       teamCapacity: s.teamCapacity,
+      capacitySource: s.capacitySource,
       startDate,
       targetDate: s.targetDate ? new Date(s.targetDate) : null,
     }));
@@ -359,6 +363,63 @@ export default function PortfolioPageClient() {
     () => unallocatedCapacity(allPeople, currentAllocations),
     [allPeople, currentAllocations]
   );
+
+  // Commit-eligibility for real, named people: does a real person's
+  // scenario allocation differ from Reality's saved one, and can every
+  // Scope they'd end up on truthfully represent that (see
+  // docs/SCENARIO-MODEL.md's "named-person transfer" section, and
+  // lib/scenario/namedTransfer.ts). Deliberately excludes ghosts --
+  // hypothetical/anonymous people are a completely separate, always-
+  // committable case handled by aggregateConversions below. Recomputed
+  // live (not just at Save time) so the "Saving this will..." summary
+  // below can show BEFORE the user clicks Save, matching this page's
+  // existing live-preview philosophy rather than surprising them with a
+  // confirmation dialog after the fact.
+  const namedMoves = useMemo(() => {
+    if (!data) return [];
+    const realPersonIds = new Set(data.people.map((p) => p.id));
+    const scenarioAllocationsForRealPeople = currentAllocations.filter((a) => realPersonIds.has(a.personId));
+    const scopesForTransfer: NamedTransferScope[] = data.scopes.map((s) => ({
+      scopeId: s.scopeId,
+      name: s.name,
+      capacitySource: s.capacitySource,
+    }));
+    return detectNamedPersonMoves(data.allocations, scenarioAllocationsForRealPeople, data.people, scopesForTransfer);
+  }, [data, currentAllocations]);
+
+  const blockedMoves = useMemo(() => namedMoves.filter((m) => !m.eligible), [namedMoves]);
+  const blockedPersonIds = useMemo(() => new Set(blockedMoves.map((m) => m.personId)), [blockedMoves]);
+
+  // Aggregate (explicit/inferred) Scopes: how much anonymous/hypothetical
+  // capacity would be committed as a new explicitTeamCapacity if Save
+  // were clicked now. Deliberately computed from hypothetical
+  // people/allocations ONLY -- a real person's contribution to an
+  // aggregate Scope is NEVER folded in here, whether or not that specific
+  // move happens to be "eligible" elsewhere, because there is no eligible
+  // path for a named person into an aggregate Scope at all (see
+  // blockedMoves above); committing it anonymously would silently
+  // discard exactly the identity information Decision 2 said not to
+  // discard.
+  const aggregateConversions = useMemo(() => {
+    if (!data) return [];
+    const hypotheticalIds = new Set(ghosts.map((g) => g.id));
+    const hypotheticalAllocations = currentAllocations.filter((a) => hypotheticalIds.has(a.personId));
+    const out: { scopeId: string; scopeName: string; from: number; to: number; wasInferred: boolean }[] = [];
+    for (const s of data.scopes) {
+      if (s.capacitySource === "allocations") continue;
+      const additive = resolveCapacity(s.scopeId, null, ghostsAsPersonLike, hypotheticalAllocations, switchCostPct);
+      const contribution = additive.capacity ?? 0;
+      if (contribution <= 1e-6) continue;
+      out.push({
+        scopeId: s.scopeId,
+        scopeName: s.name,
+        from: s.teamCapacity,
+        to: s.teamCapacity + contribution,
+        wasInferred: s.capacitySource === "inferred",
+      });
+    }
+    return out;
+  }, [data, ghosts, currentAllocations, ghostsAsPersonLike, switchCostPct]);
 
   // The live hypothetical, as a ScenarioInputDelta -- an explicit adapter
   // from the fine-grained interaction state above (fractions/ghosts/
@@ -574,20 +635,48 @@ export default function PortfolioPageClient() {
     setGhosts([]);
     setDirty(false);
     setSaveError(null);
+    setSaveSummary(null);
   }
 
+  // Commit rules (see docs/SCENARIO-MODEL.md's "Save / Commit" section):
+  //
+  // - A Scope's capacitySource never flips as a side effect of this Save.
+  //   An anonymous/hypothetical contribution to an allocations-sourced
+  //   Scope still becomes a real Person + Allocation row, exactly as
+  //   before. An anonymous contribution to an explicit/inferred Scope is
+  //   folded into a NEW explicitTeamCapacity (aggregateConversions,
+  //   computed above) -- it never gets a Person/Allocation row, and that
+  //   Scope's source becomes/stays "explicit" going forward.
+  // - A real, named person's allocation change is committed normally when
+  //   every Scope they'd end up on is allocations-sourced. If ANY touched
+  //   Scope is aggregate-sourced, the ENTIRE person's allocation set is
+  //   excluded from this Save (blockedPersonIds, from namedMoves above) --
+  //   both legs of a move, not just the aggregate-destination leg, so
+  //   Reality never ends up with a person shown at less than 100% while
+  //   the remainder silently vanishes.
   async function save() {
     if (!data) return;
     setSaving(true);
     setSaveError(null);
+    setSaveSummary(null);
     try {
-      // Ghost people become real Person rows only now, at the moment of
-      // saving -- until this point they exist only in this component's
-      // state and in the client-side preview simulation above.
+      const scopesById = new Map(data.scopes.map((s) => [s.scopeId, s]));
+      const allocationsScopeIds = new Set(
+        data.scopes.filter((s) => s.capacitySource === "allocations").map((s) => s.scopeId)
+      );
+
+      // Ghost people become real Person rows only when they're used on an
+      // allocations-sourced Scope -- a ghost used only on an aggregate
+      // Scope stays anonymous forever; its contribution is folded into
+      // that Scope's explicitTeamCapacity below instead (never a Person
+      // row -- see aggregateConversions above).
       const idRemap = new Map<string, string>();
       for (const g of ghosts) {
-        const used = [...fractions.entries()].some(([key, f]) => key.startsWith(`${g.id}::`) && f > 1e-6);
-        if (!used) continue;
+        const usedOnAllocationsScope = [...fractions.entries()].some(([key, f]) => {
+          if (!key.startsWith(`${g.id}::`) || f <= 1e-6) return false;
+          return allocationsScopeIds.has(key.split("::")[1]);
+        });
+        if (!usedOnAllocationsScope) continue;
         const res = await fetch("/api/people", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -600,10 +689,12 @@ export default function PortfolioPageClient() {
 
       // Every real (post-remap) person who has -- or previously had -- an
       // allocation anywhere gets their FULL current row set sent, one
-      // entry per Scope, explicit zeros included: PUT /api/allocations is
-      // a full replace per mentioned person, so this is the only way to
-      // make sure a cleared allocation is actually deleted, not just
-      // skipped.
+      // entry per allocations-sourced Scope, explicit zeros included: PUT
+      // /api/allocations is a full replace per mentioned person, so this
+      // is the only way to make sure a cleared allocation is actually
+      // deleted, not just skipped. Blocked real people (blockedPersonIds)
+      // are excluded entirely -- neither their reduction nor their
+      // increase is sent, so their existing Reality rows are untouched.
       // rowKeyFor(realPersonId) -> the key `fractions` actually has an
       // entry under (a ghost's rows are still keyed by its temp id even
       // after the ghost becomes a real Person above).
@@ -611,13 +702,15 @@ export default function PortfolioPageClient() {
       for (const [ghostId, realId] of idRemap) rowKeyFor.set(realId, ghostId);
 
       const personIds = new Set<string>();
-      for (const a of data.allocations) personIds.add(a.personId);
+      for (const a of data.allocations) {
+        if (!blockedPersonIds.has(a.personId)) personIds.add(a.personId);
+      }
       for (const key of fractions.keys()) {
         const [personId] = key.split("::");
         if (personId.startsWith("ghost-")) {
           const real = idRemap.get(personId);
           if (real) personIds.add(real);
-        } else {
+        } else if (!blockedPersonIds.has(personId)) {
           personIds.add(personId);
         }
       }
@@ -626,6 +719,11 @@ export default function PortfolioPageClient() {
       for (const personId of personIds) {
         const rowKeyPersonId = rowKeyFor.get(personId) ?? personId;
         for (const scope of data.scopes) {
+          // Never write a person-level allocation onto an aggregate
+          // Scope -- that would silently flip its capacitySource, the
+          // exact bug this fix exists to prevent. (The server enforces
+          // this too, independently -- see PUT /api/allocations.)
+          if (!allocationsScopeIds.has(scope.scopeId)) continue;
           const fraction = fractions.get(pairKey(rowKeyPersonId, scope.scopeId)) ?? 0;
           payload.push({ personId, scopeId: scope.scopeId, fraction });
         }
@@ -639,6 +737,21 @@ export default function PortfolioPageClient() {
       const putBody = await putRes.json().catch(() => ({}));
       if (!putRes.ok) throw new Error(putBody.error ?? "Couldn't save allocations.");
 
+      // Aggregate Scopes: fold anonymous/hypothetical contributions into
+      // a new explicitTeamCapacity via the existing PATCH /api/scopes/:id
+      // (already supports teamCapacity) -- never a Person/Allocation row.
+      for (const conversion of aggregateConversions) {
+        const patchRes = await fetch(`/api/scopes/${conversion.scopeId}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ teamCapacity: conversion.to }),
+        });
+        if (!patchRes.ok) {
+          const b = await patchRes.json().catch(() => ({}));
+          throw new Error(b.error ?? `Couldn't update ${scopesById.get(conversion.scopeId)?.name ?? conversion.scopeId}'s capacity.`);
+        }
+      }
+
       if (switchCostPct !== data.contextSwitchCostPct) {
         const settingsRes = await fetch("/api/portfolio-settings", {
           method: "PATCH",
@@ -649,6 +762,23 @@ export default function PortfolioPageClient() {
           const b = await settingsRes.json().catch(() => ({}));
           throw new Error(b.error ?? "Couldn't save the context-switch setting.");
         }
+      }
+
+      const summaryParts: string[] = [];
+      if (aggregateConversions.length > 0) {
+        summaryParts.push(
+          aggregateConversions.map((c) => `${c.scopeName} capacity set to ${c.to.toFixed(2)} (explicit)`).join("; ")
+        );
+      }
+      if (blockedMoves.length > 0) {
+        summaryParts.push(
+          `${blockedMoves.length} change${blockedMoves.length === 1 ? "" : "s"} not saved: ${blockedMoves
+            .map((m) => m.personName)
+            .join(", ")}`
+        );
+      }
+      if (summaryParts.length > 0) {
+        setSaveSummary({ text: summaryParts.join(" · "), hadBlocks: blockedMoves.length > 0 });
       }
 
       await load();
@@ -1068,6 +1198,30 @@ export default function PortfolioPageClient() {
 
         {removeError && <div className="mt-3 text-xs text-[var(--color-danger)]">{removeError}</div>}
 
+        {/* Save-impact summary -- computed live off the current drag
+            state, not just at Save time, so nothing about a capacity-
+            source conversion or a blocked named-person move is a
+            surprise after the fact. See docs/SCENARIO-MODEL.md. */}
+        {dirty && (aggregateConversions.length > 0 || blockedMoves.length > 0) && (
+          <div className="mt-3 text-xs space-y-1.5 rounded-md border border-[var(--color-line)] bg-white px-3 py-2.5">
+            <div className="font-medium text-[var(--color-ink)]">Saving this will:</div>
+            {aggregateConversions.map((c) => (
+              <div key={c.scopeId} className="text-[var(--color-ink-soft)]">
+                Set <strong className="text-[var(--color-ink)]">{c.scopeName}</strong>&rsquo;s capacity explicitly
+                to <strong className="text-[var(--color-ink)]">{c.to.toFixed(2)}</strong> ({c.from.toFixed(2)} +{" "}
+                {(c.to - c.from).toFixed(2)} anonymous) — it will no longer be{" "}
+                {c.wasInferred ? "inferred from Linear" : "a plain flat number with nothing added"}, and stays an
+                explicit value going forward.
+              </div>
+            ))}
+            {blockedMoves.map((m) => (
+              <div key={m.personId} className="text-[var(--color-danger)]">
+                Can&rsquo;t save {m.personName}&rsquo;s allocation change — {m.blockedReason}
+              </div>
+            ))}
+          </div>
+        )}
+
         <div className="flex items-center gap-3 mt-4">
           <button
             onClick={save}
@@ -1084,6 +1238,13 @@ export default function PortfolioPageClient() {
             Discard preview
           </button>
           {saveError && <span className="text-xs text-[var(--color-danger)]">{saveError}</span>}
+          {saveSummary && (
+            <span
+              className={`text-xs ${saveSummary.hadBlocks ? "text-[var(--color-amber)]" : "text-[var(--color-ink-soft)]"}`}
+            >
+              {saveSummary.text}
+            </span>
+          )}
         </div>
       </div>
     </div>

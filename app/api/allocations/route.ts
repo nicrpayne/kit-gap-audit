@@ -76,14 +76,60 @@ export async function PUT(req: NextRequest) {
   }
 
   const scopeIds = [...new Set(body.allocations.map((a) => a.scopeId!))];
-  const scopeCount = await prisma.scope.count({ where: { id: { in: scopeIds } } });
-  if (scopeCount !== scopeIds.length) {
+  const scopeRows = await prisma.scope.findMany({ where: { id: { in: scopeIds } }, select: { id: true, name: true } });
+  if (scopeRows.length !== scopeIds.length) {
     return NextResponse.json({ error: "One or more scopeId values don't exist" }, { status: 400 });
   }
 
   // Drop zero/near-zero fractions rather than storing dead rows -- a
   // slider dragged to 0 means "no allocation," not "an allocation of 0."
   const toWrite = body.allocations.filter((a) => a.fraction! > 1e-6) as Required<AllocationInput>[];
+
+  // Server-side invariant, independent of any UI: a Scope's authoritative
+  // capacity source (allocations vs. explicit/inferred) is exactly "does
+  // this Scope have any Allocation row at all" -- see
+  // lib/capacity/resolve.ts's resolveCapacity, unchanged by this check.
+  // Writing the FIRST-ever Allocation row for a Scope that currently has
+  // none would silently flip it from an aggregate (explicit/inferred)
+  // number to a person-level model containing only whoever's in THIS
+  // request -- discarding the aggregate baseline the same way the
+  // "+1 developer" bug did, just via a direct API call instead of the UI.
+  // The client (PortfolioPageClient.tsx's save()) already avoids sending
+  // these rows; this is defense-in-depth for any other caller (a script,
+  // Hermes, a future UI path) that might not. Determined with a single,
+  // cheap Allocation query -- no Linear call, no forecast computation, no
+  // need to distinguish "explicit" from "inferred" (both are exactly
+  // "zero existing Allocation rows for this Scope," which is all this
+  // check needs to know).
+  const scopesToWrite = [...new Set(toWrite.map((a) => a.scopeId))];
+  if (scopesToWrite.length > 0) {
+    const scopesWithExistingAllocations = await prisma.allocation.findMany({
+      where: { scopeId: { in: scopesToWrite } },
+      select: { scopeId: true },
+      distinct: ["scopeId"],
+    });
+    const alreadyAllocationsSourced = new Set(scopesWithExistingAllocations.map((a) => a.scopeId));
+    const aggregateScopeIds = scopesToWrite.filter((id) => !alreadyAllocationsSourced.has(id));
+    if (aggregateScopeIds.length > 0) {
+      const scopeNameById = new Map(scopeRows.map((s) => [s.id, s.name]));
+      const names = aggregateScopeIds.map((id) => scopeNameById.get(id) ?? id);
+      return NextResponse.json(
+        {
+          error:
+            `Can't write a person-level allocation onto ${names.join(", ")} -- ` +
+            `${names.length === 1 ? "it currently has" : "they currently have"} no tracked allocations, ` +
+            `so ${names.length === 1 ? "its" : "their"} capacity is a single aggregate number (explicit or inferred from Linear), ` +
+            `with no roster this endpoint could safely treat as complete. Writing any allocation here -- even a multi-person one -- ` +
+            `would silently and partially convert ${names.length === 1 ? "it" : "them"} to a person-level model that may be missing ` +
+            `whoever else the aggregate number represents. For an anonymous/net-new capacity change, update the Scope's ` +
+            `teamCapacity via PATCH /api/scopes/:id instead. Converting a Scope to full person-level tracking is a deliberate ` +
+            `action not yet supported by this endpoint.`,
+          scopeIds: aggregateScopeIds,
+        },
+        { status: 409 }
+      );
+    }
+  }
 
   const validationErrors = validateAllocations(people, toWrite);
   if (validationErrors.length > 0) {

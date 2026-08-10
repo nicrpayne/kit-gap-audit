@@ -26,13 +26,31 @@ scope-cut) are still ahead, same branch.
 from `claude/portfolio-scenario-levers`. Named and unified the
 "apply a hypothetical change to Reality and re-forecast" transform that
 previously existed as two independently hand-maintained implementations
--- done, verified, **not yet merged**. This is groundwork for a larger
-product direction (a delivery-simulation instrument with explicit
-Reality/Scenario/Forecast separation, A/B/C/D saved scenarios, direct
-manipulation) that is being built incrementally; only the narrowest first
-slice has landed so far. Do not resume this work without checking recent
-conversation history first -- Phase 1 was explicitly scoped to exclude
-everything past naming/unifying the input-delta transform.
+-- done, verified. This is groundwork for a larger product direction (a
+delivery-simulation instrument with explicit Reality/Scenario/Forecast
+separation, A/B/C/D saved scenarios, direct manipulation) that is being
+built incrementally; only the narrowest first slice has landed so far.
+
+**Capacity-scenario correctness fix**, same branch, committed right after
+Phase 1 -- Nic's click-through of Phase 1 found the "+1 developer" quick
+action could make a scope's forecast *later*, non-monotonically. Root
+cause: `resolveCapacity`'s capacity-source fallback chain (correct for
+Reality) was being fed scenario-introduced allocation entries, silently
+flipping a scope from an aggregate (explicit/inferred) source to
+"allocations" and discarding the aggregate baseline. Fixed by keying
+`applyScenarioInputDelta`'s branch on the scope's own Reality capacity
+source (not on whether a contributor is real or hypothetical) --
+`resolveCapacity` itself untouched. Commit rules approved and implemented:
+anonymous capacity added to an aggregate scope commits as a new
+`explicitTeamCapacity` (never a fake Person row, never silent -- a live
+"Saving this will..." summary in the UI); a named real person's
+reallocation commits only when every scope they touch is
+allocations-sourced, blocked atomically (whole person, both legs) if not,
+with Preview still allowed to show the full hypothetical trade regardless.
+Server-side invariant added to `PUT /api/allocations` as defense-in-depth
+against any non-UI caller. Both **not yet merged, not yet clicked through
+by Nic** -- do not resume this work or merge without checking recent
+conversation history first.
 
 ## Where things stand
 
@@ -107,6 +125,142 @@ everything past naming/unifying the input-delta transform.
   relief preview, scope-cut). Nic's own click-through against this branch
   is a required validation step before any merge -- **do not merge this
   branch without an explicit instruction to do so.**
+
+- **Capacity-scenario correctness fix (same branch
+  `claude/scenario-input-delta`, committed right after Phase 1, not yet
+  merged)** -- found during Nic's own click-through of Phase 1: clicking
+  "+1 developer" / "+2 developers" on `/portfolio` could push a scope's
+  forecast *later*, and repeated clicks moved the date around
+  non-monotonically (worse, then better, as more capacity was added).
+  Investigated rigorously before any fix -- reproduced identically via
+  pure-function calls AND a real browser on both `claude/portfolio-
+  scenario-levers` and `claude/scenario-input-delta` (git-worktree
+  checkouts of each, `node_modules` symlinked in, real local dev servers),
+  and confirmed via byte-identical file diffs that `lib/capacity/
+  resolve.ts`, `lib/forecast/portfolio.ts`, and the button-handler code
+  are unchanged across base/scenario-levers/scenario-input-delta -- so the
+  bug predates Phase 1 entirely and is live on the deployed base branch,
+  not a regression this session introduced.
+
+  **Root cause**: `resolveCapacity`'s fallback chain (allocations >
+  explicit > inferred) is correct for authoritative Reality -- a scope is
+  administered one way, never a blend -- but is mutually exclusive: the
+  instant *any* allocation-shaped entry exists for a scope, the chain
+  switches to "allocations" and computes *only* from that entry,
+  discarding whatever aggregate baseline (explicit or inferred) was there
+  a moment before. A hypothetical "+1 developer" click, or an existing
+  real person's allocation moved in from another scope, is exactly such
+  an entry. Concretely reproduced: a scope with `explicit=4`, click "+1
+  developer" once -> capacity becomes 1 (not 5), pushing a same-day
+  forecast from Sep 17 to Jan 11 (+116 days) from a single "add capacity"
+  click; five cumulative clicks were needed just to break even with the
+  original baseline.
+
+  **Two more architecture passes preceded the fix**, both explicitly
+  requested by Nic before any code changed: the first established the
+  Reality/Scenario boundary (`resolveCapacity` stays unchanged; scenario
+  application must resolve Reality's authoritative capacity first, then
+  add scenario-only effects on top, never blend all available sources).
+  The second caught a real hole in that first design: partitioning by
+  "real person vs. hypothetical person" (the natural-seeming axis) still
+  reproduces the identical bug for an *existing real person* moved into
+  an aggregate scope, and can't correctly combine a ghost and a real
+  person landing on the same aggregate scope in one scenario. The
+  corrected axis is the *destination scope's own Reality capacity
+  source*, not contributor identity -- once conditioned on that, real vs.
+  hypothetical turns out to be irrelevant to the capacity math and only
+  matters for a separate question: commit eligibility.
+
+  **What shipped**: `ScenarioInputScope` (`lib/scenario/inputDelta.ts`)
+  gained one field, `capacitySource` (Reality's own source for that
+  scope, fixed before the scenario is applied, populated from data both
+  call sites already had). `applyScenarioInputDelta` branches on it:
+  allocations-sourced scopes behave exactly as before (one
+  `resolveCapacity` call against the full current allocation picture);
+  explicit/inferred scopes preserve their resolved baseline untouched and
+  add a second `resolveCapacity` call's contribution on top
+  (`explicitTeamCapacity` forced to `null` so it can never itself resolve
+  to "explicit," but still correctly switch-cost-adjusted against the
+  full cross-scope allocation array). `resolveCapacity` itself, `simulate.ts`,
+  and `portfolio.ts` are **completely untouched**.
+
+  New `lib/scenario/namedTransfer.ts` (`detectNamedPersonMoves`) --
+  deliberately minimal, answers exactly one question ("did this real
+  person's allocation move, and can every touched scope represent that
+  truthfully"), not a general workflow engine. Drives three approved
+  product rules: (1) anonymous/net-new capacity is always committable --
+  onto an allocations-sourced scope it still becomes a real
+  `Person`/`Allocation` row (unchanged); onto an aggregate scope it's
+  folded into a new `explicitTeamCapacity` via the existing `PATCH
+  /api/scopes/:id`, **never** a fabricated `Person` row, deliberately
+  converting that scope's source to `"explicit"` going forward. (2) A
+  named real person's reallocation commits only when every scope they
+  touch is allocations-sourced; if any touched scope is aggregate-sourced,
+  their **entire** allocation set is excluded from that Save (both legs
+  of a move, not just the aggregate-destination leg -- chosen as the
+  atomicity boundary because "which legs belong to which transfer" isn't
+  well-defined once a person has touched multiple scopes in one session,
+  and the broader exclusion is strictly safer). (3) Preview is
+  unrestricted either way -- it can honestly show a trade Reality can't
+  yet persist, since Scenario answers "what if" and Reality answers "what
+  do we actually know," and weakening Preview to match Reality's
+  persistence limits would undo the point of separating them.
+  `PortfolioPageClient.tsx`'s `save()` implements all three; a live
+  "Saving this will..." summary (reusing the app's existing inline-
+  message pattern, no new modal/design element) shows pending aggregate
+  conversions and blocked named transfers *before* Save is even clicked,
+  and a short post-save summary confirms what happened -- the explicit
+  invariant "must never be silent" holds throughout.
+
+  **Server-side invariant added as approved defense-in-depth**: `PUT
+  /api/allocations` independently rejects (409) any write that would
+  create the first-ever `Allocation` row on a scope with none today,
+  regardless of caller -- one cheap `prisma.allocation` query (does this
+  scope already have any row, checked against current pre-transaction
+  state), no Linear dependency, no need to distinguish explicit from
+  inferred (both are exactly "zero existing rows," which is all the check
+  needs). Known trade-off, stated plainly in the route's own comment and
+  in `docs/SCENARIO-MODEL.md`: this also blocks a legitimate one-shot
+  "set up person-level tracking for this scope for the first time" write,
+  since the check can't distinguish that from the same partial-write bug
+  via a different call shape -- that capability doesn't exist via any
+  path today and would need its own deliberate mechanism later.
+
+  **Verified**: 14 pure-function fixture checks (`npx tsx`, deleted after
+  passing) covering all three capacity sources, the mixed
+  anonymous-plus-named case (Case 4: inferred 4 + anonymous 1 + real
+  0.3 -> 5.3), named-move atomicity detection, determinism (identical
+  specs -> identical `completionDaysSorted`), and dependency-chain
+  preservation. Real-Postgres persistence tests via direct HTTP against a
+  local dev server: valid writes to already-allocations-sourced scopes
+  succeed unchanged; direct bypass writes to aggregate scopes correctly
+  rejected with 409 and zero rows created; `PATCH /api/scopes/:id`
+  conversions correctly leave zero `Allocation` rows and zero stray
+  "New developer N" `Person` rows; a valid allocations-to-allocations
+  named transfer commits and survives reload. Three real-browser
+  Playwright runs against the actual `save()` flow with real persistence
+  (not mocked beyond the one unavoidable Linear-blocked `GET
+  /api/portfolio/inputs` call): the full blocked-named-transfer-plus-
+  aggregate-conversion scenario end to end (summary text visible before
+  Save, correct persisted state after -- Platform's explicit capacity
+  became 5, Anders' JSA allocation stayed at 1.0 untouched, no iTrack
+  allocation was created), the unaffected allocations-sourced happy path
+  (a ghost still becomes exactly one real Person, capacity sums
+  correctly, no summary block shown since nothing needs flagging), and
+  Discard (zero network writes fired, state reverts exactly, confirmed
+  directly against Postgres that nothing was ever persisted). `npx tsc
+  --noEmit`, `npx eslint .`, `npm run build` all clean throughout.
+
+  **Not done, not started, explicitly out of scope**: whether a ghost
+  added to an *already* allocations-sourced scope should also stay
+  anonymous instead of minting a "New developer N" `Person` row
+  (evidence from the button's own UX strongly suggests it should, but
+  it's a data-hygiene question, not a correctness bug -- flagged for a
+  later pass); a deliberate "convert this scope to person-level tracking"
+  mechanism; the visual/Instrument-Mode redesign; the resource mixer; any
+  Hermes changes; Scenario Levers 2-4. **Not yet merged, not yet clicked
+  through by Nic** -- do not merge without an explicit instruction to do
+  so.
 
 - **Shared capacity pool, Phase 1 of 3 (branch `claude/portfolio-
   capacity-pool`, not yet merged)** — the structural fix for a real bug:

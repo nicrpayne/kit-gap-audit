@@ -174,6 +174,7 @@ export async function POST(req: NextRequest) {
     dependsOnScopeIds: s.dependsOnScopeIds,
     explicitTeamCapacity: s.explicitTeamCapacity,
     teamCapacity: s.teamCapacity,
+    capacitySource: s.capacitySource,
     startDate: portfolio.startDate,
     targetDate: s.targetDate,
   }));

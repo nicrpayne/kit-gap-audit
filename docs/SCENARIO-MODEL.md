@@ -1,8 +1,9 @@
 # Scenario model
 
-Describes what actually exists in the codebase after the "scenario
-foundation" Phase 1 refactor (branch `claude/scenario-input-delta`, cut
-from `claude/portfolio-scenario-levers`). This is a description of shipped
+Describes what actually exists in the codebase after (1) the "scenario
+foundation" Phase 1 refactor and (2) the capacity-scenario correctness fix
+that followed it (both on branch `claude/scenario-input-delta`, cut from
+`claude/portfolio-scenario-levers`). This is a description of shipped
 code, not a design spec — if something below and the code disagree, the
 code is right and this doc is stale.
 
@@ -60,6 +61,9 @@ export interface ScenarioInputScope {
   explicitTeamCapacity: number | null;
   teamCapacity: number;      // already-resolved fallback (may itself be
                               // inferred from Linear assignees)
+  capacitySource: CapacitySource; // "allocations" | "explicit" | "inferred"
+                                   // -- Reality's OWN source for this scope,
+                                   // fixed before the scenario is applied
   startDate: Date;
   targetDate: Date | null;
 }
@@ -71,20 +75,152 @@ export function applyScenarioInputDelta(
 ): ScopeSimulationSpec[]
 ```
 
-Pure. Calls the existing `resolveCapacity` (`lib/capacity/resolve.ts`)
-once per scope — it does not reimplement any part of the capacity
-fallback chain. `teamCapacity` on the output spec is
-`resolved.capacity ?? s.teamCapacity`: if this delta gives a scope neither
-a real allocation nor an explicit override, it falls back to the
-already-resolved value computed server-side (which may itself be inferred
-from distinct Linear assignees — this pure, isomorphic module has no
-Linear data of its own and doesn't try to re-derive that inference).
+Pure. Calls the existing `resolveCapacity` (`lib/capacity/resolve.ts`) —
+never modified, never reimplemented — either once or twice per scope,
+branching on `capacitySource`:
+
+```ts
+if (s.capacitySource === "allocations") {
+  const resolved = resolveCapacity(s.scopeId, s.explicitTeamCapacity, people, delta.allocations, delta.contextSwitchCostPct);
+  teamCapacity = resolved.capacity ?? s.teamCapacity;
+} else {
+  // explicit | inferred -- the aggregate baseline is preserved untouched;
+  // a SECOND call (explicitTeamCapacity forced to null) computes only the
+  // scenario's additive contribution for this one scope, still correctly
+  // switch-cost-adjusted against the full cross-scope allocation array.
+  const additive = resolveCapacity(s.scopeId, null, people, delta.allocations, delta.contextSwitchCostPct);
+  teamCapacity = s.teamCapacity + (additive.capacity ?? 0);
+}
+```
 
 This is the **one and only place** `ScopeSimulationSpec[]` gets built from
 a Scenario. `components/PortfolioPageClient.tsx` (client-side, drives live
 drag) and `POST /api/portfolio/preview` (server-side, stateless
 apply-and-return for programmatic callers) both call it — neither hand-
 rolls the transform any more.
+
+## Capacity source belongs to Reality, not to the scenario
+
+A scope's authoritative capacity source — `"allocations"`, `"explicit"`,
+or `"inferred"` (`lib/forecast/build.ts`'s `CapacitySource`) — is a fact
+about Reality, fixed by `resolveCapacity` against Reality's own saved
+`Allocation` rows *before* any scenario is applied. `ScenarioInputScope.capacitySource`
+carries this fixed fact through to `applyScenarioInputDelta`, and it never
+changes as a result of what the scenario contains. This is the core
+invariant this document exists to state plainly, because it's exactly
+what a real, reproduced bug violated before this fix existed: introducing
+*any* allocation-shaped entry — a net-new hypothetical person, or an
+existing real person moved in from another scope — used to silently flip
+`resolveCapacity`'s decision from `"explicit"`/`"inferred"` to
+`"allocations"`, discarding an aggregate baseline (e.g. "4 FTE inferred")
+in favor of just the newly-introduced entry (e.g. "1 FTE"), sometimes
+producing a *later* forecast from *adding* capacity. Fixed by keying the
+branch in `applyScenarioInputDelta` on `capacitySource` (a Reality fact,
+computed once) rather than on whether a given allocation entry happens to
+be real or hypothetical.
+
+### Aggregate-sourced vs. allocations-sourced: what each can represent
+
+- **`capacitySource === "allocations"`** — Reality already tracks this
+  scope at person level; every real `Allocation` row is a named,
+  enumerable contributor. Both a net-new hypothetical person and an
+  existing real person's reallocation are folded into the same
+  `resolveCapacity` call, exactly as before this fix — correct, because
+  there's no aggregate number at risk of being silently discarded.
+- **`capacitySource === "explicit" | "inferred"`** — Reality is a single
+  aggregate number with **no enumerable roster**. There is no stored data
+  anywhere linking that number to specific people (no `linearUserId` on
+  `Person`, no per-contributor breakdown for an inferred count, no
+  contributor list for a typed-in explicit number). This has two
+  consequences, applied consistently everywhere in this codebase:
+  - **Anonymous/net-new capacity can always be added** — it makes no
+    claim about who's inside the aggregate, so it's safe to add on top.
+  - **A named, specific person cannot be safely added or removed** as a
+    *commit* — adding one would either fabricate that we know who else
+    makes up the rest of the number, or (if we tried to represent it
+    faithfully) require inventing a roster that doesn't exist. Removing
+    one is worse: it would require knowing they were already counted in
+    the aggregate, which is fundamentally unknowable from this data
+    model. **Preview may still model a named person's move into an
+    aggregate scope** (see "Preview may represent states that cannot yet
+    be committed" below) — only *persisting* it is restricted.
+
+### Anonymous capacity vs. named-person reallocation
+
+These are two different kinds of scenario change, and the codebase now
+treats them differently on purpose:
+
+- **Anonymous/net-new capacity** (`ScenarioInputDelta.hypotheticalPeople`,
+  e.g. the "+1 developer" / "+2 developers" quick actions) makes no claim
+  about identity. It is *always* committable: onto an allocations-sourced
+  scope it becomes a real `Person` + `Allocation` row (unchanged
+  behavior); onto an aggregate scope it's folded into a new
+  `explicitTeamCapacity` value (see "Commit rules" below) and **never**
+  given a `Person`/`Allocation` row.
+- **Named-person reallocation** (an existing real `Person`'s fraction
+  changing on one or more scopes — moving them, changing their split, or
+  adding them somewhere new) makes a specific, named claim. It is
+  committable only when every scope the person ends up on (with a
+  positive resulting fraction) is allocations-sourced. `lib/scenario/namedTransfer.ts`'s
+  `detectNamedPersonMoves` is the pure helper that answers "did this
+  person's allocation change, and can every touched scope represent
+  that truthfully" — used for commit eligibility, atomic blocking, and
+  the explanatory UI copy, and nothing else (not a general workflow
+  engine).
+
+The `+1`/`+2 developer` quick actions are, and were always intended to
+be, anonymous scenario capacity — not evidence of a specific future named
+employee. Nothing in the UI ever asks for or implies a name (the
+auto-generated "New developer N" label is a placeholder, never surfaced
+as something to fill in); the buttons exist to answer "what if we had
+more capacity," not "let's onboard someone." This is why they now commit
+as an aggregate-capacity bump on an aggregate scope rather than minting a
+meaningless named `Person` row there. On an **already** allocations-sourced
+scope, they still realize as a real `Person` row, exactly as before this
+fix — that scope's whole model is a list of named contributors, so an
+anonymously-named placeholder (renamable later) is a reasonably honest
+fit, and changing that mechanism was explicitly out of scope for this fix
+(a lower-priority data-hygiene question, not a correctness bug).
+
+### Preview may represent states that cannot yet be committed
+
+Preview (`baseline`/`preview`, the live `Map<scopeId, SimulationResult>`)
+has no opinion on persistability — it will happily show a named person's
+allocation split across an allocations-sourced scope and an aggregate
+one, because the *simulation* math is honest either way ("4 aggregate +
+0.3 named" is a perfectly coherent number to feed the engine). Commit
+eligibility is a separate, stricter question, asked only at Save time.
+This is a deliberate design choice, not an oversight: Scenario's job is
+to answer "what if," Reality's job is to answer "what do we actually know
+and track" — weakening what Scenario can *ask* merely because Reality
+can't yet *persist* the answer would be a real step backward from the
+point of separating them in the first place. The eventual **Save
+Scenario** (preserve a hypothetical without touching Reality) vs.
+**Commit to Reality** (requires the destination to represent the change
+truthfully) split — not built yet, see "What this foundation is for"
+below — is the long-term home for this asymmetry; today it shows up as
+Preview always succeeding and Save selectively excluding what it can't
+truthfully persist.
+
+### Named-transfer commit restrictions, and atomicity
+
+A real person's allocation changes are committed **only if every scope
+they'd end up on (positive resulting fraction) is allocations-sourced**.
+If any touched scope is aggregate-sourced, **the person's entire set of
+allocation changes for that Save is excluded** — not just the
+aggregate-destination leg. Concretely: if Anders moves 0.3 FTE from an
+allocations-sourced JSA to an aggregate-sourced iTrack, clicking Save
+does not reduce JSA's stored allocation for Anders either — both legs
+stay exactly as Reality had them. This is a broader atomicity boundary
+than "just the specific transfer's two legs" (chosen deliberately, since
+"which legs belong to which transfer" isn't well-defined in general once
+a person has touched multiple scopes in one session) — it's simpler to
+reason about, and strictly safer: nothing about a blocked person's
+allocations changes, full stop, for that Save. Unrelated changes (other
+people, anonymous additions, other scopes) still commit in the same Save
+action. The UI surfaces which changes were excluded and why, both before
+Save is clicked (a live "Saving this will..." summary,
+`PortfolioPageClient.tsx`) and after (a short summary message).
 
 ## Apply-delta flow
 
@@ -137,15 +273,43 @@ computation with zero network calls per drag frame.
 
 ## Save / Discard
 
-Unchanged by this refactor. `save()` writes the delta's *contents*
-straight into Reality's own Postgres tables (`POST /api/people` for new
-ghosts, `PUT /api/allocations` full-replace, `PATCH /api/portfolio-settings`
-if the switch-cost changed), then reloads Reality from scratch. `discard()`
-resets local component state back to the last-loaded Reality. There is no
-intermediate "commit this as a named scenario" step — the scenario, as a
-distinct value, still ceases to exist the moment it's saved. That's
-unchanged; naming saved scenarios is explicitly not part of this
-foundation (see "What this does NOT include" below).
+`discard()` is unchanged: resets local component state
+(`fractions`/`ghosts`/`switchCostPct`) back to the last-loaded Reality,
+zero network calls. There is no intermediate "commit this as a named
+scenario" step — the scenario, as a distinct value, ceases to exist the
+moment it's saved or discarded. Naming/saving scenarios is explicitly not
+part of this codebase yet (see "What this foundation is for" below).
+
+`save()`'s commit rules, per scope's `capacitySource`:
+
+- **`"allocations"`** — unchanged from before this fix. Anonymous
+  additions and real reallocations both flow into `POST /api/people`
+  (for a used, not-yet-real ghost) and `PUT /api/allocations` (full
+  replace per mentioned person), except that any real person flagged
+  ineligible by `detectNamedPersonMoves` (see above) is excluded from the
+  payload entirely.
+- **`"explicit"` or `"inferred"`** — an anonymous/hypothetical
+  contribution to this scope is folded into a **new `explicitTeamCapacity`
+  value**, committed via the existing `PATCH /api/scopes/:id` (already
+  supported the `teamCapacity` field; no route change needed). No
+  `Person`/`Allocation` row is created for it. This is a deliberate,
+  approved conversion: `inferred → explicit`, or `explicit(N) →
+  explicit(N + addition)` — the scope's capacity source becomes/stays
+  `"explicit"` going forward, since a number was just deliberately
+  supplied. **Not silent**: `PortfolioPageClient.tsx` renders a live
+  "Saving this will..." summary (updates as the user drags, visible
+  before Save is even clicked) naming exactly which scope converts to
+  what value and why, plus which named-person changes are blocked and
+  why — reusing the app's existing inline-message visual pattern
+  (`overAllocated`/`removeError`), not a new modal or design language. A
+  real person's contribution to an aggregate scope is **never** folded
+  into this number, whether or not that specific move happens to be
+  eligible elsewhere — there is no eligible path for a named person into
+  an aggregate scope at all (see "Named-transfer commit restrictions"
+  above).
+
+`await load()` still reloads Reality from scratch after either path
+completes, same as before.
 
 ## Comparison: compareToBaseline
 
@@ -232,6 +396,41 @@ inline `deltaDays` arithmetic (duplicated three times: two render
 call-sites in the client, once in the preview route's response) was
 replaced by `compareToBaseline` in all three places.
 
+## Server-side invariant: PUT /api/allocations
+
+The rules above are enforced client-side in `PortfolioPageClient.tsx`,
+but the client is not the only possible caller of `PUT /api/allocations`
+(`app/api/allocations/route.ts`) — a script, Hermes, or a future UI path
+could call it directly. The route enforces the same invariant
+independently, as defense-in-depth: **it rejects (409) any write that
+would introduce the first-ever `Allocation` row for a scope that
+currently has none**, regardless of how many people the request names or
+whether the request looks "complete." Determined with one cheap query —
+`prisma.allocation.findMany({ where: { scopeId: { in: scopesToWrite } }, distinct: ["scopeId"] })`
+— comparing the *current, pre-transaction* set of scopes that already
+have at least one allocation against the scopes the request targets.
+Deliberately does **not** try to distinguish `"explicit"` from
+`"inferred"` — both are exactly "zero existing `Allocation` rows for this
+scope," which is all this check needs to know, and computing which of
+the two it is would need Linear data this route has no reason to fetch.
+No Linear call, no forecast computation, no dependency on
+`resolveCapacity`'s consuming code — just a Postgres fact checked before
+the write. A write that only touches a scope which already has ≥1
+existing allocation (from anyone, including the same person being
+updated) passes normally; this is what keeps ordinary allocations-sourced
+scope edits — realizing a ghost, reallocating a real person, adjusting an
+existing fraction — working exactly as before.
+
+**Known trade-off, worth stating plainly**: this makes it impossible to
+set up person-level tracking for a scope **for the first time** via this
+endpoint at all, even as a single deliberate, complete, multi-person
+request — the check has no way to distinguish "a legitimate one-shot
+conversion" from "the same partial-write bug via a different call
+shape," so it refuses both. Converting an aggregate scope to full
+person-level tracking is not supported by any path today (client or
+API) — it would need a new, explicit, deliberately-named mechanism,
+which is future work, not part of this fix.
+
 ## What this foundation is for (not built yet)
 
 The narrow shape above is deliberate groundwork for a larger future model
@@ -275,7 +474,14 @@ persistence of a scenario as anything other than "whatever's currently in
 `fractions`/`ghosts`/`switchCostPct`/the target-date input, until Save
 writes it into Reality or Discard throws it away." This document describes
 the foundation those features would be built on, not those features
-themselves.
+themselves. Likewise, **Save Scenario** (preserve a hypothetical without
+touching Reality) and **Commit to Reality** (write it, only where
+truthfully representable) remain conceptually distinct ideas discussed in
+this document, but there is still only one button ("Save this
+allocation") and one code path — the capacity-scenario fix made that one
+path *correctly discriminate* what it can and can't truthfully persist,
+it did not split it into two separate user-facing actions. That split
+remains explicitly future work.
 
 ## Performance
 
