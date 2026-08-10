@@ -8,11 +8,13 @@ import {
   type PersonLike,
   type AllocationLike,
 } from "@/lib/capacity/resolve";
-import { runPortfolioSimulation, type ScopeSimulationSpec } from "@/lib/forecast/portfolio";
+import { runPortfolioSimulation } from "@/lib/forecast/portfolio";
 import type { SimulationResult, WorkItem, DecisionGate } from "@/lib/forecast/simulate";
 import { computePortfolioInsights, type ScopeInsightInput } from "@/lib/portfolio/insights";
 import { computeMomentum, dateDeltaPhrase } from "@/lib/momentum/compute";
 import { percentileDay, confidenceAtDay } from "@/lib/forecast/simulate";
+import { applyScenarioInputDelta, type ScenarioInputDelta, type ScenarioInputScope } from "@/lib/scenario/inputDelta";
+import { compareToBaseline } from "@/lib/scenario/compare";
 
 // This entire file is the "cheap, every slider frame" half of Phase 2's
 // performance split (see ROADMAP.md): GET /api/portfolio/inputs is the one
@@ -281,49 +283,61 @@ export default function PortfolioPageClient() {
     load();
   }, [load]);
 
-  const specsFor = useCallback(
-    (people: PersonLike[], allocations: AllocationLike[], costPct: number): ScopeSimulationSpec[] | null => {
-      if (!data) return null;
-      const startDate = new Date(data.startDate);
-      return data.scopes.map((s) => {
-        const resolved = resolveCapacity(s.scopeId, s.explicitTeamCapacity, people, allocations, costPct);
-        return {
-          scopeId: s.scopeId,
-          items: s.items,
-          gates: s.gates,
-          teamCapacity: resolved.capacity ?? s.teamCapacity,
-          dependsOnScopeIds: s.dependsOnScopeIds,
-          startDate,
-          targetDate: s.targetDate ? new Date(s.targetDate) : null,
-        };
-      });
-    },
-    [data]
-  );
+  // Per-scope simulation inputs, normalized to the ScenarioInputScope
+  // shape applyScenarioInputDelta expects (Date conversions done once
+  // here, not repeated in every baseline/preview computation). Recomputed
+  // only when a fresh load() replaces `data`, not on every drag frame.
+  const scenarioScopes: ScenarioInputScope[] | null = useMemo(() => {
+    if (!data) return null;
+    const startDate = new Date(data.startDate);
+    return data.scopes.map((s) => ({
+      scopeId: s.scopeId,
+      items: s.items,
+      gates: s.gates,
+      dependsOnScopeIds: s.dependsOnScopeIds,
+      explicitTeamCapacity: s.explicitTeamCapacity,
+      teamCapacity: s.teamCapacity,
+      startDate,
+      targetDate: s.targetDate ? new Date(s.targetDate) : null,
+    }));
+  }, [data]);
 
   // Baseline: the saved allocations, computed once per load -- the fixed
-  // reference every preview delta is measured against.
+  // reference every preview delta is measured against. Reproduces the
+  // originally-resolved capacity exactly (see applyScenarioInputDelta's
+  // doc comment) since this delta is built from Reality's own saved
+  // allocations/people/contextSwitchCostPct, not a hypothetical one.
   const baseline = useMemo(() => {
-    if (!data) return null;
-    const people: PersonLike[] = data.people;
-    const allocations: AllocationLike[] = data.allocations.map((a) => ({
-      personId: a.personId,
-      scopeId: a.scopeId,
-      fraction: a.fraction,
-    }));
-    const specs = specsFor(people, allocations, data.contextSwitchCostPct);
-    if (!specs) return null;
+    if (!data || !scenarioScopes) return null;
+    const baselineDelta: ScenarioInputDelta = {
+      allocations: data.allocations.map((a) => ({
+        personId: a.personId,
+        scopeId: a.scopeId,
+        fraction: a.fraction,
+      })),
+      hypotheticalPeople: [],
+      contextSwitchCostPct: data.contextSwitchCostPct,
+    };
     try {
-      return runPortfolioSimulation(specs);
+      return runPortfolioSimulation(applyScenarioInputDelta(scenarioScopes, data.people, baselineDelta));
     } catch {
       return null;
     }
-  }, [data, specsFor]);
+  }, [data, scenarioScopes]);
+
+  // Ghosts as PersonLike -- shared by allPeople (needed flat, for
+  // validateAllocations/unallocatedCapacity/the grid render, none of
+  // which care about the Reality/hypothetical split) and previewDelta
+  // below (which does care, per ScenarioInputDelta's shape).
+  const ghostsAsPersonLike: PersonLike[] = useMemo(
+    () => ghosts.map((g) => ({ id: g.id, name: g.name, fte: g.fte, active: true })),
+    [ghosts]
+  );
 
   const allPeople: PersonLike[] = useMemo(() => {
     if (!data) return [];
-    return [...data.people, ...ghosts.map((g) => ({ id: g.id, name: g.name, fte: g.fte, active: true }))];
-  }, [data, ghosts]);
+    return [...data.people, ...ghostsAsPersonLike];
+  }, [data, ghostsAsPersonLike]);
 
   const currentAllocations: AllocationLike[] = useMemo(() => {
     const out: AllocationLike[] = [];
@@ -346,17 +360,32 @@ export default function PortfolioPageClient() {
     [allPeople, currentAllocations]
   );
 
+  // The live hypothetical, as a ScenarioInputDelta -- an explicit adapter
+  // from the fine-grained interaction state above (fractions/ghosts/
+  // switchCostPct, each its own useState for cheap point updates on every
+  // slider frame) to the one domain shape applyScenarioInputDelta takes.
+  // Assembling this object is O(scopes-with-nonzero-fractions), the same
+  // cost `currentAllocations` above already pays every render -- it does
+  // not change the interaction layer's performance characteristics.
+  const previewDelta: ScenarioInputDelta = useMemo(
+    () => ({
+      allocations: currentAllocations,
+      hypotheticalPeople: ghostsAsPersonLike,
+      contextSwitchCostPct: switchCostPct,
+    }),
+    [currentAllocations, ghostsAsPersonLike, switchCostPct]
+  );
+
   // Debounced client-side resimulation -- immediate enough to feel live
   // while dragging without recomputing 5000 trials x every Scope on
   // every single pixel of a drag.
   const [preview, setPreview] = useState<Map<string, SimulationResult> | null>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
-    if (!data || overAllocated.length > 0) return;
+    if (!data || !scenarioScopes || overAllocated.length > 0) return;
     if (debounceRef.current) clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(() => {
-      const specs = specsFor(allPeople, currentAllocations, switchCostPct);
-      if (!specs) return;
+      const specs = applyScenarioInputDelta(scenarioScopes, data.people, previewDelta);
       try {
         setPreview(runPortfolioSimulation(specs));
       } catch {
@@ -367,7 +396,7 @@ export default function PortfolioPageClient() {
     return () => {
       if (debounceRef.current) clearTimeout(debounceRef.current);
     };
-  }, [data, allPeople, currentAllocations, switchCostPct, specsFor, overAllocated.length]);
+  }, [data, scenarioScopes, previewDelta, overAllocated.length]);
 
   const startDateObj = useMemo(() => (data ? new Date(data.startDate) : null), [data]);
 
@@ -687,8 +716,7 @@ export default function PortfolioPageClient() {
             {data.scopes.map((s, i) => {
               const b = baseline?.get(s.scopeId);
               const p = preview?.get(s.scopeId) ?? b;
-              const deltaDays =
-                b && p ? Math.round((p.likelyDate.getTime() - b.likelyDate.getTime()) / 86400000) : 0;
+              const { deltaDays } = compareToBaseline(b, p);
               const targetDay = s.targetDate && startDateObj ? dayOffset(startDateObj, new Date(s.targetDate)) : null;
               const color = SCOPE_COLORS[i % SCOPE_COLORS.length];
               return (

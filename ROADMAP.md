@@ -15,16 +15,98 @@ webhook) are planned but not yet approved to start.
 **scopes-editing + Nav fix** are both merged into the base branch --
 see "Where things stand" for the full history.
 
-Active work: **portfolio scenario levers**
-(`PORTFOLIO_SCENARIO_LEVERS_BUILD_BRIEF`), on branch
-`claude/portfolio-scenario-levers`, cut from the base branch. Lever 1 of
-4 (target date, both directions) is done, not yet merged. Levers 2-4
-(context-switch/focus toggle, dependency-relief preview, scope-cut) are
-still ahead, same branch, report-as-you-go per the brief's own
-checkpoint -- check recent conversation for where things actually stand
-before continuing.
+**Portfolio scenario levers** (`PORTFOLIO_SCENARIO_LEVERS_BUILD_BRIEF`),
+on branch `claude/portfolio-scenario-levers`, cut from the base branch.
+Lever 1 of 4 (target date, both directions) is done, not yet merged.
+Levers 2-4 (context-switch/focus toggle, dependency-relief preview,
+scope-cut) are still ahead, same branch.
+
+**Scenario foundation, Phase 1 of an architectural evolution** (see
+`docs/SCENARIO-MODEL.md`), on branch `claude/scenario-input-delta`, cut
+from `claude/portfolio-scenario-levers`. Named and unified the
+"apply a hypothetical change to Reality and re-forecast" transform that
+previously existed as two independently hand-maintained implementations
+-- done, verified, **not yet merged**. This is groundwork for a larger
+product direction (a delivery-simulation instrument with explicit
+Reality/Scenario/Forecast separation, A/B/C/D saved scenarios, direct
+manipulation) that is being built incrementally; only the narrowest first
+slice has landed so far. Do not resume this work without checking recent
+conversation history first -- Phase 1 was explicitly scoped to exclude
+everything past naming/unifying the input-delta transform.
 
 ## Where things stand
+
+- **Scenario foundation Phase 1 (branch `claude/scenario-input-delta`, cut
+  from `claude/portfolio-scenario-levers`, not yet merged)** -- an
+  architectural assessment (not build work) established that the product
+  is evolving toward an explicit Reality / Scenario / Forecast model (a
+  "delivery-simulation instrument," per the north-star brief that drove
+  this), and that most of the hard part already exists correctly:
+  `runPortfolioSimulation` (`lib/forecast/portfolio.ts`) already takes
+  arbitrary `ScopeSimulationSpec[]` and doesn't care whether they came
+  from saved data or a hypothetical. What didn't exist was a *name* for
+  "Reality + a hypothetical change" -- that concept lived as two
+  independently hand-maintained implementations: `PortfolioPageClient.tsx`'s
+  local `specsFor()` (driving the live drag preview) and
+  `POST /api/portfolio/preview`'s inline spec-building (server-side,
+  unreachable from the browser, already quietly diverged from the client's
+  version -- different hypothetical-person id schemes, no target-date
+  handling). This phase named it (`ScenarioInputDelta`,
+  `lib/scenario/inputDelta.ts`) and reduced it to one implementation
+  (`applyScenarioInputDelta`), used by both call sites. Also extracted the
+  previously-inline `deltaDays` arithmetic (duplicated three times across
+  the client's two render call-sites and the preview route's response
+  building) into `compareToBaseline` (`lib/scenario/compare.ts`) --
+  deliberately narrow, no confidence-delta field, since confidence is only
+  meaningful relative to an explicit target date.
+
+  **Deliberately excluded from this type**: target date. It's an
+  output-side/evaluation lever (a pure percentile/confidence read against
+  an already-simulated `completionDaysSorted` array, via
+  `confidenceAtDay`/`percentileDay` in `lib/forecast/simulate.ts`), not an
+  input the engine needs to re-run for -- `TargetDateLever` is untouched
+  and still bypasses `ScenarioInputDelta`/`applyScenarioInputDelta`
+  entirely, confirmed via Playwright to trigger zero network calls when
+  edited. Keeping the type this narrow leaves room for a future
+  `Scenario = ScenarioInputDelta + Evaluation + Metadata` composition
+  (needed for saved scenarios like "September 15 Plan" to remember their
+  own target without implying a target change reruns Monte Carlo) --
+  see `docs/SCENARIO-MODEL.md` for the full writeup, including what this
+  foundation deliberately does NOT build yet (no saved/named scenarios, no
+  undo/redo, no A/B/C/D slots -- all future work).
+
+  Zero Prisma schema changes. `lib/forecast/simulate.ts`,
+  `lib/forecast/portfolio.ts`, `lib/capacity/resolve.ts`,
+  `lib/forecast/scenarios.ts`/`buildScenarios`, `ForecastView.tsx`, and
+  the interaction-layer state shape (`fractions`/`ghosts`/`switchCostPct`,
+  each its own `useState` for cheap point updates on a drag frame) are
+  all untouched, per explicit instruction. Verified: a fixture regression
+  script proved `applyScenarioInputDelta`'s output is numerically
+  identical to both old implementations across every capacity-source rung
+  (allocations / explicit / inferred-fallback), a hypothetical-person
+  case, and a dependency chain (a scope depending on two others) -- both
+  as raw `ScopeSimulationSpec[]` equality and as identical
+  `runPortfolioSimulation` output (`completionDaysSorted`, `likelyDate`).
+  A live-server check confirmed `POST /api/portfolio/preview`'s
+  validation (invalid body, duplicate pair, unknown person, over-
+  allocation) is byte-identical to before, and that a valid request still
+  reaches the same Linear-blocked 502 at the same point. A real-browser
+  Playwright run against `/portfolio` (with `GET /api/portfolio/inputs`
+  mocked, the same pattern used for every prior Portfolio verification
+  this session) confirmed: dragging a scope's own allocations down moved
+  its displayed date later (Sep 14 -> Oct 19, +35d) and its dependent
+  scope moved by the *identical* +35d in the same live drag -- the
+  lockstep correlation survived the refactor end to end, not just in
+  isolated fixtures. `npm run build`, `npx eslint .`, and `npx tsc
+  --noEmit` all clean.
+
+  **Not done, not started, and explicitly out of scope for this phase**:
+  the visual/Instrument-Mode redesign, a Forecast Canvas, the resource
+  mixer, saved A/B/C/D scenarios, target-seeking as its own lever, Hermes
+  changes, and Scenario Levers 2-4 (context-switch toggle, dependency-
+  relief preview, scope-cut). Nic's own click-through against this branch
+  is a required validation step before any merge -- **do not merge this
+  branch without an explicit instruction to do so.**
 
 - **Shared capacity pool, Phase 1 of 3 (branch `claude/portfolio-
   capacity-pool`, not yet merged)** — the structural fix for a real bug:

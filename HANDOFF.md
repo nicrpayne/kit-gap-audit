@@ -380,6 +380,47 @@ Postgres. **Recommended follow-up, not yet done**: re-check this scope's
 forecast after the (now-completed, per Nic's screenshot) scope
 consolidation to see if the number resolves to something sane.
 
+## Scenario foundation — Phase 1 of a larger architectural evolution (open branch, not merged)
+
+Separate from the scenario-levers brief above. Nic gave a north-star
+product direction — KIT evolving into an explicit "delivery-simulation
+instrument" with a structural Reality / Scenario / Forecast distinction,
+eventually A/B/C/D saved scenarios, direct manipulation, and a
+darker "Instrument Mode" surface for Forecast/Portfolio — and asked for an
+architectural assessment before any of that gets built. The assessment
+(full text lives in that conversation, not repeated here) found that the
+hard part already existed correctly (`runPortfolioSimulation` already
+takes arbitrary specs and doesn't care if they're real or hypothetical);
+what was missing was a *name* for "Reality + a hypothetical change," which
+existed as two independently-diverged implementations
+(`PortfolioPageClient.tsx`'s local `specsFor()` and
+`POST /api/portfolio/preview`'s inline logic, the latter unreachable from
+the browser).
+
+**Phase 1** (branch `claude/scenario-input-delta`, cut from
+`claude/portfolio-scenario-levers`) named and unified that transform —
+`ScenarioInputDelta` + `applyScenarioInputDelta` in
+`lib/scenario/inputDelta.ts`, `compareToBaseline` in
+`lib/scenario/compare.ts` — and deleted both duplicate implementations.
+Deliberately narrow: it covers only today's input-side levers
+(allocations, hypothetical people, context-switch cost); target date
+stays outside it on purpose, since it's an output-side/evaluation read
+against an already-simulated distribution, not something that needs the
+engine to re-run. **Full writeup: `docs/SCENARIO-MODEL.md`** — read that
+before touching anything in `lib/scenario/` or the Portfolio
+preview/apply path. Zero schema changes, zero visual changes, zero
+changes to `simulate.ts`/`portfolio.ts`/`resolve.ts`/`scenarios.ts`.
+Verified via a fixture regression script (old vs. new spec-building,
+byte-identical across every capacity-source case and a dependency chain)
+and a real-browser Playwright run confirming the lockstep correlation
+still works end to end after the refactor. **Not yet merged, not yet
+clicked through by Nic** — do not merge without explicit instruction.
+
+Explicitly NOT part of Phase 1 (all future, all unstarted): the visual/
+Instrument-Mode redesign, a Forecast Canvas, the resource mixer, saved
+A/B/C/D scenarios, target-seeking as a first-class lever, any Hermes
+changes, and Scenario Levers 2-4 from the brief above.
+
 ## Linear access — an important sandbox capability correction
 
 This sandbox has **two separate network paths to Linear**, discovered
@@ -523,12 +564,15 @@ recent first: scopes-fix (`claude/scopes-fix`), design-momentum
 (`claude/portfolio-capacity-pool`, Phases 1-3 + a post-review atomicity
 bugfix). **Open, not merged**: `claude/portfolio-scenario-levers` —
 commits `7ba2d43` (Lever 1: target date), `9977b20` (axis fix), `c4a7923`
-(stale-project-name fix), all pushed to `origin/claude/portfolio-
-scenario-levers`. **Do not merge any branch into base without an explicit
-instruction to do so** — every merge this session was explicitly
-requested first, and that pattern should continue. Check `git log
---oneline -15` and `ROADMAP.md`'s top summary for anything more recent
-than this doc.
+(stale-project-name fix), `ad458dd` (HANDOFF.md rewrite), all pushed to
+`origin/claude/portfolio-scenario-levers`. **Also open, not merged**:
+`claude/scenario-input-delta`, cut from `claude/portfolio-scenario-levers`
+HEAD, carrying the scenario-foundation Phase 1 refactor (see the section
+above and `docs/SCENARIO-MODEL.md`). **Do not merge any branch into base
+without an explicit instruction to do so** — every merge this session was
+explicitly requested first, and that pattern should continue. Check
+`git log --oneline -15` and `ROADMAP.md`'s top summary for anything more
+recent than this doc.
 
 ## Where to look for more
 
@@ -543,6 +587,13 @@ than this doc.
   driving this session's design/momentum and scenario-levers work,
   committed to the base branch, worth reading directly rather than
   relying solely on this summary.
+- **`docs/SCENARIO-MODEL.md`** — describes what the scenario-foundation
+  Phase 1 refactor actually built (Reality / `ScenarioInputDelta` /
+  apply-delta flow / baseline-vs-preview / why target date doesn't
+  re-simulate), and explicitly what it deliberately does not build yet
+  (saved scenarios, undo/redo, A/B/C/D slots). Read before touching
+  `lib/scenario/`, `PortfolioPageClient.tsx`'s preview logic, or
+  `POST /api/portfolio/preview`.
 - **`BUILDPACK.md`** — the original v0 spec. Historical.
 - This file (`HANDOFF.md`) — update it whenever a change is significant
   enough that a fresh agent picking this up next would need to know.

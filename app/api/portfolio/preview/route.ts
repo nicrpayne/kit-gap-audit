@@ -1,13 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { buildPortfolioInputs } from "@/lib/forecast/compute";
-import { resolveCapacity, validateAllocations, type PersonLike, type AllocationLike } from "@/lib/capacity/resolve";
-import {
-  runPortfolioSimulation,
-  DependencyCycleError,
-  MissingDependencyError,
-  type ScopeSimulationSpec,
-} from "@/lib/forecast/portfolio";
+import { validateAllocations, type PersonLike, type AllocationLike } from "@/lib/capacity/resolve";
+import { runPortfolioSimulation, DependencyCycleError, MissingDependencyError } from "@/lib/forecast/portfolio";
+import { applyScenarioInputDelta, type ScenarioInputDelta, type ScenarioInputScope } from "@/lib/scenario/inputDelta";
+import { compareToBaseline } from "@/lib/scenario/compare";
 
 interface AllocationOverrideInput {
   personId?: string;
@@ -163,41 +160,42 @@ export async function POST(req: NextRequest) {
 
   const previewSwitchCostPct = body.contextSwitchCostPct ?? portfolio.contextSwitchCostPct;
 
-  const baselineSpecs: ScopeSimulationSpec[] = portfolio.scopes.map((s) => ({
+  // Both specs are built through the one shared transform (see
+  // lib/scenario/inputDelta.ts) -- no second, hand-rolled spec-building
+  // implementation lives in this route any more. The baseline delta is
+  // constructed from Reality's own saved allocations/people, which
+  // applyScenarioInputDelta's doc comment establishes reproduces the
+  // originally-resolved capacity exactly, including the inferred-from-
+  // assignees rung, without re-deriving it from Linear.
+  const scenarioScopes: ScenarioInputScope[] = portfolio.scopes.map((s) => ({
     scopeId: s.scopeId,
     items: s.items,
     gates: s.gates,
-    teamCapacity: s.teamCapacity,
     dependsOnScopeIds: s.dependsOnScopeIds,
+    explicitTeamCapacity: s.explicitTeamCapacity,
+    teamCapacity: s.teamCapacity,
     startDate: portfolio.startDate,
     targetDate: s.targetDate,
   }));
 
-  const previewCapacityByScope = new Map<string, number>();
-  const previewSpecs: ScopeSimulationSpec[] = portfolio.scopes.map((s) => {
-    const resolved = resolveCapacity(
-      s.scopeId,
-      s.explicitTeamCapacity,
-      previewPeople,
-      previewAllocations,
-      previewSwitchCostPct
-    );
-    // Neither a hypothetical allocation nor an explicit teamCapacity is
-    // set for this Scope -- fall back to its already-resolved baseline
-    // number (which itself already applied the inferred-from-assignees
-    // rung) rather than re-deriving from Linear a second time.
-    const teamCapacity = resolved.capacity ?? s.teamCapacity;
-    previewCapacityByScope.set(s.scopeId, teamCapacity);
-    return {
-      scopeId: s.scopeId,
-      items: s.items,
-      gates: s.gates,
-      teamCapacity,
-      dependsOnScopeIds: s.dependsOnScopeIds,
-      startDate: portfolio.startDate,
-      targetDate: s.targetDate,
-    };
-  });
+  const baselineDelta: ScenarioInputDelta = {
+    allocations: portfolio.allocations.map((a) => ({
+      personId: a.personId,
+      scopeId: a.scopeId,
+      fraction: a.fraction,
+    })),
+    hypotheticalPeople: [],
+    contextSwitchCostPct: portfolio.contextSwitchCostPct,
+  };
+  const baselineSpecs = applyScenarioInputDelta(scenarioScopes, portfolio.people, baselineDelta);
+
+  const previewDelta: ScenarioInputDelta = {
+    allocations: previewAllocations,
+    hypotheticalPeople,
+    contextSwitchCostPct: previewSwitchCostPct,
+  };
+  const previewSpecs = applyScenarioInputDelta(scenarioScopes, realPeopleRows, previewDelta);
+  const previewCapacityByScope = new Map(previewSpecs.map((s) => [s.scopeId, s.teamCapacity]));
 
   try {
     const baselineResults = runPortfolioSimulation(baselineSpecs);
@@ -223,7 +221,7 @@ export async function POST(req: NextRequest) {
           confidenceAtTarget: p.confidenceAtTarget,
           teamCapacity: previewCapacityByScope.get(s.scopeId)!,
         },
-        deltaDays: Math.round((p.likelyDate.getTime() - b.likelyDate.getTime()) / 86400000),
+        deltaDays: compareToBaseline(b, p).deltaDays,
       };
     });
 
