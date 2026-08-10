@@ -2,8 +2,8 @@
 
 Written for a fresh Claude instance (or human) with zero prior context on
 this project. Read this top to bottom before touching code or answering
-questions about it. It is a snapshot as of 2026-08-05 — check git log and
-ROADMAP.md for anything that's happened since.
+questions about it. It is a snapshot as of **2026-08-10** — check git log
+and ROADMAP.md for anything that's happened since.
 
 ## What this is, in one breath
 
@@ -12,41 +12,80 @@ messy meeting/planning context into three things: **what's missing**
 (gaps between what's been discussed/planned and what actually has a
 Linear ticket), **what's undecided** (a Decision Queue leadership can
 act on), and **when will it actually ship** (an AI-driven forecast, not
-a guess). It reads Linear tickets directly, is starting to read Notion/
-Figma/pasted spreadsheets as additional context, and is meant to be
-callable by — and to eventually collaborate with — a separate personal
-agent Nic runs called **Hermes**, which has broader context (a decision
-ledger, ongoing conversations, a wiki) that Gap App doesn't have direct
-access to.
+a guess) — now extended to a **portfolio view** across all three products
+at once with live, draggable capacity/scope/date levers. It reads Linear
+tickets directly, reads Notion/Figma/pasted spreadsheets as additional
+context, and is meant to be callable by — and to eventually collaborate
+with — a separate personal agent Nic runs called **Hermes**.
 
-Repo: `nicrpayne/kit-gap-audit`, branch `claude/product-timeline-audit-a72dmg`.
-Deployed on Railway at `kit-gap-audit-production.up.railway.app`, gated
-by a single shared password (`APP_PASSWORD`).
+Repo: `nicrpayne/kit-gap-audit`. **Base branch is
+`claude/product-timeline-audit-a72dmg`** — there is no branch literally
+named `main` in this repo (confirmed via `git remote show origin`); every
+feature branch is cut from and merged back into this one. Deployed on
+Railway at `kit-gap-audit-production.up.railway.app`, gated by a single
+shared password (`APP_PASSWORD`). **Production lags behind this branch
+until Nic redeploys on Railway — always check before assuming a fix
+described here is actually live.**
 
 ## Who's using it and why
 
 Nic is a PM/lead on a small team (~4-5 devs) shipping two related mobile
 products for a construction-safety company:
-- **JSA** (Job Safety Analysis) — a Flutter forms app, actively being
-  built, closest to release.
+- **JSA** (Job Safety Analysis) — a Flutter forms app, closest to release.
 - **iTrack** — incident/severity tracking + quality tracking, still in
-  design, follows JSA in priority.
+  design, follows JSA in priority. Real Linear data: only 2 issues total
+  as of this writing — genuinely early.
 - Both depend on shared **Platform** work (infra, file storage, shared
-  notification service, CI/CD, app-shell screens) that used to be
-  tangled into one Linear project with legacy-portal maintenance.
+  notification service, CI/CD, app-shell screens), now its own Scope with
+  JSA/iTrack depending on it (see "Scope dependencies" below).
+
+Real canonical Linear projects on team `SOF` (confirmed via the Linear
+MCP tools, see "Linear access" below): `KIT JSA`
+(`28a1de31-a367-462d-9828-a8f9d570f097`), `KIT Platform`
+(`39699fa5-a920-412b-af8c-80780a1a9c3f`), `KIT iTrack`
+(`659ac27f-2b63-4080-a85c-6ed4bae9458f`). **Decoy/near-duplicate projects
+that exist on the same team and have burned time before**: `Legacy
+Platform`, `Platform` (generic, shared across other teams too), `Safety
+Legacy Portal` (also shared). There is **no** project named `KIT Safety
+(JSA and iTrack)` any more — that was the original pre-split project and
+any Scope still pointing at it by that name is stale (see "Known-fixed
+scope-editor bug" below). Real remaining-ticket counts at last check: KIT
+JSA 116 total/41 remaining/5 distinct assignees; KIT Platform 95
+total/45 remaining/6 distinct assignees; KIT iTrack 2 issues total.
 
 The whole point of the tool is Nic being able to answer "when do we
-actually ship, and what's the honest confidence" for leadership, without
-that being a guess or a vibes-based Slack update.
+actually ship, and what's the honest confidence" for leadership — and,
+as of this session, to actually **drive** that answer live on a
+screen-share ("what if I move Sam onto Platform," "what if we accept two
+weeks later," "what if we cut this feature") without it being a guess or
+a vibes-based Slack update.
 
 ## Current status
 
 Everything below marked **shipped** is built, has passed a full
 `npm run build` + `npx eslint .`, and has been verified as far as this
 sandbox's network restrictions allow (see "Testing discipline" below).
-Production is a few commits behind at any given moment until Nic
-redeploys on Railway — always check whether he has before assuming a
-fix is live.
+
+**Shipped and merged into the base branch:**
+- v0 Audit + Decisions, V1 Forecast (AI estimation, Notion/Figma context,
+  scenarios), V3 Reports — all pre-date this session, still the
+  foundation everything else builds on.
+- **Shared capacity pool + portfolio forecasting** (Person/Allocation/
+  PortfolioSettings, scope dependency gates, lockstep joint simulation,
+  `/portfolio` dashboard with live drag-to-preview).
+- **Design language + momentum** (`/forecast`, `/reports`, `/portfolio`
+  all carry momentum chips, betting-odds phrasing, Ask chips).
+- **Scopes editing overhaul** (full edit UI, DELETE hardening, Nav fix).
+
+**Open, not yet merged** (branch `claude/portfolio-scenario-levers`):
+Scenario Lever 1 (target date, both directions) plus two live bug fixes
+found during Nic's own manual testing (garbled portfolio axis on wide
+date ranges; stale Scope project names being invisible/unremovable in
+the edit UI). See "Where things actually stand" below for the precise
+git state.
+
+**V2 Timeline** is still genuinely NOT built — `/timeline` renders a
+placeholder. Deliberately deprioritized; do not assume it exists.
 
 ## Tech stack
 
@@ -56,446 +95,454 @@ fix is live.
 - **Tailwind v3** (not v4 — v4's `@tailwindcss/oxide` native binary
   failed to build on Railway's Nixpacks image; downgraded, visually
   confirmed identical)
-- **`@anthropic-ai/sdk`**, wrapped in `lib/model.ts` — every LLM call in
-  the app goes through `completeJson()`, which handles model config,
-  defensive JSON parsing (strips code fences, trailing commas), and
-  (as of the last fix) detects a truncated response (`stop_reason ===
-  "max_tokens"`) and throws a clear error instead of trying to parse
-  garbage. Model is configurable via `AUDIT_MODEL` env var.
-- **`@linear/sdk`** — but only for auth/team/project listing. The actual
-  issue-fetch path (`getScopedIssues` in `lib/linear.ts`) uses a **raw
-  GraphQL query** (`SCOPED_ISSUES_QUERY`) with everything inlined
-  (state, assignee, labels, estimate, completedAt) in one request per
-  100 issues, because the SDK's lazy relations (`issue.state`,
-  `issue.assignee`, `issue.labels()`) each fire a separate request —
-  that cost ~770 calls for one 255-issue page load and blew Linear's
-  2500/hour rate limit in production. Has a 2-minute in-process cache.
-- **Notion & Figma**: no SDKs, raw REST (`lib/notion.ts`, `lib/figma.ts`),
-  both with injectable `fetch` for testability and their own 5-minute
-  caches.
-- **`exceljs`** for server-side `.xlsx` parsing (`app/api/parse-spreadsheet`)
-  — deliberately *not* the more common `xlsx`/SheetJS npm package, which
-  has two unpatched high-severity vulnerabilities (prototype pollution,
-  ReDoS, no fix available). `exceljs`'s own footprint is clean.
-- Auth: httpOnly cookie session (SHA-256 via Web Crypto, `middleware.ts`)
-  for the browser, plus `Authorization: Bearer <APP_PASSWORD>` as an
-  alternative on every `/api/*` route for programmatic callers (Hermes).
-  No separate API keys yet — same shared secret.
+- **`@anthropic-ai/sdk`**, wrapped in `lib/model.ts` — every LLM call goes
+  through `completeJson()` (model config, defensive JSON parsing,
+  truncation detection). Model configurable via `AUDIT_MODEL`. **Standing
+  rule established this session: no LLM call anywhere in the
+  deterministic simulation/preview/drag path.** The only allowed LLM
+  surfaces are the existing cached AI estimator (`lib/estimate/`) and
+  explicitly user-triggered "Ask" explanations (`POST /api/forecast/ask`)
+  — never anything automatic on a recompute, drag frame, or page load.
+- **`@linear/sdk`** for auth/team/project listing only; the issue-fetch
+  path (`getScopedIssues` in `lib/linear.ts`) uses a raw GraphQL query to
+  avoid the SDK's lazy-relation N+1 problem that once blew Linear's rate
+  limit. 2-minute in-process cache.
+- **Notion & Figma**: raw REST (`lib/notion.ts`, `lib/figma.ts`), 5-minute
+  caches, injectable `fetch`.
+- **`exceljs`** for server-side `.xlsx` parsing (deliberately not
+  `xlsx`/SheetJS — unpatched CVEs).
+- Auth: httpOnly cookie session (`middleware.ts`) for the browser, plus
+  `Authorization: Bearer <APP_PASSWORD>` on every `/api/*` route for
+  programmatic callers (Hermes, and this sandbox's own test scripts).
 
 ## Data model (`prisma/schema.prisma`)
 
-- **`Scope`** — the central concept. Maps a product/module (JSA, iTrack,
-  Platform, a combined view, ...) to a Linear team + **`projectNames:
-  String[]`** (as of the last schema change — was a single `projectName`
-  string, now a union match so one Scope can pull e.g. `["KIT JSA",
-  "KIT Platform"]` together) + optional label filter. Also carries
-  `targetDate`, `teamCapacity`, `includeTriage`, `estimationContext`
-  (free text fed to the AI estimator), `notionPageIds[]`, `figmaRefs[]`.
-  Everything else hangs off a Scope.
-- **`Source`** — one submitted piece of context (transcript/notes/
-  estimates/spreadsheet — see `kind`), stores the raw content verbatim,
-  belongs to a Scope, has many `Finding`s. Nothing is ever deleted —
-  full traceability was an explicit early requirement.
-- **`Finding`** — one audit result: `type` (`missing_work` | `decision` |
-  `risk` | `contradiction`), verbatim `quote`, `rationale`, `severity`,
-  `estimateHint`, `owner`/`blocks`/`blocking` (decisions), `status`
-  (`open` | `ticketed` | `dismissed` | `resolved`), `resolvedAt` (powers
-  "resolved since last report").
-- **`WorkEstimate`** — one AI-produced three-point estimate (low/likely/
-  high days) for one work item, keyed by `(scopeId, source, externalId)`
-  with a content hash so unchanged items are never re-estimated.
-  `source` is `"linear"` or `"finding"` (deliberately not
-  Linear-specific — a Notion requirement row could flow through the
-  same pipeline later). Carries `relevance` (core/peripheral/unrelated)
-  and `flags` (unclear_scope, bigger/smaller_than_pointed, hidden_work).
-- **`Report`** — an immutable leadership-report snapshot. The rendered
-  markdown is stored, not recomputed on view, so historical reports
-  don't silently change if the underlying math changes later.
-- **`ContextDoc`** — pasted or uploaded context with no live API to sync
-  from (a spreadsheet export, notes). `(scopeId, label, content)`. Fed
-  into the estimator the same way a Notion doc is.
-- **`AuditRun`** — a log row per audit pass (issue/finding counts, model
-  used) for traceability.
+- **`Scope`** — the central concept. Team + `projectNames: String[]`
+  (union match) + optional label filter, `targetDate`, `teamCapacity`
+  (now a *fallback*, see capacity pool below), `includeTriage`,
+  `estimationContext`, `notionPageIds[]`, `figmaRefs[]`, and (new this
+  session) **`dependsOnScopeIds: String[]`** — other Scopes this one
+  can't finish ahead of (JSA/iTrack depend on Platform). Also has
+  `allocations Allocation[]` (new).
+- **`Person`** (new) — `id, name, fte (default 1.0), active`. Deliberately
+  lightweight, not a generic HR/user system — models "Sam is 60% JSA,"
+  not an anonymous headcount integer.
+- **`Allocation`** (new) — `personId, scopeId, fraction` (share of *that
+  person's* time, not a global FTE number — multiply by `Person.fte` to
+  get an FTE contribution), unique per `(personId, scopeId)`. A person's
+  fractions across all their allocations must sum to ≤ 1.0 — **rejected
+  with a 400 if violated, never silently clamped** (`validateAllocations`
+  in `lib/capacity/resolve.ts`).
+- **`PortfolioSettings`** (new) — singleton row (`id = "singleton"`),
+  currently just `contextSwitchCostPct` (default 0 — a visible, user-set
+  lever, never an inferred or baked-in "industry" number, same rule as
+  everywhere else in this app).
+- **`Source`**, **`Finding`**, **`WorkEstimate`**, **`Report`** (now also
+  fetched per-scope for the portfolio momentum strip via `lastReport`),
+  **`ContextDoc`**, **`AuditRun`** — unchanged from before this session,
+  see inline schema comments for exact shapes. Nothing is ever deleted
+  from these; full traceability is a standing requirement.
 
 ## Feature rundown
 
 ### v0 — Audit + Decisions (shipped, oldest, most battle-tested)
 
-Paste (or now upload) a transcript/notes/spreadsheet at `/audit/new`.
-`runAudit()` (`lib/audit/run.ts`) fetches the Scope's Linear issues +
-previously-handled findings, builds a prompt (`lib/audit/prompts/
-audit-v1.ts`) instructing the model to extract `missing_work` /
-`decision` / `risk` / `contradiction` findings — each with a mandatory
-verbatim quote as evidence — and stores them. Each finding can be
-**Draft ticket** (creates a real Linear issue labeled `kit-found`) or
-**Dismiss** (reason stored, never re-raised — the prompt is told about
-prior handled findings explicitly). Bulk select + draft-multiple exists.
-`/audit` is a paginated index of every audit ever run with the original
-source viewable inline — nothing is ever deleted. `/decisions` is a
-dedicated Decision Queue view (blocking vs non-blocking, owner, what
-each blocks) — literally designed to be screenshotted into a leadership
-thread.
+Unchanged this session. Paste/upload a transcript/notes/spreadsheet at
+`/audit/new`, `runAudit()` extracts findings, each can be **Draft
+ticket** or **Dismiss**. `/decisions` is the Decision Queue view.
 
-### V1 — Forecast (shipped, grew well past original spec)
+### V1 — Forecast (shipped, extended this session with momentum)
 
-`/forecast`. The actual engineering core of the app:
+`/forecast`. Monte Carlo simulation (`lib/forecast/simulate.ts`),
+AI-based three-point estimation, "Paths to a sooner date" scenarios,
+"Why this date?" panel — all as before. **New this session**: a momentum
+strip (delta vs. the last report, betting-odds phrasing) and Ask chips
+(see "Design language + momentum" below).
 
-1. **Monte Carlo simulation** (`lib/forecast/simulate.ts`) — triangular-
-   distribution sampling per work item, summed under team capacity,
-   producing likely/earliest/latest dates and a confidence % (share of
-   simulated outcomes landing on or before the target date). Pure,
-   deterministic-seedable (mulberry32 PRNG) math, verified with a
-   numeric fixture suite (triangular-mean convergence, date ordering,
-   monotonic confidence, capacity scaling, gate delay).
-2. **Input assembly** (`lib/forecast/build.ts`, `buildForecastInputs`) —
-   turns Linear issues + Findings into three-point estimates. Prefers a
-   fresh AI estimate over Linear points over a wide placeholder guess;
-   excludes done/canceled and (by default) Triage-state issues; models
-   open *blocking* decisions as a serial delay gate, not divisible work.
-3. **AI estimation** (`lib/estimate/`, "Estimate tickets with AI" button,
-   `POST /api/estimate` -> `lib/estimate/runForScope.ts` ->
-   `lib/estimate/run.ts`'s `runEstimation`) — the model reads each
-   ticket's actual content (not just points/labels) and produces its
-   own three-point estimate + one-line rationale, judges release
-   *relevance* (core/peripheral/unrelated — unrelated tickets excluded
-   from the forecast but listed visibly), and flags tickets whose
-   scope is unclear, imply hidden work, or disagree 2x+ with the team's
-   own points. **Content-hash cached** — unchanged tickets/context are
-   never re-sent to the model, which is what makes "re-run daily"
-   actually cheap.
-4. **Release context** (`lib/estimate/context.ts`, `buildReleaseContext`)
-   — assembles `estimationContext` (free text) + Notion docs + Figma
-   refs + ContextDocs into one prompt block and one `contextHash`, mixed
-   into every item's estimate hash so any context change marks
-   everything stale. Figma is explicitly weighted lower-trust ("current
-   design intent") than Notion ("committed requirements") in the prompt.
-5. **Scenarios** (`lib/forecast/scenarios.ts`) — a "Paths to a sooner
-   date" panel re-runs the simulation per lever (resolve blocking
-   decisions / +1-2 devs / descope top items) with a fixed RNG seed so
-   deltas are lever-only.
-6. **"Why this date?"** panel — remaining issue/finding counts, team
-   capacity (with an "inferred from assignees" caveat when not set
-   explicitly), largest contributors, and an estimate-provenance
-   breakdown (how many AI-estimated vs. real points vs. placeholder,
-   and placeholders' share of total effort — the honest "here's what
-   would tighten this range" signal).
+### V3 — Reports (shipped, extended this session with momentum)
 
-Deliberate non-feature: **no generic industry benchmarks** ("apps like
-this take N weeks") are baked in anywhere — Nic explicitly asked for
-this and agreed no credible dataset exists; invented numbers would
-undermine trust. The credible calibration path is the team's own
-completed-ticket history once there's enough of it (not built yet).
+`/reports`. Same generation pipeline as before; now also surfaces
+momentum/attribution ("date moved 6 days later, mostly because 2 new
+findings landed").
 
-### V3 — Reports (shipped, built ahead of V2 Timeline on purpose)
+### V2 — Timeline (still NOT built)
 
-`/reports`, `POST /api/reports` -> `lib/reports/generate.ts` ->
-`lib/reports/render.ts`. A one-click leadership summary: current
-Forecast (reusing the exact same pipeline as `/forecast` so numbers
-always agree — see "Shared pipeline extraction" below), what shipped
-since the last report, what's blocking, what got resolved, the single
-best "path to a sooner date" lever. Each report is stored verbatim and
-immutable. Built before Timeline because it's the actual leadership
-deliverable; Timeline is a nice-to-have visual, not a decision-driver.
+`/timeline` is still a placeholder page (`<ComingNext>` — confirmed via
+`git log -- app/timeline/` that it's unchanged since the original
+scaffold commit). Genuinely deprioritized; do not describe it as built.
 
-### V2 — Timeline (NOT built, deliberately deferred)
+### Multi-source estimator context, spreadsheet upload, audit Kind field
 
-`/timeline` is still a placeholder page. Would be a Gantt view from
-Linear issues + open findings against the Forecast's target date/
-confidence. Depends on Forecast existing (it does). Nic's own stated
-next priority is actually **interactive scenario levers** (see
-"Planned, not built" below), not Timeline — Timeline may never get
-built at this rate and that's fine, it was explicitly deprioritized.
+Unchanged from before this session — see inline code comments in
+`lib/notion.ts`, `lib/figma.ts`, `lib/client/uploadFile.ts`,
+`app/api/parse-spreadsheet` if you need the detail.
 
-### Multi-source estimator context (shipped, three sources)
+## Shared capacity pool + portfolio forecasting (shipped this session — the big one)
 
-- **Notion** (`lib/notion.ts`) — link requirements/scoping pages per
-  Scope; raw REST, page -> plain text, 15k chars/page, 20k total.
-  Needs `NOTION_API_KEY` (internal integration) + each page individually
-  shared with that integration (Notion's Connections menu) or the API
-  404s.
-- **Figma** (`lib/figma.ts`) — link frame/page URLs (must include a
-  `node-id`); raw REST, flattens frame/text-layer content to text,
-  filters decorative shapes and default-named noise ("Rectangle 47").
-  Needs `FIGMA_API_KEY` (personal access token, no per-file sharing
-  step needed). Explicitly weighted as lower-trust design-intent, not
-  committed requirements — matters most for iTrack, which is still in
-  design with no written requirements doc.
-- **Pasted/uploaded context (`ContextDoc`)** — for anything with no live
-  API (a SharePoint/Excel task tracker, meeting notes). Paste text
-  directly, or upload `.txt/.md/.csv/.xlsx` (see spreadsheet upload
-  below). `POST/GET /api/context-docs`, `DELETE /api/context-docs/:id`.
+This is the largest addition since the last handoff. Full build plan is
+`/root/.claude/plans/piped-wiggling-stream.md` if you need the original
+reasoning; the summary below is what actually landed.
 
-### Multi-project Scopes (shipped)
+**The problem it solves**: each Scope used to carry an independent
+`teamCapacity` number, and Platform tickets were pulled into *both* JSA
+and iTrack via the `projectNames` union — so bumping capacity to account
+for one new hire made both forecasts improve as if that person worked
+full-time twice, and Platform work was double-counted in the combined
+picture.
 
-`Scope.projectNames` (array) replaced the original single `projectName`
-string, specifically so a Scope can union multiple Linear projects — the
-motivating case: after Nic split the old shared "KIT Safety (JSA and
-iTrack)" Linear project into `KIT JSA` / `KIT iTrack` / `KIT Platform`
-(shared infra/service work both products depend on) / a renamed legacy
-project, a JSA-only Scope pointed at just `KIT JSA` would silently miss
-real release-blocking Platform work (file storage service, shared
-notifications, CI/CD). The plan is three Scopes: `KIT JSA` = `[KIT JSA,
-KIT Platform]`, `KIT iTrack` = `[KIT iTrack, KIT Platform]`, and a
-`Combined` Scope = all three with the team's real total capacity — the
-per-product Scopes answer "if we only worked on this" (optimistic), the
-Combined Scope answers the realistic date given the team splits across
-both. `/scopes` UI is a per-team checkbox list now, not a dropdown.
-Migration backfilled every existing `projectName` into a one-element
-array before dropping the old column.
+**The fix, structurally:**
+1. **`Person`/`Allocation`/`PortfolioSettings`** (see Data model above)
+   let one person's time be split with fractions that must sum to ≤ 1.0.
+2. **Platform became its own Scope**, with JSA and iTrack each carrying
+   `dependsOnScopeIds: [platformScopeId]` instead of pulling Platform
+   tickets into their own union.
+3. **`lib/capacity/resolve.ts`** (`resolveCapacity`, `validateAllocations`,
+   `unallocatedCapacity`) — **pure and isomorphic, no Prisma import** —
+   deliberately, because the portfolio dashboard re-runs it client-side
+   on every drag frame. Fallback chain: ≥1 real allocation → allocations;
+   else `scope.teamCapacity` → explicit; else infer from distinct Linear
+   assignees → inferred (original behavior, untouched). With zero
+   `Person` rows this is a proven no-op — verified against real Postgres
+   that every existing Scope's forecast is byte-identical to before.
+4. **Lockstep joint simulation** (`lib/forecast/portfolio.ts`,
+   `runPortfolioTrials`/`runPortfolioSimulation`) — this is what makes
+   cross-scope dependency risk *genuinely correlated* rather than
+   independently bootstrap-resampled (an earlier, broken approach that
+   was replaced — see ROADMAP.md commit `7709d50` "Replace
+   bootstrap-resample dependency modeling with lockstep simulation" if
+   you need the history). A single outer trial loop is shared across an
+   entire dependency component; a dependent scope reads its dependency's
+   value **at the same trial index**, not a random resample, so "Platform
+   ran long in trial #4302" consistently makes every dependent scope
+   also run long in trial #4302. Topologically orders scopes by
+   `dependsOnScopeIds`; throws a clear, named error on cycles rather than
+   looping forever.
+5. **Percentile/confidence pure lookups**
+   (`lib/forecast/simulate.ts`): `percentileDay(sorted, p)` (exported —
+   "what day-count for N% confidence") and `confidenceAtDay(sorted,
+   targetDays)` (extracted from what used to be inline logic in
+   `summarizeCompletionDays`, which now calls both instead of duplicating
+   the logic) — the basis for the target-date scenario lever (see below),
+   zero new simulation runs needed to answer either direction.
 
-### Programmatic API + `POST /api/refresh` (shipped) — **the Hermes integration surface**
+**The `/portfolio` page and its preview architecture** — the part that
+makes dragging feel instant:
+- **`GET /api/portfolio/inputs`** — the one expensive call per page load.
+  Returns, per scope, the built forecast inputs, resolved capacity +
+  contributors, dependency edges, target date, and (new) each scope's
+  `lastReport` for the momentum strip.
+- **`POST /api/portfolio/preview`** — accepts hypothetical
+  allocations/settings, **persists nothing**, returns recomputed
+  forecasts. Exists for programmatic/MCP what-if callers; the browser UI
+  doesn't need it because of the next point.
+- **`components/PortfolioPageClient.tsx`** re-runs `resolveCapacity` +
+  `runPortfolioSimulation` **directly in the browser** on every drag
+  frame — zero network calls while previewing. Explicit "Save" vs.
+  "Discard" actions commit or throw away the preview.
+- Confidence bands render as absolutely-positioned HTML on a percentage
+  basis (no charting library, no SVG except the pre-existing
+  `ConfidenceRing`), matching the rest of the app's flat, no-gradient
+  visual language.
+- Portfolio insights panel: auto-surfaced observations ("iTrack finishes
+  38 days before JSA," "2.5 FTE unallocated," "Sam is over-allocated at
+  110%," "Platform is on the critical path for both").
 
-See the dedicated Hermes section below — this is the part of the app
-built specifically for another agent to call.
+**Standing rule from this phase, still binding**: any change that would
+touch `simulate.ts`'s core Monte Carlo sampling/aggregation math requires
+stopping and reporting back before proceeding. Every phase since the
+lockstep fix has explicitly not needed this and confirmed so in writing
+before starting each one.
 
-### Spreadsheet upload (shipped, hardened after a production bug)
+## Design language + momentum (shipped this session)
 
-Both `/audit/new` and `/forecast`'s "Other context" now have a real
-**Upload .txt / .md / .csv / .xlsx** button (`lib/client/uploadFile.ts`
-shared by both). `.txt/.md/.csv` are read client-side as plain text.
-`.xlsx` is parsed server-side (`POST /api/parse-spreadsheet`, `exceljs`)
-into the same pipe-delimited row format Nic was already pasting
-manually — merged cells de-duplicated to their anchor (otherwise a
-banner row repeats itself once per spanned column), multi-sheet
-workbooks get a sheet picker. Had a production crash (bare 500, no
-error body) from an unguarded row/cell-extraction loop after the
-initial `workbook.xlsx.load()` succeeded — hardened so no cell shape
-(formula errors, malformed rich text, whatever) can crash the whole
-request; each sheet parses in isolation now.
+Driven by `DESIGN_LANGUAGE_AND_MOMENTUM_BUILD_BRIEF.md` (committed to the
+base branch — read it directly for the full prose spec/principles).
+Applied in the brief's own recommended order: `/forecast` → `/reports` →
+`/portfolio` (compact strip variant, brief item #9).
 
-### Audit "Kind" field (shipped, minor)
+**Principles**: one hero stat per screen, progressive disclosure
+(collapsed/expanded), momentum over snapshots, betting-odds phrasing over
+raw percentages ("about as likely as not" vs. "52%"), "Try" chips (change
+something, see a result) vs. "Ask" chips (ask something, get an
+explanation) as the same interaction pattern with different intent, flat
+surfaces (no gradients/shadows), sentence case throughout.
 
-`transcript | notes | estimates | spreadsheet` (added the last one).
-Purely descriptive — a label in the prompt, the source's display tag,
-the auto-generated title — nothing branches on it. Uploading a
-`.csv`/`.xlsx` auto-selects "spreadsheet."
+**`lib/momentum/`**:
+- `compute.ts` — `computeMomentum` (pure delta math; "stalled" threshold
+  is <1 day of date movement **and** <5 percentage points of confidence
+  movement), `dateDeltaPhrase`, `bettingOddsPhrase`.
+- `attribution.ts` — `attributionSentence`/`reportAttributionSentence`,
+  priority order: a resolved blocking decision > fresh AI estimates >
+  shipped-ticket count.
+- `askPrompt.ts` — the prompt builder behind `POST /api/forecast/ask`
+  (the one explicitly user-triggered LLM surface in this whole momentum
+  system).
+- `lib/reports/changes.ts`'s `computeChangesSince` is shared by both
+  report generation and the live momentum strip so the two never drift
+  out of agreement.
 
-## Shared pipeline extraction (architecture note, not a feature)
+**Components**: `MomentumChip.tsx`, `Sparkline.tsx`, `AskChips.tsx`,
+`CalibrationLink.tsx` — used across `ForecastView.tsx`,
+`ReportsPageClient.tsx`, and the portfolio strip in
+`PortfolioPageClient.tsx`.
 
-To build `/api/refresh` without a third copy of the Forecast/Report
-math drifting out of sync, the logic that used to live inline in each
-route handler was extracted into reusable `lib/` functions:
-- `lib/forecast/compute.ts` — `computeForecast(scope)`. **The one place
-  Forecast math happens now.** Used by `GET /api/forecast`,
-  `generateReport`, and `/api/refresh`.
-- `lib/reports/generate.ts` — `generateReport(scope)`, built on top of
-  `computeForecast`.
-- `lib/audit/run.ts` — `runAudit(scope, input)`.
-- `lib/estimate/runForScope.ts` — `runEstimationForScope(scope)`.
+## Scopes editing overhaul (shipped this session)
 
-All four routes (`/api/audit`, `/api/estimate`, `/api/forecast`,
-`/api/reports`) are now thin wrappers around these. Verified this
-refactor changed nothing by confirming byte-identical error text
-before/after on all four routes' Linear-blocked error path.
+Before this session `/scopes` only supported create/delete — no edit UI
+existed at all, even though `PATCH /api/scopes/:id` (including
+`dependsOnScopeIds` validation) had shipped server-side earlier. That gap
+is exactly why "reconfigure a Scope's projects" used to look like it
+required delete-and-recreate.
 
-## The Hermes integration — what's built, what's the plan
+`components/ScopesManager.tsx` was substantially rewritten:
+- `ScopeFormFields` — shared between "Add scope" and per-row "Edit."
+- `useLinearTeams`/`useLinearProjects` hooks — live Linear project
+  checkboxes per selected team.
+- `EditScopeRow` — inline edit per scope row.
+- **Rename control** added (the PATCH endpoint already supported it,
+  there was just no UI button for it).
 
-**Hermes** is Nic's separate personal agent. It maintains a
-decision/commitment ledger (SQLite, `~/.hermes/ledger.db`, entries like
-"LED-004 Keep funding Pancho through remaining JSA front-end work" or
-"LED-008 JSA/iTrack design ownership: Lucy vs. Maru") and has broad
-context from ongoing conversations that Gap App has no way to see
-directly.
+**`DELETE /api/scopes/:id` hardened**: previously an uncaught Prisma FK
+error (bare 500) if the Scope had any `Report`/`Source`/`WorkEstimate`/
+`ContextDoc` history, since those don't cascade (unlike `Allocation`,
+which cascades intentionally). Now pre-checks all four plus whether any
+other Scope's `dependsOnScopeIds` references this one, returning a clear
+409 naming exactly what's attached.
 
-**Nic's stated vision**: Gap App should work as something Hermes (or
-Claude Cowork, or another agent) can *call* — "here's the current
-context, work your magic and give me a forecast for the morning
-briefing" — and separately, Gap App should be an interactive workspace
-Nic can drive live on a screen-share (drag capacity, toggle scope,
-watch the date move).
+**Known-fixed bug worth knowing about** (found from Nic's own screenshot
+after he ran a manual scope consolidation): the project checkbox list
+only ever rendered *currently live* Linear projects for the selected
+team — so a saved `projectNames` entry that no longer matched any live
+project (e.g. the old `KIT Safety (JSA and iTrack)` name) had **no
+checkbox to uncheck**, meaning editing could only ever *add* a project,
+never remove a stale one. Fixed by rendering any unmatched saved entry as
+its own flagged, removable badge ("not a current Linear project" +
+Remove button) right alongside the live checkboxes. **This fix is on
+`claude/portfolio-scenario-levers`, not yet merged/deployed** — see
+"Where things actually stand."
 
-**Critical architectural fact, established early and holding**: this is
-a **push, not a pull**. Gap App (Railway-hosted, public) cannot reach
-into Hermes' local `~/.hermes/ledger.db` or wiki — there's no live
-connector to it, unlike Notion/Figma which Gap App calls directly. So
-any Hermes context has to be *pushed* into Gap App by Hermes itself.
+**Nav fix**: `components/Nav.tsx`'s "COMING NEXT" section used to claim
+Forecast/Portfolio/Timeline/Reports were all still upcoming, which was
+stale and wrong for three of the four. `PRIMARY_TABS` now correctly
+includes Forecast/Portfolio/Reports; `COMING_NEXT_TABS` correctly
+contains only Timeline, which genuinely is still a placeholder.
 
-**What's built for this**:
+## Portfolio scenario levers — in progress (open branch, not merged)
 
-- Every `/api/*` route accepts `Authorization: Bearer <APP_PASSWORD>` as
-  an alternative to the cookie session (see `middleware.ts`) — this is
-  the auth Hermes uses for everything below.
-- **`POST /api/refresh`** (`app/api/refresh/route.ts`) is the single
-  "do everything" entrypoint, purpose-built for this: one call that
-  pushes context docs, optionally audits a new transcript, re-runs AI
-  estimation, re-runs the forecast, and optionally generates a report —
-  instead of Hermes sequencing four separate calls. Request shape:
-  ```
-  POST /api/refresh
-  Authorization: Bearer <APP_PASSWORD>
-  { "scopeId": "...",
-    "transcript": { "kind": "notes", "content": "..." },       // optional
-    "contextDocs": [{ "label": "Hermes brief — JSA", "content": "..." }], // optional
-    "generateReport": false }                                  // optional
-  ```
-  Response includes `contextDocsUpdated`, `audit`, `estimate`,
-  `forecast` (same shape as `GET /api/forecast`'s core fields), and
-  critically **`contextComplete: boolean` / `contextIssues: string[]`**.
-- **Why `contextComplete` matters**: on `/forecast`, a human sees a
-  Notion/Figma load failure as an inline warning. An unattended
-  Hermes-triggered refresh has no one watching — so a fully-failed
-  configured context source needs to be an explicit, checkable field in
-  the response, not a string nobody reads. `contextComplete: false`
-  means "don't trust this run's numbers, surface `contextIssues` back
-  to Nic." This directly answers the "how do we make sure the app is
-  getting the full context it needs" half of Nic's original question.
-- **Ordering matters**: `/api/refresh` pushes context docs *before*
-  anything Linear-dependent, so if Linear is rate-limited/down, freshly
-  pushed context still lands (verified for real: a context doc
-  persisted to Postgres on a call that still 502'd on the blocked
-  Linear call in this sandbox).
-- **Pushing the same `label` twice updates in place** rather than
-  duplicating (upsert by `(scopeId, label)`, app-level, no DB unique
-  constraint added to avoid a migration risk against unknown existing
-  production data).
-- **The scoped-brief prompt pattern** (given to Nic to paste into
-  Hermes, not yet automated): ask Hermes to produce a *scoped* context
-  brief for one product — open ledger decisions/commitments relevant to
-  that product, anything resolved recently that changes scope/
-  ownership/timing, risks it would flag — explicitly told to leave out
-  anything not clearly relevant, formatted as short plain text ready to
-  paste. This is the "scoped, attributed pull" recommendation: **never
-  dump the whole ledger/wiki in** — unscoped context dilutes signal
-  rather than adding it, and this is the same failure mode that caused
-  an earlier real forecast bug (Triage tickets + a shared JSA/iTrack
-  Linear project inflating the date to November before Scopes/AI
-  estimation fixed it). The prompt currently has Nic running it
-  manually and pasting Hermes' output in, or (once Hermes can make its
-  own HTTP calls) Hermes could call `/api/refresh` directly with that
-  brief as a `contextDocs` entry — no new endpoint needed for that, it
-  already accepts it.
+Driven by `PORTFOLIO_SCENARIO_LEVERS_BUILD_BRIEF` (committed to the base
+branch — read it directly for the full spec). Four levers, in the
+brief's recommended order, all sitting alongside the existing
+allocation-drag lever in the same preview/override mechanism:
 
-**What's explicitly NOT built** (real design questions, deliberately
-not built blind before both sides' real shapes are known):
-- Hermes doesn't know *which* Scope a given transcript/brief belongs to
-  — no routing layer.
-- No notification path in either direction — Gap App doesn't tell
-  Hermes when a refresh finishes, Hermes doesn't get pinged.
-- No scheduled/cron trigger for "refresh daily" — content-hash caching
-  already makes repeated runs cheap (unchanged tickets/context are
-  never re-sent to the model), so this is genuinely just "add a
-  trigger," not a redesign, once there's a stable calling pattern.
-- Whether Gap App's own direct Notion/Figma connectors become redundant
-  once/if Hermes reliably pushes a consolidated context bundle instead
-  — flagged as worth revisiting later, not decided now. Don't remove
-  working Notion/Figma code speculatively.
+1. **Target date, both directions** (done, on
+   `claude/portfolio-scenario-levers`) — `TargetDateLever` component in
+   `PortfolioPageClient.tsx`. Bidirectional: drag the date and see
+   confidence recompute (`confidenceAtDay`), *or* set a target confidence
+   and see what date that requires (`percentileDay` + `addDays`) — both
+   pure reads over the already-computed `completionDaysSorted` array, no
+   new simulation trials. Explicit "Save target date" button (only shown
+   when dirty) PATCHes `/api/scopes/:id`.
+2. **Context-switch/focus toggle** — not started. Per the brief, check
+   what already exists first: `PortfolioSettings.contextSwitchCostPct`
+   and its math in `resolve.ts` already exist from Phase 1 of the
+   capacity pool work, so this is likely mostly UI framing, not new
+   plumbing.
+3. **Dependency-relief preview** — not started. Reuse the existing
+   lockstep orchestration in `portfolio.ts` with a modified/removed
+   dependency edge; the brief asks for the correlation to be proven
+   explicitly, the same way the original lockstep fix was.
+4. **Scope-cut** — not started, most involved. There is no DB concept
+   today of "manually excluded ticket" — needs new schema. The
+   live-preview half should be cheap since simulation items are already
+   client-side once `/api/portfolio/inputs` has loaded.
+
+**Two live bugs found and fixed on this same branch** during Nic's own
+manual testing (not part of the levers brief, but fixed here since they
+blocked his testing):
+- **Garbled/overlapping month-axis labels on `/portfolio`** for scopes
+  forecasting far out — `monthTicks()` used to advance by exactly one
+  month per tick regardless of total span, so a multi-year range produced
+  30-50+ crammed, overlapping labels. Fixed with a new `monthStep(spanDays)`
+  helper that adaptively sizes the tick interval (1/2/3/6/12 months
+  depending on total span). Verified via Playwright with a fixture
+  forecasting to 2030 — 10 evenly-spaced, non-overlapping ticks.
+- **Stale Scope project names invisible/unremovable in the edit UI** —
+  see "Scopes editing overhaul" above, this is the same fix, just also
+  listed here since it was found via scenario-levers-branch testing.
+
+**Investigated, not fully resolved**: Nic reported one scope forecasting
+out to 2029 (+847 days vs. saved). Using real Linear data pulled via the
+MCP tools (see "Linear access" below), confirmed the double-project scope
+was pulling 86 combined open tickets (vs. 41 for JSA alone) — consistent
+with, but not conclusively proven as, the sole cause, since this sandbox
+still can't reach the actual resolved team-capacity numbers in production
+Postgres. **Recommended follow-up, not yet done**: re-check this scope's
+forecast after the (now-completed, per Nic's screenshot) scope
+consolidation to see if the number resolves to something sane.
+
+## Linear access — an important sandbox capability correction
+
+This sandbox has **two separate network paths to Linear**, discovered
+this session, with very different reachability:
+- **The app's own code** (`@linear/sdk`, raw GraphQL calls in
+  `lib/linear.ts`) calls `api.linear.app` directly — **still blocked** in
+  this sandbox, same as always (see "Testing discipline" below).
+- **`mcp__Linear__*` MCP tools** (list_projects, list_issues, get_team,
+  etc.) go through a **separate, working** network path and give genuine
+  read/write access to the real Linear workspace. This means real
+  investigation of Linear data (project lists, ticket counts, assignees,
+  states) **is possible from this sandbox** even though the deployed app
+  itself, its own Linear calls, the Railway Postgres DB, and the
+  production app URL remain unreachable. Used this session to ground the
+  scope-consolidation instructions and the +847-day investigation in
+  verified real data instead of guessing. Reach for these tools whenever
+  a task needs to know what's actually true in the real Linear workspace.
+
+## Programmatic API + `POST /api/refresh` — the Hermes integration surface
+
+Unchanged this session — full detail preserved from the prior handoff:
+
+**Hermes** is Nic's separate personal agent (decision/commitment ledger,
+broader conversational context Gap App can't see directly). **Critical
+architectural fact**: this is a **push, not a pull** — Gap App cannot
+reach into Hermes' local state, so any Hermes context has to be pushed
+into Gap App by Hermes itself, via:
+- `Authorization: Bearer <APP_PASSWORD>` on every `/api/*` route.
+- **`POST /api/refresh`** — one call to push context docs, optionally
+  audit a new transcript, re-run AI estimation, re-run the forecast, and
+  optionally generate a report. Response includes `contextComplete:
+  boolean` / `contextIssues: string[]` so an unattended run can be
+  distrusted explicitly rather than silently wrong. Pushes context docs
+  *before* anything Linear-dependent, so a Linear outage doesn't lose a
+  freshly pushed brief. Upserts by `(scopeId, label)`.
+- **The scoped-brief prompt pattern** (manual today): ask Hermes for a
+  *scoped* context brief for one product, explicitly told to leave out
+  anything not clearly relevant — never dump the whole ledger in.
+
+**Still explicitly NOT built**: routing (which Scope a transcript
+belongs to), notifications either direction, a scheduled/cron trigger.
 
 ## Planned, not built
 
-Roughly in the order Nic cares about them (see ROADMAP.md's "Where
-things stand" header for the current authoritative priority statement):
-
-1. **Interactive scenario levers** — Nic's explicitly stated next
-   priority, not Timeline. Turn "Paths to a sooner date" from static
-   precomputed rows into live UI (drag capacity, toggle decisions/
-   scope) recomputing in place — meant for driving during an actual
-   conversation/screen-share. The simulation engine already supports
-   arbitrary per-lever overrides in spirit (`buildScenarios` already
-   re-runs with one changed input per row); this is mostly a
-   generalized "recompute with overrides" endpoint plus an interactive
-   UI layer, not new simulation logic.
-2. **Cross-project dependency modeling** — a specific Platform ticket
-   blocking a specific JSA ticket, pulled from Linear's native issue-
-   blocking relations and modeled as a critical-path gate the way
-   blocking *decisions* already are (`DecisionGate` in
-   `lib/forecast/simulate.ts`). The three-Scope split (above) answers
-   "what are the numbers"; this would answer "why do they move." Not
-   started.
-3. **Points-to-days calibration from real velocity** — `lib/forecast/
-   build.ts`'s `issueEstimateToThreePoint` is a documented placeholder
-   (treats a point as a literal day count ± a fixed spread). Worth
-   revisiting once there's enough completed-ticket history to fit a
-   real conversion. This is also the credible replacement for "generic
-   industry benchmark" figures Nic asked about and was told no
-   — this is that, once there's data for it.
-4. **Timeline/Gantt (V2)** — deferred, `/timeline` still a placeholder.
-5. Hermes-side automation (see above): routing, notifications, a
-   scheduled trigger.
-6. `linearIssueUrl` on `Finding` — currently stores just the Linear
-   identifier (`SOF-123`), not a clickable URL (no stored workspace
-   slug to build one from). Minor, not urgent.
-7. `package.json#prisma` seed config is deprecated (Prisma 7 will
-   require `prisma.config.ts` instead) — cosmetic warning, not urgent.
+Roughly in priority order:
+1. **Finish the scenario-levers brief** (Levers 2-4 above) — active work.
+2. **Cross-project ticket-level dependency modeling** — a specific
+   Platform ticket blocking a specific JSA ticket, from Linear's native
+   issue-blocking relations, modeled as a critical-path gate. The scope-
+   level dependency gates (`dependsOnScopeIds`) shipped this session
+   answer "what are the numbers"; this would answer "why do they move."
+   Not started.
+3. **Points-to-days calibration from real velocity** — `issueEstimateToThreePoint`
+   in `lib/forecast/build.ts` is a documented placeholder. Worth
+   revisiting once there's enough completed-ticket history.
+4. **Timeline/Gantt (V2)** — deferred, still a placeholder.
+5. Hermes-side automation: routing, notifications, a scheduled trigger.
+6. **Persistent automated test suite** — explicitly flagged by Nic as a
+   real gap, deliberately deferred to its own dedicated conversation
+   "after Phase 2 settles" — **not to be raised proactively**, but should
+   happen before Phases 4-6 below.
+7. `linearIssueUrl` on `Finding` (currently just the identifier).
+8. `package.json#prisma` seed config deprecation warning — cosmetic.
+9. (From the original capacity-pool plan, still not started) Provenance
+   badges, an in-process MCP server at `/api/mcp`, an outbound webhook to
+   Hermes — see `/root/.claude/plans/piped-wiggling-stream.md` for the
+   full original spec on these if picked back up.
 
 ## Recent bugs fixed (useful not to repeat)
 
-- **Linear rate-limit blowout** (~770 calls/page load) — fixed by
-  switching `getScopedIssues` from lazy SDK relations to one raw
-  GraphQL query per 100 issues with everything inlined.
-- **November forecast blowup** — compound cause: shared JSA+iTrack
-  Linear project, Triage tickets counted as real work, unestimated
-  tickets carrying flat placeholders. Fixed via Triage exclusion
-  toggle + AI content-based estimation + Scopes.
-- **Audit JSON-truncation crash** — `completeJson` didn't check
-  `stop_reason`, so a response cut off by `max_tokens` (a dense
-  spreadsheet paste producing many findings) surfaced as a
-  `JSON.parse` error dumping the cut-off text. Fixed: explicit
-  `stop_reason === "max_tokens"` check with a clear "input too large"
-  error; audit's `maxTokens` also raised 8000 -> 16000.
-- **`/api/parse-spreadsheet` uncaught 500** — the row/cell extraction
-  loop after a successful `workbook.xlsx.load()` had no try/catch, so
-  an unexpected cell shape (formula error, etc.) crashed the whole
-  request with no error body. Fixed: defensive `cellToText` (never
-  throws) + per-sheet try/catch (one bad sheet doesn't sink the
-  workbook).
-- **Tailwind v4 build failure on Railway** — `@tailwindcss/oxide`
-  native binary mismatch between this sandbox and Railway's Nixpacks
-  image. Downgraded to Tailwind v3 (pure JS), visually confirmed
-  identical.
+Pre-this-session fixes (Linear rate-limit blowout, November forecast
+blowup, audit JSON-truncation crash, spreadsheet-upload 500, Tailwind v4
+build failure) are unchanged from before — see git log if you need the
+detail. **This session's fixes**, roughly chronological:
+- Duplicate scope names + stray "New developer NN PREVIEW" ghost rows on
+  `/portfolio` — duplicate-name guard on `POST/PATCH /api/scopes*`, plus
+  a per-row Remove action for both ghost and real people.
+- `PUT /api/allocations` batch write was not actually atomic against a
+  duplicate-pair payload — hit the DB's unique constraint mid-transaction,
+  uncaught, bare 500. Fixed with an explicit pre-check (clean 400) plus a
+  try/catch as defense in depth; atomicity re-verified directly against
+  real Postgres afterward.
+- Broken bootstrap-resample dependency modeling replaced with lockstep
+  joint simulation (see capacity-pool section above) — the resample
+  approach could not produce genuinely correlated cross-scope risk.
+- Garbled portfolio axis on wide date ranges; stale project names
+  invisible/unremovable in the scope editor — both described in detail
+  above, both on the still-open `claude/portfolio-scenario-levers` branch.
 
 ## Deployment
 
 Railway, Nixpacks build. `railway.json`'s start command is `npx prisma
-migrate deploy && npm run start` — every deploy applies pending
-migrations automatically, no separate release step. Env vars:
-`DATABASE_URL`, `LINEAR_API_KEY`, `ANTHROPIC_API_KEY`, `AUDIT_MODEL`,
-`APP_PASSWORD`, `NOTION_API_KEY` (optional), `FIGMA_API_KEY` (optional)
-— see `.env.example`. Nic redeploys manually; **always check whether
-he has before assuming a fix described in ROADMAP.md/HANDOFF.md is
-actually live in production.**
+migrate deploy && npm run start`. Env vars: `DATABASE_URL`,
+`LINEAR_API_KEY`, `ANTHROPIC_API_KEY`, `AUDIT_MODEL`, `APP_PASSWORD`,
+`NOTION_API_KEY` (optional), `FIGMA_API_KEY` (optional). Nic redeploys
+manually — **always check whether he has before assuming a fix is live.**
 
-## Testing discipline (important for whoever works on this next)
+## Testing discipline (important, and corrected this session)
 
-This dev sandbox's egress is restricted: `api.linear.app`,
-`api.notion.com`, `api.figma.com`, and `*.up.railway.app` are all
-**blocked**. `api.anthropic.com` is the one external API actually
-reachable from here — real Anthropic calls have been used for real
-verification (e.g. deliberately forcing a truncated response to test
-the `stop_reason` fix). Everything else follows this pattern:
-- Pure logic (simulation math, prompt builders, JSON parsing, markdown
-  rendering) gets a fixture-based unit test in a temporary
+This sandbox's egress is restricted: `api.linear.app` (from the app's own
+SDK/GraphQL code), `api.notion.com`, `api.figma.com`, `*.up.railway.app`,
+and the Railway Postgres TCP proxy are all **blocked**. `api.anthropic.com`
+is reachable. **New this session**: the `mcp__Linear__*` MCP tools give a
+genuinely separate, working path to real Linear data — see "Linear
+access" above; don't assume "Linear is blocked" applies to those tools.
+
+- Pure logic gets a fixture-based unit test in a temporary
   `scripts/*.ts`/`.mjs` file, run via `npx tsx` or `node`, deleted after
-  passing.
-- Anything needing the real UI gets a real-browser Playwright check
-  (headless Chromium at `/opt/pw-browsers/chromium` — `playwright`
-  itself isn't a permanent dependency, installed with `npm install
-  --no-save playwright` per session and uninstalled after) against
-  **local Postgres** (`postgresql://postgres:postgres@localhost:5432/
-  kit_gap_audit` — the `postgres` role's password was set locally this
-  session; production `DATABASE_URL` in `.env` points at Railway and is
-  unreachable from here), with Linear/Notion/Figma responses mocked via
-  `page.route()` where the flow needs them.
-- Anything that genuinely needs Linear/Notion/Figma/Railway is
-  acknowledged as untested-from-here and flagged as such rather than
-  faked. The one reliable real integration test available in this
-  sandbox for the Linear-dependent routes is confirming they fail
-  *gracefully* with the expected "Couldn't read tickets from Linear:
-  ...403 Host not in allowlist..." error — which has actually been
-  useful for confirming refactors didn't change behavior (byte-
-  identical error text before/after).
-- Local Postgres has occasionally stopped between shell invocations in
-  this sandbox (environment quirk) — `service postgresql start` before
-  any DB-dependent command fixes it.
+  passing. For refactors of existing pure functions, prove
+  behavior-preservation explicitly (old output vs. new output on the same
+  fixtures) before layering new capability on top.
+- **Playwright correction — the old handoff was wrong about this.**
+  Headless Chromium is **pre-installed** at `/opt/pw-browsers/chromium`
+  and the `playwright` package is **pre-installed** at
+  `/opt/node22/lib/node_modules/playwright` — it is NOT a per-session
+  `npm install --no-save playwright` dependency as the previous version
+  of this doc claimed, and it does not need to be uninstalled afterward.
+  Launch with `chromium.launch({executablePath:
+  "/opt/pw-browsers/chromium"})`; import the package from the absolute
+  path `/opt/node22/lib/node_modules/playwright/index.mjs` if a local
+  `node_modules/playwright` isn't present. Test against **local Postgres**
+  (`postgresql://postgres:localdev@localhost:5432/kit_gap_audit` — the
+  `postgres` role's password was set to `localdev` this session), with
+  Linear/Notion/Figma responses mocked via `page.route()` where the flow
+  needs them. Local auth: `Authorization: Bearer kit-jsa-dev`
+  (`APP_PASSWORD` in local `.env`).
+- Local Postgres drops between shell invocations in this sandbox —
+  `service postgresql start` before any DB-dependent command.
+- Anything that genuinely needs the app's own Linear/Notion/Figma/Railway
+  calls is acknowledged as untested-from-here and flagged as such. The
+  one reliable real-integration check for those routes is confirming they
+  fail *gracefully* with the same "Couldn't read tickets from Linear:
+  ...403 Host not in allowlist..." signature before/after a change —
+  used repeatedly this session as a cheap regression check.
+
+## Where things actually stand (git state, check this first)
+
+Base branch: `claude/product-timeline-audit-a72dmg`. Merged into it, most
+recent first: scopes-fix (`claude/scopes-fix`), design-momentum
+(`claude/design-momentum`), portfolio-capacity-pool
+(`claude/portfolio-capacity-pool`, Phases 1-3 + a post-review atomicity
+bugfix). **Open, not merged**: `claude/portfolio-scenario-levers` —
+commits `7ba2d43` (Lever 1: target date), `9977b20` (axis fix), `c4a7923`
+(stale-project-name fix), all pushed to `origin/claude/portfolio-
+scenario-levers`. **Do not merge any branch into base without an explicit
+instruction to do so** — every merge this session was explicitly
+requested first, and that pattern should continue. Check `git log
+--oneline -15` and `ROADMAP.md`'s top summary for anything more recent
+than this doc.
 
 ## Where to look for more
 
-- **`README.md`** — setup instructions, all API endpoint docs
-  (request/response shapes), Notion/Figma/spreadsheet setup steps.
-- **`ROADMAP.md`** — chronological build log with the reasoning behind
-  each decision, kept up to date after every feature. More granular
-  than this document; read it if you need the "why" behind something
-  summarized here.
-- **`BUILDPACK.md`** — the original spec this was built against (v0
-  scope). Historical, superseded by everything built since.
-- This file (`HANDOFF.md`) — update it if you make a change significant
+- **`README.md`** — setup instructions, all API endpoint docs.
+- **`ROADMAP.md`** — chronological build log with full reasoning behind
+  each decision, kept up to date after every merged unit of work. More
+  granular than this document — read it for the "why" behind anything
+  summarized here, and check its "Where things stand" header first, since
+  it's usually the freshest single source of truth on active work.
+- **`DESIGN_LANGUAGE_AND_MOMENTUM_BUILD_BRIEF.md`** and
+  **`PORTFOLIO_SCENARIO_LEVERS_BUILD_BRIEF`** — the two build briefs
+  driving this session's design/momentum and scenario-levers work,
+  committed to the base branch, worth reading directly rather than
+  relying solely on this summary.
+- **`BUILDPACK.md`** — the original v0 spec. Historical.
+- This file (`HANDOFF.md`) — update it whenever a change is significant
   enough that a fresh agent picking this up next would need to know.
