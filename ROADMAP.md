@@ -14,20 +14,25 @@ HEAD `46812f0`) -- see "Where things stand" for the full history. Phases
 2-4 (context-switch/focus toggle, dependency-relief preview, scope-cut)
 are planned but not yet approved to start.
 
-**Context Package Foundation, Phase 1a + 1b** (see `docs/CONTEXT-MODEL.md`),
-on branch `claude/gap-app-context-sources-hwy0v3`, cut from base at
-`45d4312`. Phase 1a: foundation-only groundwork for a future evidence/
-provenance layer under Reality (`ProjectContextPackage` transport contract,
-`SourceRegistration` tracking-policy table, immutable `ContextSnapshot`
-table, nullable provenance fields on `Finding`/`Report`), nothing wired in.
-Phase 1b: hardened that foundation (strict rejection of malformed packages,
-referential integrity, identity-collision detection) and wired ONE real
-ingestion/provenance path end to end through `POST /api/refresh` and
-`runAudit()`, proved with a synthetic JSA-Infrastructure-Alignment-tracker
-package. Still not Hermes integration. `/portfolio` and Momentum remain
-byte-for-byte unchanged. **Not yet merged, not yet clicked through by
-Nic** -- do not resume Phase 1c or merge without checking recent
-conversation history first.
+**Context Package Foundation, Phase 1a + 1b + 1c** (see
+`docs/CONTEXT-MODEL.md`), on branch `claude/gap-app-context-sources-hwy0v3`,
+cut from base at `45d4312`. Phase 1a: foundation-only groundwork for a
+future evidence/provenance layer under Reality (`ProjectContextPackage`
+transport contract, `SourceRegistration` tracking-policy table, immutable
+`ContextSnapshot` table, nullable provenance fields on `Finding`/`Report`),
+nothing wired in. Phase 1b: hardened that foundation (strict rejection of
+malformed packages, referential integrity, identity-collision detection)
+and wired ONE real ingestion/provenance path end to end through
+`POST /api/refresh` and `runAudit()`. Phase 1c: closed the main remaining
+trust gap -- a producer's own completeness claim is never authoritative;
+the Gap App now independently evaluates completeness against current
+`SourceRegistration` policy, rejects packages that misuse a registration,
+enforces that a package-only Finding always has real evidence behind it,
+and ships the first read-only `ProjectIntelligenceEnvelope`. All three
+phases proved with synthetic packages only. Still not Hermes integration.
+`/portfolio` and Momentum remain byte-for-byte unchanged. **Not yet
+merged, not yet clicked through by Nic** -- do not resume further phases
+or merge without checking recent conversation history first.
 
 **Portfolio Instrument Surface** (see `docs/PRODUCT-VISION.md`,
 `docs/DESIGN-NORTH-STAR.md`), on branch `claude/portfolio-instrument-
@@ -43,6 +48,130 @@ merged, not yet clicked through by Nic** -- do not resume this work or
 merge without checking recent conversation history first.
 
 ## Where things stand
+
+- **Context Package Foundation, Phase 1c (same branch, built on Phase 1b,
+  not yet merged)** -- closed the trust gap Phase 1b left open: proving
+  the pipe carries evidence is not the same as proving the Gap App can't
+  be fooled about what's missing. A package's own `completeness` field is
+  a producer ASSERTION -- `SourceRegistration` is Reality, and this phase
+  makes that literally true rather than aspirational.
+
+  New `lib/context/sourcePolicy.ts`, two separate jobs. (1)
+  `validatePackageAgainstRegistrations()` -- for every package source
+  citing a `registrationId`, checks it against CURRENT registration rows
+  and rejects the whole package (`SourcePolicyViolationError`, mapped to
+  `400` at `/api/refresh`) on: an unknown id, a `sourceType`/`sourceRef`
+  mismatch against that registration (refusing impersonation), a
+  registration that doesn't apply to the request's Scope, or a
+  `superseded`/`retired` registration used as current evidence -- a
+  formerly-tracked source can only re-enter as ad-hoc
+  (`registrationId: null`), never by citing its old policy. A source
+  citing a `candidate` registration is allowed (candidates simply have no
+  Reality effect either way). (2) `evaluateSourcePolicyCompleteness()` --
+  computes the Gap App's OWN completeness conclusion against every
+  registration applicable to the Scope, not just what the package happens
+  to mention: an `active` registration the package omits lands in
+  `missingActive` and flips the evaluated `status` to `"partial"` --
+  concretely proved even when the producer's own package claims
+  `missingSources: []` (the exact "Hermes forgot the Infrastructure
+  Alignment spreadsheet" scenario from the product brief). `paused`
+  registrations get their own bucket (`supplied`/not, reported distinctly
+  from a real miss); `superseded`/`retired` land in an informational
+  `excluded` bucket, never counted as missing; `candidate` appears
+  nowhere. An ad-hoc package source lands in its own `adHoc` bucket and is
+  proved to never become an expected/missing source in a later package.
+  **This evaluated result -- not a copy of the producer's
+  `package.completeness` -- becomes `ContextSnapshot.completenessSummary`**;
+  the producer's own claim stays preserved verbatim inside
+  `ContextSnapshot.package`, purely as historical record, never read as
+  authoritative anywhere. `persistContextSnapshot()` deliberately skips
+  re-validation/re-evaluation on a pure identical-content retry (same
+  `producer`+`packageId`+hash) -- a `SourceRegistration` changing between
+  two sends of unchanged content must not flip a safe retry into a
+  failure or silently rewrite what was recorded as true at acceptance
+  time; only a genuinely NEW package is checked against current policy.
+
+  **Finding citation invariant**: `runAudit()` now refuses to persist a
+  package-only Finding (no pasted transcript backing it) that has zero
+  valid `evidenceRefs` after the existing safety-net intersection --
+  such a finding would have had NO provenance at all (neither `Source`
+  nor `ContextSnapshot`). Never fabricates a citation to make it pass;
+  instead collects it into a new `AuditRunResult.rejectedFindings`
+  (`{title, type, reason}`), surfaced in `/api/refresh`'s response under
+  `audit.rejectedFindings` -- a visible diagnostic, not a silent loss. A
+  mixed run's finding always keeps `sourceId` regardless, so this only
+  ever bites a pure package-only run. New nullable
+  `AuditRun.contextSnapshotId` (blast radius traced first -- `sourceId` is
+  a loose string, not a real relation, zero other consumers found) closes
+  the last provenance-orphan gap: a package-only `AuditRun` row now names
+  which snapshot it consumed.
+
+  **`ProjectIntelligenceEnvelope` v1** (`lib/context/envelope.ts`,
+  `GET /api/context/envelope?scopeId=X`) -- the first read-only OUTPUT
+  contract, composed fresh on every request from existing functions only:
+  `computeForecast()`, `computeMomentum()`, the same
+  `source.scopeId OR contextSnapshot.scopeId` Finding query used
+  everywhere else, and the latest `ContextSnapshot`'s own evaluated
+  `completenessSummary` (never recomputed live, never trusted from the
+  package's own claim). One small additive field,
+  `ForecastResult.breakdown.capacityBasis`, was added to
+  `lib/forecast/compute.ts` -- surfacing the already-existing internal
+  `capacityBasisFor()` helper (previously only invoked for the portfolio
+  path) so the envelope's capacity explanation is the exact same one the
+  Instrument already shows, not a second model. Keeps Linear as its own
+  `directSources.linear` section, deliberately separate from
+  `context.health`: Linear is a direct, Gap-App-owned structural source
+  (`Scope.projectNames`/`teamKey`), never routed through Hermes or the
+  package contract, and a producer is never expected to prove it
+  "consulted Linear." Never persists anything -- proved directly, reading
+  the envelope twice creates zero new `ContextSnapshot`/`Report`/`Finding`
+  rows. Honest about time: `generatedAt` (now) and
+  `context.latestSnapshotCreatedAt` (whenever the last deliberate package
+  was accepted, possibly much earlier or never) are surfaced as two
+  distinct timestamps, never implied to be the same instant -- automatic
+  staleness-triggered refresh is explicitly not built.
+
+  Verified via a temp script (`npx tsx`, `KIT_DEV_FIXTURES=1`, deleted
+  after passing) covering every completeness bucket (active supplied/
+  missing, paused, superseded/retired-excluded, candidate-ignored,
+  ad-hoc-never-expected), every registration-validation rejection case
+  (unknown id, ref mismatch, type mismatch, wrong Scope, superseded,
+  retired), historical immutability of `completenessSummary` after a
+  registration later changes, package-only Finding citation (persists
+  when validly cited, rejected with a diagnostic and confirmed absent
+  from the database when not), a mixed-provenance Finding carrying both
+  `sourceId` and `contextSnapshotId`, a package-driven `AuditRun`'s
+  `contextSnapshotId`, and the full envelope contract end to end
+  (correct snapshot/producer/packageId citation, `"unknown"` health with
+  zero snapshot creation when none exists, capacity basis matching
+  `computeForecast()`'s own value exactly, Finding provenance fields
+  surviving into the envelope, and zero persistence across repeated
+  reads). One test-design correction worth recording: an early version of
+  this proof compared `computeForecast()`'s `likelyDate` across two
+  independent calls and failed -- not a product bug, but a reminder that
+  `lib/forecast/simulate.ts`'s Monte Carlo trials use `Math.random()` with
+  no fixed seed outside dedicated test fixtures, so two independent runs
+  are stochastically different by design; the assertion was corrected to
+  compare deterministic breakdown fields instead. `npx tsc --noEmit`,
+  `npx eslint .`, `npm run build` all clean; diffed against the Phase 1b
+  commit to reconfirm `lib/forecast/simulate.ts`,
+  `lib/forecast/portfolio.ts`, `lib/capacity/resolve.ts`, `lib/scenario/`,
+  and `lib/momentum/` are byte-for-byte untouched.
+
+  **Documented, not solved**: a Finding can now prove which package
+  evidence supported a conclusion, but not the full live Linear
+  comparison set that proved an absence -- no Linear historical
+  snapshotting exists, and none is proposed here.
+
+  **Not done, not started, explicitly out of scope**: real Hermes
+  integration (every proof used a synthetic package), a
+  `ProjectContextPackage` pull endpoint, MCP, Context Workbench UI,
+  source-policy UI, source recommendations, Notion/Figma/real-SharePoint-
+  connector assemblers, automatic stale-context refresh, Linear historical
+  snapshotting, automated Linear reconciliation, entity/obligation
+  matching, portfolio-wide snapshot semantics. **Not yet merged, not yet
+  clicked through by Nic** -- do not merge without an explicit instruction
+  to do so.
 
 - **Context Package Foundation, Phase 1a (branch
   `claude/gap-app-context-sources-hwy0v3`, cut from base `45d4312`, not yet

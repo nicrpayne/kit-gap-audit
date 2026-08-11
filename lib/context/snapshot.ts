@@ -17,7 +17,15 @@ import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { validateProjectContextPackage } from "./validate";
 import { hashProjectContextPackage } from "./hash";
-import type { ProjectContextPackage, PackageCompleteness } from "./package";
+import type { ProjectContextPackage } from "./package";
+import {
+  validatePackageAgainstRegistrations,
+  evaluateSourcePolicyCompleteness,
+  type RegistrationLike,
+  type PolicyEvaluatedCompleteness,
+} from "./sourcePolicy";
+
+export { SourcePolicyViolationError } from "./sourcePolicy";
 
 export class PackageIdentityConflictError extends Error {
   constructor(producer: string, packageId: string) {
@@ -45,7 +53,12 @@ export interface PersistedContextSnapshot {
   producer: string;
   package: ProjectContextPackage;
   contextHash: string;
-  completenessSummary: PackageCompleteness;
+  // GAP-APP-EVALUATED completeness, computed against CURRENT
+  // SourceRegistration Reality at acceptance time -- NOT a copy of the
+  // producer's own pkg.completeness (that stays preserved verbatim inside
+  // `package` above, purely as a historical record of the producer's own
+  // claim). See lib/context/sourcePolicy.ts.
+  completenessSummary: PolicyEvaluatedCompleteness;
   createdAt: Date;
   // true when this call found an already-persisted snapshot for the same
   // (producer, packageId, contextHash) instead of creating a new row --
@@ -75,7 +88,7 @@ function toResult(
     producer: row.producer,
     package: row.package as unknown as ProjectContextPackage,
     contextHash: row.contextHash,
-    completenessSummary: row.completenessSummary as unknown as PackageCompleteness,
+    completenessSummary: row.completenessSummary as unknown as PolicyEvaluatedCompleteness,
     createdAt: row.createdAt,
     reused,
   };
@@ -116,8 +129,26 @@ export async function persistContextSnapshot(
     if (existing.contextHash !== contextHash) {
       throw new PackageIdentityConflictError(pkg.producer, pkg.packageId);
     }
+    // Identical content already accepted -- return the historical result
+    // as-is. Deliberately does NOT re-validate against or re-evaluate
+    // current SourceRegistration policy: this call created nothing new,
+    // so a registration change made after the original acceptance must
+    // not make a pure retry of unchanged content start failing (or
+    // silently change what was recorded as true at acceptance time).
     return toResult(existing, true);
   }
+
+  // Only a genuinely NEW package is checked against current
+  // SourceRegistration Reality -- registrationId existence/type/ref/scope/
+  // status, and the Gap-App-evaluated completeness. Fetched once, used for
+  // both, so a package can't be validated against one registration list
+  // and evaluated against a different (e.g. concurrently changed) one.
+  const relevantRegistrations: RegistrationLike[] = await prisma.sourceRegistration.findMany({
+    where: { OR: [{ scopeIds: { isEmpty: true } }, { scopeIds: { has: pkg.scopeId } }] },
+  });
+  const registrationsById = new Map(relevantRegistrations.map((r) => [r.id, r]));
+  validatePackageAgainstRegistrations(pkg, registrationsById);
+  const completenessSummary = evaluateSourcePolicyCompleteness(pkg, relevantRegistrations);
 
   const created = await prisma.contextSnapshot.create({
     data: {
@@ -127,7 +158,7 @@ export async function persistContextSnapshot(
       producer: pkg.producer,
       package: pkg as unknown as Prisma.InputJsonValue,
       contextHash,
-      completenessSummary: pkg.completeness as unknown as Prisma.InputJsonValue,
+      completenessSummary: completenessSummary as unknown as Prisma.InputJsonValue,
     },
   });
 

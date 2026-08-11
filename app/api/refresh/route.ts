@@ -8,6 +8,7 @@ import {
   persistContextSnapshot,
   PackageIdentityConflictError,
   PackageScopeMismatchError,
+  SourcePolicyViolationError,
 } from "@/lib/context/snapshot";
 import { PackageValidationError } from "@/lib/context/validate";
 
@@ -122,7 +123,11 @@ export async function POST(req: NextRequest) {
       contextSnapshotId = snapshot.id;
       packageEvidence = snapshot.package.evidence;
     } catch (error) {
-      if (error instanceof PackageScopeMismatchError || error instanceof PackageValidationError) {
+      if (
+        error instanceof PackageScopeMismatchError ||
+        error instanceof PackageValidationError ||
+        error instanceof SourcePolicyViolationError
+      ) {
         return NextResponse.json({ error: error.message, contextDocsUpdated }, { status: 400 });
       }
       if (error instanceof PackageIdentityConflictError) {
@@ -132,7 +137,9 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  let audit: { sourceId: string | null; findingCount: number } | undefined;
+  let audit:
+    | { sourceId: string | null; findingCount: number; rejectedFindings: { title: string; type: string; reason: string }[] }
+    | undefined;
   if (body.transcript || contextSnapshotId) {
     try {
       const result = await runAudit(
@@ -140,7 +147,16 @@ export async function POST(req: NextRequest) {
         body.transcript,
         contextSnapshotId ? { packageContext: { contextSnapshotId, evidence: packageEvidence } } : undefined
       );
-      audit = { sourceId: result.source?.id ?? null, findingCount: result.findings.length };
+      // rejectedFindings: proposed findings the model produced but this
+      // run refused to persist because they'd have had no valid
+      // provenance (no transcript Source AND no valid evidenceRefs) --
+      // surfaced explicitly rather than silently dropped, so a caller
+      // knows evidence was seen but couldn't be truthfully grounded.
+      audit = {
+        sourceId: result.source?.id ?? null,
+        findingCount: result.findings.length,
+        rejectedFindings: result.rejectedFindings,
+      };
     } catch (error) {
       return NextResponse.json(
         {

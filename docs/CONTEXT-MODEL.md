@@ -1,7 +1,7 @@
-# Context model — Phase 1a + 1b
+# Context model — Phase 1a + 1b + 1c
 
 Describes what actually exists in the codebase after Context Package
-Foundation Phase 1a and Phase 1b (branch
+Foundation Phase 1a, 1b, and 1c (branch
 `claude/gap-app-context-sources-hwy0v3`). This is a description of shipped
 code, not a design spec — if something below and the code disagree, the
 code is right and this doc is stale.
@@ -9,148 +9,181 @@ code is right and this doc is stale.
 **Phase 1a** (foundation) shipped the `ProjectContextPackage` contract, the
 `SourceRegistration` and `ContextSnapshot` tables, and nullable provenance
 fields on `Finding`/`Report` — nothing was wired into any existing flow.
-**Phase 1b** (this update) hardened that foundation (strict validation,
-identity-conflict detection, referential integrity) and wired ONE real
-ingestion/provenance path end to end: `POST /api/refresh` can now accept an
-optional `contextPackage`, persist it as a `ContextSnapshot`, and have the
-audit pipeline produce a `Finding` that traces back through that snapshot
-to the exact evidence that grounded it — which then flows into the
-existing forecast through the exact same path any other unticketed
-Finding already used.
+**Phase 1b** hardened that foundation (strict validation, identity-conflict
+detection, referential integrity) and wired ONE real ingestion/provenance
+path end to end through `POST /api/refresh` and the audit pipeline.
+**Phase 1c** (this update) closes the main remaining trust gap — an
+incoming package's own claim of completeness is never authoritative — and
+ships the first read-only `ProjectIntelligenceEnvelope`.
 
-**This is still not Hermes integration.** Every proof in this phase used a
-synthetic, manually-constructed package. Nothing here calls the real KE
-wiki, a real Hermes agent, or a real spreadsheet connector.
+**This is still not Hermes integration.** Every proof across all three
+phases used a synthetic, manually-constructed package.
 
-## Four distinct concepts (unchanged from Phase 1a)
+## Four distinct concepts
 
 ```
 SourceRegistration   POLICY — mutable, current tracking policy for a
-                      recurring source
+                      recurring source. AUTHORITATIVE over anything a
+                      package claims about itself.
         │
 ProjectContextPackage   TRANSPORT — a versioned value shape, assembled by
                          a producer (Hermes, a human, or the Gap App)
         │
 ContextSnapshot   HISTORY — persisted, immutable, one frozen package
-                   instance, created exactly once per accepted package
+                   instance, created exactly once per accepted package.
+                   Stores the package verbatim (producer's claims) AND a
+                   separately Gap-App-evaluated completenessSummary.
         │
-Finding.contextSnapshotId / evidenceRefs, Report.contextSnapshotId
-                  — provenance pointers into that history
+Finding.contextSnapshotId / evidenceRefs, Report.contextSnapshotId,
+AuditRun.contextSnapshotId — provenance pointers into that history
+        │
+ProjectIntelligenceEnvelope   OUTPUT — read-only, composed on every
+                                request, never persisted (Phase 1c)
 ```
 
-`ProjectIntelligenceEnvelope` remains designed, not built.
+## The main trust gap this phase closes
 
-## Phase 1a hardening
+Phase 1b proved the pipe works: package → snapshot → Finding → forecast
+input, with provenance intact. It did **not** prove the thing
+`SourceRegistration` exists for: that a producer forgetting an expected
+source can't quietly declare the package complete. A package's own
+`completeness` field (its `expectedSources`/`missingSources`/
+`excludedSources`) is a **producer assertion** — Hermes' own claim about
+what it thinks it sent. It is preserved verbatim inside
+`ContextSnapshot.package` as a historical record of that claim, and it is
+**never trusted** as the Gap App's own answer to "is this package
+complete."
 
-Three invariants Phase 1a's first draft did not fully enforce, corrected
-before any wiring:
+## Source policy enforcement (`lib/context/sourcePolicy.ts`)
 
-### 1. Never silently drop evidence
+Two separate jobs, kept apart on purpose:
 
-`lib/context/validate.ts` was rewritten to be **strict, not lenient**. Any
-structural problem anywhere in an incoming package — a missing required
-field on any `sources[]`/`evidence[]`/`derivedClaims[]` entry, an
-oversized field, a duplicate id — rejects the **whole package** by
-throwing `PackageValidationError`, identifying exactly which entry and
-field failed (e.g. `evidence[2].id is required...`). There is no partial
-acceptance and no silent truncation: "we received a blocker but couldn't
-parse it" must never quietly become "there was no blocker."
+### 1. Registration validation (can reject the whole package)
 
-**Referential integrity** is enforced at the same boundary: every
-`evidence[].sourceRef` must match a `sources[].sourceRef` in the same
-package; every `derivedClaims[].evidenceRefs` entry must match an
-`evidence[].id` in the same package; evidence ids and derived-claim ids
-must each be unique within the package. A package with a dangling pointer
-never reaches an immutable snapshot.
+For every package source entry that supplies a `registrationId`,
+`validatePackageAgainstRegistrations()` checks it against **current**
+`SourceRegistration` rows — never trusting the package's own
+`sourceType`/`role`/`status` claims for a registered source, only using
+them to confirm they still match:
 
-### 2. Identity collision, not silent overwrite
+- **Unknown `registrationId`** → rejected (`SourcePolicyViolationError`).
+- **`sourceType` mismatch** against the registration → rejected.
+- **`sourceRef` mismatch** against the registration → rejected (refusing
+  to let one source impersonate another's registration).
+- **Registration doesn't apply to this Scope** (`scopeIds` non-empty and
+  doesn't include the package's `scopeId`) → rejected.
+- **Registration is `superseded` or `retired`** → rejected. A producer
+  cannot use a formerly-tracked source as current evidence by citing its
+  old registration; the source must be resent with `registrationId`
+  omitted (ad-hoc, see below) if the content is still worth using once.
+- A source with `registrationId: null` (**ad-hoc**) is always allowed —
+  it makes no policy claim, so there's nothing to validate against.
+- A source citing a `candidate` registration is allowed (not rejected) —
+  candidates simply don't count toward completeness either way (see
+  below).
 
-`lib/context/snapshot.ts`'s `persistContextSnapshot()` now computes the
-incoming package's hash **before** checking for an existing
-`(producer, packageId)` row. Three outcomes:
-- No existing row → create.
-- Existing row, **same** hash → idempotent reuse (`reused: true`, same
-  `ContextSnapshot.id`) — a safe retry.
-- Existing row, **different** hash → throws `PackageIdentityConflictError`.
-  The original snapshot is never overwritten, never silently returned as
-  if the new content were identical, and no second row is created under
-  the same identity. `packageId` is supposed to identify immutable
-  content; a different payload under the same id is a real error, not
-  something to paper over.
+Rejection happens **before** a `ContextSnapshot` is ever created — a
+policy-violating package leaves no row behind at all.
 
-### 3. Scope match enforced at the persistence boundary
+### 2. Completeness evaluation (never rejects, only summarizes)
 
-`persistContextSnapshot(rawPackage, { expectedScopeId })` throws
-`PackageScopeMismatchError` if the package's own `scopeId` doesn't match
-the scope the caller is persisting for — defense-in-depth so an ingestion
-boundary can't accidentally attach a package to the wrong Scope.
+`evaluateSourcePolicyCompleteness()` computes what the Gap App
+independently concludes, against **every `SourceRegistration` applicable
+to this Scope** (`scopeIds` empty or including it) — regardless of
+whether the package mentions them:
 
-### 4. `observedAt` semantics (reconfirmed, unchanged)
+| Registration status | In the package? | Bucket | Counts as missing? |
+|---|---|---|---|
+| `active` | supplied | `activeSupplied` | — |
+| `active` | **omitted** | `missingActive` | **Yes** — this is the trust-gap case |
+| `paused` | either | `paused` (`supplied: true/false`) | No — reported distinctly, a known/expected gap, not "Hermes forgot" |
+| `superseded` | either | `excluded` | No — deliberately excluded |
+| `retired` | either | `excluded` | No — deliberately excluded |
+| `candidate` | either | *(none)* | No — zero Reality effect until promoted |
 
-`PackageSourceManifestEntry.observedAt` still means "the last time the
-underlying source was actually read from its origin" — never a cache-hit
-time, never `package.generatedAt`, never snapshot-persistence time. No
-behavior changed here; Phase 1a already had this right (re-verified in
-Phase 1b's own proof, which built a fixture with `observedAt` four minutes
-before `generatedAt` and asserted both survived independently).
+A package source with `registrationId: null` appears in `adHoc` —
+contributes evidence for this one package, makes no completeness claim,
+and **never becomes an expected source** in any later package (proved:
+persisting a second package that simply omits the same ad-hoc source
+never causes it to appear in `missingActive`).
+
+`status` is `"partial"` whenever `missingActive.length > 0` — **even when
+the producer's own `package.completeness` claimed nothing was missing.**
+This is the concrete fix for the motivating example: Hermes sends a JSA
+package, forgets the Infrastructure Alignment spreadsheet (an `active`
+registration), and claims `completeness: { missingSources: [] }` — the Gap
+App still independently concludes `partial`, missing that exact source.
+
+**This result — not a copy of `package.completeness` — becomes
+`ContextSnapshot.completenessSummary`.** The producer's own claim stays
+preserved, untouched, inside `ContextSnapshot.package` purely as a
+historical record of what was asserted; it is never read as the
+authoritative answer anywhere in this codebase.
+
+## Package-only Finding citation invariant
+
+Extends Phase 1b's evidence-safety-net: a Finding produced by an audit run
+with **no pasted transcript** (`source === null` for that run) **must**
+end up with at least one valid `evidenceRef`, or it would persist with
+**no provenance at all** — neither a `Source` nor a `ContextSnapshot`
+behind it. `runAudit()` now checks this per finding, before writing
+anything:
+
+- Cited refs survive the existing safety-net intersection (Phase 1b) →
+  Finding persists, `contextSnapshotId` set.
+- Zero refs survive **and** this run has no transcript → the proposed
+  Finding is **not persisted**. It's collected instead into
+  `AuditRunResult.rejectedFindings` (`{ title, type, reason }`), surfaced
+  in `POST /api/refresh`'s response under `audit.rejectedFindings` — a
+  clear diagnostic, never a silent drop and never a fabricated citation.
+- A finding from a **mixed** run (transcript present) always has
+  `sourceId` set regardless of `evidenceRefs`, so this invariant only ever
+  bites a pure package-only run — exactly where it matters, since a
+  transcript-backed finding already has real provenance.
 
 ## Finding provenance: Source-backed vs. ContextSnapshot-backed
 
-`Finding.sourceId` is **nullable as of Phase 1b** (was required through
-Phase 1a). Two shapes now coexist, deliberately:
+Unchanged from Phase 1b:
 
 | | `sourceId` | `contextSnapshotId` | `evidenceRefs` |
 |---|---|---|---|
 | **Legacy / direct audit Finding** | set | usually null | usually `[]` |
-| **Package-derived Finding** | null | set | non-empty |
+| **Package-derived Finding** | null | set | non-empty (now enforced, see above) |
+| **Mixed** | set | set (if this finding cites package evidence) | non-empty |
 
-A Finding can carry both if a single audit run genuinely used a pasted
-transcript **and** package evidence, and the model grounded that specific
-finding in package evidence too (`evidenceRefs` non-empty) — `sourceId`
-still points at the transcript's `Source` row in that case. A finding from
-the same mixed run that's grounded **only** in the transcript keeps
-`contextSnapshotId: null` even though a package was present in the run —
-"package-derived" is a precise, checkable claim (`evidenceRefs` non-empty
-and cited), not "this run happened to have a package attached."
+## AuditRun provenance
 
-**No fake `Source` row is ever created** for a package-only audit run.
-`runAudit()`'s `AuditRunResult.source` is typed `Source | null`; it's
-`null` whenever the run had no pasted transcript.
+`AuditRun.contextSnapshotId String?` (new, nullable, `onDelete: SetNull`)
+— traced before adding: `AuditRun.sourceId` was already a loose string
+(no real Prisma relation), and nothing outside `lib/audit/run.ts`'s own
+creation call reads it, so the blast radius was zero. A package-only
+audit run now writes `contextSnapshotId` alongside `sourceId: null`,
+closing the provenance-orphan gap Phase 1b left open: without this field,
+a package-driven `AuditRun` row recorded that *an* audit happened but not
+*from what*.
 
-**Consumers updated to handle both shapes truthfully**, not by fabricating
-data:
-- `lib/forecast/compute.ts`'s `buildScopeSimInputs()`,
-  `lib/estimate/runForScope.ts`, and `lib/audit/run.ts`'s own
-  "don't re-raise a handled finding" query all changed from
-  `where: { source: { scopeId } }` to
-  `where: { OR: [{ source: { scopeId } }, { contextSnapshot: { scopeId } }] }`
-  — this was the real blast-radius finding of making `sourceId` nullable:
-  every place that found "this Scope's Findings" did it exclusively via
-  the (previously required) `Source` relation, which would have made a
-  package-derived Finding invisible to the forecast, the estimator, and
-  the audit's own re-raise guard.
-- `POST /api/findings/:id/ticket` resolves the Finding's Scope via
-  `finding.source?.scope ?? finding.contextSnapshot?.scope`, and writes a
-  provenance line into the created Linear issue's description naming
-  whichever is actually true ("from source ..." vs. "from a tracked
-  project context package (snapshot ...)").
-- `/decisions` and `DecisionQueue.tsx` render a plain label instead of a
-  broken link when a decision Finding has no `Source` to link to.
+| Run shape | `AuditRun.sourceId` | `AuditRun.contextSnapshotId` |
+|---|---|---|
+| Legacy (transcript only) | set | null |
+| Package-only | null | set |
+| Mixed | set | set |
 
 ## One snapshot per accepted package
 
-`POST /api/refresh` calls `persistContextSnapshot()` **exactly once**, at
-the top of the request, immediately after the (unchanged) `ContextDoc`
-upsert step and before anything else runs. The resulting
-`contextSnapshotId` is then **passed as a parameter** into `runAudit()`
-(as `options.packageContext`) and `generateReport()` (as its second
-argument) — neither of those functions ever persists a snapshot itself;
-they only ever receive an id and stamp it onto what they create. This is
-what makes "one accepted package instance → one ContextSnapshot" true by
-construction rather than by convention: there is exactly one call site in
-the entire codebase that creates a `ContextSnapshot` row.
+Unchanged from Phase 1b: `persistContextSnapshot()` is the sole call site
+that creates a `ContextSnapshot` row. `POST /api/refresh` calls it exactly
+once per request, before anything else runs, and threads the resulting id
+into `runAudit()`/`generateReport()` as a parameter — neither persists a
+second snapshot.
 
-## `POST /api/refresh` contract (additive)
+An identical retry (same `producer`+`packageId`+content hash) reuses the
+existing row **without re-running registration validation or
+re-evaluating completeness** — a pure retry of unchanged content must not
+start failing (or silently change what was recorded as true) just because
+`SourceRegistration` state moved on in between. Only a genuinely *new*
+package is checked against current policy.
+
+## `POST /api/refresh` contract (additive, extended in 1c)
 
 ```ts
 interface RefreshBody {
@@ -158,110 +191,140 @@ interface RefreshBody {
   transcript?: { kind: string; title?: string; content: string };
   contextDocs?: { label: string; content: string }[];
   generateReport?: boolean;
-  contextPackage?: unknown; // ProjectContextPackage v1, validated internally
+  contextPackage?: unknown; // ProjectContextPackage v1
 }
 ```
 
-`contextPackage` is entirely optional and additive — **every existing
-caller that omits it gets exactly today's behavior**, unchanged. When
-present:
+New in 1c: a `SourcePolicyViolationError` (unknown/mismatched/inapplicable/
+superseded/retired registration reference) maps to `400`, same as a
+structural `PackageValidationError` or a scope mismatch. The response's
+`audit.rejectedFindings` array (new) surfaces any proposed Finding the
+citation invariant above refused to persist. Every existing caller that
+omits `contextPackage` still gets exactly today's behavior, unchanged.
 
-1. Validated strictly (`validateProjectContextPackage`) and checked
-   against the request's `scopeId` (`PackageScopeMismatchError` on
-   mismatch) — both mapped to `400`.
-2. An identity conflict (`PackageIdentityConflictError`) maps to `409`.
-3. On success, persisted as one `ContextSnapshot`; the response's
-   top-level `contextSnapshotId` field carries its id (`null` when no
-   package was sent).
-4. **The audit now runs whenever either a transcript or an accepted
-   package is present** (previously: transcript only) — a package-only
-   refresh, with no pasted transcript at all, is a real, supported call
-   shape, since a package alone is enough evidence to audit against
-   Linear.
-5. If a Report is generated in the same request, `Report.contextSnapshotId`
-   is set to the same snapshot.
+## `ProjectIntelligenceEnvelope` v1 (`lib/context/envelope.ts`)
 
-## Package evidence audit flow
+The first read-only OUTPUT contract: `GET /api/context/envelope?scopeId=X`
+composes, on every request, **from existing functions only** — no
+duplicated forecast, momentum, or capacity logic:
 
-`runAudit(scope, input, options)` — `input` is now optional
-(`AuditInput | undefined`); `options.packageContext` carries
-`{ contextSnapshotId, evidence }`. At least one of the two must be
-present. `lib/audit/prompts/audit-v1.ts`'s `buildAuditPrompt()` renders
-package evidence as its **own block**, each item shown with its stable
-`id` and any structured `data`, distinct from a pasted transcript block —
-evidence is never flattened into one anonymous string before the model
-sees it, and the prompt explicitly instructs the model to cite an item's
-`id` in a new `evidenceRefs` output field for any finding grounded in it.
-`lib/audit/normalize.ts` parses that field defensively (`string[]`,
-default `[]`).
+- `forecast` — `computeForecast()`'s own likely/earliest/latest/target
+  dates and confidence, unchanged.
+- `momentum` — `computeMomentum()` against the most recent `Report`, or
+  `null` if none exists yet (same as every other momentum surface).
+- `capacity.basis` — `computeForecast()`'s `breakdown.capacityBasis`, a
+  small **additive** field added to `ForecastResult` this phase (computed
+  by calling the already-existing internal `capacityBasisFor()` helper,
+  previously only invoked for the portfolio path) — the exact same
+  discriminated union the Instrument's "why is Reality 10?" explanation
+  already uses. No second capacity-explanation model.
+- `findings.items` — every open Finding for the Scope (via the same
+  `source.scopeId OR contextSnapshot.scopeId` query used everywhere else),
+  with its provenance fields (`contextSnapshotId`, `evidenceRefs`)
+  surfaced directly.
+- `context.health` — read **verbatim** from the latest `ContextSnapshot`'s
+  own Gap-App-evaluated `completenessSummary` — never recomputed live
+  against current `SourceRegistration` state, and never trusted from a
+  package's own `completeness` claim (see "Source policy enforcement"
+  above). `"unknown"`, not `"complete"`, when no snapshot exists at all —
+  the absence of any deliberate context acceptance is never conflated with
+  "context is fine."
+- `directSources.linear` — see below.
 
-**Safety net, not blind trust**: `runAudit()` intersects whatever
-`evidenceRefs` the model returns against the actual set of evidence ids it
-was shown before writing anything — a hallucinated id can never survive
-into a `Finding.evidenceRefs` array. Only findings whose cited refs
-survive that intersection get `contextSnapshotId` set at all.
+**Never persisted.** Reading the endpoint — once, or a hundred times —
+creates no `ContextSnapshot`, `Report`, or `Finding` row (proved directly:
+building the envelope twice in a row, row counts identical before and
+after both calls).
 
-The audit prompt is real, shipped code. **What Phase 1b's proof did NOT
-do** is call the real Anthropic model to verify it live — there is no
-`ANTHROPIC_API_KEY` in this sandbox. The proof injected a fixed,
-deterministic response via `runAudit()`'s `options.complete` parameter
-(the same dependency-injection pattern already used by
-`lib/notion.ts`/`lib/figma.ts`'s `fetcher` parameter) instead of weakening
-`/api/refresh` itself to accept a mockable LLM call. See "Mocked vs. live
-boundaries" in the phase's own report for the exact boundary.
+## Direct Linear vs. package context health
+
+Linear remains a **structural** execution source the Gap App owns
+directly (`Scope.projectNames`/`teamKey`) — it is never routed through
+Hermes or represented as a producer's package obligation. A package
+producer is not expected to prove it "consulted Linear"; that's the Gap
+App's own job, unrelated to whatever context package arrived. The envelope
+keeps this as its own section (`directSources.linear`), deliberately
+separate from `context.health` (which is entirely about registered/ad-hoc
+package sources) so the two health signals are never confused with each
+other. `directSources.linear.configured` is always `true` (every Scope has
+one); `availableForCurrentComputation` is `true` whenever an envelope is
+successfully returned at all, since `computeForecast()` — which the
+envelope calls unconditionally — throws before that point on a genuine
+Linear failure, converted to a `502` by the route exactly like every other
+Linear-dependent endpoint in this app.
+
+## Current vs. historical honesty
+
+The envelope deliberately combines two different time bases and never
+implies they're the same instant:
+
+- `generatedAt` — when *this* envelope was composed (now).
+- `context.latestSnapshotCreatedAt` — when the most recent *deliberate*
+  package was accepted (possibly much earlier, or never).
+
+A caller comparing the two can reason about staleness ("context is 6 days
+old, request a fresh package before trusting this") — the mechanism to
+*act* on that (automatic refresh) is explicitly not built in this phase.
 
 ## Derived claims remain inert
 
-Unchanged from Phase 1a: `ProjectContextPackage.derivedClaims` round-trips
-through validation and persistence, and nothing anywhere reads or acts on
-it. The audit prompt does not currently render `derivedClaims` to the
-model at all (only `evidence` is shown) — a derived claim is context a
-future Gap App evaluation step could consider, not something auto-promoted
-into a Finding, forecast input, Linear ticket, or capacity/dependency
-change. That evaluation step does not exist yet.
+Unchanged from Phase 1a/1b: `derivedClaims` round-trips through
+validation and persistence; nothing anywhere reads or acts on it,
+including the envelope.
 
-## What is NOT built in Phase 1b
+## What is NOT built (through Phase 1c)
 
 - No real Hermes integration, no KE wiki access, no Hermes pull path.
-- No `ProjectIntelligenceEnvelope`.
-- No Context Workbench UI, no generic file upload.
-- No Notion/Figma package assemblers — only the manual/synthetic
-  construction path has been exercised (Phase 1a and 1b both).
-- No automated Linear reconciliation — superseding a `SourceRegistration`
-  does not auto-resolve any Finding derived from it; that stays a human
-  (or a future, deliberate) action.
-- No entity/obligation matching across sources (spreadsheet row vs. Linear
-  ticket correlation remains unsolved, deliberately — `Finding.evidenceRefs`
-  stays stable enough to support it later without a further migration).
-- No portfolio-wide (multi-scope) snapshot semantics — `ContextSnapshot`
-  is still single-scope only.
-- No source-supersession *recommendations* — Hermes-style "this looks
-  obsolete" suggestions are not computed anywhere; only the explicit,
-  human-approved status-transition write path exists
-  (`PATCH /api/source-registrations/:id`).
+- No `ProjectContextPackage` pull endpoint.
+- No MCP server.
+- No Context Workbench UI, no source-policy UI, no source recommendations.
+- No Notion/Figma/real-SharePoint-connector package assemblers — only the
+  manual/synthetic construction path has ever been exercised.
+- No automatic context refresh when stale — the envelope makes staleness
+  *visible* (see above), nothing acts on it.
+- No Linear historical snapshotting (see "Known provenance limitations").
+- No automated Linear reconciliation, no auto-created Linear tickets, no
+  auto-resolved Findings.
+- No entity/obligation matching across sources.
+- No portfolio-wide (multi-scope) snapshot semantics.
 
-## Protected areas — confirmed untouched
+## Known provenance limitations
+
+**A Finding can now prove which package evidence caused a conclusion, but
+not the full Linear comparison set that proved an absence.** When an audit
+concludes "this spreadsheet work has no matching Linear ticket," the
+resulting Finding's `evidenceRefs` faithfully cites the *positive*
+evidence (the spreadsheet row) — but the *negative* half of that
+conclusion (a scan of every current Linear issue finding none of them
+covers it) is not itself snapshotted anywhere. Six weeks later, the exact
+set of Linear issues that existed at the audit moment cannot be
+reconstructed with full historical fidelity — only Reality's own live
+Linear state can be queried, which has moved on. This is a real,
+documented limitation, not solved in Phase 1c: no Linear snapshot/history
+model exists, and none is proposed here. Do not claim otherwise.
+
+## Protected areas — confirmed untouched (all three phases)
 
 `lib/forecast/simulate.ts`, `lib/forecast/portfolio.ts`,
 `lib/capacity/resolve.ts`, `lib/scenario/` (`ScenarioInputDelta` and all),
 `lib/momentum/`, and every Portfolio Instrument component are
-byte-for-byte unchanged by Phase 1a or Phase 1b (verified by diffing
-against the Phase 1a commit before Phase 1b started).
+byte-for-byte unchanged (verified by diffing against the Phase 1a commit
+before Phase 1b started, and again against the Phase 1b commit before
+Phase 1c started). `lib/forecast/compute.ts` gained exactly one additive
+field (`breakdown.capacityBasis`) via an already-existing internal helper
+— no simulation math, no capacity-resolution semantics, touched.
 
 ## Next phases (not started)
 
-- **A real Notion/Figma/spreadsheet-connector package assembler** —
-  everything proven so far uses a hand-built package matching the shape a
-  real assembler would need to produce, but no such assembler exists.
-- **Hermes wiring** — a real push from Hermes using this exact same
-  `ProjectContextPackage` contract, unchanged.
-- **`ProjectIntelligenceEnvelope`** — a read-only composition of
-  `computeForecast`/`computeMomentum`/`Finding`/capacity data, citing
-  whichever `ContextSnapshot` backs it.
+- **A real Notion/Figma/spreadsheet-connector package assembler.**
+- **Hermes wiring** — a real push using this exact same
+  `ProjectContextPackage` contract, unchanged, plus an eventual pull path.
 - **Source-supersession recommendations** — a computed (never
-  auto-applied) "this source appears obsolete" suggestion, evaluated
-  against a `SourceRegistration`'s `rationale` and current Linear/other
-  source state.
+  auto-applied) "this source appears obsolete" suggestion.
+- **Automatic staleness-triggered refresh**, once the envelope's
+  now-visible staleness signal has a real consumer to act on it.
+- **Linear historical snapshotting**, if the negative-provenance
+  limitation above ever becomes a real product need.
 
-All designed in the architecture assessments that preceded these two
-phases; none built.
+All designed or flagged in the architecture assessments and phases that
+preceded this document; none built.

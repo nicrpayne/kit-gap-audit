@@ -64,6 +64,12 @@ export interface ForecastResult {
     teamCapacityInferred: boolean;
     capacitySource: CapacitySource;
     capacityContributors: CapacityContributor[];
+    // Same discriminated-union explanation the portfolio dashboard already
+    // shows ("why is Reality 10?") -- computed via the existing
+    // capacityBasisFor() helper below, not a second capacity-explanation
+    // model. Added so ProjectIntelligenceEnvelope (lib/context/envelope.ts)
+    // can reuse it without a duplicate Linear fetch.
+    capacityBasis: CapacityBasis;
     remainingEffortDays: { low: number; likely: number; high: number };
     decisionDelayDays: { low: number; likely: number; high: number };
     blockingGates: { id: string; label: string }[];
@@ -445,6 +451,8 @@ export async function computeForecast(scope: Scope): Promise<ForecastResult> {
     .slice(0, 6)
     .map((i) => ({ id: i.id, label: i.label, likelyDays: i.likely }));
 
+  const capacityBasis = capacityBasisFor(scope, own);
+
   return {
     issues: own.issues,
     findings: own.findings,
@@ -473,6 +481,7 @@ export async function computeForecast(scope: Scope): Promise<ForecastResult> {
       teamCapacityInferred: inputs.teamCapacityInferred,
       capacitySource: inputs.capacitySource,
       capacityContributors: own.capacityContributors,
+      capacityBasis,
       remainingEffortDays: base.remainingEffortDays,
       decisionDelayDays: base.decisionDelayDays,
       blockingGates: inputs.gates.map((g) => ({ id: g.id, label: g.label })),

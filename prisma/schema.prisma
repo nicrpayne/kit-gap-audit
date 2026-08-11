@@ -98,14 +98,19 @@ model ContextSnapshot {
   packageVersion String
   producer       String // "hermes" | "manual" | "gap_app"
 
-  package             Json // the full accepted ProjectContextPackage, verbatim
+  package             Json // the full accepted ProjectContextPackage, verbatim -- the PRODUCER's own claims, unmodified
   contextHash         String // deterministic hash of the package (lib/context/hash.ts)
-  completenessSummary Json // denormalized copy of package.completeness, for cheap querying
+  // GAP-APP-EVALUATED completeness (lib/context/sourcePolicy.ts), computed
+  // against current SourceRegistration Reality at acceptance time -- NOT
+  // a copy of package.completeness above, which is the producer's own
+  // (unverified) claim and is preserved only for historical record.
+  completenessSummary Json
 
   createdAt DateTime @default(now())
 
-  findings Finding[]
-  reports  Report[]
+  findings  Finding[]
+  reports   Report[]
+  auditRuns AuditRun[]
 
   @@unique([producer, packageId])
 }
@@ -277,6 +282,13 @@ model AuditRun {
   // Prisma relation), so relaxing it is a plain column-constraint change.
   // Null for a package-only audit run that created no Source row.
   sourceId     String?
+  // Which ContextSnapshot this run consumed package evidence from, when
+  // any (Phase 1c) -- so a package-driven AuditRun is never provenance-
+  // orphaned the way a bare-null sourceId alone would leave it. A legacy
+  // audit run has sourceId set and this null; a package-only run has this
+  // set and sourceId null; a mixed run may have both.
+  contextSnapshotId String?
+  contextSnapshot   ContextSnapshot? @relation(fields: [contextSnapshotId], references: [id])
   issueCount   Int
   findingCount Int
   model        String

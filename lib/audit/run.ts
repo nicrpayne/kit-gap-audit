@@ -46,12 +46,26 @@ export interface AuditRunOptions {
   complete?: typeof completeJson;
 }
 
+// A proposed Finding the model produced but this run refused to persist,
+// because it would have had NO valid provenance at all: no pasted
+// transcript behind it (source === null for this run) AND none of its
+// cited evidenceRefs survived the safety-net intersection against real
+// package evidence. Never fabricate a citation, never save an uncited
+// package-only Finding -- surface it here instead so the caller can show
+// a clear diagnostic rather than silently losing it.
+export interface RejectedFinding {
+  title: string;
+  type: string;
+  reason: string;
+}
+
 export interface AuditRunResult {
   // No Source row is created for a package-only audit run (nothing was
   // pasted) -- fabricating one just to satisfy an old required field would
   // misrepresent where the resulting Findings actually came from.
   source: Source | null;
   findings: Finding[];
+  rejectedFindings: RejectedFinding[];
 }
 
 function defaultSourceTitle(kind: string): string {
@@ -150,45 +164,67 @@ export async function runAudit(
   // provenance pointer this system exists to prevent.
   const validEvidenceIds = new Set(options.packageContext?.evidence.map((e) => e.id) ?? []);
 
-  const createdFindings = await Promise.all(
-    findings.map((f) => {
-      const citedRefs = f.evidenceRefs.filter((ref) => validEvidenceIds.has(ref));
-      // contextSnapshotId is set only when THIS finding actually cites
-      // package evidence -- a finding grounded purely in the pasted
-      // transcript stays sourceId-only even in a mixed run, so
-      // "PACKAGE-DERIVED" (contextSnapshotId set, evidenceRefs non-empty)
-      // stays a precise, checkable claim rather than "this run happened
-      // to have a package attached."
-      const contextSnapshotId = citedRefs.length > 0 ? options.packageContext?.contextSnapshotId ?? null : null;
+  const createdFindings: Finding[] = [];
+  const rejectedFindings: RejectedFinding[] = [];
 
-      return prisma.finding.create({
-        data: {
-          sourceId: source?.id ?? null,
-          type: f.type,
-          title: f.title,
-          quote: f.quote,
-          rationale: f.rationale,
-          severity: f.severity,
-          estimateHint: f.estimateHint,
-          owner: f.owner,
-          blocks: f.blocks,
-          blocking: f.blocking,
-          matchedIssues: f.matchedIssues,
-          contextSnapshotId,
-          evidenceRefs: citedRefs,
-        },
+  for (const f of findings) {
+    const citedRefs = f.evidenceRefs.filter((ref) => validEvidenceIds.has(ref));
+
+    // Citation invariant: a Finding produced by a run with NO transcript
+    // (source === null) MUST end up with at least one valid evidenceRef,
+    // or it would persist with NO provenance at all -- neither a Source
+    // nor a ContextSnapshot behind it. Never fabricate a citation to make
+    // this pass; reject the proposed Finding instead and surface why. A
+    // finding from a MIXED run (a transcript was also pasted) always has
+    // sourceId set regardless, so this only ever bites a pure
+    // package-only run.
+    if (!source && citedRefs.length === 0) {
+      rejectedFindings.push({
+        title: f.title,
+        type: f.type,
+        reason:
+          "no valid evidenceRefs and no pasted transcript for this audit run -- would have had no provenance at all",
       });
-    })
-  );
+      continue;
+    }
+
+    // contextSnapshotId is set only when THIS finding actually cites
+    // package evidence -- a finding grounded purely in the pasted
+    // transcript stays sourceId-only even in a mixed run, so
+    // "PACKAGE-DERIVED" (contextSnapshotId set, evidenceRefs non-empty)
+    // stays a precise, checkable claim rather than "this run happened to
+    // have a package attached."
+    const contextSnapshotId = citedRefs.length > 0 ? options.packageContext?.contextSnapshotId ?? null : null;
+
+    const created = await prisma.finding.create({
+      data: {
+        sourceId: source?.id ?? null,
+        type: f.type,
+        title: f.title,
+        quote: f.quote,
+        rationale: f.rationale,
+        severity: f.severity,
+        estimateHint: f.estimateHint,
+        owner: f.owner,
+        blocks: f.blocks,
+        blocking: f.blocking,
+        matchedIssues: f.matchedIssues,
+        contextSnapshotId,
+        evidenceRefs: citedRefs,
+      },
+    });
+    createdFindings.push(created);
+  }
 
   await prisma.auditRun.create({
     data: {
       sourceId: source?.id ?? null,
+      contextSnapshotId: options.packageContext?.contextSnapshotId ?? null,
       issueCount: issues.length,
       findingCount: createdFindings.length,
       model: AUDIT_MODEL,
     },
   });
 
-  return { source, findings: createdFindings };
+  return { source, findings: createdFindings, rejectedFindings };
 }
