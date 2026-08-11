@@ -2,8 +2,9 @@ import type { Scope, Finding, Source } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { getScopedIssues } from "@/lib/linear";
 import { completeJson, AUDIT_MODEL } from "@/lib/model";
-import { buildAuditPrompt } from "@/lib/audit/prompts/audit-v1";
+import { buildAuditPrompt, type PromptEvidenceItem } from "@/lib/audit/prompts/audit-v1";
 import { normalizeFindings } from "@/lib/audit/normalize";
+import type { EvidenceItem } from "@/lib/context/package";
 
 const HANDLED_STATUSES = ["dismissed", "ticketed", "resolved"];
 
@@ -25,8 +26,31 @@ export interface AuditInput {
   content: string;
 }
 
+// Package evidence attached to this audit run, when the caller (today:
+// POST /api/refresh) has an accepted ProjectContextPackage. Findings this
+// run produces that the model actually grounds in one of these items get
+// contextSnapshotId + evidenceRefs set; findings grounded only in a
+// pasted transcript do not, even in the same run -- see
+// docs/CONTEXT-MODEL.md's "Source-backed vs ContextSnapshot-backed
+// Finding provenance."
+export interface PackageAuditContext {
+  contextSnapshotId: string;
+  evidence: EvidenceItem[];
+}
+
+export interface AuditRunOptions {
+  packageContext?: PackageAuditContext;
+  // Injectable, defaults to lib/model's completeJson -- same dependency-
+  // injection pattern already used by lib/notion.ts/lib/figma.ts's
+  // `fetcher` parameter, for deterministic testing without a live LLM call.
+  complete?: typeof completeJson;
+}
+
 export interface AuditRunResult {
-  source: Source;
+  // No Source row is created for a package-only audit run (nothing was
+  // pasted) -- fabricating one just to satisfy an old required field would
+  // misrepresent where the resulting Findings actually came from.
+  source: Source | null;
   findings: Finding[];
 }
 
@@ -35,11 +59,23 @@ function defaultSourceTitle(kind: string): string {
   return `${KIND_LABELS[kind] ?? "Context"} — ${date}`;
 }
 
-// Runs one audit pass: transcript/notes text -> findings, checked against
-// this Scope's Linear issues and prior handled findings so the same gap
-// isn't re-raised. Used by POST /api/audit and POST /api/refresh. Throws
-// on Linear or model failure -- callers convert to a 502.
-export async function runAudit(scope: Scope, input: AuditInput): Promise<AuditRunResult> {
+// Runs one audit pass: pasted transcript/notes/spreadsheet text and/or
+// accepted ProjectContextPackage evidence -> findings, checked against
+// this Scope's Linear issues and prior handled findings (both
+// Source-backed and ContextSnapshot-backed) so the same gap isn't
+// re-raised. At least one of `input` / `options.packageContext` is
+// required. Used by POST /api/audit (transcript only, unchanged
+// behavior) and POST /api/refresh (transcript and/or package). Throws on
+// Linear or model failure -- callers convert to a 502.
+export async function runAudit(
+  scope: Scope,
+  input: AuditInput | undefined,
+  options: AuditRunOptions = {}
+): Promise<AuditRunResult> {
+  if (!input && !options.packageContext) {
+    throw new Error("runAudit requires a transcript, package context, or both");
+  }
+
   let issues;
   try {
     issues = await getScopedIssues(scope);
@@ -48,9 +84,18 @@ export async function runAudit(scope: Scope, input: AuditInput): Promise<AuditRu
   }
 
   const priorFindings = await prisma.finding.findMany({
-    where: { status: { in: HANDLED_STATUSES }, source: { scopeId: scope.id } },
+    where: {
+      status: { in: HANDLED_STATUSES },
+      OR: [{ source: { scopeId: scope.id } }, { contextSnapshot: { scopeId: scope.id } }],
+    },
     select: { title: true, status: true, resolution: true },
   });
+
+  const promptEvidence: PromptEvidenceItem[] = (options.packageContext?.evidence ?? []).map((e) => ({
+    id: e.id,
+    excerpt: e.excerpt,
+    data: e.data,
+  }));
 
   const prompt = buildAuditPrompt({
     issues: issues.map((issue) => ({
@@ -63,17 +108,19 @@ export async function runAudit(scope: Scope, input: AuditInput): Promise<AuditRu
       labels: issue.labels,
     })),
     priorFindings,
-    contextKind: input.kind,
-    contextText: input.content,
+    contextKind: input?.kind ?? null,
+    contextText: input?.content ?? null,
+    packageEvidence: promptEvidence,
   });
+
+  const complete = options.complete ?? completeJson;
 
   let rawFindings: unknown;
   try {
-    // Dense inputs (a full spreadsheet dump, a long transcript) can produce
-    // many findings -- 8000 was tight enough to truncate mid-response on a
-    // ~40-row spreadsheet paste. 16000 gives real headroom; completeJson
-    // still surfaces a clear error if even that isn't enough.
-    rawFindings = await completeJson({ prompt, maxTokens: 16000 });
+    // Dense inputs (a full spreadsheet dump, a long transcript, a large
+    // package) can produce many findings -- 16000 gives real headroom;
+    // completeJson still surfaces a clear error if even that isn't enough.
+    rawFindings = await complete({ prompt, maxTokens: 16000 });
   } catch (error) {
     throw new Error(`Audit model call failed: ${error instanceof Error ? error.message : "unknown error"}`);
   }
@@ -85,20 +132,38 @@ export async function runAudit(scope: Scope, input: AuditInput): Promise<AuditRu
     throw new Error(`Couldn't parse audit findings: ${error instanceof Error ? error.message : "unknown error"}`);
   }
 
-  const source = await prisma.source.create({
-    data: {
-      kind: input.kind,
-      title: input.title?.trim() || defaultSourceTitle(input.kind),
-      content: input.content,
-      scopeId: scope.id,
-    },
-  });
+  let source: Source | null = null;
+  if (input) {
+    source = await prisma.source.create({
+      data: {
+        kind: input.kind,
+        title: input.title?.trim() || defaultSourceTitle(input.kind),
+        content: input.content,
+        scopeId: scope.id,
+      },
+    });
+  }
+
+  // Safety net: the model can only truthfully cite evidence ids it was
+  // actually shown -- never trust a returned evidenceRefs entry blindly,
+  // since a hallucinated id would be exactly the kind of broken
+  // provenance pointer this system exists to prevent.
+  const validEvidenceIds = new Set(options.packageContext?.evidence.map((e) => e.id) ?? []);
 
   const createdFindings = await Promise.all(
-    findings.map((f) =>
-      prisma.finding.create({
+    findings.map((f) => {
+      const citedRefs = f.evidenceRefs.filter((ref) => validEvidenceIds.has(ref));
+      // contextSnapshotId is set only when THIS finding actually cites
+      // package evidence -- a finding grounded purely in the pasted
+      // transcript stays sourceId-only even in a mixed run, so
+      // "PACKAGE-DERIVED" (contextSnapshotId set, evidenceRefs non-empty)
+      // stays a precise, checkable claim rather than "this run happened
+      // to have a package attached."
+      const contextSnapshotId = citedRefs.length > 0 ? options.packageContext?.contextSnapshotId ?? null : null;
+
+      return prisma.finding.create({
         data: {
-          sourceId: source.id,
+          sourceId: source?.id ?? null,
           type: f.type,
           title: f.title,
           quote: f.quote,
@@ -109,14 +174,16 @@ export async function runAudit(scope: Scope, input: AuditInput): Promise<AuditRu
           blocks: f.blocks,
           blocking: f.blocking,
           matchedIssues: f.matchedIssues,
+          contextSnapshotId,
+          evidenceRefs: citedRefs,
         },
-      })
-    )
+      });
+    })
   );
 
   await prisma.auditRun.create({
     data: {
-      sourceId: source.id,
+      sourceId: source?.id ?? null,
       issueCount: issues.length,
       findingCount: createdFindings.length,
       model: AUDIT_MODEL,

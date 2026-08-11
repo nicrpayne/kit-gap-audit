@@ -1,17 +1,19 @@
-// Validation/normalization for an incoming ProjectContextPackage v1, at
-// whichever boundary accepts one (a future /api/refresh extension, a test
-// fixture, an eventual dev ingestion route). Hand-rolled rather than a
-// schema library, matching this codebase's existing precedent for
-// untrusted-JSON validation (lib/audit/normalize.ts) -- no new dependency
-// justified for one contract's shape.
+// Validation for an incoming ProjectContextPackage v1, at whichever
+// boundary accepts one (POST /api/refresh's contextPackage, a test
+// fixture). Hand-rolled rather than a schema library, matching this
+// codebase's existing precedent for untrusted-JSON validation
+// (lib/audit/normalize.ts) -- no new dependency justified for one
+// contract's shape.
 //
-// Two different failure modes on purpose, same split normalizeFindings
-// already uses: a malformed TOP-LEVEL package (missing packageId, an
-// unknown producer, wrong version) is rejected outright by throwing --
-// there's no safe partial acceptance of "which package is this even." A
-// malformed ENTRY within an array (one bad evidence item, one bad source)
-// is dropped individually so one bad row doesn't sink an otherwise-good
-// package.
+// STRICT ON PURPOSE (Phase 1b hardening -- Phase 1a's first draft silently
+// dropped malformed entries, which this repo's own standing rule forbids:
+// "we received a blocker but couldn't parse it" must never quietly become
+// "there was no blocker"). Any structural problem -- a missing required
+// field anywhere in the package, a duplicate id, a dangling reference --
+// rejects the WHOLE package by throwing PackageValidationError. There is
+// no partial acceptance and no silent size-based truncation: an oversized
+// field is a rejection reason, not something quietly cut short. Reject,
+// don't guess.
 
 import {
   PROJECT_CONTEXT_PACKAGE_VERSION,
@@ -36,198 +38,245 @@ const VALID_SOURCE_STATUSES = new Set<SourceManifestStatus>([
 ]);
 
 // Sensible, generous bounds -- same spirit as the existing per-source char
-// budgets in lib/notion.ts/lib/figma.ts, applied per-item since evidence is
-// now itemized rather than flattened into one string.
+// budgets in lib/notion.ts/lib/figma.ts. A package exceeding one of these
+// is REJECTED, not truncated -- truncating would be exactly the kind of
+// silent information loss this validator exists to prevent.
 const MAX_SOURCES = 50;
 const MAX_EVIDENCE_ITEMS = 500;
 const MAX_DERIVED_CLAIMS = 200;
 const MAX_WARNINGS = 50;
-const MAX_EXCERPT_CHARS = 2000;
-const MAX_DATA_JSON_CHARS = 4000;
+const MAX_EXCERPT_CHARS = 4000;
+const MAX_DATA_JSON_CHARS = 8000;
 const MAX_WARNING_CHARS = 500;
 const MAX_STRING_FIELD_CHARS = 500; // ids, refs, kinds, statements, etc.
 
-function str(value: unknown): string | null {
-  return typeof value === "string" && value.trim() ? value.trim() : null;
+export class PackageValidationError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "PackageValidationError";
+  }
 }
 
-function truncate(value: string, max: number): string {
-  return value.length > max ? value.slice(0, max) : value;
+function fail(message: string): never {
+  throw new PackageValidationError(message);
 }
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-// Recursively bounds a JSON value's serialized size rather than trying to
-// validate arbitrary shape -- `data` is deliberately generic (Correction 3),
-// so the only thing worth enforcing here is "not absurdly large," not a
-// fixed schema.
-function boundJson(value: unknown, maxChars: number): JsonValue | undefined {
+function requireString(raw: unknown, path: string, maxChars = MAX_STRING_FIELD_CHARS): string {
+  if (typeof raw !== "string" || !raw.trim()) {
+    fail(`${path} is required and must be a non-empty string`);
+  }
+  const value = raw.trim();
+  if (value.length > maxChars) {
+    fail(`${path} exceeds the maximum allowed length (${maxChars} chars) -- rejected, not truncated`);
+  }
+  return value;
+}
+
+function optionalString(raw: unknown, path: string, maxChars = MAX_STRING_FIELD_CHARS): string | null {
+  if (raw === undefined || raw === null) return null;
+  return requireString(raw, path, maxChars);
+}
+
+function requireIsoDate(raw: unknown, path: string): string {
+  const value = requireString(raw, path);
+  if (Number.isNaN(Date.parse(value))) {
+    fail(`${path} must be a valid ISO 8601 timestamp, got "${value}"`);
+  }
+  return value;
+}
+
+function requireArray(raw: unknown, path: string, max: number): unknown[] {
+  if (raw === undefined) return [];
+  if (!Array.isArray(raw)) fail(`${path} must be an array`);
+  if (raw.length > max) fail(`${path} has ${raw.length} entries, exceeding the maximum of ${max} -- rejected, not truncated`);
+  return raw;
+}
+
+// Recursively bounds a JSON value's serialized size -- `data` is
+// deliberately generic (no fixed schema), so the only thing worth
+// enforcing is "not absurdly large." Oversized `data` REJECTS the package.
+function checkJsonBound(value: unknown, path: string, maxChars: number): void {
+  let serialized: string;
   try {
-    const serialized = JSON.stringify(value);
-    if (serialized === undefined) return undefined;
-    if (serialized.length <= maxChars) return value as JsonValue;
-    return undefined; // oversized -- drop rather than silently truncate structured data mid-value
+    serialized = JSON.stringify(value);
   } catch {
-    return undefined;
+    fail(`${path} is not valid JSON`);
+  }
+  if (serialized === undefined) fail(`${path} is not valid JSON`);
+  if (serialized.length > maxChars) {
+    fail(`${path} exceeds the maximum allowed size (${maxChars} chars) -- rejected, not truncated`);
   }
 }
 
-function normalizeSourceEntry(raw: unknown): PackageSourceManifestEntry | null {
-  if (!isPlainObject(raw)) return null;
-  const sourceType = str(raw.sourceType);
-  const sourceRef = str(raw.sourceRef);
-  const statusRaw = str(raw.status);
-  const observedAt = str(raw.observedAt);
-  if (!sourceType || !sourceRef || !statusRaw || !observedAt) return null;
-  if (!VALID_SOURCE_STATUSES.has(statusRaw as SourceManifestStatus)) return null;
-  if (Number.isNaN(Date.parse(observedAt))) return null;
+function normalizeSourceEntry(raw: unknown, index: number): PackageSourceManifestEntry {
+  const path = `sources[${index}]`;
+  if (!isPlainObject(raw)) fail(`${path} must be an object`);
+
+  const sourceType = requireString(raw.sourceType, `${path}.sourceType`);
+  const sourceRef = requireString(raw.sourceRef, `${path}.sourceRef`);
+  const status = requireString(raw.status, `${path}.status`) as SourceManifestStatus;
+  if (!VALID_SOURCE_STATUSES.has(status)) {
+    fail(`${path}.status must be one of: ${[...VALID_SOURCE_STATUSES].join(", ")} -- got "${status}"`);
+  }
+  const observedAt = requireIsoDate(raw.observedAt, `${path}.observedAt`);
+  if (raw.succeeded !== true && raw.succeeded !== false) {
+    fail(`${path}.succeeded is required and must be a boolean`);
+  }
 
   return {
-    sourceType: truncate(sourceType, MAX_STRING_FIELD_CHARS),
-    sourceRef: truncate(sourceRef, MAX_STRING_FIELD_CHARS),
-    registrationId: str(raw.registrationId),
-    role: str(raw.role),
-    status: statusRaw as SourceManifestStatus,
+    sourceType,
+    sourceRef,
+    registrationId: optionalString(raw.registrationId, `${path}.registrationId`),
+    role: optionalString(raw.role, `${path}.role`),
+    status,
     observedAt,
-    succeeded: raw.succeeded === true,
-    detail: str(raw.detail) ? truncate(str(raw.detail)!, MAX_WARNING_CHARS) : null,
+    succeeded: raw.succeeded,
+    detail: optionalString(raw.detail, `${path}.detail`, MAX_WARNING_CHARS),
   };
 }
 
-function normalizeEvidenceItem(raw: unknown): EvidenceItem | null {
-  if (!isPlainObject(raw)) return null;
-  const id = str(raw.id);
-  const sourceRef = str(raw.sourceRef);
-  const kind = str(raw.kind);
-  const excerpt = typeof raw.excerpt === "string" ? raw.excerpt : "";
-  if (!id || !sourceRef || !kind) return null;
+function normalizeEvidenceItem(raw: unknown, index: number): EvidenceItem {
+  const path = `evidence[${index}]`;
+  if (!isPlainObject(raw)) fail(`${path} must be an object`);
 
-  const item: EvidenceItem = {
-    id: truncate(id, MAX_STRING_FIELD_CHARS),
-    sourceRef: truncate(sourceRef, MAX_STRING_FIELD_CHARS),
-    kind: truncate(kind, MAX_STRING_FIELD_CHARS),
-    excerpt: truncate(excerpt, MAX_EXCERPT_CHARS),
-  };
-  const externalRef = str(raw.externalRef);
-  if (externalRef) item.externalRef = truncate(externalRef, MAX_STRING_FIELD_CHARS);
+  const id = requireString(raw.id, `${path}.id`);
+  const sourceRef = requireString(raw.sourceRef, `${path}.sourceRef`);
+  const kind = requireString(raw.kind, `${path}.kind`);
+  const excerpt = requireString(raw.excerpt, `${path}.excerpt`, MAX_EXCERPT_CHARS);
+
+  const item: EvidenceItem = { id, sourceRef, kind, excerpt };
+
+  const externalRef = optionalString(raw.externalRef, `${path}.externalRef`);
+  if (externalRef) item.externalRef = externalRef;
 
   if (raw.data !== undefined) {
-    const bounded = boundJson(raw.data, MAX_DATA_JSON_CHARS);
-    if (bounded !== undefined && isPlainObject(bounded)) {
-      item.data = bounded as Record<string, JsonValue>;
-    }
+    if (!isPlainObject(raw.data)) fail(`${path}.data must be a plain object when present`);
+    checkJsonBound(raw.data, `${path}.data`, MAX_DATA_JSON_CHARS);
+    item.data = raw.data as Record<string, JsonValue>;
   }
 
   return item;
 }
 
-function normalizeDerivedClaim(raw: unknown): DerivedClaim | null {
-  if (!isPlainObject(raw)) return null;
-  const id = str(raw.id);
-  const kind = str(raw.kind);
-  const statement = str(raw.statement);
-  if (!id || !kind || !statement) return null;
+function normalizeDerivedClaim(raw: unknown, index: number): DerivedClaim {
+  const path = `derivedClaims[${index}]`;
+  if (!isPlainObject(raw)) fail(`${path} must be an object`);
 
-  return {
-    id: truncate(id, MAX_STRING_FIELD_CHARS),
-    kind: truncate(kind, MAX_STRING_FIELD_CHARS),
-    statement: truncate(statement, MAX_EXCERPT_CHARS),
-    evidenceRefs: Array.isArray(raw.evidenceRefs)
-      ? raw.evidenceRefs.filter((x): x is string => typeof x === "string").slice(0, 50)
-      : [],
-  };
+  const id = requireString(raw.id, `${path}.id`);
+  const kind = requireString(raw.kind, `${path}.kind`);
+  const statement = requireString(raw.statement, `${path}.statement`, MAX_EXCERPT_CHARS);
+
+  const evidenceRefsRaw = requireArray(raw.evidenceRefs, `${path}.evidenceRefs`, 50);
+  const evidenceRefs = evidenceRefsRaw.map((r, i) => requireString(r, `${path}.evidenceRefs[${i}]`));
+
+  return { id, kind, statement, evidenceRefs };
 }
 
 function normalizeCompleteness(raw: unknown): PackageCompleteness {
-  const r = isPlainObject(raw) ? raw : {};
-  const expectedSources = Array.isArray(r.expectedSources)
-    ? r.expectedSources.filter((x): x is string => typeof x === "string")
-    : [];
-  const missingSources = Array.isArray(r.missingSources)
-    ? r.missingSources.filter((x): x is string => typeof x === "string")
-    : [];
-  const excludedSources = Array.isArray(r.excludedSources)
-    ? r.excludedSources
-        .map((e) => {
-          if (!isPlainObject(e)) return null;
-          const sourceRef = str(e.sourceRef);
-          const status = str(e.status);
-          if (!sourceRef || (status !== "superseded" && status !== "retired")) return null;
-          return { sourceRef, status: status as "superseded" | "retired", reason: str(e.reason) };
-        })
-        .filter((e): e is PackageCompleteness["excludedSources"][number] => e !== null)
-    : [];
+  if (raw === undefined) {
+    fail("completeness is required");
+  }
+  if (!isPlainObject(raw)) fail("completeness must be an object");
+
+  const expectedSources = requireArray(raw.expectedSources, "completeness.expectedSources", 200).map((r, i) =>
+    requireString(r, `completeness.expectedSources[${i}]`)
+  );
+  const missingSources = requireArray(raw.missingSources, "completeness.missingSources", 200).map((r, i) =>
+    requireString(r, `completeness.missingSources[${i}]`)
+  );
+  const excludedSourcesRaw = requireArray(raw.excludedSources, "completeness.excludedSources", 200);
+  const excludedSources = excludedSourcesRaw.map((e, i) => {
+    const path = `completeness.excludedSources[${i}]`;
+    if (!isPlainObject(e)) fail(`${path} must be an object`);
+    const sourceRef = requireString(e.sourceRef, `${path}.sourceRef`);
+    const status = requireString(e.status, `${path}.status`);
+    if (status !== "superseded" && status !== "retired") {
+      fail(`${path}.status must be "superseded" or "retired", got "${status}"`);
+    }
+    return { sourceRef, status: status as "superseded" | "retired", reason: optionalString(e.reason, `${path}.reason`) };
+  });
 
   return { expectedSources, missingSources, excludedSources };
 }
 
-export class PackageValidationError extends Error {}
-
-// Rejects outright (throws) on a malformed top-level shape -- there is no
-// safe partial acceptance of "which package, from whom, for which scope."
-// Defensively normalizes/drops within nested arrays otherwise, same
-// philosophy as lib/audit/normalize.ts.
+// Rejects on ANY structural problem -- there is no safe partial
+// acceptance of "which package, from whom, for which scope, citing what."
 export function validateProjectContextPackage(raw: unknown): ProjectContextPackage {
   if (!isPlainObject(raw)) {
-    throw new PackageValidationError("Expected a ProjectContextPackage object");
+    fail("Expected a ProjectContextPackage object");
   }
 
   if (raw.version !== PROJECT_CONTEXT_PACKAGE_VERSION) {
-    throw new PackageValidationError(
-      `Unsupported ProjectContextPackage version: ${String(raw.version)} (expected "${PROJECT_CONTEXT_PACKAGE_VERSION}")`
-    );
+    fail(`Unsupported ProjectContextPackage version: ${JSON.stringify(raw.version)} (expected "${PROJECT_CONTEXT_PACKAGE_VERSION}")`);
   }
 
-  const packageId = str(raw.packageId);
-  if (!packageId) {
-    throw new PackageValidationError("packageId is required");
+  const packageId = requireString(raw.packageId, "packageId");
+
+  const producer = requireString(raw.producer, "producer") as PackageProducer;
+  if (!VALID_PRODUCERS.has(producer)) {
+    fail(`producer must be one of: ${[...VALID_PRODUCERS].join(", ")} -- got "${producer}"`);
   }
 
-  const producer = str(raw.producer);
-  if (!producer || !VALID_PRODUCERS.has(producer as PackageProducer)) {
-    throw new PackageValidationError(`producer must be one of: ${[...VALID_PRODUCERS].join(", ")}`);
-  }
+  const generatedAt = requireIsoDate(raw.generatedAt, "generatedAt");
+  const scopeId = requireString(raw.scopeId, "scopeId");
 
-  const generatedAt = str(raw.generatedAt);
-  if (!generatedAt || Number.isNaN(Date.parse(generatedAt))) {
-    throw new PackageValidationError("generatedAt must be a valid ISO 8601 timestamp");
-  }
+  const sources = requireArray(raw.sources, "sources", MAX_SOURCES).map((s, i) => normalizeSourceEntry(s, i));
+  const evidence = requireArray(raw.evidence, "evidence", MAX_EVIDENCE_ITEMS).map((e, i) => normalizeEvidenceItem(e, i));
+  const derivedClaimsRaw = requireArray(raw.derivedClaims, "derivedClaims", MAX_DERIVED_CLAIMS).map((c, i) =>
+    normalizeDerivedClaim(c, i)
+  );
+  const warningsRaw = requireArray(raw.warnings, "warnings", MAX_WARNINGS);
+  const warnings = warningsRaw.map((w, i) => requireString(w, `warnings[${i}]`, MAX_WARNING_CHARS));
 
-  const scopeId = str(raw.scopeId);
-  if (!scopeId) {
-    throw new PackageValidationError("scopeId is required (Phase 1a packages are single-scope only)");
-  }
+  const completeness = normalizeCompleteness(raw.completeness);
 
-  const sources = Array.isArray(raw.sources)
-    ? raw.sources.map(normalizeSourceEntry).filter((s): s is PackageSourceManifestEntry => s !== null).slice(0, MAX_SOURCES)
-    : [];
+  // -- Referential integrity: no dangling pointers survive into an
+  // immutable snapshot. --
 
-  const evidence = Array.isArray(raw.evidence)
-    ? raw.evidence.map(normalizeEvidenceItem).filter((e): e is EvidenceItem => e !== null).slice(0, MAX_EVIDENCE_ITEMS)
-    : [];
+  const sourceRefs = new Set(sources.map((s) => s.sourceRef));
+  evidence.forEach((e, i) => {
+    if (!sourceRefs.has(e.sourceRef)) {
+      fail(`evidence[${i}].sourceRef "${e.sourceRef}" does not match any entry in sources[] (sourceRef)`);
+    }
+  });
 
-  const derivedClaimsRaw = Array.isArray(raw.derivedClaims)
-    ? raw.derivedClaims.map(normalizeDerivedClaim).filter((c): c is DerivedClaim => c !== null).slice(0, MAX_DERIVED_CLAIMS)
-    : [];
+  const evidenceIds = new Set<string>();
+  evidence.forEach((e, i) => {
+    if (evidenceIds.has(e.id)) {
+      fail(`evidence[${i}].id "${e.id}" is a duplicate -- evidence ids must be unique within a package`);
+    }
+    evidenceIds.add(e.id);
+  });
 
-  const warnings = Array.isArray(raw.warnings)
-    ? raw.warnings
-        .filter((w): w is string => typeof w === "string")
-        .map((w) => truncate(w, MAX_WARNING_CHARS))
-        .slice(0, MAX_WARNINGS)
-    : [];
+  const claimIds = new Set<string>();
+  derivedClaimsRaw.forEach((c, i) => {
+    if (claimIds.has(c.id)) {
+      fail(`derivedClaims[${i}].id "${c.id}" is a duplicate -- derived claim ids must be unique within a package`);
+    }
+    claimIds.add(c.id);
+    c.evidenceRefs.forEach((ref, j) => {
+      if (!evidenceIds.has(ref)) {
+        fail(
+          `derivedClaims[${i}].evidenceRefs[${j}] "${ref}" does not match any evidence[].id in this package -- ` +
+            `every derived claim must cite evidence that actually exists in the package`
+        );
+      }
+    });
+  });
 
   const pkg: ProjectContextPackage = {
     version: PROJECT_CONTEXT_PACKAGE_VERSION,
     packageId,
-    producer: producer as PackageProducer,
+    producer,
     generatedAt,
     scopeId,
     sources,
     evidence,
-    completeness: normalizeCompleteness(raw.completeness),
+    completeness,
     warnings,
   };
   if (derivedClaimsRaw.length > 0) pkg.derivedClaims = derivedClaimsRaw;

@@ -97,8 +97,15 @@ interface ScopeSimBundle {
 async function buildScopeSimInputs(scope: Scope): Promise<ScopeSimBundle> {
   const issues = await getScopedIssues(scope);
 
+  // A Finding reaches this Scope's forecast either via a legacy audit
+  // Source (source.scopeId) or via a package-derived ContextSnapshot
+  // (contextSnapshot.scopeId) -- Finding.sourceId became nullable in
+  // Phase 1b specifically so a package-derived Finding never needs a
+  // fabricated Source, so this query must check both relations or such a
+  // Finding would be silently invisible to the forecast it's supposed to
+  // feed.
   const findings = await prisma.finding.findMany({
-    where: { source: { scopeId: scope.id } },
+    where: { OR: [{ source: { scopeId: scope.id } }, { contextSnapshot: { scopeId: scope.id } }] },
     select: {
       id: true,
       type: true,

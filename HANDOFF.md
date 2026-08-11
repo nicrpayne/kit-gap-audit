@@ -141,6 +141,53 @@ accept an optional package) and Phase 1c (a read-only
 `ProjectIntelligenceEnvelope` endpoint) are designed but explicitly not
 started.
 
+**Context Package Foundation, Phase 1b** (same branch, built on top of
+Phase 1a) — hardened Phase 1a's validation (malformed evidence now REJECTS
+the whole package instead of being silently dropped; referential integrity
+enforced -- duplicate ids and dangling `evidenceRefs`/`sourceRef` pointers
+rejected; identity collision detected -- same `(producer, packageId)` with
+different content now throws `PackageIdentityConflictError` rather than
+overwriting or silently reusing; a package's `scopeId` is checked against
+the request's expected scope) and wired ONE real ingestion/provenance path
+end to end. `Finding.sourceId` is now nullable (`AuditRun.sourceId` too) --
+the real blast-radius finding here: every place that found "this Scope's
+Findings" (`lib/forecast/compute.ts`, `lib/estimate/runForScope.ts`,
+`lib/audit/run.ts`'s own re-raise guard) did it exclusively through the
+Finding→Source relation, which would have made a package-derived Finding
+(no Source, by design -- never fabricated) invisible everywhere; all three
+now check `Source.scopeId` OR `ContextSnapshot.scopeId`. `POST /api/refresh`
+additively accepts an optional `contextPackage`, persists exactly ONE
+`ContextSnapshot` at the request boundary (the sole call site for
+`persistContextSnapshot()` in the whole codebase), and threads that same
+snapshot id into `runAudit()` and `generateReport()` -- neither creates a
+second snapshot. `runAudit()`'s `input` is now optional and package
+evidence is rendered to the model as its own block (never flattened into
+the transcript string) with instructions to cite evidence ids back in a
+new `evidenceRefs` field, safety-net-intersected against the real evidence
+set before anything is written. Proved end to end with a synthetic
+JSA-Infrastructure-Alignment-tracker package (`infra-row-10`/`infra-row-13`,
+real structured fields): package accepted → one snapshot → audit (Linear
+via `KIT_DEV_FIXTURES=1`, the LLM call mocked via `runAudit()`'s existing
+`options.complete` injection point -- no `ANTHROPIC_API_KEY` in this
+sandbox, clearly flagged rather than faked) → one `missing_work` Finding
+with `sourceId: null`, `contextSnapshotId` set, `evidenceRefs:
+["infra-row-13"]` → the full chain (Finding → snapshot → evidence item →
+source manifest entry → `SourceRegistration`) walks end to end →
+`computeForecast()` picks it up through the exact existing unticketed-
+Finding path (`unticketedFindingCount` +1, `remainingIssueCount`
+unchanged, no double count on a second read) → a generated Report
+references the same snapshot id. Also proved: superseding the
+`SourceRegistration` afterward changes nothing about the already-persisted
+snapshot or the Finding's provenance -- no auto-resolution, no lost
+history. `npx tsc --noEmit`, `npx eslint .`, `npm run build` all clean;
+diffed against the Phase 1a commit to confirm `lib/forecast/simulate.ts`,
+`lib/forecast/portfolio.ts`, `lib/capacity/resolve.ts`, `lib/scenario/`,
+and `lib/momentum/` are byte-for-byte untouched. **Not yet merged, not yet
+clicked through by Nic.** Still NOT Hermes integration -- every proof used
+a synthetic package; no Notion/Figma/spreadsheet-connector assembler, no
+`ProjectIntelligenceEnvelope`, no Context Workbench UI exist yet. See
+`docs/CONTEXT-MODEL.md`.
+
 ## Tech stack
 
 - **Next.js 15** (App Router, TypeScript), **React 19**

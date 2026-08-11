@@ -1,22 +1,41 @@
 // Persistence boundary for ProjectContextPackage -> ContextSnapshot. This
-// is the ONLY place a ContextSnapshot row is created (Correction 4: one
-// accepted package instance produces exactly one snapshot). Phase 1b's
-// future callers (runAudit, generateReport, /api/refresh) will call this
-// once at the top of a refresh and pass the resulting snapshot id through
-// to whatever consumes it -- none of that wiring exists yet in Phase 1a.
+// is the ONLY place a ContextSnapshot row is created (one accepted package
+// instance produces exactly one snapshot -- callers pass the resulting
+// snapshot id through to whatever consumes it; nothing downstream creates
+// a second snapshot for the same accepted package).
 //
-// Idempotent by (producer, packageId): a retried push of the same logical
-// package (same producer re-sending the same packageId, e.g. after a
-// timeout) returns the existing snapshot rather than creating a duplicate.
-// This is the safety net Correction 1 asks for -- packageId is the
-// producer's own identity for a package instance, ContextSnapshot.id is
-// the Gap App's separate, local, immutable historical identifier.
+// Idempotent by (producer, packageId) ONLY when the content is identical
+// (contextHash matches). A retry of the same logical package (same
+// producer re-sending the same packageId, e.g. after a timeout) returns
+// the existing snapshot. A DIFFERENT package showing up under an
+// already-used (producer, packageId) is an identity conflict, not a
+// silent overwrite or a silent "close enough" reuse -- packageId is
+// supposed to identify immutable content, so this is a real, throwable
+// error at the boundary, not something to paper over.
 
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { validateProjectContextPackage } from "./validate";
 import { hashProjectContextPackage } from "./hash";
 import type { ProjectContextPackage, PackageCompleteness } from "./package";
+
+export class PackageIdentityConflictError extends Error {
+  constructor(producer: string, packageId: string) {
+    super(
+      `A different package was already persisted for producer "${producer}" + packageId "${packageId}". ` +
+        `packageId must identify immutable content -- send a new packageId for changed content, or resend ` +
+        `the exact original package to reuse the existing snapshot.`
+    );
+    this.name = "PackageIdentityConflictError";
+  }
+}
+
+export class PackageScopeMismatchError extends Error {
+  constructor(expected: string, actual: string) {
+    super(`Package scopeId "${actual}" does not match the expected scopeId "${expected}" for this request`);
+    this.name = "PackageScopeMismatchError";
+  }
+}
 
 export interface PersistedContextSnapshot {
   id: string;
@@ -29,8 +48,8 @@ export interface PersistedContextSnapshot {
   completenessSummary: PackageCompleteness;
   createdAt: Date;
   // true when this call found an already-persisted snapshot for the same
-  // (producer, packageId) instead of creating a new row -- proves the
-  // idempotency guarantee rather than just asserting it.
+  // (producer, packageId, contextHash) instead of creating a new row --
+  // proves the idempotency guarantee rather than just asserting it.
   reused: boolean;
 }
 
@@ -62,25 +81,43 @@ function toResult(
   };
 }
 
-// Validates, then persists exactly one immutable ContextSnapshot row.
-// Never updates an existing row -- a ContextSnapshot, once written, is
-// never touched again by this or any other function.
-export async function persistContextSnapshot(rawPackage: unknown): Promise<PersistedContextSnapshot> {
+export interface PersistContextSnapshotOptions {
+  // When provided, the package's own scopeId must match exactly --
+  // defense-in-depth so an ingestion boundary (POST /api/refresh) can't
+  // accidentally persist a package for a different Scope than the one the
+  // request named.
+  expectedScopeId?: string;
+}
+
+// Validates, then persists exactly one immutable ContextSnapshot row (or
+// returns the existing one for an identical retry). Never updates an
+// existing row -- a ContextSnapshot, once written, is never touched again.
+export async function persistContextSnapshot(
+  rawPackage: unknown,
+  options: PersistContextSnapshotOptions = {}
+): Promise<PersistedContextSnapshot> {
   const pkg = validateProjectContextPackage(rawPackage);
+
+  if (options.expectedScopeId !== undefined && pkg.scopeId !== options.expectedScopeId) {
+    throw new PackageScopeMismatchError(options.expectedScopeId, pkg.scopeId);
+  }
 
   const scope = await prisma.scope.findUnique({ where: { id: pkg.scopeId }, select: { id: true } });
   if (!scope) {
     throw new Error(`ContextSnapshot: unknown scopeId "${pkg.scopeId}"`);
   }
 
+  const contextHash = hashProjectContextPackage(pkg);
+
   const existing = await prisma.contextSnapshot.findUnique({
     where: { producer_packageId: { producer: pkg.producer, packageId: pkg.packageId } },
   });
   if (existing) {
+    if (existing.contextHash !== contextHash) {
+      throw new PackageIdentityConflictError(pkg.producer, pkg.packageId);
+    }
     return toResult(existing, true);
   }
-
-  const contextHash = hashProjectContextPackage(pkg);
 
   const created = await prisma.contextSnapshot.create({
     data: {

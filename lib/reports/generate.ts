@@ -14,7 +14,15 @@ export interface GeneratedReport {
 // "first report" framing if there isn't one). Reuses computeForecast so
 // the numbers always agree with what's on /forecast. Throws on Linear
 // failure -- callers convert to a 502, same message used everywhere else.
-export async function generateReport(scope: Scope): Promise<GeneratedReport> {
+//
+// `contextSnapshotId`, when provided, is stamped onto the created Report
+// as-is -- this function NEVER persists a ContextSnapshot itself. The one
+// accepted package -> one snapshot invariant lives entirely in the
+// caller (POST /api/refresh): it persists a snapshot once, then passes
+// the same id through to both runAudit() and this function, so a refresh
+// that runs an audit AND generates a report never ends up with two
+// snapshots for the one package it accepted.
+export async function generateReport(scope: Scope, contextSnapshotId?: string | null): Promise<GeneratedReport> {
   const forecast = await computeForecast(scope);
   const { findings, likelyDate, earliestDate, latestDate, confidenceAtTarget, scenarios } = forecast;
 
@@ -79,6 +87,7 @@ export async function generateReport(scope: Scope): Promise<GeneratedReport> {
       blockingCount: blockingDecisions.length,
       resolvedSinceLastCount: resolvedSinceLast.length,
       summaryMarkdown,
+      contextSnapshotId: contextSnapshotId ?? null,
     },
   });
 

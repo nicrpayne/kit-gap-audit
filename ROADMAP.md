@@ -14,17 +14,20 @@ HEAD `46812f0`) -- see "Where things stand" for the full history. Phases
 2-4 (context-switch/focus toggle, dependency-relief preview, scope-cut)
 are planned but not yet approved to start.
 
-**Context Package Foundation, Phase 1a** (see `docs/CONTEXT-MODEL.md`), on
-branch `claude/gap-app-context-sources-hwy0v3`, cut from base at `45d4312`.
-Foundation-only groundwork for a future evidence/provenance layer under
-Reality: a versioned `ProjectContextPackage` transport contract, a
-`SourceRegistration` tracking-policy table, an immutable `ContextSnapshot`
-table, and nullable provenance fields on `Finding`/`Report`. Nothing is
-wired into any existing route or flow -- `/api/refresh`, the forecast/audit/
-report pipelines, `/portfolio`, and Momentum are all byte-for-byte
-unchanged. **Not yet merged, not yet clicked through by Nic** -- do not
-resume Phase 1b/1c or merge without checking recent conversation history
-first.
+**Context Package Foundation, Phase 1a + 1b** (see `docs/CONTEXT-MODEL.md`),
+on branch `claude/gap-app-context-sources-hwy0v3`, cut from base at
+`45d4312`. Phase 1a: foundation-only groundwork for a future evidence/
+provenance layer under Reality (`ProjectContextPackage` transport contract,
+`SourceRegistration` tracking-policy table, immutable `ContextSnapshot`
+table, nullable provenance fields on `Finding`/`Report`), nothing wired in.
+Phase 1b: hardened that foundation (strict rejection of malformed packages,
+referential integrity, identity-collision detection) and wired ONE real
+ingestion/provenance path end to end through `POST /api/refresh` and
+`runAudit()`, proved with a synthetic JSA-Infrastructure-Alignment-tracker
+package. Still not Hermes integration. `/portfolio` and Momentum remain
+byte-for-byte unchanged. **Not yet merged, not yet clicked through by
+Nic** -- do not resume Phase 1c or merge without checking recent
+conversation history first.
 
 **Portfolio Instrument Surface** (see `docs/PRODUCT-VISION.md`,
 `docs/DESIGN-NORTH-STAR.md`), on branch `claude/portfolio-instrument-
@@ -145,6 +148,132 @@ merge without checking recent conversation history first.
   `lib/scenario/inputDelta.ts`, and `lib/momentum/` are confirmed
   byte-for-byte unchanged. **Not yet merged, not yet clicked through by
   Nic** -- do not merge without an explicit instruction to do so.
+
+- **Context Package Foundation, Phase 1b (same branch, built on Phase 1a,
+  not yet merged)** -- hardened Phase 1a's foundation, then proved one
+  real ingestion/provenance path end to end. Three invariants corrected
+  before any wiring, per explicit review: (1) **never silently drop
+  evidence** -- `lib/context/validate.ts` rewritten from "drop a malformed
+  entry, keep the rest" to strict: any structural problem anywhere in
+  `sources[]`/`evidence[]`/`derivedClaims[]` rejects the WHOLE package
+  (`PackageValidationError`, naming the exact entry/field), since "we
+  received a blocker but couldn't parse it" must never quietly become
+  "there was no blocker." Referential integrity added at the same
+  boundary: every `evidence[].sourceRef` must resolve to a `sources[]`
+  entry, every `derivedClaims[].evidenceRefs` entry must resolve to a real
+  `evidence[].id`, evidence/claim ids must be unique within the package --
+  no dangling pointer reaches an immutable snapshot. (2) **identity
+  collision, not silent overwrite** -- `persistContextSnapshot()` now
+  hashes the incoming package BEFORE checking `(producer, packageId)`:
+  same id + same hash reuses the existing row (unchanged from 1a); same id
+  + DIFFERENT hash throws `PackageIdentityConflictError`, leaving the
+  original untouched and creating no second row -- `packageId` is
+  supposed to identify immutable content, so a differing payload under the
+  same id is a real, throwable error. (3) **scope match enforced at
+  persistence** -- `persistContextSnapshot(pkg, { expectedScopeId })`
+  throws `PackageScopeMismatchError` on mismatch, defense-in-depth against
+  an ingestion boundary attaching a package to the wrong Scope.
+
+  **The bigger finding**: making `Finding.sourceId` nullable (needed so a
+  package-derived Finding never requires a fabricated `Source` row) had a
+  real blast radius, traced before any schema change per explicit
+  instruction rather than assumed safe. Three places found "this Scope's
+  Findings" exclusively via the Finding→Source relation --
+  `lib/forecast/compute.ts`'s `buildScopeSimInputs()` (the forecast's own
+  Finding query), `lib/estimate/runForScope.ts` (the AI estimator's
+  un-ticketed-findings query), and `lib/audit/run.ts`'s own "don't
+  re-raise a handled finding" guard -- all three would have made a
+  package-derived Finding silently invisible everywhere that mattered had
+  the query not changed. Fixed identically in all three:
+  `where: { source: { scopeId } }` -> `where: { OR: [{ source: { scopeId
+  } }, { contextSnapshot: { scopeId } }] }`. Also fixed:
+  `POST /api/findings/:id/ticket` (resolves Scope via
+  `finding.source?.scope ?? finding.contextSnapshot?.scope`, writes an
+  honest provenance line into the created Linear issue either way) and
+  `/decisions`/`DecisionQueue.tsx` (renders a plain label instead of a
+  broken link when a decision Finding has no `Source`). `AuditRun.sourceId`
+  made nullable too (a loose string reference, not a real Prisma relation,
+  zero other consumers found). Migration inspected: purely constraint-
+  relaxing (`DROP NOT NULL` on two columns, one FK's `onDelete` changed to
+  `SetNull`) -- no data loss, no existing row altered.
+
+  **Wired**: `POST /api/refresh` additively gained an optional
+  `contextPackage` field -- every existing caller that omits it gets
+  exactly today's behavior, unchanged. When present: validated strictly
+  and scope-checked (`400` on either failure), an identity conflict maps
+  to `409`, and on success exactly ONE `ContextSnapshot` is persisted at
+  the request boundary -- the sole call site for `persistContextSnapshot()`
+  in the whole codebase -- with the resulting id threaded as a parameter
+  into `runAudit()` and `generateReport()`, neither of which persists a
+  second snapshot for the same accepted package. The audit now runs
+  whenever a transcript OR an accepted package is present (previously
+  transcript-only) -- a package-only refresh with no pasted transcript is
+  a real, supported call shape. `runAudit()`'s `input` parameter is now
+  optional; `lib/audit/prompts/audit-v1.ts`'s `buildAuditPrompt()` renders
+  package evidence as its own block (each item shown with its stable `id`
+  and structured `data`, never flattened into the transcript string) and
+  instructs the model to cite ids back in a new `evidenceRefs` output
+  field; `lib/audit/normalize.ts` parses it defensively. `runAudit()`
+  intersects whatever the model returns against the real evidence-id set
+  before writing anything -- a hallucinated id can never survive into a
+  `Finding.evidenceRefs` array -- and only sets `contextSnapshotId` on a
+  Finding whose cited refs actually survive that intersection, so
+  "package-derived" (`contextSnapshotId` set, `evidenceRefs` non-empty)
+  stays a precise, checkable claim even in a mixed run that also had a
+  transcript.
+
+  **Proved end to end** with a synthetic package modeled on the real JSA
+  Infrastructure Alignment tracker (`infra-row-10` "Terraform + Safety
+  infra deployed," `infra-row-13` "BLOCKER -- GitHub/VPN access," both
+  with real structured fields -- bucket/owner/effortEstimate/dueDate/
+  confidence/status/dependsOn): package accepted -> exactly one
+  `ContextSnapshot` -> `runAudit()` against Linear (`KIT_DEV_FIXTURES=1`,
+  this repo's own existing offline stand-in -- confirmed the fixture team's
+  tickets genuinely contain no VPN/GitHub work) with the LLM call
+  substituted via `runAudit()`'s existing `options.complete` injection
+  point (same dependency-injection pattern `lib/notion.ts`/`lib/figma.ts`'s
+  `fetcher` parameter already uses) for a fixed, deterministic response,
+  since no `ANTHROPIC_API_KEY` exists in this sandbox -- clearly flagged as
+  mocked, not claimed as a live model verification -> one `missing_work`
+  Finding produced with `sourceId: null`, `contextSnapshotId` set,
+  `evidenceRefs: ["infra-row-13"]` -> the full chain (Finding ->
+  `ContextSnapshot` -> `EvidenceItem` -> source manifest entry ->
+  `SourceRegistration`) walked and verified end to end ->
+  `computeForecast()` picked the Finding up through the pre-existing
+  unticketed-Finding path with zero special-casing (`unticketedFindingCount`
+  +1, `remainingIssueCount` -- the Linear-derived count -- unchanged, no
+  double count confirmed on a second read) -> `generateReport()` produced
+  a Report whose `contextSnapshotId` matches the same snapshot. Also
+  proved: marking the `SourceRegistration` `superseded` afterward changes
+  nothing about the already-persisted snapshot (its embedded source-
+  manifest entry still reads `"active"`) or the Finding's provenance, and
+  does not auto-resolve the Finding -- historical immutability and "no
+  silent auto-reconciliation" both hold under a real state transition, not
+  just by inspection. Legacy Source-backed Findings and old-style
+  snapshot-free `Finding`/`Report` rows confirmed unaffected throughout.
+
+  Verified via a temp script (`npx tsx`, `KIT_DEV_FIXTURES=1`, deleted
+  after passing) covering all of: strict rejection of malformed evidence,
+  duplicate evidence ids, a `derivedClaim` citing a nonexistent evidence
+  id, evidence pointing at an unknown source, idempotent same-hash retry,
+  rejected different-hash retry (original snapshot proven untouched),
+  scope-mismatch rejection, the one-snapshot-per-package invariant,
+  structured-data round-trip, and every step of the end-to-end chain above.
+  `npx tsc --noEmit`, `npx eslint .`, `npm run build` all clean; diffed
+  against the Phase 1a commit to confirm `lib/forecast/simulate.ts`,
+  `lib/forecast/portfolio.ts`, `lib/capacity/resolve.ts`, `lib/scenario/`,
+  and `lib/momentum/` are byte-for-byte untouched.
+
+  **Not done, not started, explicitly out of scope**: real Hermes
+  integration (every proof used a synthetic package), real KE wiki access,
+  a Hermes pull path, `ProjectIntelligenceEnvelope`, Context Workbench UI,
+  a Notion/Figma/spreadsheet-connector package assembler, automated Linear
+  reconciliation (superseding a source never auto-resolves a Finding),
+  entity/obligation matching across sources, portfolio-wide snapshot
+  semantics, source-supersession recommendations (the human-approved
+  status-transition write path is the only mutation path that exists).
+  **Not yet merged, not yet clicked through by Nic** -- do not merge
+  without an explicit instruction to do so.
 
 - **Portfolio Instrument Surface (branch `claude/portfolio-instrument-
   surface`, cut from base `46812f0`, not yet merged)** -- Phase 2 of the

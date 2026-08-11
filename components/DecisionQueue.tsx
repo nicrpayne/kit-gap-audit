@@ -11,7 +11,7 @@ export interface DecisionRow {
   blocks: string | null;
   blocking: boolean;
   createdAt: string;
-  sourceId: string;
+  sourceId: string | null;
   sourceTitle: string;
 }
 
@@ -71,9 +71,13 @@ function DecisionCard({
         <div className="col-span-2">Blocks: {decision.blocks ?? <span className="italic">not specified</span>}</div>
         <div className="col-span-2">
           Source:{" "}
-          <Link href={`/audit/${decision.sourceId}`} className="text-[var(--color-accent)] hover:underline">
-            {decision.sourceTitle}
-          </Link>
+          {decision.sourceId ? (
+            <Link href={`/audit/${decision.sourceId}`} className="text-[var(--color-accent)] hover:underline">
+              {decision.sourceTitle}
+            </Link>
+          ) : (
+            <span>{decision.sourceTitle}</span>
+          )}
         </div>
       </div>
 

@@ -12,6 +12,13 @@ export interface NormalizedFinding {
   blocks: string | null;
   blocking: boolean;
   matchedIssues: string[];
+  // EvidenceItem ids (from an accepted ProjectContextPackage, see
+  // lib/context/package.ts) the model cited as grounding this finding.
+  // Empty for a finding grounded only in a pasted transcript/notes
+  // paragraph -- callers are responsible for further intersecting this
+  // against the actual package's evidence ids before trusting it (a model
+  // could hallucinate an id that was never shown to it).
+  evidenceRefs: string[];
 }
 
 const VALID_TYPES = new Set<FindingType>(["missing_work", "decision", "risk", "contradiction"]);
@@ -56,6 +63,9 @@ export function normalizeFindings(raw: unknown): NormalizedFinding[] {
       blocking: r.blocking === true,
       matchedIssues: Array.isArray(r.matchedIssues)
         ? r.matchedIssues.filter((x): x is string => typeof x === "string")
+        : [],
+      evidenceRefs: Array.isArray(r.evidenceRefs)
+        ? r.evidenceRefs.filter((x): x is string => typeof x === "string")
         : [],
     });
   }

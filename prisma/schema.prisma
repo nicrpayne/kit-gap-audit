@@ -231,8 +231,16 @@ model Source {
 
 model Finding {
   id            String   @id @default(cuid())
-  sourceId      String
-  source        Source   @relation(fields: [sourceId], references: [id])
+  // Nullable as of Phase 1b (was required through Phase 1a). A LEGACY/
+  // DIRECT AUDIT Finding still always has one, set exactly as before. A
+  // PACKAGE-DERIVED Finding (contextSnapshotId set, no pasted transcript
+  // behind it) genuinely has no Source -- fabricating one just to satisfy
+  // a NOT NULL constraint would misrepresent where the Finding came from,
+  // so the constraint was relaxed instead. A Finding may carry both if a
+  // deliberate flow genuinely used a transcript AND package evidence in
+  // the same audit run.
+  sourceId      String?
+  source        Source?  @relation(fields: [sourceId], references: [id], onDelete: SetNull)
   type          String // "missing_work" | "decision" | "risk" | "contradiction"
   title         String
   quote         String
@@ -252,12 +260,12 @@ model Finding {
 
   // Which ContextSnapshot this Finding was derived from, and which
   // evidence items within its package it cites (EvidenceItem.id values,
-  // e.g. "infra-row-13") -- both nullable/empty since no existing Finding
-  // has a snapshot to point to, and Phase 1a doesn't wire this into
-  // runAudit() yet. Deliberately NOT a sourceRegistrationId: the snapshot
-  // already carries the full source manifest (with registrationId per
-  // entry), so a Finding pointing at the snapshot + specific evidence ids
-  // is strictly more precise than a source-level FK alone.
+  // e.g. "infra-row-13"). Set by runAudit() as of Phase 1b whenever the
+  // audit run had a ProjectContextPackage attached. Deliberately NOT a
+  // sourceRegistrationId: the snapshot already carries the full source
+  // manifest (with registrationId per entry), so a Finding pointing at
+  // the snapshot + specific evidence ids is strictly more precise than a
+  // source-level FK alone.
   contextSnapshotId String?
   contextSnapshot   ContextSnapshot? @relation(fields: [contextSnapshotId], references: [id])
   evidenceRefs      String[] @default([])
@@ -265,7 +273,10 @@ model Finding {
 
 model AuditRun {
   id           String   @id @default(cuid())
-  sourceId     String
+  // Nullable as of Phase 1b -- a loose string reference (not a real
+  // Prisma relation), so relaxing it is a plain column-constraint change.
+  // Null for a package-only audit run that created no Source row.
+  sourceId     String?
   issueCount   Int
   findingCount Int
   model        String

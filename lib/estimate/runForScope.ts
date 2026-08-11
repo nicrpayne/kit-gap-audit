@@ -28,8 +28,16 @@ export async function runEstimationForScope(scope: Scope): Promise<EstimateForSc
   // include-Triage toggle later doesn't require a new estimation run.
   const openIssues = issues.filter((i) => !DONE_STATE_TYPES.has(i.stateType));
 
+  // Same OR as lib/forecast/compute.ts's buildScopeSimInputs -- a Finding
+  // may reach this Scope via a legacy audit Source or a package-derived
+  // ContextSnapshot (Finding.sourceId is nullable as of Phase 1b), and
+  // both must be estimatable the same way.
   const openFindings = await prisma.finding.findMany({
-    where: { source: { scopeId: scope.id }, status: "open", type: { not: "decision" } },
+    where: {
+      OR: [{ source: { scopeId: scope.id } }, { contextSnapshot: { scopeId: scope.id } }],
+      status: "open",
+      type: { not: "decision" },
+    },
     select: { id: true, title: true, quote: true, rationale: true, estimateHint: true },
   });
 

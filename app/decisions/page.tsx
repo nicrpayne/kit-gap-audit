@@ -6,10 +6,16 @@ export const dynamic = "force-dynamic";
 export default async function DecisionsPage() {
   const decisions = await prisma.finding.findMany({
     where: { type: "decision", status: "open" },
-    include: { source: { select: { id: true, title: true } } },
+    include: {
+      source: { select: { id: true, title: true } },
+      contextSnapshot: { select: { id: true, packageId: true } },
+    },
     orderBy: [{ blocking: "desc" }, { createdAt: "asc" }],
   });
 
+  // A legacy/direct audit decision has a Source to link to; a
+  // package-derived decision (no Source, per Phase 1b) doesn't -- shown
+  // as a plain label instead of a broken/fabricated link.
   const rows = decisions.map((d) => ({
     id: d.id,
     title: d.title,
@@ -18,8 +24,8 @@ export default async function DecisionsPage() {
     blocks: d.blocks,
     blocking: d.blocking,
     createdAt: d.createdAt.toISOString(),
-    sourceId: d.source.id,
-    sourceTitle: d.source.title,
+    sourceId: d.source?.id ?? null,
+    sourceTitle: d.source?.title ?? (d.contextSnapshot ? `Context package (${d.contextSnapshot.packageId})` : "Unknown source"),
   }));
 
   return (
