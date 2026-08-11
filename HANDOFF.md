@@ -106,6 +106,41 @@ through by Nic — do not merge without an explicit instruction to do so.**
 **V2 Timeline** is still genuinely NOT built — `/timeline` renders a
 placeholder. Deliberately deprioritized; do not assume it exists.
 
+**Context Package Foundation, Phase 1a** (this branch,
+`claude/gap-app-context-sources-hwy0v3`) — foundation-only, nothing wired
+in. Followed a two-turn architecture assessment (repository/data-flow audit
+of every existing context-like mechanism — Linear, Notion/Figma, the audit
+Source/Finding pair, Reports, uploads — then a Source Lifecycle/Context
+Package reconciliation) neither of which is reproduced here; see
+`docs/CONTEXT-MODEL.md` for what actually shipped. Ships: a versioned
+`ProjectContextPackage` v1 TypeScript contract (`lib/context/package.ts`)
+with hand-rolled validation (`lib/context/validate.ts`, no new dependency)
+and a deterministic hash (`lib/context/hash.ts`); a `SourceRegistration`
+table (tracking policy for a recurring source — candidate/active/paused/
+superseded/retired, role independent of status, `statusReason` required on
+every status change) with minimal CRUD API
+(`/api/source-registrations[/:id]`); a `ContextSnapshot` table (one
+immutable, frozen package instance, idempotent by `(producer, packageId)`,
+created only by `lib/context/snapshot.ts`'s `persistContextSnapshot()`);
+and nullable `contextSnapshotId`/`evidenceRefs` provenance fields on
+`Finding`, `contextSnapshotId` on `Report`. All four are additive —
+verified against real local Postgres that persisting a JSA-infra-shaped
+package round-trips exactly (structured `data` fields, `derivedClaims`,
+completeness, `observedAt` semantics all intact), that a retried push is
+idempotent, that changing a `SourceRegistration`'s status afterward does
+NOT mutate an already-persisted snapshot, and that existing/old-style
+`Finding`/`Report` rows with no snapshot reference are unaffected. **Zero
+existing routes, pages, or flows call any of this yet** — `/api/refresh`,
+`runAudit()`, `generateReport()`, `computeForecast()`, `/portfolio`,
+Momentum, and every simulation module are byte-for-byte unchanged. `npx tsc
+--noEmit`, `npx eslint .`, `npm run build` all clean. **Not yet merged, not
+yet clicked through by Nic** — do not merge without an explicit instruction
+to do so. Phase 1b (wiring one real ingestion path — a package-assembler
+for the `ContextDoc`/spreadsheet case, extending `POST /api/refresh` to
+accept an optional package) and Phase 1c (a read-only
+`ProjectIntelligenceEnvelope` endpoint) are designed but explicitly not
+started.
+
 ## Tech stack
 
 - **Next.js 15** (App Router, TypeScript), **React 19**
@@ -156,11 +191,17 @@ placeholder. Deliberately deprioritized; do not assume it exists.
   currently just `contextSwitchCostPct` (default 0 — a visible, user-set
   lever, never an inferred or baked-in "industry" number, same rule as
   everywhere else in this app).
-- **`Source`**, **`Finding`**, **`WorkEstimate`**, **`Report`** (now also
-  fetched per-scope for the portfolio momentum strip via `lastReport`),
-  **`ContextDoc`**, **`AuditRun`** — unchanged from before this session,
-  see inline schema comments for exact shapes. Nothing is ever deleted
-  from these; full traceability is a standing requirement.
+- **`Source`**, **`WorkEstimate`**, **`Report`** (now also fetched
+  per-scope for the portfolio momentum strip via `lastReport`),
+  **`ContextDoc`**, **`AuditRun`** — unchanged, see inline schema comments
+  for exact shapes. Nothing is ever deleted from these; full traceability
+  is a standing requirement.
+- **`Finding`** — unchanged except two new nullable fields this session,
+  `contextSnapshotId`/`evidenceRefs` (see Context Package Foundation
+  below); nothing sets them yet.
+- **`SourceRegistration`**, **`ContextSnapshot`** (both new this session) —
+  see "Context Package Foundation, Phase 1a" above and
+  `docs/CONTEXT-MODEL.md`.
 
 ## Feature rundown
 
@@ -699,6 +740,13 @@ top summary for anything more recent than this doc.
   / named-transfer commit rules / why target date doesn't re-simulate).
   Read before touching `lib/scenario/`, `PortfolioPageClient.tsx`'s
   preview logic, or `POST /api/portfolio/preview`.
+- **`docs/CONTEXT-MODEL.md`** — describes what Context Package Foundation
+  Phase 1a actually built (`ProjectContextPackage`/`SourceRegistration`/
+  `ContextSnapshot`, Finding/Report provenance fields, snapshot identity
+  and immutability guarantees) and, explicitly, what it did not (no
+  wiring into `/api/refresh` or any existing flow, no
+  `ProjectIntelligenceEnvelope`, no Notion/Figma package assembly). Read
+  before touching `lib/context/` or resuming Phase 1b/1c.
 - **`BUILDPACK.md`** — the original v0 spec. Historical.
 - This file (`HANDOFF.md`) — update it whenever a change is significant
   enough that a fresh agent picking this up next would need to know.

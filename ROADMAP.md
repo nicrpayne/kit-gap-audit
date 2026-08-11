@@ -14,6 +14,18 @@ HEAD `46812f0`) -- see "Where things stand" for the full history. Phases
 2-4 (context-switch/focus toggle, dependency-relief preview, scope-cut)
 are planned but not yet approved to start.
 
+**Context Package Foundation, Phase 1a** (see `docs/CONTEXT-MODEL.md`), on
+branch `claude/gap-app-context-sources-hwy0v3`, cut from base at `45d4312`.
+Foundation-only groundwork for a future evidence/provenance layer under
+Reality: a versioned `ProjectContextPackage` transport contract, a
+`SourceRegistration` tracking-policy table, an immutable `ContextSnapshot`
+table, and nullable provenance fields on `Finding`/`Report`. Nothing is
+wired into any existing route or flow -- `/api/refresh`, the forecast/audit/
+report pipelines, `/portfolio`, and Momentum are all byte-for-byte
+unchanged. **Not yet merged, not yet clicked through by Nic** -- do not
+resume Phase 1b/1c or merge without checking recent conversation history
+first.
+
 **Portfolio Instrument Surface** (see `docs/PRODUCT-VISION.md`,
 `docs/DESIGN-NORTH-STAR.md`), on branch `claude/portfolio-instrument-
 surface`, cut from base at `46812f0`. Replaces `/portfolio`'s vertically-
@@ -28,6 +40,111 @@ merged, not yet clicked through by Nic** -- do not resume this work or
 merge without checking recent conversation history first.
 
 ## Where things stand
+
+- **Context Package Foundation, Phase 1a (branch
+  `claude/gap-app-context-sources-hwy0v3`, cut from base `45d4312`, not yet
+  merged)** -- followed a two-part architecture assessment (a full
+  repository/data-flow audit of every existing context-like mechanism --
+  Linear, Notion/Figma, the audit `Source`/`Finding` pair, Reports,
+  uploads -- then a Source Lifecycle/Context Package reconciliation) that
+  is not reproduced in this file; `docs/CONTEXT-MODEL.md` documents what
+  actually shipped. The core finding driving this phase: the app's
+  evidence system is three unrelated pipelines that each discard
+  provenance at the point of consumption, except the audit `Source`/
+  `Finding` pair, which already has a working evidence-quote-to-claim
+  pattern worth generalizing rather than duplicating.
+
+  Four new/extended pieces, all additive: (1) `ProjectContextPackage` v1
+  (`lib/context/package.ts`) -- a versioned transport contract with its own
+  `packageId`/`producer` identity (independent from any local Gap App id,
+  so a retried push can be detected safely), a source manifest whose
+  `observedAt` reflects when a source was *actually* read from origin
+  (never bumped by a cache hit -- a cache hit is not a new observation, a
+  standing product rule this phase treats as load-bearing), itemized
+  `EvidenceItem[]` (not one flattened prompt string) with a generic
+  `data?: Record<string, JsonValue>` field so structured sources (a
+  spreadsheet row's columns) survive as structured data, and an optional
+  `derivedClaims[]` field for Hermes-derived understanding that is
+  deliberately inert transport data in this phase -- nothing reads or acts
+  on it, and it must never silently become a Finding. Validated by
+  `lib/context/validate.ts`, hand-rolled in the same style as the existing
+  `lib/audit/normalize.ts` (no new dependency); hashed deterministically by
+  `lib/context/hash.ts` (same sha256-truncated convention as
+  `lib/estimate/context.ts`'s existing `contextHash`, with canonical key
+  sorting so key order never changes the hash). (2) `SourceRegistration` --
+  a Prisma model for tracking POLICY, independent of content: five-state
+  lifecycle (`candidate`/`active`/`paused`/`superseded`/`retired`), `role`
+  kept fully independent of `status` (a source can stay active while its
+  role changes from `operational_tracker` to `supplemental_context`),
+  `scopeIds String[]` (empty = portfolio-wide, mirroring `Scope.
+  projectNames`' own convention rather than a join table), and an
+  unambiguous `supersededByRegistrationId` FK (never a free-text label
+  standing in for an id). Linear itself is deliberately never registered --
+  it stays a structural source via `Scope.projectNames`/`teamKey`, since
+  editing those fields already is Linear's own retirement mechanism.
+  Minimal CRUD API (`GET/POST /api/source-registrations`,
+  `PATCH /api/source-registrations/:id`) -- any status change requires a
+  non-empty `statusReason`, enforced server-side, so there is no silent,
+  reason-less status change from any caller, human or an eventual approved
+  Hermes action. (3) `ContextSnapshot` -- one immutable, frozen package
+  instance per accepted package, created ONLY by
+  `lib/context/snapshot.ts`'s `persistContextSnapshot()`, idempotent by a
+  real `@@unique([producer, packageId])` constraint (a retried push returns
+  the existing row, `reused: true`, rather than duplicating it). Nothing
+  calls this function from any existing route yet -- an ordinary
+  `/forecast` page load still never writes to the database on account of
+  context, exactly as before this phase. A `FetchRecord`-style append-only
+  table (considered in the preceding architecture discussion) was
+  explicitly rejected once `ContextSnapshot` existed: live freshness is
+  already reported in-memory per package assembly, and a *meaningful*
+  observation is exactly what a snapshot already is. (4) `Finding` gained
+  nullable `contextSnapshotId`/`evidenceRefs String[]`; `Report` gained
+  nullable `contextSnapshotId` -- deliberately a single FK, not a parallel
+  `sourcesUsed` JSON manifest (an earlier draft of this design proposed
+  that and was corrected before implementation, since a Report referencing
+  the snapshot that fed it is strictly better than a Report duplicating the
+  snapshot's own manifest).
+
+  Verified against real local Postgres (temp script, `npx tsx`, deleted
+  after passing per this repo's standing testing discipline): a
+  JSA-Infrastructure-Alignment-shaped package (evidence items
+  `infra-row-13`/`infra-row-10` with structured `data` fields matching a
+  real spreadsheet's columns, a `derivedClaim` citing both an evidence item
+  and a non-evidence reference, a source manifest entry with `observedAt`
+  four minutes before `package.generatedAt`) round-trips through
+  `persistContextSnapshot()` -> `getContextSnapshot()` with every field
+  intact, including a deliberately malformed evidence item (missing `id`)
+  correctly dropped rather than accepted; retrying the identical
+  `(producer, packageId)` returns the same row with zero duplicate rows
+  created; registering the source, attaching a `Finding` to the resulting
+  snapshot, then marking that `SourceRegistration` `superseded` with a
+  `statusReason` afterward, followed by re-reading the ORIGINAL snapshot,
+  confirmed its embedded source-manifest entry still reads `"active"` --
+  historical immutability holds structurally, not just by convention; a
+  plain old-style `Finding`/`Report` created with no snapshot reference
+  round-trips with `contextSnapshotId: null`/`evidenceRefs: []` exactly as
+  every pre-existing row does; a malformed top-level package (missing
+  `packageId`/`generatedAt`/`scopeId`) is rejected via
+  `PackageValidationError` rather than silently accepted. Migration
+  inspected before applying: purely additive (two new tables, two new
+  nullable columns, all new foreign keys `ON DELETE SET NULL` or on a new
+  table) -- no existing data touched, no backfill required, confirmed by
+  running it against a fresh copy of every prior migration in sequence.
+  `npx tsc --noEmit`, `npx eslint .`, `npm run build` all clean.
+
+  **Not done, not started, explicitly out of scope for this phase**: any
+  wiring into `/api/refresh`, `runAudit()`, `generateReport()`, or
+  `computeForecast()`; a `ProjectIntelligenceEnvelope` type or endpoint; a
+  Notion/Figma package assembler (only the manual/test construction path
+  has been exercised); portfolio-wide (multi-scope) snapshot semantics;
+  any UI; automatic `Finding` creation from a package's `derivedClaims`;
+  cross-source conflict detection; an obligation/entity-resolution layer
+  (deliberately left buildable-later via `Finding.evidenceRefs` staying
+  stable, not solved now). `lib/forecast/simulate.ts`,
+  `lib/forecast/portfolio.ts`, `lib/capacity/resolve.ts`,
+  `lib/scenario/inputDelta.ts`, and `lib/momentum/` are confirmed
+  byte-for-byte unchanged. **Not yet merged, not yet clicked through by
+  Nic** -- do not merge without an explicit instruction to do so.
 
 - **Portfolio Instrument Surface (branch `claude/portfolio-instrument-
   surface`, cut from base `46812f0`, not yet merged)** -- Phase 2 of the

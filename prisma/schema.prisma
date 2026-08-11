@@ -31,6 +31,83 @@ model Scope {
   reports      Report[]
   contextDocs  ContextDoc[]
   allocations  Allocation[]
+  contextSnapshots ContextSnapshot[]
+}
+
+// Tracking POLICY for a recurring source -- "should we currently keep
+// looking at this," independent from any specific content. Deliberately a
+// thin layer that references existing content (a ContextDoc id/label, a
+// Notion page id, a Figma ref key) by id rather than owning it -- content
+// ingestion is unchanged (ContextDoc/Notion/Figma/Source stay exactly as
+// they are). Not every piece of context needs a row here: a one-off pasted
+// transcript audited once never gets registered. Registration is reserved
+// for things meant to be repeatedly relied on and reviewed. Linear itself
+// is deliberately NOT registered here -- it's a structural source via
+// Scope.projectNames/teamKey, not something with a candidate/retired
+// lifecycle (see docs/CONTEXT-MODEL.md).
+model SourceRegistration {
+  id         String   @id @default(cuid())
+  sourceType String // "notion" | "figma" | "contextDoc" | "spreadsheet" | ...
+  sourceRef  String // Notion page id / Figma "fileKey:nodeId" / ContextDoc id or label
+
+  // Which Scopes this applies to. Empty = portfolio-wide, mirroring
+  // Scope.projectNames' existing "empty = any project" convention rather
+  // than a join table.
+  scopeIds String[] @default([])
+
+  // ROLE and STATUS are independent axes on purpose (see docs/CONTEXT-MODEL.md):
+  // role = how authoritative this source is for the facts it contains while
+  // tracked; status = whether it's currently tracked at all. A source can
+  // stay "active" while its role changes from operational_tracker to
+  // supplemental_context once execution moves elsewhere.
+  role   String // "operational_tracker" | "requirements_of_record" | "design_reference" | "supplemental_context" | "raw_evidence"
+  status String @default("candidate") // "candidate" | "active" | "paused" | "superseded" | "retired"
+
+  rationale       String? // human-readable "why is this tracked"
+  statusReason    String? // human-readable "why is the CURRENT status what it is" -- required by the API on every status change
+  statusChangedAt DateTime?
+
+  // Unambiguous replacement pointer -- set ONLY when the replacement is
+  // itself a tracked source. When the replacement is a structural source
+  // (e.g. Linear), statusReason carries the explanation in prose instead;
+  // this field is never a free-text label standing in for an id.
+  supersededByRegistrationId String?
+  supersededByRegistration   SourceRegistration?  @relation("SourceSupersession", fields: [supersededByRegistrationId], references: [id])
+  supersededSources          SourceRegistration[] @relation("SourceSupersession")
+
+  createdAt DateTime @default(now())
+}
+
+// One immutable, frozen instance of a ProjectContextPackage (see
+// lib/context/package.ts) -- the historical input boundary. Created ONLY
+// by lib/context/snapshot.ts's persistContextSnapshot(), and only at a
+// deliberate moment (never on an ordinary /forecast page load -- see
+// docs/CONTEXT-MODEL.md). Never updated after creation: a later
+// SourceRegistration status change must never alter what an existing
+// ContextSnapshot says it used.
+model ContextSnapshot {
+  id      String  @id @default(cuid())
+  scopeId String // Phase 1a is single-scope only; portfolio-wide snapshots are explicitly deferred
+  scope   Scope   @relation(fields: [scopeId], references: [id])
+
+  // packageId + producer are the PRODUCER's own transport identity for
+  // this package instance (independent from this row's own `id`) -- the
+  // unique constraint below is what makes a retried push idempotent
+  // instead of creating a duplicate snapshot.
+  packageId      String
+  packageVersion String
+  producer       String // "hermes" | "manual" | "gap_app"
+
+  package             Json // the full accepted ProjectContextPackage, verbatim
+  contextHash         String // deterministic hash of the package (lib/context/hash.ts)
+  completenessSummary Json // denormalized copy of package.completeness, for cheap querying
+
+  createdAt DateTime @default(now())
+
+  findings Finding[]
+  reports  Report[]
+
+  @@unique([producer, packageId])
 }
 
 // A named team member. Deliberately lightweight (not a generic HR/user
@@ -108,6 +185,15 @@ model Report {
   blockingCount      Int
   resolvedSinceLastCount Int
   summaryMarkdown    String  // the full rendered report -- the historical record
+
+  // Which ContextSnapshot (if any) fed the computation this Report was
+  // generated from. Nullable -- every Report predating this field, and
+  // every Report generated before Phase 1b wires snapshot creation into
+  // generateReport(), has none. Deliberately a single FK, not a parallel
+  // "sourcesUsed" JSON manifest -- ContextSnapshot.package already is the
+  // full manifest; a Report should reference it, not duplicate it.
+  contextSnapshotId  String?
+  contextSnapshot    ContextSnapshot? @relation(fields: [contextSnapshotId], references: [id])
 }
 
 // An AI-produced three-point estimate for one work item, cached by content
@@ -163,6 +249,18 @@ model Finding {
   resolution    String? // for decisions: what was decided, when marked resolved
   resolvedAt    DateTime? // set when status -> resolved; powers "resolved since last report"
   createdAt     DateTime @default(now())
+
+  // Which ContextSnapshot this Finding was derived from, and which
+  // evidence items within its package it cites (EvidenceItem.id values,
+  // e.g. "infra-row-13") -- both nullable/empty since no existing Finding
+  // has a snapshot to point to, and Phase 1a doesn't wire this into
+  // runAudit() yet. Deliberately NOT a sourceRegistrationId: the snapshot
+  // already carries the full source manifest (with registrationId per
+  // entry), so a Finding pointing at the snapshot + specific evidence ids
+  // is strictly more precise than a source-level FK alone.
+  contextSnapshotId String?
+  contextSnapshot   ContextSnapshot? @relation(fields: [contextSnapshotId], references: [id])
+  evidenceRefs      String[] @default([])
 }
 
 model AuditRun {
