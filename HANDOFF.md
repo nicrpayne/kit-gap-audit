@@ -1,9 +1,14 @@
-# HANDOFF — KIT Gap Audit
+# HANDOFF — Product Timeline Audit App (KIT Gap App)
 
 Written for a fresh Claude instance (or human) with zero prior context on
 this project. Read this top to bottom before touching code or answering
-questions about it. It is a snapshot as of **2026-08-10** — check git log
+questions about it. It is a snapshot as of **2026-08-11** — check git log
 and ROADMAP.md for anything that's happened since.
+
+**Naming**: KIT is Nic's broader product family (KIT Safety, KIT
+Construct, KIT Design) — this app is the **Product Timeline Audit App**,
+"KIT Gap App" or "Gap App" for short, not bare "KIT." JSA/iTrack are
+components of KIT Safety. See `docs/PRODUCT-VISION.md`.
 
 ## What this is, in one breath
 
@@ -76,13 +81,27 @@ sandbox's network restrictions allow (see "Testing discipline" below).
 - **Design language + momentum** (`/forecast`, `/reports`, `/portfolio`
   all carry momentum chips, betting-odds phrasing, Ask chips).
 - **Scopes editing overhaul** (full edit UI, DELETE hardening, Nav fix).
+- **Scenario Lever 1** (target date, both directions) plus two live bug
+  fixes (garbled portfolio axis on wide date ranges; stale Scope project
+  names invisible/unremovable in the edit UI).
+- **Scenario foundation** (`ScenarioInputDelta`/`applyScenarioInputDelta`
+  — one implementation of "Reality + a hypothetical, re-forecast," see
+  `docs/SCENARIO-MODEL.md`) and the **capacity-scenario correctness fix**
+  that followed it (the "+1 developer makes the date later" bug — see
+  ROADMAP.md for the full root-cause writeup). Both merged to
+  `claude/product-timeline-audit-a72dmg` at `46812f0`.
 
-**Open, not yet merged** (branch `claude/portfolio-scenario-levers`):
-Scenario Lever 1 (target date, both directions) plus two live bug fixes
-found during Nic's own manual testing (garbled portfolio axis on wide
-date ranges; stale Scope project names being invisible/unremovable in
-the edit UI). See "Where things actually stand" below for the precise
-git state.
+**Open, not yet merged** (branch `claude/portfolio-instrument-surface`,
+cut from `46812f0`): the **Portfolio Instrument Surface** — `/portfolio`'s
+old vertically-isolated release-date cards, the "+1/+2 developer" opaque
+buttons, and the overlay toggle are replaced by a single dark "Instrument"
+surface inside the Workbench shell: a Forecast Canvas (every Scope on one
+shared axis, Reality-vs-Scenario ghosting built in), an explicit Capacity
+Control (Reality/Scenario FTE, safe decrement/reset), and a persistent
+contextual Inspector (deterministic "why" explanations, target-date lever,
+Ask Hermes). See `docs/PRODUCT-VISION.md`, `docs/DESIGN-NORTH-STAR.md`,
+and ROADMAP.md's newest entry for the full writeup. **Not yet clicked
+through by Nic — do not merge without an explicit instruction to do so.**
 
 **V2 Timeline** is still genuinely NOT built — `/timeline` renders a
 placeholder. Deliberately deprioritized; do not assume it exists.
@@ -632,24 +651,37 @@ access" above; don't assume "Linear is blocked" applies to those tools.
 ## Where things actually stand (git state, check this first)
 
 Base branch: `claude/product-timeline-audit-a72dmg`. Merged into it, most
-recent first: scopes-fix (`claude/scopes-fix`), design-momentum
+recent first: `claude/scenario-input-delta` (scenario foundation +
+capacity-scenario correctness fix, fast-forward merge, base HEAD now
+`46812f0`), scopes-fix (`claude/scopes-fix`), design-momentum
 (`claude/design-momentum`), portfolio-capacity-pool
 (`claude/portfolio-capacity-pool`, Phases 1-3 + a post-review atomicity
-bugfix). **Open, not merged**: `claude/portfolio-scenario-levers` —
-commits `7ba2d43` (Lever 1: target date), `9977b20` (axis fix), `c4a7923`
-(stale-project-name fix), `ad458dd` (HANDOFF.md rewrite), all pushed to
-`origin/claude/portfolio-scenario-levers`. **Also open, not merged**:
-`claude/scenario-input-delta`, cut from `claude/portfolio-scenario-levers`
-HEAD, carrying (in order) the scenario-foundation Phase 1 refactor and the
-capacity-scenario correctness fix described above (see both sections and
-`docs/SCENARIO-MODEL.md`). **Do not merge any branch into base without an
-explicit instruction to do so** — every merge this session was explicitly
-requested first, and that pattern should continue. Check
-`git log --oneline -15` and `ROADMAP.md`'s top summary for anything more
-recent than this doc.
+bugfix). Note: `claude/portfolio-scenario-levers` (Lever 1 + two bug
+fixes) is folded into base too, since `claude/scenario-input-delta` was
+cut from its HEAD and base was fast-forwarded through it.
+
+**Open, not merged**: `claude/portfolio-instrument-surface`, cut from base
+at `46812f0` — the Portfolio Instrument Surface (Forecast Canvas,
+Capacity Control, Scenario Inspector, Instrument Footer; see "Current
+status" above and ROADMAP.md's newest entry for the full writeup).
+
+**Do not merge any branch into base without an explicit instruction to do
+so** — every merge this session was explicitly requested first, and that
+pattern should continue. Check `git log --oneline -15` and `ROADMAP.md`'s
+top summary for anything more recent than this doc.
 
 ## Where to look for more
 
+- **`docs/PRODUCT-VISION.md`** — what this app is *for*: the product-
+  delivery-simulation framing, Reality/Scenario/Forecast, the live-call
+  use case, the naming convention (this app vs. the broader KIT family),
+  "play the project." Read this before making any product-level judgment
+  call.
+- **`docs/DESIGN-NORTH-STAR.md`** — what it should *feel like*: Workbench
+  vs. Instrument surfaces, direct-manipulation principles borrowed from
+  pro creative tools (explicitly without their visual chrome), the
+  simple-surface/deep-on-demand rule, color/motion/accessibility
+  conventions. Read this before touching any `/portfolio` UI.
 - **`README.md`** — setup instructions, all API endpoint docs.
 - **`ROADMAP.md`** — chronological build log with full reasoning behind
   each decision, kept up to date after every merged unit of work. More
@@ -658,16 +690,15 @@ recent than this doc.
   it's usually the freshest single source of truth on active work.
 - **`DESIGN_LANGUAGE_AND_MOMENTUM_BUILD_BRIEF.md`** and
   **`PORTFOLIO_SCENARIO_LEVERS_BUILD_BRIEF`** — the two build briefs
-  driving this session's design/momentum and scenario-levers work,
+  driving an earlier session's design/momentum and scenario-levers work,
   committed to the base branch, worth reading directly rather than
   relying solely on this summary.
 - **`docs/SCENARIO-MODEL.md`** — describes what the scenario-foundation
-  Phase 1 refactor actually built (Reality / `ScenarioInputDelta` /
-  apply-delta flow / baseline-vs-preview / why target date doesn't
-  re-simulate), and explicitly what it deliberately does not build yet
-  (saved scenarios, undo/redo, A/B/C/D slots). Read before touching
-  `lib/scenario/`, `PortfolioPageClient.tsx`'s preview logic, or
-  `POST /api/portfolio/preview`.
+  refactor and the capacity-scenario correctness fix actually built
+  (Reality / `ScenarioInputDelta` / apply-delta flow / baseline-vs-preview
+  / named-transfer commit rules / why target date doesn't re-simulate).
+  Read before touching `lib/scenario/`, `PortfolioPageClient.tsx`'s
+  preview logic, or `POST /api/portfolio/preview`.
 - **`BUILDPACK.md`** — the original v0 spec. Historical.
 - This file (`HANDOFF.md`) — update it whenever a change is significant
   enough that a fresh agent picking this up next would need to know.

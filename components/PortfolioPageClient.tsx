@@ -11,11 +11,14 @@ import {
 import { runPortfolioSimulation } from "@/lib/forecast/portfolio";
 import type { SimulationResult, WorkItem, DecisionGate } from "@/lib/forecast/simulate";
 import { computePortfolioInsights, type ScopeInsightInput } from "@/lib/portfolio/insights";
-import { computeMomentum, dateDeltaPhrase } from "@/lib/momentum/compute";
-import { percentileDay, confidenceAtDay } from "@/lib/forecast/simulate";
+import { computeMomentum } from "@/lib/momentum/compute";
 import { applyScenarioInputDelta, type ScenarioInputDelta, type ScenarioInputScope } from "@/lib/scenario/inputDelta";
 import { compareToBaseline } from "@/lib/scenario/compare";
 import { detectNamedPersonMoves, type NamedTransferScope } from "@/lib/scenario/namedTransfer";
+import ForecastCanvas, { type CanvasScope } from "@/components/portfolio/ForecastCanvas";
+import ScenarioInspector from "@/components/portfolio/ScenarioInspector";
+import InstrumentFooter, { type ScenarioCapacityLine } from "@/components/portfolio/InstrumentFooter";
+import type { DependencyDelta, DependentDelta } from "@/lib/portfolio/explain";
 
 // This entire file is the "cheap, every slider frame" half of Phase 2's
 // performance split (see ROADMAP.md): GET /api/portfolio/inputs is the one
@@ -27,6 +30,14 @@ import { detectNamedPersonMoves, type NamedTransferScope } from "@/lib/scenario/
 // implementation anywhere in this file: reusing these exact functions is
 // what guarantees a preview can't silently drift from the saved path's
 // correlated-risk behavior.
+//
+// Visually, this component renders the dark "Instrument" surface (Canvas +
+// Inspector + Footer, see docs/DESIGN-NORTH-STAR.md) plus a collapsed,
+// unchanged-in-substance "Per-person allocation detail" section in the
+// original light Workbench styling underneath it. The Instrument is a
+// presentation layer over exactly the same state and handlers the old
+// single-card layout used -- no new persistence semantics, no new
+// simulation path.
 
 interface ScopeInputRow {
   scopeId: string;
@@ -73,14 +84,6 @@ function pairKey(personId: string, scopeId: string): string {
   return `${personId}::${scopeId}`;
 }
 
-function formatDate(iso: Date): string {
-  return iso.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
-}
-
-function confidenceColor(pct: number): string {
-  return pct >= 70 ? "var(--color-accent)" : pct >= 35 ? "var(--color-amber)" : "var(--color-danger)";
-}
-
 function addDays(date: Date, days: number): Date {
   const d = new Date(date);
   d.setUTCDate(d.getUTCDate() + Math.round(days));
@@ -89,101 +92,6 @@ function addDays(date: Date, days: number): Date {
 
 function dayOffset(startDate: Date, date: Date): number {
   return (date.getTime() - startDate.getTime()) / 86400000;
-}
-
-function toDateStr(iso: string | null): string {
-  return iso ? iso.slice(0, 10) : "";
-}
-
-// Scenario lever #1 (target date, both directions -- see
-// PORTFOLIO_SCENARIO_LEVERS_BUILD_BRIEF): a hypothetical date and a
-// hypothetical confidence percentage, kept in sync purely by looking
-// either up on `sortedDays` -- the SAME per-scope SimulationResult.
-// completionDaysSorted the rest of this page already has in memory, via
-// the exact percentileDay/confidenceAtDay functions simulate.ts uses
-// internally. No new simulation run, no network call while previewing;
-// confidencePct is a derived value (not separate state) so editing
-// either field can never drift out of sync with the other -- there is
-// exactly one source of truth (dateStr) and one pure read of it.
-function TargetDateLever({
-  scopeId,
-  savedTargetDate,
-  sortedDays,
-  startDate,
-  onSave,
-}: {
-  scopeId: string;
-  savedTargetDate: string | null;
-  sortedDays: number[];
-  startDate: Date;
-  onSave: (scopeId: string, targetDate: string | null) => Promise<void>;
-}) {
-  const [dateStr, setDateStr] = useState(toDateStr(savedTargetDate));
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  const confidencePct = useMemo(() => {
-    if (!dateStr) return null;
-    const days = dayOffset(startDate, new Date(dateStr + "T00:00:00Z"));
-    return confidenceAtDay(sortedDays, days);
-  }, [dateStr, sortedDays, startDate]);
-
-  function onConfidenceChange(raw: string) {
-    if (raw === "") {
-      setDateStr("");
-      return;
-    }
-    const pct = Math.max(0, Math.min(100, parseInt(raw, 10) || 0));
-    const days = percentileDay(sortedDays, pct);
-    setDateStr(addDays(startDate, days).toISOString().slice(0, 10));
-  }
-
-  const dirty = dateStr !== toDateStr(savedTargetDate);
-
-  async function handleSave() {
-    setSaving(true);
-    setError(null);
-    try {
-      await onSave(scopeId, dateStr || null);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Couldn't save.");
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  return (
-    <div className="flex items-center gap-2 text-xs flex-wrap">
-      <span className="text-[var(--color-ink-soft)]">Target date</span>
-      <input
-        type="date"
-        value={dateStr}
-        onChange={(e) => setDateStr(e.target.value)}
-        className="rounded-md border border-[var(--color-line)] px-2 py-1"
-      />
-      <span className="text-[var(--color-ink-soft)]">for</span>
-      <input
-        type="number"
-        min={0}
-        max={100}
-        value={confidencePct ?? ""}
-        onChange={(e) => onConfidenceChange(e.target.value)}
-        placeholder="—"
-        className="w-14 rounded-md border border-[var(--color-line)] px-2 py-1"
-      />
-      <span className="text-[var(--color-ink-soft)]">% confidence</span>
-      {dirty && (
-        <button
-          onClick={handleSave}
-          disabled={saving}
-          className="rounded-md border border-[var(--color-accent)] text-[var(--color-accent-dark)] px-2 py-1 hover:bg-[var(--color-accent-soft)] disabled:opacity-50"
-        >
-          {saving ? "Saving…" : "Save target date"}
-        </button>
-      )}
-      {error && <span className="text-[var(--color-danger)]">{error}</span>}
-    </div>
-  );
 }
 
 // Month-boundary ticks for the shared axis, e.g. "Jan '26", "Feb '26" --
@@ -224,19 +132,6 @@ function monthTicks(startDate: Date, minDay: number, maxDay: number): { day: num
   return ticks;
 }
 
-// A small, fixed palette drawn from existing design tokens (no charting
-// library, no categorical-color system in this app) -- cycles if there
-// are more Scopes than colors.
-const SCOPE_COLORS = [
-  "var(--color-accent)",
-  "var(--color-amber)",
-  "var(--color-danger)",
-  "var(--color-accent-dark)",
-  "var(--color-ink-soft)",
-];
-
-const BAND_GRID_COLS = "180px 1fr";
-
 let ghostCounter = 0;
 
 export default function PortfolioPageClient() {
@@ -253,7 +148,7 @@ export default function PortfolioPageClient() {
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saveSummary, setSaveSummary] = useState<{ text: string; hadBlocks: boolean } | null>(null);
 
-  const [overlay, setOverlay] = useState(false);
+  const [selectedScopeId, setSelectedScopeId] = useState<string | null>(null);
   const [removingId, setRemovingId] = useState<string | null>(null);
   const [removeError, setRemoveError] = useState<string | null>(null);
 
@@ -371,9 +266,9 @@ export default function PortfolioPageClient() {
   // lib/scenario/namedTransfer.ts). Deliberately excludes ghosts --
   // hypothetical/anonymous people are a completely separate, always-
   // committable case handled by aggregateConversions below. Recomputed
-  // live (not just at Save time) so the "Saving this will..." summary
-  // below can show BEFORE the user clicks Save, matching this page's
-  // existing live-preview philosophy rather than surprising them with a
+  // live (not just at Save time) so the "Committing this will..." summary
+  // can show BEFORE the user clicks Commit, matching this page's existing
+  // live-preview philosophy rather than surprising them with a
   // confirmation dialog after the fact.
   const namedMoves = useMemo(() => {
     if (!data) return [];
@@ -391,15 +286,15 @@ export default function PortfolioPageClient() {
   const blockedPersonIds = useMemo(() => new Set(blockedMoves.map((m) => m.personId)), [blockedMoves]);
 
   // Aggregate (explicit/inferred) Scopes: how much anonymous/hypothetical
-  // capacity would be committed as a new explicitTeamCapacity if Save
+  // capacity would be committed as a new explicitTeamCapacity if Commit
   // were clicked now. Deliberately computed from hypothetical
   // people/allocations ONLY -- a real person's contribution to an
   // aggregate Scope is NEVER folded in here, whether or not that specific
   // move happens to be "eligible" elsewhere, because there is no eligible
   // path for a named person into an aggregate Scope at all (see
   // blockedMoves above); committing it anonymously would silently
-  // discard exactly the identity information Decision 2 said not to
-  // discard.
+  // discard exactly the identity information the approved model says not
+  // to discard.
   const aggregateConversions = useMemo(() => {
     if (!data) return [];
     const hypotheticalIds = new Set(ghosts.map((g) => g.id));
@@ -481,23 +376,37 @@ export default function PortfolioPageClient() {
     return { minDay, maxDay, ticks: monthTicks(startDateObj, minDay, maxDay) };
   }, [data, startDateObj, baseline, preview]);
 
-  function axisPct(day: number): number {
-    if (!axis) return 0;
-    const span = Math.max(1, axis.maxDay - axis.minDay);
-    return Math.min(100, Math.max(0, ((day - axis.minDay) / span) * 100));
-  }
-
-  // Live effective capacity per Scope for the grid's column-totals row --
-  // deliberately NOT read off `preview`/`baseline` (SimulationResult
-  // doesn't carry capacity), just resolveCapacity again directly. Cheap
-  // (no simulation trials), so it updates on every keystroke, not
-  // debounced like the band recompute above.
+  // Live effective capacity per Scope -- deliberately NOT read off
+  // `preview`/`baseline` (SimulationResult doesn't carry capacity), just
+  // resolveCapacity again directly. Cheap (no simulation trials), so it
+  // updates on every keystroke, not debounced like the band recompute
+  // above. This is the Instrument's "Scenario" capacity number; a Scope's
+  // own `teamCapacity` as loaded from Reality (untouched by any of this)
+  // is the "Reality" number next to it.
+  //
+  // Branches on capacitySource exactly like applyScenarioInputDelta (see
+  // lib/scenario/inputDelta.ts) -- NOT a plain resolveCapacity call.
+  // resolveCapacity alone has no notion of "an aggregate baseline plus an
+  // additive scenario contribution": for an explicit/inferred Scope, the
+  // moment any allocation-shaped row exists (an added ghost, a moved
+  // person), it would return ONLY that row's own contribution and
+  // silently drop the preserved aggregate baseline -- displaying, say,
+  // "1.0 FTE" for a Scope actually simulating at 5.0. That's the same bug
+  // class the capacity-scenario fix exists to prevent, just re-appearing
+  // in a display number instead of the simulation itself. Mirroring the
+  // branch here keeps what this control SHOWS truthful to what
+  // applyScenarioInputDelta actually feeds the simulation for this Scope.
   const capacityByScope = useMemo(() => {
     if (!data) return new Map<string, number>();
     const out = new Map<string, number>();
     for (const s of data.scopes) {
-      const resolved = resolveCapacity(s.scopeId, s.explicitTeamCapacity, allPeople, currentAllocations, switchCostPct);
-      out.set(s.scopeId, resolved.capacity ?? s.teamCapacity);
+      if (s.capacitySource === "allocations") {
+        const resolved = resolveCapacity(s.scopeId, s.explicitTeamCapacity, allPeople, currentAllocations, switchCostPct);
+        out.set(s.scopeId, resolved.capacity ?? s.teamCapacity);
+      } else {
+        const additive = resolveCapacity(s.scopeId, null, allPeople, currentAllocations, switchCostPct);
+        out.set(s.scopeId, s.teamCapacity + (additive.capacity ?? 0));
+      }
     }
     return out;
   }, [data, allPeople, currentAllocations, switchCostPct]);
@@ -514,14 +423,14 @@ export default function PortfolioPageClient() {
     return computePortfolioInsights(scopeInputs, overAllocated, unallocated);
   }, [data, baseline, preview, overAllocated, unallocated]);
 
-  // Compact per-scope momentum (design brief #9): "vs. the last time we
-  // told someone a number" -- the SAVED-allocations baseline against the
-  // most recent stored Report, same semantics and the same computeMomentum
-  // function /forecast and /reports use. Deliberately NOT the live
-  // preview: an in-progress unsaved drag already has its own "vs saved"
-  // delta text right next to this; this pill answers a different
+  // Compact per-scope momentum: "vs. the last time we told someone a
+  // number" -- the SAVED-allocations baseline against the most recent
+  // stored Report, same semantics and the same computeMomentum function
+  // /forecast and /reports use. Deliberately NOT the live preview: an
+  // in-progress unsaved scenario already has its own "vs Reality" delta
+  // right next to this in the Inspector; this answers a different
   // question (has this Scope actually moved since it was last reported
-  // on) and shouldn't flicker while dragging.
+  // on) and shouldn't flicker while previewing.
   const reportMomentum = useMemo(() => {
     if (!data) return new Map<string, ReturnType<typeof computeMomentum>>();
     const out = new Map<string, ReturnType<typeof computeMomentum>>();
@@ -543,6 +452,85 @@ export default function PortfolioPageClient() {
     }
     return out;
   }, [data, baseline]);
+
+  // Forecast Canvas's row data -- a thin projection of ScopeInputRow, so
+  // the Canvas component stays ignorant of everything else this page
+  // knows about a Scope (capacity source, gates, items...).
+  const canvasScopes: CanvasScope[] = useMemo(() => {
+    if (!data) return [];
+    return data.scopes.map((s) => ({
+      scopeId: s.scopeId,
+      name: s.name,
+      dependsOnScopeIds: s.dependsOnScopeIds,
+      targetDate: s.targetDate,
+    }));
+  }, [data]);
+
+  const effectiveSelectedScopeId = selectedScopeId ?? data?.scopes[0]?.scopeId ?? null;
+
+  // Anonymous (ghost) FTE currently contributing to each Scope in this
+  // scenario -- what the Inspector's Capacity Control and the footer's
+  // per-scope chips both read. Ghosts are single-scope by construction
+  // (addHypotheticalDeveloper mints a fresh id per click, allocated only
+  // to the Scope it was added for), so this is a direct sum, not an
+  // apportionment across scopes.
+  const scenarioAnonymousFteByScope = useMemo(() => {
+    const out = new Map<string, number>();
+    const ghostById = new Map(ghosts.map((g) => [g.id, g]));
+    for (const [key, fraction] of fractions) {
+      if (fraction <= 1e-6) continue;
+      const [personId, scopeId] = key.split("::");
+      const g = ghostById.get(personId);
+      if (!g) continue;
+      out.set(scopeId, (out.get(scopeId) ?? 0) + fraction * g.fte);
+    }
+    return out;
+  }, [ghosts, fractions]);
+
+  const namedFteChangedScopeIds = useMemo(() => {
+    const out = new Set<string>();
+    for (const m of namedMoves) {
+      for (const c of m.changes) out.add(c.scopeId);
+    }
+    return out;
+  }, [namedMoves]);
+
+  // Dependency/dependent deltas for whichever Scope the Inspector is
+  // currently showing -- the same baseline/preview deltas the Canvas
+  // already renders per row, gathered for one Scope's neighbors so
+  // explainScope() can narrate them in plain language.
+  const selectedScopeDeps = useMemo(() => {
+    const empty: { dependsOn: DependencyDelta[]; dependents: DependentDelta[] } = { dependsOn: [], dependents: [] };
+    if (!data || !effectiveSelectedScopeId) return empty;
+    const scope = data.scopes.find((s) => s.scopeId === effectiveSelectedScopeId);
+    if (!scope) return empty;
+    const deltaFor = (scopeId: string): number => {
+      const b = baseline?.get(scopeId);
+      const p = preview?.get(scopeId) ?? b;
+      return compareToBaseline(b, p).deltaDays;
+    };
+    const dependsOn: DependencyDelta[] = scope.dependsOnScopeIds.map((id) => ({
+      scopeId: id,
+      name: data.scopes.find((s) => s.scopeId === id)?.name ?? id,
+      deltaDays: deltaFor(id),
+    }));
+    const dependents: DependentDelta[] = data.scopes
+      .filter((s) => s.dependsOnScopeIds.includes(effectiveSelectedScopeId))
+      .map((s) => ({ scopeId: s.scopeId, name: s.name, deltaDays: deltaFor(s.scopeId) }));
+    return { dependsOn, dependents };
+  }, [data, baseline, preview, effectiveSelectedScopeId]);
+
+  const capacityLinesForFooter: ScenarioCapacityLine[] = useMemo(() => {
+    if (!data) return [];
+    const out: ScenarioCapacityLine[] = [];
+    for (const s of data.scopes) {
+      const fte = scenarioAnonymousFteByScope.get(s.scopeId) ?? 0;
+      if (fte > 1e-6) out.push({ scopeId: s.scopeId, scopeName: s.name, fteAdded: fte });
+    }
+    return out;
+  }, [data, scenarioAnonymousFteByScope]);
+
+  const eligibleNamedMoveCount = namedMoves.length - blockedMoves.length;
 
   function setFraction(personId: string, scopeId: string, pct: number) {
     setFractions((prev) => {
@@ -568,13 +556,13 @@ export default function PortfolioPageClient() {
   // Removes a person from the grid entirely. A ghost (never persisted --
   // see the addHypotheticalDeveloper comment) is just local-state
   // cleanup: drop it from `ghosts` and clear its fraction entries so it
-  // can't leak into a later Save. A real Person is actually deleted via
+  // can't leak into a later Commit. A real Person is actually deleted via
   // the existing DELETE /api/people/:id (cascades to their Allocations)
   // and the page reloads from the server -- this is the one place in the
   // UI that can clean up a person who got persisted by mistake (e.g. an
-  // exploratory "+1 developer" click that was still allocated when Save
-  // was pressed), since there was previously no way to undo that short
-  // of a raw API call.
+  // exploratory "+1 developer" click that was still allocated when
+  // Commit was pressed), since there was previously no way to undo that
+  // short of a raw API call.
   async function removePerson(personId: string, isGhost: boolean) {
     setRemoveError(null);
     if (isGhost) {
@@ -604,7 +592,40 @@ export default function PortfolioPageClient() {
     }
   }
 
-  // Target-date lever's Save: unlike the allocation grid's big Save
+  // Capacity Control's decrement: removes the most recently added ghost
+  // currently contributing to this Scope -- the smallest safe operation,
+  // since it can only ever remove scenario-added anonymous capacity,
+  // never touch a real person or Reality's own aggregate number (see
+  // docs/SCENARIO-MODEL.md). Ghosts are single-scope by construction, so
+  // in the common case ("+1 developer" then undo it) this affects only
+  // `scopeId`; it's still scoped correctly even if the per-person detail
+  // grid was used to hand-spread one ghost's time across multiple scopes,
+  // since removing that ghost only ever removes scenario-added capacity.
+  function decrementScopeCapacity(scopeId: string) {
+    let latest: GhostPerson | null = null;
+    let latestN = -1;
+    for (const g of ghosts) {
+      if ((fractions.get(pairKey(g.id, scopeId)) ?? 0) <= 1e-6) continue;
+      const n = parseInt(g.id.replace("ghost-", ""), 10) || 0;
+      if (n > latestN) {
+        latestN = n;
+        latest = g;
+      }
+    }
+    if (latest) removePerson(latest.id, true);
+  }
+
+  // Capacity Control's reset: removes every ghost currently contributing
+  // to this one Scope, returning just its scenario capacity to Reality
+  // without touching any other Scope's scenario changes -- global Discard
+  // (below) is what resets the whole Scenario.
+  function resetScopeCapacity(scopeId: string) {
+    for (const g of ghosts) {
+      if ((fractions.get(pairKey(g.id, scopeId)) ?? 0) > 1e-6) removePerson(g.id, true);
+    }
+  }
+
+  // Target-date lever's Save: unlike the allocation grid's big Commit
   // (which batches everything behind one explicit action), this saves
   // ONE Scope's targetDate immediately when its own "Save target date"
   // button is clicked -- reuses the existing PATCH /api/scopes/:id
@@ -640,18 +661,19 @@ export default function PortfolioPageClient() {
 
   // Commit rules (see docs/SCENARIO-MODEL.md's "Save / Commit" section):
   //
-  // - A Scope's capacitySource never flips as a side effect of this Save.
-  //   An anonymous/hypothetical contribution to an allocations-sourced
-  //   Scope still becomes a real Person + Allocation row, exactly as
-  //   before. An anonymous contribution to an explicit/inferred Scope is
-  //   folded into a NEW explicitTeamCapacity (aggregateConversions,
-  //   computed above) -- it never gets a Person/Allocation row, and that
-  //   Scope's source becomes/stays "explicit" going forward.
+  // - A Scope's capacitySource never flips as a side effect of this
+  //   Commit. An anonymous/hypothetical contribution to an
+  //   allocations-sourced Scope still becomes a real Person + Allocation
+  //   row, exactly as before. An anonymous contribution to an
+  //   explicit/inferred Scope is folded into a NEW explicitTeamCapacity
+  //   (aggregateConversions, computed above) -- it never gets a
+  //   Person/Allocation row, and that Scope's source becomes/stays
+  //   "explicit" going forward.
   // - A real, named person's allocation change is committed normally when
   //   every Scope they'd end up on is allocations-sourced. If ANY touched
   //   Scope is aggregate-sourced, the ENTIRE person's allocation set is
-  //   excluded from this Save (blockedPersonIds, from namedMoves above) --
-  //   both legs of a move, not just the aggregate-destination leg, so
+  //   excluded from this Commit (blockedPersonIds, from namedMoves above)
+  //   -- both legs of a move, not just the aggregate-destination leg, so
   //   Reality never ends up with a person shown at less than 100% while
   //   the remainder silently vanishes.
   async function save() {
@@ -805,448 +827,275 @@ export default function PortfolioPageClient() {
     );
   }
 
+  const selectedScope = effectiveSelectedScopeId
+    ? data.scopes.find((s) => s.scopeId === effectiveSelectedScopeId) ?? null
+    : null;
+  const selectedBaseline = effectiveSelectedScopeId ? baseline?.get(effectiveSelectedScopeId) : undefined;
+  const selectedPreview = effectiveSelectedScopeId ? preview?.get(effectiveSelectedScopeId) : undefined;
+
+  const scenarioSummaryParts: string[] = capacityLinesForFooter.map(
+    (l) => `${l.scopeName} +${l.fteAdded.toFixed(1)} FTE`
+  );
+  if (namedMoves.length > 0) {
+    scenarioSummaryParts.push(`${namedMoves.length} ${namedMoves.length === 1 ? "person" : "people"} reallocated`);
+  }
+
   return (
     <div>
-      {/* Per-scope forecast: baseline vs live preview, confidence bands on
-          a shared date axis. */}
-      <div className="border border-[var(--color-line)] rounded-xl bg-[var(--color-card)] mb-6">
-        <div className="flex items-center justify-between px-5 pt-4">
-          <div className="text-sm font-medium">Release dates</div>
-          <button
-            onClick={() => setOverlay((v) => !v)}
-            className={`text-xs rounded-md border px-2 py-1 ${
-              overlay
-                ? "border-[var(--color-accent)] text-[var(--color-accent-dark)] bg-[var(--color-accent-soft)]"
-                : "border-[var(--color-line)] hover:bg-white"
+      {/* The Instrument: a precision simulation surface opened inside the
+          Workbench shell. Toolbar (state) -> Canvas + Inspector (the
+          primary interaction) -> Footer (commit). See
+          docs/DESIGN-NORTH-STAR.md. */}
+      <div className="instrument rounded-xl border border-[var(--i-border)] overflow-hidden">
+        <div className="flex items-center gap-3 flex-wrap px-5 py-3.5 border-b border-[var(--i-border)] bg-[var(--i-panel)]">
+          <span
+            className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-medium uppercase tracking-wide ${
+              dirty ? "bg-[var(--i-violet-soft)] text-[var(--i-violet)]" : "bg-[var(--i-panel-raised)] text-[var(--i-text-soft)]"
             }`}
           >
-            {overlay ? "Show separate rows" : "Overlay all on one axis"}
-          </button>
-        </div>
-
-        {axis && (
-          <div className="px-5 pt-3" style={{ display: "grid", gridTemplateColumns: BAND_GRID_COLS }}>
-            <div />
-            <div className="relative h-4">
-              {axis.ticks.map((t) => (
-                <div
-                  key={t.day}
-                  className="absolute text-[10px] text-[var(--color-ink-soft)] -translate-x-1/2 whitespace-nowrap"
-                  style={{ left: `${axisPct(t.day)}%` }}
-                >
-                  {t.label}
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {!overlay ? (
-          <div className="divide-y divide-[var(--color-line)] mt-2">
-            {data.scopes.map((s, i) => {
-              const b = baseline?.get(s.scopeId);
-              const p = preview?.get(s.scopeId) ?? b;
-              const { deltaDays } = compareToBaseline(b, p);
-              const targetDay = s.targetDate && startDateObj ? dayOffset(startDateObj, new Date(s.targetDate)) : null;
-              const color = SCOPE_COLORS[i % SCOPE_COLORS.length];
-              return (
-                <div key={s.scopeId} className="px-5 py-4">
-                  <div className="flex items-center justify-between gap-4 flex-wrap">
-                    <div className="font-medium">{s.name}</div>
-                    <div className="flex items-center gap-4 text-sm">
-                      {p && (
-                        <>
-                          <span className="font-display text-lg">{formatDate(p.likelyDate)}</span>
-                          {dirty && b && (
-                            <span
-                              className={`text-xs whitespace-nowrap ${
-                                deltaDays < 0
-                                  ? "text-[var(--color-accent-dark)]"
-                                  : deltaDays > 0
-                                  ? "text-[var(--color-danger)]"
-                                  : "text-[var(--color-ink-soft)]"
-                              }`}
-                            >
-                              {deltaDays === 0 ? "no change" : deltaDays < 0 ? `${deltaDays}d` : `+${deltaDays}d`} vs
-                              saved
-                            </span>
-                          )}
-                          {p.confidenceAtTarget !== null && (
-                            <span
-                              className="text-xs font-medium whitespace-nowrap"
-                              style={{ color: confidenceColor(p.confidenceAtTarget) }}
-                            >
-                              {p.confidenceAtTarget}% at target
-                            </span>
-                          )}
-                        </>
-                      )}
-                      {(() => {
-                        const rm = reportMomentum.get(s.scopeId);
-                        if (!rm) return null;
-                        const daysSinceReport = Math.max(
-                          0,
-                          Math.round((Date.now() - rm.previousGeneratedAt.getTime()) / 86400000)
-                        );
-                        return (
-                          <span
-                            title={`Since the last report (${formatDate(rm.previousGeneratedAt)})`}
-                            className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium whitespace-nowrap ${
-                              rm.stalled
-                                ? "bg-[var(--color-line)]/60 text-[var(--color-ink-soft)]"
-                                : rm.dateDeltaDays < 0
-                                ? "bg-[var(--color-accent-soft)] text-[var(--color-accent-dark)]"
-                                : "bg-[var(--color-danger-soft)] text-[var(--color-danger)]"
-                            }`}
-                          >
-                            <span aria-hidden>{rm.stalled ? "●" : rm.dateDeltaDays < 0 ? "↓" : "↑"}</span>
-                            {rm.stalled ? `unchanged ${daysSinceReport}d` : dateDeltaPhrase(rm.dateDeltaDays)}
-                          </span>
-                        );
-                      })()}
-                    </div>
-                  </div>
-
-                  {axis && p && (
-                    <div className="mt-2" style={{ display: "grid", gridTemplateColumns: BAND_GRID_COLS }}>
-                      <div className="text-[10px] text-[var(--color-ink-soft)] pr-3 self-center">
-                        P10&ndash;P90 / P50&ndash;P85
-                      </div>
-                      <div className="relative h-6">
-                        <div
-                          className="absolute top-1/2 -translate-y-1/2 h-1.5 rounded-full"
-                          style={{
-                            left: `${axisPct(p.percentiles.p10)}%`,
-                            right: `${100 - axisPct(p.percentiles.p90)}%`,
-                            background: color,
-                            opacity: 0.25,
-                          }}
-                          title={`P10 ${formatDate(addDays(startDateObj!, p.percentiles.p10))} -- P90 ${formatDate(addDays(startDateObj!, p.percentiles.p90))}`}
-                        />
-                        <div
-                          className="absolute top-1/2 -translate-y-1/2 h-1.5 rounded-full"
-                          style={{
-                            left: `${axisPct(p.percentiles.p50)}%`,
-                            right: `${100 - axisPct(p.percentiles.p85)}%`,
-                            background: color,
-                            opacity: 0.6,
-                          }}
-                        />
-                        <div
-                          className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 h-3 w-3 rounded-full border-2 border-white shadow"
-                          style={{ left: `${axisPct(p.percentiles.p50)}%`, background: color }}
-                          title={`P50: ${formatDate(p.likelyDate)}`}
-                        />
-                        {targetDay !== null && (
-                          <div
-                            className="absolute inset-y-0 border-l border-dashed"
-                            style={{ left: `${axisPct(targetDay)}%`, borderColor: "var(--color-ink-soft)" }}
-                            title={`Target: ${formatDate(new Date(s.targetDate!))}`}
-                          />
-                        )}
-                      </div>
-                    </div>
-                  )}
-
-                  <div className="flex items-center gap-2 mt-2">
-                    <button
-                      onClick={() => addHypotheticalDeveloper(s.scopeId)}
-                      className="text-xs rounded-md border border-[var(--color-line)] px-2 py-1 hover:bg-[var(--color-accent-soft)]"
-                    >
-                      +1 developer
-                    </button>
-                    <button
-                      onClick={() => {
-                        addHypotheticalDeveloper(s.scopeId);
-                        addHypotheticalDeveloper(s.scopeId);
-                      }}
-                      className="text-xs rounded-md border border-[var(--color-line)] px-2 py-1 hover:bg-[var(--color-accent-soft)]"
-                    >
-                      +2 developers
-                    </button>
-                    {s.dependsOnScopeIds.length > 0 && (
-                      <span className="text-[11px] text-[var(--color-ink-soft)]">
-                        depends on{" "}
-                        {s.dependsOnScopeIds
-                          .map((id) => data.scopes.find((x) => x.scopeId === id)?.name ?? id)
-                          .join(", ")}
-                      </span>
-                    )}
-                  </div>
-
-                  {p && (
-                    <div className="mt-2">
-                      <TargetDateLever
-                        scopeId={s.scopeId}
-                        savedTargetDate={s.targetDate}
-                        sortedDays={p.completionDaysSorted}
-                        startDate={startDateObj!}
-                        onSave={saveTargetDate}
-                      />
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        ) : (
-          <div className="px-5 py-4">
-            {axis && startDateObj && (
-              <div style={{ display: "grid", gridTemplateColumns: BAND_GRID_COLS }}>
-                <div />
-                <div className="relative" style={{ height: `${Math.max(28, data.scopes.length * 14 + 14)}px` }}>
-                  {data.scopes.map((s, i) => {
-                    const p = preview?.get(s.scopeId) ?? baseline?.get(s.scopeId);
-                    if (!p) return null;
-                    const color = SCOPE_COLORS[i % SCOPE_COLORS.length];
-                    const topPx = 6 + i * 14;
-                    return (
-                      <div key={s.scopeId} className="absolute h-1.5" style={{ top: `${topPx}px`, left: 0, right: 0 }}>
-                        <div
-                          className="absolute h-1.5 rounded-full"
-                          style={{
-                            left: `${axisPct(p.percentiles.p10)}%`,
-                            right: `${100 - axisPct(p.percentiles.p90)}%`,
-                            background: color,
-                            opacity: 0.3,
-                          }}
-                        />
-                        <div
-                          className="absolute h-1.5 rounded-full"
-                          style={{
-                            left: `${axisPct(p.percentiles.p50)}%`,
-                            right: `${100 - axisPct(p.percentiles.p85)}%`,
-                            background: color,
-                            opacity: 0.75,
-                          }}
-                        />
-                        <div
-                          className="absolute -translate-x-1/2 h-2.5 w-2.5 rounded-full border-2 border-white shadow"
-                          style={{ left: `${axisPct(p.percentiles.p50)}%`, top: "-2px", background: color }}
-                          title={`${s.name} P50: ${formatDate(p.likelyDate)}`}
-                        />
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
-            <div className="flex items-center gap-4 flex-wrap mt-3 pt-3 border-t border-[var(--color-line)]">
-              {data.scopes.map((s, i) => (
-                <div key={s.scopeId} className="flex items-center gap-1.5 text-xs">
-                  <span
-                    className="h-2.5 w-2.5 rounded-full inline-block"
-                    style={{ background: SCOPE_COLORS[i % SCOPE_COLORS.length] }}
-                  />
-                  {s.name}
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-      </div>
-
-      {insights.length > 0 && (
-        <div className="border border-[var(--color-line)] rounded-xl bg-[var(--color-card)] p-5 mb-6">
-          <div className="text-sm font-medium mb-3">Portfolio insights</div>
-          <ul className="space-y-1.5">
-            {insights.map((insight) => (
-              <li
-                key={insight.id}
-                className="text-xs flex items-start gap-2"
-                style={{ color: insight.tone === "warning" ? "var(--color-danger)" : "var(--color-ink)" }}
-              >
-                <span aria-hidden>{insight.tone === "warning" ? "⚠" : "•"}</span>
-                <span>{insight.text}</span>
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
-
-      {/* Allocation grid */}
-      <div className="border border-[var(--color-line)] rounded-xl bg-[var(--color-card)] p-5 mb-6">
-        <div className="flex items-center justify-between mb-4">
-          <div className="text-sm font-medium">Allocations</div>
-          <div className="flex items-center gap-2 text-xs text-[var(--color-ink-soft)]">
-            <span>Context-switch cost</span>
-            <input
-              type="range"
-              min={0}
-              max={100}
-              value={switchCostPct}
-              onChange={(e) => {
-                setSwitchCostPct(parseInt(e.target.value, 10));
-                setDirty(true);
-              }}
-              className="w-24"
-            />
-            <span className="w-9 text-right">{switchCostPct}%</span>
-          </div>
-        </div>
-
-        {allPeople.length === 0 ? (
-          <div className="text-xs text-[var(--color-ink-soft)] py-6 text-center">
-            No people yet -- use a preset above, or add people via POST /api/people.
-          </div>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-xs">
-              <thead>
-                <tr>
-                  <th className="text-left font-medium py-1.5 pr-3">Person</th>
-                  {data.scopes.map((s) => (
-                    <th key={s.scopeId} className="text-left font-medium py-1.5 px-2 whitespace-nowrap">
-                      {s.name}
-                    </th>
-                  ))}
-                  <th className="text-left font-medium py-1.5 px-2">Total</th>
-                  <th className="py-1.5 px-2" />
-                </tr>
-              </thead>
-              <tbody>
-                {allPeople.map((person) => {
-                  const isGhost = person.id.startsWith("ghost-");
-                  const total = data.scopes.reduce(
-                    (sum, s) => sum + (fractions.get(pairKey(person.id, s.scopeId)) ?? 0),
-                    0
-                  );
-                  const over = overAllocatedIds.has(person.id);
-                  return (
-                    <tr key={person.id} className="border-t border-[var(--color-line)]">
-                      <td className="py-1.5 pr-3 whitespace-nowrap">
-                        {person.name}
-                        {isGhost && (
-                          <span className="ml-1 text-[10px] uppercase tracking-wide text-[var(--color-accent)]">
-                            preview
-                          </span>
-                        )}
-                        <span className="text-[var(--color-ink-soft)]"> · {person.fte} FTE</span>
-                      </td>
-                      {data.scopes.map((s) => {
-                        const pct = Math.round((fractions.get(pairKey(person.id, s.scopeId)) ?? 0) * 100);
-                        return (
-                          <td key={s.scopeId} className="py-1.5 px-2">
-                            <div className="flex items-center gap-1.5">
-                              <input
-                                type="range"
-                                min={0}
-                                max={100}
-                                value={pct}
-                                onChange={(e) => setFraction(person.id, s.scopeId, parseInt(e.target.value, 10))}
-                                className="w-16"
-                              />
-                              <span className="w-8 text-right tabular-nums">{pct}%</span>
-                            </div>
-                          </td>
-                        );
-                      })}
-                      <td
-                        className="py-1.5 px-2 font-medium"
-                        style={{ color: over ? "var(--color-danger)" : undefined }}
-                      >
-                        {Math.round(total * 100)}%
-                      </td>
-                      <td className="py-1.5 px-2 text-right">
-                        <button
-                          onClick={() => removePerson(person.id, isGhost)}
-                          disabled={removingId === person.id}
-                          className="text-[var(--color-danger)] hover:underline whitespace-nowrap disabled:opacity-50"
-                        >
-                          {removingId === person.id ? "Removing…" : "Remove"}
-                        </button>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-              <tfoot>
-                <tr className="border-t-2 border-[var(--color-line)]">
-                  <td className="py-1.5 pr-3 font-medium">Effective capacity</td>
-                  {data.scopes.map((s) => (
-                    <td key={s.scopeId} className="py-1.5 px-2 font-medium">
-                      {(capacityByScope.get(s.scopeId) ?? 0).toFixed(2)}
-                    </td>
-                  ))}
-                  <td />
-                  <td />
-                </tr>
-              </tfoot>
-            </table>
-          </div>
-        )}
-
-        <p className="mt-3 text-[11px] text-[var(--color-ink-soft)]">
-          Capacity scales linearly here (2x the people, half the time) -- real teams rarely hit that in
-          practice, so treat these as an optimistic floor, not a promise.
-        </p>
-
-        {overAllocated.length > 0 && (
-          <div className="mt-3 text-xs text-[var(--color-danger)]">
-            Over-allocated:{" "}
-            {overAllocated.map((o) => `${o.personName} at ${Math.round(o.totalFraction * 100)}%`).join(", ")} --
-            fix before previewing further.
-          </div>
-        )}
-
-        {unallocated.length > 0 && (
-          <div className="mt-3 text-xs text-[var(--color-ink-soft)]">
-            Unallocated:{" "}
-            {unallocated.map((u) => `${u.name} (${u.unallocatedFte.toFixed(2)} FTE free)`).join(", ")}
-          </div>
-        )}
-
-        {removeError && <div className="mt-3 text-xs text-[var(--color-danger)]">{removeError}</div>}
-
-        {/* Save-impact summary -- computed live off the current drag
-            state, not just at Save time, so nothing about a capacity-
-            source conversion or a blocked named-person move is a
-            surprise after the fact. See docs/SCENARIO-MODEL.md. */}
-        {dirty && (aggregateConversions.length > 0 || blockedMoves.length > 0) && (
-          <div className="mt-3 text-xs space-y-1.5 rounded-md border border-[var(--color-line)] bg-white px-3 py-2.5">
-            <div className="font-medium text-[var(--color-ink)]">Saving this will:</div>
-            {aggregateConversions.map((c) => (
-              <div key={c.scopeId} className="text-[var(--color-ink-soft)]">
-                Set <strong className="text-[var(--color-ink)]">{c.scopeName}</strong>&rsquo;s capacity explicitly
-                to <strong className="text-[var(--color-ink)]">{c.to.toFixed(2)}</strong> ({c.from.toFixed(2)} +{" "}
-                {(c.to - c.from).toFixed(2)} anonymous) — it will no longer be{" "}
-                {c.wasInferred ? "inferred from Linear" : "a plain flat number with nothing added"}, and stays an
-                explicit value going forward.
-              </div>
-            ))}
-            {blockedMoves.map((m) => (
-              <div key={m.personId} className="text-[var(--color-danger)]">
-                Can&rsquo;t save {m.personName}&rsquo;s allocation change — {m.blockedReason}
-              </div>
-            ))}
-          </div>
-        )}
-
-        <div className="flex items-center gap-3 mt-4">
-          <button
-            onClick={save}
-            disabled={saving || !dirty || overAllocated.length > 0}
-            className="rounded-md bg-[var(--color-ink)] text-white px-3.5 py-2 text-xs font-medium hover:bg-black disabled:opacity-50"
-          >
-            {saving ? "Saving…" : "Save this allocation"}
-          </button>
-          <button
-            onClick={discard}
-            disabled={saving || !dirty}
-            className="rounded-md border border-[var(--color-line)] px-3.5 py-2 text-xs font-medium hover:bg-white disabled:opacity-50"
-          >
-            Discard preview
-          </button>
-          {saveError && <span className="text-xs text-[var(--color-danger)]">{saveError}</span>}
-          {saveSummary && (
             <span
-              className={`text-xs ${saveSummary.hadBlocks ? "text-[var(--color-amber)]" : "text-[var(--color-ink-soft)]"}`}
-            >
-              {saveSummary.text}
-            </span>
+              aria-hidden
+              className="h-1.5 w-1.5 rounded-full"
+              style={{ background: dirty ? "var(--i-violet)" : "var(--i-text-faint)" }}
+            />
+            {dirty ? "Scenario · Unsaved" : "Current"}
+          </span>
+          {dirty && scenarioSummaryParts.length > 0 && (
+            <span className="text-xs text-[var(--i-text-soft)]">{scenarioSummaryParts.join(" · ")}</span>
           )}
         </div>
+
+        <div className="grid" style={{ gridTemplateColumns: "1fr 320px" }}>
+          <div className="min-w-0 border-r border-[var(--i-border)]">
+            <ForecastCanvas
+              scopes={canvasScopes}
+              baseline={baseline}
+              preview={preview}
+              axis={axis}
+              startDate={startDateObj!}
+              dirty={dirty}
+              selectedScopeId={effectiveSelectedScopeId}
+              onSelectScope={setSelectedScopeId}
+            />
+            {insights.length > 0 && (
+              <div className="border-t border-[var(--i-border)] px-5 py-4">
+                <div className="text-[10px] uppercase tracking-wider text-[var(--i-text-faint)] mb-2">
+                  Portfolio insights
+                </div>
+                <ul className="space-y-1.5">
+                  {insights.map((insight) => (
+                    <li
+                      key={insight.id}
+                      className="text-xs flex items-start gap-2"
+                      style={{ color: insight.tone === "warning" ? "var(--i-red)" : "var(--i-text-soft)" }}
+                    >
+                      <span aria-hidden>{insight.tone === "warning" ? "⚠" : "•"}</span>
+                      <span>{insight.text}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
+
+          <div className="min-w-0">
+            {selectedScope ? (
+              <ScenarioInspector
+                scope={{
+                  scopeId: selectedScope.scopeId,
+                  name: selectedScope.name,
+                  targetDate: selectedScope.targetDate,
+                  capacitySource: selectedScope.capacitySource,
+                }}
+                baseline={selectedBaseline}
+                preview={selectedPreview}
+                dirty={dirty}
+                startDate={startDateObj!}
+                realityCapacity={selectedScope.teamCapacity}
+                scenarioCapacity={capacityByScope.get(selectedScope.scopeId) ?? selectedScope.teamCapacity}
+                anonymousFteAdded={scenarioAnonymousFteByScope.get(selectedScope.scopeId) ?? 0}
+                namedFteChanged={namedFteChangedScopeIds.has(selectedScope.scopeId)}
+                canDecrement={ghosts.some((g) => (fractions.get(pairKey(g.id, selectedScope.scopeId)) ?? 0) > 1e-6)}
+                onIncrement={() => addHypotheticalDeveloper(selectedScope.scopeId)}
+                onIncrementTwice={() => {
+                  addHypotheticalDeveloper(selectedScope.scopeId);
+                  addHypotheticalDeveloper(selectedScope.scopeId);
+                }}
+                onDecrement={() => decrementScopeCapacity(selectedScope.scopeId)}
+                onResetCapacity={() => resetScopeCapacity(selectedScope.scopeId)}
+                onSaveTargetDate={saveTargetDate}
+                dependsOn={selectedScopeDeps.dependsOn}
+                dependents={selectedScopeDeps.dependents}
+                momentum={reportMomentum.get(selectedScope.scopeId) ?? null}
+              />
+            ) : (
+              <div className="p-5 text-sm text-[var(--i-text-faint)]">Select a scope to inspect it.</div>
+            )}
+          </div>
+        </div>
+
+        <InstrumentFooter
+          dirty={dirty}
+          saving={saving}
+          canCommit={overAllocated.length === 0}
+          capacityLines={capacityLinesForFooter}
+          namedTransferCount={eligibleNamedMoveCount}
+          aggregateConversions={aggregateConversions}
+          blockedMoves={blockedMoves.map((m) => ({
+            personId: m.personId,
+            personName: m.personName,
+            blockedReason: m.blockedReason ?? "",
+          }))}
+          onCommit={save}
+          onDiscard={discard}
+          saveError={saveError}
+          saveSummary={saveSummary}
+        />
       </div>
+
+      {/* Deep-on-demand: the full per-person allocation grid, unchanged in
+          substance from before the Instrument existed. Commit/Discard
+          live once, above, in the Footer -- this section is for editing
+          and for the detail the main surface deliberately keeps off-Canvas. */}
+      <details className="mt-6 border border-[var(--color-line)] rounded-xl bg-[var(--color-card)] group">
+        <summary className="cursor-pointer select-none px-5 py-4 text-sm font-medium flex items-center justify-between">
+          <span>Per-person allocation detail</span>
+          <span className="text-xs text-[var(--color-ink-soft)] group-open:hidden">Show</span>
+          <span className="text-xs text-[var(--color-ink-soft)] hidden group-open:inline">Hide</span>
+        </summary>
+        <div className="px-5 pb-5">
+          <div className="flex items-center justify-between mb-4 pt-1">
+            <div className="flex items-center gap-2 text-xs text-[var(--color-ink-soft)]">
+              <span>Context-switch cost</span>
+              <input
+                type="range"
+                min={0}
+                max={100}
+                value={switchCostPct}
+                onChange={(e) => {
+                  setSwitchCostPct(parseInt(e.target.value, 10));
+                  setDirty(true);
+                }}
+                className="w-24"
+              />
+              <span className="w-9 text-right">{switchCostPct}%</span>
+            </div>
+          </div>
+
+          {allPeople.length === 0 ? (
+            <div className="text-xs text-[var(--color-ink-soft)] py-6 text-center">
+              No people yet -- use a scope&rsquo;s Capacity Control above, or add people via POST /api/people.
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs">
+                <thead>
+                  <tr>
+                    <th className="text-left font-medium py-1.5 pr-3">Person</th>
+                    {data.scopes.map((s) => (
+                      <th key={s.scopeId} className="text-left font-medium py-1.5 px-2 whitespace-nowrap">
+                        {s.name}
+                      </th>
+                    ))}
+                    <th className="text-left font-medium py-1.5 px-2">Total</th>
+                    <th className="py-1.5 px-2" />
+                  </tr>
+                </thead>
+                <tbody>
+                  {allPeople.map((person) => {
+                    const isGhost = person.id.startsWith("ghost-");
+                    const total = data.scopes.reduce(
+                      (sum, s) => sum + (fractions.get(pairKey(person.id, s.scopeId)) ?? 0),
+                      0
+                    );
+                    const over = overAllocatedIds.has(person.id);
+                    return (
+                      <tr key={person.id} className="border-t border-[var(--color-line)]">
+                        <td className="py-1.5 pr-3 whitespace-nowrap">
+                          {person.name}
+                          {isGhost && (
+                            <span className="ml-1 text-[10px] uppercase tracking-wide text-[var(--color-accent)]">
+                              preview
+                            </span>
+                          )}
+                          <span className="text-[var(--color-ink-soft)]"> · {person.fte} FTE</span>
+                        </td>
+                        {data.scopes.map((s) => {
+                          const pct = Math.round((fractions.get(pairKey(person.id, s.scopeId)) ?? 0) * 100);
+                          return (
+                            <td key={s.scopeId} className="py-1.5 px-2">
+                              <div className="flex items-center gap-1.5">
+                                <input
+                                  type="range"
+                                  min={0}
+                                  max={100}
+                                  value={pct}
+                                  onChange={(e) => setFraction(person.id, s.scopeId, parseInt(e.target.value, 10))}
+                                  className="w-16"
+                                />
+                                <span className="w-8 text-right tabular-nums">{pct}%</span>
+                              </div>
+                            </td>
+                          );
+                        })}
+                        <td
+                          className="py-1.5 px-2 font-medium"
+                          style={{ color: over ? "var(--color-danger)" : undefined }}
+                        >
+                          {Math.round(total * 100)}%
+                        </td>
+                        <td className="py-1.5 px-2 text-right">
+                          <button
+                            onClick={() => removePerson(person.id, isGhost)}
+                            disabled={removingId === person.id}
+                            className="text-[var(--color-danger)] hover:underline whitespace-nowrap disabled:opacity-50"
+                          >
+                            {removingId === person.id ? "Removing…" : "Remove"}
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+                <tfoot>
+                  <tr className="border-t-2 border-[var(--color-line)]">
+                    <td className="py-1.5 pr-3 font-medium">Effective capacity</td>
+                    {data.scopes.map((s) => (
+                      <td key={s.scopeId} className="py-1.5 px-2 font-medium">
+                        {(capacityByScope.get(s.scopeId) ?? 0).toFixed(2)}
+                      </td>
+                    ))}
+                    <td />
+                    <td />
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+          )}
+
+          <p className="mt-3 text-[11px] text-[var(--color-ink-soft)]">
+            Capacity scales linearly here (2x the people, half the time) -- real teams rarely hit that in
+            practice, so treat these as an optimistic floor, not a promise.
+          </p>
+
+          {overAllocated.length > 0 && (
+            <div className="mt-3 text-xs text-[var(--color-danger)]">
+              Over-allocated:{" "}
+              {overAllocated.map((o) => `${o.personName} at ${Math.round(o.totalFraction * 100)}%`).join(", ")} --
+              fix before previewing further.
+            </div>
+          )}
+
+          {unallocated.length > 0 && (
+            <div className="mt-3 text-xs text-[var(--color-ink-soft)]">
+              Unallocated:{" "}
+              {unallocated.map((u) => `${u.name} (${u.unallocatedFte.toFixed(2)} FTE free)`).join(", ")}
+            </div>
+          )}
+
+          {removeError && <div className="mt-3 text-xs text-[var(--color-danger)]">{removeError}</div>}
+        </div>
+      </details>
     </div>
   );
 }

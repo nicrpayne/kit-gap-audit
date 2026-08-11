@@ -33,3 +33,71 @@ body {
   background: var(--color-accent-soft);
   color: var(--color-ink);
 }
+
+/* Instrument surface -- the dark simulation environment opened INSIDE the
+   warm Workbench shell (Portfolio's Forecast Canvas today; scoped to a
+   `.instrument` wrapper, never redefines the root Workbench tokens above,
+   so nothing outside it changes). Graphite structure, warm-white text
+   (echoes --color-paper's warmth rather than a cold neutral), and a
+   restrained semantic set: mint = favorable movement, violet = active
+   scenario/hypothetical state, amber = uncertainty, red = risk/later,
+   muted neutral = Reality/baseline reference. See docs/DESIGN-NORTH-STAR.md. */
+.instrument {
+  --i-bg: #14171a;
+  --i-panel: #1c2024;
+  --i-panel-raised: #23282d;
+  --i-border: #2d3339;
+  --i-border-strong: #3a4148;
+  --i-text: #f3f0e6;
+  --i-text-soft: #9099a1;
+  --i-text-faint: #666e76;
+  --i-mint: #4ad9a8;
+  --i-mint-soft: rgba(74, 217, 168, 0.14);
+  --i-violet: #9b8cfa;
+  --i-violet-soft: rgba(155, 140, 250, 0.16);
+  --i-amber: #e0b04a;
+  --i-amber-soft: rgba(224, 176, 74, 0.14);
+  --i-red: #ef6b5b;
+  --i-red-soft: rgba(239, 107, 91, 0.14);
+  --i-reality: #6b7278;
+  background: var(--i-bg);
+  color: var(--i-text);
+}
+
+.instrument ::selection {
+  background: var(--i-violet-soft);
+  color: var(--i-text);
+}
+
+/* Direct-manipulation feedback (Reality->Scenario ghosting, delta badges)
+   animates on change -- 150-300ms, functional not theatrical -- but never
+   when the user has asked the OS to reduce motion. */
+@media (prefers-reduced-motion: reduce) {
+  .instrument * {
+    transition-duration: 0.001ms !important;
+    animation-duration: 0.001ms !important;
+  }
+}
+
+/* Adapts the existing AskChips component (built for the light Workbench
+   surface, also used as-is on /forecast) for the dark Inspector WITHOUT
+   forking or editing AskChips.tsx -- it's reused verbatim. Its own
+   classNames read var(--color-line)/var(--color-card)/etc, which pick up
+   these shadowed values automatically; the couple of hardcoded literal
+   classes (bg-white) need a direct override since a CSS variable can't
+   reach them. */
+.instrument-ask {
+  --color-line: var(--i-border-strong);
+  --color-card: var(--i-panel-raised);
+  --color-accent-soft: var(--i-violet-soft);
+  --color-danger: var(--i-red);
+  --color-ink: var(--i-text);
+  --color-ink-soft: var(--i-text-soft);
+}
+.instrument-ask button {
+  background: var(--i-panel-raised) !important;
+  color: var(--i-text) !important;
+}
+.instrument-ask button:hover:not(:disabled) {
+  background: var(--i-violet-soft) !important;
+}

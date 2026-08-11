@@ -5,54 +5,176 @@ AI estimation + Notion + Figma), and V3 (Reports) are built and deployed.
 Timeline (V2) is the one piece left from the original plan -- deferred on
 purpose since Reports was the actually-needed leadership deliverable.
 The shared capacity pool + portfolio forecasting work (Phases 1-3, plus a
-post-review bug fix) is merged into the base branch
-(`claude/product-timeline-audit-a72dmg`) -- see "Where things stand" for
-the full history. Phases 4-6 (provenance badges, MCP server, outbound
-webhook) are planned but not yet approved to start.
+post-review bug fix), design language + momentum, scopes-editing + Nav
+fix, portfolio scenario Lever 1 + two live bug fixes, the scenario
+foundation refactor, and the capacity-scenario correctness fix are all
+merged into the base branch (`claude/product-timeline-audit-a72dmg`,
+HEAD `46812f0`) -- see "Where things stand" for the full history. Phases
+4-6 (provenance badges, MCP server, outbound webhook) and Scenario Levers
+2-4 (context-switch/focus toggle, dependency-relief preview, scope-cut)
+are planned but not yet approved to start.
 
-**Design language + momentum**
-(`DESIGN_LANGUAGE_AND_MOMENTUM_BUILD_BRIEF.md`) and a follow-up
-**scopes-editing + Nav fix** are both merged into the base branch --
-see "Where things stand" for the full history.
-
-**Portfolio scenario levers** (`PORTFOLIO_SCENARIO_LEVERS_BUILD_BRIEF`),
-on branch `claude/portfolio-scenario-levers`, cut from the base branch.
-Lever 1 of 4 (target date, both directions) is done, not yet merged.
-Levers 2-4 (context-switch/focus toggle, dependency-relief preview,
-scope-cut) are still ahead, same branch.
-
-**Scenario foundation, Phase 1 of an architectural evolution** (see
-`docs/SCENARIO-MODEL.md`), on branch `claude/scenario-input-delta`, cut
-from `claude/portfolio-scenario-levers`. Named and unified the
-"apply a hypothetical change to Reality and re-forecast" transform that
-previously existed as two independently hand-maintained implementations
--- done, verified. This is groundwork for a larger product direction (a
-delivery-simulation instrument with explicit Reality/Scenario/Forecast
-separation, A/B/C/D saved scenarios, direct manipulation) that is being
-built incrementally; only the narrowest first slice has landed so far.
-
-**Capacity-scenario correctness fix**, same branch, committed right after
-Phase 1 -- Nic's click-through of Phase 1 found the "+1 developer" quick
-action could make a scope's forecast *later*, non-monotonically. Root
-cause: `resolveCapacity`'s capacity-source fallback chain (correct for
-Reality) was being fed scenario-introduced allocation entries, silently
-flipping a scope from an aggregate (explicit/inferred) source to
-"allocations" and discarding the aggregate baseline. Fixed by keying
-`applyScenarioInputDelta`'s branch on the scope's own Reality capacity
-source (not on whether a contributor is real or hypothetical) --
-`resolveCapacity` itself untouched. Commit rules approved and implemented:
-anonymous capacity added to an aggregate scope commits as a new
-`explicitTeamCapacity` (never a fake Person row, never silent -- a live
-"Saving this will..." summary in the UI); a named real person's
-reallocation commits only when every scope they touch is
-allocations-sourced, blocked atomically (whole person, both legs) if not,
-with Preview still allowed to show the full hypothetical trade regardless.
-Server-side invariant added to `PUT /api/allocations` as defense-in-depth
-against any non-UI caller. Both **not yet merged, not yet clicked through
-by Nic** -- do not resume this work or merge without checking recent
-conversation history first.
+**Portfolio Instrument Surface** (see `docs/PRODUCT-VISION.md`,
+`docs/DESIGN-NORTH-STAR.md`), on branch `claude/portfolio-instrument-
+surface`, cut from base at `46812f0`. Replaces `/portfolio`'s vertically-
+isolated release-date cards and opaque "+1/+2 developer" buttons with a
+single dark "Instrument" surface (Forecast Canvas on one shared axis,
+explicit Capacity Control, persistent contextual Inspector, Commit/
+Discard footer) presenting the same, already-correct Reality/Scenario/
+Forecast plumbing from the two merged phases above. No forecast math, no
+schema, and no commit semantics changed -- presentation and a display-only
+capacity-number bug fix only (see "Where things stand" below). **Not yet
+merged, not yet clicked through by Nic** -- do not resume this work or
+merge without checking recent conversation history first.
 
 ## Where things stand
+
+- **Portfolio Instrument Surface (branch `claude/portfolio-instrument-
+  surface`, cut from base `46812f0`, not yet merged)** -- Phase 2 of the
+  Reality/Scenario/Forecast product direction the scenario-foundation
+  refactor was groundwork for (see `docs/PRODUCT-VISION.md`): the first
+  visual/interaction pass built specifically around that model, on top of
+  already-correct plumbing rather than alongside a redesign of it.
+  Explicitly presentation-layer work -- `lib/forecast/simulate.ts`,
+  `lib/forecast/portfolio.ts`, `resolveCapacity`, `applyScenarioInputDelta`,
+  the Prisma schema, the dependency model, target-date computation, and
+  `save()`'s commit rules are all byte-for-byte unchanged (one narrow,
+  justified exception below).
+
+  **What changed on `/portfolio`**: the "Release dates" card (per-scope
+  isolated rows *or* an overlay-toggle combined view) and the separate
+  "Portfolio insights" card are replaced by one `ForecastCanvas`
+  (`components/portfolio/ForecastCanvas.tsx`) -- every Scope on one
+  shared axis by default, no toggle, since overlay was always the more
+  legible mental model. Each row: name + clickable "depends on X" badge,
+  likely date + delta + confidence-at-target, and a band track (P10-P90 /
+  P50-P85 / P50 dot / dashed target marker) using the exact
+  `SimulationResult.percentiles` already computed -- no new statistics.
+  When a Scenario is active, Reality renders as a muted ghost tick next to
+  the now-violet Scenario position on the SAME row, not just as caption
+  text; position changes transition over 150-300ms
+  (`transition-[left,right] duration-200`), collapsed to near-zero under
+  `prefers-reduced-motion` (new `.instrument` rule, `app/globals.css`).
+
+  New `components/portfolio/ScenarioInspector.tsx` is the persistent
+  right-rail: selected-scope header (big date, violet when dirty, delta,
+  per-scope momentum), a `CapacityControl` (Reality FTE / Scenario FTE /
+  `[-] +N.0 FTE [+]` / Reset -- replaces the old opaque "+1/+2 developer"
+  buttons, which still exist as secondary "+2 quick add" shortcuts that
+  now visibly update this same control instead of firing invisibly), a
+  `TargetControl` (the pre-existing `TargetDateLever` logic moved here
+  verbatim and restyled -- semantics, including zero re-simulation on
+  edit, untouched), an "Effect on portfolio" dependents list, a "Why"
+  section, and an "Ask Hermes" section. The "Why" prose comes from a new
+  pure module, `lib/portfolio/explain.ts` (`explainScope`) -- zero LLM
+  calls, built entirely from data already in the browser (deltas,
+  dependency relationships, active capacity/named-transfer changes) --
+  checked FIRST, per the standing simple-surface/deep-on-demand and
+  no-LLM-in-the-simulation-path rules. Only after that does the Inspector
+  offer Hermes (`AskChips`, reused verbatim via a CSS-variable-shadowing
+  adapter class `.instrument-ask` rather than forking the component),
+  with an explicit, honest caption that `/api/forecast/ask` answers about
+  the current *saved* forecast and has no visibility into the unsaved
+  Scenario -- confirmed by reading the route in full before writing that
+  caption, not assumed.
+
+  New `components/portfolio/InstrumentFooter.tsx`: a violet scenario-chip
+  summary row, the exact pre-existing "Saving this will..." truth-model
+  warnings (aggregate-capacity conversions, blocked named transfers,
+  same wording) retitled "Committing this will:", and
+  **`[ Commit changes ]` / `[ Discard ]`** -- "Commit changes," not "Save
+  Scenario," per explicit instruction: this action still writes straight
+  into Reality and no saved-scenario object exists yet, so "Save Scenario"
+  would imply a feature that isn't built. Both buttons call the exact
+  pre-existing `save()`/`discard()` functions, unmodified.
+
+  A toplevel toolbar states `CURRENT` / `SCENARIO · UNSAVED` in **text**
+  (never color-only, for screen-share legibility) plus a compact
+  active-scenario summary ("Platform +1.0 FTE") when dirty.  The old,
+  detailed per-person allocation grid (sliders, over-allocation/
+  unallocated warnings, Remove) is fully preserved, logic untouched, and
+  relocated into a collapsed `<details>` "Per-person allocation detail"
+  section in the original light Workbench styling below the dark
+  Instrument -- deep-on-demand rather than deleted or redesigned.
+  `app/portfolio/page.tsx` widened to `max-w-[1440px]` (was `max-w-5xl`)
+  and its heading/copy updated to describe the new primary interaction.
+
+  **One real bug found and fixed during verification, in-scope and
+  narrow**: `capacityByScope` (the memo powering both the Inspector's
+  "Scenario" FTE number and the per-person grid's "Effective capacity"
+  row) called `resolveCapacity` directly instead of mirroring
+  `applyScenarioInputDelta`'s capacity-source branch -- for an
+  explicit/inferred scope with a scenario-added ghost, it displayed only
+  the ghost's own contribution (e.g. "1.0 FTE") instead of the aggregate
+  baseline plus that contribution (correctly "5.0 FTE," what the
+  simulation actually uses). Same bug class as the capacity-scenario fix
+  this phase explicitly preserves, just re-surfaced in a *display* number
+  the new Capacity Control now makes load-bearing rather than in the
+  simulation itself -- fixed by branching `capacityByScope` on
+  `capacitySource` exactly like `applyScenarioInputDelta` already does,
+  using only the same already-approved `resolveCapacity` primitive.
+  `resolveCapacity`, `applyScenarioInputDelta`, `simulate.ts`, and
+  `portfolio.ts` remain completely untouched; this is a one-memo fix in
+  `PortfolioPageClient.tsx`, the same file already being rewritten this
+  phase.
+
+  **Verified**: `npx tsc --noEmit`, `npx eslint .`, `npm run build` all
+  clean. Since `GET /api/portfolio/inputs` needs live Linear data (a
+  server-side call this sandbox can't reach, confirmed by reading
+  `lib/forecast/compute.ts`'s "throws on Linear failure" comment -- unlike
+  the app's own client-side fetches, `page.route()` cannot intercept it),
+  end-to-end verification used a Playwright fixture engineered to
+  reproduce the exact STRUCTURAL pattern from the motivating real bug
+  report -- Platform (aggregate capacity) with iTrack depending on it at
+  negligible own effort (fully tracks Platform) and JSA depending on it at
+  large own effort (own constraint always dominates, provably never moves
+  when Platform's capacity changes, by construction of the fixture's
+  margins) -- with all mutating routes (`/api/allocations`,
+  `/api/people`, `/api/scopes/:id`, `/api/portfolio-settings`) also mocked
+  so Commit could be exercised with zero database writes. Dates produced
+  are synthetic fixture output, not the real Sep/Oct 2026 production
+  dates from the bug report -- an explicit, honest substitution forced by
+  the sandbox's Linear restriction. 44 assertions, all passing, covering:
+  baseline render (including the dependency-badge presence and the
+  structural iTrack-tracks-Platform / JSA-independent pattern before any
+  interaction); selecting a scope and reading Reality/Scenario capacity;
+  the exact acceptance case (+1 FTE on Platform moved Platform AND iTrack
+  the identical number of days earlier, JSA showed the literal text
+  "no change," a Reality ghost tick appeared at the old date, zero
+  additional `/api/portfolio/inputs` or `/preview` network calls fired --
+  confirming the client-only resimulation path); decrement returning both
+  affected scopes exactly to Reality; `+2 quick add` then Reset; clicking
+  a dependency badge re-targeting the Inspector; editing the target date
+  firing no new simulation network call while still updating the
+  probability field; the Commit warning text and the resulting PATCH body
+  (`teamCapacity: 5`, exactly Reality's 4 plus the scenario's 1); Discard
+  fully reverting date and toolbar state; Enter-key row selection;
+  `prefers-reduced-motion` collapsing the measured `transitionDuration` to
+  effectively zero; and byte-identical dates across a full page reload
+  (same fixed `FORECAST_SEED`, confirming no determinism regression).
+  Screenshots taken at each major state for visual QA against the design
+  brief's bar -- confirmed the warm Workbench shell survives unchanged
+  around the dark Instrument, the semantic color rules hold (violet
+  active-scenario, mint favorable delta, amber commit warning), and there
+  is no dashboard-card proliferation or DAW-chrome regression.
+
+  **Not done, not started, explicitly out of scope for this phase**: the
+  Resource Mixer, saved A/B/C/D scenario persistence, any new forecast
+  math, Scenario Levers 2-4, and any change to
+  `lib/forecast/buildScenarios`. `components/Nav.tsx`'s sidebar still
+  reads bare "KIT" -- pre-existing UI text, not touched by this phase's
+  naming convention (see `docs/PRODUCT-VISION.md`), flagged rather than
+  silently changed since relabeling app-wide navigation wasn't requested.
+  **Not yet merged, not yet clicked through by Nic** -- do not merge
+  without an explicit instruction to do so.
+
+- **Scenario foundation and the capacity-scenario correctness fix are
+  merged** (branch `claude/scenario-input-delta`, fast-forward merge into
+  `claude/product-timeline-audit-a72dmg`, base HEAD now `46812f0`) --
+  Nic's production click-through approved both; see the two entries
+  immediately below for what shipped. `claude/portfolio-scenario-levers`
+  (Lever 1 + two bug fixes) is folded into base along with it, since
+  `claude/scenario-input-delta` was cut from its HEAD.
 
 - **Scenario foundation Phase 1 (branch `claude/scenario-input-delta`, cut
   from `claude/portfolio-scenario-levers`, not yet merged)** -- an
@@ -122,9 +244,12 @@ conversation history first.
   the visual/Instrument-Mode redesign, a Forecast Canvas, the resource
   mixer, saved A/B/C/D scenarios, target-seeking as its own lever, Hermes
   changes, and Scenario Levers 2-4 (context-switch toggle, dependency-
-  relief preview, scope-cut). Nic's own click-through against this branch
-  is a required validation step before any merge -- **do not merge this
-  branch without an explicit instruction to do so.**
+  relief preview, scope-cut). **Merged since**: approved after Nic's
+  production click-through, fast-forward merged into
+  `claude/product-timeline-audit-a72dmg` (base HEAD `46812f0`) alongside
+  the capacity-scenario fix below. The visual/Instrument-Mode redesign and
+  Forecast Canvas that were out of scope here are the Portfolio Instrument
+  Surface entry at the top of this section.
 
 - **Capacity-scenario correctness fix (same branch
   `claude/scenario-input-delta`, committed right after Phase 1, not yet
@@ -257,10 +382,12 @@ conversation history first.
   (evidence from the button's own UX strongly suggests it should, but
   it's a data-hygiene question, not a correctness bug -- flagged for a
   later pass); a deliberate "convert this scope to person-level tracking"
-  mechanism; the visual/Instrument-Mode redesign; the resource mixer; any
-  Hermes changes; Scenario Levers 2-4. **Not yet merged, not yet clicked
-  through by Nic** -- do not merge without an explicit instruction to do
-  so.
+  mechanism; the resource mixer; any Hermes changes; Scenario Levers 2-4.
+  **Merged since**: Nic approved both this fix and Phase 1 above after his
+  production click-through; fast-forward merged into
+  `claude/product-timeline-audit-a72dmg` (base HEAD `46812f0`). The
+  visual/Instrument-Mode redesign that was out of scope here is the
+  Portfolio Instrument Surface entry at the top of this section.
 
 - **Shared capacity pool, Phase 1 of 3 (branch `claude/portfolio-
   capacity-pool`, not yet merged)** — the structural fix for a real bug:
