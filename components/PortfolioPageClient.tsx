@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { usePathname } from "next/navigation";
 import {
   resolveCapacity,
   validateAllocations,
@@ -9,35 +10,33 @@ import {
   type AllocationLike,
 } from "@/lib/capacity/resolve";
 import { runPortfolioSimulation } from "@/lib/forecast/portfolio";
-import type { SimulationResult, WorkItem, DecisionGate } from "@/lib/forecast/simulate";
-import { computePortfolioInsights, type ScopeInsightInput } from "@/lib/portfolio/insights";
+import { confidenceAtDay, type SimulationResult, type WorkItem, type DecisionGate } from "@/lib/forecast/simulate";
 import { computeMomentum } from "@/lib/momentum/compute";
+import { computeMomentumTrend, type MomentumTrend } from "@/lib/momentum/trend";
 import { applyScenarioInputDelta, type ScenarioInputDelta, type ScenarioInputScope } from "@/lib/scenario/inputDelta";
 import { compareToBaseline } from "@/lib/scenario/compare";
 import { detectNamedPersonMoves, type NamedTransferScope } from "@/lib/scenario/namedTransfer";
-import ForecastCanvas, { type CanvasScope } from "@/components/portfolio/ForecastCanvas";
+import ForecastField, { type FieldScope } from "@/components/portfolio/ForecastField";
+import InstrumentBay from "@/components/portfolio/InstrumentBay";
 import ScenarioInspector from "@/components/portfolio/ScenarioInspector";
-import InstrumentFooter, { type ScenarioCapacityLine } from "@/components/portfolio/InstrumentFooter";
+import ScenarioBar, { type ScenarioCapacityLine } from "@/components/portfolio/ScenarioBar";
+import AllocationDrawer from "@/components/portfolio/AllocationDrawer";
+import InstrumentRail from "@/components/instrument/InstrumentRail";
+import CommandMenu from "@/components/instrument/CommandMenu";
 import type { DependencyDelta, DependentDelta } from "@/lib/portfolio/explain";
 
-// This entire file is the "cheap, every slider frame" half of Phase 2's
-// performance split (see ROADMAP.md): GET /api/portfolio/inputs is the one
-// expensive network call (Linear + findings + context, per Scope), fetched
-// once on mount. Every allocation edit after that re-runs resolveCapacity
-// and runPortfolioSimulation -- imported directly from the same pure
-// modules the server uses for the saved forecast -- entirely in the
-// browser. There is deliberately no second "recompute this scope"
-// implementation anywhere in this file: reusing these exact functions is
-// what guarantees a preview can't silently drift from the saved path's
-// correlated-risk behavior.
+// The Instrument. GET /api/portfolio/inputs is the one expensive network
+// call (Linear + findings + context, per Scope), fetched once on mount;
+// every control interaction after that re-runs resolveCapacity and
+// runPortfolioSimulation -- the same pure modules the server uses for the
+// saved forecast -- entirely in the browser. There is deliberately no
+// second "recompute this scope" implementation in this file: reusing those
+// exact functions is what guarantees a live preview can't drift from the
+// saved path's correlated-risk behaviour.
 //
-// Visually, this component renders the dark "Instrument" surface (Canvas +
-// Inspector + Footer, see docs/DESIGN-NORTH-STAR.md) plus a collapsed,
-// unchanged-in-substance "Per-person allocation detail" section in the
-// original light Workbench styling underneath it. The Instrument is a
-// presentation layer over exactly the same state and handlers the old
-// single-card layout used -- no new persistence semantics, no new
-// simulation path.
+// Presentation: this page is INSTRUMENT MODE and owns the whole viewport
+// (see lib/shell/mode.ts and docs/DESIGN-NORTH-STAR.md). The Workbench nav
+// stands down; navigation is the 48px rail, which can be hidden outright.
 
 interface ScopeInputRow {
   scopeId: string;
@@ -50,6 +49,13 @@ interface ScopeInputRow {
   capacitySource: "allocations" | "explicit" | "inferred";
   explicitTeamCapacity: number | null;
   lastReport: { generatedAt: string; likelyDate: string; confidenceAtTarget: number | null } | null;
+  reportHistory: {
+    generatedAt: string;
+    likelyDate: string;
+    confidenceAtTarget: number | null;
+    shippedCount: number;
+    resolvedSinceLastCount: number;
+  }[];
 }
 
 interface PersonRow {
@@ -75,7 +81,7 @@ interface PortfolioInputsResponse {
 }
 
 interface GhostPerson {
-  id: string; // "ghost-<n>" -- never sent to any API until Save creates a real Person
+  id: string; // "ghost-<scopeId>" -- never sent to any API until Commit creates a real Person
   name: string;
   fte: number;
 }
@@ -83,26 +89,31 @@ interface GhostPerson {
 function pairKey(personId: string, scopeId: string): string {
   return `${personId}::${scopeId}`;
 }
-
+function ghostIdFor(scopeId: string): string {
+  return `ghost-${scopeId}`;
+}
 function addDays(date: Date, days: number): Date {
   const d = new Date(date);
   d.setUTCDate(d.getUTCDate() + Math.round(days));
   return d;
 }
-
 function dayOffset(startDate: Date, date: Date): number {
   return (date.getTime() - startDate.getTime()) / 86400000;
 }
 
-// Month-boundary ticks for the shared axis, e.g. "Jan '26", "Feb '26" --
-// only the ones that actually fall inside [minDay, maxDay].
-// Step size adapts to how wide the axis actually is -- a fixed
-// one-tick-per-month pace looked fine against this page's original
-// ~1-year test fixtures, but a Scope simulating years out (a
-// misconfigured Scope pulling in far more effort than intended, or
-// legitimately just a long way off) pushed the range wide enough that
-// one label per month piled into an unreadable overlapping mess. Aim
-// for roughly 6-12 ticks regardless of how wide the range is.
+// Ticks for the shared axis, aiming for roughly 6-10 labels however wide
+// the range is. A portfolio usually spans weeks, not years, so short spans
+// get dated week markers ("Sep 7") -- month boundaries alone left a
+// seven-week axis carrying a single label, which is a ruler with no marks
+// on it. Long spans (a misconfigured Scope pulling in years of effort) fall
+// back to month/quarter steps so labels can't pile into a smear.
+function niceDayStep(spanDays: number): number | null {
+  for (const step of [2, 3, 7, 14, 28]) {
+    if (spanDays / step <= 10) return step;
+  }
+  return null; // too wide for day steps -- use months
+}
+
 function monthStep(spanDays: number): number {
   const spanMonths = spanDays / 30.44;
   if (spanMonths <= 10) return 1;
@@ -112,9 +123,26 @@ function monthStep(spanDays: number): number {
   return 12;
 }
 
-function monthTicks(startDate: Date, minDay: number, maxDay: number): { day: number; label: string }[] {
-  const step = monthStep(Math.max(1, maxDay - minDay));
+function axisTicks(startDate: Date, minDay: number, maxDay: number): { day: number; label: string }[] {
+  const span = Math.max(1, maxDay - minDay);
   const ticks: { day: number; label: string }[] = [];
+  const dayStep = niceDayStep(span);
+
+  if (dayStep !== null) {
+    // Align to a week boundary so markers land on the same weekday, which
+    // reads as a calendar rather than as an arbitrary interval.
+    const first = Math.ceil(minDay / dayStep) * dayStep;
+    for (let day = first; day <= maxDay; day += dayStep) {
+      const d = addDays(startDate, day);
+      ticks.push({
+        day,
+        label: d.toLocaleDateString(undefined, { month: "short", day: "numeric", timeZone: "UTC" }),
+      });
+    }
+    return ticks;
+  }
+
+  const step = monthStep(span);
   const first = addDays(startDate, minDay);
   const cursor = new Date(Date.UTC(first.getUTCFullYear(), first.getUTCMonth(), 1));
   let guard = 0;
@@ -132,9 +160,9 @@ function monthTicks(startDate: Date, minDay: number, maxDay: number): { day: num
   return ticks;
 }
 
-let ghostCounter = 0;
-
 export default function PortfolioPageClient() {
+  const pathname = usePathname();
+
   const [data, setData] = useState<PortfolioInputsResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -152,6 +180,16 @@ export default function PortfolioPageClient() {
   const [removingId, setRemovingId] = useState<string | null>(null);
   const [removeError, setRemoveError] = useState<string | null>(null);
 
+  // Shell state. Hiding the rail and collapsing the inspector both exist so
+  // the forecast can take the whole screen when it's being presented.
+  const [railHidden, setRailHidden] = useState(false);
+  const [inspectorOpen, setInspectorOpen] = useState(true);
+  const [commandOpen, setCommandOpen] = useState(false);
+  const [allocationsOpen, setAllocationsOpen] = useState(false);
+
+  // Target dates scrubbed on the field but not yet written back.
+  const [pendingTargets, setPendingTargets] = useState<Map<string, string>>(new Map());
+
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
@@ -168,6 +206,7 @@ export default function PortfolioPageClient() {
       setFractions(initial);
       setSwitchCostPct(body.contextSwitchCostPct);
       setGhosts([]);
+      setPendingTargets(new Map());
       setDirty(false);
       setSaveSummary(null);
     } catch (err) {
@@ -181,10 +220,22 @@ export default function PortfolioPageClient() {
     load();
   }, [load]);
 
-  // Per-scope simulation inputs, normalized to the ScenarioInputScope
-  // shape applyScenarioInputDelta expects (Date conversions done once
-  // here, not repeated in every baseline/preview computation). Recomputed
-  // only when a fresh load() replaces `data`, not on every drag frame.
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      const meta = e.metaKey || e.ctrlKey;
+      if (meta && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        setCommandOpen((v) => !v);
+      }
+      if (meta && e.key === "\\") {
+        e.preventDefault();
+        setRailHidden((v) => !v);
+      }
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
   const scenarioScopes: ScenarioInputScope[] | null = useMemo(() => {
     if (!data) return null;
     const startDate = new Date(data.startDate);
@@ -202,18 +253,11 @@ export default function PortfolioPageClient() {
   }, [data]);
 
   // Baseline: the saved allocations, computed once per load -- the fixed
-  // reference every preview delta is measured against. Reproduces the
-  // originally-resolved capacity exactly (see applyScenarioInputDelta's
-  // doc comment) since this delta is built from Reality's own saved
-  // allocations/people/contextSwitchCostPct, not a hypothetical one.
+  // reference every preview delta is measured against.
   const baseline = useMemo(() => {
     if (!data || !scenarioScopes) return null;
     const baselineDelta: ScenarioInputDelta = {
-      allocations: data.allocations.map((a) => ({
-        personId: a.personId,
-        scopeId: a.scopeId,
-        fraction: a.fraction,
-      })),
+      allocations: data.allocations.map((a) => ({ personId: a.personId, scopeId: a.scopeId, fraction: a.fraction })),
       hypotheticalPeople: [],
       contextSwitchCostPct: data.contextSwitchCostPct,
     };
@@ -224,10 +268,6 @@ export default function PortfolioPageClient() {
     }
   }, [data, scenarioScopes]);
 
-  // Ghosts as PersonLike -- shared by allPeople (needed flat, for
-  // validateAllocations/unallocatedCapacity/the grid render, none of
-  // which care about the Reality/hypothetical split) and previewDelta
-  // below (which does care, per ScenarioInputDelta's shape).
   const ghostsAsPersonLike: PersonLike[] = useMemo(
     () => ghosts.map((g) => ({ id: g.id, name: g.name, fte: g.fte, active: true })),
     [ghosts]
@@ -248,28 +288,17 @@ export default function PortfolioPageClient() {
     return out;
   }, [fractions]);
 
-  const overAllocated = useMemo(
-    () => validateAllocations(allPeople, currentAllocations),
-    [allPeople, currentAllocations]
-  );
-  const overAllocatedIds = useMemo(() => new Set(overAllocated.map((o) => o.personId)), [overAllocated]);
-
-  const unallocated = useMemo(
-    () => unallocatedCapacity(allPeople, currentAllocations),
-    [allPeople, currentAllocations]
+  // Allocations with every scenario ghost removed -- the "what would this
+  // Scope resolve to if I hadn't added anything" number the Capacity fader
+  // measures its own addition against, and resets to.
+  const realPersonAllocations: AllocationLike[] = useMemo(
+    () => currentAllocations.filter((a) => !a.personId.startsWith("ghost-")),
+    [currentAllocations]
   );
 
-  // Commit-eligibility for real, named people: does a real person's
-  // scenario allocation differ from Reality's saved one, and can every
-  // Scope they'd end up on truthfully represent that (see
-  // docs/SCENARIO-MODEL.md's "named-person transfer" section, and
-  // lib/scenario/namedTransfer.ts). Deliberately excludes ghosts --
-  // hypothetical/anonymous people are a completely separate, always-
-  // committable case handled by aggregateConversions below. Recomputed
-  // live (not just at Save time) so the "Committing this will..." summary
-  // can show BEFORE the user clicks Commit, matching this page's existing
-  // live-preview philosophy rather than surprising them with a
-  // confirmation dialog after the fact.
+  const overAllocated = useMemo(() => validateAllocations(allPeople, currentAllocations), [allPeople, currentAllocations]);
+  const unallocated = useMemo(() => unallocatedCapacity(allPeople, currentAllocations), [allPeople, currentAllocations]);
+
   const namedMoves = useMemo(() => {
     if (!data) return [];
     const realPersonIds = new Set(data.people.map((p) => p.id));
@@ -285,16 +314,6 @@ export default function PortfolioPageClient() {
   const blockedMoves = useMemo(() => namedMoves.filter((m) => !m.eligible), [namedMoves]);
   const blockedPersonIds = useMemo(() => new Set(blockedMoves.map((m) => m.personId)), [blockedMoves]);
 
-  // Aggregate (explicit/inferred) Scopes: how much anonymous/hypothetical
-  // capacity would be committed as a new explicitTeamCapacity if Commit
-  // were clicked now. Deliberately computed from hypothetical
-  // people/allocations ONLY -- a real person's contribution to an
-  // aggregate Scope is NEVER folded in here, whether or not that specific
-  // move happens to be "eligible" elsewhere, because there is no eligible
-  // path for a named person into an aggregate Scope at all (see
-  // blockedMoves above); committing it anonymously would silently
-  // discard exactly the identity information the approved model says not
-  // to discard.
   const aggregateConversions = useMemo(() => {
     if (!data) return [];
     const hypotheticalIds = new Set(ghosts.map((g) => g.id));
@@ -316,13 +335,6 @@ export default function PortfolioPageClient() {
     return out;
   }, [data, ghosts, currentAllocations, ghostsAsPersonLike, switchCostPct]);
 
-  // The live hypothetical, as a ScenarioInputDelta -- an explicit adapter
-  // from the fine-grained interaction state above (fractions/ghosts/
-  // switchCostPct, each its own useState for cheap point updates on every
-  // slider frame) to the one domain shape applyScenarioInputDelta takes.
-  // Assembling this object is O(scopes-with-nonzero-fractions), the same
-  // cost `currentAllocations` above already pays every render -- it does
-  // not change the interaction layer's performance characteristics.
   const previewDelta: ScenarioInputDelta = useMemo(
     () => ({
       allocations: currentAllocations,
@@ -333,8 +345,8 @@ export default function PortfolioPageClient() {
   );
 
   // Debounced client-side resimulation -- immediate enough to feel live
-  // while dragging without recomputing 5000 trials x every Scope on
-  // every single pixel of a drag.
+  // while dragging a fader without recomputing 5000 trials x every Scope on
+  // every pixel of the drag.
   const [preview, setPreview] = useState<Map<string, SimulationResult> | null>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
@@ -345,10 +357,9 @@ export default function PortfolioPageClient() {
       try {
         setPreview(runPortfolioSimulation(specs));
       } catch {
-        // A hypothetical dependsOnScopeIds cycle can't happen from this UI
-        // (dependencies aren't editable here), but stay defensive.
+        // A hypothetical dependsOnScopeIds cycle can't happen from this UI.
       }
-    }, 120);
+    }, 110);
     return () => {
       if (debounceRef.current) clearTimeout(debounceRef.current);
     };
@@ -356,10 +367,6 @@ export default function PortfolioPageClient() {
 
   const startDateObj = useMemo(() => (data ? new Date(data.startDate) : null), [data]);
 
-  // Shared date axis across every Scope's band: the union of every known
-  // percentile extent (baseline AND preview, so the axis doesn't jump
-  // around mid-drag more than necessary) plus any target dates, padded a
-  // little for breathing room.
   const axis = useMemo(() => {
     if (!data || !startDateObj) return null;
     const days: number[] = [0];
@@ -368,112 +375,55 @@ export default function PortfolioPageClient() {
         if (!r) continue;
         days.push(r.percentiles.p10, r.percentiles.p90);
       }
-      if (s.targetDate) days.push(dayOffset(startDateObj, new Date(s.targetDate)));
+      const t = pendingTargets.get(s.scopeId) ?? s.targetDate;
+      if (t) days.push(dayOffset(startDateObj, new Date(t)));
     }
     const minDay = Math.min(0, ...days);
     const maxDayRaw = Math.max(...days);
-    const maxDay = maxDayRaw + Math.max(5, maxDayRaw * 0.05);
-    return { minDay, maxDay, ticks: monthTicks(startDateObj, minDay, maxDay) };
-  }, [data, startDateObj, baseline, preview]);
+    // Generous right padding: the density curve is drawn across the whole
+    // axis, so a fat right tail needs somewhere to land instead of being
+    // sliced off by the panel edge.
+    const maxDay = maxDayRaw + Math.max(8, maxDayRaw * 0.16);
+    return { minDay, maxDay, ticks: axisTicks(startDateObj, minDay, maxDay) };
+  }, [data, startDateObj, baseline, preview, pendingTargets]);
 
-  // Live effective capacity per Scope -- deliberately NOT read off
-  // `preview`/`baseline` (SimulationResult doesn't carry capacity), just
-  // resolveCapacity again directly. Cheap (no simulation trials), so it
-  // updates on every keystroke, not debounced like the band recompute
-  // above. This is the Instrument's "Scenario" capacity number; a Scope's
-  // own `teamCapacity` as loaded from Reality (untouched by any of this)
-  // is the "Reality" number next to it.
-  //
-  // Branches on capacitySource exactly like applyScenarioInputDelta (see
-  // lib/scenario/inputDelta.ts) -- NOT a plain resolveCapacity call.
-  // resolveCapacity alone has no notion of "an aggregate baseline plus an
-  // additive scenario contribution": for an explicit/inferred Scope, the
-  // moment any allocation-shaped row exists (an added ghost, a moved
-  // person), it would return ONLY that row's own contribution and
-  // silently drop the preserved aggregate baseline -- displaying, say,
-  // "1.0 FTE" for a Scope actually simulating at 5.0. That's the same bug
-  // class the capacity-scenario fix exists to prevent, just re-appearing
-  // in a display number instead of the simulation itself. Mirroring the
-  // branch here keeps what this control SHOWS truthful to what
-  // applyScenarioInputDelta actually feeds the simulation for this Scope.
-  const capacityByScope = useMemo(() => {
-    if (!data) return new Map<string, number>();
-    const out = new Map<string, number>();
-    for (const s of data.scopes) {
-      if (s.capacitySource === "allocations") {
-        const resolved = resolveCapacity(s.scopeId, s.explicitTeamCapacity, allPeople, currentAllocations, switchCostPct);
-        out.set(s.scopeId, resolved.capacity ?? s.teamCapacity);
-      } else {
-        const additive = resolveCapacity(s.scopeId, null, allPeople, currentAllocations, switchCostPct);
-        out.set(s.scopeId, s.teamCapacity + (additive.capacity ?? 0));
+  // Live effective capacity per Scope. Branches on capacitySource exactly
+  // like applyScenarioInputDelta -- NOT a plain resolveCapacity call. For an
+  // explicit/inferred Scope, resolveCapacity alone would return only the
+  // scenario's own contribution and silently drop the preserved aggregate
+  // baseline, displaying e.g. "1.0 FTE" for a Scope simulating at 5.0.
+  const capacityFor = useCallback(
+    (allocations: AllocationLike[], people: PersonLike[], pct: number) => {
+      const out = new Map<string, number>();
+      if (!data) return out;
+      for (const s of data.scopes) {
+        if (s.capacitySource === "allocations") {
+          const resolved = resolveCapacity(s.scopeId, s.explicitTeamCapacity, people, allocations, pct);
+          out.set(s.scopeId, resolved.capacity ?? s.teamCapacity);
+        } else {
+          const additive = resolveCapacity(s.scopeId, null, people, allocations, pct);
+          out.set(s.scopeId, s.teamCapacity + (additive.capacity ?? 0));
+        }
       }
-    }
-    return out;
-  }, [data, allPeople, currentAllocations, switchCostPct]);
+      return out;
+    },
+    [data]
+  );
 
-  const insights = useMemo(() => {
-    if (!data) return [];
-    const scopeInputs: ScopeInsightInput[] = data.scopes
-      .map((s) => {
-        const r = preview?.get(s.scopeId) ?? baseline?.get(s.scopeId);
-        if (!r) return null;
-        return { scopeId: s.scopeId, name: s.name, dependsOnScopeIds: s.dependsOnScopeIds, likelyDays: r.percentiles.p50 };
-      })
-      .filter((x): x is ScopeInsightInput => x !== null);
-    return computePortfolioInsights(scopeInputs, overAllocated, unallocated);
-  }, [data, baseline, preview, overAllocated, unallocated]);
-
-  // Compact per-scope momentum: "vs. the last time we told someone a
-  // number" -- the SAVED-allocations baseline against the most recent
-  // stored Report, same semantics and the same computeMomentum function
-  // /forecast and /reports use. Deliberately NOT the live preview: an
-  // in-progress unsaved scenario already has its own "vs Reality" delta
-  // right next to this in the Inspector; this answers a different
-  // question (has this Scope actually moved since it was last reported
-  // on) and shouldn't flicker while previewing.
-  const reportMomentum = useMemo(() => {
-    if (!data) return new Map<string, ReturnType<typeof computeMomentum>>();
-    const out = new Map<string, ReturnType<typeof computeMomentum>>();
-    for (const s of data.scopes) {
-      if (!s.lastReport) continue;
-      const b = baseline?.get(s.scopeId);
-      if (!b) continue;
-      out.set(
-        s.scopeId,
-        computeMomentum(
-          { generatedAt: new Date(), likelyDate: b.likelyDate, confidenceAtTarget: b.confidenceAtTarget },
-          {
-            generatedAt: new Date(s.lastReport.generatedAt),
-            likelyDate: new Date(s.lastReport.likelyDate),
-            confidenceAtTarget: s.lastReport.confidenceAtTarget,
-          }
-        )
-      );
-    }
-    return out;
-  }, [data, baseline]);
-
-  // Forecast Canvas's row data -- a thin projection of ScopeInputRow, so
-  // the Canvas component stays ignorant of everything else this page
-  // knows about a Scope (capacity source, gates, items...).
-  const canvasScopes: CanvasScope[] = useMemo(() => {
-    if (!data) return [];
-    return data.scopes.map((s) => ({
-      scopeId: s.scopeId,
-      name: s.name,
-      dependsOnScopeIds: s.dependsOnScopeIds,
-      targetDate: s.targetDate,
-    }));
-  }, [data]);
+  const capacityByScope = useMemo(
+    () => capacityFor(currentAllocations, allPeople, switchCostPct),
+    [capacityFor, currentAllocations, allPeople, switchCostPct]
+  );
+  // The same resolution with scenario ghosts excluded: the Capacity fader's
+  // zero point, so "how much did I add" stays truthful even after the
+  // switch-cost lever has moved everyone's effective contribution.
+  const baseCapacityByScope = useMemo(
+    () => capacityFor(realPersonAllocations, data?.people ?? [], switchCostPct),
+    [capacityFor, realPersonAllocations, data?.people, switchCostPct]
+  );
 
   const effectiveSelectedScopeId = selectedScopeId ?? data?.scopes[0]?.scopeId ?? null;
 
-  // Anonymous (ghost) FTE currently contributing to each Scope in this
-  // scenario -- what the Inspector's Capacity Control and the footer's
-  // per-scope chips both read. Ghosts are single-scope by construction
-  // (addHypotheticalDeveloper mints a fresh id per click, allocated only
-  // to the Scope it was added for), so this is a direct sum, not an
-  // apportionment across scopes.
   const scenarioAnonymousFteByScope = useMemo(() => {
     const out = new Map<string, number>();
     const ghostById = new Map(ghosts.map((g) => [g.id, g]));
@@ -489,16 +439,10 @@ export default function PortfolioPageClient() {
 
   const namedFteChangedScopeIds = useMemo(() => {
     const out = new Set<string>();
-    for (const m of namedMoves) {
-      for (const c of m.changes) out.add(c.scopeId);
-    }
+    for (const m of namedMoves) for (const c of m.changes) out.add(c.scopeId);
     return out;
   }, [namedMoves]);
 
-  // Dependency/dependent deltas for whichever Scope the Inspector is
-  // currently showing -- the same baseline/preview deltas the Canvas
-  // already renders per row, gathered for one Scope's neighbors so
-  // explainScope() can narrate them in plain language.
   const selectedScopeDeps = useMemo(() => {
     const empty: { dependsOn: DependencyDelta[]; dependents: DependentDelta[] } = { dependsOn: [], dependents: [] };
     if (!data || !effectiveSelectedScopeId) return empty;
@@ -520,7 +464,79 @@ export default function PortfolioPageClient() {
     return { dependsOn, dependents };
   }, [data, baseline, preview, effectiveSelectedScopeId]);
 
-  const capacityLinesForFooter: ScenarioCapacityLine[] = useMemo(() => {
+  // Momentum: the SAVED baseline against the most recent stored Report --
+  // same semantics and the same computeMomentum /forecast and /reports use.
+  // Deliberately not the live preview: an unsaved scenario has its own "vs
+  // Reality" delta already, and this answers a different question (has this
+  // Scope actually moved since it was last reported on).
+  const momentumByScope = useMemo(() => {
+    const out = new Map<string, MomentumTrend>();
+    if (!data) return out;
+    for (const s of data.scopes) {
+      if (!s.lastReport) continue;
+      const b = baseline?.get(s.scopeId);
+      if (!b) continue;
+      const m = computeMomentum(
+        { generatedAt: new Date(), likelyDate: b.likelyDate, confidenceAtTarget: b.confidenceAtTarget },
+        {
+          generatedAt: new Date(s.lastReport.generatedAt),
+          likelyDate: new Date(s.lastReport.likelyDate),
+          confidenceAtTarget: s.lastReport.confidenceAtTarget,
+        }
+      );
+      const latest = s.reportHistory[s.reportHistory.length - 1];
+      out.set(
+        s.scopeId,
+        computeMomentumTrend(
+          m,
+          latest
+            ? {
+                generatedAt: new Date(latest.generatedAt),
+                shippedCount: latest.shippedCount,
+                resolvedSinceLastCount: latest.resolvedSinceLastCount,
+              }
+            : null
+        )
+      );
+    }
+    return out;
+  }, [data, baseline]);
+
+  const fieldScopes: FieldScope[] = useMemo(() => {
+    if (!data) return [];
+    return data.scopes.map((s) => ({
+      scopeId: s.scopeId,
+      name: s.name,
+      dependsOnScopeIds: s.dependsOnScopeIds,
+      targetDate: s.targetDate,
+    }));
+  }, [data]);
+
+  // "When does this all ship" across scopes = the last scope to land. The
+  // page's headline answer, and the number a scenario is ultimately judged
+  // on -- pulling one scope in doesn't matter if a later one still gates.
+  const portfolio = useMemo(() => {
+    if (!data) return { likely: null as Date | null, deltaDays: 0, gatedBy: null as string | null };
+    let activeMax: number | null = null;
+    let baseMax: number | null = null;
+    let gatedBy: string | null = null;
+    for (const s of data.scopes) {
+      const b = baseline?.get(s.scopeId);
+      const p = preview?.get(s.scopeId) ?? b;
+      if (p && (activeMax === null || p.likelyDate.getTime() > activeMax)) {
+        activeMax = p.likelyDate.getTime();
+        gatedBy = s.name;
+      }
+      if (b) baseMax = Math.max(baseMax ?? -Infinity, b.likelyDate.getTime());
+    }
+    return {
+      likely: activeMax === null ? null : new Date(activeMax),
+      deltaDays: activeMax !== null && baseMax !== null ? Math.round((activeMax - baseMax) / 86400000) : 0,
+      gatedBy,
+    };
+  }, [data, baseline, preview]);
+
+  const capacityLinesForBar: ScenarioCapacityLine[] = useMemo(() => {
     if (!data) return [];
     const out: ScenarioCapacityLine[] = [];
     for (const s of data.scopes) {
@@ -532,6 +548,8 @@ export default function PortfolioPageClient() {
 
   const eligibleNamedMoveCount = namedMoves.length - blockedMoves.length;
 
+  // ---- interaction handlers -------------------------------------------
+
   function setFraction(personId: string, scopeId: string, pct: number) {
     setFractions((prev) => {
       const next = new Map(prev);
@@ -541,37 +559,76 @@ export default function PortfolioPageClient() {
     setDirty(true);
   }
 
-  function addHypotheticalDeveloper(scopeId: string) {
-    ghostCounter += 1;
-    const id = `ghost-${ghostCounter}`;
-    setGhosts((prev) => [...prev, { id, name: `New developer ${ghostCounter}`, fte: 1.0 }]);
-    setFractions((prev) => {
+  // The Capacity fader's write path. One scenario ghost per Scope, whose FTE
+  // *is* the added amount -- so a continuous fader maps onto exactly one
+  // hypothetical person rather than a pile of 1.0-FTE placeholders. Commit
+  // semantics are untouched: on an allocations-sourced Scope this ghost
+  // becomes a real Person + Allocation; on an aggregate Scope it is folded
+  // into a new explicitTeamCapacity and never becomes a Person row (see
+  // docs/SCENARIO-MODEL.md).
+  const setScopeCapacity = useCallback(
+    (scopeId: string, scopeName: string, targetFte: number) => {
+      const base = baseCapacityByScope.get(scopeId) ?? 0;
+      const added = Math.max(0, parseFloat((targetFte - base).toFixed(3)));
+      const id = ghostIdFor(scopeId);
+      setGhosts((prev) => {
+        const rest = prev.filter((g) => g.id !== id);
+        return added > 1e-6 ? [...rest, { id, name: `Added capacity — ${scopeName}`, fte: added }] : rest;
+      });
+      setFractions((prev) => {
+        const next = new Map(prev);
+        if (added > 1e-6) next.set(pairKey(id, scopeId), 1.0);
+        else next.delete(pairKey(id, scopeId));
+        return next;
+      });
+      setDirty(true);
+    },
+    [baseCapacityByScope]
+  );
+
+  function scrubTarget(scopeId: string, iso: string) {
+    setPendingTargets((prev) => {
       const next = new Map(prev);
-      next.set(pairKey(id, scopeId), 1.0);
+      next.set(scopeId, iso);
       return next;
     });
-    setDirty(true);
   }
 
-  // Removes a person from the grid entirely. A ghost (never persisted --
-  // see the addHypotheticalDeveloper comment) is just local-state
-  // cleanup: drop it from `ghosts` and clear its fraction entries so it
-  // can't leak into a later Commit. A real Person is actually deleted via
-  // the existing DELETE /api/people/:id (cascades to their Allocations)
-  // and the page reloads from the server -- this is the one place in the
-  // UI that can clean up a person who got persisted by mistake (e.g. an
-  // exploratory "+1 developer" click that was still allocated when
-  // Commit was pressed), since there was previously no way to undo that
-  // short of a raw API call.
+  // Unlike the batched Commit, this writes ONE Scope's targetDate straight
+  // away -- reusing the existing PATCH /api/scopes/:id rather than a new
+  // endpoint -- and updates `data` in place so the axis and confidence
+  // readouts pick up the saved value without a full reload.
+  async function saveTargetDate(scopeId: string) {
+    const targetDate = pendingTargets.get(scopeId);
+    if (targetDate === undefined) return;
+    try {
+      const res = await fetch(`/api/scopes/${scopeId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ targetDate }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body.error ?? "Couldn't save the target date.");
+      setData((prev) =>
+        prev ? { ...prev, scopes: prev.scopes.map((s) => (s.scopeId === scopeId ? { ...s, targetDate } : s)) } : prev
+      );
+      setPendingTargets((prev) => {
+        const next = new Map(prev);
+        next.delete(scopeId);
+        return next;
+      });
+    } catch (err) {
+      setSaveError(err instanceof Error ? err.message : "Couldn't save the target date.");
+    }
+  }
+
   async function removePerson(personId: string, isGhost: boolean) {
     setRemoveError(null);
     if (isGhost) {
       setGhosts((prev) => prev.filter((g) => g.id !== personId));
       setFractions((prev) => {
         const next = new Map(prev);
-        for (const key of next.keys()) {
-          if (key.startsWith(`${personId}::`)) next.delete(key);
-        }
+        for (const key of next.keys()) if (key.startsWith(`${personId}::`)) next.delete(key);
         return next;
       });
       setDirty(true);
@@ -592,61 +649,6 @@ export default function PortfolioPageClient() {
     }
   }
 
-  // Capacity Control's decrement: removes the most recently added ghost
-  // currently contributing to this Scope -- the smallest safe operation,
-  // since it can only ever remove scenario-added anonymous capacity,
-  // never touch a real person or Reality's own aggregate number (see
-  // docs/SCENARIO-MODEL.md). Ghosts are single-scope by construction, so
-  // in the common case ("+1 developer" then undo it) this affects only
-  // `scopeId`; it's still scoped correctly even if the per-person detail
-  // grid was used to hand-spread one ghost's time across multiple scopes,
-  // since removing that ghost only ever removes scenario-added capacity.
-  function decrementScopeCapacity(scopeId: string) {
-    let latest: GhostPerson | null = null;
-    let latestN = -1;
-    for (const g of ghosts) {
-      if ((fractions.get(pairKey(g.id, scopeId)) ?? 0) <= 1e-6) continue;
-      const n = parseInt(g.id.replace("ghost-", ""), 10) || 0;
-      if (n > latestN) {
-        latestN = n;
-        latest = g;
-      }
-    }
-    if (latest) removePerson(latest.id, true);
-  }
-
-  // Capacity Control's reset: removes every ghost currently contributing
-  // to this one Scope, returning just its scenario capacity to Reality
-  // without touching any other Scope's scenario changes -- global Discard
-  // (below) is what resets the whole Scenario.
-  function resetScopeCapacity(scopeId: string) {
-    for (const g of ghosts) {
-      if ((fractions.get(pairKey(g.id, scopeId)) ?? 0) > 1e-6) removePerson(g.id, true);
-    }
-  }
-
-  // Target-date lever's Save: unlike the allocation grid's big Commit
-  // (which batches everything behind one explicit action), this saves
-  // ONE Scope's targetDate immediately when its own "Save target date"
-  // button is clicked -- reuses the existing PATCH /api/scopes/:id
-  // (already supports targetDate) rather than a new endpoint. Updates
-  // `data` in place so the axis/confidence badges elsewhere on the page
-  // pick up the new saved value without a full reload.
-  async function saveTargetDate(scopeId: string, targetDate: string | null) {
-    const res = await fetch(`/api/scopes/${scopeId}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ targetDate }),
-    });
-    const body = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(body.error ?? "Couldn't save the target date.");
-    setData((prev) =>
-      prev
-        ? { ...prev, scopes: prev.scopes.map((s) => (s.scopeId === scopeId ? { ...s, targetDate } : s)) }
-        : prev
-    );
-  }
-
   function discard() {
     if (!data) return;
     const initial = new Map<string, number>();
@@ -654,28 +656,21 @@ export default function PortfolioPageClient() {
     setFractions(initial);
     setSwitchCostPct(data.contextSwitchCostPct);
     setGhosts([]);
+    setPendingTargets(new Map());
     setDirty(false);
     setSaveError(null);
     setSaveSummary(null);
   }
 
-  // Commit rules (see docs/SCENARIO-MODEL.md's "Save / Commit" section):
-  //
-  // - A Scope's capacitySource never flips as a side effect of this
-  //   Commit. An anonymous/hypothetical contribution to an
-  //   allocations-sourced Scope still becomes a real Person + Allocation
-  //   row, exactly as before. An anonymous contribution to an
-  //   explicit/inferred Scope is folded into a NEW explicitTeamCapacity
-  //   (aggregateConversions, computed above) -- it never gets a
-  //   Person/Allocation row, and that Scope's source becomes/stays
-  //   "explicit" going forward.
-  // - A real, named person's allocation change is committed normally when
-  //   every Scope they'd end up on is allocations-sourced. If ANY touched
-  //   Scope is aggregate-sourced, the ENTIRE person's allocation set is
-  //   excluded from this Commit (blockedPersonIds, from namedMoves above)
-  //   -- both legs of a move, not just the aggregate-destination leg, so
-  //   Reality never ends up with a person shown at less than 100% while
-  //   the remainder silently vanishes.
+  // Commit rules (docs/SCENARIO-MODEL.md's "Save / Commit" section):
+  // - A Scope's capacitySource never flips as a side effect. An anonymous
+  //   contribution to an allocations-sourced Scope becomes a real Person +
+  //   Allocation; to an explicit/inferred Scope it is folded into a new
+  //   explicitTeamCapacity and never gets a Person row.
+  // - A real person's allocation change commits normally when every Scope
+  //   they'd land on is allocations-sourced; if ANY touched Scope is
+  //   aggregate-sourced the whole person is excluded, both legs of the move,
+  //   so Reality never shows someone at under 100% with the rest vanished.
   async function save() {
     if (!data) return;
     setSaving(true);
@@ -687,11 +682,6 @@ export default function PortfolioPageClient() {
         data.scopes.filter((s) => s.capacitySource === "allocations").map((s) => s.scopeId)
       );
 
-      // Ghost people become real Person rows only when they're used on an
-      // allocations-sourced Scope -- a ghost used only on an aggregate
-      // Scope stays anonymous forever; its contribution is folded into
-      // that Scope's explicitTeamCapacity below instead (never a Person
-      // row -- see aggregateConversions above).
       const idRemap = new Map<string, string>();
       for (const g of ghosts) {
         const usedOnAllocationsScope = [...fractions.entries()].some(([key, f]) => {
@@ -709,24 +699,11 @@ export default function PortfolioPageClient() {
         idRemap.set(g.id, body.person.id);
       }
 
-      // Every real (post-remap) person who has -- or previously had -- an
-      // allocation anywhere gets their FULL current row set sent, one
-      // entry per allocations-sourced Scope, explicit zeros included: PUT
-      // /api/allocations is a full replace per mentioned person, so this
-      // is the only way to make sure a cleared allocation is actually
-      // deleted, not just skipped. Blocked real people (blockedPersonIds)
-      // are excluded entirely -- neither their reduction nor their
-      // increase is sent, so their existing Reality rows are untouched.
-      // rowKeyFor(realPersonId) -> the key `fractions` actually has an
-      // entry under (a ghost's rows are still keyed by its temp id even
-      // after the ghost becomes a real Person above).
       const rowKeyFor = new Map<string, string>();
       for (const [ghostId, realId] of idRemap) rowKeyFor.set(realId, ghostId);
 
       const personIds = new Set<string>();
-      for (const a of data.allocations) {
-        if (!blockedPersonIds.has(a.personId)) personIds.add(a.personId);
-      }
+      for (const a of data.allocations) if (!blockedPersonIds.has(a.personId)) personIds.add(a.personId);
       for (const key of fractions.keys()) {
         const [personId] = key.split("::");
         if (personId.startsWith("ghost-")) {
@@ -741,10 +718,9 @@ export default function PortfolioPageClient() {
       for (const personId of personIds) {
         const rowKeyPersonId = rowKeyFor.get(personId) ?? personId;
         for (const scope of data.scopes) {
-          // Never write a person-level allocation onto an aggregate
-          // Scope -- that would silently flip its capacitySource, the
-          // exact bug this fix exists to prevent. (The server enforces
-          // this too, independently -- see PUT /api/allocations.)
+          // Never write a person-level allocation onto an aggregate Scope --
+          // that would silently flip its capacitySource. (The server
+          // enforces this independently too.)
           if (!allocationsScopeIds.has(scope.scopeId)) continue;
           const fraction = fractions.get(pairKey(rowKeyPersonId, scope.scopeId)) ?? 0;
           payload.push({ personId, scopeId: scope.scopeId, fraction });
@@ -759,9 +735,6 @@ export default function PortfolioPageClient() {
       const putBody = await putRes.json().catch(() => ({}));
       if (!putRes.ok) throw new Error(putBody.error ?? "Couldn't save allocations.");
 
-      // Aggregate Scopes: fold anonymous/hypothetical contributions into
-      // a new explicitTeamCapacity via the existing PATCH /api/scopes/:id
-      // (already supports teamCapacity) -- never a Person/Allocation row.
       for (const conversion of aggregateConversions) {
         const patchRes = await fetch(`/api/scopes/${conversion.scopeId}`, {
           method: "PATCH",
@@ -788,20 +761,14 @@ export default function PortfolioPageClient() {
 
       const summaryParts: string[] = [];
       if (aggregateConversions.length > 0) {
-        summaryParts.push(
-          aggregateConversions.map((c) => `${c.scopeName} capacity set to ${c.to.toFixed(2)} (explicit)`).join("; ")
-        );
+        summaryParts.push(aggregateConversions.map((c) => `${c.scopeName} capacity set to ${c.to.toFixed(2)} (explicit)`).join("; "));
       }
       if (blockedMoves.length > 0) {
         summaryParts.push(
-          `${blockedMoves.length} change${blockedMoves.length === 1 ? "" : "s"} not saved: ${blockedMoves
-            .map((m) => m.personName)
-            .join(", ")}`
+          `${blockedMoves.length} change${blockedMoves.length === 1 ? "" : "s"} not saved: ${blockedMoves.map((m) => m.personName).join(", ")}`
         );
       }
-      if (summaryParts.length > 0) {
-        setSaveSummary({ text: summaryParts.join(" · "), hadBlocks: blockedMoves.length > 0 });
-      }
+      if (summaryParts.length > 0) setSaveSummary({ text: summaryParts.join(" · "), hadBlocks: blockedMoves.length > 0 });
 
       await load();
     } catch (err) {
@@ -811,17 +778,35 @@ export default function PortfolioPageClient() {
     }
   }
 
+  // ---- render ----------------------------------------------------------
+
+  const shell = (children: React.ReactNode) => (
+    <div className="instrument fixed inset-0 flex overflow-hidden">
+      <InstrumentRail
+        pathname={pathname}
+        hidden={railHidden}
+        onToggle={() => setRailHidden((v) => !v)}
+        onOpenCommand={() => setCommandOpen(true)}
+      />
+      {children}
+    </div>
+  );
+
   if (loading && !data) {
-    return <div className="text-sm text-[var(--color-ink-soft)]">Loading portfolio…</div>;
+    return shell(
+      <div className="flex-1 flex items-center justify-center text-[12px] text-[var(--i-text-faint)]">
+        Loading portfolio…
+      </div>
+    );
   }
   if (error) {
-    return <div className="text-sm text-[var(--color-danger)]">{error}</div>;
+    return shell(<div className="flex-1 flex items-center justify-center text-[12px] text-[var(--i-red)]">{error}</div>);
   }
   if (!data) return null;
 
   if (data.scopes.length === 0) {
-    return (
-      <div className="text-sm text-[var(--color-ink-soft)] py-12 text-center border border-dashed border-[var(--color-line)] rounded-xl">
+    return shell(
+      <div className="flex-1 flex items-center justify-center text-[12px] text-[var(--i-text-faint)]">
         No Scope configured yet. Add one at /scopes to see a portfolio view.
       </div>
     );
@@ -832,114 +817,60 @@ export default function PortfolioPageClient() {
     : null;
   const selectedBaseline = effectiveSelectedScopeId ? baseline?.get(effectiveSelectedScopeId) : undefined;
   const selectedPreview = effectiveSelectedScopeId ? preview?.get(effectiveSelectedScopeId) : undefined;
+  const selectedActive = selectedPreview ?? selectedBaseline;
 
-  const scenarioSummaryParts: string[] = capacityLinesForFooter.map(
-    (l) => `${l.scopeName} +${l.fteAdded.toFixed(1)} FTE`
-  );
-  if (namedMoves.length > 0) {
-    scenarioSummaryParts.push(`${namedMoves.length} ${namedMoves.length === 1 ? "person" : "people"} reallocated`);
-  }
+  // Confidence shown in the bay comes from wherever the target currently
+  // sits -- including an unsaved scrub -- so the meter can never disagree
+  // with the flag the user is dragging on the field.
+  const selectedTargetIso = selectedScope
+    ? pendingTargets.get(selectedScope.scopeId) ?? selectedScope.targetDate
+    : null;
+  const selectedConfidence =
+    selectedActive && selectedTargetIso && startDateObj
+      ? confidenceAtDay(selectedActive.completionDaysSorted, dayOffset(startDateObj, new Date(selectedTargetIso)))
+      : null;
+  const spreadDays = selectedActive
+    ? Math.round(selectedActive.percentiles.p90 - selectedActive.percentiles.p10)
+    : null;
+  const fmtDay = (d: Date) => d.toLocaleDateString(undefined, { month: "short", day: "numeric", timeZone: "UTC" });
+  const spreadRange =
+    selectedActive && startDateObj
+      ? {
+          earliest: fmtDay(addDays(startDateObj, selectedActive.percentiles.p10)),
+          latest: fmtDay(addDays(startDateObj, selectedActive.percentiles.p90)),
+        }
+      : null;
+  const sinceLabel = selectedScope?.lastReport
+    ? fmtDay(new Date(selectedScope.lastReport.generatedAt))
+    : null;
 
-  return (
-    <div>
-      {/* The Instrument: a precision simulation surface opened inside the
-          Workbench shell. Toolbar (state) -> Canvas + Inspector (the
-          primary interaction) -> Footer (commit). See
-          docs/DESIGN-NORTH-STAR.md. */}
-      <div className="instrument rounded-xl border border-[var(--i-border)] overflow-hidden">
-        <div className="flex items-center gap-3 flex-wrap px-5 py-3.5 border-b border-[var(--i-border)] bg-[var(--i-panel)]">
-          <span
-            className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-medium uppercase tracking-wide ${
-              dirty ? "bg-[var(--i-violet-soft)] text-[var(--i-violet)]" : "bg-[var(--i-panel-raised)] text-[var(--i-text-soft)]"
-            }`}
-          >
-            <span
-              aria-hidden
-              className="h-1.5 w-1.5 rounded-full"
-              style={{ background: dirty ? "var(--i-violet)" : "var(--i-text-faint)" }}
-            />
-            {dirty ? "Scenario · Unsaved" : "Current"}
-          </span>
-          {dirty && scenarioSummaryParts.length > 0 && (
-            <span className="text-xs text-[var(--i-text-soft)]">{scenarioSummaryParts.join(" · ")}</span>
-          )}
-        </div>
+  // The trend line ends on the value the Momentum headline is talking about.
+  // Plotting only stored reports let the line trend one way while the words
+  // ("44 days sooner") described the live-vs-last-report step, which is a
+  // different comparison -- so the last point here IS today's baseline, and
+  // the final segment is exactly the delta being named.
+  // Plain computation, not useMemo: this sits below the early returns above,
+  // so a hook here would violate the rules of hooks. It is a map over <=10
+  // rows and costs nothing.
+  const trendSeries: number[] = selectedScope
+    ? (() => {
+        const pts = selectedScope.reportHistory.map((r) => new Date(r.likelyDate).getTime());
+        const b = baseline?.get(selectedScope.scopeId);
+        if (b) pts.push(b.likelyDate.getTime());
+        return pts;
+      })()
+    : [];
 
-        <div className="grid" style={{ gridTemplateColumns: "1fr 320px" }}>
-          <div className="min-w-0 border-r border-[var(--i-border)]">
-            <ForecastCanvas
-              scopes={canvasScopes}
-              baseline={baseline}
-              preview={preview}
-              axis={axis}
-              startDate={startDateObj!}
-              dirty={dirty}
-              selectedScopeId={effectiveSelectedScopeId}
-              onSelectScope={setSelectedScopeId}
-            />
-            {insights.length > 0 && (
-              <div className="border-t border-[var(--i-border)] px-5 py-4">
-                <div className="text-[10px] uppercase tracking-wider text-[var(--i-text-faint)] mb-2">
-                  Portfolio insights
-                </div>
-                <ul className="space-y-1.5">
-                  {insights.map((insight) => (
-                    <li
-                      key={insight.id}
-                      className="text-xs flex items-start gap-2"
-                      style={{ color: insight.tone === "warning" ? "var(--i-red)" : "var(--i-text-soft)" }}
-                    >
-                      <span aria-hidden>{insight.tone === "warning" ? "⚠" : "•"}</span>
-                      <span>{insight.text}</span>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            )}
-          </div>
-
-          <div className="min-w-0">
-            {selectedScope ? (
-              <ScenarioInspector
-                scope={{
-                  scopeId: selectedScope.scopeId,
-                  name: selectedScope.name,
-                  targetDate: selectedScope.targetDate,
-                  capacitySource: selectedScope.capacitySource,
-                }}
-                baseline={selectedBaseline}
-                preview={selectedPreview}
-                dirty={dirty}
-                startDate={startDateObj!}
-                realityCapacity={selectedScope.teamCapacity}
-                scenarioCapacity={capacityByScope.get(selectedScope.scopeId) ?? selectedScope.teamCapacity}
-                anonymousFteAdded={scenarioAnonymousFteByScope.get(selectedScope.scopeId) ?? 0}
-                namedFteChanged={namedFteChangedScopeIds.has(selectedScope.scopeId)}
-                canDecrement={ghosts.some((g) => (fractions.get(pairKey(g.id, selectedScope.scopeId)) ?? 0) > 1e-6)}
-                onIncrement={() => addHypotheticalDeveloper(selectedScope.scopeId)}
-                onIncrementTwice={() => {
-                  addHypotheticalDeveloper(selectedScope.scopeId);
-                  addHypotheticalDeveloper(selectedScope.scopeId);
-                }}
-                onDecrement={() => decrementScopeCapacity(selectedScope.scopeId)}
-                onResetCapacity={() => resetScopeCapacity(selectedScope.scopeId)}
-                onSaveTargetDate={saveTargetDate}
-                dependsOn={selectedScopeDeps.dependsOn}
-                dependents={selectedScopeDeps.dependents}
-                momentum={reportMomentum.get(selectedScope.scopeId) ?? null}
-              />
-            ) : (
-              <div className="p-5 text-sm text-[var(--i-text-faint)]">Select a scope to inspect it.</div>
-            )}
-          </div>
-        </div>
-
-        <InstrumentFooter
+  return shell(
+    <>
+      <div className="flex-1 min-w-0 flex flex-col">
+        <ScenarioBar
           dirty={dirty}
           saving={saving}
           canCommit={overAllocated.length === 0}
-          capacityLines={capacityLinesForFooter}
+          capacityLines={capacityLinesForBar}
           namedTransferCount={eligibleNamedMoveCount}
+          switchCostChanged={switchCostPct !== data.contextSwitchCostPct}
           aggregateConversions={aggregateConversions}
           blockedMoves={blockedMoves.map((m) => ({
             personId: m.personId,
@@ -948,154 +879,116 @@ export default function PortfolioPageClient() {
           }))}
           onCommit={save}
           onDiscard={discard}
+          onOpenAllocations={() => setAllocationsOpen(true)}
           saveError={saveError}
           saveSummary={saveSummary}
         />
-      </div>
 
-      {/* Deep-on-demand: the full per-person allocation grid, unchanged in
-          substance from before the Instrument existed. Commit/Discard
-          live once, above, in the Footer -- this section is for editing
-          and for the detail the main surface deliberately keeps off-Canvas. */}
-      <details className="mt-6 border border-[var(--color-line)] rounded-xl bg-[var(--color-card)] group">
-        <summary className="cursor-pointer select-none px-5 py-4 text-sm font-medium flex items-center justify-between">
-          <span>Per-person allocation detail</span>
-          <span className="text-xs text-[var(--color-ink-soft)] group-open:hidden">Show</span>
-          <span className="text-xs text-[var(--color-ink-soft)] hidden group-open:inline">Hide</span>
-        </summary>
-        <div className="px-5 pb-5">
-          <div className="flex items-center justify-between mb-4 pt-1">
-            <div className="flex items-center gap-2 text-xs text-[var(--color-ink-soft)]">
-              <span>Context-switch cost</span>
-              <input
-                type="range"
-                min={0}
-                max={100}
-                value={switchCostPct}
-                onChange={(e) => {
-                  setSwitchCostPct(parseInt(e.target.value, 10));
+        <div className="flex-1 min-h-0 flex">
+          <div className="flex-1 min-w-0 flex flex-col" style={{ background: "var(--i-bg)" }}>
+            <ForecastField
+              scopes={fieldScopes}
+              baseline={baseline}
+              preview={preview}
+              axis={axis}
+              startDate={startDateObj!}
+              dirty={dirty}
+              selectedScopeId={effectiveSelectedScopeId}
+              onSelectScope={setSelectedScopeId}
+              onScrubTarget={scrubTarget}
+              pendingTargets={pendingTargets}
+              onSaveTarget={saveTargetDate}
+              portfolioLikely={portfolio.likely}
+              portfolioDeltaDays={portfolio.deltaDays}
+              portfolioGatedBy={portfolio.gatedBy}
+            />
+
+            {selectedScope && (
+              <InstrumentBay
+                scopeName={selectedScope.name}
+                realityCapacity={selectedScope.teamCapacity}
+                scenarioCapacity={capacityByScope.get(selectedScope.scopeId) ?? selectedScope.teamCapacity}
+                onCapacityChange={(fte) => setScopeCapacity(selectedScope.scopeId, selectedScope.name, fte)}
+                capacityDisabled={overAllocated.length > 0}
+                switchCostPct={switchCostPct}
+                savedSwitchCostPct={data.contextSwitchCostPct}
+                onSwitchCostChange={(pct) => {
+                  setSwitchCostPct(Math.round(pct));
                   setDirty(true);
                 }}
-                className="w-24"
+                trend={momentumByScope.get(selectedScope.scopeId) ?? null}
+                trendSeries={trendSeries}
+                confidencePct={selectedConfidence}
+                targetLabel={
+                  selectedTargetIso
+                    ? `by ${new Date(selectedTargetIso).toLocaleDateString(undefined, { month: "short", day: "numeric", timeZone: "UTC" })}`
+                    : "no target set"
+                }
+                spreadDays={spreadDays}
+                spreadRange={spreadRange}
+                sinceLabel={sinceLabel}
+                gates={selectedScope.gates.map((g) => ({ id: g.id, label: g.label, likely: g.likely }))}
+                onInspectMomentum={() => setInspectorOpen(true)}
               />
-              <span className="w-9 text-right">{switchCostPct}%</span>
-            </div>
+            )}
           </div>
 
-          {allPeople.length === 0 ? (
-            <div className="text-xs text-[var(--color-ink-soft)] py-6 text-center">
-              No people yet -- use a scope&rsquo;s Capacity Control above, or add people via POST /api/people.
-            </div>
+          {/* Below ~1280px there isn't room for a 296px narration panel and
+              a legible field at the same time; the field wins, and every
+              fact in here is still reachable from the bay's readouts. */}
+          {selectedScope && inspectorOpen ? (
+            <ScenarioInspector
+              scope={{
+                scopeId: selectedScope.scopeId,
+                name: selectedScope.name,
+                targetDate: selectedScope.targetDate,
+                capacitySource: selectedScope.capacitySource,
+              }}
+              baseline={selectedBaseline}
+              preview={selectedPreview}
+              dirty={dirty}
+              anonymousFteAdded={scenarioAnonymousFteByScope.get(selectedScope.scopeId) ?? 0}
+              namedFteChanged={namedFteChangedScopeIds.has(selectedScope.scopeId)}
+              dependsOn={selectedScopeDeps.dependsOn}
+              dependents={selectedScopeDeps.dependents}
+              trend={momentumByScope.get(selectedScope.scopeId) ?? null}
+              onCollapse={() => setInspectorOpen(false)}
+            />
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-xs">
-                <thead>
-                  <tr>
-                    <th className="text-left font-medium py-1.5 pr-3">Person</th>
-                    {data.scopes.map((s) => (
-                      <th key={s.scopeId} className="text-left font-medium py-1.5 px-2 whitespace-nowrap">
-                        {s.name}
-                      </th>
-                    ))}
-                    <th className="text-left font-medium py-1.5 px-2">Total</th>
-                    <th className="py-1.5 px-2" />
-                  </tr>
-                </thead>
-                <tbody>
-                  {allPeople.map((person) => {
-                    const isGhost = person.id.startsWith("ghost-");
-                    const total = data.scopes.reduce(
-                      (sum, s) => sum + (fractions.get(pairKey(person.id, s.scopeId)) ?? 0),
-                      0
-                    );
-                    const over = overAllocatedIds.has(person.id);
-                    return (
-                      <tr key={person.id} className="border-t border-[var(--color-line)]">
-                        <td className="py-1.5 pr-3 whitespace-nowrap">
-                          {person.name}
-                          {isGhost && (
-                            <span className="ml-1 text-[10px] uppercase tracking-wide text-[var(--color-accent)]">
-                              preview
-                            </span>
-                          )}
-                          <span className="text-[var(--color-ink-soft)]"> · {person.fte} FTE</span>
-                        </td>
-                        {data.scopes.map((s) => {
-                          const pct = Math.round((fractions.get(pairKey(person.id, s.scopeId)) ?? 0) * 100);
-                          return (
-                            <td key={s.scopeId} className="py-1.5 px-2">
-                              <div className="flex items-center gap-1.5">
-                                <input
-                                  type="range"
-                                  min={0}
-                                  max={100}
-                                  value={pct}
-                                  onChange={(e) => setFraction(person.id, s.scopeId, parseInt(e.target.value, 10))}
-                                  className="w-16"
-                                />
-                                <span className="w-8 text-right tabular-nums">{pct}%</span>
-                              </div>
-                            </td>
-                          );
-                        })}
-                        <td
-                          className="py-1.5 px-2 font-medium"
-                          style={{ color: over ? "var(--color-danger)" : undefined }}
-                        >
-                          {Math.round(total * 100)}%
-                        </td>
-                        <td className="py-1.5 px-2 text-right">
-                          <button
-                            onClick={() => removePerson(person.id, isGhost)}
-                            disabled={removingId === person.id}
-                            className="text-[var(--color-danger)] hover:underline whitespace-nowrap disabled:opacity-50"
-                          >
-                            {removingId === person.id ? "Removing…" : "Remove"}
-                          </button>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-                <tfoot>
-                  <tr className="border-t-2 border-[var(--color-line)]">
-                    <td className="py-1.5 pr-3 font-medium">Effective capacity</td>
-                    {data.scopes.map((s) => (
-                      <td key={s.scopeId} className="py-1.5 px-2 font-medium">
-                        {(capacityByScope.get(s.scopeId) ?? 0).toFixed(2)}
-                      </td>
-                    ))}
-                    <td />
-                    <td />
-                  </tr>
-                </tfoot>
-              </table>
-            </div>
+            <button
+              onClick={() => setInspectorOpen(true)}
+              aria-label="Show inspector"
+              title="Show inspector"
+              className="shrink-0 w-6 hidden xl:flex items-start justify-center pt-3.5 text-[var(--i-text-faint)] hover:text-[var(--i-text)] transition-colors"
+              style={{ background: "var(--i-panel)", borderLeft: "1px solid var(--i-border)" }}
+            >
+              ‹
+            </button>
           )}
-
-          <p className="mt-3 text-[11px] text-[var(--color-ink-soft)]">
-            Capacity scales linearly here (2x the people, half the time) -- real teams rarely hit that in
-            practice, so treat these as an optimistic floor, not a promise.
-          </p>
-
-          {overAllocated.length > 0 && (
-            <div className="mt-3 text-xs text-[var(--color-danger)]">
-              Over-allocated:{" "}
-              {overAllocated.map((o) => `${o.personName} at ${Math.round(o.totalFraction * 100)}%`).join(", ")} --
-              fix before previewing further.
-            </div>
-          )}
-
-          {unallocated.length > 0 && (
-            <div className="mt-3 text-xs text-[var(--color-ink-soft)]">
-              Unallocated:{" "}
-              {unallocated.map((u) => `${u.name} (${u.unallocatedFte.toFixed(2)} FTE free)`).join(", ")}
-            </div>
-          )}
-
-          {removeError && <div className="mt-3 text-xs text-[var(--color-danger)]">{removeError}</div>}
         </div>
-      </details>
-    </div>
+      </div>
+
+      <CommandMenu
+        open={commandOpen}
+        onClose={() => setCommandOpen(false)}
+        scopes={data.scopes.map((s) => ({ scopeId: s.scopeId, name: s.name }))}
+        onSelectScope={setSelectedScopeId}
+      />
+
+      <AllocationDrawer
+        open={allocationsOpen}
+        onClose={() => setAllocationsOpen(false)}
+        scopes={data.scopes.map((s) => ({ scopeId: s.scopeId, name: s.name }))}
+        people={allPeople}
+        fractionFor={(personId, scopeId) => fractions.get(pairKey(personId, scopeId)) ?? 0}
+        onSetFraction={setFraction}
+        capacityByScope={capacityByScope}
+        overAllocated={overAllocated}
+        unallocated={unallocated}
+        onRemovePerson={removePerson}
+        removingId={removingId}
+        removeError={removeError}
+      />
+    </>
   );
 }

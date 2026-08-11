@@ -43,14 +43,19 @@ body {
    scenario/hypothetical state, amber = uncertainty, red = risk/later,
    muted neutral = Reality/baseline reference. See docs/DESIGN-NORTH-STAR.md. */
 .instrument {
-  --i-bg: #14171a;
-  --i-panel: #1c2024;
-  --i-panel-raised: #23282d;
-  --i-border: #2d3339;
-  --i-border-strong: #3a4148;
+  /* Depth ladder. Four levels, not two -- the Instrument's physicality
+     comes from things sitting ON or being CUT INTO a surface, which needs
+     a ground darker than the panels and a recess darker than the ground. */
+  --i-void: #0b0e10; /* the ground everything sits on */
+  --i-bg: #101417; /* canvas / field */
+  --i-panel: #161b1f;
+  --i-panel-raised: #1d2429; /* controls sit UP here */
+  --i-recess: #0a0d0f; /* meter windows are CUT IN to here */
+  --i-border: #262d33;
+  --i-border-strong: #333c43;
   --i-text: #f3f0e6;
   --i-text-soft: #9099a1;
-  --i-text-faint: #666e76;
+  --i-text-faint: #667079;
   --i-mint: #4ad9a8;
   --i-mint-soft: rgba(74, 217, 168, 0.14);
   --i-violet: #9b8cfa;
@@ -60,8 +65,96 @@ body {
   --i-red: #ef6b5b;
   --i-red-soft: rgba(239, 107, 91, 0.14);
   --i-reality: #6b7278;
-  background: var(--i-bg);
+  background: var(--i-void);
   color: var(--i-text);
+  /* Numerals are the Instrument's voice: always tabular so a changing
+     value never reflows, never a serif (that's the Workbench's face). */
+  font-feature-settings: "tnum" 1, "cv01" 1;
+}
+
+/* Big readouts -- the loudest type in the Instrument. Tight tracking and
+   heavy weight give the numbers presence without a display typeface. */
+.i-readout {
+  font-variant-numeric: tabular-nums;
+  font-weight: 650;
+  letter-spacing: -0.03em;
+  font-feature-settings: "tnum" 1;
+}
+
+/* Structural micro-label. Uppercase, wide-tracked, quiet -- these do the
+   Instrument's organizing work so boxes and rules don't have to. */
+.i-label {
+  font-size: 9.5px;
+  line-height: 1;
+  text-transform: uppercase;
+  letter-spacing: 0.15em;
+  color: var(--i-text-faint);
+  font-weight: 550;
+}
+
+/* ---- The affordance split -------------------------------------------
+   The one rule that keeps the bay truthful: anything the user can grab is
+   RAISED and lit from above; anything that is a computed readout is CUT
+   INTO the panel and unlit. You can tell what is operable without reading
+   a label, and a meter can never be mistaken for a control. */
+.i-control {
+  background: linear-gradient(180deg, var(--i-panel-raised), var(--i-panel));
+  border: 1px solid var(--i-border-strong);
+  border-top-color: #3f4950;
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.05) inset, 0 2px 5px rgba(0, 0, 0, 0.45);
+  border-radius: 7px;
+}
+.i-meter {
+  background: var(--i-recess);
+  border: 1px solid #1c2227;
+  box-shadow: 0 2px 7px rgba(0, 0, 0, 0.55) inset, 0 1px 0 rgba(255, 255, 255, 0.035);
+  border-radius: 7px;
+}
+
+/* Recessed slot a fader cap travels in -- cut into the control plate. */
+.i-slot {
+  background: var(--i-recess);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.7) inset, 0 -1px 0 rgba(255, 255, 255, 0.04);
+  border-radius: 999px;
+}
+
+/* The fader cap: the one element in the app that says "grab me". Grip
+   ridges are drawn, not decorative -- they mark the drag axis. */
+.i-cap {
+  background: linear-gradient(180deg, #454f57 0%, #2b3339 55%, #222a2f 100%);
+  border: 1px solid #4d5860;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.6), 0 1px 0 rgba(255, 255, 255, 0.16) inset;
+  border-radius: 4px;
+  cursor: grab;
+}
+.i-cap:active {
+  cursor: grabbing;
+}
+.i-fader:focus-visible .i-cap,
+.i-fader[data-dragging="true"] .i-cap {
+  border-color: var(--i-violet);
+  box-shadow: 0 0 0 3px var(--i-violet-soft), 0 2px 4px rgba(0, 0, 0, 0.6),
+    0 1px 0 rgba(255, 255, 255, 0.16) inset;
+}
+.i-fader {
+  outline: none;
+  touch-action: none;
+}
+
+/* Unplanned / unmodeled region -- diagonal hatch carries "we don't know",
+   the one texture in the Instrument, used only for absence of data. */
+.i-hatch {
+  background-image: repeating-linear-gradient(
+    -45deg,
+    rgba(224, 176, 74, 0.16) 0 1px,
+    transparent 1px 6px
+  );
+}
+
+.instrument :focus-visible {
+  outline: 2px solid var(--i-violet);
+  outline-offset: 2px;
+  border-radius: 3px;
 }
 
 .instrument ::selection {

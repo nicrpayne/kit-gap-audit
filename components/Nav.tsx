@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { isInstrumentRoute } from "@/lib/shell/mode";
 
 const PRIMARY_TABS = [
   { href: "/", label: "Dashboard" },
@@ -27,6 +28,12 @@ export default function Nav() {
   const pathname = usePathname();
 
   if (pathname === "/login") return null;
+
+  // Instrument Mode owns the viewport: the Workbench's 256px nav stands
+  // down and the Instrument renders its own compact rail with the same
+  // destinations (see lib/shell/mode.ts). Nothing about the route table
+  // changes -- only which chrome is worn.
+  if (isInstrumentRoute(pathname)) return null;
 
   return (
     <aside className="w-64 shrink-0 bg-[var(--color-ink)] text-[var(--color-paper)] flex flex-col min-h-screen">

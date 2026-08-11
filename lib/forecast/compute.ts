@@ -214,6 +214,20 @@ export interface PortfolioScopeInput {
   // Report has ever been generated for this Scope, in which case the UI
   // shows no momentum pill at all (nothing to compare against).
   lastReport: { generatedAt: Date; likelyDate: Date; confidenceAtTarget: number | null } | null;
+  // The most recent handful of Reports, oldest first -- what the Instrument's
+  // Momentum readout draws its trend line from. Deliberately the stored
+  // record rather than a recomputed history: these are the numbers that were
+  // actually reported to someone, which is the only honest basis for "are we
+  // moving". shippedCount/resolvedSinceLastCount ride along because they are
+  // the existing factual attribution for a movement (see
+  // lib/momentum/attribution.ts) and cost nothing extra to select.
+  reportHistory: {
+    generatedAt: Date;
+    likelyDate: Date;
+    confidenceAtTarget: number | null;
+    shippedCount: number;
+    resolvedSinceLastCount: number;
+  }[];
 }
 
 export interface PortfolioInputs {
@@ -245,11 +259,20 @@ export async function buildPortfolioInputs(): Promise<PortfolioInputs> {
   const scopeInputs: PortfolioScopeInput[] = [];
   for (const scope of scopes) {
     const bundle = await buildScopeSimInputs(scope);
-    const lastReport = await prisma.report.findFirst({
+    const recentReports = await prisma.report.findMany({
       where: { scopeId: scope.id },
       orderBy: { generatedAt: "desc" },
-      select: { generatedAt: true, likelyDate: true, confidenceAtTarget: true },
+      take: 10,
+      select: {
+        generatedAt: true,
+        likelyDate: true,
+        confidenceAtTarget: true,
+        shippedCount: true,
+        resolvedSinceLastCount: true,
+      },
     });
+    const lastReport = recentReports[0] ?? null;
+    const reportHistory = [...recentReports].reverse();
     scopeInputs.push({
       scopeId: scope.id,
       name: scope.name,
@@ -262,6 +285,7 @@ export async function buildPortfolioInputs(): Promise<PortfolioInputs> {
       capacityContributors: bundle.capacityContributors,
       explicitTeamCapacity: scope.teamCapacity,
       lastReport,
+      reportHistory,
     });
   }
 

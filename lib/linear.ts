@@ -87,6 +87,14 @@ const issueCache = new Map<string, { at: number; issues: LinearIssueSummary[] }>
 // data (see Scope model), not env vars, so a new module (Precon, Design,
 // ...) is a new row, not a redeploy.
 export async function getScopedIssues(scope: ScopeFilter): Promise<LinearIssueSummary[]> {
+  // Offline/design mode: opt-in only, never set in a real deployment. Lets
+  // the whole app (especially /portfolio's live simulation) run without a
+  // Linear key or network. See lib/dev/fixtures.ts.
+  if (process.env.KIT_DEV_FIXTURES === "1") {
+    const { devFixtureIssues } = await import("@/lib/dev/fixtures");
+    return devFixtureIssues(scope);
+  }
+
   const projectNames = scope.projectNames ?? [];
   const cacheKey = `${scope.teamKey}::${[...projectNames].sort().join(",")}::${scope.labelFilter ?? ""}`;
   const cached = issueCache.get(cacheKey);
