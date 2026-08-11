@@ -24,6 +24,10 @@ async function main() {
   await prisma.contextDoc.deleteMany({});
   await prisma.scope.deleteMany({});
 
+  // Platform: capacity INFERRED from Linear (no allocations, no explicit
+  // value) -- the fixture puts 10 distinct assignees on remaining work, so
+  // Reality resolves to 10 FTE. This is the case that was opaque in
+  // production and is now the main thing the Instrument has to explain.
   const platform = await prisma.scope.create({
     data: {
       id: "platform",
@@ -31,6 +35,21 @@ async function main() {
       teamKey: "PLAT",
       projectNames: ["KIT Platform"],
       targetDate: daysFromNow(34),
+      teamCapacity: null,
+      dependsOnScopeIds: [],
+    },
+  });
+
+  // Design: allocations-sourced, and shares Sam with JSA -- the only way
+  // context-switch cost can actually bite, so the Instrument's "what does
+  // this affect" answer has something true to report.
+  const design = await prisma.scope.create({
+    data: {
+      id: "design",
+      name: "Design",
+      teamKey: "DSN",
+      projectNames: ["KIT Design"],
+      targetDate: null, // deliberately no target -- exercises the NO TARGET state
       teamCapacity: null,
       dependsOnScopeIds: [],
     },
@@ -48,6 +67,7 @@ async function main() {
     },
   });
 
+  // iTrack: EXPLICIT aggregate capacity -- somebody typed 5.
   const itrack = await prisma.scope.create({
     data: {
       id: "itrack",
@@ -55,33 +75,31 @@ async function main() {
       teamKey: "TRK",
       projectNames: ["KIT iTrack"],
       targetDate: daysFromNow(30),
-      teamCapacity: 3,
+      teamCapacity: 5,
       dependsOnScopeIds: [platform.id],
     },
   });
 
-  // A named capacity pool -- Platform and JSA are allocations-sourced,
-  // iTrack deliberately stays an explicit aggregate so the Instrument has
-  // to show both capacity-source behaviours honestly.
+  // JSA and Design are the ALLOCATIONS-sourced scopes; Sam is split across
+  // both, which is the only configuration in which context-switch cost has
+  // any effect at all.
   const people = await Promise.all(
     [
       { name: "Sam Ortiz", fte: 1.0 },
-      { name: "James Whitfield", fte: 1.0 },
       { name: "Maru Tanaka", fte: 1.0 },
       { name: "Lucy Bell", fte: 0.6 },
       { name: "Alex Reyes", fte: 1.0 },
     ].map((p) => prisma.person.create({ data: p }))
   );
-  const [sam, james, maru, lucy, alex] = people;
+  const [sam, maru, lucy, alex] = people;
 
   await prisma.allocation.createMany({
     data: [
-      { personId: sam.id, scopeId: platform.id, fraction: 0.8 },
-      { personId: sam.id, scopeId: jsa.id, fraction: 0.2 },
-      { personId: james.id, scopeId: platform.id, fraction: 1.0 },
       { personId: maru.id, scopeId: jsa.id, fraction: 1.0 },
       { personId: lucy.id, scopeId: jsa.id, fraction: 1.0 },
-      { personId: alex.id, scopeId: jsa.id, fraction: 0.5 },
+      { personId: alex.id, scopeId: jsa.id, fraction: 0.8 },
+      { personId: sam.id, scopeId: jsa.id, fraction: 0.6 },
+      { personId: sam.id, scopeId: design.id, fraction: 0.4 },
     ],
   });
 
@@ -208,7 +226,7 @@ async function main() {
     }
   }
 
-  console.log("Seeded: 3 scopes, 5 people, 6 allocations, 4 findings, 24 reports.");
+  console.log("Seeded: 4 scopes, 4 people, 5 allocations, 4 findings, 24 reports.");
 }
 
 main()

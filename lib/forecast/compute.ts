@@ -1,7 +1,13 @@
 import type { Scope } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { getScopedIssues, type LinearIssueSummary } from "@/lib/linear";
-import { buildForecastInputs, type CapacitySource, type ForecastInputs } from "@/lib/forecast/build";
+import {
+  buildForecastInputs,
+  remainingIssuesFor,
+  inferCapacityFromAssignees,
+  type CapacitySource,
+  type ForecastInputs,
+} from "@/lib/forecast/build";
 import { buildScenarios } from "@/lib/forecast/scenarios";
 import { runPortfolioSimulation, type ScopeSimulationSpec } from "@/lib/forecast/portfolio";
 import type { SimulationResult } from "@/lib/forecast/simulate";
@@ -228,6 +234,54 @@ export interface PortfolioScopeInput {
     shippedCount: number;
     resolvedSinceLastCount: number;
   }[];
+  // Where this Scope's Reality capacity number actually came from, in
+  // enough detail for the Instrument to show its working rather than
+  // asserting a figure. Every field is read off the same computation that
+  // produced teamCapacity -- nothing here is re-derived or estimated.
+  capacityBasis: CapacityBasis;
+}
+
+export type CapacityBasis =
+  | {
+      kind: "allocations";
+      // Named people and what each contributes after any context-switch
+      // penalty. Sums to teamCapacity.
+      contributors: CapacityContributor[];
+    }
+  | {
+      kind: "explicit";
+      // The number somebody typed on the Scope.
+      value: number;
+    }
+  | {
+      kind: "inferred";
+      // Distinct assignees on remaining Linear work -- the actual basis.
+      assignees: string[];
+      remainingIssueCount: number;
+      unassignedCount: number;
+    };
+
+// Reads the explanation off the SAME bundle that produced teamCapacity,
+// using the SAME helpers the inference itself uses
+// (remainingIssuesFor/inferCapacityFromAssignees, lib/forecast/build.ts),
+// so the Instrument's "why is Reality 10?" answer cannot drift from the 10.
+function capacityBasisFor(scope: Scope, bundle: ScopeSimBundle): CapacityBasis {
+  switch (bundle.inputs.capacitySource) {
+    case "allocations":
+      return { kind: "allocations", contributors: bundle.capacityContributors };
+    case "explicit":
+      return { kind: "explicit", value: bundle.inputs.teamCapacity };
+    case "inferred": {
+      const remaining = remainingIssuesFor(bundle.issues, scope.includeTriage);
+      const inferred = inferCapacityFromAssignees(remaining);
+      return {
+        kind: "inferred",
+        assignees: inferred.assignees,
+        remainingIssueCount: remaining.length,
+        unassignedCount: inferred.unassignedCount,
+      };
+    }
+  }
 }
 
 export interface PortfolioInputs {
@@ -286,6 +340,7 @@ export async function buildPortfolioInputs(): Promise<PortfolioInputs> {
       explicitTeamCapacity: scope.teamCapacity,
       lastReport,
       reportHistory,
+      capacityBasis: capacityBasisFor(scope, bundle),
     });
   }
 

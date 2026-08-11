@@ -141,6 +141,16 @@ body {
   touch-action: none;
 }
 
+/* Rotary sibling of .i-cap -- same "this is grabbable" contract. */
+.i-knob {
+  outline: none;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.5);
+}
+.i-knob:focus-visible,
+.i-knob[data-dragging="true"] {
+  box-shadow: 0 0 0 3px var(--i-violet-soft), 0 2px 5px rgba(0, 0, 0, 0.5);
+}
+
 /* Unplanned / unmodeled region -- diagonal hatch carries "we don't know",
    the one texture in the Instrument, used only for absence of data. */
 .i-hatch {

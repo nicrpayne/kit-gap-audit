@@ -47,7 +47,10 @@ const EPSILON = 1e-6;
 // inferred or baked-in number, per the same "no invented benchmarks" rule
 // already applied to Forecast's estimate math. A person allocated to only
 // one scope is never penalized regardless of the setting.
-function switchFactorFor(contextSwitchCostPct: number, scopeCount: number): number {
+// Exported so the Instrument can SHOW this formula's own output ("2 scopes
+// -> 88% effective") rather than paraphrasing it in prose that could drift.
+// Behaviour is unchanged: same function, same call sites.
+export function switchFactorFor(contextSwitchCostPct: number, scopeCount: number): number {
   if (contextSwitchCostPct <= 0 || scopeCount <= 1) return 1;
   const factor = 1 - (contextSwitchCostPct / 100) * (scopeCount - 1);
   return Math.min(1, Math.max(0.1, factor));

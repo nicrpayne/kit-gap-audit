@@ -27,7 +27,7 @@ interface AllocationDrawerProps {
   capacityByScope: Map<string, number>;
   overAllocated: { personId: string; personName: string; totalFraction: number }[];
   unallocated: { name: string; unallocatedFte: number }[];
-  onRemovePerson: (personId: string, isGhost: boolean) => void;
+  onRemovePerson: (personId: string) => void;
   removingId: string | null;
   removeError: string | null;
 }
@@ -84,7 +84,8 @@ export default function AllocationDrawer({
         <div className="p-5">
           {people.length === 0 ? (
             <div className="text-[12px] text-[var(--i-text-faint)] py-8 text-center">
-              No people yet — use the Capacity fader to explore added capacity, or add people via POST /api/people.
+              No people are tracked yet. Scopes without named people fall back to an aggregate capacity number —
+              see &ldquo;Reality capacity&rdquo; in the Inspector.
             </div>
           ) : (
             <table className="w-full text-[12px]">
@@ -102,16 +103,12 @@ export default function AllocationDrawer({
               </thead>
               <tbody>
                 {people.map((person) => {
-                  const isGhost = person.id.startsWith("ghost-");
                   const total = scopes.reduce((sum, s) => sum + fractionFor(person.id, s.scopeId), 0);
                   const over = overIds.has(person.id);
                   return (
                     <tr key={person.id} style={{ borderTop: "1px solid var(--i-border)" }}>
                       <td className="py-2 pr-3 whitespace-nowrap text-[var(--i-text)]">
                         {person.name}
-                        {isGhost && (
-                          <span className="ml-1.5 text-[9.5px] uppercase tracking-wider text-[var(--i-violet)]">scenario</span>
-                        )}
                         <span className="text-[var(--i-text-faint)]"> · {person.fte} FTE</span>
                       </td>
                       {scopes.map((s) => {
@@ -138,7 +135,7 @@ export default function AllocationDrawer({
                       </td>
                       <td className="py-2 px-2 text-right">
                         <button
-                          onClick={() => onRemovePerson(person.id, isGhost)}
+                          onClick={() => onRemovePerson(person.id)}
                           disabled={removingId === person.id}
                           className="text-[var(--i-red)] hover:underline whitespace-nowrap disabled:opacity-50"
                         >

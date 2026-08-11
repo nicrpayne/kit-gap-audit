@@ -31,6 +31,10 @@ export interface FieldScope {
   name: string;
   dependsOnScopeIds: string[];
   targetDate: string | null;
+  /** Carries a scenario change. Deliberately independent of selection:
+      "what I changed" and "what I'm looking at" are different questions and
+      never share a visual state -- violet means changed, full stop. */
+  changed: boolean;
 }
 
 export interface AxisSpec {
@@ -245,6 +249,24 @@ export default function ForecastField({
           <LegendItem swatch={<span className="block h-2 w-6 rounded-sm" style={{ background: "var(--i-text)", opacity: 0.3 }} />}>
             outcomes
           </LegendItem>
+          {/* The P50 stem is named here so it can't be mistaken for the
+              draggable target flag -- it is a readout, not a control. */}
+          <LegendItem
+            swatch={
+              <span className="relative block w-6 h-3">
+                <span
+                  className="absolute left-1/2 inset-y-0 w-px"
+                  style={{ background: "var(--i-text)", opacity: 0.8 }}
+                />
+                <span
+                  className="absolute left-1/2 -translate-x-1/2 bottom-0 rounded-full"
+                  style={{ width: 4, height: 4, background: "var(--i-text)" }}
+                />
+              </span>
+            }
+          >
+            likely date
+          </LegendItem>
           <LegendItem
             swatch={
               <span className="block h-2 w-6 i-hatch rounded-sm" style={{ border: "1px solid rgba(224,176,74,0.4)" }} />
@@ -330,20 +352,38 @@ export default function ForecastField({
                 minHeight: 116,
                 maxHeight: 260,
                 paddingLeft: NAME_COL,
-                background: selected ? "rgba(155,140,250,0.045)" : undefined,
+                // Selection is a NEUTRAL structural highlight -- a lifted
+                // panel, not a colour. Colour here would collide with
+                // "changed", which is what violet means everywhere else.
+                background: selected ? "rgba(243,240,230,0.035)" : undefined,
                 borderBottom: "1px solid var(--i-border)",
               }}
             >
               {selected && (
-                <div className="absolute left-0 inset-y-0 w-[2px] z-10" style={{ background: "var(--i-violet)" }} aria-hidden />
+                <div
+                  className="absolute left-0 inset-y-0 w-[3px] z-10"
+                  style={{ background: "var(--i-text-soft)" }}
+                  aria-hidden
+                />
               )}
 
               <div className="absolute left-0 top-0 h-full flex flex-col justify-center pl-4 pr-3" style={{ width: NAME_COL }}>
-                <div
-                  className="text-[12px] font-medium truncate uppercase tracking-[0.06em]"
-                  style={{ color: selected ? "var(--i-text)" : "var(--i-text-soft)" }}
-                >
-                  {s.name}
+                <div className="flex items-center gap-1.5 min-w-0">
+                  <span
+                    className="text-[12px] font-medium truncate uppercase tracking-[0.06em]"
+                    style={{ color: selected ? "var(--i-text)" : "var(--i-text-soft)" }}
+                  >
+                    {s.name}
+                  </span>
+                  {s.changed && (
+                    <span
+                      data-shoot="changed-badge"
+                      className="shrink-0 rounded-sm px-1 py-[1px] text-[8.5px] uppercase tracking-[0.1em] font-semibold"
+                      style={{ background: "var(--i-violet-soft)", color: "var(--i-violet)" }}
+                    >
+                      changed
+                    </span>
+                  )}
                 </div>
                 <div
                   className="i-readout text-[21px] mt-1.5 leading-none"
@@ -371,11 +411,14 @@ export default function ForecastField({
               </div>
 
               <div className="relative h-full">
+                {/* Violet tracks THIS row's own movement, not the global
+                    dirty flag -- a scope you haven't affected must not look
+                    like one you have. */}
                 <Ridge
                   result={p}
                   reality={moved ? b : undefined}
                   axis={axis}
-                  dirty={dirty}
+                  moved={moved}
                   targetPct={targetDay !== null ? pct(targetDay) : null}
                 />
 
@@ -500,13 +543,13 @@ function Ridge({
   result,
   reality,
   axis,
-  dirty,
+  moved,
   targetPct,
 }: {
   result: SimulationResult;
   reality: SimulationResult | undefined;
   axis: AxisSpec | null;
-  dirty: boolean;
+  moved: boolean;
   targetPct: number | null;
 }) {
   const uid = useId().replace(/:/g, "");
@@ -519,7 +562,7 @@ function Ridge({
     };
   }, [result, reality, axis]);
 
-  const fill = dirty ? "var(--i-violet)" : "var(--i-text)";
+  const fill = moved ? "var(--i-violet)" : "var(--i-text)";
   const missX = targetPct === null ? null : (targetPct / 100) * W;
 
   // Wrapped in a positioned div: an <svg> is a replaced element, so giving
@@ -536,7 +579,7 @@ function Ridge({
       >
       <defs>
         <linearGradient id={`g-${uid}`} x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stopColor={fill} stopOpacity={dirty ? 0.5 : 0.34} />
+          <stop offset="0%" stopColor={fill} stopOpacity={moved ? 0.5 : 0.34} />
           <stop offset="100%" stopColor={fill} stopOpacity={0.06} />
         </linearGradient>
         {/* The hatch is the Instrument's only texture and means exactly one

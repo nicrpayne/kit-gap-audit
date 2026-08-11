@@ -1,26 +1,29 @@
 "use client";
 
-// THE INSTRUMENT BAY. Two halves that must never look alike:
+// THE INSTRUMENT BAY. Three groups, and which group a thing is in is a
+// claim about what it does:
 //
-//   CONTROLS (left, raised)  -- every one of these writes a variable the
-//                               simulation reads on the next frame. There
-//                               are exactly as many faders here as there
-//                               are real levers in the model; when a lever
-//                               does not exist yet, no fader is drawn for
-//                               it.
-//   READOUTS (right, recessed) -- consequences. Momentum, confidence,
-//                               spread and gates are computed from the run
-//                               and cannot be set. None of them has a cap,
-//                               a handle, or a grab cursor.
+//   SCENARIO · <scope>  (raised)  -- per-scope hypotheticals. Today: the
+//                                    bidirectional aggregate Capacity fader.
+//   PORTFOLIO MODEL     (raised)  -- assumptions that apply to the whole
+//                                    portfolio, not to the selected scope.
+//                                    Context-switch cost lives here because
+//                                    that is what it actually is; sitting it
+//                                    next to the Capacity fader implied
+//                                    "JSA's switch cost is 55%", which the
+//                                    model has never meant.
+//   READOUTS            (recessed)-- consequences. No handles, no onChange.
 //
-// The two levers that exist today are capacity (per Scope, via anonymous
-// scenario FTE) and context-switch cost (portfolio-wide). Target date is a
-// real lever too, but it belongs on the timeline where the date lives --
-// it is scrubbed directly on the Forecast Field, not abstracted into a
-// knob over here.
+// Reality is shown beside the Capacity fader but is deliberately NOT a
+// control: it is what the system believes is true, it explains where it came
+// from, and correcting it is a separate, secondary action ("Explain / edit")
+// that opens the Inspector rather than something you can nudge by dragging.
 
 import Fader from "@/components/instrument/Fader";
+import Knob from "@/components/instrument/Knob";
 import { Meter, ArcMeter, TrendSpark } from "@/components/instrument/Meter";
+import { switchFactorFor } from "@/lib/capacity/resolve";
+import { MIN_SIMULATED_CAPACITY, maxSimulatedCapacity } from "@/lib/capacity/limits";
 import {
   DIRECTION_GLYPH,
   DIRECTION_LABEL,
@@ -35,26 +38,39 @@ export interface BayGate {
   likely: number;
 }
 
+export type BayCapacitySource = "allocations" | "explicit" | "inferred";
+
+const SOURCE_LABEL: Record<BayCapacitySource, string> = {
+  allocations: "named people",
+  explicit: "set by hand",
+  inferred: "inferred from Linear",
+};
+
 interface InstrumentBayProps {
   scopeName: string;
-  // --- real controls ---
+  // --- scenario control ---
   realityCapacity: number;
+  realitySource: BayCapacitySource;
   scenarioCapacity: number;
   onCapacityChange: (fte: number) => void;
-  capacityDisabled: boolean;
+  onExplainReality: () => void;
+  // --- portfolio model ---
   switchCostPct: number;
   savedSwitchCostPct: number;
   onSwitchCostChange: (pct: number) => void;
+  trackedScopeCount: number;
+  splitPeopleCount: number;
+  onExplainSwitchCost: () => void;
   // --- derived readouts ---
   trend: MomentumTrend | null;
   trendSeries: number[];
   confidencePct: number | null;
   targetLabel: string;
+  hasTarget: boolean;
+  onSetTarget: () => void;
   spreadDays: number | null;
-  /** The actual P10 and P90 dates behind the spread number. */
   spreadRange: { earliest: string; latest: string } | null;
   gates: BayGate[];
-  /** When the report Momentum is measured against was generated. */
   sinceLabel: string | null;
   onInspectMomentum: () => void;
 }
@@ -67,16 +83,22 @@ function confidenceTone(pct: number | null): string {
 export default function InstrumentBay({
   scopeName,
   realityCapacity,
+  realitySource,
   scenarioCapacity,
   onCapacityChange,
-  capacityDisabled,
+  onExplainReality,
   switchCostPct,
   savedSwitchCostPct,
   onSwitchCostChange,
+  trackedScopeCount,
+  splitPeopleCount,
+  onExplainSwitchCost,
   trend,
   trendSeries,
   confidencePct,
   targetLabel,
+  hasTarget,
+  onSetTarget,
   spreadDays,
   spreadRange,
   gates,
@@ -84,45 +106,73 @@ export default function InstrumentBay({
   onInspectMomentum,
 }: InstrumentBayProps) {
   const gateDays = gates.reduce((sum, g) => sum + g.likely, 0);
+  const capacityDelta = scenarioCapacity - realityCapacity;
+  const capacityChanged = Math.abs(capacityDelta) > 1e-6;
 
   return (
-    // overflow-x-auto: on a narrow screen the bay scrolls sideways rather
-    // than crushing the faders below a usable throw -- a control you can't
-    // hit accurately is worse than one you have to scroll to.
     <div
       className="shrink-0 flex items-stretch gap-3 px-4 py-3 overflow-x-auto"
       style={{ background: "var(--i-panel)", borderTop: "1px solid var(--i-border)" }}
     >
-      {/* ---------------- CONTROLS ---------------- */}
-      <div className="i-control flex items-stretch gap-2 px-3.5 py-3">
-        <div className="flex flex-col pr-3.5 mr-0.5 w-[112px]" style={{ borderRight: "1px solid var(--i-border)" }}>
+      {/* ---------------- SCENARIO (per scope) ---------------- */}
+      <div className="i-control flex items-stretch gap-3 px-3.5 py-3 shrink-0">
+        <div className="flex flex-col w-[136px]">
           <div className="i-label" style={{ color: "var(--i-violet)" }}>
-            Controls
+            Scenario
           </div>
           <div className="mt-1.5 text-[12px] text-[var(--i-text)] font-medium leading-tight truncate">{scopeName}</div>
-          <div className="mt-auto text-[9.5px] text-[var(--i-text-faint)] leading-snug">
-            Drag or arrow-key. Shift = fine. Double-click resets.
+
+          {/* Reality: a statement, not a control. */}
+          <div className="mt-3 pt-2.5" style={{ borderTop: "1px solid var(--i-border)" }}>
+            <div className="i-label">Reality</div>
+            <div className="i-readout mt-1 text-[16px] leading-none text-[var(--i-text)]">
+              {realityCapacity.toFixed(1)} <span className="text-[10px] font-normal">FTE</span>
+            </div>
+            <div className="mt-1 text-[9.5px] text-[var(--i-text-faint)] leading-tight">
+              {SOURCE_LABEL[realitySource]}
+            </div>
+            <button
+              onClick={onExplainReality}
+              data-shoot="explain-reality"
+              className="mt-1.5 text-[10px] underline decoration-dotted underline-offset-2 text-[var(--i-text-soft)] hover:text-[var(--i-text)]"
+            >
+              Explain / edit
+            </button>
+          </div>
+
+          <div className="mt-auto pt-2 text-[9px] text-[var(--i-text-faint)] leading-snug">
+            Drag or arrow-key. Shift = fine. Double-click resets to Reality.
           </div>
         </div>
 
         <Fader
           label="Capacity"
           value={scenarioCapacity}
-          min={0}
-          max={Math.max(8, Math.ceil(realityCapacity) + 6)}
+          min={MIN_SIMULATED_CAPACITY}
+          max={maxSimulatedCapacity(realityCapacity)}
           step={0.5}
           fineStep={0.1}
           resetValue={realityCapacity}
           onChange={onCapacityChange}
           format={(v) => `${v.toFixed(1)}`}
-          formatAria={(v) => `${v.toFixed(1)} FTE, reality ${realityCapacity.toFixed(1)}`}
-          disabled={capacityDisabled}
-          sub={`FTE · reality ${realityCapacity.toFixed(1)}`}
+          formatAria={(v) =>
+            `${v.toFixed(1)} FTE simulated, Reality is ${realityCapacity.toFixed(1)} FTE`
+          }
+          sub={
+            capacityChanged
+              ? `${capacityDelta > 0 ? "+" : "−"}${Math.abs(capacityDelta).toFixed(1)} FTE vs reality`
+              : "same as reality"
+          }
+          subTone={capacityChanged ? "var(--i-violet)" : undefined}
+          height={104}
           dataShoot="capacity-fader"
         />
+      </div>
 
-        <Fader
-          label={"Switch cost"}
+      {/* ---------------- PORTFOLIO MODEL (global) ---------------- */}
+      <div className="i-control flex items-stretch gap-3 px-3.5 py-3 shrink-0">
+        <Knob
+          label="Context switch"
           value={switchCostPct}
           min={0}
           max={100}
@@ -131,18 +181,48 @@ export default function InstrumentBay({
           resetValue={savedSwitchCostPct}
           onChange={onSwitchCostChange}
           format={(v) => `${Math.round(v)}%`}
-          formatAria={(v) => `${Math.round(v)} percent capacity lost per extra scope`}
-          sub="lost per extra scope"
-          height={82}
-          dataShoot="switch-fader"
+          formatAria={(v) => `${Math.round(v)} percent lost per additional scope a person is split across`}
+          dataShoot="switch-knob"
         />
+        <div className="flex flex-col w-[132px]">
+          <div className="i-label">Portfolio model</div>
+          {/* The formula's own output, not a paraphrase of it. */}
+          <table className="mt-2 text-[10px] tabular-nums" data-shoot="switch-table">
+            <tbody>
+              {[1, 2, 3].map((n) => (
+                <tr key={n}>
+                  <td className="pr-2 text-[var(--i-text-faint)] whitespace-nowrap">
+                    {n} scope{n === 1 ? "" : "s"}
+                  </td>
+                  <td className="text-[var(--i-text-soft)]">
+                    {Math.round(switchFactorFor(switchCostPct, n) * 100)}% effective
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <div className="mt-auto pt-2">
+            <div className="text-[9px] text-[var(--i-text-faint)] leading-snug">
+              {trackedScopeCount === 0
+                ? "No scope is tracked by named people, so this currently changes nothing."
+                : splitPeopleCount === 0
+                  ? `Nobody is split across scopes, so this currently changes nothing.`
+                  : `${splitPeopleCount} person${splitPeopleCount === 1 ? "" : "s"} split across scopes.`}
+            </div>
+            <button
+              onClick={onExplainSwitchCost}
+              data-shoot="explain-switch"
+              className="mt-1 text-[10px] underline decoration-dotted underline-offset-2 text-[var(--i-text-soft)] hover:text-[var(--i-text)]"
+            >
+              What does this affect?
+            </button>
+          </div>
+        </div>
       </div>
 
       {/* ---------------- READOUTS ---------------- */}
       <div className="flex-1 min-w-0 flex items-stretch gap-3">
-        {/* Momentum: direction first, the factual delta second, the record
-            third. No score -- see lib/momentum/trend.ts. */}
-        <Meter label="Momentum" width={230} onClick={onInspectMomentum} dataShoot="momentum">
+        <Meter label="Momentum" width={206} onClick={onInspectMomentum} dataShoot="momentum">
           {trend ? (
             <>
               <div className="flex items-end justify-between gap-2 w-full">
@@ -157,21 +237,42 @@ export default function InstrumentBay({
                     {DIRECTION_LABEL[trend.direction]}
                   </span>
                 </div>
-                <TrendSpark points={trendSeries} tone={directionTone(trend.direction)} invert width={86} height={30} />
+                <TrendSpark points={trendSeries} tone={directionTone(trend.direction)} invert width={76} height={28} />
               </div>
               <div className="mt-2 text-[10.5px] text-[var(--i-text-soft)] leading-tight">{trendPhrase(trend)}</div>
               {sinceLabel && <div className="mt-1 text-[9.5px] text-[var(--i-text-faint)]">since {sinceLabel}</div>}
             </>
           ) : (
-            <div className="text-[11px] text-[var(--i-text-faint)]">No prior report to compare against.</div>
+            <div className="text-[10.5px] text-[var(--i-text-faint)] leading-snug">
+              No prior report for this scope yet, so there is nothing to measure movement against.
+            </div>
           )}
         </Meter>
 
-        <Meter label="Confidence" width={196}>
-          <ArcMeter pct={confidencePct} tone={confidenceTone(confidencePct)} caption={targetLabel} />
+        <Meter label="Confidence" width={182}>
+          {hasTarget ? (
+            <ArcMeter pct={confidencePct} tone={confidenceTone(confidencePct)} caption={targetLabel} />
+          ) : (
+            // Not a failure state -- there is simply nothing to be confident
+            // *about* until a date exists to be measured against.
+            <div className="w-full">
+              <div className="i-readout text-[15px] leading-none text-[var(--i-text-faint)]">No target</div>
+              <div className="mt-1.5 text-[9.5px] text-[var(--i-text-faint)] leading-tight">
+                Confidence needs a date to measure against.
+              </div>
+              <button
+                onClick={onSetTarget}
+                data-shoot="set-target"
+                className="mt-2 rounded-md px-2.5 py-1.5 text-[10.5px] font-medium"
+                style={{ background: "var(--i-violet)", color: "var(--i-void)" }}
+              >
+                Set target
+              </button>
+            </div>
+          )}
         </Meter>
 
-        <Meter label="Spread" width={168}>
+        <Meter label="Spread" width={158}>
           <div className="i-readout text-[24px] leading-none text-[var(--i-text)]">
             {spreadDays === null ? "—" : `${spreadDays}d`}
           </div>
@@ -183,7 +284,7 @@ export default function InstrumentBay({
           <div className="mt-1 text-[9.5px] text-[var(--i-text-faint)] leading-tight">best to worst case</div>
         </Meter>
 
-        <Meter label="Open gates" width={210}>
+        <Meter label="Open gates" width={196}>
           <div className="flex items-baseline gap-2">
             <span
               className="i-readout text-[24px] leading-none"
@@ -203,9 +304,7 @@ export default function InstrumentBay({
                 <span className="truncate text-[var(--i-text-faint)]">{g.label}</span>
               </li>
             ))}
-            {gates.length > 2 && (
-              <li className="text-[10px] text-[var(--i-text-faint)]">+{gates.length - 2} more</li>
-            )}
+            {gates.length > 2 && <li className="text-[10px] text-[var(--i-text-faint)]">+{gates.length - 2} more</li>}
           </ul>
         </Meter>
       </div>

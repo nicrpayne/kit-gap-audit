@@ -135,6 +135,42 @@ export interface ScopeComposition {
 // assignees on remaining issues.
 export type CapacitySource = "allocations" | "explicit" | "inferred";
 
+// The work the forecast actually simulates: everything not already
+// finished, minus Triage unless the Scope opts in. Extracted so the
+// capacity inference below AND the Instrument's "why is Reality 10?"
+// explanation read from one definition instead of two that can drift.
+export function remainingIssuesFor(issues: LinearIssueSummary[], includeTriage: boolean): LinearIssueSummary[] {
+  return issues.filter(
+    (i) => !DONE_STATE_TYPES.has(i.stateType) && (includeTriage || i.stateType !== "triage")
+  );
+}
+
+// Capacity inference, stage 2 of the fallback chain: with no named
+// allocations and no explicit teamCapacity, a Scope's parallel capacity is
+// taken to be THE NUMBER OF DISTINCT PEOPLE ASSIGNED TO ITS REMAINING
+// WORK IN LINEAR -- i.e. "however many people are currently holding a
+// ticket here is how many people are working on this." Unassigned tickets
+// contribute nobody; a Scope where nothing is assigned falls back to 1 so
+// the simulation never divides by zero.
+//
+// It is a rough proxy and the UI says so: it counts ticket-holders, not
+// availability, so someone assigned one ticket at 10% time counts the same
+// as someone full-time. Returning the names (not just the count) is what
+// lets the Instrument show its work rather than asserting a number.
+export function inferCapacityFromAssignees(remainingIssues: LinearIssueSummary[]): {
+  capacity: number;
+  assignees: string[];
+  unassignedCount: number;
+} {
+  const distinct = new Set(remainingIssues.map((i) => i.assignee).filter((a): a is string => !!a));
+  const assignees = [...distinct].sort();
+  return {
+    capacity: assignees.length > 0 ? assignees.length : 1,
+    assignees,
+    unassignedCount: remainingIssues.filter((i) => !i.assignee).length,
+  };
+}
+
 export interface ForecastInputs {
   items: SourcedWorkItem[];
   gates: DecisionGate[];
@@ -192,9 +228,7 @@ export function buildForecastInputs(
     }
   }
 
-  const remainingIssues = issues.filter(
-    (i) => !DONE_STATE_TYPES.has(i.stateType) && (includeTriage || i.stateType !== "triage")
-  );
+  const remainingIssues = remainingIssuesFor(issues, includeTriage);
   if (!includeTriage) {
     composition.excludedTriageCount = composition.triage;
   }
@@ -294,10 +328,7 @@ export function buildForecastInputs(
   let teamCapacityInferred = false;
   let capacitySource: CapacitySource = options?.capacitySource ?? "explicit";
   if (teamCapacity <= 0) {
-    const distinctAssignees = new Set(
-      remainingIssues.map((i) => i.assignee).filter((a): a is string => !!a)
-    );
-    teamCapacity = distinctAssignees.size > 0 ? distinctAssignees.size : 1;
+    teamCapacity = inferCapacityFromAssignees(remainingIssues).capacity;
     teamCapacityInferred = true;
     capacitySource = "inferred";
   }

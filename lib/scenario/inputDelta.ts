@@ -18,11 +18,40 @@
 // ScopeSimulationSpec[] themselves.
 
 import { resolveCapacity, type PersonLike, type AllocationLike } from "@/lib/capacity/resolve";
+import { clampSimulatedCapacity } from "@/lib/capacity/limits";
 import type { ScopeSimulationSpec } from "@/lib/forecast/portfolio";
 import type { WorkItem, DecisionGate } from "@/lib/forecast/simulate";
 import type { CapacitySource } from "@/lib/forecast/build";
 
 export interface ScenarioInputDelta {
+  // AGGREGATE CAPACITY SCENARIO, per Scope: "simulate this Scope as though
+  // its total effective capacity were N FTE." When present for a Scope this
+  // REPLACES the entire capacity resolution chain for that Scope, in that
+  // hypothetical only -- allocations, explicit override and assignee
+  // inference are all bypassed, and Reality is not modified in any way.
+  //
+  // This is deliberately a separate concept from allocations/
+  // hypotheticalPeople below, not a clever encoding on top of them. The two
+  // answer different questions:
+  //
+  //   NAMED PERSON REALLOCATION -- "move Sam from Platform to JSA"
+  //     -> allocations / hypotheticalPeople. Knows WHO. Commits to real
+  //        Allocation rows.
+  //   AGGREGATE CAPACITY SCENARIO -- "what if Platform had 7 FTE"
+  //     -> capacityOverrideByScope. Deliberately does NOT know who, and
+  //        must never be read as "remove a specific person."
+  //
+  // Encoding a downward move as a negative person was considered and
+  // rejected: there is no such thing as a person with negative time, the
+  // arithmetic only coincidentally works, and it would have made the
+  // commit path claim knowledge of named people it does not have. Keeping
+  // the aggregate case as its own field is also what leaves room for the
+  // future Resource Mixer to own the named-person case properly.
+  //
+  // Values are clamped to MIN_SIMULATED_CAPACITY (see lib/capacity/limits.ts).
+  // Omitted entirely (or an empty object) = no aggregate override anywhere,
+  // which reproduces the pre-existing behaviour exactly.
+  capacityOverrideByScope?: Record<string, number>;
   // The COMPLETE hypothetical allocation set to simulate against -- not a
   // diff layered on top of saved allocations. This matches how the
   // allocation grid and POST /api/portfolio/preview already treat
@@ -110,9 +139,18 @@ export function applyScenarioInputDelta(
   delta: ScenarioInputDelta
 ): ScopeSimulationSpec[] {
   const people = [...realityPeople, ...delta.hypotheticalPeople];
+  const overrides = delta.capacityOverrideByScope ?? {};
   return scopes.map((s) => {
     let teamCapacity: number;
-    if (s.capacitySource === "allocations") {
+    // An aggregate capacity scenario short-circuits the whole fallback
+    // chain for this Scope: the user asked to simulate a specific total, so
+    // that total is what gets simulated, whatever Reality's source is. This
+    // is the one sanctioned way to bypass resolveCapacity, and it applies
+    // to the hypothetical only -- Reality is never rewritten to achieve it.
+    const override = overrides[s.scopeId];
+    if (override !== undefined) {
+      teamCapacity = clampSimulatedCapacity(override);
+    } else if (s.capacitySource === "allocations") {
       const resolved = resolveCapacity(s.scopeId, s.explicitTeamCapacity, people, delta.allocations, delta.contextSwitchCostPct);
       teamCapacity = resolved.capacity ?? s.teamCapacity;
     } else {

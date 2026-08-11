@@ -36,12 +36,19 @@ interface FaderProps {
   disabled?: boolean;
   /** Caption under the value, e.g. "Reality 2.6". */
   sub?: string;
+  /** Colour for `sub`; defaults to the faint text tone. */
+  subTone?: string;
   height?: number;
   dataShoot?: string;
 }
 
+// Snaps to multiples of `step` anchored at ZERO, not at `min`. Anchoring at
+// min made the reachable grid depend on the floor -- with min 0.1 and step
+// 0.5 a capacity fader could only land on 9.6 / 10.1 / 10.6, so "set this
+// scope to exactly 7 FTE" was unreachable and every readout looked wrong by
+// a decimal. Clamping still respects min/max.
 function quantize(v: number, step: number, min: number, max: number): number {
-  const snapped = Math.round((v - min) / step) * step + min;
+  const snapped = Math.round(v / step) * step;
   return Math.min(max, Math.max(min, parseFloat(snapped.toFixed(6))));
 }
 
@@ -59,6 +66,7 @@ export default function Fader({
   accent = "var(--i-violet)",
   disabled = false,
   sub,
+  subTone,
   height = 82,
   dataShoot,
 }: FaderProps) {
@@ -276,7 +284,14 @@ export default function Fader({
       >
         {format(value)}
       </div>
-      {sub && <div className="mt-1 text-[9.5px] text-[var(--i-text-faint)] text-center leading-tight">{sub}</div>}
+      {sub && (
+        <div
+          className="mt-1 text-[9.5px] text-center leading-tight"
+          style={{ color: subTone ?? "var(--i-text-faint)" }}
+        >
+          {sub}
+        </div>
+      )}
     </div>
   );
 }

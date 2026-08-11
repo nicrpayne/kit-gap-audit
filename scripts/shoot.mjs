@@ -26,7 +26,7 @@ const settle = (ms = 1500) => page.waitForTimeout(ms);
 const shot = async (n) => { await page.screenshot({ path: `${outDir}/${label}-${n}.png` }); console.log("shot", n); };
 
 await page.goto(`${BASE}/portfolio`, { waitUntil: "networkidle" });
-await settle(2800);
+await settle(5000);
 
 // 1. Reality
 await shot("1-reality");
