@@ -40,6 +40,12 @@ interface FaderProps {
   subTone?: string;
   height?: number;
   dataShoot?: string;
+  /** Makes the numeric readout directly editable. Typed values bypass the
+      step grid AND the fader's own max -- the throw is a display range, not
+      a limit on what may be simulated. Return null to reject an entry. */
+  parseInput?: (raw: string) => number | null;
+  /** Text under the input while editing, e.g. the accepted range. */
+  inputHint?: string;
 }
 
 // Snaps to multiples of `step` anchored at ZERO, not at `min`. Anchoring at
@@ -50,6 +56,19 @@ interface FaderProps {
 function quantize(v: number, step: number, min: number, max: number): number {
   const snapped = Math.round(v / step) * step;
   return Math.min(max, Math.max(min, parseFloat(snapped.toFixed(6))));
+}
+
+// One keyboard step, walking the grid rather than adding-then-rounding.
+// Reality is usually OFF the grid (Design resolves to 0.352 FTE), and
+// value+step+round would jump 0.352 straight to 0.5, silently skipping 0.4.
+// The plug-in convention is that the first press onto an off-grid value
+// snaps to the neighbouring grid point and presses after that move a full
+// step -- which is what makes fine adjustment near Reality usable.
+function stepFrom(v: number, step: number, dir: 1 | -1): number {
+  const ticks = v / step;
+  const onGrid = Math.abs(ticks - Math.round(ticks)) < 1e-9;
+  const next = onGrid ? v + dir * step : (dir > 0 ? Math.ceil(ticks) : Math.floor(ticks)) * step;
+  return parseFloat(next.toFixed(6));
 }
 
 export default function Fader({
@@ -69,7 +88,12 @@ export default function Fader({
   subTone,
   height = 82,
   dataShoot,
+  parseInput,
+  inputHint,
 }: FaderProps) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState("");
+  const [rejected, setRejected] = useState(false);
   const slotRef = useRef<HTMLDivElement>(null);
   const [dragging, setDragging] = useState(false);
   // Drag origin, so Shift can scale movement rather than teleporting the
@@ -143,11 +167,11 @@ export default function Fader({
     switch (e.key) {
       case "ArrowUp":
       case "ArrowRight":
-        next = value + s;
+        next = stepFrom(value, s, 1);
         break;
       case "ArrowDown":
       case "ArrowLeft":
-        next = value - s;
+        next = stepFrom(value, s, -1);
         break;
       case "PageUp":
         next = value + s * 5;
@@ -167,7 +191,9 @@ export default function Fader({
     }
     if (next === null) return;
     e.preventDefault();
-    onChange(quantize(next, s, min, max));
+    // Escape restores the reference value verbatim -- it is the one target
+    // that must never be nudged onto the grid.
+    onChange(e.key === "Escape" ? next : quantize(next, s, min, max));
   }
 
   // A drag that ends outside the window still has to release cleanly.
@@ -184,6 +210,21 @@ export default function Fader({
       window.removeEventListener("pointercancel", stop);
     };
   }, [dragging]);
+
+  // Typed entry deliberately bypasses BOTH quantize() and `max`: the step
+  // grid is a convenience for dragging, and the range is a display property.
+  // Only the engine floor (enforced by parseInput) can reject a value.
+  function commitDraft() {
+    if (!parseInput) return;
+    const parsed = parseInput(draft);
+    if (parsed === null) {
+      setRejected(true);
+      return;
+    }
+    onChange(parsed);
+    setEditing(false);
+    setRejected(false);
+  }
 
   const TICKS = 9;
 
@@ -278,12 +319,65 @@ export default function Fader({
         </div>
       </div>
 
-      <div
-        className="i-readout mt-2.5 text-[13px] leading-none text-center"
-        style={{ color: changed ? accent : "var(--i-text)" }}
-      >
-        {format(value)}
-      </div>
+      {/* The readout doubles as the precise-entry field -- the plug-in
+          convention of typing a value straight onto the parameter display,
+          rather than a separate form control bolted alongside the fader. */}
+      {parseInput && editing ? (
+        <input
+          autoFocus
+          value={draft}
+          inputMode="decimal"
+          aria-label={`${label} exact value`}
+          onChange={(e) => {
+            setDraft(e.target.value);
+            setRejected(false);
+          }}
+          onBlur={() => commitDraft()}
+          onKeyDown={(e) => {
+            e.stopPropagation();
+            if (e.key === "Enter") {
+              e.preventDefault();
+              commitDraft();
+            }
+            if (e.key === "Escape") {
+              e.preventDefault();
+              setEditing(false);
+              setRejected(false);
+            }
+          }}
+          className="i-readout mt-2.5 w-[64px] rounded text-[13px] leading-none text-center py-1"
+          style={{
+            background: "var(--i-void)",
+            border: `1px solid ${rejected ? "var(--i-red)" : "var(--i-violet)"}`,
+            color: "var(--i-text)",
+            outline: "none",
+          }}
+        />
+      ) : (
+        <button
+          type="button"
+          disabled={!parseInput || disabled}
+          data-shoot={dataShoot ? `${dataShoot}-value` : undefined}
+          title={parseInput ? "Click to type an exact value" : undefined}
+          onClick={() => {
+            if (!parseInput || disabled) return;
+            setDraft(format(value));
+            setRejected(false);
+            setEditing(true);
+          }}
+          className="i-readout mt-2.5 text-[13px] leading-none text-center rounded px-1.5 py-1 disabled:cursor-default"
+          style={{
+            color: changed ? accent : "var(--i-text)",
+            border: `1px solid ${parseInput && !disabled ? "var(--i-border)" : "transparent"}`,
+            background: "transparent",
+          }}
+        >
+          {format(value)}
+        </button>
+      )}
+      {editing && inputHint && (
+        <div className="mt-1 text-[9px] text-[var(--i-text-faint)] text-center leading-tight">{inputHint}</div>
+      )}
       {sub && (
         <div
           className="mt-1 text-[9.5px] text-center leading-tight"

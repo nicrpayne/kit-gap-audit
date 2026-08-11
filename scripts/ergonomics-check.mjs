@@ -102,6 +102,78 @@ await shot("G-selected-jsa-changed-platform");
 await page.locator('button:has-text("Discard")').click();
 await settle(1200);
 
+// ---------- H. UNBOUNDED DIRECT ENTRY (Platform, reality 10) ----------
+await selectScope("PLATFORM");
+const restingMax = parseFloat(await fader().getAttribute("aria-valuemax"));
+check("H0 resting range is 2x Reality", restingMax, 20);
+const likelyOf = async (name) => (await rowByName(name).innerText()).split("\n")[1];
+const likelyAt10 = await likelyOf("PLATFORM");
+
+// type a value far beyond the resting range
+await page.locator('[data-shoot="capacity-fader-value"]').click();
+await settle(250);
+await page.locator('[aria-label="Capacity exact value"]').fill("28");
+await page.keyboard.press("Enter");
+await settle(1600);
+check("H1 typed 28 is not clamped to 2x Reality", await faderValue(), 28);
+check("H2 fader range expanded past 28", parseFloat(await fader().getAttribute("aria-valuemax")) > 28 ? "expanded" : "clamped", "expanded");
+const likelyAt28 = await likelyOf("PLATFORM");
+check("H3 forecast recomputed at 28", likelyAt28 !== likelyAt10 ? "recomputed" : "unchanged", "recomputed");
+await shot("H-direct-entry-28");
+
+// an even more extreme value is still accepted
+await page.locator('[data-shoot="capacity-fader-value"]').click();
+await settle(250);
+await page.locator('[aria-label="Capacity exact value"]').fill("40");
+await page.keyboard.press("Enter");
+await settle(1400);
+check("H4 typed 40 accepted", await faderValue(), 40);
+
+// Escape cancels without committing
+await page.locator('[data-shoot="capacity-fader-value"]').click();
+await settle(250);
+await page.locator('[aria-label="Capacity exact value"]').fill("99");
+await page.keyboard.press("Escape");
+await settle(600);
+check("H5 Escape cancels the edit", await faderValue(), 40);
+
+// invalid entries are rejected, not silently coerced
+await page.locator('[data-shoot="capacity-fader-value"]').click();
+await settle(250);
+await page.locator('[aria-label="Capacity exact value"]').fill("0");
+await page.keyboard.press("Enter");
+await settle(500);
+check("H6 zero rejected (engine floor)", await faderValue(), 40);
+await page.locator('[aria-label="Capacity exact value"]').fill("abc");
+await page.keyboard.press("Enter");
+await settle(500);
+check("H7 non-numeric rejected", await faderValue(), 40);
+await page.keyboard.press("Escape");
+await settle(400);
+
+// reset collapses both the value and the range
+await fader().dblclick();
+await settle(1200);
+check("H8 reset returns to exactly 10", await faderValue(), 10);
+check("H9 range collapses back to resting", parseFloat(await fader().getAttribute("aria-valuemax")), 20);
+check("H10 forecast returns to its Reality value", await likelyOf("PLATFORM"), likelyAt10);
+
+// ---------- I. FINE MANIPULATION ON A SMALL SCOPE (Design, reality 0.4) ----------
+await selectScope("DESIGN");
+check("I0 Design resting max is 2 (not 8)", parseFloat(await fader().getAttribute("aria-valuemax")), 2);
+await fader().focus();
+await page.keyboard.down("Shift");
+await press("ArrowUp", 1);
+// Reality here is off-grid (0.352), so the first fine press walks to the
+// neighbouring 0.1 grid point rather than skipping it -- that is what makes
+// adjustment near Reality usable on a small scope.
+check("I1 fine step lands on the next 0.1 grid point above Reality", await faderValue(), 0.4);
+await press("ArrowUp", 1);
+check("I2 subsequent fine presses move a full 0.1 step", await faderValue(), 0.5);
+await page.keyboard.up("Shift");
+await fader().dblclick();
+await settle(900);
+
 // ---------- F. NO TARGET (Design) ----------
 await selectScope("DESIGN");
 check("F1 confidence shows NO TARGET", await page.locator('text=No target').count() > 0 ? "yes" : "no", "yes");

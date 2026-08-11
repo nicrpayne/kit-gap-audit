@@ -23,7 +23,12 @@ import Fader from "@/components/instrument/Fader";
 import Knob from "@/components/instrument/Knob";
 import { Meter, ArcMeter, TrendSpark } from "@/components/instrument/Meter";
 import { switchFactorFor } from "@/lib/capacity/resolve";
-import { MIN_SIMULATED_CAPACITY, maxSimulatedCapacity } from "@/lib/capacity/limits";
+import {
+  MIN_SIMULATED_CAPACITY,
+  faderMaxCapacity,
+  parseCapacityInput,
+  formatCapacity,
+} from "@/lib/capacity/limits";
 import {
   DIRECTION_GLYPH,
   DIRECTION_LABEL,
@@ -149,18 +154,22 @@ export default function InstrumentBay({
           label="Capacity"
           value={scenarioCapacity}
           min={MIN_SIMULATED_CAPACITY}
-          max={maxSimulatedCapacity(realityCapacity)}
+          // Display range only -- it follows the value rather than capping
+          // it, so "what would 28 FTE do?" is answerable.
+          max={faderMaxCapacity(realityCapacity, scenarioCapacity)}
           step={0.5}
           fineStep={0.1}
           resetValue={realityCapacity}
           onChange={onCapacityChange}
-          format={(v) => `${v.toFixed(1)}`}
+          format={formatCapacity}
+          parseInput={parseCapacityInput}
+          inputHint={`min ${MIN_SIMULATED_CAPACITY}, no max`}
           formatAria={(v) =>
-            `${v.toFixed(1)} FTE simulated, Reality is ${realityCapacity.toFixed(1)} FTE`
+            `${formatCapacity(v)} FTE simulated, Reality is ${formatCapacity(realityCapacity)} FTE`
           }
           sub={
             capacityChanged
-              ? `${capacityDelta > 0 ? "+" : "−"}${Math.abs(capacityDelta).toFixed(1)} FTE vs reality`
+              ? `${capacityDelta > 0 ? "+" : "−"}${formatCapacity(Math.abs(capacityDelta))} FTE vs reality`
               : "same as reality"
           }
           subTone={capacityChanged ? "var(--i-violet)" : undefined}
