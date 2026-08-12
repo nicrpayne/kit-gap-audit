@@ -48,6 +48,7 @@ function baseFinding(overrides: Partial<NormalizedFinding> = {}): NormalizedFind
       explicitlyOutOfProjectScope: false,
       explicitlyDeferred: false,
       explicitlyNotReleaseBlocker: false,
+      appliesToBoundary: null,
     },
     reconciliation: { newObligation: true, checkedAgainst: [], matchedExistingId: null, reason: null },
     ...overrides,
@@ -110,28 +111,154 @@ check(
   ).blocking === true
 );
 check(
-  "blocking requested + gate present but explicitlyDeferred -> downgraded",
+  "blocking requested + gate present + explicitlyDeferred for the SAME boundary -> downgraded",
   resolveBlocking(
     baseFinding({
       blockingRequested: true,
-      gate: { releaseBoundary: "Beta", dependency: "x", evidenceForGate: "y" },
-      qualifiers: { ...baseFinding().qualifiers, explicitlyDeferred: true },
+      gate: { releaseBoundary: "Milestone A", dependency: "x", evidenceForGate: "y" },
+      qualifiers: { ...baseFinding().qualifiers, explicitlyDeferred: true, appliesToBoundary: "Milestone A" },
     })
   ).blocking === false
 );
 check(
-  "blocking requested + gate present but explicitlyNotReleaseBlocker -> downgraded",
+  "blocking requested + gate present + explicitlyNotReleaseBlocker for the SAME boundary -> downgraded",
   resolveBlocking(
     baseFinding({
       blockingRequested: true,
-      gate: { releaseBoundary: "Beta", dependency: "x", evidenceForGate: "y" },
-      qualifiers: { ...baseFinding().qualifiers, explicitlyNotReleaseBlocker: true },
+      gate: { releaseBoundary: "Milestone A", dependency: "x", evidenceForGate: "y" },
+      qualifiers: { ...baseFinding().qualifiers, explicitlyNotReleaseBlocker: true, appliesToBoundary: "Milestone A" },
     })
   ).blocking === false
 );
 check(
   "blocking not requested -> stays false regardless of gate",
   resolveBlocking(baseFinding({ blockingRequested: false, gate: null })).blocking === false
+);
+
+console.log("== Release-boundary qualifier coherence (semantic-review calibration fix) ==");
+
+// CASE A -- same-boundary non-blocker suppresses the gate.
+check(
+  "CASE A: same-boundary explicitlyNotReleaseBlocker suppresses an otherwise-complete gate",
+  resolveBlocking(
+    baseFinding({
+      blockingRequested: true,
+      gate: { releaseBoundary: "Pilot", dependency: "offline sync", evidenceForGate: "e" },
+      qualifiers: { ...baseFinding().qualifiers, explicitlyNotReleaseBlocker: true, appliesToBoundary: "Pilot" },
+    })
+  ).blocking === false
+);
+
+// CASE B -- different-boundary non-blocker must NOT suppress the gate.
+// This is Candidate 1's exact shape, generalized: a real gate against one
+// boundary, plus a disclaiming qualifier scoped to a narrower, different
+// boundary. The disclaimer is true and real -- it just doesn't apply here.
+check(
+  "CASE B: different-boundary explicitlyNotReleaseBlocker does NOT suppress the gate",
+  resolveBlocking(
+    baseFinding({
+      blockingRequested: true,
+      gate: { releaseBoundary: "GA", dependency: "joint readiness", evidenceForGate: "e" },
+      qualifiers: { ...baseFinding().qualifiers, explicitlyNotReleaseBlocker: true, appliesToBoundary: "Pilot" },
+    })
+  ).blocking === true
+);
+
+// CASE C -- same-boundary deferred suppresses the gate (mirror of A for
+// the other disqualifying qualifier).
+check(
+  "CASE C: same-boundary explicitlyDeferred suppresses an otherwise-complete gate",
+  resolveBlocking(
+    baseFinding({
+      blockingRequested: true,
+      gate: { releaseBoundary: "GA", dependency: "migration", evidenceForGate: "e" },
+      qualifiers: { ...baseFinding().qualifiers, explicitlyDeferred: true, appliesToBoundary: "GA" },
+    })
+  ).blocking === false
+);
+
+// CASE D -- ambiguous/no-boundary evidence (no gate at all) cannot
+// produce blocking, regardless of any qualifier.
+check(
+  "CASE D: no gate at all -> never blocking, no matter what qualifiers say",
+  resolveBlocking(
+    baseFinding({
+      blockingRequested: true,
+      gate: null,
+      qualifiers: { ...baseFinding().qualifiers, explicitlyNotReleaseBlocker: false },
+    })
+  ).blocking === false
+);
+
+// CASE E -- explicit same-boundary serial gate, no disqualifying
+// qualifier at all, survives.
+check(
+  "CASE E: complete gate, no disqualifying qualifier -> survives as blocking",
+  resolveBlocking(
+    baseFinding({
+      blockingRequested: true,
+      gate: { releaseBoundary: "GA", dependency: "x", evidenceForGate: "y" },
+    })
+  ).blocking === true
+);
+
+// Unscoped (appliesToBoundary omitted/null) qualifier does NOT override a
+// complete, specific gate -- this is the exact shape legacy/pre-fix saved
+// model output has (no boundary field existed yet), and the shape a
+// model that skips the (still-optional-when-false) field will produce.
+check(
+  "Unscoped explicitlyNotReleaseBlocker (appliesToBoundary null) does not cancel a complete gate",
+  resolveBlocking(
+    baseFinding({
+      blockingRequested: true,
+      gate: { releaseBoundary: "GA", dependency: "x", evidenceForGate: "y" },
+      qualifiers: { ...baseFinding().qualifiers, explicitlyNotReleaseBlocker: true, appliesToBoundary: null },
+    })
+  ).blocking === true
+);
+
+// Boundary comparison is normalized (case/whitespace), not a literal
+// string match -- and works for arbitrary project-specific boundary
+// vocabulary (internal test / pilot / Beta / GA / production / customer
+// rollout / Phase 1 / milestone X, ...), not just two hardcoded values.
+check(
+  "boundary comparison is case/whitespace-normalized",
+  resolveBlocking(
+    baseFinding({
+      blockingRequested: true,
+      gate: { releaseBoundary: "  Customer Rollout  ", dependency: "x", evidenceForGate: "y" },
+      qualifiers: { ...baseFinding().qualifiers, explicitlyDeferred: true, appliesToBoundary: "customer rollout" },
+    })
+  ).blocking === false
+);
+check(
+  "boundary comparison generalizes to arbitrary project vocabulary (Phase 1 vs Milestone X)",
+  resolveBlocking(
+    baseFinding({
+      blockingRequested: true,
+      gate: { releaseBoundary: "Phase 1", dependency: "x", evidenceForGate: "y" },
+      qualifiers: { ...baseFinding().qualifiers, explicitlyDeferred: true, appliesToBoundary: "Milestone X" },
+    })
+  ).blocking === true
+);
+
+// The literal reproduction of the semantic-review Candidate 1 shape:
+// production gate + a Beta-scoped non-blocker qualifier. Must survive.
+check(
+  "Candidate 1 shape: production gate + Beta-scoped non-blocker survives as blocking",
+  resolveBlocking(
+    baseFinding({
+      type: "risk",
+      title: "JSA production is serially coupled to iTrack readiness",
+      blockingRequested: true,
+      gate: {
+        releaseBoundary: "2026-10-31 production release",
+        dependency: "iTrack must be ready for the same production launch before JSA can ship.",
+        evidenceForGate: "Lucas stated the release will contain JSA and iTrack together.",
+      },
+      qualifiers: { ...baseFinding().qualifiers, explicitlyNotReleaseBlocker: true, appliesToBoundary: "Beta" },
+    })
+  ).blocking === true
 );
 
 console.log("== MUST FIX 1: reconciliation / duplication ==");

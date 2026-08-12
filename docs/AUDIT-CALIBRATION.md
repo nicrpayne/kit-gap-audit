@@ -381,3 +381,185 @@ branch only — no merge, no deploy, no production handshake run.
 ## 16. Recommendation
 
 GOLDEN SET CALIBRATED — READY FOR NIC REVIEW
+
+---
+
+## Addendum — semantic review follow-up: release-boundary qualifier coherence
+
+A first real semantic evaluation (a real model call against real
+first-handshake-shaped evidence, `evaluation/model-bakeoff/raw/
+openai-result.json` — external to this repo, not committed here, see
+"Golden regression harness" below for why) surfaced one bounded defect in
+the pipeline this document describes.
+
+### The defect
+
+Candidate 1 ("JSA production is serially coupled to iTrack readiness")
+had a complete, well-evidenced gate against a production release
+boundary (`gate.releaseBoundary: "2026-10-31 production release"`,
+explicit dependency, a direct quote as evidence) — genuinely the
+strongest-shaped gate this pipeline had seen. It ALSO had
+`qualifiers.explicitlyNotReleaseBlocker: true`, because its evidence also
+included a Beta-scoped exception ("JSA-only Beta is allowed"). The
+pre-fix `resolveBlocking()` (see "Blocking semantics" above) treated
+`explicitlyNotReleaseBlocker` as a global disqualifier with no boundary
+of its own — so a disclaimer about Beta silently canceled a gate about
+Production. Verified by independently replaying the raw candidate through
+the unmodified code before touching anything (`scripts/semantic-review/
+replay-saved-sol.ts`): reproduced the exact same downgrade and reason
+string the saved evaluation recorded, byte-for-byte.
+
+### The fix
+
+`qualifiers` gained one field: `appliesToBoundary: string | null` — the
+same free-text boundary label `gate.releaseBoundary` already uses (no new
+ontology, no enum). `resolveBlocking()` (`lib/audit/run.ts`) now only
+lets `explicitlyDeferred`/`explicitlyNotReleaseBlocker` cancel a complete
+gate when `qualifiers.appliesToBoundary` is stated AND matches
+`gate.releaseBoundary` (case/whitespace-normalized string equality via a
+new `boundariesMatch()` helper — not a keyword list, not string-matching
+against "Beta"/"Production" specifically). An UNSCOPED qualifier
+(`appliesToBoundary` null — exactly the shape the saved evaluation's raw
+JSON has, since it predates this field) does **not** cancel a complete
+gate: between a specific claim (the gate) and a vague one (a disqualifier
+naming no boundary), the specific one wins. This mirrors the original
+blocking-bar asymmetry (an incomplete gate always loses to
+non-blocking-by-default) applied symmetrically to the qualifier side.
+
+This required a narrow, disclosed prompt change (`lib/audit/
+prompts/audit-v1.ts`, version bumped `v2` → `v2.1`) — traced first and
+found necessary, not optional: the archived raw candidate has no
+structured field distinguishing "this disclaimer is about Beta" from
+"this disclaimer is about Production" anywhere, only in free prose
+(`rationale`), and resolving that generally without a schema field would
+have required exactly the "string hacks against 'Beta'/'Production'"
+the review explicitly ruled out. One field, one paragraph of guidance,
+one JSON-schema-example line — nothing else in the prompt touched.
+
+### Candidate 1 — before / after
+
+| | Before | After |
+|---|---|---|
+| `blockingRequested` | `true` | `true` (unchanged — model's own request) |
+| `gate` | complete (Production, Oct 31, iTrack dependency, direct-quote evidence) | unchanged |
+| `qualifiers.explicitlyNotReleaseBlocker` | `true` | `true` (unchanged — still a real, true fact about Beta) |
+| `qualifiers.appliesToBoundary` | *(field didn't exist)* | `null` (archived data predates the field) |
+| Normalized outcome | `persist_eligible` | `persist_eligible` (unchanged) |
+| **`finalBlocking`** | **`false`** | **`true`** |
+| Downgrade reason | `"cited evidence explicitly states this is not a release blocker"` | *(none — survives)* |
+
+Internally coherent now: the Beta exception is still true and still
+visible (it's exactly what earned `explicitlyNotReleaseBlocker: true` in
+the first place), but it no longer cancels a gate about a boundary it was
+never about. A Beta exception no longer incorrectly cancels a Production
+gate — verified generally (not just for this one candidate) by the CASE
+A–E deterministic tests in `scripts/golden-regression/
+deterministic.test.ts`, using synthetic boundary labels ("Milestone A",
+"GA", "Pilot", "Phase 1") to prove the mechanism itself doesn't hinge on
+recognizing "Beta"/"Production" as special strings.
+
+### Forecast effect — the one residual, honestly reported, NOT fixed here
+
+Candidate 1's `type` is `"risk"`, not `"decision"`. `lib/forecast/
+build.ts`'s `blockingDecisions` filter — unchanged, protected,
+untouched by this fix — only converts `type === "decision" &&
+status === "open" && blocking` findings into a `DecisionGate` (the
+serial, non-parallelizable delay). A blocking `risk` (or `missing_work`/
+`contradiction`) instead flows through `openWorkFindings` (every open
+non-decision finding, blocking or not) and gets a placeholder-effort
+estimate from `classifyEstimateHint("needs scoping")` →
+`{low:2, likely:5, high:12}` days — parallelizable backlog work, not a
+serial gate. So: **even after this fix, Candidate 1 would still enter a
+real forecast as generic 2/5/12-day placeholder effort, not as a serial
+DecisionGate** — not because the boundary-qualifier defect was
+mishandled (that part is now fixed and coherent), but because of a
+separate, pre-existing, structural characteristic of the
+(explicitly-protected, unchanged) forecast wiring: only `type:
+"decision"` findings ever become gates. Fixing that would mean touching
+`lib/forecast/build.ts` and/or reconsidering whether `type` classification
+itself needs revisiting for release-dependency risks — both explicitly
+out of this task's bounded scope ("do not change forecast math," "do not
+redesign anything"). Flagged here, not silently left implicit.
+
+### Candidates 2–12 — regression check
+
+Replayed the full saved result (all 12 candidates) through the fixed
+pipeline. Only Candidate 1 changed — it's the only candidate in the file
+with `blockingRequested: true` and a non-null `gate` at all, so it's the
+only one that can even reach the new boundary-comparison branch.
+Confirmed byte-identical before/after for the other 11: 3 more findings
+(all `persist_eligible`, all non-blocking, all for the same reasons as
+before — none touch `resolveBlocking`'s changed branch since none
+request blocking), 6 signals (never reach `resolveBlocking` at all —
+`normalizeAuditOutput` routes them out of the findings array entirely),
+2 clarifications (same). Zero new suppressions, zero new duplicates,
+zero blocker inflation beyond the one intended flip. Totals: `{findings:
+4, persistEligible: 4, signals: 6, clarifications: 2, suppressed: 0,
+proposedBlockers: 1, finalBlockers: 1}` (was `finalBlockers: 0`).
+
+### Golden regression harness (from the original calibration pass)
+
+Re-ran unchanged: 30 deterministic checks (9 new, covering CASE A–E plus
+the literal Candidate 1 shape) and all 31 end-to-end checks against real
+Postgres — zero regression, since the original golden fixture's two
+blocking-downgrade cases (findings 5 and 7) were both downgraded via the
+"no gate" branch, never the qualifier-boundary branch this fix changed.
+
+### Tests added
+
+`scripts/golden-regression/deterministic.test.ts` — 9 new checks: CASE
+A (same-boundary suppresses), CASE B (different-boundary survives — the
+core Candidate-1-shaped regression case), CASE C (same-boundary
+`explicitlyDeferred` suppresses), CASE D (no gate, never blocking), CASE
+E (complete gate, no disqualifier, survives), unscoped-qualifier-doesn't-
+cancel, boundary normalization (case/whitespace), boundary-vocabulary
+generality (arbitrary labels, not just Beta/Production), and the literal
+Candidate 1 reproduction.
+
+### Files changed (this addendum)
+
+- `lib/audit/normalize.ts` — `FindingQualifiers.appliesToBoundary` field.
+- `lib/audit/run.ts` — `boundariesMatch()` helper; `resolveBlocking()`
+  boundary-aware disqualification.
+- `lib/audit/prompts/audit-v1.ts` — one new qualifier field + guidance
+  paragraph + JSON-schema-example line; version `v2` → `v2.1`.
+- `scripts/golden-regression/deterministic.test.ts` — fixture helper
+  updated for the new required field; 9 new checks.
+- `scripts/semantic-review/replay-saved-sol.ts` — new. Evaluation-only
+  replay harness (no Prisma import, no model call, no mutation of the
+  saved raw file) for re-running any saved raw-candidate-shaped result
+  through the current normalize/guardrail pipeline.
+- This document.
+
+No changes to: `prisma/schema.prisma`, `qualifierContradiction()`
+(the separate full-suppression guardrail — `explicitlyTicketed`/
+`explicitlyOutOfProjectScope` are untouched, this defect was specific to
+`resolveBlocking()`), any `lib/forecast/*`, `lib/capacity/*`,
+`lib/scenario/*`, `lib/momentum/*`, any component, any page, Hermes, or
+`kit-gap-bridge`.
+
+### Migration
+
+None.
+
+### Deferred, non-blocking improvements
+
+Per the semantic review's own list, not expanded here: SOF-510-direction-change recall, notifications-POC
+recall, zero fully-domain-inferred candidates in this sample, draft
+generation still limited, the Anthropic side of a provider bake-off still
+incomplete, `matchedIssues` representation could be cleaner. Plus one
+newly surfaced item from this pass: **`type`-vs-forecast-gate coherence**
+for release-dependency risks (see "Forecast effect" above) — real,
+worth a future decision, explicitly not fixed here.
+
+### Git status (this addendum)
+
+Committed locally on `claude/gap-audit-calibration-6i5jyn`. **Not
+pushed** — the saved evaluation file lives outside this repo (uploaded to
+this session only) and per instruction the historical corpus itself is
+not to be pushed; only the code/test/doc changes are committed. Not
+merged, not deployed.
+
+### Design gate
+
+REASONING FOUNDATION V1 COMPLETE — READY FOR DESIGN

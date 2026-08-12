@@ -28,6 +28,16 @@ export interface FindingQualifiers {
   explicitlyOutOfProjectScope: boolean;
   explicitlyDeferred: boolean;
   explicitlyNotReleaseBlocker: boolean;
+  // Which release/delivery boundary explicitlyDeferred /
+  // explicitlyNotReleaseBlocker concerns, in the model's own free-text
+  // label (the SAME representation gate.releaseBoundary already uses --
+  // no new ontology, see lib/audit/run.ts's boundariesMatch). Null when
+  // the cited evidence doesn't name a specific boundary distinct from
+  // whatever gate this candidate proposes. Required so a "not blocking
+  // Beta" disclaimer can never be mistaken for "not blocking Production"
+  // -- see docs/AUDIT-CALIBRATION.md's "Release-boundary qualifier
+  // coherence."
+  appliesToBoundary: string | null;
 }
 
 export interface FindingReconciliation {
@@ -124,6 +134,7 @@ function parseQualifiers(raw: unknown): FindingQualifiers {
     explicitlyOutOfProjectScope: bool(r.explicitlyOutOfProjectScope),
     explicitlyDeferred: bool(r.explicitlyDeferred),
     explicitlyNotReleaseBlocker: bool(r.explicitlyNotReleaseBlocker),
+    appliesToBoundary: str(r.appliesToBoundary),
   };
 }
 

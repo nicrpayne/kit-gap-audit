@@ -9,7 +9,11 @@
 // reconciliation/qualifier/gate fields that lib/audit/normalize.ts and
 // lib/audit/run.ts use to deterministically suppress duplicates, respect
 // explicit evidence qualifiers, and hold blocking=true to a high bar.
-export const AUDIT_PROMPT_VERSION = "v2";
+// v2.1: qualifiers gained appliesToBoundary (release-boundary-specific
+// non-blocker/deferred qualifiers -- see docs/AUDIT-CALIBRATION.md's
+// "Release-boundary qualifier coherence" for why a bare boolean wasn't
+// enough).
+export const AUDIT_PROMPT_VERSION = "v2.1";
 
 export interface PromptIssue {
   identifier: string;
@@ -163,6 +167,18 @@ worth tracking, it just doesn't gate the current release.
   says this is not a release blocker for the current release/milestone
   (this includes "outside Beta"-style scoping when the work is still
   relevant to the project overall, just not this release).
+- appliesToBoundary: REQUIRED whenever explicitlyDeferred or
+  explicitlyNotReleaseBlocker is true -- name the exact release/delivery
+  boundary the disclaiming evidence concerns, using the same label you'd
+  put in a gate's "releaseBoundary" (e.g. "Beta", "Pilot", "2026-10-31
+  production release"). This matters because a candidate can legitimately
+  have BOTH a real gate against one boundary AND a disclaimer about a
+  DIFFERENT, narrower boundary -- "not blocking Beta" does NOT mean "not
+  blocking Production," and a disclaimer about one boundary must never be
+  allowed to cancel a gate against a different one. Set to null only if
+  the evidence disclaims release-blocking status without naming any
+  boundary at all (rare -- prefer naming one whenever the evidence lets
+  you).
 These are read from ACTUAL cited text, never inferred from tone or
 severity.
 
@@ -219,7 +235,7 @@ Respond with ONLY a JSON array of objects, each shaped as one of:
   "estimateHint", "owner", "blocks", "matchedIssues": ["JSA-123"],
   "evidenceRefs": ["infra-row-13"], "reasoningOrigin",
   "qualifiers": { "explicitlyTicketed", "explicitlyOutOfProjectScope",
-    "explicitlyDeferred", "explicitlyNotReleaseBlocker" },
+    "explicitlyDeferred", "explicitlyNotReleaseBlocker", "appliesToBoundary" },
   "reconciliation": { "newObligation", "checkedAgainst": [],
     "matchedExistingId", "reason" },
   "blocking", "gate": { "releaseBoundary", "dependency", "evidenceForGate" } | null }

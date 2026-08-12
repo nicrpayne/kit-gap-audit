@@ -150,26 +150,65 @@ export function qualifierContradiction(f: NormalizedFinding): string | null {
   return null;
 }
 
+// Case/whitespace-insensitive equality over free-text release-boundary
+// labels ("Beta", "2026-10-31 production release", "Pilot", "Phase 1",
+// ...). Deliberately just normalized string equality -- no keyword list,
+// no boundary-name hardcoding, no fuzzy/semantic matching. Two labels
+// that mean the same boundary but are worded differently (e.g. "Beta"
+// vs. "the Beta milestone") will NOT match; that's a disclosed limitation
+// (see docs/AUDIT-CALIBRATION.md), not silently papered over with a
+// bigger NLP mechanism.
+function boundariesMatch(a: string | null, b: string | null): boolean {
+  if (!a || !b) return false;
+  const normalize = (s: string) => s.trim().toLowerCase().replace(/\s+/g, " ");
+  return normalize(a) === normalize(b);
+}
+
 // The blocking bar: the model's own blockingRequested is never trusted
 // directly. blocking=true survives only with fully-populated gate
 // metadata (what can't complete, what release boundary, what evidence)
-// AND no cited-evidence qualifier that disqualifies blocking specifically
-// (explicitly deferred / explicitly not a release boundary). Everything
-// else defaults to non-blocking -- serious, risky, and historically-
-// blocking-sounding are not enough on their own.
+// AND no cited-evidence qualifier that disqualifies blocking FOR THAT
+// SAME BOUNDARY. Everything else defaults to non-blocking -- serious,
+// risky, and historically-blocking-sounding are not enough on their own.
+//
+// Boundary-scoped, on purpose (see docs/AUDIT-CALIBRATION.md's
+// "Release-boundary qualifier coherence"): a candidate can legitimately
+// carry BOTH a genuine gate against one boundary (e.g. "iTrack readiness
+// gates the 2026-10-31 production release") AND a qualifier the model
+// picked up from evidence about a DIFFERENT, narrower boundary (e.g. "JSA
+// can Beta without iTrack"). Those are not in conflict -- "not blocking
+// Beta" does not imply "not blocking Production." explicitlyDeferred /
+// explicitlyNotReleaseBlocker therefore only override a complete gate
+// when qualifiers.appliesToBoundary is stated AND matches gate.
+// releaseBoundary (normalized). An UNSCOPED qualifier (appliesToBoundary
+// null) does NOT override a complete, specifically-evidenced gate --
+// between a specific claim (the gate: named boundary + dependency +
+// evidence) and a vague one (a disqualifying boolean with no boundary of
+// its own), the specific claim wins. This mirrors the original
+// MUST-FIX-4 asymmetry (an incomplete GATE always loses to "non-blocking
+// by default") applied symmetrically to the QUALIFIER side.
 export function resolveBlocking(f: NormalizedFinding): { blocking: boolean; downgradeReason: string | null } {
   if (!f.blockingRequested) return { blocking: false, downgradeReason: null };
 
-  if (f.qualifiers.explicitlyDeferred) {
-    return { blocking: false, downgradeReason: "cited evidence explicitly states this is deferred" };
-  }
-  if (f.qualifiers.explicitlyNotReleaseBlocker) {
-    return { blocking: false, downgradeReason: "cited evidence explicitly states this is not a release blocker" };
-  }
   if (!f.gate) {
     return {
       blocking: false,
       downgradeReason: "no complete gate (release boundary / dependency / evidence) was established",
+    };
+  }
+
+  const sameBoundary = boundariesMatch(f.qualifiers.appliesToBoundary, f.gate.releaseBoundary);
+
+  if (f.qualifiers.explicitlyDeferred && sameBoundary) {
+    return {
+      blocking: false,
+      downgradeReason: `cited evidence explicitly states this is deferred for the same release boundary this gate concerns (${f.gate.releaseBoundary})`,
+    };
+  }
+  if (f.qualifiers.explicitlyNotReleaseBlocker && sameBoundary) {
+    return {
+      blocking: false,
+      downgradeReason: `cited evidence explicitly states this is not a release blocker for the same release boundary this gate concerns (${f.gate.releaseBoundary})`,
     };
   }
   return { blocking: true, downgradeReason: null };
