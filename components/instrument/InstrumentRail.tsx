@@ -24,6 +24,32 @@ import { DESTINATIONS } from "@/lib/shell/mode";
 // the Forecast Field itself, so the mark for the Instrument depicts the
 // Instrument.
 const ICONS: Record<string, React.ReactNode> = {
+  "/overview": (
+    <>
+      <rect x="1.4" y="1.4" width="5.6" height="7" rx="1.2" fill="none" strokeWidth="1.3" />
+      <rect x="8.4" y="1.4" width="4.2" height="4.2" rx="1.2" fill="none" strokeWidth="1.3" />
+      <rect x="8.4" y="7" width="4.2" height="5.6" rx="1.2" fill="none" strokeWidth="1.3" />
+      <rect x="1.4" y="9.8" width="5.6" height="2.8" rx="1.2" fill="none" strokeWidth="1.3" />
+    </>
+  ),
+  "/scope": (
+    <>
+      <rect x="1.4" y="2" width="11.2" height="3.4" rx="1.7" fill="none" strokeWidth="1.3" />
+      <circle cx="9.8" cy="3.7" r="1.1" strokeWidth="0" />
+      <rect x="1.4" y="8.6" width="11.2" height="3.4" rx="1.7" fill="none" strokeWidth="1.3" />
+      <circle cx="4.2" cy="10.3" r="1.1" strokeWidth="0" />
+    </>
+  ),
+  "/timeline": (
+    <>
+      <line x1="1.6" y1="3.4" x2="12.4" y2="3.4" strokeWidth="1.2" strokeLinecap="round" opacity="0.45" />
+      <line x1="1.6" y1="7" x2="12.4" y2="7" strokeWidth="1.2" strokeLinecap="round" opacity="0.45" />
+      <line x1="1.6" y1="10.6" x2="12.4" y2="10.6" strokeWidth="1.2" strokeLinecap="round" opacity="0.45" />
+      <rect x="2.4" y="2.4" width="5" height="2" rx="1" strokeWidth="0" />
+      <rect x="5.4" y="6" width="6" height="2" rx="1" strokeWidth="0" />
+      <rect x="3.4" y="9.6" width="4" height="2" rx="1" strokeWidth="0" />
+    </>
+  ),
   "/": (
     <>
       <rect x="1.5" y="1.5" width="4.5" height="4.5" rx="1" />
@@ -111,13 +137,13 @@ export default function InstrumentRail({
     >
       {/* Back to the Workbench. The mark is the exit, and says so on hover. */}
       <Link
-        href="/"
-        title="Back to Workbench"
+        href="/overview"
+        title="Overview workspace"
         className="group relative h-8 w-8 rounded-md flex items-center justify-center text-[13px] font-semibold mb-2 transition-colors"
         style={{ background: "var(--i-panel-raised)", border: "1px solid var(--i-border-strong)", color: "var(--i-text)" }}
       >
         K
-        <RailTip>Back to Workbench</RailTip>
+        <RailTip>Overview workspace</RailTip>
       </Link>
 
       {DESTINATIONS.map((d) => {
@@ -136,7 +162,7 @@ export default function InstrumentRail({
           >
             <RailIcon href={d.href} />
             <span className="sr-only">{d.label}</span>
-            <RailTip>{d.label}</RailTip>
+            <RailTip>{d.label} — {d.verb}</RailTip>
           </Link>
         );
       })}
