@@ -22,6 +22,7 @@ export interface ForecastFinding {
   status: string;
   blocking: boolean;
   estimateHint: string | null;
+  gate: unknown;
   owner: string | null;
   blocks: string | null;
   quote: string;
@@ -119,6 +120,7 @@ async function buildScopeSimInputs(scope: Scope): Promise<ScopeSimBundle> {
       status: true,
       blocking: true,
       estimateHint: true,
+      gate: true,
       owner: true,
       blocks: true,
       quote: true,

@@ -255,6 +255,11 @@ model Finding {
   owner         String? // for decisions: who seems to own the call
   blocks        String? // for decisions/risks: what this is holding up
   blocking      Boolean  @default(false) // true = actively blocks scoped work
+  // Complete normalized serial-gate evidence retained from the audit
+  // candidate: { releaseBoundary, dependency, evidenceForGate }. Nullable
+  // for non-gates and legacy/manual Findings. Forecast code validates this
+  // shape again before allowing the Finding to create a serial gate.
+  gate          Json?
   matchedIssues String[]
   status        String   @default("open") // open | ticketed | dismissed | resolved
   linearIssueId String?

@@ -32,6 +32,7 @@ import {
   type NormalizedClarification,
 } from "@/lib/audit/normalize";
 import { qualifierContradiction, resolveBlocking, withinBatchDuplicateKey } from "@/lib/audit/run";
+import { buildForecastInputs } from "@/lib/forecast/build";
 
 interface FindingOutcome {
   candidate: NormalizedFinding;
@@ -151,6 +152,36 @@ function main() {
   };
   console.log("\n=== TOTALS ===");
   console.log(JSON.stringify(totals, null, 2));
+
+  const persistedFindings = persistEligible.map((result, index) => ({
+    id: `replay-finding-${index + 1}`,
+    type: result.candidate.type,
+    title: result.candidate.title,
+    status: "open",
+    blocking: result.finalBlocking,
+    estimateHint: result.candidate.estimateHint,
+    gate: result.candidate.gate,
+  }));
+  const currentForecast = buildForecastInputs([], persistedFindings, 1);
+  const currentItemIds = new Set(currentForecast.items.map((item) => item.id));
+  const currentGates = new Map(currentForecast.gates.map((gate) => [gate.id, gate]));
+
+  console.log("\n=== FORECAST HANDOFF: BEFORE / AFTER ===");
+  for (const finding of persistedFindings) {
+    const legacyPlaceholderWork = finding.type !== "decision";
+    const legacyDecisionGate = finding.type === "decision" && finding.blocking;
+    const currentGate = currentGates.get(finding.id);
+    console.log(`\n- "${finding.title}" [${finding.type}]`);
+    console.log(`  finalBlocking: ${finding.blocking}`);
+    console.log(`  persistedGate: ${JSON.stringify(finding.gate)}`);
+    console.log(`  BEFORE: placeholderWork=${legacyPlaceholderWork} decisionGate=${legacyDecisionGate}`);
+    console.log(
+      `  AFTER: workItem=${currentItemIds.has(finding.id)} serialGate=${Boolean(currentGate)} representation=${currentGate ? JSON.stringify(currentGate) : "none"}`
+    );
+    console.log(
+      `  why: ${currentGate ? "final blocking survived with complete persisted boundary/dependency/evidence; represented once as a serial gate" : currentItemIds.has(finding.id) ? "open non-decision conclusion without a proven serial gate remains work" : "no forecast Reality effect"}`
+    );
+  }
 }
 
 main();

@@ -563,3 +563,82 @@ merged, not deployed.
 ### Design gate
 
 REASONING FOUNDATION V1 COMPLETE — READY FOR DESIGN
+
+---
+
+## Final addendum — Finding type vs. forecast gate
+
+### Trace and root cause
+
+The audit candidate already carried three independent concepts:
+
+- `type`: what kind of project conclusion this is;
+- `estimateHint`: any effort obligation associated with it;
+- `gate` plus deterministic `finalBlocking`: whether a named delivery
+  boundary has a proven serial dependency.
+
+Before this change, persistence discarded `gate` and retained only
+`Finding.blocking`. Forecast construction then sent every open
+non-`decision` Finding through the work path, while only
+`type === "decision" && blocking` entered the serial-gate path. Candidate
+1 therefore became a 2/5/12-day placeholder work item solely because its
+project-conclusion type was `risk`, even though its complete Production
+gate had survived deterministic guardrails.
+
+### Durable invariant
+
+Finding = project conclusion. Work estimate = effort obligation. Gate =
+proven serial delivery dependency. These dimensions are related but
+orthogonal; Finding type never establishes or cancels gate eligibility.
+
+`Finding.gate` now persists the normalized free-text
+`releaseBoundary`, `dependency`, and `evidenceForGate`. Forecast
+construction validates that all three strings are present and requires
+the persisted final `blocking` judgment plus `status === "open"` before
+creating a serial gate. A boolean without complete structured metadata
+cannot create one, so legacy/manual blockers do not bypass the calibrated
+bar.
+
+### Work/gate rule
+
+One Finding produces one forecast effect:
+
+- complete surviving gate: one serial gate, no parallel/placeholder work
+  item for the same Finding;
+- open non-decision without a surviving gate: existing work-estimate path;
+- open nonblocking decision: neither work nor gate, unchanged;
+- Signals and Clarifications: never forecast Reality, unchanged.
+
+For a missing-work Finding that is also a proven serial dependency, the
+current engine-safe representation is the serial gate only. Emitting the
+same Finding as both work and gate would add the same uncertainty once as
+capacity-divisible effort and again as serial delay. The existing gate
+range remains 1/4/10 days; Monte Carlo sampling and portfolio simulation
+are unchanged.
+
+### Saved Sol replay
+
+Candidate 1 before: `type=risk`, `finalBlocking=true`, complete Production
+gate, placeholder work `true`, serial gate `false`.
+
+Candidate 1 after: `type=risk`, `finalBlocking=true`, the same persisted
+Production gate, work item `false`, serial gate `true`. Its forecast input
+now carries the boundary, dependency, evidence, source Finding type, and
+the unchanged serial-gate range.
+
+Candidates 2–12 retain their routing: cutover remains nonblocking work;
+the staged-Beta and September 7 decisions remain nonblocking with no
+gate; all six Signals and both Clarifications stay outside forecast
+Reality. Offline and migration remain non-gates. No candidate is emitted
+as both work and gate.
+
+### Migration
+
+`Finding.gate` is a nullable JSONB column. Existing rows remain valid with
+`null`; there is no speculative backfill. New audit Findings persist the
+complete normalized gate when one was proposed, while forecast eligibility
+still requires the final blocking guardrail result.
+
+### Final design gate
+
+REASONING FOUNDATION V1 COMPLETE — READY FOR DESIGN

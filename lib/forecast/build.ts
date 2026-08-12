@@ -8,6 +8,13 @@ export interface FindingLike {
   status: string;
   blocking: boolean;
   estimateHint: string | null;
+  gate: unknown;
+}
+
+export interface PersistedFindingGate {
+  releaseBoundary: string;
+  dependency: string;
+  evidenceForGate: string;
 }
 
 const DONE_STATE_TYPES = new Set(["completed", "canceled"]);
@@ -86,9 +93,35 @@ function classifyEstimateHint(hint: string | null): { tp: ThreePoint; source: Es
   return { tp: HINT_PLACEHOLDER, source: "finding_placeholder" };
 }
 
-// Serial time-to-decide for a blocking decision -- doesn't shrink with
-// more developers, so it's a gate, not a divisible work item.
-const DECISION_GATE_ESTIMATE: ThreePoint = { low: 1, likely: 4, high: 10 };
+// Serial time-to-resolve for a proven delivery gate. This keeps the existing
+// gate estimate unchanged; the semantic fix changes eligibility and prevents
+// duplicate work representation, not Monte Carlo sampling or gate math.
+const SERIAL_GATE_ESTIMATE: ThreePoint = { low: 1, likely: 4, high: 10 };
+
+export interface ForecastGate extends DecisionGate, PersistedFindingGate {
+  sourceFindingType: string;
+}
+
+function nonEmptyString(value: unknown): string | null {
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+// Finding type describes the project conclusion; it does not establish a
+// serial forecast effect. A gate requires both the final persisted blocking
+// judgment and the complete structured evidence that passed audit guardrails.
+export function serialGateForFinding(finding: FindingLike): PersistedFindingGate | null {
+  if (finding.status !== "open" || !finding.blocking || !finding.gate || typeof finding.gate !== "object") {
+    return null;
+  }
+
+  const candidate = finding.gate as Record<string, unknown>;
+  const releaseBoundary = nonEmptyString(candidate.releaseBoundary);
+  const dependency = nonEmptyString(candidate.dependency);
+  const evidenceForGate = nonEmptyString(candidate.evidenceForGate);
+  if (!releaseBoundary || !dependency || !evidenceForGate) return null;
+
+  return { releaseBoundary, dependency, evidenceForGate };
+}
 
 // How much of the forecast rests on real estimates vs. placeholder guesses.
 export interface EstimateQuality {
@@ -173,7 +206,7 @@ export function inferCapacityFromAssignees(remainingIssues: LinearIssueSummary[]
 
 export interface ForecastInputs {
   items: SourcedWorkItem[];
-  gates: DecisionGate[];
+  gates: ForecastGate[];
   teamCapacity: number;
   teamCapacityInferred: boolean;
   capacitySource: CapacitySource;
@@ -279,7 +312,18 @@ export function buildForecastInputs(
     items.push({ id: issue.identifier, label, estimateSource: source, ...tp });
   }
 
-  const openWorkFindings = findings.filter((f) => f.type !== "decision" && f.status === "open");
+  const serialGates = new Map<string, PersistedFindingGate>();
+  for (const finding of findings) {
+    const gate = serialGateForFinding(finding);
+    if (gate) serialGates.set(finding.id, gate);
+  }
+
+  // One Finding produces one forecast effect. A proven serial gate is not
+  // also emitted as placeholder/parallel work for the same uncertainty.
+  // Non-blocking non-decision Findings retain the existing work path.
+  const openWorkFindings = findings.filter(
+    (f) => f.type !== "decision" && f.status === "open" && !serialGates.has(f.id)
+  );
   for (const f of openWorkFindings) {
     const estimate = findingEstimates.get(f.id);
     const fresh = estimate && (!findingHashFor || estimate.contentHash === findingHashFor(f));
@@ -315,14 +359,17 @@ export function buildForecastInputs(
   ai.flagged.sort((a, b) => b.aiLikelyDays - a.aiLikelyDays);
   ai.flagged = ai.flagged.slice(0, 8);
 
-  const blockingDecisions = findings.filter(
-    (f) => f.type === "decision" && f.status === "open" && f.blocking
-  );
-  const gates: DecisionGate[] = blockingDecisions.map((f) => ({
-    id: f.id,
-    label: f.title,
-    ...DECISION_GATE_ESTIMATE,
-  }));
+  const gates: ForecastGate[] = findings.flatMap((finding) => {
+    const gate = serialGates.get(finding.id);
+    if (!gate) return [];
+    return [{
+      id: finding.id,
+      label: finding.title,
+      sourceFindingType: finding.type,
+      ...gate,
+      ...SERIAL_GATE_ESTIMATE,
+    }];
+  });
 
   let teamCapacity = configuredCapacity ?? 0;
   let teamCapacityInferred = false;

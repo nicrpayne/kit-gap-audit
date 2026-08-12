@@ -18,6 +18,7 @@ import { runAudit } from "@/lib/audit/run";
 import { persistContextSnapshot } from "@/lib/context/snapshot";
 import { buildGoldenPackage, EXISTING_FINDINGS_SEED } from "./fixture";
 import { CALIBRATED_CANDIDATES } from "./calibratedOutput";
+import { buildForecastInputs } from "@/lib/forecast/build";
 
 let pass = 0;
 let fail = 0;
@@ -104,6 +105,20 @@ async function main() {
       "exactly ONE persisted Finding is blocking, and it's the one with a real gate",
       blockingFindings.length === 1 && blockingFindings[0].title === "Beta submission checklist owner undecided",
       JSON.stringify(blockingFindings.map((f) => f.title))
+    );
+    const persistedGate = blockingFindings[0]?.gate as Record<string, unknown> | null;
+    check(
+      "the complete normalized gate is retained on the persisted Finding",
+      typeof persistedGate?.releaseBoundary === "string" &&
+        typeof persistedGate?.dependency === "string" &&
+        typeof persistedGate?.evidenceForGate === "string"
+    );
+    const forecastHandoff = buildForecastInputs([], result.findings, 1);
+    check(
+      "the persisted blocker becomes exactly one serial forecast gate and no duplicate work item",
+      forecastHandoff.gates.length === 1 &&
+        forecastHandoff.gates[0].id === blockingFindings[0].id &&
+        !forecastHandoff.items.some((item) => item.id === blockingFindings[0].id)
     );
 
     // -- Origin tag durably present on persisted rationale --

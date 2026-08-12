@@ -415,6 +415,13 @@ export async function runAudit(
         owner: f.owner,
         blocks: f.blocks,
         blocking,
+        gate: f.gate
+          ? {
+              releaseBoundary: f.gate.releaseBoundary,
+              dependency: f.gate.dependency,
+              evidenceForGate: f.gate.evidenceForGate,
+            }
+          : undefined,
         matchedIssues: f.matchedIssues,
         contextSnapshotId,
         evidenceRefs: citedRefs,

@@ -12,6 +12,7 @@ import {
   withinBatchDuplicateKey,
 } from "@/lib/audit/run";
 import { normalizeAuditOutput, type NormalizedFinding } from "@/lib/audit/normalize";
+import { buildForecastInputs, type FindingLike } from "@/lib/forecast/build";
 import { CALIBRATED_CANDIDATES } from "./calibratedOutput";
 
 let pass = 0;
@@ -53,6 +54,29 @@ function baseFinding(overrides: Partial<NormalizedFinding> = {}): NormalizedFind
     reconciliation: { newObligation: true, checkedAgainst: [], matchedExistingId: null, reason: null },
     ...overrides,
   };
+}
+
+const COMPLETE_FORECAST_GATE = {
+  releaseBoundary: "Production",
+  dependency: "The dependency must complete before this boundary can ship.",
+  evidenceForGate: "Direct evidence establishes the serial dependency.",
+};
+
+function forecastFinding(overrides: Partial<FindingLike> = {}): FindingLike {
+  return {
+    id: "finding-1",
+    type: "risk",
+    title: "Forecast finding",
+    status: "open",
+    blocking: false,
+    estimateHint: null,
+    gate: null,
+    ...overrides,
+  };
+}
+
+function forecastFor(...findings: FindingLike[]) {
+  return buildForecastInputs([], findings, 1);
 }
 
 console.log("== MUST FIX 2: structured qualifiers ==");
@@ -261,6 +285,68 @@ check(
   ).blocking === true
 );
 
+console.log("== Finding type vs. serial forecast gate ==");
+
+const pureReleaseDependency = forecastFor(
+  forecastFinding({
+    type: "risk",
+    title: "Production cannot ship until external approval",
+    blocking: true,
+    gate: COMPLETE_FORECAST_GATE,
+  })
+);
+check(
+  "A: pure release dependency -> one serial gate and no placeholder work",
+  pureReleaseDependency.gates.length === 1 && pureReleaseDependency.items.length === 0 &&
+    pureReleaseDependency.gates[0].sourceFindingType === "risk"
+);
+
+const nonBlockingMissingWork = forecastFor(
+  forecastFinding({
+    type: "missing_work",
+    title: "Cutover plan has not been created",
+    blocking: false,
+    gate: null,
+  })
+);
+check(
+  "B: non-blocking missing work -> work, no gate",
+  nonBlockingMissingWork.items.length === 1 && nonBlockingMissingWork.gates.length === 0
+);
+
+const blockingMissingWork = forecastFor(
+  forecastFinding({ type: "missing_work", blocking: true, gate: COMPLETE_FORECAST_GATE })
+);
+check(
+  "C: missing work + proven serial dependency -> gate only, without duplicate work",
+  blockingMissingWork.gates.length === 1 && blockingMissingWork.items.length === 0
+);
+
+const blockingDecision = forecastFor(
+  forecastFinding({ type: "decision", blocking: true, gate: COMPLETE_FORECAST_GATE })
+);
+check(
+  "D: blocking decision + complete gate -> serial gate",
+  blockingDecision.gates.length === 1 && blockingDecision.items.length === 0
+);
+
+const seriousRiskWithoutGate = forecastFor(
+  forecastFinding({ type: "risk", blocking: true, gate: null })
+);
+check(
+  "E: serious risk without serial dependency -> no gate",
+  seriousRiskWithoutGate.gates.length === 0 && seriousRiskWithoutGate.items.length === 1
+);
+
+const incompleteGate = forecastFor(
+  forecastFinding({
+    type: "risk",
+    blocking: true,
+    gate: { releaseBoundary: "Production", dependency: "Dependency", evidenceForGate: "" },
+  })
+);
+check("incomplete persisted gate metadata -> no gate", incompleteGate.gates.length === 0);
+
 console.log("== MUST FIX 1: reconciliation / duplication ==");
 
 check(
@@ -294,6 +380,11 @@ check("1 clarification candidate parsed", normalized.clarifications.length === 1
 check(
   "a signal never has Finding-only fields leak through (no 'type' on NormalizedSignal)",
   !("type" in normalized.signals[0])
+);
+check(
+  "H: signals and clarifications never enter forecast Reality",
+  forecastFor().items.length === 0 && forecastFor().gates.length === 0 &&
+    normalized.signals.length === 2 && normalized.clarifications.length === 1
 );
 
 console.log("== Legacy/malformed input tolerance ==");
