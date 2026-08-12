@@ -28,8 +28,16 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    const { source, findings } = await runAudit(scope, { kind, title, content });
-    return NextResponse.json({ source, findings });
+    const result = await runAudit(scope, { kind, title, content });
+    return NextResponse.json({
+      source: result.source,
+      findings: result.findings,
+      rejectedFindings: result.rejectedFindings,
+      suppressedFindings: result.suppressedFindings,
+      downgradedBlocking: result.downgradedBlocking,
+      signals: result.signals,
+      clarifications: result.clarifications,
+    });
   } catch (error) {
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Audit failed" },

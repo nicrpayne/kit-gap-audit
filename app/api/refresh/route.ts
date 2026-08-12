@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { runAudit, VALID_AUDIT_KINDS } from "@/lib/audit/run";
+import { runAudit, VALID_AUDIT_KINDS, type AuditRunResult } from "@/lib/audit/run";
 import { runEstimationForScope } from "@/lib/estimate/runForScope";
 import { computeForecast } from "@/lib/forecast/compute";
 import { generateReport } from "@/lib/reports/generate";
@@ -35,6 +35,23 @@ interface RefreshBody {
   // to every consumer this refresh runs (audit, report) -- nothing
   // downstream persists a second snapshot for it.
   contextPackage?: unknown;
+}
+
+// Shapes runAudit()'s result for the API response -- additive fields only
+// (findingCount/rejectedFindings existed before; suppressedFindings/
+// downgradedBlocking/signals/clarifications are new in the calibration
+// pass, see docs/AUDIT-CALIBRATION.md). Every existing caller that only
+// reads sourceId/findingCount/rejectedFindings is unaffected.
+function buildAuditResponse(result: AuditRunResult) {
+  return {
+    sourceId: result.source?.id ?? null,
+    findingCount: result.findings.length,
+    rejectedFindings: result.rejectedFindings,
+    suppressedFindings: result.suppressedFindings,
+    downgradedBlocking: result.downgradedBlocking,
+    signals: result.signals,
+    clarifications: result.clarifications,
+  };
 }
 
 // One call to do everything a Hermes/Cowork-triggered refresh needs:
@@ -117,11 +134,13 @@ export async function POST(req: NextRequest) {
   // id, they never persist a snapshot themselves.
   let contextSnapshotId: string | null = null;
   let packageEvidence: Awaited<ReturnType<typeof persistContextSnapshot>>["package"]["evidence"] = [];
+  let packageSources: Awaited<ReturnType<typeof persistContextSnapshot>>["package"]["sources"] = [];
   if (body.contextPackage !== undefined) {
     try {
       const snapshot = await persistContextSnapshot(body.contextPackage, { expectedScopeId: scope.id });
       contextSnapshotId = snapshot.id;
       packageEvidence = snapshot.package.evidence;
+      packageSources = snapshot.package.sources;
     } catch (error) {
       if (
         error instanceof PackageScopeMismatchError ||
@@ -137,26 +156,24 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  let audit:
-    | { sourceId: string | null; findingCount: number; rejectedFindings: { title: string; type: string; reason: string }[] }
-    | undefined;
+  let audit: Awaited<ReturnType<typeof buildAuditResponse>> | undefined;
   if (body.transcript || contextSnapshotId) {
     try {
       const result = await runAudit(
         scope,
         body.transcript,
-        contextSnapshotId ? { packageContext: { contextSnapshotId, evidence: packageEvidence } } : undefined
+        contextSnapshotId
+          ? { packageContext: { contextSnapshotId, evidence: packageEvidence, sources: packageSources } }
+          : undefined
       );
-      // rejectedFindings: proposed findings the model produced but this
-      // run refused to persist because they'd have had no valid
-      // provenance (no transcript Source AND no valid evidenceRefs) --
-      // surfaced explicitly rather than silently dropped, so a caller
-      // knows evidence was seen but couldn't be truthfully grounded.
-      audit = {
-        sourceId: result.source?.id ?? null,
-        findingCount: result.findings.length,
-        rejectedFindings: result.rejectedFindings,
-      };
+      // rejectedFindings / suppressedFindings: proposed candidates the
+      // model produced that this run refused to persist -- rejected for
+      // missing provenance, suppressed by a content guardrail (qualifier
+      // contradiction, reconciliation, within-batch duplicate). Surfaced
+      // explicitly rather than silently dropped. signals/clarifications:
+      // non-persisted intelligence that should never become forecast
+      // input -- see docs/AUDIT-CALIBRATION.md.
+      audit = buildAuditResponse(result);
     } catch (error) {
       return NextResponse.json(
         {

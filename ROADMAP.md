@@ -14,6 +14,26 @@ HEAD `46812f0`) -- see "Where things stand" for the full history. Phases
 2-4 (context-switch/focus toggle, dependency-relief preview, scope-cut)
 are planned but not yet approved to start.
 
+**Audit reasoning calibration** (see `docs/AUDIT-CALIBRATION.md`), on
+branch `claude/gap-audit-calibration-6i5jyn`, cut from `45d4312`. A real
+Hermes handshake (outside this repo) produced 11 Findings from one JSA
+package; forensic review found heavy duplication, one stale composite,
+three that shouldn't have been Findings, and over-broad `blocking`
+(8/11, zero firmly-proven serial gates). Root cause: open Findings were
+never shown to the audit model at all (only handled ones), so duplicate
+detection was structurally impossible. Fixed with a v2 prompt contract
+(promotion ladder: evidence → candidate → reconcile/qualifiers →
+Finding → optional gate; three candidate kinds so a direction-change or
+possible-duplicate observation can be a non-persisted `signal` instead of
+a forced Finding) plus deterministic code guardrails in `lib/audit/run.ts`
+(qualifier contradiction, reconciliation-based suppression, a real
+blocking bar requiring complete gate metadata) that never trust the
+model's claims outright. Zero schema migration. Reconstructed golden
+regression harness at `scripts/golden-regression/` (21 deterministic + 31
+end-to-end checks, all passing). Does not touch forecast/capacity/
+scenario/momentum math, Hermes, or `kit-gap-bridge`. **Not yet merged,
+not yet clicked through by Nic.**
+
 **Context Package Foundation, Phase 1a + 1b + 1c** (see
 `docs/CONTEXT-MODEL.md`), on branch `claude/gap-app-context-sources-hwy0v3`,
 cut from base at `45d4312`. Phase 1a: foundation-only groundwork for a

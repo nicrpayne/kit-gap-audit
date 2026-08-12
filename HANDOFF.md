@@ -272,6 +272,34 @@ set that proved an absence -- no Linear historical snapshotting exists.
 Still no real Hermes integration, no MCP, no Context Workbench UI, no
 Notion/Figma/spreadsheet-connector assembler. See `docs/CONTEXT-MODEL.md`.
 
+**Audit reasoning calibration** (branch `claude/gap-audit-calibration-6i5jyn`,
+cut from `45d4312`, independent of the Context Package Foundation branch
+above) — the first real Hermes handshake happened outside this repo's own
+history and produced 11 Findings from one JSA package; forensic review
+found 0 excellent, 4 duplicate, 1 stale, 3 that shouldn't have been
+Findings at all, 3 useful-but-miscalibrated, and 8/11 marked blocking
+with zero firmly-proven serial gates. Root cause (traced, not guessed):
+`runAudit()`'s prior-findings query only ever showed **handled**
+Findings to the model — an **open** Finding (exactly what golden findings
+1/3/11 needed to reconcile against) was structurally invisible. Fixed
+with a prompt-contract rewrite (`lib/audit/prompts/audit-v1.ts`, bumped
+v1→v2) adding a promotion ladder (evidence → candidate →
+reconcile-against-qualifiers → actionable Finding → optional gate), three
+candidate kinds (`finding`/`signal`/`clarification` — a direction-change
+or possible-duplicate-tracker observation no longer has to be force-fit
+into Finding shape or dropped), and deterministic code guardrails in
+`lib/audit/run.ts` (qualifier contradiction, reconciliation-based
+duplicate suppression, a real blocking bar requiring complete gate
+metadata) that never trust the model's own claims outright. Zero schema
+migration — `reasoningOrigin` persists as a rationale-text prefix, not a
+column; signals/clarifications are response-only, never written to
+`Finding`. Full root-cause writeup, before/after golden-set results, and
+the reconstructed regression harness (`scripts/golden-regression/`,
+21 deterministic + 31 end-to-end checks, all passing): see
+`docs/AUDIT-CALIBRATION.md`. Does not touch `lib/forecast/*`,
+`lib/capacity/*`, `lib/scenario/*`, `lib/momentum/*`, Hermes, or
+`kit-gap-bridge`. **Not yet merged, not yet clicked through by Nic.**
+
 ## Tech stack
 
 - **Next.js 15** (App Router, TypeScript), **React 19**

@@ -2,16 +2,20 @@ import type { Scope, Finding, Source } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { getScopedIssues } from "@/lib/linear";
 import { completeJson, AUDIT_MODEL } from "@/lib/model";
-import { buildAuditPrompt, type PromptEvidenceItem } from "@/lib/audit/prompts/audit-v1";
-import { normalizeFindings } from "@/lib/audit/normalize";
-import type { EvidenceItem } from "@/lib/context/package";
+import {
+  buildAuditPrompt,
+  type PromptEvidenceItem,
+  type PromptExistingFinding,
+} from "@/lib/audit/prompts/audit-v1";
+import {
+  normalizeAuditOutput,
+  type NormalizedFinding,
+  type NormalizedSignal,
+  type NormalizedClarification,
+  type ReasoningOrigin,
+} from "@/lib/audit/normalize";
+import type { EvidenceItem, PackageSourceManifestEntry } from "@/lib/context/package";
 
-const HANDLED_STATUSES = ["dismissed", "ticketed", "resolved"];
-
-// Purely descriptive -- shown to the model as "(C) NEW CONTEXT (<kind>):"
-// so it knows what shape of text follows, stored on Source.kind for
-// display, and used for the auto-generated title if none is given.
-// Nothing branches on the value beyond that.
 const KIND_LABELS: Record<string, string> = {
   transcript: "Transcript",
   notes: "Notes",
@@ -19,6 +23,20 @@ const KIND_LABELS: Record<string, string> = {
   spreadsheet: "Spreadsheet",
 };
 export const VALID_AUDIT_KINDS = Object.keys(KIND_LABELS);
+
+// Durably records HOW a surviving Finding was produced (see
+// docs/AUDIT-CALIBRATION.md) without a schema migration: prefixed onto
+// the persisted rationale, one bracket tag, parseable but still readable
+// as plain prose in FindingCard/the Decision Queue. "inferred from domain
+// knowledge" must stay honestly distinguishable from "explicitly required
+// by project evidence" even after this run's in-memory result is gone.
+const ORIGIN_LABELS: Record<ReasoningOrigin, string> = {
+  explicit: "explicit",
+  cross_source: "cross-source",
+  coverage: "coverage-gap",
+  domain_inferred: "domain-inferred",
+  predictive: "predictive",
+};
 
 export interface AuditInput {
   kind: string;
@@ -32,10 +50,13 @@ export interface AuditInput {
 // contextSnapshotId + evidenceRefs set; findings grounded only in a
 // pasted transcript do not, even in the same run -- see
 // docs/CONTEXT-MODEL.md's "Source-backed vs ContextSnapshot-backed
-// Finding provenance."
+// Finding provenance." `sources` (the package's source manifest) is
+// optional and used only to surface each evidence item's observedAt to
+// the model for freshness judgment -- never persisted, never required.
 export interface PackageAuditContext {
   contextSnapshotId: string;
   evidence: EvidenceItem[];
+  sources?: PackageSourceManifestEntry[];
 }
 
 export interface AuditRunOptions {
@@ -59,6 +80,27 @@ export interface RejectedFinding {
   reason: string;
 }
 
+// A proposed Finding that DID have valid provenance but was suppressed by
+// a deterministic content guardrail before being persisted -- contradicted
+// by a structured qualifier in its own cited evidence, or judged (by the
+// model's own reconciliation field, or this run's within-batch check) to
+// represent an obligation that already exists. Distinct from
+// RejectedFinding (provenance failure) so the two reasons are never
+// conflated in a diagnostic.
+export interface SuppressedFinding {
+  title: string;
+  type: string;
+  reason: string;
+}
+
+// A Finding that WAS persisted, but whose model-requested blocking=true
+// did not survive the blocking-bar guardrail (missing/incomplete gate
+// metadata, or a disqualifying qualifier) and was normalized to false.
+export interface DowngradedBlocking {
+  title: string;
+  reason: string;
+}
+
 export interface AuditRunResult {
   // No Source row is created for a package-only audit run (nothing was
   // pasted) -- fabricating one just to satisfy an old required field would
@@ -66,6 +108,15 @@ export interface AuditRunResult {
   source: Source | null;
   findings: Finding[];
   rejectedFindings: RejectedFinding[];
+  suppressedFindings: SuppressedFinding[];
+  downgradedBlocking: DowngradedBlocking[];
+  // Non-persisted candidates -- see docs/AUDIT-CALIBRATION.md's promotion
+  // ladder. Deliberately never touch prisma.finding: a "signal" is useful
+  // intelligence that must not become forecast input, and a
+  // "clarification" is uncertainty that must not be silently converted
+  // into forecast reality just because the model wants more information.
+  signals: NormalizedSignal[];
+  clarifications: NormalizedClarification[];
 }
 
 function defaultSourceTitle(kind: string): string {
@@ -73,14 +124,79 @@ function defaultSourceTitle(kind: string): string {
   return `${KIND_LABELS[kind] ?? "Context"} — ${date}`;
 }
 
+// True when a candidate's own cited-evidence qualifiers directly
+// contradict its core claim. Two distinct cases, both a hard suppression
+// (the candidate never becomes a Finding at all -- never a softened
+// version of itself):
+// - A "missing_work" candidate whose cited evidence explicitly says
+//   tracking already exists (explicitlyTicketed) -- direct contradiction
+//   of "no ticket exists for this."
+// - ANY candidate whose cited evidence explicitly disclaims relevance to
+//   the PROJECT/SCOPE ITSELF being audited (explicitlyOutOfProjectScope,
+//   e.g. "not needed for JSA" while auditing the JSA scope) -- this
+//   candidate doesn't belong in this Scope's Findings at all, regardless
+//   of type. Deliberately narrower than a release-boundary disclaimer
+//   (explicitlyDeferred / explicitlyNotReleaseBlocker, e.g. "outside
+//   Beta" while still being JSA-relevant work) -- see resolveBlocking,
+//   which only downgrades blocking for those, since the underlying work
+//   is still real and worth tracking non-blocking.
+export function qualifierContradiction(f: NormalizedFinding): string | null {
+  if (f.type === "missing_work" && f.qualifiers.explicitlyTicketed) {
+    return "cited evidence explicitly states tracking/tickets already exist for this -- contradicts a missing-work claim";
+  }
+  if (f.qualifiers.explicitlyOutOfProjectScope) {
+    return "cited evidence explicitly states this is not needed for / out of scope for the project being audited";
+  }
+  return null;
+}
+
+// The blocking bar: the model's own blockingRequested is never trusted
+// directly. blocking=true survives only with fully-populated gate
+// metadata (what can't complete, what release boundary, what evidence)
+// AND no cited-evidence qualifier that disqualifies blocking specifically
+// (explicitly deferred / explicitly not a release boundary). Everything
+// else defaults to non-blocking -- serious, risky, and historically-
+// blocking-sounding are not enough on their own.
+export function resolveBlocking(f: NormalizedFinding): { blocking: boolean; downgradeReason: string | null } {
+  if (!f.blockingRequested) return { blocking: false, downgradeReason: null };
+
+  if (f.qualifiers.explicitlyDeferred) {
+    return { blocking: false, downgradeReason: "cited evidence explicitly states this is deferred" };
+  }
+  if (f.qualifiers.explicitlyNotReleaseBlocker) {
+    return { blocking: false, downgradeReason: "cited evidence explicitly states this is not a release blocker" };
+  }
+  if (!f.gate) {
+    return {
+      blocking: false,
+      downgradeReason: "no complete gate (release boundary / dependency / evidence) was established",
+    };
+  }
+  return { blocking: true, downgradeReason: null };
+}
+
+// Deterministic backstop against two candidates IN THE SAME BATCH
+// representing the same underlying obligation, on top of the model's own
+// per-candidate reconciliation.newObligation judgment. Deliberately
+// narrow (exact type + exact non-empty matchedIssues set) to avoid
+// suppressing genuinely distinct findings that happen to touch the same
+// ticket.
+export function withinBatchDuplicateKey(f: NormalizedFinding): string | null {
+  if (f.matchedIssues.length === 0) return null;
+  const normalized = [...new Set(f.matchedIssues.map((s) => s.trim().toUpperCase()))].sort();
+  return `${f.type}::${normalized.join(",")}`;
+}
+
 // Runs one audit pass: pasted transcript/notes/spreadsheet text and/or
-// accepted ProjectContextPackage evidence -> findings, checked against
-// this Scope's Linear issues and prior handled findings (both
-// Source-backed and ContextSnapshot-backed) so the same gap isn't
-// re-raised. At least one of `input` / `options.packageContext` is
-// required. Used by POST /api/audit (transcript only, unchanged
-// behavior) and POST /api/refresh (transcript and/or package). Throws on
-// Linear or model failure -- callers convert to a 502.
+// accepted ProjectContextPackage evidence -> candidates -> findings,
+// checked against this Scope's Linear issues and EVERY existing Finding
+// (open and handled) so the same underlying obligation is never
+// duplicated. Candidates that are useful but not (yet) actionable are
+// returned as non-persisted signals/clarifications instead of being
+// forced into Finding shape. At least one of `input` /
+// `options.packageContext` is required. Used by POST /api/audit
+// (transcript only) and POST /api/refresh (transcript and/or package).
+// Throws on Linear or model failure -- callers convert to a 502.
 export async function runAudit(
   scope: Scope,
   input: AuditInput | undefined,
@@ -97,18 +213,24 @@ export async function runAudit(
     throw new Error(`Couldn't read tickets from Linear: ${error instanceof Error ? error.message : "unknown error"}`);
   }
 
-  const priorFindings = await prisma.finding.findMany({
-    where: {
-      status: { in: HANDLED_STATUSES },
-      OR: [{ source: { scopeId: scope.id } }, { contextSnapshot: { scopeId: scope.id } }],
-    },
-    select: { title: true, status: true, resolution: true },
+  // Every existing Finding for this Scope, open AND handled -- v1 only
+  // ever showed handled ones, which made duplicate detection against an
+  // open Finding structurally impossible. See PromptExistingFinding.
+  const existingFindingRows = await prisma.finding.findMany({
+    where: { OR: [{ source: { scopeId: scope.id } }, { contextSnapshot: { scopeId: scope.id } }] },
+    select: { title: true, type: true, status: true, blocking: true, matchedIssues: true, resolution: true },
   });
+  const existingFindings: PromptExistingFinding[] = existingFindingRows;
 
+  const sourceObservedAt = new Map(
+    (options.packageContext?.sources ?? []).map((s) => [s.sourceRef, s.observedAt] as const)
+  );
   const promptEvidence: PromptEvidenceItem[] = (options.packageContext?.evidence ?? []).map((e) => ({
     id: e.id,
     excerpt: e.excerpt,
     data: e.data,
+    sourceRef: e.sourceRef,
+    observedAt: sourceObservedAt.get(e.sourceRef) ?? null,
   }));
 
   const prompt = buildAuditPrompt({
@@ -121,7 +243,7 @@ export async function runAudit(
       assignee: issue.assignee,
       labels: issue.labels,
     })),
-    priorFindings,
+    existingFindings,
     contextKind: input?.kind ?? null,
     contextText: input?.content ?? null,
     packageEvidence: promptEvidence,
@@ -129,19 +251,19 @@ export async function runAudit(
 
   const complete = options.complete ?? completeJson;
 
-  let rawFindings: unknown;
+  let rawOutput: unknown;
   try {
     // Dense inputs (a full spreadsheet dump, a long transcript, a large
-    // package) can produce many findings -- 16000 gives real headroom;
+    // package) can produce many candidates -- 16000 gives real headroom;
     // completeJson still surfaces a clear error if even that isn't enough.
-    rawFindings = await complete({ prompt, maxTokens: 16000 });
+    rawOutput = await complete({ prompt, maxTokens: 16000 });
   } catch (error) {
     throw new Error(`Audit model call failed: ${error instanceof Error ? error.message : "unknown error"}`);
   }
 
-  let findings;
+  let candidates;
   try {
-    findings = normalizeFindings(rawFindings);
+    candidates = normalizeAuditOutput(rawOutput);
   } catch (error) {
     throw new Error(`Couldn't parse audit findings: ${error instanceof Error ? error.message : "unknown error"}`);
   }
@@ -166,16 +288,17 @@ export async function runAudit(
 
   const createdFindings: Finding[] = [];
   const rejectedFindings: RejectedFinding[] = [];
+  const suppressedFindings: SuppressedFinding[] = [];
+  const downgradedBlocking: DowngradedBlocking[] = [];
+  const seenBatchKeys = new Set<string>();
 
-  for (const f of findings) {
+  for (const f of candidates.findings) {
     const citedRefs = f.evidenceRefs.filter((ref) => validEvidenceIds.has(ref));
 
-    // Citation invariant: a Finding produced by a run with NO transcript
+    // 1) Provenance: a Finding produced by a run with NO transcript
     // (source === null) MUST end up with at least one valid evidenceRef,
-    // or it would persist with NO provenance at all -- neither a Source
-    // nor a ContextSnapshot behind it. Never fabricate a citation to make
-    // this pass; reject the proposed Finding instead and surface why. A
-    // finding from a MIXED run (a transcript was also pasted) always has
+    // or it would persist with NO provenance at all. Never fabricate a
+    // citation -- reject instead. A finding from a MIXED run always has
     // sourceId set regardless, so this only ever bites a pure
     // package-only run.
     if (!source && citedRefs.length === 0) {
@@ -188,13 +311,58 @@ export async function runAudit(
       continue;
     }
 
+    // 2) Structured-qualifier contradiction: cited evidence directly
+    // contradicts the candidate's core claim (e.g. "Tickets Created: y"
+    // vs a missing-work claim, or "not needed for this scope" vs
+    // promoting it into required delivery work). Full suppression, not a
+    // softened Finding.
+    const qualifierReason = qualifierContradiction(f);
+    if (qualifierReason) {
+      suppressedFindings.push({ title: f.title, type: f.type, reason: qualifierReason });
+      continue;
+    }
+
+    // 3) Reconciliation: the model's own judgment that this is NOT a new
+    // underlying obligation (already represented by an existing Linear
+    // ticket or Finding). Defaults to "not new" if the model omitted the
+    // judgment entirely (see normalize.ts) -- a missing judgment must
+    // never default into "safe to persist."
+    if (!f.reconciliation.newObligation) {
+      const target = f.reconciliation.matchedExistingId ? ` (matches: ${f.reconciliation.matchedExistingId})` : "";
+      suppressedFindings.push({
+        title: f.title,
+        type: f.type,
+        reason: `not a new underlying obligation${target}${f.reconciliation.reason ? ` -- ${f.reconciliation.reason}` : ""}`,
+      });
+      continue;
+    }
+
+    // 4) Within-batch duplicate backstop, on top of the model's own
+    // per-candidate reconciliation.
+    const batchKey = withinBatchDuplicateKey(f);
+    if (batchKey && seenBatchKeys.has(batchKey)) {
+      suppressedFindings.push({
+        title: f.title,
+        type: f.type,
+        reason: `duplicates another candidate in this same audit run (same type + matched issues: ${f.matchedIssues.join(", ")})`,
+      });
+      continue;
+    }
+    if (batchKey) seenBatchKeys.add(batchKey);
+
+    // 5) Blocking bar: the model's requested blocking=true is honored
+    // only with complete gate metadata and no disqualifying qualifier.
+    const { blocking, downgradeReason } = resolveBlocking(f);
+    if (f.blockingRequested && !blocking) {
+      downgradedBlocking.push({ title: f.title, reason: downgradeReason ?? "blocking bar not met" });
+    }
+
     // contextSnapshotId is set only when THIS finding actually cites
     // package evidence -- a finding grounded purely in the pasted
-    // transcript stays sourceId-only even in a mixed run, so
-    // "PACKAGE-DERIVED" (contextSnapshotId set, evidenceRefs non-empty)
-    // stays a precise, checkable claim rather than "this run happened to
-    // have a package attached."
+    // transcript stays sourceId-only even in a mixed run.
     const contextSnapshotId = citedRefs.length > 0 ? options.packageContext?.contextSnapshotId ?? null : null;
+
+    const rationale = `[${ORIGIN_LABELS[f.reasoningOrigin]}] ${f.rationale}`;
 
     const created = await prisma.finding.create({
       data: {
@@ -202,12 +370,12 @@ export async function runAudit(
         type: f.type,
         title: f.title,
         quote: f.quote,
-        rationale: f.rationale,
+        rationale,
         severity: f.severity,
         estimateHint: f.estimateHint,
         owner: f.owner,
         blocks: f.blocks,
-        blocking: f.blocking,
+        blocking,
         matchedIssues: f.matchedIssues,
         contextSnapshotId,
         evidenceRefs: citedRefs,
@@ -226,5 +394,13 @@ export async function runAudit(
     },
   });
 
-  return { source, findings: createdFindings, rejectedFindings };
+  return {
+    source,
+    findings: createdFindings,
+    rejectedFindings,
+    suppressedFindings,
+    downgradedBlocking,
+    signals: candidates.signals,
+    clarifications: candidates.clarifications,
+  };
 }
