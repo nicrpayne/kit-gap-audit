@@ -220,6 +220,26 @@ export interface ScopeWorkItem extends SourcedWorkItem {
   /** For inferred work: what was actually said, and why we think it's work. */
   quote: string | null;
   rationale: string | null;
+  // The Linear parent this issue hangs from, verbatim. NOT yet resolved to a
+  // feature -- a sub-issue's parent is another issue, so the walk up to the
+  // top of the chain happens in lib/scope/features.ts, which is the only
+  // place that knows what a feature is.
+  parentIdentifier: string | null;
+  parentTitle: string | null;
+  /** The Linear Project (the Epic) this issue sits in. */
+  projectName: string | null;
+}
+
+// Work that is already finished. Deliberately NOT part of `items`: the
+// forecast simulates what is left, and that must not change. This exists so
+// Scope can report a feature's real coverage ("4 of 7 done") instead of
+// implying a feature is only its unfinished half.
+export interface CompletedWork {
+  id: string;
+  label: string;
+  parentIdentifier: string | null;
+  parentTitle: string | null;
+  completedAt: string | null;
 }
 
 // Joins the simulated items back to the records they were built from. Reads
@@ -238,6 +258,9 @@ function describeItems(bundle: ScopeSimBundle): ScopeWorkItem[] {
         points: issue.estimate,
         quote: null,
         rationale: null,
+        parentIdentifier: issue.parentIdentifier,
+        parentTitle: issue.parentTitle,
+        projectName: issue.projectName,
       };
     }
     const finding = findingById.get(item.id);
@@ -249,6 +272,12 @@ function describeItems(bundle: ScopeSimBundle): ScopeWorkItem[] {
       points: null,
       quote: finding?.quote ?? null,
       rationale: finding?.rationale ?? null,
+      // Inferred work has no Linear parent by definition -- nothing in Linear
+      // represents it. That is exactly why Scope treats it as a candidate
+      // capability rather than filing it under an existing feature.
+      parentIdentifier: null,
+      parentTitle: null,
+      projectName: null,
     };
   });
 }
@@ -259,6 +288,8 @@ export interface PortfolioScopeInput {
   targetDate: Date | null;
   dependsOnScopeIds: string[];
   items: ScopeWorkItem[];
+  /** Finished work, for coverage only. Never simulated. */
+  completedWork: CompletedWork[];
   gates: ForecastInputs["gates"];
   teamCapacity: number;
   capacitySource: CapacitySource;
@@ -389,6 +420,15 @@ export async function buildPortfolioInputs(): Promise<PortfolioInputs> {
       targetDate: scope.targetDate,
       dependsOnScopeIds: scope.dependsOnScopeIds,
       items: describeItems(bundle),
+      completedWork: bundle.issues
+        .filter((i) => i.completedAt !== null)
+        .map((i) => ({
+          id: i.identifier,
+          label: `${i.identifier} ${i.title}`,
+          parentIdentifier: i.parentIdentifier,
+          parentTitle: i.parentTitle,
+          completedAt: i.completedAt,
+        })),
       gates: bundle.inputs.gates,
       teamCapacity: bundle.inputs.teamCapacity,
       capacitySource: bundle.inputs.capacitySource,

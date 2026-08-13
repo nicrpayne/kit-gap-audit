@@ -1,14 +1,15 @@
-// SCOPE -> FORECAST PROOF. Not part of the app build.
+// SCOPE -> FORECAST PROOF, at the capability level. Not part of the app build.
 //
-// Drives the real UI with a real pointer and asserts, at every step, that the
-// two instruments are operating ONE world:
+// Drives the real UI and asserts that composing the product in Scope and
+// reading the consequence in Forecast are one world:
 //
-//   Reality on Scope  ->  cut real work  ->  Scope reacts  ->  walk to Forecast
-//   ->  the Living Forecast shows the SAME hypothetical  ->  discard  ->  both
-//   instruments are back on Reality.
+//   Reality -> bypass a capability -> the desk reacts -> the release readout
+//   moves -> walk to Forecast -> the Living Forecast shows the SAME
+//   hypothetical, named as a capability -> discard -> both back on Reality.
 //
-// Also proves the honest negative: a scope whose date is set by a dependency
-// does not move when its backlog is cut.
+// Also proves the two honest negatives: a capability whose work is dominated
+// by a dependency moves nothing, and a hand-declared capability with no work
+// mapped to it changes no forecast at all.
 //
 //   node scripts/scope-forecast-proof.mjs [outDir]
 import { chromium } from "playwright";
@@ -40,101 +41,117 @@ p.on("pageerror", (e) => {
 const settle = (ms = 1500) => p.waitForTimeout(ms);
 const shot = (n) => p.screenshot({ path: `${out}/${n}.png` });
 
-// The landing date each instrument is currently showing for its scope.
-const scopeDate = () => p.locator('[data-shoot="landing"] .i-readout').first().innerText();
+const scopeDate = () => p.locator('[data-shoot="master"] .i-readout').first().innerText();
 const forecastDate = () => p.locator('[data-shoot="central-date"] .i-readout').first().innerText();
 const statePill = () => p.locator('[data-shoot="scenario-strip"] span').first().innerText();
+const releaseLoad = async () =>
+  (await p.locator('[data-shoot="master"]').innerText()).match(/RELEASE LOAD\s+([\d.]+)d/i)?.[1];
 
-async function pullOut(index) {
-  const slab = p.locator('[data-shoot="stratum"]').nth(index);
-  const box = await slab.boundingBox();
-  const y = box.y + box.height / 2;
-  await p.mouse.move(box.x + box.width / 2, y);
-  await p.mouse.down();
-  for (const dx of [40, 90, 140, 175]) {
-    await p.mouse.move(box.x + box.width / 2 + dx, y, { steps: 4 });
-    await p.waitForTimeout(45);
-  }
-  await p.mouse.up();
+const goScope = async (key) => {
+  await p.goto(`${BASE}/scope`, { waitUntil: "networkidle" });
+  await settle(4000);
+  await p.locator(`[data-shoot="scope-${key}"]`).click();
+  await settle(1600);
+};
+const bypass = async (i) => {
+  await p.locator('[data-shoot="engage"]').nth(i).click();
   await settle(1500);
-}
+};
 
-// ── 1. Reality on Scope ─────────────────────────────────────────────────
-await p.goto(`${BASE}/scope`, { waitUntil: "networkidle" });
-await settle(4200);
-await p.locator('text="Design"').first().click();
-await settle(1600);
-
-const realityScope = await scopeDate();
+// ── 1. Reality ──────────────────────────────────────────────────────────
+await goScope("jsa");
 check("Scope opens in Reality", (await statePill()).includes("REALITY"), await statePill());
-console.log(`      Design lands ${realityScope} in Reality`);
-await shot("1-scope-reality");
+const channels = await p.locator('[data-shoot="channel"]').count();
+check("The desk shows capabilities, not tickets", channels >= 4 && channels <= 12, `${channels} channels`);
+const realityDate = await scopeDate();
+const realityLoad = await releaseLoad();
+console.log(`      JSA lands ${realityDate}, carrying ${realityLoad}d across ${channels} capabilities`);
+await shot("1-reality");
 
-// ── 2. Cut real work, with a real drag ──────────────────────────────────
-const itemName = await p.locator('[data-shoot="stratum"]').first().getAttribute("aria-label");
-await pullOut(0);
-const scenarioScope = await scopeDate();
+// ── 2. Bypass one capability ────────────────────────────────────────────
+const firstName = await p.locator('[data-shoot="channel"]').first().innerText();
+await bypass(0);
+const scenarioDate = await scopeDate();
+const scenarioLoad = await releaseLoad();
 check("Scenario state is declared in words", (await statePill()).includes("SCENARIO"), await statePill());
-check("The work is parked, not deleted", (await p.locator('[data-shoot="out-margin"]').count()) === 1);
-check("Scope's own date moved", realityScope !== scenarioScope, `${realityScope} -> ${scenarioScope}`);
-console.log(`      cut: ${itemName}`);
-await shot("2-scope-scenario");
+check(
+  "The chip names a capability, not a ticket count",
+  (await p.locator("text=/capabilit(y|ies) out of this release/").count()) > 0
+);
+check("The channel is muted, not removed", (await p.locator('[data-shoot="channel"]').count()) === channels);
+check(
+  "It is marked out and can be brought back",
+  (await p.locator('[data-shoot="channel"][data-bypassed="true"]').count()) === 1
+);
+check("Release load fell", Number(scenarioLoad) < Number(realityLoad), `${realityLoad}d -> ${scenarioLoad}d`);
+check("The release date moved", realityDate !== scenarioDate, `${realityDate} -> ${scenarioDate}`);
+console.log(`      bypassed: ${firstName.split("\n")[1]}`);
+await shot("2-bypassed");
 
-// ── 3. Walk to Forecast. The hypothetical must survive the walk ─────────
-await p.locator('[data-shoot="open-forecast"]').count().then(async (n) => {
-  if (n === 0) await p.locator('[data-shoot="toggle-macros"]').click();
-});
-await settle(600);
+// ── 3. The hypothetical survives the walk to Forecast ───────────────────
 await p.locator('[data-shoot="open-forecast"]').click();
 await p.waitForURL("**/forecast");
 await settle(4200);
-await p.locator('[data-shoot="scope-design"]').click();
+await p.locator('[data-shoot="scope-jsa"]').click();
 await settle(2200);
-
 const forecastScenario = await forecastDate();
 check("Forecast is in the same Scenario", (await statePill()).includes("SCENARIO"), await statePill());
 check(
-  "Forecast names the assumption Scope made",
-  (await p.locator('text=/item(s)? out of scope/').count()) > 0
+  "Forecast names the capability Scope took out",
+  (await p.locator("text=/capabilit(y|ies) out of this release/").count()) > 0
 );
 check(
   "Forecast shows the same date Scope did",
-  scenarioScope.toUpperCase().includes(forecastScenario.split(" ")[0].toUpperCase()),
-  `Scope "${scenarioScope}" vs Forecast "${forecastScenario}"`
+  scenarioDate.toUpperCase().includes(forecastScenario.split(" ")[0].toUpperCase()),
+  `Scope "${scenarioDate}" vs Forecast "${forecastScenario}"`
 );
 await shot("3-forecast-same-scenario");
 
-// ── 4. Discard. Both instruments return to Reality ──────────────────────
+// ── 4. Discard returns both instruments to Reality ──────────────────────
 await p.locator('[data-shoot="discard"]').click();
 await settle(2400);
-const forecastReality = await forecastDate();
 check("Forecast is back on Reality", (await statePill()).includes("REALITY"), await statePill());
-check("Forecast's date returned", forecastReality !== forecastScenario, `${forecastScenario} -> ${forecastReality}`);
-await shot("4-forecast-reality");
-
-await p.goto(`${BASE}/scope`, { waitUntil: "networkidle" });
-await settle(4200);
-await p.locator('text="Design"').first().click();
-await settle(1600);
-check("Scope is back on Reality too", (await scopeDate()) === realityScope, `${await scopeDate()} vs ${realityScope}`);
-check("Nothing is parked any more", (await p.locator('[data-shoot="out-margin"]').count()) === 0);
-await shot("5-scope-back-to-reality");
+await goScope("jsa");
+check("Scope is back on Reality too", (await scopeDate()) === realityDate, `${await scopeDate()} vs ${realityDate}`);
+check("Nothing is left muted", (await p.locator('[data-shoot="channel"][data-bypassed="true"]').count()) === 0);
+await shot("4-back-to-reality");
 
 // ── 5. The honest negative: a dominated scope ───────────────────────────
-await p.locator('text="iTrack"').first().click();
-await settle(1800);
+await goScope("itrack");
 const itrackReality = await scopeDate();
-await pullOut(0);
-await pullOut(0);
+await bypass(0);
+await bypass(1);
 const itrackScenario = await scopeDate();
 check(
-  "Cutting a dominated scope moves nothing, and the instrument says so",
+  "Cutting capabilities in a dominated scope moves nothing",
   itrackReality === itrackScenario,
   `${itrackReality} -> ${itrackScenario}`
 );
-const verdict = await p.locator('[data-shoot="verdict"]').innerText();
-check("The verdict names the real constraint", /waits on Platform/i.test(verdict), verdict.replace(/\n/g, " "));
-await shot("6-dominated");
+const master = await p.locator('[data-shoot="master"]').innerText();
+check("The master names the real constraint", /waits on Platform/i.test(master), master.split("\n").slice(-6).join(" · "));
+await shot("5-dominated");
+
+// ── 6. A declared capability with no work changes no forecast ──────────
+await p.locator('[data-shoot="discard"]').click();
+await settle(1500);
+const beforeDeclare = await scopeDate();
+await p.locator('[data-shoot="add-feature"]').click();
+await settle(700);
+await p.locator("#feature-name").fill("Shift Handover");
+await p.locator('[data-shoot="create-feature"]').click();
+await settle(1600);
+await p.keyboard.press("Escape");
+await settle(800);
+check(
+  "A declared capability with no work mapped changes no date",
+  (await scopeDate()) === beforeDeclare,
+  `${beforeDeclare} -> ${await scopeDate()}`
+);
+check(
+  "…and is visibly a draft that was never saved",
+  (await p.locator('[data-shoot="channel"]').filter({ hasText: "Draft" }).count()) === 1
+);
+await shot("6-declared-capability");
 
 await b.close();
 console.log(failures === 0 ? "\nALL PROOFS PASS" : `\n${failures} FAILED`);

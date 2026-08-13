@@ -27,6 +27,10 @@ export interface ScopeWorkItem extends WorkItem {
   points: number | null;
   quote: string | null;
   rationale: string | null;
+  /** The Linear parent, verbatim; resolved to a feature in lib/scope/features.ts. */
+  parentIdentifier: string | null;
+  parentTitle: string | null;
+  projectName: string | null;
 }
 
 export interface ProjectScope {
@@ -35,6 +39,13 @@ export interface ProjectScope {
   targetDate: string | null;
   dependsOnScopeIds: string[];
   items: ScopeWorkItem[];
+  completedWork: {
+    id: string;
+    label: string;
+    parentIdentifier: string | null;
+    parentTitle: string | null;
+    completedAt: string | null;
+  }[];
   gates: DecisionGate[];
   teamCapacity: number;
   capacitySource: "allocations" | "explicit" | "inferred";
@@ -123,6 +134,19 @@ export interface SuiteScenario {
       is a pure input change on the existing path -- no new math, and the
       stored WorkEstimate is never touched. Scope owns this lever. */
   estimateOverrideByItemId: Record<string, { low: number; likely: number; high: number }>;
+  // WHICH CAPABILITIES ARE OUT, as opposed to which work items are.
+  //
+  // excludedItemIds above stays the engine's truth -- the simulation only
+  // understands work items, and nothing here changes that. This set records
+  // the PRODUCT-LEVEL decision that produced those exclusions, so the suite
+  // can say "Offline Capture is out of this release" instead of "3 items out
+  // of scope". Scope writes both together, and is the only writer of this one.
+  bypassedFeatureIds: Set<string>;
+  // Capabilities declared by hand in this session. There is no Feature table
+  // yet, so a draft lives here and dies with the Scenario -- the honest
+  // behaviour for something that was never saved. See docs/SCOPE-INSTRUMENT.md
+  // for the migration this stands in for.
+  draftFeatures: { id: string; name: string; intent: string; itemIds: string[] }[];
   contextSwitchCostPct: number | null;
 }
 
@@ -131,6 +155,8 @@ export const EMPTY_SCENARIO: SuiteScenario = {
   excludedItemIds: new Set(),
   resolvedGateIds: new Set(),
   estimateOverrideByItemId: {},
+  bypassedFeatureIds: new Set(),
+  draftFeatures: [],
   contextSwitchCostPct: null,
 };
 
@@ -140,6 +166,8 @@ export function scenarioIsActive(s: SuiteScenario): boolean {
     s.excludedItemIds.size > 0 ||
     s.resolvedGateIds.size > 0 ||
     Object.keys(s.estimateOverrideByItemId).length > 0 ||
+    s.bypassedFeatureIds.size > 0 ||
+    s.draftFeatures.length > 0 ||
     s.contextSwitchCostPct !== null
   );
 }

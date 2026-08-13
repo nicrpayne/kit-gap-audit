@@ -2,125 +2,158 @@
 
 Companion to `docs/DESIGN-NORTH-STAR.md`. That document says what the
 Instrument surface should feel like; this one says what **Scope** is, what it
-is allowed to control, and — the part that matters most — where the engine
-stops and the drawing has to stop with it.
+is allowed to control, and where the model stops.
 
-Scope answers one question: **what are we actually trying to ship?**
+Scope answers one question: **what are we actually shipping?**
 
-## The object is the load, and the date is not part of it
+## The unit is a capability, not a ticket
 
-Every other backlog tool conflates two things. Scope keeps them apart, on one
-shared vertical axis measured in days:
+A product manager thinks in capabilities — "Offline Capture", "Approval
+Workflow" — and tickets are how those get built. Scope's first version worked
+at the WorkItem level and was wrong for that reason: it was a beautifully
+argued backlog visualiser, and a backlog is not a product.
 
-| | What it is | Does cutting change it? |
+So the surface is a **desk**. One channel per capability, feeding a master
+section that is the release. Each channel is a fixed-size module: effort never
+changes its size, only the light inside it. Muting a channel takes that
+capability out of the release, and — as on any desk — the channel stays
+exactly where it was.
+
+## Where features come from
+
+Linear has no first-class Feature entity. Scope derives one, from structure
+rather than from language, and never by clustering titles or asking a model to
+guess. `lib/scope/features.ts` is the only place that knows what a feature is.
+
+| Source | Derived from | Status |
 |---|---|---|
-| **The load** | What this Scope has committed to carry. `Σ mean(item)/capacity + Σ mean(gate)` | **Always.** It is arithmetic. |
-| **The landing** | Where the simulation says it lands, from 5000 trials | **Sometimes.** A dependency or an open decision can be what is really setting it. |
+| **Linear** | the top of an issue's `parent` chain (Epic → Feature → Issue → Sub-issue) | real |
+| **Hermes** | an open Finding no ticket represents | **candidate**, never accepted Reality |
+| **Manual** | declared by hand in the app | **draft**, session-local — see below |
+| **Unmapped** | work with no parent at all | not a capability — a coverage gap, shown as one |
 
-The column is the load. The rule below it is the landing. When they separate,
-a dashed **tether** is drawn between them, and that gap is the honest answer to
-"why didn't my cut help?" — it is slack, and no amount of further cutting
-reaches it.
+Two details that matter:
 
-This is why the instrument is not a list. A list can tell you an item is 8
-points; it cannot show you that removing it falls into 7 days of slack.
+- The chain is **walked to its root**, because a sub-issue's parent is another
+  issue, not a feature. `rootParentOf` bounds the walk rather than trusting the
+  data for acyclicity.
+- **Unmapped work gets its own visible module.** Inventing a bucket for it
+  would hide exactly the thing Scope should be surfacing: nobody has said what
+  product capability this work serves.
 
-### Why slab height is the mean, not the likely value
+### What this cost in code
 
-`sampleOwnDays` (`lib/forecast/simulate.ts`) draws each item from a triangular
-distribution and divides the sum by capacity. The sum is linear in the items,
-so one item's expected contribution is exactly `mean(low, likely, high) /
-capacity` days — a separable share that falls out of the engine's own
-arithmetic rather than an attribution invented for the picture.
+Nothing structural. `lib/linear.ts` gained two fields on a query it already
+ran — `parent { identifier title }` and `project { name }`. Before this pass
+the app fetched neither, so feature discovery was not merely unbuilt, it was
+impossible. **No Prisma migration was made** (see below for the one that is
+eventually needed).
 
-Using the *likely* value instead would make every column fall systematically
-short of its own simulated date (a 1–3–7 day placeholder has a mean of 3.7,
-not 3), and that shortfall would be indistinguishable from real domination.
-The one thing this instrument exists to show would have been buried under an
-artefact of its own drawing. See `lib/scope/load.ts`.
+## ⚠ Before real Linear data flows in: the double-count
 
-## The visual → semantic map
+The dev fixtures deliberately model Feature issues as *references* — children
+carry `parentIdentifier`, and the Feature issue itself is not in the fetched
+set. Real Linear will not be so tidy.
 
-Nothing here is decorative. If it is drawn, it is derived.
+**If the reorganised Linear returns Feature issues inside a Scope's own
+filter, `buildForecastInputs` will count them as work alongside their
+children.** A Feature issue with no estimate picks up the 1–7 day placeholder,
+so a release with 8 features would silently gain ~30 days of phantom effort.
 
-| What you see | What it means | Derived from |
-|---|---|---|
-| Slab **height** | days of schedule this item costs | `mean(range) / capacity` |
-| Slab **width** | how unsure that is | `(high − low) / capacity`, scaled against Reality's widest item |
-| Slab **order** | heaviest first | sort on the above |
-| **Hatching** on a slab | no real estimate; a deliberately wide guess | `estimateSource` is a placeholder |
-| Violet slab border | re-estimated in this Scenario | `estimateOverrideByItemId` |
-| "inferred" on a name | not a ticket — the audit found it in a source | `kind === "inferred"` |
-| Amber **hatched band** | serial decision delay; capacity cannot divide it | open `DecisionGate`s |
-| Amber bar **in the gutter** | the days cutting here cannot reach | a real simulation with the backlog emptied |
-| Dashed **tether** | slack between the load and the date | `landing − load` |
-| Violet date | moved in this Scenario | `preview` vs `baseline` |
-| Dashed ghost rule | Reality's own landing | `baseline` |
-
-The silhouette is therefore readable before any number is: a column that
-tapers is a release whose big items are its well-understood ones; a column
-that bulges is a release carrying its uncertainty in its heaviest work.
+The fix is one filter — exclude issues that are parents of other in-scope
+issues — but it changes forecast numbers, so it belongs in its own pass with
+its own before/after evidence, not smuggled into a design change. It is the
+single highest-value follow-up from this work.
 
 ## What Scope actually controls
 
-Verified against the code, not assumed.
-
 **Real, and wired:**
 
-- **Work inclusion / exclusion.** `runPortfolioSimulation` reads `items` off
-  the spec it is handed, so removing one is the engine's own definition of
-  "this isn't in the release". No new math; `SuiteScenario.excludedItemIds`
-  filters the spec.
-- **Three-point estimate override.** Same class of change: the simulation
-  reads `low/likely/high` off the spec. `estimateOverrideByItemId` substitutes
-  a hypothetical range. The stored `WorkEstimate` is never written.
+- **Capability inclusion / exclusion.** Bypassing writes both halves of the
+  truth: `bypassedFeatureIds` (the product decision) and the `excludedItemIds`
+  the engine actually simulates. Written together, so they cannot disagree.
+- **Three-point estimate override**, per work item, inside Feature Detail. The
+  simulation reads `low/likely/high` off the spec it is handed, so substituting
+  them is a pure input change. The stored `WorkEstimate` is never written.
 
-Both are input substitutions applied in `useProject`'s existing preview path.
-**Monte Carlo sampling and `runPortfolioSimulation` orchestration are
-untouched.**
+Both are input substitutions on the existing path. **Monte Carlo sampling and
+`runPortfolioSimulation` orchestration are untouched.**
 
-**Real, but owned elsewhere — shown, never edited here:**
+**Real, but owned elsewhere — shown, never edited here:** capacity and context
+switch (Portfolio), decision resolution (Decisions), release dates (Timeline),
+the synthesized consequence (Forecast). Each appears only where it bears on the
+composition, with a door.
 
-| Value | Owner | Why Scope shows it |
-|---|---|---|
-| capacity / FTE | Portfolio | it is the divisor in every slab height |
-| decision resolution | Decisions | serial delay is part of the load |
-| target date | evaluation / Forecast | not a scope question |
-| consequence analysis | Forecast | Scope shows the date, Forecast explains it |
-
-**Not supported by the model, and therefore not built as a control:**
+**Not supported by the model, and therefore fenced:**
 
 - **Release assignment (Beta / Production / Later).** There is no release
-  entity a `WorkItem` can belong to — one release per Scope, no milestones. The
-  interaction is drawn in a summoned window marked `Prototype` that says so
-  before it shows anything, and it reaches nothing.
-- **Within-project sequencing.** The simulation treats items as one parallel
-  pool divided by capacity. There is no order to manipulate, so no ordering
-  control exists. Slab order is a *reading* order (by size), which is why it is
-  never draggable.
-- **Milestones**, **release lanes**, and **arbitrary grouping**: no model.
-- **Committing a cut into Reality.** There is nowhere to write it: exclusion is
-  not a field on a Linear issue or a `WorkItem`. Scope therefore has no Commit
-  button, and every surface says "out in this Scenario", never "removed".
+  entity a WorkItem can belong to. The control is drawn in Feature Detail,
+  marked `Prototype`, and inert. `"Move Offline Capture to Production"` is a
+  Scope operation and it is coming; today, taking the capability out of the
+  Scenario is the honest version of the question.
+- **Accepting a Hermes candidate.** Acceptance means writing a capability down,
+  which needs the table below. Until then a candidate stays a candidate — and
+  the work it implies keeps being counted, which is the safe way round.
+- **Saving a manual capability.** A declared capability is real to the
+  instrument and dies with the Scenario. The surface says so.
+- **Committing anything to Reality.** Scope has no Commit button, because there
+  is nowhere to write an exclusion.
 
-## One world, seven surfaces
+## The migration this is standing in for
 
-`useProject` keeps the payload and the scenario in a module store rather than
-per-component state. A scenario is a statement about the project, not about the
-screen it was made on — cutting scope and walking to Forecast to see the
-consequence is the point of a suite, and per-surface state silently discarded
-the hypothetical on the way. `scripts/scope-forecast-proof.mjs` asserts the
-whole round trip, including that discarding returns both instruments to
-Reality.
+Two models, whenever features should outlive a session:
 
-## The two examples worth keeping
+```
+model Feature {
+  id, scopeId, name, intent,
+  source        // "manual" | "accepted_hermes"
+  linearParentId String?   // set once reconciled to Linear
+  createdAt
+}
+model FeatureWorkLink { featureId, source, externalId }  // @@unique
+```
 
-Both are real, from the dev seed, and both are load-bearing for the design:
+`composeFeatures` already takes drafts as an argument and merges them over the
+Linear-derived set, so persisting them is a matter of loading rows into that
+argument. The UI does not change.
 
-- **Design** — capacity is 0.35 FTE, so a single 3-day item is 10 days of
-  schedule. Cutting one moves the date 10 days earlier. Cutting *helps*.
-- **iTrack** — depends on Platform. All 7 of its items can be cut and the date
-  does not move by one day, because Platform's own completion sets it. Cutting
-  *does nothing*, and the instrument says which thing is really in the way.
+## Visual → semantic map
 
-`scripts/scope-truth.mjs` re-derives both against the live payload.
+Nothing is decorative. If it is drawn, it is derived.
+
+| What you see | What it means |
+|---|---|
+| Channel **width/height** | nothing — fixed, so the composition stays learnable |
+| Meter **level line** | this capability's expected load, `mean(range) ÷ capacity` |
+| Meter **fill gradient** | light falling away from the level; the eye lands on the level, not the block |
+| Meter **ticks** | a real scale in whole days, 4–6 graduations across the tallest |
+| **Bracket** on the meter's right | the low-to-high range this could actually run |
+| **Hatching** | placeholder estimates / unmapped work — the one texture, one meaning |
+| Dashed violet border | Hermes candidate or manual draft — hypothetical, not Reality |
+| Amber tag | a coverage gap, not a capability |
+| Channel **dark, meter drained** | muted: out of this release, still in Reality |
+| **Mint dot** on the switch | engaged and feeding the master |
+
+Colour follows the suite rule — state, never category. Every capability that is
+simply *in* the release is neutral warm white; violet means hypothetical, amber
+means a gap, mint means engaged.
+
+## Feature Detail
+
+Five modes, each showing what the model holds or saying plainly that it holds
+nothing: **Overview** (what it is, load, share, certainty, coverage, the fenced
+release control), **Work** (the Linear issues, open and done — the only place
+tickets appear in Scope), **Evidence** (why the machine believes it exists),
+**Estimate** (where each number comes from, plus the estimate pad),
+**History** (completions from stored records; it says outright that no
+feature-level change log exists).
+
+## Proofs
+
+- `scripts/scope-forecast-proof.mjs` — 18 assertions over the real UI: bypass a
+  capability, watch the release move, walk to Forecast and find the same
+  hypothetical named as a capability, discard, both back on Reality. Plus the
+  two honest negatives: a dominated scope where cutting moves nothing, and a
+  declared capability with no work that changes no date.
+- `scripts/scope-truth.mjs` — re-derives the cutting-helps / cutting-does-not
+  cases against the live payload.

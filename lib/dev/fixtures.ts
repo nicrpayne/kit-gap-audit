@@ -26,6 +26,20 @@ interface TeamFixture {
   doneCount: number;
   /** Remaining tickets left deliberately unassigned. */
   unassignedCount: number;
+  /** The Linear Project these issues sit in -- the EPIC in the new structure. */
+  epic: string;
+  // THE FEATURE LAYER, modelled the way the reorganised Linear actually
+  // expresses it: implementation issues carry a `parent` pointing at the
+  // Feature issue they belong to. Indexes are into `titles` above.
+  //
+  // Titles listed in NO feature are deliberate: real backlogs always contain
+  // work nobody has mapped to a capability yet, and Scope's job is to show
+  // that gap rather than quietly invent a bucket for it.
+  features: { key: string; title: string; items: number[] }[];
+  // One issue whose parent is ANOTHER ISSUE rather than the feature directly
+  // -- a sub-issue. Present so the feature resolver's parent-chain walk is
+  // exercised offline and not just in production.
+  subIssueOf?: Record<number, number>;
 }
 
 const TEAMS: Record<string, TeamFixture> = {
@@ -65,6 +79,16 @@ const TEAMS: Record<string, TeamFixture> = {
     ],
     doneCount: 4,
     unassignedCount: 2,
+    epic: "KIT Platform",
+    features: [
+      { key: "PLAT-F1", title: "Identity & Access", items: [0, 6, 11] },
+      { key: "PLAT-F2", title: "Service Platform", items: [2, 5, 12, 13] },
+      { key: "PLAT-F3", title: "Data & Storage", items: [3, 7, 14] },
+      { key: "PLAT-F4", title: "Developer Platform", items: [1, 8, 10, 15] },
+    ],
+    // "Session invalidation across devices" hangs off the auth ticket, not
+    // off the feature -- so resolving it needs the chain walk.
+    subIssueOf: { 11: 0 },
   },
   SOF: {
     titles: [
@@ -86,6 +110,13 @@ const TEAMS: Record<string, TeamFixture> = {
     assignees: ["Maru Tanaka", "Lucy Bell", "Alex Reyes", "Sam Ortiz"],
     doneCount: 4,
     unassignedCount: 3,
+    epic: "KIT Safety (JSA and iTrack)",
+    features: [
+      { key: "SOF-F1", title: "Offline Capture", items: [1, 3, 13] },
+      { key: "SOF-F2", title: "JSA Authoring", items: [4, 10, 11] },
+      { key: "SOF-F3", title: "Review & Approval", items: [6, 9, 12] },
+      { key: "SOF-F4", title: "Compliance Export", items: [7, 8] },
+    ],
   },
   TRK: {
     titles: [
@@ -103,6 +134,13 @@ const TEAMS: Record<string, TeamFixture> = {
     assignees: ["Alex Reyes", "Maru Tanaka"],
     doneCount: 3,
     unassignedCount: 2,
+    epic: "KIT iTrack",
+    features: [
+      { key: "TRK-F1", title: "Incident Intake", items: [0, 2] },
+      { key: "TRK-F2", title: "Corrective Actions", items: [1, 9] },
+      { key: "TRK-F3", title: "Root Cause Analysis", items: [3, 5, 8] },
+      { key: "TRK-F4", title: "Regulatory Export", items: [7] },
+    ],
   },
   DSN: {
     titles: [
@@ -116,6 +154,11 @@ const TEAMS: Record<string, TeamFixture> = {
     assignees: ["Lucy Bell", "Sam Ortiz"],
     doneCount: 2,
     unassignedCount: 1,
+    epic: "KIT Design",
+    features: [
+      { key: "DSN-F1", title: "Design System", items: [0, 1] },
+      { key: "DSN-F2", title: "Field Experience", items: [2, 3] },
+    ],
   },
 };
 
@@ -123,9 +166,24 @@ const TEAMS: Record<string, TeamFixture> = {
 // between runs but not uniform.
 const POINTS = [3, 5, 2, 8, 3, 1, 5, 2, 8, 3, 5, 2, 3, 8, 1, 5];
 
+// identifier for title index i -- kept as its own function so the parent
+// links below and the issues themselves cannot drift apart.
+function identifierFor(teamKey: string, i: number): string {
+  return `${teamKey}-${100 + i * 7}`;
+}
+
 export function devFixtureIssues(scope: ScopeFilter): LinearIssueSummary[] {
   const fixture = TEAMS[scope.teamKey] ?? TEAMS.SOF;
   const issues: LinearIssueSummary[] = [];
+
+  // Index -> the Feature issue it hangs from. Everything about the
+  // simulation (estimates, assignees, states) is untouched by this: a
+  // feature is metadata ABOUT work that was already being counted, never a
+  // change to what gets counted.
+  const featureOf = new Map<number, { key: string; title: string }>();
+  for (const f of fixture.features) {
+    for (const idx of f.items) featureOf.set(idx, { key: f.key, title: f.title });
+  }
 
   fixture.titles.forEach((title, i) => {
     const isDone = i < fixture.doneCount;
@@ -139,8 +197,18 @@ export function devFixtureIssues(scope: ScopeFilter): LinearIssueSummary[] {
         ? null
         : fixture.assignees[(remainingIndex - fixture.unassignedCount) % fixture.assignees.length];
 
+    // A sub-issue points at another ISSUE; everything else points straight
+    // at its Feature. Both shapes exist in the reorganised Linear, and
+    // resolveFeatures walks whichever chain it is handed.
+    const subParent = fixture.subIssueOf?.[i];
+    const feature = featureOf.get(i) ?? null;
+    const parentIdentifier =
+      subParent !== undefined ? identifierFor(scope.teamKey, subParent) : feature?.key ?? null;
+    const parentTitle =
+      subParent !== undefined ? fixture.titles[subParent] : feature?.title ?? null;
+
     issues.push({
-      identifier: `${scope.teamKey}-${100 + i * 7}`,
+      identifier: identifierFor(scope.teamKey, i),
       title,
       description: null,
       state: isDone ? "Done" : remainingIndex < fixture.unassignedCount + 2 ? "In Progress" : "Todo",
@@ -151,6 +219,9 @@ export function devFixtureIssues(scope: ScopeFilter): LinearIssueSummary[] {
       assignee,
       labels: [],
       completedAt: isDone ? new Date(Date.now() - (i + 3) * 86400000).toISOString() : null,
+      parentIdentifier,
+      parentTitle,
+      projectName: fixture.epic,
     });
   });
 

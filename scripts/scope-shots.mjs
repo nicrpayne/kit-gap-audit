@@ -1,5 +1,5 @@
-// Design-loop screenshot harness for the Scope instrument. Not part of the
-// app build.  node scripts/scope-shots.mjs <outDir>
+// Design-loop screenshot harness for the Scope Composer. Not part of the app
+// build.   node scripts/scope-shots.mjs <outDir>
 import { chromium } from "playwright";
 import { mkdirSync } from "fs";
 
@@ -20,88 +20,101 @@ p.on("console", (m) => {
   if (m.type() === "error") console.log("CONSOLE:", m.text().slice(0, 200));
 });
 
-const settle = (ms = 1400) => p.waitForTimeout(ms);
+const settle = (ms = 1300) => p.waitForTimeout(ms);
 const shot = async (n) => {
   await p.screenshot({ path: `${out}/${n}.png` });
   console.log("shot", n);
 };
-
-// Pulls a slab out of the column with a real pointer drag, the way a person
-// would -- proving the gesture, not just the state change behind it.
-async function pullOut(index) {
-  const slab = p.locator('[data-shoot="stratum"]').nth(index);
-  const box = await slab.boundingBox();
-  await p.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
-  await p.mouse.down();
-  for (const dx of [30, 70, 110, 150]) {
-    await p.mouse.move(box.x + box.width / 2 + dx, box.y + box.height / 2, { steps: 4 });
-    await p.waitForTimeout(40);
-  }
-  await p.mouse.up();
-}
-
 const goScope = async (name) => {
   await p.goto(`${BASE}/scope`, { waitUntil: "networkidle" });
   await settle(3800);
   if (name) {
-    await p.locator(`text="${name}"`).first().click();
-    await settle(1600);
+    await p.locator(`[data-shoot="scope-${name}"]`).click();
+    await settle(1500);
   }
 };
+const bypass = async (i) => {
+  await p.locator('[data-shoot="engage"]').nth(i).click();
+  await settle(1400);
+};
+const openFeature = async (i) => {
+  await p.locator('[data-shoot="channel"] button').nth(i * 2).click();
+  await settle(800);
+};
+const mode = async (m) => {
+  await p.locator(`[data-shoot="mode-${m}"]`).click();
+  await settle(600);
+};
 
-// 1. REALITY. The calm default canvas.
-await goScope();
+// 1. REALITY — the whole product shape at a glance.
+await goScope("jsa");
 await shot("1-reality");
 
-// 2. Depth on demand: one piece of work, and the estimate control.
-await p.locator('[data-shoot="stratum"]').first().click();
+// 2. One capability bypassed.
+await bypass(0);
+await shot("2-one-bypassed");
+
+// 3. Several bypassed.
+await bypass(2);
+await bypass(3);
+await shot("3-several-bypassed");
+
+// 4-8. Feature Detail, every mode.
+await p.locator('[data-shoot="discard"]').click();
+await settle(1500);
+await openFeature(0);
+await shot("4-detail-overview");
+await mode("work");
+await shot("5-detail-work");
+await mode("evidence");
+await shot("6-detail-evidence");
+await mode("estimate");
+await p.locator('[data-shoot="tune-estimate"]').first().click();
 await settle(700);
-await shot("2-selection");
-await p.locator('text="Open detail"').click();
-await settle(900);
-await shot("3-work-detail");
+await shot("7-detail-estimate");
+await mode("history");
+await shot("8-detail-history");
 await p.keyboard.press("Escape");
 await settle(500);
 
-// 4. THE CUT THAT HELPS -- Design, where capacity is small so one item is
-//    worth many days of schedule.
-await goScope("Design");
-await shot("4-design-reality");
-await pullOut(0);
-await settle(1600);
-await shot("5-design-cut");
-await p.locator('[data-shoot="toggle-macros"]').click();
-await settle(900);
-await shot("6-design-macros");
-await p.locator('[data-shoot="open-compare"]').click();
-await settle(900);
-await shot("7-compare-helped");
-await p.keyboard.press("Escape");
-await settle(400);
+// 9. The Hermes candidate — a capability Linear does not represent.
+const candidate = p.locator('[data-shoot="channel"]').filter({ hasText: "Candidate" }).first();
+if ((await candidate.count()) > 0) {
+  await candidate.locator("button").first().click();
+  await settle(800);
+  await mode("evidence");
+  await shot("9-hermes-candidate");
+  await p.keyboard.press("Escape");
+  await settle(500);
+}
 
-// 8. THE CUT THAT DOES NOT HELP -- iTrack, dominated by Platform.
+// 10. Adding a capability by hand, claiming unmapped work.
+await p.locator('[data-shoot="add-feature"]').click();
+await settle(700);
+await p.locator("#feature-name").fill("Crew Directory");
+await p.locator("#feature-intent").fill("Supervisors need an accurate crew list before a JSA can be signed off.");
+await settle(300);
+const claims = p.locator('[data-shoot="claim-item"]');
+if ((await claims.count()) > 0) {
+  await claims.first().click();
+  await settle(300);
+}
+await shot("10-add-capability");
+await p.locator('[data-shoot="create-feature"]').click();
+await settle(1400);
+await shot("11-draft-created");
+await p.keyboard.press("Escape");
+await settle(600);
+await shot("12-desk-with-draft");
+
+// 13. Cross-instrument: the same hypothetical, in Forecast.
 await p.locator('[data-shoot="discard"]').click();
 await settle(1400);
-await goScope("iTrack");
-await shot("8-itrack-reality");
-await pullOut(0);
-await settle(900);
-await pullOut(0);
-await settle(1700);
-await shot("9-itrack-dominated");
-await p.locator('[data-shoot="toggle-macros"]').click();
-await settle(600);
-await p.locator('[data-shoot="open-compare"]').click();
-await settle(900);
-await shot("10-compare-dominated");
-await p.keyboard.press("Escape");
-await settle(400);
-
-// 11. The release-boundary prototype, clearly fenced off.
-await p.locator('[data-shoot="open-boundary"]').click();
-await settle(900);
-await shot("11-boundary-prototype");
-await p.keyboard.press("Escape");
-await settle(400);
+await bypass(0);
+await shot("13-scenario-before-forecast");
+await p.locator('[data-shoot="open-forecast"]').click();
+await p.waitForURL("**/forecast");
+await settle(4000);
+await shot("14-forecast-consequence");
 
 await b.close();
