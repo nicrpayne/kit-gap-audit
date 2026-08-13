@@ -7,6 +7,7 @@ import {
   inferCapacityFromAssignees,
   type CapacitySource,
   type ForecastInputs,
+  type SourcedWorkItem,
 } from "@/lib/forecast/build";
 import { buildScenarios } from "@/lib/forecast/scenarios";
 import { runPortfolioSimulation, type ScopeSimulationSpec } from "@/lib/forecast/portfolio";
@@ -25,6 +26,7 @@ export interface ForecastFinding {
   owner: string | null;
   blocks: string | null;
   quote: string;
+  rationale: string;
   resolution: string | null;
   resolvedAt: Date | null;
 }
@@ -109,6 +111,7 @@ async function buildScopeSimInputs(scope: Scope): Promise<ScopeSimBundle> {
       owner: true,
       blocks: true,
       quote: true,
+      rationale: true,
       resolution: true,
       resolvedAt: true,
     },
@@ -197,12 +200,65 @@ async function buildScopeSimInputs(scope: Scope): Promise<ScopeSimBundle> {
   };
 }
 
+// One modelled work item, plus the provenance the Scope instrument needs to
+// answer "why is this in the release, and how well do we know it?" without
+// asserting anything new. Every field is JOINED from data buildScopeSimInputs
+// already fetched -- the Linear issue the item came from, or the Finding it
+// was inferred from -- so this adds no query, no inference and no invented
+// attribute. Anything the sources don't carry stays null rather than being
+// guessed at.
+export interface ScopeWorkItem extends SourcedWorkItem {
+  /** "ticket" = a real Linear issue. "inferred" = an open Finding the audit
+      raised that no ticket covers yet, which the engine already counts as
+      real work (see buildForecastInputs). */
+  kind: "ticket" | "inferred";
+  /** Linear workflow state name, e.g. "In Progress". Null for inferred work. */
+  state: string | null;
+  assignee: string | null;
+  /** The team's own Linear estimate in points, when they gave one. */
+  points: number | null;
+  /** For inferred work: what was actually said, and why we think it's work. */
+  quote: string | null;
+  rationale: string | null;
+}
+
+// Joins the simulated items back to the records they were built from. Reads
+// only the bundle -- no second fetch, no second definition of what's in scope.
+function describeItems(bundle: ScopeSimBundle): ScopeWorkItem[] {
+  const issueById = new Map(bundle.issues.map((i) => [i.identifier, i]));
+  const findingById = new Map(bundle.findings.map((f) => [f.id, f]));
+  return bundle.inputs.items.map((item) => {
+    const issue = issueById.get(item.id);
+    if (issue) {
+      return {
+        ...item,
+        kind: "ticket" as const,
+        state: issue.state,
+        assignee: issue.assignee,
+        points: issue.estimate,
+        quote: null,
+        rationale: null,
+      };
+    }
+    const finding = findingById.get(item.id);
+    return {
+      ...item,
+      kind: "inferred" as const,
+      state: null,
+      assignee: null,
+      points: null,
+      quote: finding?.quote ?? null,
+      rationale: finding?.rationale ?? null,
+    };
+  });
+}
+
 export interface PortfolioScopeInput {
   scopeId: string;
   name: string;
   targetDate: Date | null;
   dependsOnScopeIds: string[];
-  items: ForecastInputs["items"];
+  items: ScopeWorkItem[];
   gates: ForecastInputs["gates"];
   teamCapacity: number;
   capacitySource: CapacitySource;
@@ -332,7 +388,7 @@ export async function buildPortfolioInputs(): Promise<PortfolioInputs> {
       name: scope.name,
       targetDate: scope.targetDate,
       dependsOnScopeIds: scope.dependsOnScopeIds,
-      items: bundle.inputs.items,
+      items: describeItems(bundle),
       gates: bundle.inputs.gates,
       teamCapacity: bundle.inputs.teamCapacity,
       capacitySource: bundle.inputs.capacitySource,

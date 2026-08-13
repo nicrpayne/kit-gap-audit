@@ -120,6 +120,14 @@ export function chipsFor(
       href: "/decisions",
     });
   }
+  const reEstimated = Object.keys(scenario.estimateOverrideByItemId).length;
+  if (reEstimated > 0) {
+    chips.push({
+      id: "estimates",
+      label: `${reEstimated} re-estimated`,
+      href: "/scope",
+    });
+  }
   if (scenario.contextSwitchCostPct !== null) {
     chips.push({ id: "switch", label: `switch cost ${scenario.contextSwitchCostPct}%`, href: "/portfolio" });
   }
