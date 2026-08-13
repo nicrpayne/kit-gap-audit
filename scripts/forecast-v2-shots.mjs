@@ -1,11 +1,11 @@
-// Forecast Flagship V2 — interaction + motion evidence run.
-// Exercises every required cause→effect transition, captures frames DURING
-// the morphs, and hard-asserts the critical semantic: scrubbing a target
-// never changes the object's geometry.
+// Forecast Flagship V2.1 — interaction + motion evidence run.
+// Exercises every cause→effect transition still owned by Forecast, captures
+// frames DURING the morphs, and hard-asserts the critical semantic:
+// scrubbing a target never changes the object's geometry.
 import { chromium } from "playwright";
 import { mkdirSync } from "fs";
 
-const out = process.argv[2] ?? "/tmp/fc-v2";
+const out = process.argv[2] ?? "/tmp/fc-v21";
 mkdirSync(out, { recursive: true });
 const b = await chromium.launch({ executablePath: "/opt/pw-browsers/chromium-1194/chrome-linux/chrome" });
 const ctx = await b.newContext({ viewport: { width: 1680, height: 1050 }, deviceScaleFactor: 2 });
@@ -26,9 +26,9 @@ const assert = (cond, label) => {
   console.log(cond ? `PASS  ${label}` : `FAIL  ${label}`);
   if (!cond) failures++;
 };
-const bodyPathD = () => p.evaluate(() => document.querySelector(".lf-subject svg path[fill^='url(#fill']")?.getAttribute("d"));
+const bodyPathD = () => p.evaluate(() => document.querySelector('.lf-subject svg path[data-shoot="object-hit"]')?.getAttribute("d"));
 const ensureMacros = async (want) => {
-  const open = (await p.locator('[data-shoot="open-detail"]').count()) > 0;
+  const open = (await p.locator('[data-shoot="macro-people"]').count()) > 0;
   if (open !== want) { await p.locator('[data-shoot="toggle-macros"]').click(); await wait(400); }
 };
 
@@ -40,6 +40,7 @@ await p.locator('[data-shoot="scope-platform"]').click();
 await wait(2600);
 await shot("a1-platform-rest");
 assert((await p.locator('[data-shoot^="gate-wall-"]').count()) === 1, "Platform shows one gate wall");
+assert((await p.locator('[data-shoot="macro-capacity"]').count()) === 0, "no capacity fader on Forecast (Portfolio owns it)");
 
 // ── B. CRITICAL TEST: target scrub must not move the object ─────────────
 const dBefore = await bodyPathD();
@@ -50,9 +51,9 @@ await wait(600);
 await shot("a2-target-scrubbed-object-still");
 const dAfter = await bodyPathD();
 assert(dBefore === dAfter, "object geometry identical after scrubbing target 25 days");
-assert((await p.locator('[data-shoot="confidence-corner"]').innerText()).includes("%"), "confidence responds to scrub");
-// reset the evaluation via the Target tool
-await p.locator('[data-shoot="confidence-corner"]').click();
+// the % lives at the target line now
+assert(/\d+%/.test(await p.locator('[data-shoot="target-caption"]').innerText()), "confidence shown at the target line");
+await p.locator('[data-shoot="target-caption"]').click();
 await wait(400);
 await shot("b9-target-tool");
 await p.locator('[data-shoot="target-reset"]').click();
@@ -60,14 +61,12 @@ await wait(300);
 await p.locator('[data-shoot="tool-close"]').click();
 await wait(400);
 
-// ── C. Gate release: wall flashes + releases, object morphs earlier ─────
-await p.locator('[data-shoot="toggle-macros"]').click();
-await wait(500);
+// ── C. Gate release ──────────────────────────────────────────────────────
+await ensureMacros(true);
 await shot("a3-macros-open");
 await p.locator('[data-shoot="macro-gate"]').first().click();
 await wait(120); await shot("m-gate-1");
 await wait(220); await shot("m-gate-2");
-await wait(240); await shot("m-gate-3");
 await wait(900);
 await shot("a4-gate-resolved-settled");
 assert((await p.locator('[data-shoot^="gate-wall-"]').count()) === 0, "gate wall released after assume-resolved");
@@ -77,7 +76,17 @@ const ghostOp = await p.evaluate(() => {
 });
 assert(ghostOp !== null && parseFloat(ghostOp) > 0.3, "Reality ghost visible during Scenario");
 
-// ── D. Discard: Scenario collapses back into Reality ────────────────────
+// ── D. Ghost click → Reality comparison ──────────────────────────────────
+// Click near the ghost's right tip — its own territory, clear of the body.
+const gb = await p.locator('[data-shoot="ghost-hit"]').boundingBox();
+await p.locator('[data-shoot="ghost-hit"]').click({ position: { x: gb.width - 12, y: gb.height / 2 }, force: true });
+await wait(450);
+await shot("b11-reality-tool");
+assert((await p.locator('[data-shoot="tool-reality"]').count()) === 1, "ghost summons the Reality comparison");
+await p.locator('[data-shoot="tool-close"]').click();
+await wait(300);
+
+// ── E. Discard: Scenario collapses back into Reality ─────────────────────
 await p.locator('[data-shoot="discard"]').click();
 await wait(150); await shot("m-home-1");
 await wait(350); await shot("m-home-2");
@@ -89,40 +98,20 @@ const ghostOp2 = await p.evaluate(() => {
 });
 assert(ghostOp2 === null || parseFloat(ghostOp2) < 0.05, "ghost fades out on discard");
 
-// ── E. Capacity: fewer people → later + wider, morphing continuously ────
-await ensureMacros(true);
-const fader = p.locator('[data-shoot="macro-capacity"]');
-await fader.focus();
-await p.keyboard.press("PageDown");
-await p.keyboard.press("PageDown");
-await p.keyboard.press("PageDown"); // 10 -> 2.5 FTE
-await wait(200); await shot("m-cap-1");
-await wait(300); await shot("m-cap-2");
-await wait(1000);
-await shot("a6-capacity-cut-settled");
-await p.locator('[data-shoot="discard"]').click();
-await wait(1100);
-
-// ── F. Forecast Detail: the five pages ───────────────────────────────────
-await p.locator('[data-shoot="central-date"]').click();
+// ── F. Object click → Forecast Detail; the five pages ────────────────────
+await p.locator('[data-shoot="object-hit"]').click({ force: true });
 await wait(450);
+assert((await p.locator('[data-shoot="tool-forecast"]').count()) === 1, "object body summons Forecast detail");
 await shot("b1-detail-summary");
 await p.locator('[data-shoot="detail-mode-drivers"]').click(); await wait(250); await shot("b2-detail-drivers");
 await p.locator('[data-shoot="detail-mode-distribution"]').click(); await wait(250); await shot("b3-detail-distribution");
 await p.locator('[data-shoot="detail-mode-inputs"]').click(); await wait(250); await shot("b4-detail-inputs");
-// toggle an item OUT from inside the tool — the object morphs behind it
-await p.locator('[data-shoot^="item-toggle-"]').first().click();
-await wait(500); await shot("b5-item-out-morph-behind-tool");
-await wait(700);
-await p.locator('[data-shoot^="item-toggle-"]').first().click(); // back in
-await wait(400);
+assert((await p.locator('[data-shoot^="item-toggle-"]').count()) === 0, "INPUTS is read-only (Scope owns inclusion)");
 await p.locator('[data-shoot="detail-mode-history"]').click(); await wait(250); await shot("b6-detail-history");
 await p.locator('[data-shoot="tool-close"]').click();
 await wait(300);
-await p.locator('[data-shoot="discard"]').click().catch(() => {});
-await wait(900);
 
-// ── G. Gate tool from the wall itself ────────────────────────────────────
+// ── G. Gate tool from the wall; assume resolved from inside it ───────────
 await p.locator('[data-shoot^="gate-wall-"]').first().click();
 await wait(400);
 await shot("b7-gate-tool");
@@ -134,7 +123,7 @@ await wait(200);
 await p.locator('[data-shoot="discard"]').click();
 await wait(1000);
 
-// ── H. Context tool ──────────────────────────────────────────────────────
+// ── H. Context tool ───────────────────────────────────────────────────────
 await ensureMacros(true);
 await p.locator('[data-shoot="open-context"]').click();
 await wait(400);
@@ -142,12 +131,12 @@ await shot("b10-context-tool");
 await p.locator('[data-shoot="tool-close"]').click();
 await ensureMacros(false);
 
-// ── I. The other subjects ────────────────────────────────────────────────
+// ── I. The other subjects ─────────────────────────────────────────────────
 await p.locator('[data-shoot="scope-design"]').click();
 await wait(2800);
 await shot("c1-design-wide-no-target");
-// evaluate a hypothetical target on a scope with none saved
-await p.locator('[data-shoot="confidence-corner"]').click();
+assert((await p.locator('[data-shoot="no-target-entry"]').count()) === 1, "target-less scope offers the quiet evaluate entry");
+await p.locator('[data-shoot="no-target-entry"]').click();
 await wait(400);
 await p.locator('[data-shoot="target-hypothetical"]').click();
 await wait(500);

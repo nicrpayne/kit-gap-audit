@@ -20,8 +20,22 @@
 //   overall LENGTH           the real span of simulated outcomes in days
 //   overall SIZE             the same fact again — height is locked to a
 //                            fixed fraction of the object's own length. A
-//                            settled outcome is a compact bead; an
-//                            unresolved one is a long low ridge.
+//                            settled outcome is a compact, near-spherical
+//                            body; an unresolved one is the same body
+//                            pulled and stretched across time.
+//   NESTED SHELLS            probability concentration. Each inner shell is
+//                            the region where density exceeds a fixed
+//                            fraction of the peak (28% / 58%) — a threshold
+//                            of the SAME density, not new geometry. A
+//                            settled outcome's shells almost coincide, so
+//                            it reads as one dense body; a diffuse
+//                            outcome's shells separate and it visibly loses
+//                            coherence.
+//   internal illumination    the radial glow is centred on the waist and
+//                            sized by the object's own length — brightest
+//                            where the trial mass is densest. "It glows in
+//                            the middle because that is where the
+//                            probability is."
 //   striation visibility     dispersion relative to the object's own centre.
 //                            Same number the length shows, second channel.
 //   outer bloom              target confidence, ONLY when a target exists.
@@ -33,11 +47,14 @@
 //                            A boundary, not a mark — a gate is not effort
 //                            and capacity cannot cross it.
 //   dashed outline           Reality's own distribution, held while a
-//                            Scenario morphs over it
+//                            Scenario morphs over it. Deliberately flat and
+//                            spectral: it is a memory, not a body.
 //   waist connector          the P50 shift between Reality and Scenario —
 //                            the days the change actually bought or cost
-//   ambient lean             Momentum direction. ±6px on the layer only,
-//                            explicitly NEVER applied to the geometry.
+//   ambient lean             Momentum direction. ±6px on the outer layer,
+//                            ±3px extra on the core (a restrained parallax
+//                            that gives the body depth), explicitly NEVER
+//                            applied to the geometry.
 //
 // ─────────────────────────────────────────────────────────────────────────
 // MOTION. State changes MORPH; they never teleport and they never bounce.
@@ -106,6 +123,8 @@ export interface LivingForecastProps {
   momentumDir: number;
   onGateOpen?: (id: string) => void;
   onTargetOpen?: () => void;
+  onObjectOpen?: () => void;
+  onRealityOpen?: () => void;
 }
 
 function quantileSample(sorted: number[], n = Q): number[] {
@@ -160,17 +179,39 @@ function ampFor(range: [number, number], boxW: number, boxH: number): number {
   return halfPx * (VB_H / Math.max(1, boxH));
 }
 
-function spindlePath(d: number[], amp: number, range: [number, number]): string {
-  const peak = Math.max(...d, 1);
+/** Closed mirrored form from a per-bin height array, trimmed to the bins
+    that carry real height so no baseline ever runs the canvas. */
+function formPath(h: number[], eps: number): string | null {
+  let first = -1;
+  let last = -1;
+  for (let i = 0; i < BINS; i++) {
+    if (h[i] > eps) {
+      if (first < 0) first = i;
+      last = i;
+    }
+  }
+  if (first < 0) return null;
   const x = (i: number) => ((i + 0.5) / BINS) * VB_W;
-  const h = (v: number) => (v / peak) * amp;
-  const [first, last] = range;
   let top = `M ${x(first).toFixed(1)} ${MID}`;
-  for (let i = first; i <= last; i++) top += ` L ${x(i).toFixed(1)} ${(MID - h(d[i])).toFixed(1)}`;
+  for (let i = first; i <= last; i++) top += ` L ${x(i).toFixed(1)} ${(MID - h[i]).toFixed(1)}`;
   top += ` L ${x(last).toFixed(1)} ${MID}`;
   let bot = "";
-  for (let i = last; i >= first; i--) bot += ` L ${x(i).toFixed(1)} ${(MID + h(d[i])).toFixed(1)}`;
+  for (let i = last; i >= first; i--) bot += ` L ${x(i).toFixed(1)} ${(MID + h[i]).toFixed(1)}`;
   return `${top}${bot} Z`;
+}
+
+/** Heights of the density region above a threshold fraction of the peak —
+    a true isosurface of the same density, renormalised so τ=0 is the full
+    form. This is what makes the body volumetric without inventing shape:
+    inner shells are literally "where the probability is denser". */
+function shellHeights(d: number[], peak: number, amp: number, tau: number): number[] {
+  return d.map((v) => (Math.max(0, v / peak - tau) / (1 - tau)) * amp);
+}
+
+function spindlePath(d: number[], amp: number, range: [number, number]): string {
+  const peak = Math.max(...d, 1);
+  void range;
+  return formPath(shellHeights(d, peak, amp, 0), amp * 0.004) ?? `M 0 ${MID}`;
 }
 
 const easeInOutCubic = (t: number) => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2);
@@ -237,6 +278,8 @@ export default function LivingForecast({
   momentumDir,
   onGateOpen,
   onTargetOpen,
+  onObjectOpen,
+  onRealityOpen,
 }: LivingForecastProps) {
   const uid = useId().replace(/:/g, "");
   const wrapRef = useRef<HTMLDivElement>(null);
@@ -268,20 +311,29 @@ export default function LivingForecast({
   const [dLo, dHi] = drawn.win;
   const pctX = (day: number) => ((day - dLo) / (dHi - dLo || 1)) * 100;
 
-  // Everything below derives from the DRAWN state, so grain, edge weight and
-  // the waist all evolve continuously through a morph.
-  const d = density(drawn.q, dLo, dHi);
-  const range = liveRange(d);
-  const amp = ampFor(range, box.w, box.h);
-  const peak = Math.max(...d, 1);
-  const path = spindlePath(d, amp, range);
-
+  // Everything below derives from the DRAWN state, so grain, edge weight,
+  // the shells and the waist all evolve continuously through a morph.
   const drawnP10 = drawn.q[Math.round(0.1 * (Q - 1))];
   const drawnP50 = drawn.q[Math.round(0.5 * (Q - 1))];
   const drawnP90 = drawn.q[Math.round(0.9 * (Q - 1))];
   const grain = Math.max(0, Math.min(1, (drawnP90 - drawnP10) / Math.max(1, drawnP50) / 0.9));
 
+  const d = density(drawn.q, dLo, dHi);
+  const range = liveRange(d);
+  const amp = ampFor(range, box.w, box.h);
+  const peak = Math.max(...d, 1);
+  const eps = amp * 0.004;
+  const path = formPath(shellHeights(d, peak, amp, 0), eps) ?? `M 0 ${MID}`;
+  // Density isosurfaces — the volumetric interior. A settled body's shells
+  // nearly coincide; a diffuse one visibly comes apart.
+  const midPath = formPath(shellHeights(d, peak, amp, 0.28), eps);
+  const corePath = formPath(shellHeights(d, peak, amp, 0.58), eps);
+
   const core = `rgb(${drawn.col[0]},${drawn.col[1]},${drawn.col[2]})`;
+  // The illumination is anchored to the drawn waist and sized by the drawn
+  // length, so the light stays inside the body through every morph.
+  const waistX = (((drawnP50 - dLo) / (dHi - dLo || 1))) * VB_W;
+  const halfLenVb = Math.max(((range[1] - range[0] + 1) / (2 * BINS)) * VB_W, 60);
 
   // The Reality ghost is binned into the same drawn window, so it glides in
   // day-space with everything else. Its visibility is a slow CSS fade.
@@ -356,11 +408,17 @@ export default function LivingForecast({
         }}
       >
         <defs>
-          <linearGradient id={`fill-${uid}`} x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor={core} stopOpacity={0.05} />
-            <stop offset="50%" stopColor={core} stopOpacity={0.32} />
-            <stop offset="100%" stopColor={core} stopOpacity={0.05} />
-          </linearGradient>
+          <radialGradient
+            id={`core-${uid}`}
+            gradientUnits="userSpaceOnUse"
+            cx={waistX}
+            cy={MID}
+            r={halfLenVb}
+          >
+            <stop offset="0%" stopColor={core} stopOpacity={0.5} />
+            <stop offset="55%" stopColor={core} stopOpacity={0.2} />
+            <stop offset="100%" stopColor={core} stopOpacity={0.04} />
+          </radialGradient>
           {/* userSpaceOnUse: a percentage filter region is relative to the
               path's own bbox, so a small object would clip its own bloom
               into a visible rectangle. */}
@@ -373,6 +431,19 @@ export default function LivingForecast({
             height={VB_H * 3}
           >
             <feGaussianBlur stdDeviation={11} />
+          </filter>
+          {/* Melts the isosurface boundaries into internal light — the
+              shells stay where the density puts them, but read as volume
+              rather than as contour bands. */}
+          <filter
+            id={`soft-${uid}`}
+            filterUnits="userSpaceOnUse"
+            x={-VB_W}
+            y={-VB_H}
+            width={VB_W * 3}
+            height={VB_H * 3}
+          >
+            <feGaussianBlur stdDeviation={7} />
           </filter>
           <pattern id={`miss-${uid}`} width="7" height="7" patternUnits="userSpaceOnUse" patternTransform="rotate(-45)">
             <line x1="0" y1="0" x2="0" y2="7" stroke="var(--i-red)" strokeWidth="1.6" strokeOpacity="0.55" />
@@ -398,8 +469,22 @@ export default function LivingForecast({
           />
         </g>
 
-        {/* The body */}
-        <path d={path} fill={`url(#fill-${uid})`} />
+        {/* The body — internally illuminated, then two density isosurfaces.
+            The interior brightens exactly where the trial mass concentrates,
+            and the core rides a slightly deeper momentum lean than the
+            outer layer: a restrained parallax, geometry untouched. */}
+        <path d={path} fill={`url(#core-${uid})`} />
+        {midPath && <path d={midPath} fill={core} opacity={0.15} filter={`url(#soft-${uid})`} />}
+        {corePath && (
+          <g
+            style={{
+              transform: `translateX(${momentumDir * -3}px)`,
+              transition: "transform 1200ms cubic-bezier(.4,0,.2,1)",
+            }}
+          >
+            <path d={corePath} fill={core} opacity={0.22} filter={`url(#soft-${uid})`} />
+          </g>
+        )}
 
         {/* Grain — a diffuse outcome resolves into visible striations; a
             tight one fuses. Opacity IS the dispersion ratio. */}
@@ -463,6 +548,28 @@ export default function LivingForecast({
             vectorEffect="non-scaling-stroke"
           />
         )}
+
+        {/* Direct summons — the instrument itself is explorable. Pointer
+            affordances only; the accessible paths are the on-canvas
+            buttons and the macro strip. The ghost's hit area sits UNDER
+            the body's, so where the two forms overlap the body wins and
+            the ghost answers only in its own territory. */}
+        {ghost && scenarioActive && (
+          <path
+            d={ghost}
+            fill="rgba(0,0,0,0)"
+            data-shoot="ghost-hit"
+            style={{ pointerEvents: "fill", cursor: "pointer" }}
+            onClick={() => onRealityOpen?.()}
+          />
+        )}
+        <path
+          d={path}
+          fill="rgba(0,0,0,0)"
+          data-shoot="object-hit"
+          style={{ pointerEvents: "fill", cursor: "pointer" }}
+          onClick={() => onObjectOpen?.()}
+        />
       </svg>
 
       {/* Gate walls. Structurally different from everything else: a hard
@@ -550,6 +657,18 @@ export default function LivingForecast({
             <div className="mt-1 i-readout text-[12px] text-[var(--i-text-soft)] group-hover:text-[var(--i-text)] transition-colors">
               {fmtTarget}
             </div>
+            {confidence !== null && (
+              <div
+                className="mt-0.5 i-readout text-[13px]"
+                style={{
+                  color:
+                    confidence >= 70 ? "var(--i-mint)" : confidence >= 40 ? "var(--i-amber)" : "var(--i-red)",
+                  transition: "color 300ms ease",
+                }}
+              >
+                {confidence}%
+              </div>
+            )}
           </button>
         </div>
       )}
@@ -570,6 +689,16 @@ export default function LivingForecast({
         >
           <div className="i-label whitespace-nowrap">Target {targetDay > dHi ? "→" : "←"}</div>
           <div className="mt-1 i-readout text-[12px] text-[var(--i-text-soft)] whitespace-nowrap">{fmtTarget}</div>
+          {confidence !== null && (
+            <div
+              className="mt-0.5 i-readout text-[13px]"
+              style={{
+                color: confidence >= 70 ? "var(--i-mint)" : confidence >= 40 ? "var(--i-amber)" : "var(--i-red)",
+              }}
+            >
+              {confidence}%
+            </div>
+          )}
           <div className="mt-1 text-[10px] text-[var(--i-text-faint)] whitespace-nowrap">
             {Math.abs(Math.round(targetDay - result.percentiles.p50))}d {targetDay > dHi ? "after" : "before"} the
             likely date

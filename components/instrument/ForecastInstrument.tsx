@@ -21,25 +21,20 @@ import { useMemo, useState } from "react";
 import Link from "next/link";
 import InstrumentShell from "@/components/instrument/InstrumentShell";
 import ScenarioStrip, { chipsFor } from "@/components/instrument/ScenarioStrip";
-import Fader from "@/components/instrument/Fader";
 import LivingForecast, { dispersionWord, type GateMark } from "@/components/instrument/LivingForecast";
 import ForecastDetail from "@/components/instrument/ForecastDetail";
-import { GateDetail, TargetDetail, ContextDetail } from "@/components/instrument/ForecastTools";
+import { GateDetail, TargetDetail, ContextDetail, RealityDetail } from "@/components/instrument/ForecastTools";
 import { useProject, EMPTY_SCENARIO, fmtDay, deltaLabel, deltaTone } from "@/lib/instrument/useProject";
 import { confidenceAtDay } from "@/lib/forecast/simulate";
-import {
-  MIN_SIMULATED_CAPACITY,
-  faderMaxCapacity,
-  parseCapacityInput,
-  formatCapacity,
-} from "@/lib/capacity/limits";
+import { formatCapacity } from "@/lib/capacity/limits";
 
 type Tool =
   | null
   | { kind: "forecast" }
   | { kind: "gate"; id: string }
   | { kind: "target" }
-  | { kind: "context" };
+  | { kind: "context" }
+  | { kind: "reality" };
 
 export default function ForecastInstrument() {
   const m = useProject();
@@ -154,15 +149,10 @@ export default function ForecastInstrument() {
   const dayNum = res.likelyDate.toLocaleDateString(undefined, { day: "numeric", timeZone: "UTC" });
 
   const cutCount = scope.items.filter((i) => m.scenario.excludedItemIds.has(i.id)).length;
+  // Forecast DISPLAYS capacity; Portfolio owns it. A Portfolio-made override
+  // still shows here (tagged), because the shared scenario is one world.
   const capValue = m.scenario.capacityOverrideByScope[scope.scopeId] ?? scope.teamCapacity;
-
-  const setCapacity = (v: number) =>
-    m.setScenario((prev) => {
-      const next = { ...prev.capacityOverrideByScope };
-      if (Math.abs(v - scope.teamCapacity) < 1e-6) delete next[scope.scopeId];
-      else next[scope.scopeId] = v;
-      return { ...prev, capacityOverrideByScope: next };
-    });
+  const capOverridden = m.scenario.capacityOverrideByScope[scope.scopeId] !== undefined;
 
   const setOverride = (day: number) =>
     setTargetOverride((prev) => new Map(prev).set(scope.scopeId, day));
@@ -194,6 +184,8 @@ export default function ForecastInstrument() {
           momentumDir={momentumDir}
           onGateOpen={(id) => setTool({ kind: "gate", id })}
           onTargetOpen={() => setTool({ kind: "target" })}
+          onObjectOpen={() => setTool({ kind: "forecast" })}
+          onRealityOpen={() => setTool({ kind: "reality" })}
         />
 
         {/* THE ANSWER. Sits at the object's waist. Output only — nothing
@@ -249,49 +241,31 @@ export default function ForecastInstrument() {
           </button>
         </div>
 
-        {/* The one corner fact: the target relationship. Clicking it opens
-            the Target tool. Momentum has no corner — it is the ambient lean
-            and a line in the detail, never a headline. */}
-        <div className="absolute top-4 left-5">
+        {/* No corner dashboard. Confidence lives AT the target line and in
+            the Target tool; Momentum is the ambient lean and a Detail line.
+            The only permanent canvas text beyond the object's own captions
+            is this quiet entry when there is no target at all — otherwise
+            the tool would be unreachable on a target-less scope. */}
+        {confidence === null && (
           <button
             type="button"
-            data-shoot="confidence-corner"
+            data-shoot="no-target-entry"
             onClick={() => setTool({ kind: "target" })}
-            className="text-left group"
+            className="absolute top-4 left-5 text-left group"
             aria-label="Open target evaluation"
           >
-            {confidence !== null ? (
-              <>
-                <div className="i-label group-hover:text-[var(--i-text-soft)] transition-colors">
-                  Chance of hitting target
-                </div>
-                <div
-                  className="i-readout text-[30px] leading-none mt-1.5"
-                  style={{
-                    color: confidence >= 70 ? "var(--i-mint)" : confidence >= 40 ? "var(--i-amber)" : "var(--i-red)",
-                    transition: "color 300ms ease",
-                  }}
-                >
-                  {confidence}%
-                </div>
-                {overridden && (
-                  <div className="mt-1 text-[9.5px]" style={{ color: "var(--i-violet)" }}>
-                    {savedTargetDay !== null
-                      ? `evaluating a moved target — saved ${fmtDay(new Date(m.startDate.getTime() + savedTargetDay * 86400000))}`
-                      : "evaluating a hypothetical target"}
-                  </div>
-                )}
-              </>
-            ) : (
-              <>
-                <div className="i-label group-hover:text-[var(--i-text-soft)] transition-colors">No target set</div>
-                <div className="mt-1.5 text-[11px] text-[var(--i-text-faint)] max-w-[190px] leading-relaxed">
-                  Nothing to judge this against, so the instrument stays neutral.
-                </div>
-              </>
-            )}
+            <div className="i-label group-hover:text-[var(--i-text-soft)] transition-colors">
+              No target — evaluate one →
+            </div>
           </button>
-        </div>
+        )}
+        {overridden && (
+          <div className="absolute top-4 left-5 text-[9.5px]" style={{ color: "var(--i-violet)" }}>
+            {savedTargetDay !== null
+              ? `evaluating a moved target — saved ${fmtDay(new Date(m.startDate.getTime() + savedTargetDay * 86400000))}`
+              : "evaluating a hypothetical target"}
+          </div>
+        )}
 
         {/* Target scrub — invisible until sought. The Target tool is the
             discoverable path; this is the direct-manipulation shortcut. */}
@@ -358,41 +332,51 @@ export default function ForecastInstrument() {
                     {scope.items.length - cutCount}/{scope.items.length}
                   </span>
                   <span className="text-[10px] text-[var(--i-text-faint)]">items in</span>
+                  {cutCount > 0 && (
+                    <span className="rounded-full px-1.5 py-px text-[8px] font-semibold uppercase" style={{ background: "var(--i-violet-soft)", color: "var(--i-violet)" }}>
+                      scenario
+                    </span>
+                  )}
                 </div>
-                <button
-                  onClick={() => setTool({ kind: "forecast" })}
-                  className="mt-1.5 block text-[10px] text-[var(--i-text-faint)] hover:text-[var(--i-text)] transition-colors"
-                >
-                  Toggle items in Inputs →
-                </button>
                 <Link
                   href="/scope"
-                  className="mt-1 block text-[10px] text-[var(--i-text-faint)] hover:text-[var(--i-text)] transition-colors"
+                  className="mt-1.5 block text-[10px] text-[var(--i-text-faint)] hover:text-[var(--i-text)] transition-colors"
                 >
                   Scope owns what ships →
                 </Link>
               </div>
 
-              {/* The one grabbable thing in the strip: simulated capacity.
-                  A real lever — the same override Portfolio previews. */}
-              <div className="flex items-start gap-4">
-                <Fader
-                  label="People"
-                  value={capValue}
-                  min={MIN_SIMULATED_CAPACITY}
-                  max={faderMaxCapacity(scope.teamCapacity, capValue)}
-                  step={0.5}
-                  fineStep={0.1}
-                  resetValue={scope.teamCapacity}
-                  onChange={setCapacity}
-                  format={(v) => `${formatCapacity(v)} FTE`}
-                  formatAria={(v) => `${formatCapacity(v)} full-time equivalents`}
-                  parseInput={parseCapacityInput}
-                  inputHint={`min ${MIN_SIMULATED_CAPACITY} · no upper limit`}
-                  sub={`Reality ${formatCapacity(scope.teamCapacity)} · ${m.data.contextSwitchCostPct}% switch`}
-                  height={64}
-                  dataShoot="macro-capacity"
-                />
+              {/* Displayed, not editable: Forecast composes assumptions,
+                  Portfolio owns this one. */}
+              <div className="min-w-[130px]" data-shoot="macro-people">
+                <div className="i-label mb-2">People</div>
+                <div className="flex items-baseline gap-2">
+                  <span
+                    className="i-readout text-[15px]"
+                    style={{ color: capOverridden ? "var(--i-violet)" : "var(--i-text)" }}
+                  >
+                    {formatCapacity(capValue)} FTE
+                  </span>
+                  <span className="text-[10px] text-[var(--i-text-faint)]">
+                    {m.data.contextSwitchCostPct}% switch
+                  </span>
+                  {capOverridden && (
+                    <span className="rounded-full px-1.5 py-px text-[8px] font-semibold uppercase" style={{ background: "var(--i-violet-soft)", color: "var(--i-violet)" }}>
+                      scenario
+                    </span>
+                  )}
+                </div>
+                <div className="mt-1 text-[10px] text-[var(--i-text-faint)]">
+                  {capOverridden
+                    ? `Reality ${formatCapacity(scope.teamCapacity)} · Portfolio owns this`
+                    : "Inherited from Portfolio"}
+                </div>
+                <Link
+                  href="/portfolio"
+                  className="mt-1 block text-[10px] text-[var(--i-text-faint)] hover:text-[var(--i-text)] transition-colors"
+                >
+                  Open Portfolio →
+                </Link>
               </div>
 
               <div className="flex-1" />
@@ -443,7 +427,6 @@ export default function ForecastInstrument() {
         targetDay={targetDay}
         confidence={confidence}
         scenario={m.scenario}
-        setScenario={m.setScenario}
         scenarioActive={m.active}
         contextSwitchCostPct={m.data.contextSwitchCostPct}
         momentum={trend}
@@ -484,6 +467,18 @@ export default function ForecastInstrument() {
         sources={m.data.sources}
         reportCount={m.data.reports.filter((r) => r.scopeId === scope.scopeId).length}
       />
+
+      {base && (
+        <RealityDetail
+          open={tool?.kind === "reality"}
+          onClose={() => setTool(null)}
+          scopeName={scope.name}
+          reality={base}
+          scenario={res}
+          scenarioActive={m.active}
+          startDate={m.startDate}
+        />
+      )}
     </InstrumentShell>
   );
 }

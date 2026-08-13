@@ -185,6 +185,81 @@ export function TargetDetail({
   );
 }
 
+// ── REALITY ──────────────────────────────────────────────────────────────
+// Summoned by clicking the ghost: the baseline this scenario left, side by
+// side with the hypothetical, in the same vocabulary the object uses.
+
+export function RealityDetail({
+  open,
+  onClose,
+  scopeName,
+  reality,
+  scenario,
+  scenarioActive,
+  startDate,
+}: {
+  open: boolean;
+  onClose: () => void;
+  scopeName: string;
+  reality: SimulationResult;
+  scenario: SimulationResult;
+  scenarioActive: boolean;
+  startDate: Date;
+}) {
+  if (!open) return null;
+  const d = (days: number) => fmtFull(new Date(startDate.getTime() + days * 86400000));
+  const spreadR = Math.round(reality.percentiles.p90 - reality.percentiles.p10);
+  const spreadS = Math.round(scenario.percentiles.p90 - scenario.percentiles.p10);
+  const movedP50 = Math.round(scenario.percentiles.p50 - reality.percentiles.p50);
+  const dSpread = spreadS - spreadR;
+  return (
+    <ToolWindow open onClose={onClose} title="Reality comparison" subtitle={scopeName} width={380} dataShoot="tool-reality">
+      <div className="px-5 py-4">
+        <p className="text-[11px] text-[var(--i-text-soft)] leading-relaxed">
+          The dashed outline is <strong className="text-[var(--i-text)]">Reality</strong> — what the app currently
+          accepts as true. The solid body is the Scenario preview. Nothing becomes Reality from here: committing an
+          assumption happens in the instrument that owns it.
+        </p>
+
+        <div className="i-label mt-4 mb-1" style={{ color: "var(--i-reality)" }}>
+          Reality — the baseline
+        </div>
+        <Row k="Lands" v={d(reality.percentiles.p50)} />
+        <Row k="Range" v={`${fmtDay(new Date(startDate.getTime() + reality.percentiles.p10 * 86400000))} — ${fmtDay(new Date(startDate.getTime() + reality.percentiles.p90 * 86400000))}`} note={`${spreadR}d spread`} />
+
+        {scenarioActive ? (
+          <>
+            <div className="i-label mt-4 mb-1" style={{ color: "var(--i-violet)" }}>
+              Scenario — the hypothetical
+            </div>
+            <Row k="Lands" v={d(scenario.percentiles.p50)} tone="var(--i-violet)" />
+            <Row
+              k="Range"
+              v={`${fmtDay(new Date(startDate.getTime() + scenario.percentiles.p10 * 86400000))} — ${fmtDay(new Date(startDate.getTime() + scenario.percentiles.p90 * 86400000))}`}
+              note={`${spreadS}d spread`}
+            />
+            <div className="i-label mt-4 mb-1">What the scenario changed</div>
+            <Row
+              k="Likely date"
+              v={movedP50 === 0 ? "no change" : `${Math.abs(movedP50)}d ${movedP50 < 0 ? "earlier" : "later"}`}
+              tone={movedP50 === 0 ? undefined : movedP50 < 0 ? "var(--i-mint)" : "var(--i-red)"}
+            />
+            <Row
+              k="Uncertainty"
+              v={dSpread === 0 ? "unchanged" : `${Math.abs(dSpread)}d ${dSpread < 0 ? "tighter" : "wider"}`}
+              note="the spread between best and worst case"
+            />
+          </>
+        ) : (
+          <p className="mt-3 text-[11px] text-[var(--i-text-faint)] leading-relaxed">
+            No scenario is active — the body on the canvas IS Reality right now.
+          </p>
+        )}
+      </div>
+    </ToolWindow>
+  );
+}
+
 // ── CONTEXT ──────────────────────────────────────────────────────────────
 
 export function ContextDetail({

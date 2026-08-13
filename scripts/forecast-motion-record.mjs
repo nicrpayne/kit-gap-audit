@@ -17,6 +17,10 @@ const p = await ctx.newPage();
 const wait = (ms) => p.waitForTimeout(ms);
 // Discard is correctly disabled when the scenario is already empty (e.g.
 // a capacity fader stepped exactly back onto Reality removes its override).
+const ensureMacros = async (want) => {
+  const open = (await p.locator('[data-shoot="macro-people"]').count()) > 0;
+  if (open !== want) { await p.locator('[data-shoot="toggle-macros"]').click(); await wait(500); }
+};
 const discardIfActive = async () => {
   const btn = p.locator('[data-shoot="discard"]');
   if (await btn.isEnabled()) { await btn.click(); }
@@ -39,8 +43,8 @@ await wait(1200);
 
 // 3. Constraint assumed resolved — the wall flashes and releases; the object
 //    morphs earlier and tightens; Reality stays as the ghost.
-await p.locator('[data-shoot="toggle-macros"]').click();
-await wait(900);
+await ensureMacros(true);
+await wait(400);
 await p.locator('[data-shoot="macro-gate"]').first().click();
 await wait(2400);
 
@@ -48,30 +52,27 @@ await wait(2400);
 await discardIfActive();
 await wait(2200);
 
-// 5. Capacity cut — fewer people: later and wider, continuously tracking.
-const fader = p.locator('[data-shoot="macro-capacity"]');
-await fader.focus();
-await p.keyboard.press("PageDown"); await wait(700);
-await p.keyboard.press("PageDown"); await wait(700);
-await p.keyboard.press("PageDown"); await wait(2200);
-// … and back up.
-await p.keyboard.press("PageUp"); await wait(500);
-await p.keyboard.press("PageUp"); await wait(500);
-await p.keyboard.press("PageUp"); await wait(2000);
-await discardIfActive();
-await wait(1800);
-
-// 6. Work removed from inside Forecast Detail — object morphs behind the tool.
-await p.locator('[data-shoot="central-date"]').click();
-await wait(800);
-await p.locator('[data-shoot="detail-mode-inputs"]').click();
-await wait(700);
-await p.locator('[data-shoot^="item-toggle-"]').first().click();
-await wait(1900);
-await p.locator('[data-shoot^="item-toggle-"]').nth(4).click();
-await wait(1900);
+// 5. The object is the entry point: body → Forecast Detail, pages tour.
+await p.locator('[data-shoot="object-hit"]').click({ force: true });
+await wait(1000);
+await p.locator('[data-shoot="detail-mode-drivers"]').click(); await wait(900);
+await p.locator('[data-shoot="detail-mode-distribution"]').click(); await wait(1100);
+await p.locator('[data-shoot="detail-mode-inputs"]').click(); await wait(900);
+await p.locator('[data-shoot="detail-mode-history"]').click(); await wait(900);
 await p.locator('[data-shoot="tool-close"]').click();
-await wait(600);
+await wait(800);
+
+// 6. Resolve the gate again, then click the GHOST → Reality comparison.
+await ensureMacros(true);
+await p.locator('[data-shoot="macro-gate"]').first().click();
+await wait(2000);
+const gb = await p.locator('[data-shoot="ghost-hit"]').boundingBox();
+if (gb) {
+  await p.locator('[data-shoot="ghost-hit"]').click({ position: { x: gb.width - 12, y: gb.height / 2 }, force: true });
+  await wait(1600);
+  await p.locator('[data-shoot="tool-close"]').click();
+}
+await wait(500);
 await discardIfActive();
 await wait(2000);
 
