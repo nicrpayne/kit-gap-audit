@@ -2,37 +2,65 @@
 
 // FORECAST — the flagship. The synthesized delivery consequence, as an object.
 //
-// Composition owes its hierarchy to how a good plug-in is laid out: ONE
-// enormous focal element, generous emptiness around it, and a thin strip of
-// controls that support rather than compete. The date is the answer the
-// machine is currently giving; everything statistical is one click away in
-// Forecast Detail rather than permanently on screen.
+// The default canvas answers exactly four questions:
+//   where does this land · how settled is that · is something structurally
+//   in the way · how does that relate to my target
+// Everything else the model knows is one summons away: the central date
+// opens Forecast Detail, a gate wall opens the Gate tool, the target opens
+// Target evaluation, and the macro strip can ask "what does the model
+// know". Simple is not the same as shallow — the canvas is the meeting
+// glance, the tools are the depth.
 //
-// Reality is calm. Scenario opens the macro strip and the object morphs while
-// Reality stays behind as a dashed outline. The date is an OUTPUT and is never
-// draggable; the target is a boundary you can move, and moving it changes the
-// evaluation without touching the distribution.
+// FRAMING RULE (the critical one): the window is derived from the
+// distribution, Reality's ghost and the SAVED target — never from the
+// evaluation override. Scrubbing a target must sweep the line through a
+// perfectly still object, because a target is evaluation, not forecast
+// input, and the composition is how that lesson is taught.
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import InstrumentShell from "@/components/instrument/InstrumentShell";
 import ScenarioStrip, { chipsFor } from "@/components/instrument/ScenarioStrip";
+import Fader from "@/components/instrument/Fader";
 import LivingForecast, { dispersionWord, type GateMark } from "@/components/instrument/LivingForecast";
 import ForecastDetail from "@/components/instrument/ForecastDetail";
+import { GateDetail, TargetDetail, ContextDetail } from "@/components/instrument/ForecastTools";
 import { useProject, EMPTY_SCENARIO, fmtDay, deltaLabel, deltaTone } from "@/lib/instrument/useProject";
 import { confidenceAtDay } from "@/lib/forecast/simulate";
-import { DIRECTION_GLYPH, DIRECTION_LABEL, directionTone } from "@/lib/momentum/trend";
+import {
+  MIN_SIMULATED_CAPACITY,
+  faderMaxCapacity,
+  parseCapacityInput,
+  formatCapacity,
+} from "@/lib/capacity/limits";
+
+type Tool =
+  | null
+  | { kind: "forecast" }
+  | { kind: "gate"; id: string }
+  | { kind: "target" }
+  | { kind: "context" };
 
 export default function ForecastInstrument() {
   const m = useProject();
   const [selected, setSelected] = useState<string | null>(null);
   const [targetOverride, setTargetOverride] = useState<Map<string, number>>(new Map());
-  const [detailOpen, setDetailOpen] = useState(false);
+  const [tool, setTool] = useState<Tool>(null);
   const [macrosOpen, setMacrosOpen] = useState(false);
 
   const scopeNameById = useMemo(() => new Map((m.data?.scopes ?? []).map((s) => [s.scopeId, s.name])), [m.data]);
   const scopeId = selected ?? m.data?.scopes[0]?.scopeId ?? null;
   const scope = m.data?.scopes.find((s) => s.scopeId === scopeId) ?? null;
+
+  // Memoised so LivingForecast's gate diffing sees a stable identity — a
+  // fresh array every render would re-trigger the enter/leave machinery.
+  const openGates = useMemo<GateMark[]>(
+    () =>
+      (scope?.gates ?? [])
+        .filter((g) => !m.scenario.resolvedGateIds.has(g.id))
+        .map((g) => ({ id: g.id, label: g.label, day: g.likely })),
+    [scope, m.scenario.resolvedGateIds]
+  );
 
   const strip = (
     <ScenarioStrip
@@ -74,7 +102,7 @@ export default function ForecastInstrument() {
       </InstrumentShell>
     );
 
-  const base = m.baseline?.get(scope.scopeId);
+  const base = m.baseline?.get(scope.scopeId) ?? null;
   const res = m.preview?.get(scope.scopeId) ?? base;
   if (!res) return <InstrumentShell stateBar={strip}><div className="flex-1" /></InstrumentShell>;
 
@@ -83,52 +111,67 @@ export default function ForecastInstrument() {
     ? (new Date(scope.targetDate).getTime() - m.startDate.getTime()) / 86400000
     : null;
   const targetDay = targetOverride.get(scope.scopeId) ?? savedTargetDay;
+  const overridden = targetDay !== null && targetDay !== savedTargetDay;
   const confidence = targetDay !== null ? confidenceAtDay(res.completionDaysSorted, targetDay) : null;
 
-  // Framed SYMMETRICALLY about P50, so the object's waist lands dead centre
-  // and the date sits inside the form rather than beside it. The axis is a
-  // consequence of the composition, not the other way round.
-  //
-  // The distribution decides the frame; a target or gate only widens it enough
-  // to be visible. Padding off the outermost reference instead would let a
-  // distant target squeeze the object into a sliver and make a settled project
-  // look like nothing at all.
+  // Framed symmetrically about P50 so the object's waist sits dead centre.
+  // Sized off the object's near-extremes so the form terminates inside the
+  // canvas; the SAVED target and Reality may widen the window up to a cap,
+  // past which they become edge markers — a distant deadline is not a
+  // reason for a settled project to render as a speck. The evaluation
+  // override is deliberately absent from this formula.
   const centre = res.percentiles.p50;
-  // The window is sized by the object being shown, never by whatever else is
-  // on the canvas. Everything else may widen it, but only up to a cap — past
-  // that a reference becomes an edge marker, because a distant deadline or a
-  // sprawling old Reality is not a reason for a settled project to render as
-  // a speck.
-  // Sized off the object's near-extremes, not p10/p90, so the form always
-  // terminates inside the canvas. A tail sliced off by the viewport edge reads
-  // as a rendering fault, not as a long tail.
   const cds = res.completionDaysSorted;
   const q = (p: number) => cds[Math.min(cds.length - 1, Math.max(0, Math.round(p * (cds.length - 1))))];
   const objHalf = Math.max(centre - q(0.005), q(0.995) - centre, 1.5);
   const cap = objHalf * 2.6;
-  const wantReality = base ? Math.abs(base.percentiles.p50 - centre) * 1.3 : 0;
-  const wantTarget = targetDay === null ? 0 : Math.abs(targetDay - centre) * 1.15;
-  const halfSpan = Math.max(objHalf * 1.15, Math.min(wantReality, cap), Math.min(wantTarget, cap), 3);
+  // While a Scenario is on, the comparison IS the content: try to hold
+  // Reality's whole distribution in frame, with a floor on the cap so a
+  // freshly-settled bead can still show the baseline it left. Past that,
+  // Reality becomes an edge marker rather than shrinking the object.
+  const wantReality =
+    m.active && base
+      ? Math.max(Math.abs(base.percentiles.p10 - centre), Math.abs(base.percentiles.p90 - centre)) * 1.15
+      : 0;
+  const wantTarget = savedTargetDay === null ? 0 : Math.abs(savedTargetDay - centre) * 1.15;
+  const halfSpan = Math.max(
+    objHalf * 1.15,
+    Math.min(wantReality, Math.max(cap, 18)),
+    Math.min(wantTarget, cap),
+    3
+  );
   const minDay = centre - halfSpan;
   const maxDay = centre + halfSpan;
 
-  // The scrub always reaches past the window, so a target can be pushed out of
-  // frame and pulled back in.
+  // The scrub always reaches past the window so a target can be pushed out
+  // of frame and pulled back in — the range moves, the window does not.
   const scrubHalf = Math.max(halfSpan, targetDay === null ? 0 : Math.abs(targetDay - centre)) * 1.25;
-
-  // A gate sits at its own likely duration from today — that is the real date
-  // the decision is expected to land, and nothing can complete before it.
-  const openGates: GateMark[] = scope.gates
-    .filter((g) => !m.scenario.resolvedGateIds.has(g.id))
-    .map((g) => ({ id: g.id, label: g.label, day: g.likely }));
 
   const trend = m.momentumByScope.get(scope.scopeId) ?? null;
   const momentumDir = !trend ? 0 : trend.direction === "rising" ? -1 : trend.direction === "falling" ? 1 : 0;
 
   const month = res.likelyDate.toLocaleDateString(undefined, { month: "short", timeZone: "UTC" }).toUpperCase();
-  const day = res.likelyDate.toLocaleDateString(undefined, { day: "numeric", timeZone: "UTC" });
+  const dayNum = res.likelyDate.toLocaleDateString(undefined, { day: "numeric", timeZone: "UTC" });
 
   const cutCount = scope.items.filter((i) => m.scenario.excludedItemIds.has(i.id)).length;
+  const capValue = m.scenario.capacityOverrideByScope[scope.scopeId] ?? scope.teamCapacity;
+
+  const setCapacity = (v: number) =>
+    m.setScenario((prev) => {
+      const next = { ...prev.capacityOverrideByScope };
+      if (Math.abs(v - scope.teamCapacity) < 1e-6) delete next[scope.scopeId];
+      else next[scope.scopeId] = v;
+      return { ...prev, capacityOverrideByScope: next };
+    });
+
+  const setOverride = (day: number) =>
+    setTargetOverride((prev) => new Map(prev).set(scope.scopeId, day));
+  const clearOverride = () =>
+    setTargetOverride((prev) => {
+      const n = new Map(prev);
+      n.delete(scope.scopeId);
+      return n;
+    });
 
   return (
     <InstrumentShell
@@ -138,8 +181,10 @@ export default function ForecastInstrument() {
     >
       <div className="flex-1 min-h-0 relative" style={{ background: "var(--i-void)" }}>
         <LivingForecast
+          key={scope.scopeId}
           result={res}
-          reality={m.active && base ? base : undefined}
+          reality={base}
+          scenarioActive={m.active}
           minDay={minDay}
           maxDay={maxDay}
           startDate={m.startDate}
@@ -147,17 +192,18 @@ export default function ForecastInstrument() {
           confidence={confidence}
           gates={openGates}
           momentumDir={momentumDir}
-          scenarioActive={m.active}
+          onGateOpen={(id) => setTool({ kind: "gate", id })}
+          onTargetOpen={() => setTool({ kind: "target" })}
         />
 
-        {/* THE ANSWER. Sits at the object's waist. Output only — nothing here
-            is draggable, and clicking opens the numbers rather than editing. */}
+        {/* THE ANSWER. Sits at the object's waist. Output only — nothing
+            here is draggable, and clicking summons the numbers. */}
         <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
           <button
-            onClick={() => setDetailOpen(true)}
+            onClick={() => setTool({ kind: "forecast" })}
             data-shoot="central-date"
             className="pointer-events-auto text-center group"
-            title="Open Forecast Detail"
+            title="Open Forecast detail"
           >
             <div
               className="i-label"
@@ -167,18 +213,17 @@ export default function ForecastInstrument() {
             </div>
             <div className="flex items-baseline justify-center gap-4 mt-3">
               <span
-                className="i-readout leading-[0.8]"
+                key={`${month}-${dayNum}`}
+                className="i-readout i-fadeup inline-block leading-[0.8]"
                 style={{
                   fontSize: "clamp(56px, 7.5vw, 132px)",
                   color: moved !== 0 ? "var(--i-violet)" : "var(--i-text)",
                   letterSpacing: "-0.045em",
-                  // The object passes behind the type. The halo keeps the answer
-                  // readable without hiding the form it is sitting in.
                   textShadow: "0 0 26px rgba(6,8,10,0.9)",
                   transition: "color 400ms ease",
                 }}
               >
-                {month} {day}
+                {month} {dayNum}
               </span>
             </div>
             <div
@@ -204,55 +249,52 @@ export default function ForecastInstrument() {
           </button>
         </div>
 
-        {/* Corner facts. Deliberately three, deliberately in the corners, so
-            the middle of the canvas stays empty. */}
-        <div className="absolute top-4 left-5 pointer-events-none">
-          {confidence !== null ? (
-            <>
-              <div className="i-label">Chance of hitting target</div>
-              <div
-                className="i-readout text-[30px] leading-none mt-1.5"
-                style={{ color: confidence >= 70 ? "var(--i-mint)" : confidence >= 40 ? "var(--i-amber)" : "var(--i-red)" }}
-              >
-                {confidence}%
-              </div>
-            </>
-          ) : (
-            <>
-              <div className="i-label">No target set</div>
-              <div className="mt-1.5 text-[11px] text-[var(--i-text-faint)] max-w-[190px] leading-relaxed">
-                Nothing to judge this against, so the instrument stays neutral.
-              </div>
-              <Link
-                href="/timeline"
-                className="pointer-events-auto mt-2 inline-block text-[10.5px] text-[var(--i-text-faint)] hover:text-[var(--i-text)]"
-              >
-                Timeline owns targets →
-              </Link>
-            </>
-          )}
+        {/* The one corner fact: the target relationship. Clicking it opens
+            the Target tool. Momentum has no corner — it is the ambient lean
+            and a line in the detail, never a headline. */}
+        <div className="absolute top-4 left-5">
+          <button
+            type="button"
+            data-shoot="confidence-corner"
+            onClick={() => setTool({ kind: "target" })}
+            className="text-left group"
+            aria-label="Open target evaluation"
+          >
+            {confidence !== null ? (
+              <>
+                <div className="i-label group-hover:text-[var(--i-text-soft)] transition-colors">
+                  Chance of hitting target
+                </div>
+                <div
+                  className="i-readout text-[30px] leading-none mt-1.5"
+                  style={{
+                    color: confidence >= 70 ? "var(--i-mint)" : confidence >= 40 ? "var(--i-amber)" : "var(--i-red)",
+                    transition: "color 300ms ease",
+                  }}
+                >
+                  {confidence}%
+                </div>
+                {overridden && (
+                  <div className="mt-1 text-[9.5px]" style={{ color: "var(--i-violet)" }}>
+                    {savedTargetDay !== null
+                      ? `evaluating a moved target — saved ${fmtDay(new Date(m.startDate.getTime() + savedTargetDay * 86400000))}`
+                      : "evaluating a hypothetical target"}
+                  </div>
+                )}
+              </>
+            ) : (
+              <>
+                <div className="i-label group-hover:text-[var(--i-text-soft)] transition-colors">No target set</div>
+                <div className="mt-1.5 text-[11px] text-[var(--i-text-faint)] max-w-[190px] leading-relaxed">
+                  Nothing to judge this against, so the instrument stays neutral.
+                </div>
+              </>
+            )}
+          </button>
         </div>
 
-        {trend && (
-          <div className="absolute top-4 right-5 text-right pointer-events-none">
-            <div className="i-label">Momentum</div>
-            <div className="mt-1.5 flex items-baseline justify-end gap-1.5">
-              <span className="i-readout text-[16px] leading-none" style={{ color: directionTone(trend.direction) }}>
-                {DIRECTION_GLYPH[trend.direction]}
-              </span>
-              <span
-                className="text-[12px] font-semibold uppercase tracking-wide leading-none"
-                style={{ color: directionTone(trend.direction) }}
-              >
-                {DIRECTION_LABEL[trend.direction]}
-              </span>
-            </div>
-            <div className="mt-1 text-[9.5px] text-[var(--i-text-faint)]">interpretation, not forecast input</div>
-          </div>
-        )}
-
-        {/* Target scrub — the one thing on the canvas you may move. It changes
-            the evaluation; the object does not move. */}
+        {/* Target scrub — invisible until sought. The Target tool is the
+            discoverable path; this is the direct-manipulation shortcut. */}
         {targetDay !== null && (
           <input
             type="range"
@@ -261,24 +303,23 @@ export default function ForecastInstrument() {
             value={Math.round(targetDay)}
             data-shoot="target-scrub"
             aria-label={`${scope.name} target date`}
-            onChange={(e) =>
-              setTargetOverride((prev) => new Map(prev).set(scope.scopeId, parseInt(e.target.value, 10)))
-            }
-            style={{ bottom: macrosOpen ? 152 : 62 }}
-            className="absolute left-[8%] right-[8%] accent-[var(--i-violet)] opacity-25 hover:opacity-90 focus:opacity-100 focus:outline-none transition-opacity"
+            onChange={(e) => setOverride(parseInt(e.target.value, 10))}
+            style={{ bottom: macrosOpen ? 196 : 62 }}
+            className="absolute left-[8%] right-[8%] accent-[var(--i-violet)] opacity-0 hover:opacity-90 focus:opacity-100 focus:outline-none transition-opacity"
           />
         )}
 
-        {/* The macro strip. Closed in Reality; opens when you want to play. */}
+        {/* The macro strip. Closed in Reality; opens when you want to play.
+            Every control here is a real scenario lever or a summons. */}
         <div className="absolute bottom-0 left-0 right-0">
           {macrosOpen && (
             <div
-              className="px-5 py-3.5 flex items-start gap-6 flex-wrap"
+              className="px-5 py-3.5 flex items-start gap-7 flex-wrap"
               style={{ background: "var(--i-panel)", borderTop: "1px solid var(--i-border)" }}
             >
               <div className="min-w-[168px]">
                 <div className="i-label mb-2">Assume settled</div>
-                <div className="flex flex-wrap gap-1.5">
+                <div className="flex flex-wrap gap-1.5 max-w-[280px]">
                   {scope.gates.map((g) => {
                     const on = m.scenario.resolvedGateIds.has(g.id);
                     return (
@@ -310,7 +351,7 @@ export default function ForecastInstrument() {
                 </div>
               </div>
 
-              <div className="min-w-[150px]">
+              <div className="min-w-[130px]">
                 <div className="i-label mb-2">Scope</div>
                 <div className="flex items-baseline gap-2">
                   <span className="i-readout text-[15px] text-[var(--i-text)]">
@@ -318,30 +359,60 @@ export default function ForecastInstrument() {
                   </span>
                   <span className="text-[10px] text-[var(--i-text-faint)]">items in</span>
                 </div>
-                <Link href="/scope" className="mt-1.5 block text-[10px] text-[var(--i-text-faint)] hover:text-[var(--i-text)]">
-                  Choose what ships →
+                <button
+                  onClick={() => setTool({ kind: "forecast" })}
+                  className="mt-1.5 block text-[10px] text-[var(--i-text-faint)] hover:text-[var(--i-text)] transition-colors"
+                >
+                  Toggle items in Inputs →
+                </button>
+                <Link
+                  href="/scope"
+                  className="mt-1 block text-[10px] text-[var(--i-text-faint)] hover:text-[var(--i-text)] transition-colors"
+                >
+                  Scope owns what ships →
                 </Link>
               </div>
 
-              <div className="min-w-[150px]">
-                <div className="i-label mb-2">People</div>
-                <div className="flex items-baseline gap-2">
-                  <span className="i-readout text-[15px] text-[var(--i-text)]">{scope.teamCapacity.toFixed(1)} FTE</span>
-                  <span className="text-[10px] text-[var(--i-text-faint)]">{m.data.contextSwitchCostPct}% switch</span>
-                </div>
-                <Link href="/portfolio" className="mt-1.5 block text-[10px] text-[var(--i-text-faint)] hover:text-[var(--i-text)]">
-                  Portfolio owns these →
-                </Link>
+              {/* The one grabbable thing in the strip: simulated capacity.
+                  A real lever — the same override Portfolio previews. */}
+              <div className="flex items-start gap-4">
+                <Fader
+                  label="People"
+                  value={capValue}
+                  min={MIN_SIMULATED_CAPACITY}
+                  max={faderMaxCapacity(scope.teamCapacity, capValue)}
+                  step={0.5}
+                  fineStep={0.1}
+                  resetValue={scope.teamCapacity}
+                  onChange={setCapacity}
+                  format={(v) => `${formatCapacity(v)} FTE`}
+                  formatAria={(v) => `${formatCapacity(v)} full-time equivalents`}
+                  parseInput={parseCapacityInput}
+                  inputHint={`min ${MIN_SIMULATED_CAPACITY} · no upper limit`}
+                  sub={`Reality ${formatCapacity(scope.teamCapacity)} · ${m.data.contextSwitchCostPct}% switch`}
+                  height={64}
+                  dataShoot="macro-capacity"
+                />
               </div>
 
               <div className="flex-1" />
-              <button
-                onClick={() => setDetailOpen(true)}
-                className="rounded-md px-3 py-2 text-[11px] text-[var(--i-text-soft)] hover:text-[var(--i-text)]"
-                style={{ border: "1px solid var(--i-border-strong)" }}
-              >
-                Forecast detail
-              </button>
+              <div className="flex flex-col items-end gap-1.5">
+                <button
+                  onClick={() => setTool({ kind: "forecast" })}
+                  data-shoot="open-detail"
+                  className="rounded-md px-3 py-2 text-[11px] text-[var(--i-text-soft)] hover:text-[var(--i-text)] transition-colors"
+                  style={{ border: "1px solid var(--i-border-strong)" }}
+                >
+                  Forecast detail
+                </button>
+                <button
+                  onClick={() => setTool({ kind: "context" })}
+                  data-shoot="open-context"
+                  className="px-3 py-1.5 text-[10.5px] text-[var(--i-text-faint)] hover:text-[var(--i-text)] transition-colors"
+                >
+                  What the model knows →
+                </button>
+              </div>
             </div>
           )}
           <div className="flex justify-center pb-3 pt-2">
@@ -362,20 +433,56 @@ export default function ForecastInstrument() {
       </div>
 
       <ForecastDetail
-        open={detailOpen}
-        onClose={() => setDetailOpen(false)}
-        scopeName={scope.name}
+        open={tool?.kind === "forecast"}
+        onClose={() => setTool(null)}
+        scope={scope}
+        scopeNameById={scopeNameById}
         result={res}
         reality={base}
         startDate={m.startDate}
         targetDay={targetDay}
         confidence={confidence}
-        gates={scope.gates}
-        resolvedGateIds={m.scenario.resolvedGateIds}
-        capacity={scope.teamCapacity}
-        capacitySource={scope.capacitySource}
-        itemsIn={scope.items.length - cutCount}
-        itemsTotal={scope.items.length}
+        scenario={m.scenario}
+        setScenario={m.setScenario}
+        scenarioActive={m.active}
+        contextSwitchCostPct={m.data.contextSwitchCostPct}
+        momentum={trend}
+      />
+
+      {tool?.kind === "gate" && (
+        <GateDetail
+          gate={scope.gates.find((g) => g.id === tool.id) ?? null}
+          resolved={m.scenario.resolvedGateIds.has(tool.id)}
+          onToggle={() =>
+            m.setScenario((prev) => {
+              const n = new Set(prev.resolvedGateIds);
+              if (n.has(tool.id)) n.delete(tool.id);
+              else n.add(tool.id);
+              return { ...prev, resolvedGateIds: n };
+            })
+          }
+          onClose={() => setTool(null)}
+        />
+      )}
+
+      <TargetDetail
+        open={tool?.kind === "target"}
+        onClose={() => setTool(null)}
+        scope={scope}
+        result={res}
+        startDate={m.startDate}
+        savedTargetDay={savedTargetDay}
+        targetDay={targetDay}
+        onSetOverride={setOverride}
+        onClearOverride={clearOverride}
+      />
+
+      <ContextDetail
+        open={tool?.kind === "context"}
+        onClose={() => setTool(null)}
+        scope={scope}
+        sources={m.data.sources}
+        reportCount={m.data.reports.filter((r) => r.scopeId === scope.scopeId).length}
       />
     </InstrumentShell>
   );
