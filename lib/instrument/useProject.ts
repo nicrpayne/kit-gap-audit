@@ -147,6 +147,13 @@ export interface SuiteScenario {
   // behaviour for something that was never saved. See docs/SCOPE-INSTRUMENT.md
   // for the migration this stands in for.
   draftFeatures: { id: string; name: string; intent: string; itemIds: string[] }[];
+  // Hermes candidates the user has seated into the release by hand. Session-
+  // local for the same reason drafts are: accepting a candidate means writing a
+  // capability down, and there is no Feature table to write it to yet. Seating
+  // one changes NO simulation input -- the candidate's work was already being
+  // counted -- so this is purely a statement about what we accept as a
+  // capability, and the surface says so.
+  acceptedCandidateIds: Set<string>;
   contextSwitchCostPct: number | null;
 }
 
@@ -157,6 +164,7 @@ export const EMPTY_SCENARIO: SuiteScenario = {
   estimateOverrideByItemId: {},
   bypassedFeatureIds: new Set(),
   draftFeatures: [],
+  acceptedCandidateIds: new Set(),
   contextSwitchCostPct: null,
 };
 
@@ -168,6 +176,7 @@ export function scenarioIsActive(s: SuiteScenario): boolean {
     Object.keys(s.estimateOverrideByItemId).length > 0 ||
     s.bypassedFeatureIds.size > 0 ||
     s.draftFeatures.length > 0 ||
+    s.acceptedCandidateIds.size > 0 ||
     s.contextSwitchCostPct !== null
   );
 }

@@ -40,6 +40,7 @@ export default function FeatureDetail({
   capacity,
   releaseLoadDays,
   onToggle,
+  onAccept,
   onSetEstimate,
   onClearEstimate,
 }: {
@@ -49,6 +50,7 @@ export default function FeatureDetail({
   capacity: number;
   releaseLoadDays: number;
   onToggle: (out: boolean) => void;
+  onAccept: (id: string) => void;
   onSetEstimate: (id: string, range: ThreePoint) => void;
   onClearEstimate: (id: string) => void;
 }) {
@@ -82,7 +84,7 @@ export default function FeatureDetail({
         <Overview feature={f} capacity={capacity} releaseLoadDays={releaseLoadDays} onToggle={onToggle} />
       )}
       {mode === "work" && <Work feature={f} capacity={capacity} />}
-      {mode === "evidence" && <Evidence feature={f} />}
+      {mode === "evidence" && <Evidence feature={f} onAccept={onAccept} />}
       {mode === "estimate" && (
         <Estimate feature={f} capacity={capacity} onSetEstimate={onSetEstimate} onClearEstimate={onClearEstimate} />
       )}
@@ -298,7 +300,7 @@ function Work({ feature: f, capacity }: { feature: Feature; capacity: number }) 
 
 // ── EVIDENCE ─────────────────────────────────────────────────────────────
 
-function Evidence({ feature: f }: { feature: Feature }) {
+function Evidence({ feature: f, onAccept }: { feature: Feature; onAccept: (id: string) => void }) {
   if (f.source === "hermes" && f.evidence)
     return (
       <div className="px-5 py-4">
@@ -316,7 +318,31 @@ function Evidence({ feature: f }: { feature: Feature }) {
         <div className="mt-3">
           <Row k="Represented in Linear" v="No" tone="var(--i-amber)" note="no ticket covers this" />
           <Row k="Counted in the forecast" v="Yes" note="the audit's estimate is already simulated" />
-          <Row k="Accepted as a capability" v="Not yet" tone="var(--i-violet)" note="this is a candidate" />
+          <Row
+            k="Accepted as a capability"
+            v={f.accepted ? "Yes — in this Scenario" : "Not yet"}
+            tone="var(--i-violet)"
+            note={f.accepted ? "seated by hand; not written anywhere" : "this is a candidate"}
+          />
+        </div>
+
+        <div className="mt-3 rounded px-3 py-3" style={{ background: "var(--i-recess)" }}>
+          <div className="flex items-center gap-2">
+            <Prototype note="There is no Feature table yet, so acceptance is not written anywhere." />
+            <span className="i-label">Seat it into the release</span>
+          </div>
+          <p className="mt-1.5 text-[10px] text-[var(--i-text-faint)] leading-snug">
+            Accepting sets the candidate down on the tray with everything else in Reality. It changes no forecast
+            input — this work was already being counted — so the only thing that moves is what we call a capability.
+          </p>
+          <button
+            onClick={() => onAccept(f.id)}
+            data-shoot="accept-candidate"
+            className="mt-2.5 w-full rounded-md px-3 py-2 text-[11.5px] transition-colors"
+            style={{ border: "1px solid var(--i-violet)", color: "var(--i-violet)" }}
+          >
+            {f.accepted ? "Return it to candidate" : "Accept as a capability"}
+          </button>
         </div>
         <p className="mt-3 text-[10.5px] text-[var(--i-text-soft)] leading-relaxed">
           Accepting a candidate means writing it down as a first-class capability, which needs the Feature table Scope

@@ -66,6 +66,8 @@ export interface Feature {
   evidence: { quote: string | null; rationale: string | null } | null;
   /** True once the user has bypassed it in this Scenario. */
   bypassed: boolean;
+  /** A Hermes candidate the user has seated by hand, in this Scenario only. */
+  accepted: boolean;
 }
 
 export interface FeatureComposition {
@@ -121,6 +123,7 @@ function summarise(
   epic: string | null,
   evidence: Feature["evidence"],
   bypassed: boolean,
+  accepted: boolean,
   estimateOverrides: Record<string, ThreePoint>
 ): Feature {
   const range = items.reduce<ThreePoint>(
@@ -150,6 +153,7 @@ function summarise(
     ).length,
     evidence,
     bypassed,
+    accepted,
   };
 }
 
@@ -167,7 +171,8 @@ export function composeFeatures(
   capacity: number,
   bypassedFeatureIds: Set<string>,
   estimateOverrides: Record<string, ThreePoint>,
-  drafts: DraftFeature[]
+  drafts: DraftFeature[],
+  acceptedCandidateIds: Set<string> = new Set()
 ): FeatureComposition {
   const byIdentifier = new Map(items.map((i) => [i.id, i]));
 
@@ -205,7 +210,7 @@ export function composeFeatures(
     }
     const root = rootParentOf(item, byIdentifier);
     if (!root) {
-      put(UNMAPPED_ID, "Not mapped to a feature", "unmapped", item);
+      put(UNMAPPED_ID, "No capability yet", "unmapped", item);
       continue;
     }
     put(root.id, root.title, "linear", item);
@@ -235,6 +240,7 @@ export function composeFeatures(
         b.epic,
         b.evidence,
         bypassedFeatureIds.has(id),
+        acceptedCandidateIds.has(id),
         estimateOverrides
       )
     );
@@ -246,7 +252,19 @@ export function composeFeatures(
   for (const d of drafts) {
     if (features.some((f) => f.id === d.id)) continue;
     features.push(
-      summarise(d.id, d.name, "manual", [], [], capacity, null, null, bypassedFeatureIds.has(d.id), estimateOverrides)
+      summarise(
+        d.id,
+        d.name,
+        "manual",
+        [],
+        [],
+        capacity,
+        null,
+        null,
+        bypassedFeatureIds.has(d.id),
+        acceptedCandidateIds.has(d.id),
+        estimateOverrides
+      )
     );
   }
 

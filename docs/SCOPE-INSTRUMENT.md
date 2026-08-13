@@ -13,11 +13,67 @@ Workflow" — and tickets are how those get built. Scope's first version worked
 at the WorkItem level and was wrong for that reason: it was a beautifully
 argued backlog visualiser, and a backlog is not a product.
 
-So the surface is a **desk**. One channel per capability, feeding a master
-section that is the release. Each channel is a fixed-size module: effort never
-changes its size, only the light inside it. Muting a channel takes that
-capability out of the release, and — as on any desk — the channel stays
-exactly where it was.
+So the surface is a **tray**. Capabilities are physical tiles seated in a lit
+bay that IS this release, with a dark shelf beneath it for what has been taken
+out. You pick a tile up, the bay makes room, you carry it to the shelf, and the
+release recomposes around the hole it left. Manipulating the object is
+manipulating the model: a tile leaving the tray removes its work items from the
+simulation on the next frame.
+
+### Three materials, one glance
+
+| Material | What it is | How it reads |
+|---|---|---|
+| **Seated** | accepted Reality | solid, lit from within, contact shadow — it is touching the surface |
+| **Spectral** | a Hermes candidate or an unsaved draft | hovers above the tray, translucent, dashed edge, a cast shadow with a gap beneath it |
+| **Raw** | unmapped work | hatched amber, deliberately not tile-shaped enough to be mistaken for a finished capability |
+
+The spectral state carries a precise fact that took three versions to land:
+a candidate's **work is already counted in the forecast**, but its existence as
+a capability is not settled. So it belongs in the bay while visibly not being
+seated in it. Accepting one sets it down — and changes no simulation input,
+because nothing about the work changed.
+
+Tile **size** carries relative load in three discrete steps, not continuously.
+A tile that resizes by a few pixels every time an estimate moves is a chart;
+three sizes is a hierarchy you can learn and recognise across sessions.
+
+## The drag is the instrument
+
+Libraries were chosen after inspecting the shipped packages and compiling them
+against this repo's React 19.2.7, because the doc sites were unreachable from
+the build environment.
+
+| Choice | Why | Why not the alternative |
+|---|---|---|
+| **@dnd-kit/core 6.3.1** | has exactly the set this surface needs — pointer + keyboard sensors, `pointerWithin` collision, a portalled `DragOverlay`, and screen-reader `announcements`. Ships complete types, and a probe file compiled clean on React 19. | `@dnd-kit/react` 0.5.0 is the maintainer's stated direction and explicitly supports React 19, but it is 0.x. Where the drag *is* the product, proven behaviour beats a newer API. Worth revisiting when it reaches 1.x. |
+| **motion 13.1.0** | `layout` FLIP so neighbours make room continuously, springs that settle rather than bounce, `AnimatePresence`, and `MotionConfig reducedMotion="user"` — which honours the OS setting for every animation on the surface with one wrapper. | — |
+| **no `@dnd-kit/sortable`** | order in the bay is derived from load, not user-arranged. There is nothing to sort. | — |
+| **no GSAP** | Motion's layout + spring already cover displacement and settle. A second animation runtime would duplicate ~60kb for behaviour already available. | Revisit only if the settle feel proves inadequate in use. |
+
+### The one structural decision
+
+The source tile deliberately does **not** carry dnd-kit's transform. It becomes
+a depression in the tray with the same footprint, and the real tile flies in a
+`DragOverlay`. That keeps Motion's layout animation free of a competing
+transform, gives the lifted object its own physics, and — most importantly —
+stops the bay collapsing under the hand, so the composition stays spatially
+continuous.
+
+### Motion states
+
+`rest → hover → pickup → carry → armed → drop → settle → recomposed`, and
+`cancel` returning the tile to exactly where it came from. Each is a distinct
+treatment, not a single transition: pickup trades the contact shadow for a cast
+one, the shelf arms in violet as the hand approaches, and the master's date
+animates in a beat *after* the tile lands — the object moves first, the number
+follows. `scripts/scope-drag-record.mjs` records video and samples every one of
+those states as its own frame.
+
+**A note on the spectral float:** it is a static offset, not a loop. An element
+that never comes to rest is never "stable" — it blocks pointer actionability,
+defeats assistive tooling and composites forever. The life lives in the shadow
+beneath it, which nothing needs to interact with.
 
 ## Where features come from
 

@@ -51,26 +51,37 @@ const goScope = async (key) => {
   await p.goto(`${BASE}/scope`, { waitUntil: "networkidle" });
   await settle(4000);
   await p.locator(`[data-shoot="scope-${key}"]`).click();
-  await settle(1600);
+  await settle(1700);
 };
-const bypass = async (i) => {
-  await p.locator('[data-shoot="engage"]').nth(i).click();
-  await settle(1500);
+// Taking a capability out is a DRAG in V3, so the proof performs one -- with a
+// real pointer, past the activation threshold, into the shelf.
+const bypass = async () => {
+  const tile = p.locator('[data-shoot="bay-in"] [data-shoot="capability"]').first();
+  const shelf = p.locator('[data-shoot="bay-out"]');
+  const a = await tile.boundingBox();
+  const t = await shelf.boundingBox();
+  await p.mouse.move(a.x + a.width / 2, a.y + a.height / 2, { steps: 8 });
+  await p.mouse.down();
+  await p.mouse.move(a.x + a.width / 2 + 12, a.y + a.height / 2 + 6, { steps: 4 });
+  await p.mouse.move(t.x + t.width * 0.35, t.y + t.height / 2, { steps: 22 });
+  await settle(350);
+  await p.mouse.up();
+  await settle(1600);
 };
 
 // ── 1. Reality ──────────────────────────────────────────────────────────
 await goScope("jsa");
 check("Scope opens in Reality", (await statePill()).includes("REALITY"), await statePill());
-const channels = await p.locator('[data-shoot="channel"]').count();
-check("The desk shows capabilities, not tickets", channels >= 4 && channels <= 12, `${channels} channels`);
+const tiles = await p.locator('[data-shoot="capability"]').count();
+check("The tray shows capabilities, not tickets", tiles >= 4 && tiles <= 12, `${tiles} tiles`);
 const realityDate = await scopeDate();
 const realityLoad = await releaseLoad();
-console.log(`      JSA lands ${realityDate}, carrying ${realityLoad}d across ${channels} capabilities`);
+console.log(`      JSA lands ${realityDate}, carrying ${realityLoad}d across ${tiles} capabilities`);
 await shot("1-reality");
 
 // ── 2. Bypass one capability ────────────────────────────────────────────
-const firstName = await p.locator('[data-shoot="channel"]').first().innerText();
-await bypass(0);
+const firstName = await p.locator('[data-shoot="bay-in"] [data-shoot="capability"]').first().innerText();
+await bypass();
 const scenarioDate = await scopeDate();
 const scenarioLoad = await releaseLoad();
 check("Scenario state is declared in words", (await statePill()).includes("SCENARIO"), await statePill());
@@ -78,14 +89,14 @@ check(
   "The chip names a capability, not a ticket count",
   (await p.locator("text=/capabilit(y|ies) out of this release/").count()) > 0
 );
-check("The channel is muted, not removed", (await p.locator('[data-shoot="channel"]').count()) === channels);
+check("The capability still exists, on the shelf", (await p.locator('[data-shoot="capability"]').count()) === tiles);
 check(
-  "It is marked out and can be brought back",
-  (await p.locator('[data-shoot="channel"][data-bypassed="true"]').count()) === 1
+  "It is parked out of the release, not deleted",
+  (await p.locator('[data-shoot="bay-out"] [data-shoot="capability"]').count()) === 1
 );
 check("Release load fell", Number(scenarioLoad) < Number(realityLoad), `${realityLoad}d -> ${scenarioLoad}d`);
 check("The release date moved", realityDate !== scenarioDate, `${realityDate} -> ${scenarioDate}`);
-console.log(`      bypassed: ${firstName.split("\n")[1]}`);
+console.log(`      dragged out: ${firstName.split("\n")[0]}`);
 await shot("2-bypassed");
 
 // ── 3. The hypothetical survives the walk to Forecast ───────────────────
@@ -113,14 +124,14 @@ await settle(2400);
 check("Forecast is back on Reality", (await statePill()).includes("REALITY"), await statePill());
 await goScope("jsa");
 check("Scope is back on Reality too", (await scopeDate()) === realityDate, `${await scopeDate()} vs ${realityDate}`);
-check("Nothing is left muted", (await p.locator('[data-shoot="channel"][data-bypassed="true"]').count()) === 0);
+check("The shelf is empty again", (await p.locator('[data-shoot="bay-out"] [data-shoot="capability"]').count()) === 0);
 await shot("4-back-to-reality");
 
 // ── 5. The honest negative: a dominated scope ───────────────────────────
 await goScope("itrack");
 const itrackReality = await scopeDate();
-await bypass(0);
-await bypass(1);
+await bypass();
+await bypass();
 const itrackScenario = await scopeDate();
 check(
   "Cutting capabilities in a dominated scope moves nothing",
@@ -149,7 +160,7 @@ check(
 );
 check(
   "…and is visibly a draft that was never saved",
-  (await p.locator('[data-shoot="channel"]').filter({ hasText: "Draft" }).count()) === 1
+  (await p.locator('[data-shoot="capability"]').filter({ hasText: "Draft" }).count()) === 1
 );
 await shot("6-declared-capability");
 
