@@ -21,7 +21,7 @@ import { useMemo, useState } from "react";
 import Link from "next/link";
 import InstrumentShell from "@/components/instrument/InstrumentShell";
 import ScenarioStrip, { chipsFor } from "@/components/instrument/ScenarioStrip";
-import LivingForecast, { dispersionWord, type GateMark } from "@/components/instrument/LivingForecast";
+import LivingForecast, { type GateMark } from "@/components/instrument/LivingForecast";
 import ForecastDetail from "@/components/instrument/ForecastDetail";
 import { GateDetail, TargetDetail, ContextDetail, RealityDetail } from "@/components/instrument/ForecastTools";
 import { useProject, EMPTY_SCENARIO, fmtDay, deltaLabel, deltaTone } from "@/lib/instrument/useProject";
@@ -226,9 +226,6 @@ export default function ForecastInstrument() {
                 {fmtDay(new Date(m.startDate.getTime() + res.percentiles.p10 * 86400000))} —{" "}
                 {fmtDay(new Date(m.startDate.getTime() + res.percentiles.p90 * 86400000))}
               </span>
-              <span className="i-label" style={{ color: "var(--i-text-soft)" }}>
-                {dispersionWord(res)}
-              </span>
               {moved !== 0 && (
                 <span className="i-readout text-[12px]" style={{ color: deltaTone(moved) }}>
                   {deltaLabel(moved)}
@@ -292,7 +289,7 @@ export default function ForecastInstrument() {
               style={{ background: "var(--i-panel)", borderTop: "1px solid var(--i-border)" }}
             >
               <div className="min-w-[168px]">
-                <div className="i-label mb-2">Assume settled</div>
+                <div className="i-label mb-2">Assume decided — hypothetical</div>
                 <div className="flex flex-wrap gap-1.5 max-w-[280px]">
                   {scope.gates.map((g) => {
                     const on = m.scenario.resolvedGateIds.has(g.id);

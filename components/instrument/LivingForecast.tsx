@@ -382,6 +382,10 @@ export default function LivingForecast({
   }, [gates]);
 
   const inFrame = (day: number) => pctX(day) > 3 && pctX(day) < 97;
+  // The object's own extent in day-space — a wall only shows CONTACT when
+  // real probability mass actually presses against it.
+  const objLoDay = dLo + (range[0] / BINS) * (dHi - dLo);
+  const objHiDay = dLo + ((range[1] + 1) / BINS) * (dHi - dLo);
   const passedGates = drawGates.filter((e) => !e.leaving && !inFrame(e.g.day) && pctX(e.g.day) <= 3);
   const targetInFrame = targetDay !== null && targetDay >= dLo && targetDay <= dHi;
   const fmtTarget =
@@ -470,9 +474,11 @@ export default function LivingForecast({
         </g>
 
         {/* The body — internally illuminated, then two density isosurfaces.
-            The interior brightens exactly where the trial mass concentrates,
-            and the core rides a slightly deeper momentum lean than the
-            outer layer: a restrained parallax, geometry untouched. */}
+            The soft duplicate underneath is the SAME exact outline, blurred:
+            the eye reads continuous material first, while the crisp data
+            boundary stays drawn (quietly) above. Nothing is smoothed in the
+            data — only in the light. */}
+        <path d={path} fill={core} opacity={0.16} filter={`url(#soft-${uid})`} />
         <path d={path} fill={`url(#core-${uid})`} />
         {midPath && <path d={midPath} fill={core} opacity={0.15} filter={`url(#soft-${uid})`} />}
         {corePath && (
@@ -499,19 +505,20 @@ export default function LivingForecast({
                 y2={MID + (v / peak) * amp}
                 stroke={core}
                 strokeWidth={1}
-                opacity={0.05 + grain * 0.3}
+                opacity={0.04 + grain * 0.22}
                 vectorEffect="non-scaling-stroke"
               />
             ) : null
           )}
 
-        {/* Edge */}
+        {/* The exact data boundary — deliberately SECONDARY now. The body is
+            what the eye meets; the contour is there for anyone who looks. */}
         <path
           d={path}
           fill="none"
           stroke={core}
-          strokeWidth={1.4}
-          opacity={0.55 + (1 - grain) * 0.35}
+          strokeWidth={1.1}
+          opacity={0.24 + (1 - grain) * 0.2}
           vectorEffect="non-scaling-stroke"
         />
 
@@ -573,12 +580,16 @@ export default function LivingForecast({
       </svg>
 
       {/* Gate walls. Structurally different from everything else: a hard
-          boundary with pressure banked against it, because a serial gate is
-          not effort and capacity cannot cross it. Resolving one in Scenario
-          flashes the wall once and releases the structure. */}
+          boundary the probability field presses against, because a serial
+          gate is not effort and capacity cannot cross it. The compression
+          striations bunch toward the plane; the contact glow appears only
+          where real trial mass actually reaches the boundary. Resolving one
+          in Scenario flashes the wall once and releases the structure. */}
       {drawGates
         .filter((e) => e.leaving || inFrame(e.g.day))
-        .map(({ g, leaving, entering }) => (
+        .map(({ g, leaving, entering }) => {
+          const contact = g.day >= objLoDay && g.day <= objHiDay;
+          return (
           <div
             key={g.id}
             className={`absolute inset-y-0 ${leaving ? "lf-gate-leave" : entering ? "lf-gate-enter" : ""}`}
@@ -587,15 +598,42 @@ export default function LivingForecast({
             <div
               className="lf-press absolute inset-y-0"
               style={{
-                width: 54,
-                transform: "translateX(-54px)",
-                background: "linear-gradient(90deg, transparent, rgba(224,176,74,0.14))",
+                width: 76,
+                transform: "translateX(-76px)",
+                background: "linear-gradient(90deg, transparent, rgba(224,176,74,0.16))",
               }}
             />
+            {/* Field compression: spacing tightens toward the plane. */}
+            {[38, 21, 9].map((off, i) => (
+              <div
+                key={off}
+                className="lf-press absolute"
+                style={{
+                  top: "24%",
+                  bottom: "24%",
+                  width: 1,
+                  transform: `translateX(${-off}px)`,
+                  background: "var(--i-amber)",
+                  opacity: 0.1 + i * 0.09,
+                }}
+              />
+            ))}
             <div
               className="absolute inset-y-0 w-px"
-              style={{ background: "var(--i-amber)", opacity: 0.85, boxShadow: "0 0 12px rgba(224,176,74,0.45)" }}
+              style={{ background: "var(--i-amber)", opacity: 0.85, boxShadow: "0 0 14px rgba(224,176,74,0.5)" }}
             />
+            {/* Contact — mass against the boundary. */}
+            {contact && (
+              <div
+                className="absolute -translate-x-1/2 -translate-y-1/2 pointer-events-none"
+                style={{
+                  top: "50%",
+                  width: 46,
+                  height: 130,
+                  background: "radial-gradient(closest-side, rgba(224,176,74,0.4), transparent)",
+                }}
+              />
+            )}
             <button
               type="button"
               data-shoot={`gate-wall-${g.id}`}
@@ -614,7 +652,8 @@ export default function LivingForecast({
               <div className="mt-1 text-[10px] text-[var(--i-text-faint)]">nothing lands before this</div>
             </button>
           </div>
-        ))}
+          );
+        })}
 
       {/* Decisions that land before this window opens. Their delay is
           already inside every trial, so the honest thing is to say so. */}
@@ -629,7 +668,7 @@ export default function LivingForecast({
             {passedGates.length} open decision{passedGates.length > 1 ? "s" : ""}
           </div>
           <div className="mt-1 text-[10px] text-[var(--i-text-faint)] leading-relaxed">
-            resolve before this window — their delay is already inside this date
+            already counted in this date
           </div>
         </button>
       )}

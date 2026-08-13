@@ -27,7 +27,6 @@ import ToolWindow, { RailButton, Row } from "@/components/instrument/ToolWindow"
 import type { SimulationResult } from "@/lib/forecast/simulate";
 import type { ProjectScope, SuiteScenario } from "@/lib/instrument/useProject";
 import { fmtDay, fmtFull, deltaLabel, deltaTone, confidenceTone } from "@/lib/instrument/useProject";
-import { dispersionWord } from "@/components/instrument/LivingForecast";
 import type { MomentumTrend } from "@/lib/momentum/trend";
 import { DIRECTION_GLYPH, DIRECTION_LABEL, directionTone, trendPhrase } from "@/lib/momentum/trend";
 
@@ -45,16 +44,48 @@ function SectionNote({ children }: { children: React.ReactNode }) {
   return <p className="text-[11px] text-[var(--i-text-soft)] leading-relaxed">{children}</p>;
 }
 
-/** One recessed stat cell — the plug-in alternative to a row. */
-function Cell({ k, v, note, tone, wide }: { k: string; v: string; note?: string; tone?: string; wide?: boolean }) {
+/** One unboxed stat — hierarchy from type, not from chrome. */
+function Stat({ k, v, note, tone, wide }: { k: string; v: string; note?: string; tone?: string; wide?: boolean }) {
   return (
-    <div className={`i-meter rounded-md px-3 py-2.5 ${wide ? "col-span-2" : ""}`}>
+    <div className={`pt-2.5 ${wide ? "col-span-2" : ""}`} style={{ borderTop: "1px solid var(--i-border)" }}>
       <div className="i-label">{k}</div>
-      <div className="i-readout mt-1 text-[14px] leading-tight" style={{ color: tone ?? "var(--i-text)" }}>
+      <div className="i-readout mt-1 text-[14.5px] leading-tight" style={{ color: tone ?? "var(--i-text)" }}>
         {v}
       </div>
       {note && <div className="mt-0.5 text-[9.5px] text-[var(--i-text-faint)] leading-snug">{note}</div>}
     </div>
+  );
+}
+
+/** A row whose right column carries a quiet input-magnitude bar — days as
+    the model holds them, normalised within its own group. Never an
+    attribution: the bar shows the INPUT's size, not its computed effect. */
+function MagRow({ k, days, max, label, note, color }: { k: string; days: number; max: number; label: string; note?: string; color?: string }) {
+  return (
+    <div className="py-2" style={{ borderTop: "1px solid var(--i-border)" }}>
+      <div className="flex items-baseline justify-between gap-4">
+        <span className="i-label min-w-0 truncate">{k}</span>
+        <span className="i-readout shrink-0 text-[12.5px] text-[var(--i-text)]">{label}</span>
+      </div>
+      <div className="mt-1.5 flex items-center gap-2">
+        <div className="h-[3px] flex-1 rounded-full overflow-hidden" style={{ background: "var(--i-recess)" }}>
+          <div
+            className="h-full rounded-full"
+            style={{ width: `${Math.max(4, (days / Math.max(max, 1)) * 100)}%`, background: color ?? "var(--i-text-faint)", opacity: 0.75 }}
+          />
+        </div>
+        {note && <span className="shrink-0 text-[9px] text-[var(--i-text-faint)]">{note}</span>}
+      </div>
+    </div>
+  );
+}
+
+/** A read-only row that navigates to the instrument owning the value. */
+function NavRow({ href, children }: { href: string; children: React.ReactNode }) {
+  return (
+    <Link href={href} className="block -mx-2 px-2 rounded transition-colors hover:bg-[var(--i-panel-raised)]">
+      {children}
+    </Link>
   );
 }
 
@@ -371,8 +402,10 @@ export default function ForecastDetail({
                 </div>
               </div>
               <div className="text-right">
-                <div className="i-label">{dispersionWord(result)}</div>
-                <div className="i-readout text-[13px] text-[var(--i-text-soft)] mt-0.5">{spread}d spread</div>
+                <div className="i-label">Spread</div>
+                <div className="i-readout text-[13px] text-[var(--i-text-soft)] mt-0.5">
+                  {spread}d best to worst
+                </div>
               </div>
             </div>
 
@@ -386,32 +419,32 @@ export default function ForecastDetail({
               />
             </div>
 
-            <div className="mt-3 grid grid-cols-2 gap-2">
+            <div className="mt-4 grid grid-cols-2 gap-x-5">
               {targetDay !== null ? (
-                <Cell
+                <Stat
                   k="Target"
                   v={`${fmtDay(new Date(startDate.getTime() + targetDay * 86400000))} · ${confidence}%`}
                   tone={confidenceTone(confidence)}
                   note={`${confidence} of 100 runs land on or before it`}
                 />
               ) : (
-                <Cell k="Target" v="none set" note="the instrument stays neutral without one" />
+                <Stat k="Target" v="none set" note="the instrument stays neutral without one" />
               )}
               {scenarioActive && reality ? (
-                <Cell k="Versus Reality" v={moved === 0 ? "no change" : deltaLabel(moved)} tone={deltaTone(moved)} note="scenario preview" />
+                <Stat k="Versus Reality" v={moved === 0 ? "no change" : deltaLabel(moved)} tone={deltaTone(moved)} note="scenario preview" />
               ) : sinceLast !== null && scope.lastReport ? (
-                <Cell k="Since last report" v={deltaLabel(sinceLast)} tone={deltaTone(sinceLast)} note={`reported ${day(scope.lastReport.generatedAt)}`} />
+                <Stat k="Since last report" v={deltaLabel(sinceLast)} tone={deltaTone(sinceLast)} note={`reported ${day(scope.lastReport.generatedAt)}`} />
               ) : (
-                <Cell k="Since last report" v="no reports yet" />
+                <Stat k="Since last report" v="no reports yet" />
               )}
-              <Cell
+              <Stat
                 k="Primary constraint"
                 v={openGates.length === 0 ? "none" : openGates[0].label}
                 note={openGates.length === 0 ? "nothing structural in the way" : `serial · likely +${openGates[0].likely}d`}
                 wide={!momentum}
               />
               {momentum && (
-                <Cell
+                <Stat
                   k="Momentum"
                   v={`${DIRECTION_GLYPH[momentum.direction]} ${DIRECTION_LABEL[momentum.direction]}`}
                   tone={directionTone(momentum.direction)}
@@ -433,19 +466,37 @@ export default function ForecastDetail({
             {openGates.length > 0 && (
               <Block accent="var(--i-amber)" title="Constraints — serial, people don't help">
                 {openGates.map((g) => (
-                  <Row key={g.id} k={g.label} v={`+${g.likely}d`} note="waits in every trial" />
+                  <MagRow
+                    key={g.id}
+                    k={g.label}
+                    days={g.likely}
+                    max={Math.max(...openGates.map((x) => x.likely))}
+                    label={`+${g.likely}d`}
+                    note="waits in every trial"
+                    color="var(--i-amber)"
+                  />
                 ))}
               </Block>
             )}
 
             <Block title="Uncertain work — where the spread comes from">
-              {[...scope.items]
-                .filter((i) => !scenario.excludedItemIds.has(i.id))
-                .sort((a, b) => b.high - b.low - (a.high - a.low))
-                .slice(0, 3)
-                .map((i) => (
-                  <Row key={i.id} k={i.label} v={`${i.low}–${i.high}d`} note="widest three-point estimate" />
-                ))}
+              {(() => {
+                const widest = [...scope.items]
+                  .filter((i) => !scenario.excludedItemIds.has(i.id))
+                  .sort((a, b) => b.high - b.low - (a.high - a.low))
+                  .slice(0, 3);
+                const maxW = Math.max(...widest.map((i) => i.high - i.low), 1);
+                return widest.map((i) => (
+                  <MagRow
+                    key={i.id}
+                    k={i.label}
+                    days={i.high - i.low}
+                    max={maxW}
+                    label={`${i.low}–${i.high}d`}
+                    note="estimate width"
+                  />
+                ));
+              })()}
             </Block>
 
             <Block title="Scope — the mass being pushed">
@@ -540,7 +591,9 @@ export default function ForecastDetail({
             </SectionNote>
 
             <OwnerHeader label="People" href="/portfolio" owner="Portfolio" />
-            <Row k="Capacity" v={`${capacity.toFixed(2).replace(/0$/, "")} FTE`} note={capNote} changed={capOverride !== undefined} />
+            <NavRow href="/portfolio">
+              <Row k="Capacity" v={`${capacity.toFixed(2).replace(/0$/, "")} FTE`} note={capNote} changed={capOverride !== undefined} />
+            </NavRow>
             {scope.capacityBasis.contributors?.map((c) => (
               <Row key={c.personId} k={c.name} v={`${c.effectiveFte.toFixed(2)} FTE`} note={c.scopeCount > 1 ? `across ${c.scopeCount} scopes` : undefined} />
             ))}
@@ -551,12 +604,14 @@ export default function ForecastDetail({
                 note={`${scope.capacityBasis.remainingIssueCount ?? 0} remaining issues · ${scope.capacityBasis.unassignedCount ?? 0} unassigned`}
               />
             )}
-            <Row
-              k="Context switch"
-              v={`${scenario.contextSwitchCostPct ?? contextSwitchCostPct}%`}
-              note="per additional scope a person spans"
-              changed={scenario.contextSwitchCostPct !== null}
-            />
+            <NavRow href="/portfolio">
+              <Row
+                k="Context switch"
+                v={`${scenario.contextSwitchCostPct ?? contextSwitchCostPct}%`}
+                note="per additional scope a person spans"
+                changed={scenario.contextSwitchCostPct !== null}
+              />
+            </NavRow>
 
             <OwnerHeader label="Work" href="/scope" owner="Scope" />
             {scope.items.map((i) => {
@@ -628,15 +683,15 @@ export default function ForecastDetail({
             </div>
 
             {momentum && (
-              <div className="mt-3 grid grid-cols-2 gap-2">
-                <Cell
+              <div className="mt-3 grid grid-cols-2 gap-x-5">
+                <Stat
                   k="Momentum"
                   v={`${DIRECTION_GLYPH[momentum.direction]} ${DIRECTION_LABEL[momentum.direction]}`}
                   tone={directionTone(momentum.direction)}
                   note={trendPhrase(momentum)}
                 />
                 {sinceLast !== null && scope.lastReport && (
-                  <Cell k="Since last report" v={deltaLabel(sinceLast)} tone={deltaTone(sinceLast)} note={`reported ${day(scope.lastReport.generatedAt)}`} />
+                  <Stat k="Since last report" v={deltaLabel(sinceLast)} tone={deltaTone(sinceLast)} note={`reported ${day(scope.lastReport.generatedAt)}`} />
                 )}
               </div>
             )}

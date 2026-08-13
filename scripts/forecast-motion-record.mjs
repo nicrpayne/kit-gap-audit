@@ -1,4 +1,6 @@
-// Records the full cause→effect sequence as a webm for motion review.
+// V2.2 motion review: the full cross-instrument story on video.
+// "I change something in the instrument that owns it → Forecast responds."
+// All committed values are reverted before the recording ends.
 import { chromium } from "playwright";
 import { mkdirSync } from "fs";
 const out = process.argv[2] ?? "/tmp/fc-video";
@@ -15,83 +17,105 @@ await ctx.addInitScript(() => {
 });
 const p = await ctx.newPage();
 const wait = (ms) => p.waitForTimeout(ms);
-// Discard is correctly disabled when the scenario is already empty (e.g.
-// a capacity fader stepped exactly back onto Reality removes its override).
-const ensureMacros = async (want) => {
-  const open = (await p.locator('[data-shoot="macro-people"]').count()) > 0;
-  if (open !== want) { await p.locator('[data-shoot="toggle-macros"]').click(); await wait(500); }
-};
 const discardIfActive = async () => {
   const btn = p.locator('[data-shoot="discard"]');
   if (await btn.isEnabled()) { await btn.click(); }
 };
-
-await p.goto("http://localhost:3000/forecast", { waitUntil: "networkidle" });
-await wait(3500);
+const gotoForecast = async (scope) => {
+  await p.goto("http://localhost:3000/forecast", { waitUntil: "networkidle" });
+  await wait(3000);
+  await p.locator(`[data-shoot="scope-${scope}"]`).click();
+  await wait(2400);
+};
+const gotoPortfolio = async (name) => {
+  await p.goto("http://localhost:3000/portfolio", { waitUntil: "networkidle" });
+  await wait(3600);
+  await p.locator('[role="button"][aria-pressed]').filter({ hasText: name }).first().click();
+  await wait(1200);
+};
+const commit = async () => { await p.locator('button:has-text("Commit changes")').click(); await wait(2800); };
+const setCapacityTyped = async (v) => {
+  await p.locator('[data-shoot="capacity-fader-value"]').click();
+  await p.keyboard.press("ControlOrMeta+a");
+  await p.keyboard.type(String(v));
+  await p.keyboard.press("Enter");
+  await wait(1200);
+};
 
 // 1. Reality at rest — Platform. Calm.
-await p.locator('[data-shoot="scope-platform"]').click();
-await wait(3000);
-
-// 2. Target moved — the object does not move; the line sweeps through it.
-const scrub = p.locator('[data-shoot="target-scrub"]');
-await scrub.focus();
-for (let i = 0; i < 30; i++) { await p.keyboard.press("ArrowLeft"); await wait(50); }
-await wait(900);
-for (let i = 0; i < 30; i++) { await p.keyboard.press("ArrowRight"); await wait(35); }
-await wait(1200);
-
-// 3. Constraint assumed resolved — the wall flashes and releases; the object
-//    morphs earlier and tightens; Reality stays as the ghost.
-await ensureMacros(true);
-await wait(400);
-await p.locator('[data-shoot="macro-gate"]').first().click();
-await wait(2400);
-
-// 4. Back to Reality — the scenario collapses home; ghost dissolves.
-await discardIfActive();
+await gotoForecast("platform");
 await wait(2200);
 
-// 5. The object is the entry point: body → Forecast Detail, pages tour.
-await p.locator('[data-shoot="object-hit"]').click({ force: true });
+// 2. Target moved through the unchanged body.
+const scrub = p.locator('[data-shoot="target-scrub"]');
+await scrub.focus();
+for (let i = 0; i < 28; i++) { await p.keyboard.press("ArrowLeft"); await wait(45); }
+await wait(700);
+for (let i = 0; i < 28; i++) { await p.keyboard.press("ArrowRight"); await wait(30); }
 await wait(1000);
-await p.locator('[data-shoot="detail-mode-drivers"]').click(); await wait(900);
-await p.locator('[data-shoot="detail-mode-distribution"]').click(); await wait(1100);
-await p.locator('[data-shoot="detail-mode-inputs"]').click(); await wait(900);
-await p.locator('[data-shoot="detail-mode-history"]').click(); await wait(900);
-await p.locator('[data-shoot="tool-close"]').click();
-await wait(800);
 
-// 6. Resolve the gate again, then click the GHOST → Reality comparison.
-await ensureMacros(true);
+// 3. Portfolio owns capacity: double Platform's FTE and COMMIT.
+await gotoPortfolio("PLATFORM");
+await setCapacityTyped(16);
+await wait(800);
+await commit();
+
+// 4. Forecast consumed it — but the serial gate limits the gain.
+await gotoForecast("platform");
+await wait(2200);
+
+// 5. Assume the decision made — the wall releases; NOW it moves.
+await p.locator('[data-shoot="toggle-macros"]').click();
+await wait(600);
 await p.locator('[data-shoot="macro-gate"]').first().click();
-await wait(2000);
+await wait(2600);
+
+// 6. Click the ghost → Reality comparison.
 const gb = await p.locator('[data-shoot="ghost-hit"]').boundingBox();
 if (gb) {
   await p.locator('[data-shoot="ghost-hit"]').click({ position: { x: gb.width - 12, y: gb.height / 2 }, force: true });
-  await wait(1600);
+  await wait(2200);
   await p.locator('[data-shoot="tool-close"]').click();
 }
-await wait(500);
+await wait(600);
+
+// 7. Discard — home.
 await discardIfActive();
 await wait(2000);
 
-// 7. Gate tool from the wall; assume resolved from inside it.
-await p.locator('[data-shoot^="gate-wall-"]').first().click();
-await wait(1100);
-await p.locator('[data-shoot="gate-toggle"]').click();
-await wait(2000);
+// 8. The object is the door: body → Forecast Detail, two pages.
+await p.locator('[data-shoot="object-hit"]').click({ force: true });
+await wait(1400);
+await p.locator('[data-shoot="detail-mode-distribution"]').click();
+await wait(1600);
 await p.locator('[data-shoot="tool-close"]').click();
-await wait(500);
-await discardIfActive();
-await wait(1800);
+await wait(700);
 
-// 8. Subject switch: Design (wide, no target) then iTrack (tight).
-await p.locator('[data-shoot="scope-design"]').click();
+// 9. Portfolio: revert capacity, COMMIT.
+await gotoPortfolio("PLATFORM");
+await setCapacityTyped(8);
+await commit();
+
+// 10. Context switch is Portfolio's too: 12% → 62%, COMMIT; JSA responds.
+const knob = p.locator('[data-shoot="switch-knob"]');
+await knob.focus();
+await p.keyboard.press("PageUp");
+await p.keyboard.press("PageUp");
+await wait(900);
+await commit();
+await gotoForecast("jsa");
 await wait(2600);
-await p.locator('[data-shoot="scope-itrack"]').click();
-await wait(2600);
-await p.locator('[data-shoot="scope-jsa"]').click();
+
+// 11. Revert the switch; JSA comes home.
+await gotoPortfolio("PLATFORM");
+await knob.focus();
+await p.keyboard.press("Home");
+for (let i = 0; i < 12; i++) await p.keyboard.press("Shift+ArrowUp");
+await wait(700);
+await commit();
+
+// 12. Rest.
+await gotoForecast("jsa");
 await wait(3000);
 
 await ctx.close();
