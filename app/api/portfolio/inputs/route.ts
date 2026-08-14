@@ -8,6 +8,12 @@ import { buildPortfolioInputs } from "@/lib/forecast/compute";
 // PortfolioPageClient, which re-runs resolveCapacity + runPortfolioSimulation
 // (the same pure functions this API's own math uses) on every slider drag
 // with zero further network calls.
+
+// The same freshness rule as /api/instrument/project: a read of persisted
+// Reality, refetched on every mount and after every save, so it is re-run
+// per request and never prerendered or served from a Next data cache.
+export const dynamic = "force-dynamic";
+
 export async function GET() {
   let data;
   try {

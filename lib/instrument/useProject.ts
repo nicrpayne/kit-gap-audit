@@ -15,6 +15,7 @@ import type { SimulationResult, WorkItem, DecisionGate } from "@/lib/forecast/si
 import { applyScenarioInputDelta, type ScenarioInputDelta, type ScenarioInputScope } from "@/lib/scenario/inputDelta";
 import { computeMomentum } from "@/lib/momentum/compute";
 import { computeMomentumTrend, type MomentumTrend } from "@/lib/momentum/trend";
+import { realityRevision, subscribeReality } from "@/lib/instrument/reality";
 
 // The provenance the Scope instrument reads. Produced by describeItems in
 // lib/forecast/compute.ts by joining each simulated item back to the Linear
@@ -199,6 +200,17 @@ export function scenarioIsActive(s: SuiteScenario): boolean {
 //
 // Deliberately not React context: useProject's signature is unchanged, so all
 // seven surfaces got this by existing, and none of them had to be rewired.
+//
+// SHARING A SNAPSHOT IS NOT THE SAME AS FREEZING ONE. The first version of
+// this store pursued (2) by never re-fetching at all -- one request per page
+// load, reused for the life of the tab -- which meant a Reality change made
+// in Portfolio was invisible in Forecast until the browser was refreshed.
+// Two instruments were showing different worlds and calling both Reality.
+//
+// So the store now revalidates (see load) while still rendering what it
+// already holds, and Reality and Scenario are invalidated by different
+// events: persisted truth is refreshed by mutations, and a hypothetical is
+// only ever discarded by the person who made it.
 interface ProjectStore {
   data: ProjectPayload | null;
   loading: boolean;
@@ -208,6 +220,13 @@ interface ProjectStore {
 
 let store: ProjectStore = { data: null, loading: true, error: null, scenario: EMPTY_SCENARIO };
 let inFlight: Promise<void> | null = null;
+// Distinguishes "the request I am about to settle" from "a newer request has
+// since replaced it", so a slow response can never null out a fresh inFlight.
+let inFlightToken = 0;
+// The reality revision `store.data` was fetched at. Compared against
+// realityRevision() to notice that truth moved while a request was in the
+// air -- see load().
+let dataRevision = -1;
 const listeners = new Set<() => void>();
 
 function publish(patch: Partial<ProjectStore>) {
@@ -223,24 +242,68 @@ function subscribe(l: () => void) {
 // force = an explicit user-driven refresh, which DOES drop the scenario: the
 // hypothetical was built against facts that just changed underneath it.
 // Mounting a second instrument is not that, and must never clear it.
+//
+// Every other call is a REVALIDATION: fetch current truth, swap it in, leave
+// the scenario exactly where it was. Mounting an instrument is one of these,
+// and that is what keeps the suite honest -- a snapshot taken before someone
+// changed Platform's capacity in Portfolio is not Reality any more, however
+// recently it was fetched.
+//
+// Revalidation deliberately does NOT raise `loading` once we have data. The
+// snapshot we already hold renders immediately and the fresh one replaces it
+// when it lands, so walking between instruments still feels like turning to
+// look at something rather than opening a page -- the property the module
+// store was built for, now without the staleness it was paying for it with.
 function load(force: boolean): Promise<void> {
+  // Dedupe concurrent revalidations. `inFlight` means a request is genuinely
+  // in the air and is cleared when it settles; leaving it set after the first
+  // load is what made this store permanently stale until a browser refresh.
   if (inFlight && !force) return inFlight;
-  publish({ loading: true, error: null });
-  inFlight = (async () => {
+
+  const token = ++inFlightToken;
+  const startedAt = realityRevision();
+  publish(store.data === null ? { loading: true, error: null } : { error: null });
+
+  const request = (async () => {
     try {
-      const res = await fetch("/api/instrument/project");
+      // Genuinely dynamic: it reads the database and Linear on every call,
+      // and is now fetched repeatedly within one document rather than once
+      // per page load. (HTTP caching was NOT the staleness bug -- no request
+      // was being made at all -- but a repeatedly-fetched URL should say what
+      // it is rather than rely on a heuristic.)
+      const res = await fetch("/api/instrument/project", { cache: "no-store" });
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
         throw new Error(body.error ?? "Couldn't load the project model.");
       }
       const data: ProjectPayload = await res.json();
+      dataRevision = startedAt;
       publish({ data, loading: false, scenario: force ? EMPTY_SCENARIO : store.scenario });
     } catch (err) {
       publish({ error: err instanceof Error ? err.message : "Something went wrong.", loading: false });
+    } finally {
+      if (inFlightToken === token) inFlight = null;
     }
-  })();
-  return inFlight;
+  })().then(() => {
+    // Truth moved while this request was in the air, so the body it brought
+    // back was already out of date on arrival. Go again rather than settle
+    // for it. Terminates because only a real persisted mutation bumps the
+    // revision.
+    if (inFlight === null && store.error === null && dataRevision !== realityRevision()) void load(false);
+  });
+
+  inFlight = request;
+  return request;
 }
+
+// A persisted Reality mutation anywhere in the app revalidates the snapshot
+// every instrument is reading, so a surface that is already on screen updates
+// in place instead of waiting to be re-entered. Subscribed once at module
+// scope: the store outlives every component that reads it.
+subscribeReality(() => {
+  if (store.data === null) return;
+  void load(false);
+});
 
 export interface ProjectModel {
   data: ProjectPayload | null;
@@ -278,6 +341,9 @@ export function useProject(): ProjectModel {
     publish({ scenario: typeof update === "function" ? update(store.scenario) : update });
   }, []);
 
+  // Entering an instrument revalidates. Whatever the suite already holds
+  // renders on this same frame; if truth has moved since it was fetched, the
+  // current answer replaces it a moment later, scenario untouched.
   useEffect(() => {
     void load(false);
   }, []);

@@ -28,6 +28,7 @@ import ScenarioBar, { type ScenarioCapacityLine } from "@/components/portfolio/S
 import AllocationDrawer from "@/components/portfolio/AllocationDrawer";
 import InstrumentRail from "@/components/instrument/InstrumentRail";
 import CommandMenu from "@/components/instrument/CommandMenu";
+import { mutateReality } from "@/lib/instrument/reality";
 import type { DependencyDelta, DependentDelta } from "@/lib/portfolio/explain";
 
 // The Instrument. GET /api/portfolio/inputs is the one expensive network
@@ -571,7 +572,7 @@ export default function PortfolioPageClient() {
     const targetDate = pendingTargets.get(scopeId);
     if (targetDate === undefined) return;
     try {
-      const res = await fetch(`/api/scopes/${scopeId}`, {
+      const res = await mutateReality(`/api/scopes/${scopeId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ targetDate }),
@@ -595,7 +596,7 @@ export default function PortfolioPageClient() {
   // straight through the existing PATCH /api/scopes/:id and reloads, so the
   // Scope's source becomes explicit exactly as it would from Scope settings.
   async function saveRealityCapacity(scopeId: string, fte: number) {
-    const res = await fetch(`/api/scopes/${scopeId}`, {
+    const res = await mutateReality(`/api/scopes/${scopeId}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ teamCapacity: fte }),
@@ -614,7 +615,7 @@ export default function PortfolioPageClient() {
     setRemoveError(null);
     setRemovingId(personId);
     try {
-      const res = await fetch(`/api/people/${personId}`, { method: "DELETE" });
+      const res = await mutateReality(`/api/people/${personId}`, { method: "DELETE" });
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
         throw new Error(body.error ?? "Couldn't remove that person.");
@@ -681,7 +682,7 @@ export default function PortfolioPageClient() {
       }
 
       if (payload.length > 0) {
-        const putRes = await fetch("/api/allocations", {
+        const putRes = await mutateReality("/api/allocations", {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ allocations: payload }),
@@ -691,7 +692,7 @@ export default function PortfolioPageClient() {
       }
 
       for (const conversion of aggregateConversions) {
-        const patchRes = await fetch(`/api/scopes/${conversion.scopeId}`, {
+        const patchRes = await mutateReality(`/api/scopes/${conversion.scopeId}`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ teamCapacity: conversion.to }),
@@ -703,7 +704,7 @@ export default function PortfolioPageClient() {
       }
 
       if (switchCostPct !== data.contextSwitchCostPct) {
-        const settingsRes = await fetch("/api/portfolio-settings", {
+        const settingsRes = await mutateReality("/api/portfolio-settings", {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ contextSwitchCostPct: switchCostPct }),

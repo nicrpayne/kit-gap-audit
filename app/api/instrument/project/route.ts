@@ -15,6 +15,20 @@ import { buildPortfolioInputs } from "@/lib/forecast/compute";
 // It computes no forecast of its own. Simulation stays where it already
 // lives: the browser re-runs runPortfolioSimulation over this payload, the
 // same way /portfolio has since Phase 2.
+
+// This is the suite's read of persisted Reality, and the client revalidates
+// it on every instrument mount and after every Reality mutation (see
+// lib/instrument/reality.ts). A response is therefore only ever true for the
+// instant it was produced.
+//
+// This declares that on the SERVER: never prerendered, never served from a
+// Next data cache, re-run per request. It does not set a response header --
+// Next emits no Cache-Control here -- so the browser side of the same
+// promise is the caller's `cache: "no-store"` in lib/instrument/useProject.
+// Both halves are needed and neither was the staleness bug, which was a
+// client module store that stopped issuing requests entirely.
+export const dynamic = "force-dynamic";
+
 export async function GET() {
   let portfolio;
   try {
