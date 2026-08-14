@@ -19,6 +19,7 @@
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import ToolWindow, { RailButton, Row } from "@/components/instrument/ToolWindow";
+import { DistributionDisplay, accentFor, materialOf } from "@/components/instrument/CapabilityTile";
 import { Prototype } from "@/components/instrument/Panel";
 import { expectedDays, uncertaintyLabel, type Feature, type ThreePoint, type DraftFeature } from "@/lib/scope/features";
 import type { ScopeWorkItem } from "@/lib/instrument/useProject";
@@ -39,6 +40,8 @@ export default function FeatureDetail({
   scopeName,
   capacity,
   releaseLoadDays,
+  realityRange,
+  maxSpread,
   onToggle,
   onAccept,
   onSetEstimate,
@@ -49,6 +52,10 @@ export default function FeatureDetail({
   scopeName: string;
   capacity: number;
   releaseLoadDays: number;
+  /** Where Reality's own estimate sits, so a Scenario re-estimate is drawn
+      against a real before rather than an implied one. */
+  realityRange: ThreePoint | null;
+  maxSpread: number;
   onToggle: (out: boolean) => void;
   onAccept: (id: string) => void;
   onSetEstimate: (id: string, range: ThreePoint) => void;
@@ -67,6 +74,7 @@ export default function FeatureDetail({
       width={352}
       docked
       dataShoot="feature-detail"
+      hero={<ModuleHead feature={f} capacity={capacity} releaseLoadDays={releaseLoadDays} realityRange={realityRange} maxSpread={maxSpread} />}
       footer={
         <div className="px-5 py-3 space-y-1.5">
           <button
@@ -103,7 +111,7 @@ export default function FeatureDetail({
       }
     >
       {mode === "overview" && (
-        <Overview feature={f} capacity={capacity} releaseLoadDays={releaseLoadDays} />
+        <Overview feature={f} />
       )}
       {mode === "work" && <Work feature={f} capacity={capacity} />}
       {mode === "evidence" && <Evidence feature={f} onAccept={onAccept} />}
@@ -115,46 +123,140 @@ export default function FeatureDetail({
   );
 }
 
-// ── OVERVIEW ─────────────────────────────────────────────────────────────
 
-function Overview({
+// ── THE MODULE HEAD ──────────────────────────────────────────────────────
+//
+// What is fixed under the panel's header, above every mode: this is the
+// module you opened, and this is its display — larger, and reading from the
+// same geometry the deck draws, so the panel is unmistakably an editor for
+// the object rather than a page about it.
+function ModuleHead({
   feature: f,
   capacity,
   releaseLoadDays,
+  realityRange,
+  maxSpread,
 }: {
   feature: Feature;
   capacity: number;
   releaseLoadDays: number;
+  realityRange: ThreePoint | null;
+  maxSpread: number;
 }) {
+  const material = materialOf(f);
+  const accent = accentFor(material);
+  const hasRange = f.items.length > 0 && f.range.high - f.range.low > 0;
+  const retuned = !!realityRange && hasRange && Math.abs(realityRange.likely - f.range.likely) > 0.05;
+  const source =
+    f.source === "linear"
+      ? "Linear"
+      : f.source === "hermes"
+        ? f.accepted
+          ? "Hermes · accepted here"
+          : "Hermes · candidate"
+        : f.source === "manual"
+          ? "Declared here · draft"
+          : "Unmapped work";
+
+  return (
+    <div className="px-5 pt-3 pb-3.5" style={{ borderBottom: "1px solid var(--i-border)" }}>
+      <div className="flex items-center gap-2">
+        <span
+          className="rounded-sm px-1.5 py-0.5 text-[8px] font-semibold uppercase tracking-[0.1em]"
+          style={{ color: accent, border: `1px solid color-mix(in srgb, ${accent} 45%, transparent)` }}
+        >
+          {source}
+        </span>
+        {f.epic && <span className="min-w-0 truncate text-[9.5px] text-[var(--i-text-faint)]">in {f.epic}</span>}
+        <span className="flex-1" />
+        {f.bypassed && (
+          <span className="text-[8px] font-semibold uppercase tracking-[0.1em]" style={{ color: "var(--i-violet)" }}>
+            out of this release
+          </span>
+        )}
+      </div>
+
+      <div className="mt-2.5 h-[96px]">
+        <DistributionDisplay
+          range={f.range}
+          hasItems={f.items.length > 0}
+          maxSpread={maxSpread}
+          accent={accent}
+          ghost={realityRange}
+          dim={f.bypassed}
+          scale={2}
+        />
+      </div>
+      {hasRange ? (
+        <div className="mt-1 flex items-baseline justify-between text-[8.5px] tabular-nums text-[var(--i-text-faint)]">
+          <span>{f.range.low.toFixed(1)}d</span>
+          <span style={{ color: retuned ? "var(--i-violet)" : undefined }}>
+            {retuned ? `re-estimated · Reality ${realityRange!.likely.toFixed(1)}d likely` : "days of effort"}
+          </span>
+          <span>{f.range.high.toFixed(1)}d</span>
+        </div>
+      ) : (
+        <div className="mt-1 text-center text-[8.5px] text-[var(--i-text-faint)]">no work mapped, so no range</div>
+      )}
+
+      <div className="mt-3 flex items-start gap-5">
+        <HeadStat k="Load" v={`${f.loadDays.toFixed(1)}d`} n={`÷ ${capacity.toFixed(2)} FTE`} />
+        <HeadStat
+          k="Share"
+          v={releaseLoadDays > 0 && !f.bypassed ? `${((f.loadDays / releaseLoadDays) * 100).toFixed(0)}%` : "—"}
+          n={f.bypassed ? "not carried" : `of ${releaseLoadDays.toFixed(1)}d`}
+        />
+        <HeadStat
+          k="Certainty"
+          v={uncertaintyLabel(f.uncertainty)}
+          n={f.placeholderCount > 0 ? `${f.placeholderCount} unestimated` : "all sized"}
+        />
+      </div>
+    </div>
+  );
+}
+
+function HeadStat({ k, v, n }: { k: string; v: string; n: string }) {
+  return (
+    <div className="min-w-0">
+      <div className="i-label" style={{ fontSize: 8 }}>
+        {k}
+      </div>
+      <div className="i-readout mt-1 text-[15px] leading-none text-[var(--i-text)]">{v}</div>
+      <div className="mt-1 text-[8.5px] leading-none text-[var(--i-text-faint)] truncate">{n}</div>
+    </div>
+  );
+}
+
+// ── OVERVIEW ─────────────────────────────────────────────────────────────
+
+function Overview({ feature: f }: { feature: Feature }) {
   const mapped = f.items.length + f.done.length;
   return (
     <div className="px-5 py-4">
       <p className="text-[11.5px] text-[var(--i-text-soft)] leading-relaxed">
         {f.source === "linear" && (
           <>
-            A capability in Linear. {mapped} issue{mapped === 1 ? "" : "s"} hang from it, and this is what the release
-            is carrying on its behalf.
+            A capability in Linear. {mapped} issue{mapped === 1 ? "" : "s"} hang from it.
           </>
         )}
         {f.source === "hermes" && (
           <>
-            Hermes found this in a source and nothing in Linear represents it.{" "}
-            <strong className="text-[var(--i-violet)]">It is a candidate, not accepted Reality</strong> — though the
-            work it implies is already counted in the forecast.
+            Hermes found this in a source; nothing in Linear represents it.{" "}
+            <strong className="text-[var(--i-violet)]">A candidate, not accepted Reality</strong> — though the work it
+            implies is already counted.
           </>
         )}
         {f.source === "manual" && (
           <>
-            You declared this capability in this session.{" "}
-            <strong className="text-[var(--i-violet)]">It is not saved</strong> — Scope has no Feature table yet, so it
-            lives until the Scenario is discarded.
+            Declared in this session. <strong className="text-[var(--i-violet)]">Not saved</strong> — Scope has no
+            Feature table yet.
           </>
         )}
         {f.source === "unmapped" && (
           <>
-            Not a capability at all. These are work items with no parent in Linear, so nothing says which product
-            capability they serve. That is a real gap, and closing it is a Linear job or an{" "}
-            <strong className="text-[var(--i-text)]">Add capability</strong> job.
+            Not a capability. Work items with no parent in Linear, so nothing says which capability they serve — a real
+            coverage gap.
           </>
         )}
       </p>
@@ -167,30 +269,14 @@ function Overview({
           changed={f.bypassed}
         />
         <Row
-          k="Load"
-          v={`${f.loadDays.toFixed(1)}d`}
-          note={`${expectedDays(f.range).toFixed(1)}d of expected effort ÷ ${capacity.toFixed(2)} FTE`}
-        />
-        <Row
-          k="Share of the release"
-          v={releaseLoadDays > 0 && !f.bypassed ? `${((f.loadDays / releaseLoadDays) * 100).toFixed(0)}%` : "—"}
-          note={f.bypassed ? "not being carried in this Scenario" : `of ${releaseLoadDays.toFixed(1)}d`}
-        />
-        <Row
-          k="Certainty"
-          v={uncertaintyLabel(f.uncertainty)}
-          note={
-            f.items.length === 0
-              ? "no work mapped, so nothing to be certain about"
-              : `range ${f.range.low.toFixed(0)}–${f.range.high.toFixed(0)}d${
-                  f.placeholderCount > 0 ? ` · ${f.placeholderCount} item${f.placeholderCount === 1 ? "" : "s"} unestimated` : ""
-                }`
-          }
-        />
-        <Row
           k="Coverage"
           v={mapped === 0 ? "no work mapped" : `${f.done.length}/${mapped} done`}
           note={f.epic ? `in ${f.epic}` : "no Linear project"}
+        />
+        <Row
+          k="Effort"
+          v={`${expectedDays(f.range).toFixed(1)}d`}
+          note={`expected, before capacity · ${f.range.low.toFixed(0)}–${f.range.high.toFixed(0)}d range`}
         />
       </div>
 
@@ -422,21 +508,10 @@ function Estimate({
   const tuned = f.items.find((i) => i.id === tuning) ?? null;
   return (
     <div className="px-5 py-4">
-      <Row
-        k="Aggregate range"
-        v={`${f.range.low.toFixed(0)} – ${f.range.high.toFixed(0)}d`}
-        note={`expected ${expectedDays(f.range).toFixed(1)}d of effort, summed across ${f.items.length} items`}
-      />
-      <Row k="Load" v={`${f.loadDays.toFixed(1)}d`} note={`÷ ${capacity.toFixed(2)} FTE`} />
-      <Row
-        k="Certainty"
-        v={uncertaintyLabel(f.uncertainty)}
-        note={
-          f.placeholderCount > 0
-            ? `${f.placeholderCount} of ${f.items.length} items rest on a placeholder guess`
-            : "every item has a real estimate behind it"
-        }
-      />
+      <p className="text-[11px] text-[var(--i-text-soft)] leading-relaxed">
+        The display above is the sum of these {f.items.length} range{f.items.length === 1 ? "" : "s"}. Re-estimating
+        one moves it, in this Scenario only.
+      </p>
 
       <div className="i-label mt-4 mb-2">Where each number comes from</div>
       <ul>
@@ -473,7 +548,7 @@ function Estimate({
       )}
 
       <p className="mt-3 text-[10px] text-[var(--i-text-faint)] leading-snug">
-        Re-estimating simulates a different range in this Scenario only. The stored estimate is never written.
+        The stored estimate is never written.
       </p>
     </div>
   );

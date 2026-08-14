@@ -1,27 +1,33 @@
 "use client";
 
-// SCOPE COMPOSER — the accepted reference mockup, executed over the real model.
+// SCOPE COMPOSER — a physical composition instrument. You compose what ships
+// by picking capability modules up and putting them down.
 //
-// The composition is the reference's, element for element:
+//   header      a nameplate, and ONE piece of inset glass carrying the
+//               landing date (dominant), the release load (secondary) and the
+//               scenario impact (dark until there is a scenario)
+//   deck        IN THIS RELEASE — a chassis of capability modules, each with
+//               its own distribution display. The deck always shows its bays:
+//               spare positions are drawn as empty seats, not as air
+//   bay         OUT OF THIS RELEASE — a cassette cut into the chassis. It
+//               sleeps, and wakes in proportion to a real pointer approach
+//   rail        the LOCK RAIL — an amber conductor of read-only decision
+//               gates, ending in the measured FLOOR, illuminated only when
+//               the release is genuinely dominated
+//   strip       one thin signal strip: what Scope inherited, what the
+//               composition costs, and the actions
+//   panel       FEATURE DETAIL, docked as the selected module's editor
 //
-//   header      SCOPE COMPOSER + a master readout strip (landing date, release
-//               load, scenario impact) that reads from across the room
-//   left        IN THIS RELEASE — a 4-across rack of capability modules, each
-//               with sigil, load, derived distribution trace and certainty hue
-//   right       OUT OF THIS RELEASE — a subordinate column: parked modules and
-//               one permanent drop slot that wakes with the pointer's approach
-//   below       DECISION CONSTRAINTS — the amber structural strip of real open
-//               gates, ending in the measured FLOOR the release cannot cut
-//               through
-//   bottom      inherited Portfolio inputs (read-only, with doors), the
-//               scenario summary, and scenario controls — including the
-//               mockup's own honest "Commit to Reality (not available)"
-//   far right   FEATURE DETAIL, summoned as a docked plugin panel
+// THE LIGHT LAW: nothing glows because it exists. Light means active,
+// changing, uncertain, constrained, or being touched.
 //
-// Everything on screen is derived: traces from summed three-point ranges,
-// hues from certainty, the floor from a real empty-backlog simulation, the
-// constraint strip from live gates. Semantics, engine paths and drag
-// mechanics are unchanged from the accepted V3/material passes.
+// THE STAGING IS THE ARGUMENT: the object moves first, the machine recomputes
+// second, the interpretation arrives last. See STAGE below.
+//
+// Everything on screen is derived: displays from summed three-point ranges,
+// the floor from a real empty-backlog simulation, the rail from live gates.
+// Semantics, engine paths and drag mechanics are unchanged from the accepted
+// V3 / material passes.
 
 import { useCallback, useMemo, useRef, useState } from "react";
 import Link from "next/link";
@@ -54,39 +60,43 @@ import {
   deltaTone,
   type ProjectScope,
 } from "@/lib/instrument/useProject";
-import { composeFeatures, type Feature } from "@/lib/scope/features";
+import { composeFeatures, type Feature, type ThreePoint } from "@/lib/scope/features";
 import { readDominance } from "@/lib/scope/constraint";
 import { formatCapacity } from "@/lib/capacity/limits";
 
 const BAY_IN = "bay-in";
 const BAY_OUT = "bay-out";
 const FRAME_BG = "#0c1013";
-// THE DECK PACKS ITSELF. A fixed column count leaves a release of six modules
-// sitting in a ten-slot grid — four empty bays reading as dead space rather
-// than as an instrument. So the column count is chosen per release, from the
-// candidates that keep a module recognisably module-shaped: fewest rows first,
-// then fewest empty bays, then the widest modules.
+// THE DECK PACKS ITSELF.
+//
+// A chassis shows its bays. Two rows, always — the columns are chosen so at
+// most one bay is left spare, and whatever is spare is drawn as an empty seat
+// rather than left as unexplained air. A four-capability release should read
+// as "four modules racked, four bays open", which is true, instead of as a
+// short row floating in the middle of a tall empty box.
 function packDeck(cellCount: number): { cols: number; rows: number } {
-  // A small release goes in one taller row rather than filling a second row
-  // with nothing: four modules over four empty bays is not a composition.
-  if (cellCount <= 6) return { cols: Math.max(4, cellCount), rows: 1 };
-  let best = { cols: 5, rows: 3, waste: Infinity };
-  for (const cols of [4, 5, 6]) {
-    const rows = Math.ceil(cellCount / cols);
-    const waste = cols * rows - cellCount;
-    if (rows < best.rows || (rows === best.rows && waste < best.waste)) best = { cols, rows, waste };
-  }
-  return { cols: best.cols, rows: best.rows };
+  if (cellCount <= 2) return { cols: Math.max(2, cellCount), rows: 1 };
+  const cols = Math.min(6, Math.max(3, Math.ceil(cellCount / 2)));
+  return { cols, rows: Math.ceil(cellCount / cols) };
 }
 
-// Rows divide the deck instead of being stamped out at a fixed height, so a
-// release always fits its rack exactly and never clips a module. Only past two
-// rows does the deck become a scrolling surface with fixed-size bays.
+// Rows divide the deck rather than being stamped out at a fixed height, so a
+// release always fits its rack and nothing is ever clipped. Past two rows the
+// deck becomes a scrolling surface with fixed-size bays.
 function rowGeometry(rows: number): React.CSSProperties {
   if (rows === 1)
-    return { height: "100%", gridTemplateRows: `minmax(${MODULE_H}px, ${MODULE_H + 186}px)`, alignContent: "center" };
-  if (rows === 2) return { height: "100%", gridTemplateRows: `repeat(2, minmax(${MODULE_H - 40}px, 1fr))` };
+    return { height: "100%", gridTemplateRows: `minmax(${MODULE_H}px, ${MODULE_H + 92}px)`, alignContent: "center" };
+  if (rows === 2) return { height: "100%", gridTemplateRows: "repeat(2, minmax(0, 1fr))" };
   return { minHeight: "100%", gridAutoRows: `${MODULE_H}px`, alignContent: "start" };
+}
+
+/** Load moved by the composition. A re-estimate can make a release HEAVIER,
+    so the sign is computed rather than prefixed — "−-0.8d" is not a number. */
+function loadDelta(removed: number): { value: string; note: string } {
+  if (Math.abs(removed) < 0.05) return { value: "0.0d", note: "no change" };
+  return removed > 0
+    ? { value: `−${removed.toFixed(1)}d`, note: "removed" }
+    : { value: `+${Math.abs(removed).toFixed(1)}d`, note: "added" };
 }
 
 /** Where a module will land in a load-ordered rack — the seat that opens for
@@ -229,6 +239,10 @@ export default function ScopeInstrument() {
     const r = reality.features.find((x) => x.id === f.id);
     return r && reality.loadDays > 0 ? r.loadDays / reality.loadDays : 0;
   };
+  // Reality's own distribution per capability. Passed to the display so a
+  // Scenario re-estimate morphs off a visible ghost of where it started —
+  // real data on both sides, never a fabricated "before".
+  const realityRangeOf = (f: Feature) => reality.features.find((x) => x.id === f.id)?.range ?? null;
   // The trace yardstick: the widest effort-day spread across the release.
   const maxSpread = Math.max(0.001, ...composition.features.map((f) => f.range.high - f.range.low));
 
@@ -254,7 +268,9 @@ export default function ScopeInstrument() {
     lastDX.current = 0;
   };
   const onDragMove = (e: DragMoveEvent) => {
-    tilt.set(Math.max(-2.2, Math.min(2.2, (e.delta.x - lastDX.current) * 0.3)));
+    // Under a degree: enough to feel the object has mass, never enough to
+    // read as a cartoon.
+    tilt.set(Math.max(-0.9, Math.min(0.9, (e.delta.x - lastDX.current) * 0.14)));
     lastDX.current = e.delta.x;
     if (!dragging || dragging.bypassed) return;
     const rect = shelfEl.current?.getBoundingClientRect();
@@ -317,94 +333,36 @@ export default function ScopeInstrument() {
               className="h-full flex flex-col rounded-2xl overflow-hidden"
               style={{ background: FRAME_BG, border: "1px solid var(--i-border)", boxShadow: "0 30px 80px rgba(0,0,0,0.5)" }}
             >
-              {/* ── HEADER: title + master readout ─────────────────────── */}
-              <div className="shrink-0 flex items-center gap-6 px-6 pt-3.5 pb-3">
+              {/* ── HEADER: nameplate + master display ─────────────────── */}
+              <div className="shrink-0 flex items-center gap-6 px-5 pt-3.5 pb-3">
                 <div className="min-w-0">
                   <div
-                    className="text-[13px] font-semibold uppercase"
-                    style={{ letterSpacing: "0.3em", color: "var(--i-violet)" }}
+                    className="text-[12px] font-semibold uppercase"
+                    style={{ letterSpacing: "0.32em", color: "var(--i-text-soft)" }}
                   >
                     Scope Composer
                   </div>
-                  <div className="mt-1 text-[10.5px] text-[var(--i-text-faint)]">
+                  <div className="mt-1 text-[10px] text-[var(--i-text-faint)]">
                     Compose what ships. Pull capabilities out to explore the impact.
                   </div>
                 </div>
                 <div className="flex-1" />
-                <div
-                  data-shoot="master"
-                  className="flex items-stretch rounded-xl overflow-hidden"
-                  style={{ background: "#11161a", border: "1px solid var(--i-border)" }}
-                >
-                  <MasterStat
-                    label={`${scope.name} lands`}
-                    value={
-                      <motion.span
-                        key={fmtFull(res.likelyDate)}
-                        initial={{ opacity: 0, y: 6 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        transition={{ duration: 0.3, delay: 0.42, ease: "easeOut" }}
-                        className="inline-block i-readout"
-                        style={{ color: movedDays !== 0 ? "var(--i-violet)" : "var(--i-text)" }}
-                      >
-                        {fmtFull(res.likelyDate)}
-                      </motion.span>
-                    }
-                    caption={`best ${fmtDay(res.earliestDate)} · worst ${fmtDay(res.latestDate)}`}
-                  />
-                  <MasterStat
-                    label="Release load"
-                    value={
-                      <motion.span
-                        key={composition.loadDays.toFixed(1)}
-                        initial={{ opacity: 0, y: 4 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        transition={{ duration: 0.26, delay: 0.24 }}
-                        className="inline-block i-readout"
-                        style={{ color: m.active ? "var(--i-violet)" : "var(--i-text)" }}
-                      >
-                        {composition.loadDays.toFixed(1)}d
-                      </motion.span>
-                    }
-                    caption={
-                      m.active
-                        ? `Reality ${reality.loadDays.toFixed(1)}d`
-                        : `at ${formatCapacity(capacity)} FTE`
-                    }
-                  />
-                  <MasterStat
-                    label="Scenario impact"
-                    value={
-                      <motion.span
-                        key={`${movedDays}-${effortRemoved.toFixed(1)}-${m.active}`}
-                        initial={{ opacity: 0, y: 4 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        transition={{ duration: 0.28, delay: 0.5 }}
-                        className="inline-block i-readout"
-                        style={{
-                          color:
-                            movedDays !== 0
-                              ? deltaTone(movedDays)
-                              : m.active
-                                ? "var(--i-text-soft)"
-                                : "var(--i-text-faint)",
-                        }}
-                      >
-                        {movedDays !== 0 ? deltaLabel(movedDays) : m.active ? "held" : "—"}
-                      </motion.span>
-                    }
-                    caption={
-                      carryingSeated && dragging
-                        ? `setting down removes ${(dragging.effortDays / (capacity > 0 ? capacity : 1)).toFixed(1)}d of load`
-                        : m.active
-                          ? movedDays === 0 && dom?.dominated
-                            ? dom.phrase
-                            : `${effortRemoved.toFixed(1)}d of load removed`
-                          : "no scenario"
-                    }
-                    captionTone={carryingSeated ? "var(--i-violet)" : undefined}
-                  />
-                </div>
+                <MasterDisplay
+                  scopeName={scope.name}
+                  date={fmtFull(res.likelyDate)}
+                  best={fmtDay(res.earliestDate)}
+                  worst={fmtDay(res.latestDate)}
+                  loadDays={composition.loadDays}
+                  realityLoadDays={reality.loadDays}
+                  capacityLabel={formatCapacity(capacity)}
+                  movedDays={movedDays}
+                  effortRemoved={effortRemoved}
+                  active={m.active}
+                  dominancePhrase={dom?.dominated ? dom.phrase : null}
+                  previewRelief={
+                    carryingSeated && dragging ? dragging.effortDays / (capacity > 0 ? capacity : 1) : null
+                  }
+                />
               </div>
 
               {/* ── MAIN: the deck, then the strata it rests on ─────────── */}
@@ -419,6 +377,7 @@ export default function ScopeInstrument() {
                     seatArmed={over === BAY_IN}
                     onOpen={setOpenFeatureId}
                     onAdd={() => setAdding(true)}
+                    ghostRangeOf={realityRangeOf}
                     scopeName={scope.name}
                     unmappedItems={composition.unmappedItems}
                     totalItems={composition.totalItems}
@@ -432,6 +391,7 @@ export default function ScopeInstrument() {
                     features={composition.bypassed}
                     shareOf={realityShareOf}
                     maxSpread={maxSpread}
+                    ghostRangeOf={realityRangeOf}
                     dragging={dragging}
                     pull={shelfPull}
                     armed={acquiringShelf}
@@ -441,44 +401,28 @@ export default function ScopeInstrument() {
 
                 <ConstraintStrip gates={openGates} dominance={dom} startDate={startDate} />
 
-                <div className="shrink-0 grid grid-cols-4 gap-3.5">
-                  <PortfolioModule
-                    label="Capacity"
-                    big={`${formatCapacity(capacity)} FTE`}
-                    changed={m.scenario.capacityOverrideByScope[scope.scopeId] !== undefined}
-                    caption={
-                      scope.capacitySource === "explicit"
-                        ? "set by hand in Portfolio"
-                        : scope.capacitySource === "allocations"
-                          ? "from named allocations"
-                          : "inferred from assignees"
-                    }
-                    fill={Math.min(1, capacity / Math.max(1, m.data.people.filter((p) => p.active).reduce((s, p) => s + p.fte, 0)))}
-                    fillNote={`of ${m.data.people.filter((p) => p.active).reduce((s, p) => s + p.fte, 0).toFixed(1)} FTE in the portfolio`}
-                  />
-                  <PortfolioModule
-                    label="Context switch"
-                    big={`${m.scenario.contextSwitchCostPct ?? m.data.contextSwitchCostPct}%`}
-                    changed={m.scenario.contextSwitchCostPct !== null}
-                    caption="per additional scope"
-                    fill={Math.min(1, (m.scenario.contextSwitchCostPct ?? m.data.contextSwitchCostPct) / 60)}
-                    fillNote="capacity lost when people split"
-                  />
-                  <ScenarioSummary
-                    included={engaged.length}
-                    out={composition.bypassed.length}
-                    loadRemoved={effortRemoved}
-                    movedDays={movedDays}
-                    active={m.active}
-                  />
-                  <ScenarioControls
-                    active={m.active}
-                    onDiscard={() => {
-                      m.setScenario(EMPTY_SCENARIO);
-                      setOpenFeatureId(null);
-                    }}
-                  />
-                </div>
+                <SignalStrip
+                  capacityLabel={formatCapacity(capacity)}
+                  capacitySource={
+                    scope.capacitySource === "explicit"
+                      ? "set by hand in Portfolio"
+                      : scope.capacitySource === "allocations"
+                        ? "from named allocations"
+                        : "inferred from assignees"
+                  }
+                  capacityChanged={m.scenario.capacityOverrideByScope[scope.scopeId] !== undefined}
+                  contextPct={m.scenario.contextSwitchCostPct ?? m.data.contextSwitchCostPct}
+                  contextChanged={m.scenario.contextSwitchCostPct !== null}
+                  loadRemoved={effortRemoved}
+                  movedDays={movedDays}
+                  included={engaged.length}
+                  out={composition.bypassed.length}
+                  active={m.active}
+                  onDiscard={() => {
+                    m.setScenario(EMPTY_SCENARIO);
+                    setOpenFeatureId(null);
+                  }}
+                />
               </div>
 
               {/* ── FOOTER ─────────────────────────────────────────────── */}
@@ -510,7 +454,7 @@ export default function ScopeInstrument() {
                     ? { scale: 1.0, rotate: 0, y: 3 }
                     : acquiringBay
                       ? { scale: 1.0, rotate: 0, y: -2 }
-                      : { scale: 1.025, rotate: -0.6, y: 0 }
+                      : { scale: 1.02, rotate: -0.5, y: 0 }
                 }
                 transition={{ type: "spring", stiffness: 420, damping: 30 }}
                 style={{ cursor: "grabbing", width: dragSize.w, height: dragSize.h }}
@@ -521,6 +465,7 @@ export default function ScopeInstrument() {
                     share={dragging.bypassed ? realityShareOf(dragging) : shareOf(dragging)}
                     material={acquiringBay ? "seated" : materialOf(dragging)}
                     maxSpread={maxSpread}
+                    ghostRange={realityRangeOf(dragging)}
                     compact={dragging.bypassed && !acquiringBay}
                     lifted
                   />
@@ -537,6 +482,8 @@ export default function ScopeInstrument() {
         scopeName={scope.name}
         capacity={capacity}
         releaseLoadDays={composition.loadDays}
+        realityRange={openFeature ? realityRangeOf(openFeature) : null}
+        maxSpread={maxSpread}
         onToggle={(out) => openFeature && setBypassed(openFeature, out)}
         onAccept={(id) =>
           m.setScenario((prev) => {
@@ -600,25 +547,163 @@ function VelocityLean({
   );
 }
 
-function MasterStat({
-  label,
-  value,
-  caption,
-  captionTone,
+// ── THE MASTER DISPLAY ───────────────────────────────────────────────────
+//
+// One piece of glass inset into the chassis, not three KPI cards. At rest the
+// machine is calm: the landing date is the only loud thing, load is secondary,
+// and the scenario cell is dark because there is no scenario. Composing a
+// scenario powers the cell on.
+//
+// The resolution is STAGED, and the order is the argument: the object lands
+// first, then the machine recomputes, then it interprets. Nothing here
+// animates on its own — every arrival is caused by something the user did.
+const STAGE = { load: 0.24, date: 0.42, impact: 0.58 };
+
+function MasterDisplay({
+  scopeName,
+  date,
+  best,
+  worst,
+  loadDays,
+  realityLoadDays,
+  capacityLabel,
+  movedDays,
+  effortRemoved,
+  active,
+  dominancePhrase,
+  previewRelief,
 }: {
-  label: string;
-  value: React.ReactNode;
-  caption: string;
-  captionTone?: string;
+  scopeName: string;
+  date: string;
+  best: string;
+  worst: string;
+  loadDays: number;
+  realityLoadDays: number;
+  capacityLabel: string;
+  movedDays: number;
+  effortRemoved: number;
+  active: boolean;
+  /** Set only when the date is held by something Scope cannot cut. */
+  dominancePhrase: string | null;
+  /** Live during a carry: what setting this module down would remove. */
+  previewRelief: number | null;
 }) {
+  const moved = movedDays !== 0;
+  const impactTone = moved ? deltaTone(movedDays) : active ? "var(--i-text-soft)" : "var(--i-text-faint)";
   return (
-    <div className="px-6 py-3" style={{ borderLeft: "1px solid var(--i-border)" }}>
-      <div className="i-label">{label}</div>
-      <div className="mt-1.5 text-[25px] leading-none">{value}</div>
-      <div className="mt-1.5 text-[9.5px]" style={{ color: captionTone ?? "var(--i-text-faint)" }}>
-        {caption}
+    <div
+      data-shoot="master"
+      className="relative flex items-stretch rounded-lg overflow-hidden"
+      style={{
+        background: "linear-gradient(180deg, #0a0e11 0%, #070a0c 100%)",
+        boxShadow:
+          "inset 0 2px 7px rgba(0,0,0,0.66), inset 0 -1px 0 rgba(255,255,255,0.03), inset 0 0 0 1px rgba(255,255,255,0.035)",
+      }}
+    >
+      {/* LANDING — the loudest thing on the instrument. */}
+      <div className="px-6 py-3">
+        <div className="i-label">{scopeName} lands</div>
+        <div className="mt-1.5 leading-none" style={{ fontSize: 30 }}>
+          <motion.span
+            key={date}
+            initial={{ opacity: 0, y: 5 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.3, delay: STAGE.date, ease: [0.22, 1, 0.36, 1] }}
+            className="inline-block i-readout"
+            style={{ color: moved ? "var(--i-violet)" : "var(--i-text)" }}
+          >
+            {date}
+          </motion.span>
+        </div>
+        <div className="mt-1.5 text-[9.5px] text-[var(--i-text-faint)]">
+          best {best} · worst {worst}
+        </div>
       </div>
+
+      <Engraving />
+
+      {/* RELEASE LOAD — secondary, and the first number to resolve. */}
+      <div className="px-6 py-3">
+        <div className="i-label">Release load</div>
+        <div className="mt-1.5 leading-none" style={{ fontSize: 21 }}>
+          <motion.span
+            key={loadDays.toFixed(1)}
+            initial={{ opacity: 0, y: 4 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.26, delay: STAGE.load }}
+            className="inline-block i-readout"
+            style={{ color: active ? "var(--i-violet)" : "var(--i-text-soft)" }}
+          >
+            {loadDays.toFixed(1)}d
+          </motion.span>
+        </div>
+        <div className="mt-1.5 text-[9.5px] text-[var(--i-text-faint)]">
+          {active ? `Reality ${realityLoadDays.toFixed(1)}d` : `at ${capacityLabel} FTE`}
+        </div>
+      </div>
+
+      <Engraving />
+
+      {/* SCENARIO — dark until there is a scenario to report. */}
+      <motion.div
+        className="px-6 py-3 min-w-[172px]"
+        initial={false}
+        animate={{ opacity: active || previewRelief !== null ? 1 : 0.34 }}
+        transition={{ duration: 0.3, delay: active ? STAGE.impact : 0 }}
+      >
+        <div className="i-label" style={{ color: active ? "var(--i-violet)" : undefined }}>
+          Scenario impact
+        </div>
+        <div className="mt-1.5 leading-none" style={{ fontSize: 21 }}>
+          <motion.span
+            key={`${movedDays}-${effortRemoved.toFixed(1)}-${active}`}
+            initial={{ opacity: 0, y: 4 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.28, delay: STAGE.impact }}
+            className="inline-block i-readout"
+            style={{ color: impactTone }}
+          >
+            {moved ? deltaLabel(movedDays) : active ? "held" : "—"}
+          </motion.span>
+        </div>
+        <div className="mt-1.5 text-[9.5px] leading-snug" style={{ color: previewRelief !== null ? "var(--i-violet)" : "var(--i-text-faint)" }}>
+          {previewRelief !== null ? (
+            `setting down removes ${previewRelief.toFixed(1)}d of load`
+          ) : active ? (
+            // The dominated case: the date did not move, and saying so is the
+            // result. It re-arrives so the stillness reads as an answer.
+            <motion.span
+              key={dominancePhrase ?? effortRemoved.toFixed(1)}
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              transition={{ duration: 0.34, delay: STAGE.impact + 0.06 }}
+              className="inline-block"
+            >
+              {!moved && dominancePhrase
+                ? `held — ${dominancePhrase}`
+                : `${loadDelta(effortRemoved).value} of load ${loadDelta(effortRemoved).note}`}
+            </motion.span>
+          ) : (
+            "no scenario"
+          )}
+        </div>
+      </motion.div>
     </div>
+  );
+}
+
+/** An engraved division in the glass — a scored line, not a border. */
+function Engraving() {
+  return (
+    <span
+      aria-hidden
+      className="shrink-0 self-stretch my-2.5"
+      style={{
+        width: 1,
+        background: "linear-gradient(180deg, transparent, rgba(0,0,0,0.7) 20%, rgba(0,0,0,0.7) 80%, transparent)",
+        boxShadow: "1px 0 0 rgba(255,255,255,0.04)",
+      }}
+    />
   );
 }
 
@@ -628,6 +713,7 @@ function SeatedModule({
   feature,
   share,
   maxSpread,
+  ghostRange,
   isDragging,
   compact,
   onOpen,
@@ -635,6 +721,7 @@ function SeatedModule({
   feature: Feature;
   share: number;
   maxSpread: number;
+  ghostRange?: ThreePoint | null;
   isDragging: boolean;
   compact?: boolean;
   onOpen: () => void;
@@ -657,6 +744,7 @@ function SeatedModule({
           share={share}
           material={materialOf(feature)}
           maxSpread={maxSpread}
+          ghostRange={ghostRange}
           compact={compact}
           onOpen={onOpen}
           setNodeRef={setNodeRef}
@@ -690,6 +778,7 @@ function ReleaseRack({
   maxSpread,
   offeringSeat,
   seatArmed,
+  ghostRangeOf,
   onOpen,
   onAdd,
   scopeName,
@@ -703,6 +792,7 @@ function ReleaseRack({
   maxSpread: number;
   offeringSeat: boolean;
   seatArmed: boolean;
+  ghostRangeOf: (f: Feature) => ThreePoint | null;
   onOpen: (id: string) => void;
   onAdd: () => void;
   scopeName: string;
@@ -720,6 +810,7 @@ function ReleaseRack({
       feature={f}
       share={shareOf(f)}
       maxSpread={maxSpread}
+      ghostRange={ghostRangeOf(f)}
       isDragging={dragging?.id === f.id}
       onOpen={() => onOpen(f.id)}
     />
@@ -758,8 +849,8 @@ function ReleaseRack({
       </span>
       {unmappedItems > 0 && (
         <span
-          className="absolute -top-[8px] right-4 px-2 text-[9px] whitespace-nowrap z-10"
-          style={{ background: FRAME_BG, color: "var(--i-amber)" }}
+          className="absolute top-2 right-4 text-[8.5px] whitespace-nowrap z-10 uppercase tracking-[0.12em]"
+          style={{ color: "color-mix(in srgb, var(--i-amber) 80%, transparent)" }}
         >
           {totalItems - unmappedItems}/{totalItems} mapped
         </span>
@@ -788,7 +879,7 @@ function ReleaseRack({
           </motion.button>
           {Array.from({ length: spare }).map((_, i) => (
             <div key={`spare-${i}`} className="relative h-full" aria-hidden>
-              <Seat />
+              <Seat mark />
             </div>
           ))}
         </div>
@@ -804,6 +895,7 @@ function OutColumn({
   features,
   shareOf,
   maxSpread,
+  ghostRangeOf,
   dragging,
   pull,
   armed,
@@ -813,6 +905,7 @@ function OutColumn({
   features: Feature[];
   shareOf: (f: Feature) => number;
   maxSpread: number;
+  ghostRangeOf: (f: Feature) => ThreePoint | null;
   dragging: Feature | null;
   pull: MotionValue<number>;
   armed: boolean;
@@ -820,33 +913,79 @@ function OutColumn({
 }) {
   const { setNodeRef } = useDroppable({ id: BAY_OUT });
   const parkedDays = features.reduce((s, f) => s + f.loadDays, 0);
-  const wake = useSpring(pull, { stiffness: 170, damping: 26 });
-  const slotGlow = useTransform(wake, [0, 1], [0, 1]);
-  const labelTone = useTransform(wake, [0, 1], ["var(--i-text-faint)", "var(--i-violet)"]);
+  const wake = useSpring(pull, { stiffness: 190, damping: 28 });
+
+  // Everything below is driven by ONE real quantity: how close the carried
+  // module actually is. Nothing here is a hover state.
+  const railOpacity = useTransform(wake, [0.06, 0.85], [0, 1]);
+  const seatOpacity = useTransform(wake, [0.18, 0.8], [0, 1]);
+  const seatLift = useTransform(wake, [0.18, 0.9], [7, 0]);
+  const labelTone = useTransform(wake, [0.2, 1], ["var(--i-text-faint)", "var(--i-violet)"]);
+  const bodyLift = useTransform(wake, [0, 1], ["#080b0d", "#0d0c15"]);
 
   return (
-    <div
-      ref={(el) => {
+    <motion.div
+      ref={(el: HTMLDivElement | null) => {
         setNodeRef(el);
         shelfEl.current = el;
       }}
       data-shoot="bay-out"
       data-armed={armed ? "true" : "false"}
-      className="relative shrink-0 rounded-xl"
+      className="relative shrink-0 rounded-xl overflow-hidden"
       style={{
         width: 172,
-        border: "1px dashed var(--i-border)",
-        background: "#0a0d10",
-        boxShadow: "inset 0 4px 12px rgba(0,0,0,0.5)",
+        border: "1px solid var(--i-border)",
+        // A bay cut into the chassis. It sleeps here — no dashed perimeter,
+        // no instruction, nothing shouting "drop zone".
+        background: bodyLift,
+        boxShadow: "inset 0 3px 12px rgba(0,0,0,0.62), inset 0 -1px 0 rgba(255,255,255,0.028)",
       }}
     >
+      <span aria-hidden className="absolute inset-0 pointer-events-none">
+        {[10, 161].map((x) => (
+          <span
+            key={x}
+            className="absolute"
+            style={{
+              left: x,
+              top: 26,
+              bottom: 52,
+              width: 1,
+              background:
+                "linear-gradient(180deg, transparent, rgba(255,255,255,0.055) 16%, rgba(255,255,255,0.055) 84%, transparent)",
+            }}
+          />
+        ))}
+      </span>
+
+      {/* THE GUIDE RAILS — the mechanism lighting up as a module approaches.
+          Driven by real pointer distance, not by hover. */}
+      <motion.span aria-hidden className="absolute inset-0 pointer-events-none" style={{ opacity: railOpacity }}>
+        {[10, 161].map((x) => (
+          <span
+            key={x}
+            className="absolute"
+            style={{
+              left: x,
+              top: 26,
+              bottom: 52,
+              width: 1,
+              background:
+                "linear-gradient(180deg, transparent, color-mix(in srgb, var(--i-violet) 60%, transparent) 18%, color-mix(in srgb, var(--i-violet) 60%, transparent) 82%, transparent)",
+              boxShadow: "0 0 7px color-mix(in srgb, var(--i-violet) 34%, transparent)",
+            }}
+          />
+        ))}
+      </motion.span>
+
       <motion.span
-        className="absolute -top-[8px] left-3 px-2 i-label whitespace-nowrap"
-        style={{ background: FRAME_BG, letterSpacing: "0.16em", color: labelTone }}
+        className="absolute top-2 left-3 right-3 i-label whitespace-nowrap z-10"
+        style={{ letterSpacing: "0.16em", color: labelTone, fontSize: 8.5 }}
       >
         Out of this release
       </motion.span>
-      <div className="h-full overflow-y-auto px-2.5 pt-4 pb-2.5 flex flex-col justify-center gap-2.5">
+
+      <div className="h-full overflow-y-auto px-2.5 pt-7 pb-2.5 flex flex-col gap-2.5">
         <AnimatePresence initial={false}>
           {features.map((f) => (
             <SeatedModule
@@ -854,6 +993,7 @@ function OutColumn({
               feature={f}
               share={shareOf(f)}
               maxSpread={maxSpread}
+              ghostRange={ghostRangeOf(f)}
               isDragging={dragging?.id === f.id}
               compact
               onOpen={() => onOpen(f.id)}
@@ -861,39 +1001,45 @@ function OutColumn({
           ))}
         </AnimatePresence>
 
-        {/* The permanent slot — the mockup's own device. It wakes with the
-            pointer's approach and arms at contact. */}
+        {/* THE RECEIVING SEAT — depth opens only as far as the approach
+            warrants, so crossing the boundary is progressively intentional. */}
         <motion.div
-          className="relative shrink-0 rounded-lg flex flex-col items-center justify-center gap-1 px-3 text-center"
-          style={{ height: 132 }}
-          initial={false}
-          animate={{
-            borderColor: armed ? "var(--i-violet)" : "var(--i-border-strong)",
-            backgroundColor: armed ? "color-mix(in srgb, var(--i-violet) 9%, transparent)" : "rgba(0,0,0,0.25)",
-          }}
-          transition={{ duration: 0.2 }}
+          className="relative shrink-0 rounded-lg"
+          style={{ height: 116, opacity: seatOpacity, y: seatLift }}
+          aria-hidden
         >
-          <span className="absolute inset-0 rounded-lg pointer-events-none" style={{ border: "1px dashed inherit" }} aria-hidden />
           <motion.span
-            aria-hidden
-            className="absolute inset-0 rounded-lg pointer-events-none"
-            style={{
-              opacity: slotGlow,
-              boxShadow: "inset 0 0 0 1px color-mix(in srgb, var(--i-violet) 45%, transparent), 0 0 16px color-mix(in srgb, var(--i-violet) 14%, transparent)",
+            className="absolute inset-0 rounded-lg"
+            initial={false}
+            animate={{
+              boxShadow: armed
+                ? "inset 0 4px 12px rgba(0,0,0,0.7), inset 0 0 0 1px color-mix(in srgb, var(--i-violet) 62%, transparent), 0 0 22px color-mix(in srgb, var(--i-violet) 20%, transparent)"
+                : "inset 0 4px 12px rgba(0,0,0,0.7), inset 0 0 0 1px color-mix(in srgb, var(--i-violet) 22%, transparent)",
+              backgroundColor: armed
+                ? "color-mix(in srgb, var(--i-violet) 11%, rgba(0,0,0,0.4))"
+                : "rgba(0,0,0,0.4)",
             }}
+            transition={{ duration: 0.18, ease: "easeOut" }}
           />
-          <span className="text-[15px] leading-none" style={{ color: armed ? "var(--i-violet)" : "var(--i-text-faint)" }}>
-            +
-          </span>
-          <span className="text-[9px] leading-snug" style={{ color: armed ? "var(--i-violet)" : "var(--i-text-faint)" }}>
-            {armed ? "let go — out of this release" : "drop here to take out of this release"}
-          </span>
+          <motion.span
+            className="absolute inset-x-0 bottom-3 text-center text-[9px] leading-snug px-3"
+            initial={false}
+            animate={{ opacity: armed ? 1 : 0, color: "var(--i-violet)" }}
+            transition={{ duration: 0.16 }}
+          >
+            release — out of this release
+          </motion.span>
         </motion.div>
 
-        {/* A real zero is still a readout. It anchors the column when the
-            release is whole, and it is the honest number when it is not. */}
-        <div className="shrink-0 px-1 pt-1 text-center" style={{ borderTop: "1px solid var(--i-border)" }}>
-          <div className="pt-1.5 i-readout text-[15px] leading-none" style={{ color: features.length > 0 ? "var(--i-violet)" : "var(--i-text-faint)" }}>
+        <div className="flex-1 min-h-0" />
+
+        {/* A real zero is still a readout. It anchors the bay when the release
+            is whole, and it is the honest number when it is not. */}
+        <div className="shrink-0 px-1 pt-1.5 text-center" style={{ borderTop: "1px solid rgba(255,255,255,0.05)" }}>
+          <div
+            className="i-readout text-[15px] leading-none"
+            style={{ color: features.length > 0 ? "var(--i-violet)" : "var(--i-text-faint)" }}
+          >
             {parkedDays.toFixed(1)}
             <span className="text-[9px] font-normal">d</span>
           </div>
@@ -904,15 +1050,22 @@ function OutColumn({
           </div>
         </div>
       </div>
-    </div>
+    </motion.div>
   );
 }
 
-// ── THE CONSTRAINT STRIP ─────────────────────────────────────────────────
+// ── THE LOCK RAIL ────────────────────────────────────────────────────────
 //
-// Real open gates, drawn as the structural layer the release rests on, ending
-// in the measured FLOOR — the empty-backlog simulation's landing. This is the
-// dominated case made physical: you cannot cut Scope through this band.
+// A mechanical stop under the release, not another dashboard section. Scope
+// does not own decisions, so this is read-only and mostly black: one amber
+// conductor engraved along the chassis, a lock indicator per open gate, and
+// the measured FLOOR as its terminal.
+//
+// The conductor and the terminal illuminate only when the release is actually
+// DOMINATED — when cutting scope can no longer reach the date. Individual
+// locks stay quiet, because the model attributes the floor to open decisions
+// and dependencies collectively; it does not know which single gate sets it,
+// and inventing that attribution would be a lie the user could act on.
 function ConstraintStrip({
   gates,
   dominance,
@@ -923,193 +1076,300 @@ function ConstraintStrip({
   startDate: Date;
 }) {
   const dom = dominance;
+  const held = !!dom?.dominated;
+  const hasFloor = !!dom && dom.floorDays > 0.5;
+  const conductor = held
+    ? "linear-gradient(90deg, transparent, var(--i-amber) 6%, var(--i-amber) 94%, transparent)"
+    : "linear-gradient(90deg, transparent, color-mix(in srgb, var(--i-amber) 34%, transparent) 6%, color-mix(in srgb, var(--i-amber) 34%, transparent) 94%, transparent)";
+
   return (
     <div
-      className="shrink-0 flex items-stretch rounded-xl overflow-hidden"
-      style={{ border: "1px solid color-mix(in srgb, var(--i-amber) 26%, var(--i-border))", background: "#0e1013" }}
+      className="relative shrink-0 flex items-stretch rounded-lg overflow-hidden"
+      style={{
+        background: "linear-gradient(180deg, #0a0c0e 0%, #070809 100%)",
+        boxShadow: "inset 0 1px 0 rgba(255,255,255,0.03), inset 0 -2px 6px rgba(0,0,0,0.5)",
+        border: "1px solid #1a1c1e",
+        height: 46,
+      }}
       data-shoot="constraints"
     >
-      <div className="shrink-0 w-44 px-4 py-2.5">
-        <div className="i-label" style={{ color: "var(--i-amber)" }}>
-          Decision constraints
-        </div>
-        <div className="mt-1 text-[9px] leading-snug text-[var(--i-text-faint)]">
-          serial delays under the release — capacity cannot divide them
-        </div>
+      {/* The conductor: one engraved amber line running the length of the
+          rail. It is the only continuous thing down here. */}
+      <motion.span
+        aria-hidden
+        className="absolute left-0 right-0 pointer-events-none"
+        initial={false}
+        animate={{ opacity: held ? 1 : 0.75 }}
+        transition={{ duration: 0.3 }}
+        style={{
+          top: 0,
+          height: 1,
+          background: conductor,
+          boxShadow: held ? "0 0 8px color-mix(in srgb, var(--i-amber) 40%, transparent)" : undefined,
+        }}
+      />
+
+      <span
+        aria-hidden
+        className="absolute left-0 right-0 pointer-events-none"
+        style={{
+          top: 1,
+          height: 4,
+          opacity: 0.5,
+          backgroundImage: "repeating-linear-gradient(90deg, rgba(255,255,255,0.075) 0 1px, transparent 1px 14px)",
+        }}
+      />
+
+      <div className="shrink-0 flex flex-col justify-center pl-4 pr-3.5">
+        <span className="i-label" style={{ color: held ? "var(--i-amber)" : "var(--i-text-faint)", fontSize: 8.5 }}>
+          Locks
+        </span>
+        <span className="mt-0.5 text-[8.5px] leading-none text-[var(--i-text-faint)]">serial · owned by Decisions</span>
       </div>
-      <div className="flex-1 min-w-0 flex items-stretch">
+
+      <div className="flex-1 min-w-0 flex items-center gap-1.5 px-1 overflow-hidden">
         {gates.length === 0 ? (
-          <div className="flex items-center px-4 text-[10px] text-[var(--i-text-faint)]">
-            no open decisions under this release
-          </div>
+          <span className="text-[9.5px] text-[var(--i-text-faint)] px-2">no open decisions under this release</span>
         ) : (
           gates.map((g) => (
             <Link
               key={g.id}
               href="/decisions"
-              className="relative flex-1 min-w-0 flex flex-col justify-center px-3.5 py-2 group"
-              style={{ borderLeft: "1px solid color-mix(in srgb, var(--i-amber) 22%, transparent)" }}
+              className="group min-w-0 flex items-center gap-1.5 rounded px-2 py-1 transition-colors"
+              style={{ border: "1px solid #23262a", background: "rgba(0,0,0,0.35)" }}
               title="Decisions owns this — open the Decisions instrument"
             >
-              <span aria-hidden className="absolute inset-0 i-hatch opacity-70" />
-              <span className="relative truncate text-[10.5px] text-[var(--i-text)] group-hover:text-[var(--i-amber)] transition-colors">
+              <svg
+                width="9"
+                height="9"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2.4"
+                className="shrink-0"
+                style={{ color: "color-mix(in srgb, var(--i-amber) 70%, transparent)" }}
+                aria-hidden
+              >
+                <rect x="4" y="10" width="16" height="11" rx="2" />
+                <path d="M8 10V7a4 4 0 018 0v3" />
+              </svg>
+              <span className="min-w-0 truncate text-[9.5px] text-[var(--i-text-soft)] group-hover:text-[var(--i-text)] transition-colors">
                 {g.label}
               </span>
-              <span className="relative mt-0.5 text-[9px]" style={{ color: "var(--i-amber)" }}>
-                serial · ≈{g.likely.toFixed(0)}d to decide
+              <span className="shrink-0 text-[9px] tabular-nums" style={{ color: "color-mix(in srgb, var(--i-amber) 78%, transparent)" }}>
+                {g.likely.toFixed(0)}d
               </span>
             </Link>
           ))
         )}
       </div>
-      {dom && dom.floorDays > 0.5 && (
-        <div
-          className="shrink-0 w-44 px-4 py-2.5"
+
+      {hasFloor && (
+        <motion.div
+          className="shrink-0 flex items-center gap-2.5 pl-4 pr-4"
+          initial={false}
+          animate={{ opacity: held ? 1 : 0.7 }}
+          transition={{ duration: 0.3 }}
           style={{
-            borderLeft: "1px solid color-mix(in srgb, var(--i-amber) 40%, transparent)",
-            boxShadow: "inset -3px 0 0 var(--i-amber)",
-            background: "color-mix(in srgb, var(--i-amber) 5%, transparent)",
+            borderLeft: `1px solid ${held ? "color-mix(in srgb, var(--i-amber) 50%, transparent)" : "#1e2124"}`,
+            background: held ? "color-mix(in srgb, var(--i-amber) 6%, transparent)" : undefined,
+            boxShadow: held ? "inset -3px 0 0 var(--i-amber)" : undefined,
           }}
+          title={dom?.phrase ? `Can't land sooner — ${dom.phrase}` : undefined}
         >
-          <div className="i-label" style={{ color: "var(--i-amber)" }}>
-            Floor
+          <div className="flex flex-col">
+            <span className="i-label" style={{ color: "var(--i-amber)", fontSize: 8.5 }}>
+              Floor
+            </span>
+            <span className="mt-0.5 text-[8.5px] leading-none text-[var(--i-text-faint)]">
+              {held ? "the date is here" : "cutting can still reach the date"}
+            </span>
           </div>
-          <div className="i-readout mt-0.5 text-[15px]" style={{ color: "var(--i-amber)" }}>
+          <span className="i-readout text-[16px] leading-none" style={{ color: "var(--i-amber)" }}>
             {fmtDay(new Date(startDate.getTime() + dom.floorDays * 86400000))}
-          </div>
-          <div className="mt-0.5 text-[8.5px] leading-snug text-[var(--i-text-faint)]">
-            can&apos;t land sooner — {dom.phrase}
-          </div>
-        </div>
+          </span>
+        </motion.div>
       )}
     </div>
   );
 }
 
-// ── BOTTOM MODULES ───────────────────────────────────────────────────────
+// ── THE SIGNAL STRIP ─────────────────────────────────────────────────────
+//
+// The bottom of the instrument is not four equal cards. It is one thin strip
+// carrying, left to right: what Scope INHERITED (quiet, with doors to the
+// instrument that owns it), then what the current composition COSTS (loud
+// only when there is a scenario), then the actions.
+function SignalStrip({
+  capacityLabel,
+  capacitySource,
+  capacityChanged,
+  contextPct,
+  contextChanged,
+  loadRemoved,
+  movedDays,
+  included,
+  out,
+  active,
+  onDiscard,
+}: {
+  capacityLabel: string;
+  capacitySource: string;
+  capacityChanged: boolean;
+  contextPct: number;
+  contextChanged: boolean;
+  loadRemoved: number;
+  movedDays: number;
+  included: number;
+  out: number;
+  active: boolean;
+  onDiscard: () => void;
+}) {
+  return (
+    <div
+      className="shrink-0 flex items-stretch rounded-lg overflow-hidden"
+      style={{
+        background: "linear-gradient(180deg, #0f1417 0%, #0b0f12 100%)",
+        border: "1px solid var(--i-border)",
+        boxShadow: "inset 0 1px 0 rgba(255,255,255,0.035)",
+        height: 62,
+      }}
+      data-shoot="signal-strip"
+    >
+      <InheritedSignal
+        label="Capacity"
+        value={`${capacityLabel} FTE`}
+        note={capacitySource}
+        changed={capacityChanged}
+      />
+      <Engraving />
+      <InheritedSignal
+        label="Context switch"
+        value={`${contextPct}%`}
+        note="per additional scope"
+        changed={contextChanged}
+      />
+      <Engraving />
 
-function PortfolioModule({
+      {/* WHAT THE COMPOSITION COSTS — dark until composed. */}
+      <motion.div
+        className="shrink-0 flex items-center gap-8 px-5"
+        initial={false}
+        animate={{ opacity: active ? 1 : 0.42 }}
+        transition={{ duration: 0.3, delay: active ? 0.24 : 0 }}
+      >
+        <Consequence
+          label="Load"
+          value={active ? loadDelta(loadRemoved).value : "—"}
+          tone={active ? "var(--i-violet)" : "var(--i-text-faint)"}
+          note={active ? `${included} in · ${out} out` : "no scenario"}
+          delay={0.24}
+        />
+        <Consequence
+          label="Landing"
+          value={movedDays !== 0 ? deltaLabel(movedDays) : active ? "held" : "—"}
+          tone={movedDays !== 0 ? deltaTone(movedDays) : active ? "var(--i-text-soft)" : "var(--i-text-faint)"}
+          note={movedDays !== 0 ? "against Reality" : active ? "this scenario does not move it" : "no scenario"}
+          delay={0.42}
+        />
+      </motion.div>
+
+      <div className="flex-1 min-w-0" />
+      <Engraving />
+
+      <div className="shrink-0 flex items-center gap-1.5 px-4">
+        <button
+          onClick={onDiscard}
+          disabled={!active}
+          className="i-control px-3 py-1.5 text-[10px] transition-colors disabled:opacity-25 hover:text-[var(--i-text)]"
+          style={{ color: "var(--i-text-soft)" }}
+        >
+          Discard
+        </button>
+        <Link
+          href="/forecast"
+          data-shoot="open-forecast"
+          className="i-control px-3 py-1.5 text-[10px] transition-colors"
+          style={{
+            borderColor: active ? "var(--i-violet)" : undefined,
+            color: active ? "var(--i-violet)" : "var(--i-text-soft)",
+          }}
+        >
+          Forecast →
+        </Link>
+      </div>
+    </div>
+  );
+}
+
+/** A value Scope reads but does not own. Quiet, with a door. */
+function InheritedSignal({
   label,
-  big,
-  caption,
-  fill,
-  fillNote,
+  value,
+  note,
   changed,
 }: {
   label: string;
-  big: string;
-  caption: string;
-  fill: number;
-  fillNote: string;
+  value: string;
+  note: string;
   changed: boolean;
 }) {
   return (
     <Link
       href="/portfolio"
-      className="rounded-xl px-4 py-3 group"
-      style={{ border: "1px solid var(--i-border)", background: "#0f1418" }}
+      className="group shrink-0 flex flex-col justify-center px-5 transition-colors"
       title="Portfolio owns this"
     >
-      <div className="flex items-baseline justify-between">
-        <span className="i-label">{label}</span>
-        <span className="text-[8.5px] text-[var(--i-text-faint)] group-hover:text-[var(--i-text-soft)] transition-colors">
+      <div className="flex items-baseline gap-2">
+        <span className="i-label" style={{ fontSize: 8.5 }}>
+          {label}
+        </span>
+        <span className="text-[8px] text-[var(--i-text-faint)] opacity-0 group-hover:opacity-100 transition-opacity">
           Portfolio →
         </span>
       </div>
-      <div className="i-readout mt-1.5 text-[19px] leading-none" style={{ color: changed ? "var(--i-violet)" : "var(--i-text)" }}>
-        {big}
-      </div>
-      <div className="mt-1 text-[9px] text-[var(--i-text-faint)]">{caption}</div>
-      {/* A readout, not a control: recessed, unlit, no handle. */}
-      <div className="i-meter mt-2 h-[6px] overflow-hidden" style={{ borderRadius: 4 }}>
-        <motion.div
-          className="h-full"
-          initial={false}
-          animate={{ width: `${Math.max(2, fill * 100)}%` }}
-          transition={{ type: "spring", stiffness: 200, damping: 30 }}
-          style={{ background: changed ? "var(--i-violet)" : "var(--i-text-soft)", opacity: 0.55 }}
-        />
-      </div>
-      <div className="mt-1 text-[8px] text-[var(--i-text-faint)]">{fillNote}</div>
+      <span
+        className="i-readout mt-1 text-[16px] leading-none"
+        style={{ color: changed ? "var(--i-violet)" : "var(--i-text-soft)" }}
+      >
+        {value}
+      </span>
+      <span className="mt-1 text-[8.5px] leading-none text-[var(--i-text-faint)]">{note}</span>
     </Link>
   );
 }
 
-function ScenarioSummary({
-  included,
-  out,
-  loadRemoved,
-  movedDays,
-  active,
+/** A consequence of the composition. Resolves on the master's own schedule,
+    so the whole instrument answers in one voice. */
+function Consequence({
+  label,
+  value,
+  tone,
+  note,
+  delay,
 }: {
-  included: number;
-  out: number;
-  loadRemoved: number;
-  movedDays: number;
-  active: boolean;
+  label: string;
+  value: string;
+  tone: string;
+  note: string;
+  delay: number;
 }) {
   return (
-    <div className="rounded-xl px-4 py-3" style={{ border: "1px solid var(--i-border)", background: "#0f1418" }}>
-      <div className="i-label">Scenario summary</div>
-      <div className="mt-2 grid grid-cols-4 gap-2">
-        <Mini v={`${included}`} k="included" />
-        <Mini v={`${out}`} k="out" tone={out > 0 ? "var(--i-violet)" : undefined} />
-        <Mini v={active ? `−${loadRemoved.toFixed(1)}d` : "—"} k="load removed" tone={active ? "var(--i-violet)" : undefined} />
-        <Mini
-          v={movedDays !== 0 ? `${Math.abs(movedDays)}d ${movedDays < 0 ? "↑" : "↓"}` : active ? "held" : "—"}
-          k={movedDays !== 0 ? "forecast" : "date"}
-          tone={movedDays !== 0 ? deltaTone(movedDays) : undefined}
-        />
-      </div>
-      <Link
-        href="/forecast"
-        data-shoot="open-forecast"
-        className="mt-2.5 block text-center rounded-md py-1.5 text-[10px] transition-colors"
-        style={{
-          border: `1px solid ${active ? "var(--i-violet)" : "var(--i-border-strong)"}`,
-          color: active ? "var(--i-violet)" : "var(--i-text-soft)",
-        }}
-      >
-        See consequence in Forecast →
-      </Link>
-    </div>
-  );
-}
-
-function Mini({ v, k, tone }: { v: string; k: string; tone?: string }) {
-  return (
     <div className="min-w-0">
-      <div className="i-readout text-[14px] leading-none truncate" style={{ color: tone ?? "var(--i-text)" }}>
-        {v}
+      <div className="i-label" style={{ fontSize: 8.5 }}>
+        {label}
       </div>
-      <div className="mt-0.5 text-[8px] text-[var(--i-text-faint)] truncate">{k}</div>
-    </div>
-  );
-}
-
-function ScenarioControls({ active, onDiscard }: { active: boolean; onDiscard: () => void }) {
-  return (
-    <div className="rounded-xl px-4 py-3 flex flex-col" style={{ border: "1px solid var(--i-border)", background: "#0f1418" }}>
-      <div className="i-label">Scenario controls</div>
-      <button
-        onClick={onDiscard}
-        disabled={!active}
-        className="mt-2 rounded-md py-1.5 text-[10px] transition-colors disabled:opacity-30"
-        style={{ border: "1px solid var(--i-border-strong)", color: "var(--i-text-soft)" }}
+      <motion.div
+        key={value}
+        initial={{ opacity: 0, y: 4 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.26, delay }}
+        className="i-readout mt-1 text-[19px] leading-none truncate"
+        style={{ color: tone }}
       >
-        Discard scenario
-      </button>
-      {/* Straight from the accepted mockup, honesty included: Scope composes
-          hypotheticals; it has nowhere to write an exclusion, so it does not
-          commit. The button exists to say exactly that. */}
-      <button
-        disabled
-        className="mt-1.5 rounded-md py-1.5 text-[10px]"
-        style={{ background: "color-mix(in srgb, var(--i-violet) 26%, transparent)", color: "var(--i-text-soft)", opacity: 0.5 }}
-      >
-        Commit to Reality
-      </button>
-      <div className="mt-1 text-[8px] text-[var(--i-text-faint)]">(Not available — Scope does not commit)</div>
+        {value}
+      </motion.div>
+      <div className="mt-1 text-[8.5px] leading-none text-[var(--i-text-faint)] truncate">{note}</div>
     </div>
   );
 }

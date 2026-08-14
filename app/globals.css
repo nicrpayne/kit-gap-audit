@@ -58,6 +58,12 @@ body {
   --i-text-faint: #667079;
   --i-mint: #4ad9a8;
   --i-mint-soft: rgba(74, 217, 168, 0.14);
+  /* MATERIAL, not state: a capability that is accepted Reality and live in
+     the release. Deliberately cooler than --i-mint so "this is seated and
+     powered" never reads as "this moved in your favour". Every accepted
+     capability shares it -- hue is not a per-module variable. */
+  --i-signal: #46c3d6;
+  --i-signal-soft: rgba(70, 195, 214, 0.14);
   --i-violet: #9b8cfa;
   --i-violet-soft: rgba(155, 140, 250, 0.16);
   --i-amber: #e0b04a;

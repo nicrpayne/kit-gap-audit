@@ -24,30 +24,82 @@ cut into the deck; lifting one leaves its empty seat behind; a candidate hovers
 above a seat it has not accepted; a valid destination is nothing more than a
 new seat opening between modules, at the position the module will truly take.
 There is deliberately no dropzone language anywhere — no perimeter highlight,
-no giant labelled target. The shelf SLEEPS as a 48px recess and opens in
-continuous proportion to the pointer's approach (a real geometric pull signal,
-0→1 over the last ~300px), which is what makes crossing the exclusion boundary
-feel increasingly intentional rather than validated.
+no giant labelled target.
 
-The consequence is **staged**: the module lands (~240ms), the deck closes its
-empty seat, the release load resolves (+0.24s), and the landing date resolves
-last (+0.42s). Object first, numbers second. In the dominated case the date
-does not move at all — only its caption re-arrives ("held — this scenario does
-not move the date"), so the stillness reads as a result, not a hang.
+### The removal bay
 
-### Three materials, one glance
+The destination is a **cassette cut into the chassis**, not a drop column. At
+rest it sleeps: no dashed perimeter, no instruction, nothing but two machined
+guide rails at the threshold of visibility. It wakes on real pointer geometry —
+`shelfPull` runs 0→1 over the last ~320px of actual approach — and the rails
+illuminate, the label warms toward violet, and a receiving seat rises into view
+and deepens. Only at contact does it arm, and only then does it say anything.
+Crossing the exclusion boundary is therefore progressively *intentional*
+rather than validated after the fact.
+
+### The staging is the argument
+
+The consequence is **staged**, and the order is what the instrument is
+claiming: the object moves first, the machine recomputes second, the
+interpretation arrives last.
+
+| Beat | At |
+|---|---|
+| the module lands in its destination and settles | 0ms (240ms drop) |
+| the deck recomposes, closing the vacated seat | continuous, Motion `layout` |
+| **release load** resolves | +240ms |
+| **landing date** resolves | +420ms |
+| **scenario impact** illuminates | +580ms |
+
+In the dominated case the date does **not** move, and nothing pretends it did:
+the date is keyed on its own value, so an unchanged date never re-animates and
+stays spatially still. Only the caption re-arrives — "held — it waits on
+Platform" — which is how the machine says *I recalculated; the answer is the
+same*.
+
+### Four materials, one glance
+
+Hue is **material, not measurement**. Everything that is accepted Reality and
+live in this release shares one signal colour, because those modules are all
+the same kind of thing. Certainty is not a hue — it is legible in the shape of
+the distribution, which is where it actually lives.
 
 | Material | What it is | How it reads |
 |---|---|---|
-| **Seated** | accepted Reality | solid, lit from within, contact shadow — it is touching the surface |
-| **Spectral** | a Hermes candidate or an unsaved draft | hovers above the tray, translucent, dashed edge, a cast shadow with a gap beneath it |
-| **Raw** | unmapped work | hatched amber, deliberately not tile-shaped enough to be mistaken for a finished capability |
+| **Seated** | accepted Reality, carrying work | graphite face, cyan signal in the edge, sigil and trace; a real top facet and hard contact with the deck |
+| **Spectral** | a Hermes candidate or an unsaved draft | violet, dashed, translucent enough to see the recess through, hovering above its seat with a shadow gap and no contact edge |
+| **Raw** | unmapped work | amber and hatched, with **no specular facet** — deliberately not a finished faceplate |
+| **Parked** | out of this release, still Reality | powered down: graphite, unlit sigil, neutral trace, and a visibly *cut* conductor across the top edge rather than a faded copy of itself |
+
+The colour law for the whole surface:
+
+| Colour | Means |
+|---|---|
+| **cyan** (`--i-signal`) | accepted capability material, live in this release |
+| **violet** | scenario, hypothetical, unsettled — candidates, drafts, the removal bay |
+| **amber** | unmapped work, constraints, structural stops |
+| **mint** | movement in your favour |
+| **graphite** | Reality, baseline, powered down |
+
+Deliberately cooler than mint, so "this is seated and powered" can never be
+misread as "this moved in your favour".
 
 The spectral state carries a precise fact that took three versions to land:
 a candidate's **work is already counted in the forecast**, but its existence as
 a capability is not settled. So it belongs in the bay while visibly not being
 seated in it. Accepting one sets it down — and changes no simulation input,
 because nothing about the work changed.
+
+### The light law
+
+> Nothing glows because it exists. Light means active, changing, uncertain,
+> constrained, or being touched.
+
+A seated module at rest has no outer glow at all. What it has is a specular
+top edge at 42%, which goes to full in ~120ms when a pointer arrives — the
+edge answers *before* the body moves. There is no perpetual breath anywhere on
+the surface; the one thing that emits continuously is the trace's phosphor,
+and a trace only exists where there is real estimate data behind it.
 
 ## The module, and the deck it sits in
 
@@ -61,7 +113,7 @@ object. What varies is what is *drawn on* the module:
 | **load readout** | `mean(low, likely, high) ÷ capacity`, and its share of the release |
 | **trace** | the triangular density of the summed three-point range: horizontal extent = spread against the release's widest, peak height = concentration, peak position = `(likely − low) / (high − low)` |
 | **trace scale** | the actual `low` / `likely` / `high` in days, so the curve is readable rather than decorative |
-| **accent hue** | certainty, and nothing else — teal well-sized, blue moderate, indigo poorly sized. Violet overrides for a candidate, amber for unmapped work |
+| **accent** | MATERIAL, not measurement — cyan for accepted, violet for unsettled, amber for unmapped, graphite for parked. Certainty is not a hue |
 | **dots** | done work over total mapped work, capped at six |
 
 The trace lives in a **recess cut into the faceplate** rather than floating on
@@ -69,12 +121,14 @@ it, which is what separates an instrument readout from a sparkline in a card.
 
 ### The deck sizes itself to the release
 
-A fixed column count is what makes a rack look like a dashboard: six modules in
-a ten-slot grid leaves four holes that read as unfinished rather than as
-composition. So `packDeck` chooses the columns per release — one taller row up
-to six modules, otherwise the two-row packing with the fewest empty bays. Rows
-divide the rack's height rather than being stamped out at a fixed size, so a
-release always fits its chassis and nothing is ever clipped.
+A chassis shows its bays. `packDeck` lays every release out in **two rows**,
+choosing the column count so at most one bay is left spare, and whatever is
+spare is drawn as an empty seat carrying a machined registration mark. A
+four-capability release therefore reads as "four modules racked, four bays
+open" — which is true — instead of as a short row floating in the middle of a
+tall empty box. Rows divide the rack's height rather than being stamped out at
+a fixed size, so a release always fits its chassis and nothing is clipped; only
+past two rows does the deck become a scrolling surface.
 
 Crucially the deck is sized from **every capability the release has**, seated or
 not. Taking one out leaves its seat empty; it does not re-cut the chassis. The
@@ -104,13 +158,24 @@ continuous.
 
 ### Motion states
 
-`rest → hover → pickup → carry → armed → drop → settle → recomposed`, and
-`cancel` returning the tile to exactly where it came from. Each is a distinct
-treatment, not a single transition: pickup trades the contact shadow for a cast
-one, the shelf arms in violet as the hand approaches, and the master's date
-animates in a beat *after* the tile lands — the object moves first, the number
-follows. `scripts/scope-drag-record.mjs` records video and samples every one of
-those states as its own frame.
+`rest → hover → press → pickup → carry → armed → drop → settle → recomposed`,
+and `cancel` returning the module to exactly where it came from. Each is a
+distinct treatment, not one transition with different durations.
+
+| State | Treatment | Spring |
+|---|---|---|
+| **hover** | the specular edge goes to full *first* (120ms), then the body lifts 3px | 380 / 34 |
+| **press** | 1.5px into the seat, contact shadow tightens, no travel back through zero | 900 / 42 (~90ms) |
+| **pickup** | releases from the seat, face catches more light, cast shadow separates, the vacated seat stays visible | 420 / 36 |
+| **carry** | attached to the pointer via `DragOverlay`; a velocity lean capped at **±0.9°** — enough to feel mass, never a cartoon | 300 / 28 |
+| **armed** | the bay's rails and receiving seat, driven by real pointer distance | 180ms tween |
+| **drop** | 240ms `cubic-bezier(0.25, 0, 0.2, 1)`, then neighbours settle by Motion `layout` | 330 / 33 |
+
+Everything lands inside 150–350ms, critically damped: no wobble, no overshoot,
+no elastic bounce. The eye can follow the object at every moment.
+`scripts/scope-drag-record.mjs` records video and samples every state as its
+own frame. `MotionConfig reducedMotion="user"` plus the `.instrument *` CSS
+guard flatten all of it when the OS asks.
 
 **A note on the spectral float:** it is a static offset, not a loop. An element
 that never comes to rest is never "stable" — it blocks pointer actionability,
@@ -215,6 +280,33 @@ model FeatureWorkLink { featureId, source, externalId }  // @@unique
 Linear-derived set, so persisting them is a matter of loading rows into that
 argument. The UI does not change.
 
+## The distribution display
+
+The signature object. One component, `DistributionDisplay`, drawn once and
+opened at two sizes — small in the module, large in Feature Detail — so the
+deck and the editor can never drift.
+
+| What you see | What it means |
+|---|---|
+| **Horizontal position** | days. The drawn span IS the capability's low→high range |
+| **Drawn width** | that range against the release's widest, so a badly-bounded capability is visibly wider than a well-bounded one across the whole deck |
+| **Curve** | the triangular density of the summed three-point range |
+| **Peak height** | concentration — what a density normalised to unit area does. A taller curve is a *surer* capability, never a bigger one. Size is the readout above it |
+| **Peak position** | `(likely − low) / (high − low)` |
+| **Locator + its number** | the likely value, riding its own hairline like a marker readout |
+| **Numbers at the window's foot** | `low` and `high` in real days, placed at the exact x the curve reaches — the labels *are* the axis |
+| **Dashed grey curve behind** | Reality's own distribution, when a Scenario re-estimate has moved this one off it |
+| **Three faint hairlines + a floor** | reference marks. Enough to read a curve against; not a chart grid |
+| **Phosphor bloom on the stroke** | the one emissive thing in the window, and only where real estimate data exists |
+
+The peak floor is `0.62`, so even the widest capability fills its window rather
+than smearing along the glass. The ordering still reads; the display is never a
+flat line pretending to be a distribution.
+
+When a Scenario re-estimates a capability, the active curve **morphs** to its
+new shape on a spring — never a jump cut, never animated fake samples — and
+Reality stays behind it as a ghost. Both curves are real data.
+
 ## Visual → semantic map
 
 Nothing is decorative. If it is drawn, it is derived.
@@ -222,31 +314,62 @@ Nothing is decorative. If it is drawn, it is derived.
 | What you see | What it means |
 |---|---|
 | Module **width/height** | nothing — uniform, so the composition stays learnable |
-| **Curve** in the recessed window | the summed triangular density of this capability's three-point range |
-| Curve **width** | how wide the range runs, against the widest range in the release |
-| Curve **height** | how concentrated it is — a tall narrow peak is a well-understood capability |
-| **Vertical hairline** under the peak | the `likely` value's position inside the range |
-| **Numbers under the window** | that same range in real days: low, likely, high |
-| Curve **hue** | certainty: teal low, blue moderate, indigo high |
+| Module **accent** | material: cyan accepted, violet unsettled, amber unmapped, graphite parked |
+| **Specular top edge** | a finished faceplate. Brightens first under a pointer; absent on raw work |
+| **Cut conductor** across a module's top | parked: the signal path is broken, not merely faded |
 | **Hatching** | placeholder estimates / unmapped work — the one texture, one meaning |
-| Dashed violet border, module floating | Hermes candidate or manual draft — hypothetical, not Reality |
-| Amber tag | a coverage gap, not a capability |
-| Module **drained, in the right column** | out of this release, still in Reality |
+| Dashed violet border, module floating with a shadow gap | Hermes candidate or manual draft — hypothetical, not Reality |
 | **Empty recess** in the deck | a seat: a module was lifted from here, or could be set down here |
-| **Amber strip** under the deck | real open decision gates, ending in the measured floor |
+| **Registration mark** in a recess | a bare bay — a mounting position with nothing racked in it |
+| **Guide rails** in the removal bay | the receiving mechanism, lit in proportion to a real approach |
+| **Amber conductor** under the deck | the lock rail: real open decision gates, ending in the measured floor |
+| Lock rail **illuminated** | the release is dominated — cutting scope can no longer reach the date |
 
-Colour follows the suite rule — state, never category. Every capability that is
-simply *in* the release is neutral warm white; violet means hypothetical, amber
-means a gap, mint means engaged.
+## The lock rail, and what it cannot say
+
+A mechanical stop beneath the release: mostly black, one engraved amber
+conductor with machined graduations, a compact lock indicator per open gate,
+and the measured FLOOR as its terminal. Scope does not own decisions, so
+everything here is read-only with a door to Decisions.
+
+The conductor and the terminal illuminate **only when the release is actually
+dominated**. Individual locks stay quiet, and that is a deliberate limit rather
+than a design preference: `readDominance` attributes the floor to open
+decisions and dependencies *collectively*. The model does not know which single
+gate sets it. Illuminating one anyway would be invented attribution that a user
+could act on, so the rail says what is true — there is a structural stop under
+this release — and no more.
+
+## The signal strip
+
+Not four equal cards. One thin strip reading left to right: what Scope
+**inherited** (capacity, context switch — quiet, with doors to Portfolio),
+what the current composition **costs** (load moved, landing moved — dark until
+there is a scenario, and resolving on the master's own schedule so the whole
+instrument answers in one voice), then the actions as machined controls.
+
+Load delta is signed rather than prefixed, because a re-estimate can make a
+release *heavier*: `−3.8d removed` and `+0.8d added` are both real outcomes.
 
 ## Feature Detail
 
 Summoned as a **docked plugin panel** on the right rather than a floating
 window: it belongs to a module you selected, so it sits alongside the deck
-rather than covering it. The take-out control and the door to Forecast are
-pinned to its footer, reachable from every mode. Picking a module up closes the
-panel — it is docked over the destination, and lifting something is a statement
-that you are done reading about it.
+rather than covering it. Picking a module up closes the panel — it is docked
+over the destination, and lifting something is a statement that you are done
+reading about it.
+
+Under the header sits a fixed **module head** that every mode shares: the
+capability's source and state, a large instance of the same distribution
+display the deck draws, and three tight readouts (load, share, certainty). The
+take-out control and the door to Forecast are pinned to the footer, reachable
+from every mode. The result is an editor opened *for the object*, not a page
+about it.
+
+Because the head carries the aggregate, the modes no longer restate it —
+Overview lost about a third of its prose, and **Estimate** is now what it
+should be: provenance per item, and the one lever Scope owns. Re-estimating
+morphs the head's display while Reality stays ghosted behind it.
 
 Five modes, each showing what the model holds or saying plainly that it holds
 nothing: **Overview** (what it is, load, share, certainty, coverage, the fenced

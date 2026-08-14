@@ -20,6 +20,7 @@ export default function ToolWindow({
   width = 420,
   rail,
   footer,
+  hero,
   docked,
   children,
   dataShoot,
@@ -33,6 +34,10 @@ export default function ToolWindow({
   rail?: React.ReactNode;
   /** Pinned actions between the scroll body and the rail. */
   footer?: React.ReactNode;
+  /** Docked only: a fixed block under the header that every mode shares —
+      the module's identity and its display, which should not scroll away
+      while you page through what the model knows about it. */
+  hero?: React.ReactNode;
   /** Docked: a flush right panel integrated into the instrument, no backdrop
       dim — the Scope Composer's detail panel. Default stays the summoned
       floating window every other instrument uses. */
@@ -83,6 +88,7 @@ export default function ToolWindow({
             ✕
           </button>
         </div>
+        {hero && <div className="shrink-0">{hero}</div>}
         <div className="min-h-0 flex-1 overflow-y-auto">{children}</div>
         {footer && (
           <div className="shrink-0" style={{ borderTop: "1px solid var(--i-border)" }}>
