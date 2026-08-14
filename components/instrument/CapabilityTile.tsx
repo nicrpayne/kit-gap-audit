@@ -75,7 +75,7 @@ const SIGILS = [
   "M12 3l8 5-8 5-8-5zM4 13v4l8 5 8-5v-4", // crate
   "M9 12a3 3 0 013-3h5a3 3 0 010 6h-2M15 12a3 3 0 01-3 3H7a3 3 0 010-6h2", // link
 ];
-function sigilFor(name: string): string {
+export function sigilPathFor(name: string): string {
   let h = 0;
   for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) >>> 0;
   return SIGILS[h % SIGILS.length];
@@ -584,7 +584,7 @@ export default function CapabilityTile({
             }}
           >
             <svg width={compact ? 12 : 14} height={compact ? 12 : 14} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round" strokeLinecap="round">
-              <path d={sigilFor(f.name)} />
+              <path d={sigilPathFor(f.name)} />
             </svg>
           </span>
           <span
@@ -641,7 +641,7 @@ export default function CapabilityTile({
 
         {/* THE DISPLAY — cut into the faceplate, filling the module's body. */}
         <div className={`relative flex-1 min-h-0 flex flex-col justify-end ${compact ? "mt-1.5" : "mt-2"}`}>
-          <div className="relative flex-1 min-h-[30px]" style={{ maxHeight: compact ? 62 : 148 }}>
+          <div className="relative flex-1 min-h-[30px]" style={compact ? { maxHeight: 62 } : undefined}>
             <DistributionDisplay
               range={f.range}
               hasItems={f.items.length > 0}

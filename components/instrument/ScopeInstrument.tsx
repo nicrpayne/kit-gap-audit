@@ -7,8 +7,9 @@
 //               landing date (dominant), the release load (secondary) and the
 //               scenario impact (dark until there is a scenario)
 //   deck        IN THIS RELEASE — a chassis of capability modules, each with
-//               its own distribution display. The deck always shows its bays:
-//               spare positions are drawn as empty seats, not as air
+//               its own distribution display. Exactly three kinds of cell:
+//               OCCUPIED, VACATED (a Scenario removal, holding its position),
+//               and one RESERVE bay. Nothing is drawn to square off a grid
 //   bay         OUT OF THIS RELEASE — a cassette cut into the chassis. It
 //               sleeps, and wakes in proportion to a real pointer approach
 //   rail        the LOCK RAIL — an amber conductor of read-only decision
@@ -50,7 +51,7 @@ import { AnimatePresence, MotionConfig, motion, useMotionValue, useSpring, useTr
 import InstrumentShell from "@/components/instrument/InstrumentShell";
 import ScenarioStrip, { chipsFor } from "@/components/instrument/ScenarioStrip";
 import FeatureDetail, { AddFeature } from "@/components/instrument/FeatureDetail";
-import CapabilityTile, { Seat, materialOf, MODULE_H } from "@/components/instrument/CapabilityTile";
+import CapabilityTile, { Seat, materialOf, sigilPathFor, MODULE_H } from "@/components/instrument/CapabilityTile";
 import {
   useProject,
   EMPTY_SCENARIO,
@@ -67,25 +68,26 @@ import { formatCapacity } from "@/lib/capacity/limits";
 const BAY_IN = "bay-in";
 const BAY_OUT = "bay-out";
 const FRAME_BG = "#0c1013";
-// THE DECK PACKS ITSELF.
-//
-// A chassis shows its bays. Two rows, always — the columns are chosen so at
-// most one bay is left spare, and whatever is spare is drawn as an empty seat
-// rather than left as unexplained air. A four-capability release should read
-// as "four modules racked, four bays open", which is true, instead of as a
-// short row floating in the middle of a tall empty box.
+// THE DECK LAYS OUT WHAT EXISTS. Cells are exactly: every capability this
+// release has — seated or vacated — plus one reserve bay. There is no
+// grid-completion step, so a small release is a short deck rather than a full
+// rectangle of meaningless holes. A release only takes a second row when its
+// real capabilities need one; a future row is never reserved in advance.
 function packDeck(cellCount: number): { cols: number; rows: number } {
-  if (cellCount <= 2) return { cols: Math.max(2, cellCount), rows: 1 };
-  const cols = Math.min(6, Math.max(3, Math.ceil(cellCount / 2)));
-  return { cols, rows: Math.ceil(cellCount / cols) };
+  if (cellCount <= 6) return { cols: Math.max(1, cellCount), rows: 1 };
+  if (cellCount <= 12) return { cols: Math.ceil(cellCount / 2), rows: 2 };
+  return { cols: 6, rows: Math.ceil(cellCount / 6) };
 }
 
 // Rows divide the deck rather than being stamped out at a fixed height, so a
 // release always fits its rack and nothing is ever clipped. Past two rows the
 // deck becomes a scrolling surface with fixed-size bays.
 function rowGeometry(rows: number): React.CSSProperties {
+  // A one-row release gets taller modules rather than a short row marooned in
+  // a tall rack — the deck is the machine's face, so it keeps its height and
+  // the modules take the proportions of a channel strip.
   if (rows === 1)
-    return { height: "100%", gridTemplateRows: `minmax(${MODULE_H}px, ${MODULE_H + 92}px)`, alignContent: "center" };
+    return { height: "100%", gridTemplateRows: `minmax(${MODULE_H}px, ${MODULE_H + 150}px)`, alignContent: "center" };
   if (rows === 2) return { height: "100%", gridTemplateRows: "repeat(2, minmax(0, 1fr))" };
   return { minHeight: "100%", gridAutoRows: `${MODULE_H}px`, alignContent: "start" };
 }
@@ -97,13 +99,6 @@ function loadDelta(removed: number): { value: string; note: string } {
   return removed > 0
     ? { value: `−${removed.toFixed(1)}d`, note: "removed" }
     : { value: `+${Math.abs(removed).toFixed(1)}d`, note: "added" };
-}
-
-/** Where a module will land in a load-ordered rack — the seat that opens for
-    it opens in the true place, not a flattering one. */
-function seatIndexFor(list: Feature[], f: Feature): number {
-  return list.filter((x) => x.loadDays > f.loadDays || (x.loadDays === f.loadDays && x.name.localeCompare(f.name) < 0))
-    .length;
 }
 
 export default function ScopeInstrument() {
@@ -369,19 +364,17 @@ export default function ScopeInstrument() {
               <div className="flex-1 min-h-0 flex flex-col gap-3.5 px-5 pb-3.5">
                 <div className="flex-1 min-h-0 flex gap-3.5">
                   <ReleaseRack
-                    engaged={engaged}
+                    features={composition.features}
                     dragging={dragging}
                     shareOf={shareOf}
                     maxSpread={maxSpread}
-                    offeringSeat={carryingParked}
-                    seatArmed={over === BAY_IN}
+                    seatArmed={acquiringBay}
                     onOpen={setOpenFeatureId}
                     onAdd={() => setAdding(true)}
                     ghostRangeOf={realityRangeOf}
                     scopeName={scope.name}
                     unmappedItems={composition.unmappedItems}
                     totalItems={composition.totalItems}
-                    deckSize={composition.features.length}
                   />
 
                   {/* The destination is subordinate: it flanks the deck only,
@@ -755,28 +748,130 @@ function SeatedModule({
   );
 }
 
-function OfferedSeat({ armed, tone }: { armed: boolean; tone: string }) {
+// A VACATED SEAT — the position a capability holds in Reality, standing open
+// because the active Scenario took it out. It is not a blank cell: it is the
+// only thing on the deck that carries Reality-vs-Scenario meaning, and it
+// stays exactly where the module was so the chassis geometry is identical in
+// both states. The identity is ENGRAVED into the recess — dark, letterpressed,
+// no fill and no light — so it reads as a machined label on bare metal rather
+// than as another card.
+function VacatedSeat({
+  feature,
+  armed,
+  onOpen,
+}: {
+  feature: Feature;
+  /** The capability itself is being carried back over the deck. */
+  armed: boolean;
+  onOpen: () => void;
+}) {
   return (
     <motion.div
       layout
-      initial={{ opacity: 0, scale: 0.92 }}
-      animate={{ opacity: 1, scale: 1 }}
-      exit={{ opacity: 0, scale: 0.92 }}
-      transition={{ type: "spring", stiffness: 300, damping: 30 }}
+      transition={{ type: "spring", stiffness: 330, damping: 33 }}
       className="relative w-full h-full"
-      data-shoot="offered-seat"
+      style={{ height: "100%" }}
+      data-shoot="vacated-seat"
+      data-capability={feature.id}
     >
-      <Seat armed={armed} tone={tone} />
+      <Seat armed={armed} tone="var(--i-violet)" />
+      {/* A vacated seat is a SCENARIO artifact, so the recess carries the
+          scenario's own colour. That is what separates it at a glance from the
+          reserve bay, which is simply a position nothing has ever occupied. */}
+      <span
+        aria-hidden
+        className="absolute inset-0 pointer-events-none"
+        style={{
+          borderRadius: 12,
+          boxShadow:
+            "inset 0 0 0 1px color-mix(in srgb, var(--i-violet) 16%, transparent), inset 0 6px 18px rgba(0,0,0,0.5)",
+        }}
+      />
+      <button
+        type="button"
+        onClick={onOpen}
+        className="absolute inset-0 flex flex-col items-center justify-center gap-2 px-4 text-center"
+        aria-label={`${feature.name}, taken out of this release. Its seat is open. Click to open the capability.`}
+      >
+        <svg
+          width="26"
+          height="26"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="rgba(255,255,255,0.09)"
+          strokeWidth="1.6"
+          strokeLinejoin="round"
+          strokeLinecap="round"
+          aria-hidden
+          style={{ filter: "drop-shadow(0 1px 0 rgba(255,255,255,0.045))" }}
+        >
+          <path d={sigilPathFor(feature.name)} />
+        </svg>
+        <span
+          className="max-w-full font-semibold uppercase leading-[1.3]"
+          style={{
+            fontSize: 9,
+            letterSpacing: "0.14em",
+            color: "rgba(255,255,255,0.11)",
+            textShadow: "0 1px 0 rgba(255,255,255,0.05)",
+            display: "-webkit-box",
+            WebkitLineClamp: 2,
+            WebkitBoxOrient: "vertical",
+            overflow: "hidden",
+          }}
+        >
+          {feature.name}
+        </span>
+        <motion.span
+          className="text-[8px] font-semibold uppercase tracking-[0.16em]"
+          initial={false}
+          animate={{ opacity: armed ? 1 : 0.55, color: "var(--i-violet)" }}
+          transition={{ duration: 0.18 }}
+        >
+          {armed ? "reconnect" : "seat open"}
+        </motion.span>
+      </button>
     </motion.div>
   );
 }
 
+// THE RESERVE BAY — one quiet open position at the end of the composition,
+// and the only unoccupied cell on the deck that is not a vacated seat. It says
+// one thing: this instrument can take another capability. It is dark at rest
+// and names itself only under the pointer.
+function ReserveBay({ onAdd }: { onAdd: () => void }) {
+  return (
+    <motion.button
+      layout
+      onClick={onAdd}
+      data-shoot="add-feature"
+      className="relative group h-full"
+      transition={{ type: "spring", stiffness: 330, damping: 33 }}
+    >
+      <Seat mark />
+      <span className="absolute inset-0 flex flex-col items-center justify-center gap-1.5 px-4 text-center">
+        <span
+          className="text-[8px] font-semibold uppercase tracking-[0.2em] opacity-0 group-hover:opacity-100 transition-opacity duration-150"
+          style={{ color: "var(--i-text-soft)" }}
+        >
+          Open bay
+        </span>
+        <span
+          className="text-[8.5px] leading-snug opacity-0 group-hover:opacity-100 transition-opacity duration-150"
+          style={{ color: "var(--i-text-faint)" }}
+        >
+          add a capability
+        </span>
+      </span>
+    </motion.button>
+  );
+}
+
 function ReleaseRack({
-  engaged,
+  features,
   dragging,
   shareOf,
   maxSpread,
-  offeringSeat,
   seatArmed,
   ghostRangeOf,
   onOpen,
@@ -784,13 +879,13 @@ function ReleaseRack({
   scopeName,
   unmappedItems,
   totalItems,
-  deckSize,
 }: {
-  engaged: Feature[];
+  /** EVERY capability in this release, in the deck's canonical order. */
+  features: Feature[];
   dragging: Feature | null;
   shareOf: (f: Feature) => number;
   maxSpread: number;
-  offeringSeat: boolean;
+  /** A parked capability is being carried back over the deck. */
   seatArmed: boolean;
   ghostRangeOf: (f: Feature) => ThreePoint | null;
   onOpen: (id: string) => void;
@@ -798,37 +893,37 @@ function ReleaseRack({
   scopeName: string;
   unmappedItems: number;
   totalItems: number;
-  /** Every capability in this release, seated or not — the chassis' size. */
-  deckSize: number;
 }) {
   const { setNodeRef } = useDroppable({ id: BAY_IN });
-  const insertionAt = offeringSeat && dragging ? seatIndexFor(engaged, dragging) : -1;
 
-  const cells: React.ReactNode[] = engaged.map((f) => (
-    <SeatedModule
-      key={f.id}
-      feature={f}
-      share={shareOf(f)}
-      maxSpread={maxSpread}
-      ghostRange={ghostRangeOf(f)}
-      isDragging={dragging?.id === f.id}
-      onOpen={() => onOpen(f.id)}
-    />
-  ));
-  if (insertionAt >= 0 && dragging) {
-    cells.splice(insertionAt, 0, <OfferedSeat key="__offered" armed={seatArmed} tone="var(--i-text)" />);
-  }
+  // THE DECK HAS EXACTLY THREE KINDS OF CELL. A capability is either seated in
+  // its position or its position is standing vacated; every capability the
+  // release has occupies one cell either way, which is what keeps the chassis
+  // identical between Reality and Scenario and stops the remaining modules
+  // reflowing into a hole. Then one reserve bay. Nothing else — a cell drawn
+  // only to square off a grid would be a seat that means nothing.
+  const cells = features.map((f) =>
+    f.bypassed ? (
+      <VacatedSeat
+        key={f.id}
+        feature={f}
+        armed={seatArmed && dragging?.id === f.id}
+        onOpen={() => onOpen(f.id)}
+      />
+    ) : (
+      <SeatedModule
+        key={f.id}
+        feature={f}
+        share={shareOf(f)}
+        maxSpread={maxSpread}
+        ghostRange={ghostRangeOf(f)}
+        isDragging={dragging?.id === f.id}
+        onOpen={() => onOpen(f.id)}
+      />
+    )
+  );
 
-  // Pack to the deck rather than to a fixed module height: the rows divide the
-  // rack, so two rows always fit and modules take whatever height is going.
-  // The deck is sized for every capability this release HAS, not just the ones
-  // currently seated — so taking one out leaves a seat behind instead of
-  // resizing the whole chassis. Geometry is a property of the release.
-  const { cols, rows } = packDeck(deckSize + 1);
-  // Whatever the packing cannot fill stays as bare seats. An empty recess is
-  // already the surface's word for "a module could sit here" — spelling it out
-  // as one wide labelled rail would just be negative space with a caption.
-  const spare = Math.max(0, cols * rows - (cells.length + 1));
+  const { cols, rows } = packDeck(cells.length + 1);
 
   return (
     <section
@@ -861,27 +956,7 @@ function ReleaseRack({
           style={{ gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))`, ...rowGeometry(rows) }}
         >
           <AnimatePresence initial={false}>{cells}</AnimatePresence>
-          <motion.button
-            layout
-            onClick={onAdd}
-            data-shoot="add-feature"
-            className="relative group h-full"
-            transition={{ type: "spring", stiffness: 330, damping: 33 }}
-          >
-            <Seat />
-            <span className="absolute inset-0 flex flex-col items-center justify-center gap-1.5 opacity-45 group-hover:opacity-95 transition-opacity px-4 text-center">
-              <span className="text-[19px] leading-none text-[var(--i-text-soft)]">+</span>
-              <span className="text-[10px] text-[var(--i-text-soft)]">Add capability</span>
-              <span className="text-[8.5px] leading-snug text-[var(--i-text-faint)]">
-                create, or claim unassigned work
-              </span>
-            </span>
-          </motion.button>
-          {Array.from({ length: spare }).map((_, i) => (
-            <div key={`spare-${i}`} className="relative h-full" aria-hidden>
-              <Seat mark />
-            </div>
-          ))}
+          <ReserveBay onAdd={onAdd} />
         </div>
       </div>
     </section>

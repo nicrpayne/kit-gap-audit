@@ -119,20 +119,43 @@ object. What varies is what is *drawn on* the module:
 The trace lives in a **recess cut into the faceplate** rather than floating on
 it, which is what separates an instrument readout from a sparkline in a card.
 
-### The deck sizes itself to the release
+### Three seat states, and no fourth
 
-A chassis shows its bays. `packDeck` lays every release out in **two rows**,
-choosing the column count so at most one bay is left spare, and whatever is
-spare is drawn as an empty seat carrying a machined registration mark. A
-four-capability release therefore reads as "four modules racked, four bays
-open" — which is true — instead of as a short row floating in the middle of a
-tall empty box. Rows divide the rack's height rather than being stamped out at
-a fixed size, so a release always fits its chassis and nothing is clipped; only
-past two rows does the deck become a scrolling surface.
+An empty seat must always mean something. There are exactly three kinds of
+cell on the deck, and nothing is ever drawn just to square off a grid:
 
-Crucially the deck is sized from **every capability the release has**, seated or
-not. Taking one out leaves its seat empty; it does not re-cut the chassis. The
-geometry is a property of the release, not of the current scenario.
+| State | What it is | How it reads |
+|---|---|---|
+| **Occupied** | a capability included in this release | the module, seated |
+| **Vacated** | a capability that holds this position in Reality and has been taken out in the active Scenario | the recess, rimmed in scenario violet, with the capability's sigil and name **engraved** into it — letterpressed, unlit, no fill. Never another card |
+| **Reserve** | one quiet open position at the end of the composition | bare recess with a machined registration mark. Dark at rest, no glow, no dashed perimeter; it names itself `OPEN BAY` only under the pointer |
+
+The **vacated** seat is what makes the chassis honest. Every capability the
+release has occupies a cell whether it is seated or not, so the deck's geometry
+is byte-identical between Reality and Scenario, and the remaining modules never
+reflow into the hole — you can see exactly what was disconnected and where it
+belongs. Carrying the capability back arms its own seat (`reconnect`) rather
+than opening a new position somewhere else: it returns to the position it never
+gave up.
+
+The **reserve** bay says one thing — the instrument can take another
+capability. There is at most one, it sits at the end, and it opens the existing
+Add capability tool. It reserves a position, never a future row.
+
+### The deck lays out what exists
+
+`packDeck` receives exactly those cells — every capability, plus the reserve —
+and lays them out in as few rows as the count needs: one row up to six cells,
+otherwise two balanced rows, and only past twelve does the deck become a
+scrolling surface. A four-capability release is therefore a short deck,
+
+    [ CAP ][ CAP ][ CAP ][ CAP ][ reserve ]
+
+not a full rectangle padded with holes. A release takes a second row when its
+real capabilities need one; a future row is never reserved in advance. A
+one-row deck gets taller modules rather than a short row marooned in a tall
+rack — the deck is the machine's face, so it keeps its height and the modules
+take the proportions of a channel strip.
 
 ## The drag is the instrument
 
@@ -319,8 +342,8 @@ Nothing is decorative. If it is drawn, it is derived.
 | **Cut conductor** across a module's top | parked: the signal path is broken, not merely faded |
 | **Hatching** | placeholder estimates / unmapped work — the one texture, one meaning |
 | Dashed violet border, module floating with a shadow gap | Hermes candidate or manual draft — hypothetical, not Reality |
-| **Empty recess** in the deck | a seat: a module was lifted from here, or could be set down here |
-| **Registration mark** in a recess | a bare bay — a mounting position with nothing racked in it |
+| **Violet-rimmed recess with an engraved name** | a vacated seat: this capability holds this position in Reality and the Scenario took it out |
+| **Registration mark** in a bare recess | the reserve bay — the one open position, and the only empty cell that is not a vacated seat |
 | **Guide rails** in the removal bay | the receiving mechanism, lit in proportion to a real approach |
 | **Amber conductor** under the deck | the lock rail: real open decision gates, ending in the measured floor |
 | Lock rail **illuminated** | the release is dominated — cutting scope can no longer reach the date |
