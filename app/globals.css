@@ -204,3 +204,65 @@ body {
 .instrument-ask button:hover:not(:disabled) {
   background: var(--i-violet-soft) !important;
 }
+
+/* ── Forecast motion vocabulary ──────────────────────────────────────────
+   The instrument may breathe; it should not dance. Reality at rest gets a
+   sub-perceptual bloom breath. Everything expressive is cause→effect and
+   lives in LivingForecast's JS morph; these keyframes cover the moments a
+   DOM element enters, leaves, or is summoned. The reduced-motion guard
+   above (.instrument *) already flattens all of it to ~0ms. */
+
+/* Barely alive at rest: ±3.5% bloom over 9s. Below conscious notice. */
+@keyframes i-breath {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.93; }
+}
+
+/* A new central date arrives; the old state is gone, the new one settles. */
+@keyframes i-fadeup {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.i-fadeup { animation: i-fadeup 300ms cubic-bezier(0.2, 0, 0.2, 1); }
+
+/* Summoned tool windows: quick, mechanical, no theatre. Tools snap open;
+   instrument STATE settles slowly. Two different tempos on purpose. */
+@keyframes i-toolin {
+  from { opacity: 0; transform: translateX(16px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+.i-toolin { animation: i-toolin 190ms cubic-bezier(0.2, 0, 0.2, 1); }
+
+@keyframes i-backdropin {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+.i-backdropin { animation: i-backdropin 190ms ease-out; }
+
+/* A gate wall being assumed resolved: a brief pressure flash, then the
+   structure releases. Pairs with the object itself morphing earlier. */
+@keyframes i-gate-release {
+  0% { opacity: 1; filter: brightness(1); }
+  16% { opacity: 1; filter: brightness(1.7); }
+  100% { opacity: 0; filter: brightness(1); }
+}
+.lf-gate-leave { animation: i-gate-release 700ms cubic-bezier(0.3, 0, 0.4, 1) forwards; }
+.lf-gate-leave .lf-press {
+  transform: scaleX(0.12);
+  transition: transform 700ms cubic-bezier(0.3, 0, 0.4, 1);
+  transform-origin: 100% 50%;
+}
+
+@keyframes i-gate-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+.lf-gate-enter { animation: i-gate-in 450ms ease-out; }
+
+/* Scope switch: the instrument changes SUBJECT, so the object must not
+   morph (Design did not "become" JSA). Remount + settle instead. */
+@keyframes i-subject-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+.lf-subject { animation: i-subject-in 260ms ease-out; }
