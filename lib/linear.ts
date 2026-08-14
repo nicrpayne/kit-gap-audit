@@ -34,6 +34,24 @@ export interface LinearIssueSummary {
   // Null unless the issue is in a "completed" state. Powers "what shipped
   // since the last report" without a second fetch.
   completedAt: string | null;
+  // THE FEATURE LAYER. Linear has no first-class "Feature" entity -- what it
+  // has is issue nesting (parent/children) and Projects. After the Epic ->
+  // Feature -> Issue -> Sub-issue reorganisation, a FEATURE is the ancestor
+  // issue an implementation issue hangs from, and the EPIC is the Project
+  // those features live in.
+  //
+  // Both are read here rather than inferred from titles or labels, because a
+  // product capability is exactly the kind of thing this app must not guess
+  // at. An issue with no parent has no feature -- that is a real coverage
+  // gap, and Scope shows it as one instead of inventing a bucket.
+  //
+  // `parent` is the DIRECT parent only. A sub-issue's parent is an issue, not
+  // a feature; lib/scope/features.ts walks the chain to find the top of it.
+  parentIdentifier: string | null;
+  parentTitle: string | null;
+  // The Linear Project this issue belongs to -- the Epic in the new
+  // structure. Null for issues filed outside any project.
+  projectName: string | null;
 }
 
 // One GraphQL query per 100 issues with state/assignee/labels inlined.
@@ -54,6 +72,8 @@ const SCOPED_ISSUES_QUERY = `
         state { name type }
         assignee { name }
         labels { nodes { name } }
+        parent { identifier title }
+        project { name }
       }
     }
   }
@@ -71,6 +91,8 @@ interface ScopedIssuesQueryData {
       state: { name: string; type: string } | null;
       assignee: { name: string } | null;
       labels: { nodes: { name: string }[] };
+      parent: { identifier: string; title: string } | null;
+      project: { name: string } | null;
     }[];
   };
 }
@@ -137,6 +159,9 @@ export async function getScopedIssues(scope: ScopeFilter): Promise<LinearIssueSu
         assignee: node.assignee?.name ?? null,
         labels: node.labels.nodes.map((l) => l.name),
         completedAt: node.completedAt ?? null,
+        parentIdentifier: node.parent?.identifier ?? null,
+        parentTitle: node.parent?.title ?? null,
+        projectName: node.project?.name ?? null,
       });
     }
 

@@ -9,19 +9,43 @@
 // yet (release boundaries, decision options), the surface says so with
 // <Prototype/> rather than this module inventing data.
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { runPortfolioSimulation } from "@/lib/forecast/portfolio";
 import type { SimulationResult, WorkItem, DecisionGate } from "@/lib/forecast/simulate";
 import { applyScenarioInputDelta, type ScenarioInputDelta, type ScenarioInputScope } from "@/lib/scenario/inputDelta";
 import { computeMomentum } from "@/lib/momentum/compute";
 import { computeMomentumTrend, type MomentumTrend } from "@/lib/momentum/trend";
 
+// The provenance the Scope instrument reads. Produced by describeItems in
+// lib/forecast/compute.ts by joining each simulated item back to the Linear
+// issue or Finding it was built from -- nothing here is inferred client-side.
+export interface ScopeWorkItem extends WorkItem {
+  estimateSource: "ai" | "points" | "issue_placeholder" | "hint" | "finding_placeholder";
+  kind: "ticket" | "inferred";
+  state: string | null;
+  assignee: string | null;
+  points: number | null;
+  quote: string | null;
+  rationale: string | null;
+  /** The Linear parent, verbatim; resolved to a feature in lib/scope/features.ts. */
+  parentIdentifier: string | null;
+  parentTitle: string | null;
+  projectName: string | null;
+}
+
 export interface ProjectScope {
   scopeId: string;
   name: string;
   targetDate: string | null;
   dependsOnScopeIds: string[];
-  items: WorkItem[];
+  items: ScopeWorkItem[];
+  completedWork: {
+    id: string;
+    label: string;
+    parentIdentifier: string | null;
+    parentTitle: string | null;
+    completedAt: string | null;
+  }[];
   gates: DecisionGate[];
   teamCapacity: number;
   capacitySource: "allocations" | "explicit" | "inferred";
@@ -108,6 +132,32 @@ export interface SuiteScenario {
   excludedItemIds: Set<string>;
   /** Gate ids treated as resolved -- real: the serial delay disappears. */
   resolvedGateIds: Set<string>;
+  /** Item id -> a hypothetical three-point range to simulate INSTEAD of the
+      stored one. Exactly as real as an exclusion: the simulation reads an
+      item's low/likely/high off the spec it is handed, so substituting them
+      is a pure input change on the existing path -- no new math, and the
+      stored WorkEstimate is never touched. Scope owns this lever. */
+  estimateOverrideByItemId: Record<string, { low: number; likely: number; high: number }>;
+  // WHICH CAPABILITIES ARE OUT, as opposed to which work items are.
+  //
+  // excludedItemIds above stays the engine's truth -- the simulation only
+  // understands work items, and nothing here changes that. This set records
+  // the PRODUCT-LEVEL decision that produced those exclusions, so the suite
+  // can say "Offline Capture is out of this release" instead of "3 items out
+  // of scope". Scope writes both together, and is the only writer of this one.
+  bypassedFeatureIds: Set<string>;
+  // Capabilities declared by hand in this session. There is no Feature table
+  // yet, so a draft lives here and dies with the Scenario -- the honest
+  // behaviour for something that was never saved. See docs/SCOPE-INSTRUMENT.md
+  // for the migration this stands in for.
+  draftFeatures: { id: string; name: string; intent: string; itemIds: string[] }[];
+  // Hermes candidates the user has seated into the release by hand. Session-
+  // local for the same reason drafts are: accepting a candidate means writing a
+  // capability down, and there is no Feature table to write it to yet. Seating
+  // one changes NO simulation input -- the candidate's work was already being
+  // counted -- so this is purely a statement about what we accept as a
+  // capability, and the surface says so.
+  acceptedCandidateIds: Set<string>;
   contextSwitchCostPct: number | null;
 }
 
@@ -115,6 +165,10 @@ export const EMPTY_SCENARIO: SuiteScenario = {
   capacityOverrideByScope: {},
   excludedItemIds: new Set(),
   resolvedGateIds: new Set(),
+  estimateOverrideByItemId: {},
+  bypassedFeatureIds: new Set(),
+  draftFeatures: [],
+  acceptedCandidateIds: new Set(),
   contextSwitchCostPct: null,
 };
 
@@ -123,8 +177,69 @@ export function scenarioIsActive(s: SuiteScenario): boolean {
     Object.keys(s.capacityOverrideByScope).length > 0 ||
     s.excludedItemIds.size > 0 ||
     s.resolvedGateIds.size > 0 ||
+    Object.keys(s.estimateOverrideByItemId).length > 0 ||
+    s.bypassedFeatureIds.size > 0 ||
+    s.draftFeatures.length > 0 ||
+    s.acceptedCandidateIds.size > 0 ||
     s.contextSwitchCostPct !== null
   );
+}
+
+// ── ONE WORLD, SEVEN SURFACES ──────────────────────────────────────────
+// The suite's snapshot and its scenario live in a module store rather than in
+// each instrument's local state. Two reasons, both product reasons:
+//
+//   1. A scenario is a statement about the PROJECT, not about the screen you
+//      happened to make it on. Cutting scope and walking to Forecast to see
+//      the consequence is the whole point of a suite; per-surface state made
+//      that walk silently discard the hypothetical.
+//   2. The payload costs a Linear round-trip. Re-fetching it on every
+//      navigation made moving between instruments feel like loading pages
+//      instead of turning to look at something.
+//
+// Deliberately not React context: useProject's signature is unchanged, so all
+// seven surfaces got this by existing, and none of them had to be rewired.
+interface ProjectStore {
+  data: ProjectPayload | null;
+  loading: boolean;
+  error: string | null;
+  scenario: SuiteScenario;
+}
+
+let store: ProjectStore = { data: null, loading: true, error: null, scenario: EMPTY_SCENARIO };
+let inFlight: Promise<void> | null = null;
+const listeners = new Set<() => void>();
+
+function publish(patch: Partial<ProjectStore>) {
+  store = { ...store, ...patch };
+  for (const l of listeners) l();
+}
+
+function subscribe(l: () => void) {
+  listeners.add(l);
+  return () => listeners.delete(l);
+}
+
+// force = an explicit user-driven refresh, which DOES drop the scenario: the
+// hypothetical was built against facts that just changed underneath it.
+// Mounting a second instrument is not that, and must never clear it.
+function load(force: boolean): Promise<void> {
+  if (inFlight && !force) return inFlight;
+  publish({ loading: true, error: null });
+  inFlight = (async () => {
+    try {
+      const res = await fetch("/api/instrument/project");
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error ?? "Couldn't load the project model.");
+      }
+      const data: ProjectPayload = await res.json();
+      publish({ data, loading: false, scenario: force ? EMPTY_SCENARIO : store.scenario });
+    } catch (err) {
+      publish({ error: err instanceof Error ? err.message : "Something went wrong.", loading: false });
+    }
+  })();
+  return inFlight;
 }
 
 export interface ProjectModel {
@@ -143,35 +258,29 @@ export interface ProjectModel {
   momentumByScope: Map<string, MomentumTrend>;
   /** Latest likely date across scopes, and which scope sets it. */
   portfolioLikely: { date: Date | null; gatedBy: string | null; deltaDays: number };
+  /** Per scope: where it would still land with EVERY one of its work items
+      cut. The honest ceiling on what cutting scope can buy -- gates and a
+      dependency's own completion survive an empty backlog. Simulated on the
+      same path as everything else, under the CURRENT scenario, so a gate
+      assumed resolved in Decisions correctly lowers it. */
+  floorByScope: Map<string, SimulationResult> | null;
 }
 
 export function useProject(): ProjectModel {
-  const [data, setData] = useState<ProjectPayload | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [scenario, setScenario] = useState<SuiteScenario>(EMPTY_SCENARIO);
+  const snapshot = useSyncExternalStore(subscribe, () => store, () => store);
+  const { data, loading, error, scenario } = snapshot;
 
-  const reload = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const res = await fetch("/api/instrument/project");
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({}));
-        throw new Error(body.error ?? "Couldn't load the project model.");
-      }
-      setData(await res.json());
-      setScenario(EMPTY_SCENARIO);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Something went wrong.");
-    } finally {
-      setLoading(false);
-    }
+  const reload = useCallback(() => {
+    void load(true);
+  }, []);
+
+  const setScenario = useCallback<React.Dispatch<React.SetStateAction<SuiteScenario>>>((update) => {
+    publish({ scenario: typeof update === "function" ? update(store.scenario) : update });
   }, []);
 
   useEffect(() => {
-    reload();
-  }, [reload]);
+    void load(false);
+  }, []);
 
   const startDate = useMemo(() => (data ? new Date(data.startDate) : null), [data]);
 
@@ -207,26 +316,50 @@ export function useProject(): ProjectModel {
   // Scenario simulation. Scope exclusions and gate resolutions are applied by
   // FILTERING the spec's items/gates -- which is exactly what the engine
   // already means by "this work isn't in the release" and "that decision is
-  // settled". No new math.
+  // settled". An estimate override MAPS one item's three-point range to the
+  // hypothetical one. All three are input substitutions on the existing spec;
+  // no new math, and runPortfolioSimulation is called exactly as before.
   const [preview, setPreview] = useState<Map<string, SimulationResult> | null>(null);
+  const [floorByScope, setFloorByScope] = useState<Map<string, SimulationResult> | null>(null);
   const debounce = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
     if (!data || !scenarioScopes) return;
     if (debounce.current) clearTimeout(debounce.current);
     debounce.current = setTimeout(() => {
-      const filtered = scenarioScopes.map((s) => ({
-        ...s,
-        items: s.items.filter((i) => !scenario.excludedItemIds.has(i.id)),
-        gates: s.gates.filter((g) => !scenario.resolvedGateIds.has(g.id)),
-      }));
       const delta: ScenarioInputDelta = {
         allocations: data.allocations.map((a) => ({ personId: a.personId, scopeId: a.scopeId, fraction: a.fraction })),
         hypotheticalPeople: [],
         contextSwitchCostPct: scenario.contextSwitchCostPct ?? data.contextSwitchCostPct,
         capacityOverrideByScope: scenario.capacityOverrideByScope,
       };
+      // emptyScopeId: additionally drop every item of that one scope, which
+      // is how the irreducible floor is measured -- what survives an empty
+      // backlog is, by definition, what cutting scope cannot reach.
+      const specsFor = (emptyScopeId?: string) =>
+        applyScenarioInputDelta(
+          scenarioScopes.map((s) => ({
+            ...s,
+            items:
+              s.scopeId === emptyScopeId
+                ? []
+                : s.items
+                    .filter((i) => !scenario.excludedItemIds.has(i.id))
+                    .map((i) => {
+                      const o = scenario.estimateOverrideByItemId[i.id];
+                      return o ? { ...i, low: o.low, likely: o.likely, high: o.high } : i;
+                    }),
+            gates: s.gates.filter((g) => !scenario.resolvedGateIds.has(g.id)),
+          })),
+          data.people,
+          delta
+        );
       try {
-        setPreview(runPortfolioSimulation(applyScenarioInputDelta(filtered, data.people, delta)));
+        setPreview(runPortfolioSimulation(specsFor()));
+        const floors = new Map<string, SimulationResult>();
+        for (const s of scenarioScopes) {
+          floors.set(s.scopeId, runPortfolioSimulation(specsFor(s.scopeId)).get(s.scopeId)!);
+        }
+        setFloorByScope(floors);
       } catch {
         /* a dependency cycle can't be created from these surfaces */
       }
@@ -303,6 +436,7 @@ export function useProject(): ProjectModel {
     active: scenarioIsActive(scenario),
     momentumByScope,
     portfolioLikely,
+    floorByScope,
   };
 }
 

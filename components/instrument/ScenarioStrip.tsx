@@ -110,14 +110,39 @@ export function chipsFor(
       href: "/portfolio",
     });
   }
-  if (itemCount > 0) {
+  // Scope speaks in capabilities; the engine speaks in work items. When Scope
+  // set the exclusions it also recorded which capabilities they came from, so
+  // the chip can say the product-level thing rather than the accounting one.
+  const features = scenario.bypassedFeatureIds.size;
+  if (features > 0) {
+    chips.push({
+      id: "scope",
+      label: `${features} capabilit${features === 1 ? "y" : "ies"} out of this release`,
+      href: "/scope",
+    });
+  } else if (itemCount > 0) {
     chips.push({ id: "scope", label: `${itemCount} item${itemCount === 1 ? "" : "s"} out of scope`, href: "/scope" });
+  }
+  if (scenario.draftFeatures.length > 0) {
+    chips.push({
+      id: "drafts",
+      label: `${scenario.draftFeatures.length} draft capabilit${scenario.draftFeatures.length === 1 ? "y" : "ies"}`,
+      href: "/scope",
+    });
   }
   if (gateCount > 0) {
     chips.push({
       id: "gates",
       label: `${gateCount} decision${gateCount === 1 ? "" : "s"} assumed resolved`,
       href: "/decisions",
+    });
+  }
+  const reEstimated = Object.keys(scenario.estimateOverrideByItemId).length;
+  if (reEstimated > 0) {
+    chips.push({
+      id: "estimates",
+      label: `${reEstimated} re-estimated`,
+      href: "/scope",
     });
   }
   if (scenario.contextSwitchCostPct !== null) {
