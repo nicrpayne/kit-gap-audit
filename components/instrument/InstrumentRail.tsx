@@ -137,13 +137,13 @@ export default function InstrumentRail({
     >
       {/* Back to the Workbench. The mark is the exit, and says so on hover. */}
       <Link
-        href="/overview"
-        title="Overview workspace"
+        href="/"
+        title="Dashboard"
         className="group relative h-8 w-8 rounded-md flex items-center justify-center text-[13px] font-semibold mb-2 transition-colors"
         style={{ background: "var(--i-panel-raised)", border: "1px solid var(--i-border-strong)", color: "var(--i-text)" }}
       >
         K
-        <RailTip>Overview workspace</RailTip>
+        <RailTip>Dashboard</RailTip>
       </Link>
 
       {DESTINATIONS.map((d) => {
@@ -162,7 +162,7 @@ export default function InstrumentRail({
           >
             <RailIcon href={d.href} />
             <span className="sr-only">{d.label}</span>
-            <RailTip>{d.label} — {d.verb}</RailTip>
+            <RailTip>{d.verb ? `${d.label} — ${d.verb}` : d.label}</RailTip>
           </Link>
         );
       })}

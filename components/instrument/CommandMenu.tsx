@@ -48,7 +48,7 @@ export default function CommandMenu({
       ...DESTINATIONS.map((d) => ({
         id: `route:${d.href}`,
         label: d.label,
-        hint: d.href === "/portfolio" ? "Instrument" : "Workbench",
+        hint: d.instrument ? "Instrument" : "Workbench",
         run: () => router.push(d.href),
       })),
     ];

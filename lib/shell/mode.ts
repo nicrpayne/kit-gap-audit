@@ -1,92 +1,75 @@
 // WHICH ROUTES ARE INSTRUMENTS, AND WHAT EACH ONE OWNS.
 //
-// The suite is one delivery model operated through several specialised
-// instruments. The `owns` line below is not documentation decoration -- it is
-// the one-job test, kept next to the route so a new surface cannot quietly
-// grow into someone else's territory. If two entries could claim the same
-// control, one of them is wrong.
+// This is a PRESENTATION switch only -- it changes what chrome a route
+// wears, never the route table, the nav's information architecture, or
+// what any page can reach. The Workbench (dashboard, audit, decisions,
+// reports, scopes, configuration) keeps its light editorial language; an
+// Instrument route owns the whole viewport in the dark simulation language,
+// because simulating is a different job from reading and shouldn't be
+// performed through a letterbox. See docs/DESIGN-NORTH-STAR.md.
 //
-// Instrument Mode is a PRESENTATION switch only: the Workbench nav stands
-// down on these routes and they own the viewport. The route table itself is
-// unchanged.
+// Both the Workbench Nav (which stands down on these routes) and the
+// Instrument's own rail (which reproduces the same destinations in a
+// compact form) read this one list, so the two can never disagree about
+// where the boundary is.
+//
+// RELEASE BOUNDARY: this release promotes exactly three instruments --
+// Portfolio (already an instrument in production), plus Forecast and Scope.
+// Every other destination keeps its production Workbench surface until its
+// own instrument has been designed and accepted. Timeline is deliberately
+// absent from this list: production presents it through the Nav's separate
+// "Coming next" group, and it should not appear here as a peer of finished
+// instruments until it is one.
 
+export const INSTRUMENT_ROUTES = ["/portfolio", "/forecast", "/scope"] as const;
+
+export function isInstrumentRoute(pathname: string): boolean {
+  return INSTRUMENT_ROUTES.some((r) => pathname === r || pathname.startsWith(r + "/"));
+}
+
+// The full destination list, shared by the Instrument rail and the command
+// menu so the two can never drift. The rail draws its own icon per href
+// (see InstrumentRail); nothing visual lives here.
 export interface ShellDestination {
   href: string;
   label: string;
-  /** The one sentence this instrument is allowed to be about. */
-  owns: string;
+  /** True where the route wears Instrument chrome rather than the Workbench. */
+  instrument?: boolean;
+  /** The one sentence this instrument is allowed to be about. Instrument
+      routes only -- a Workbench reading surface makes no such claim. */
+  owns?: string;
   /** Verb pairing from the product principle -- shown in the rail tooltip. */
-  verb: string;
-  group: "operate" | "model" | "investigate" | "communicate";
+  verb?: string;
 }
 
 export const DESTINATIONS: ShellDestination[] = [
-  {
-    href: "/overview",
-    label: "Overview",
-    owns: "What is happening with this project right now",
-    verb: "Conduct the project",
-    group: "operate",
-  },
+  { href: "/", label: "Dashboard" },
+  { href: "/audit", label: "Audit" },
+  { href: "/decisions", label: "Decisions" },
   {
     href: "/forecast",
     label: "Forecast",
+    instrument: true,
     owns: "The synthesized delivery consequence of everything we believe",
     verb: "Where do we land",
-    group: "operate",
   },
   {
     href: "/scope",
     label: "Scope",
+    instrument: true,
     owns: "What we are actually shipping, and what we are not",
     verb: "Play what ships",
-    group: "model",
-  },
-  {
-    href: "/timeline",
-    label: "Timeline",
-    owns: "How this delivery fits together over time",
-    verb: "Play the sequence",
-    group: "model",
   },
   {
     href: "/portfolio",
     label: "Portfolio",
+    instrument: true,
     owns: "People, allocation and the portfolio-wide switching assumption",
     verb: "Play the people",
-    group: "model",
   },
-  {
-    href: "/audit",
-    label: "Intelligence",
-    owns: "What the machine thinks we are missing, wrong about, or unsure of",
-    verb: "Challenge the model",
-    group: "investigate",
-  },
-  {
-    href: "/decisions",
-    label: "Decisions",
-    owns: "What choices must be made, and what they change",
-    verb: "Play the choices",
-    group: "investigate",
-  },
-  {
-    href: "/reports",
-    label: "Reports",
-    owns: "How the current model gets communicated to other people",
-    verb: "Communicate the model",
-    group: "communicate",
-  },
+  { href: "/reports", label: "Reports" },
+  { href: "/scopes", label: "Scopes settings" },
 ];
-
-// Every suite route runs in Instrument Mode. Sub-routes that are genuinely
-// Workbench reading surfaces (an individual audit's findings list, the audit
-// intake form, scope settings) deliberately stay light.
-const INSTRUMENT_EXACT = new Set(DESTINATIONS.map((d) => d.href));
-
-export function isInstrumentRoute(pathname: string): boolean {
-  return INSTRUMENT_EXACT.has(pathname);
-}
 
 export function destinationFor(pathname: string): ShellDestination | undefined {
   return DESTINATIONS.find((d) => d.href === pathname);

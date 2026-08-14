@@ -9,6 +9,10 @@ const PRIMARY_TABS = [
   { href: "/audit", label: "Audit" },
   { href: "/decisions", label: "Decisions" },
   { href: "/forecast", label: "Forecast" },
+  // Scope ships as an instrument in this release, so the Workbench needs a
+  // way in. Without an entry here it would be reachable only from inside
+  // another instrument's rail -- a released surface with no front door.
+  { href: "/scope", label: "Scope" },
   { href: "/portfolio", label: "Portfolio" },
   { href: "/reports", label: "Reports" },
 ];
