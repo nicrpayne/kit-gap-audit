@@ -5,7 +5,8 @@
 // pointer at human speed:
 //
 //   rest -> hover -> pickup -> carry -> armed over the shelf -> drop ->
-//   settle -> recomposed;  and separately, pickup -> carry -> CANCEL -> home.
+//   settle -> recomposed;  pickup -> carry -> CANCEL -> home;  and the
+//   dominated case: iTrack sheds capabilities, the date calmly refuses.
 //
 //   node scripts/scope-drag-record.mjs [outDir]
 import { chromium } from "playwright";
@@ -111,6 +112,31 @@ if ((await parked.count()) > 0) {
   await p.mouse.up();
   await p.waitForTimeout(1600);
   await shot("13-put-back");
+}
+
+// ── THE DOMINATED CASE: the release gets lighter; the date holds ───────
+await p.waitForTimeout(500);
+const discard = p.locator('[data-shoot="discard"]');
+if (await discard.isEnabled()) {
+  await discard.click();
+  await p.waitForTimeout(1400);
+}
+await p.locator('[data-shoot="scope-itrack"]').click();
+await p.waitForTimeout(1800);
+await p.screenshot({ path: `${frames}/dom-0-reality.png` });
+for (const n of [1, 2]) {
+  const t = p.locator('[data-shoot="bay-in"] [data-shoot="capability"]').first();
+  const shelf2 = p.locator('[data-shoot="bay-out"]');
+  const a = await t.boundingBox();
+  const s2 = await shelf2.boundingBox();
+  await p.mouse.move(a.x + a.width / 2, a.y + a.height / 2, { steps: 10 });
+  await p.mouse.down();
+  await p.mouse.move(a.x + a.width / 2 + 12, a.y + a.height / 2 + 8, { steps: 4 });
+  await p.mouse.move(s2.x + s2.width * 0.4, s2.y + s2.height / 2, { steps: 26 });
+  await p.waitForTimeout(360);
+  await p.mouse.up();
+  await p.waitForTimeout(1700);
+  await p.screenshot({ path: `${frames}/dom-${n}-lighter-date-held.png` });
 }
 
 await p.waitForTimeout(700);

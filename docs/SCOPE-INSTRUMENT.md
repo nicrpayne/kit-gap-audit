@@ -13,12 +13,27 @@ Workflow" — and tickets are how those get built. Scope's first version worked
 at the WorkItem level and was wrong for that reason: it was a beautifully
 argued backlog visualiser, and a backlog is not a product.
 
-So the surface is a **tray**. Capabilities are physical tiles seated in a lit
-bay that IS this release, with a dark shelf beneath it for what has been taken
-out. You pick a tile up, the bay makes room, you carry it to the shelf, and the
-release recomposes around the hole it left. Manipulating the object is
-manipulating the model: a tile leaving the tray removes its work items from the
-simulation on the next frame.
+So the surface is a **chassis**: one continuous instrument deck into which
+capability modules are seated, with a recessed shelf directly beneath it for
+what has been taken out of this release. Manipulating the object is
+manipulating the model: a module leaving the deck removes its work items from
+the simulation on the next frame.
+
+The **seat** is the whole physical vocabulary. Every module occupies a recess
+cut into the deck; lifting one leaves its empty seat behind; a candidate hovers
+above a seat it has not accepted; a valid destination is nothing more than a
+new seat opening between modules, at the position the module will truly take.
+There is deliberately no dropzone language anywhere — no perimeter highlight,
+no giant labelled target. The shelf SLEEPS as a 48px recess and opens in
+continuous proportion to the pointer's approach (a real geometric pull signal,
+0→1 over the last ~300px), which is what makes crossing the exclusion boundary
+feel increasingly intentional rather than validated.
+
+The consequence is **staged**: the module lands (~240ms), the deck closes its
+empty seat, the release load resolves (+0.24s), and the landing date resolves
+last (+0.42s). Object first, numbers second. In the dominated case the date
+does not move at all — only its caption re-arrives ("held — this scenario does
+not move the date"), so the stillness reads as a result, not a hang.
 
 ### Three materials, one glance
 
