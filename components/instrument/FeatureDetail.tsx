@@ -62,10 +62,31 @@ export default function FeatureDetail({
     <ToolWindow
       open
       onClose={onClose}
-      title={`${scopeName} · capability`}
+      title={`${scopeName} · feature detail`}
       subtitle={f.name}
-      width={470}
+      width={352}
+      docked
       dataShoot="feature-detail"
+      footer={
+        <div className="px-5 py-3 space-y-1.5">
+          <button
+            onClick={() => onToggle(!f.bypassed)}
+            data-shoot="detail-toggle"
+            className="w-full rounded-md px-3 py-2 text-[11.5px] transition-colors"
+            style={{ border: "1px solid var(--i-violet)", color: "var(--i-violet)" }}
+          >
+            {f.bypassed ? "Put back in this release" : "Take out of this release"}
+          </button>
+          <Link
+            href="/forecast"
+            data-shoot="detail-forecast"
+            className="block w-full rounded-md px-3 py-2 text-center text-[11px] transition-colors"
+            style={{ border: "1px solid var(--i-border-strong)", color: "var(--i-text-soft)" }}
+          >
+            See consequence in Forecast →
+          </Link>
+        </div>
+      }
       rail={
         <>
           {(["overview", "work", "evidence", "estimate", "history"] as Mode[]).map((mo) => (
@@ -75,13 +96,14 @@ export default function FeatureDetail({
               active={mode === mo}
               onClick={() => setMode(mo)}
               dataShoot={`mode-${mo}`}
+              compact
             />
           ))}
         </>
       }
     >
       {mode === "overview" && (
-        <Overview feature={f} capacity={capacity} releaseLoadDays={releaseLoadDays} onToggle={onToggle} />
+        <Overview feature={f} capacity={capacity} releaseLoadDays={releaseLoadDays} />
       )}
       {mode === "work" && <Work feature={f} capacity={capacity} />}
       {mode === "evidence" && <Evidence feature={f} onAccept={onAccept} />}
@@ -99,12 +121,10 @@ function Overview({
   feature: f,
   capacity,
   releaseLoadDays,
-  onToggle,
 }: {
   feature: Feature;
   capacity: number;
   releaseLoadDays: number;
-  onToggle: (out: boolean) => void;
 }) {
   const mapped = f.items.length + f.done.length;
   return (
@@ -202,23 +222,15 @@ function Overview({
         </p>
       </div>
 
-      <div className="mt-4">
-        <button
-          onClick={() => onToggle(!f.bypassed)}
-          data-shoot="detail-toggle"
-          className="w-full rounded-md px-3 py-2.5 text-[12px] transition-colors"
-          style={{ border: "1px solid var(--i-violet)", color: "var(--i-violet)" }}
-        >
-          {f.bypassed ? "Put back in this release" : "Take out of this release"}
-        </button>
-        <p className="mt-2 text-[10px] text-[var(--i-text-faint)] leading-snug">
-          {f.bypassed
-            ? "Out in this Scenario only. Reality still ships it, and discarding the Scenario brings it back."
-            : `Removes its ${f.items.length} open item${
-                f.items.length === 1 ? "" : "s"
-              } from the simulation in this hypothetical. Nothing is deleted.`}
-        </p>
-      </div>
+      {/* The control itself lives in the panel's pinned footer, where it stays
+          reachable from every mode. This is what it will do. */}
+      <p className="mt-4 text-[10px] text-[var(--i-text-faint)] leading-snug">
+        {f.bypassed
+          ? "Out in this Scenario only. Reality still ships it, and discarding the Scenario brings it back."
+          : `Taking it out removes its ${f.items.length} open item${
+              f.items.length === 1 ? "" : "s"
+            } from the simulation in this hypothetical. Nothing is deleted.`}
+      </p>
     </div>
   );
 }

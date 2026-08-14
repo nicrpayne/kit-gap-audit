@@ -49,9 +49,36 @@ a capability is not settled. So it belongs in the bay while visibly not being
 seated in it. Accepting one sets it down — and changes no simulation input,
 because nothing about the work changed.
 
-Tile **size** carries relative load in three discrete steps, not continuously.
-A tile that resizes by a few pixels every time an estimate moves is a chart;
-three sizes is a hierarchy you can learn and recognise across sessions.
+## The module, and the deck it sits in
+
+Every module is the same size. Load is not encoded in the footprint, because a
+tile that resizes whenever an estimate moves is a chart pretending to be an
+object. What varies is what is *drawn on* the module:
+
+| Element | Derived from |
+|---|---|
+| **sigil** | a stable hash of the capability's name — an identity anchor, deliberately not a domain icon, which would be a semantic claim the model does not make |
+| **load readout** | `mean(low, likely, high) ÷ capacity`, and its share of the release |
+| **trace** | the triangular density of the summed three-point range: horizontal extent = spread against the release's widest, peak height = concentration, peak position = `(likely − low) / (high − low)` |
+| **trace scale** | the actual `low` / `likely` / `high` in days, so the curve is readable rather than decorative |
+| **accent hue** | certainty, and nothing else — teal well-sized, blue moderate, indigo poorly sized. Violet overrides for a candidate, amber for unmapped work |
+| **dots** | done work over total mapped work, capped at six |
+
+The trace lives in a **recess cut into the faceplate** rather than floating on
+it, which is what separates an instrument readout from a sparkline in a card.
+
+### The deck sizes itself to the release
+
+A fixed column count is what makes a rack look like a dashboard: six modules in
+a ten-slot grid leaves four holes that read as unfinished rather than as
+composition. So `packDeck` chooses the columns per release — one taller row up
+to six modules, otherwise the two-row packing with the fewest empty bays. Rows
+divide the rack's height rather than being stamped out at a fixed size, so a
+release always fits its chassis and nothing is ever clipped.
+
+Crucially the deck is sized from **every capability the release has**, seated or
+not. Taking one out leaves its seat empty; it does not re-cut the chassis. The
+geometry is a property of the release, not of the current scenario.
 
 ## The drag is the instrument
 
@@ -194,22 +221,32 @@ Nothing is decorative. If it is drawn, it is derived.
 
 | What you see | What it means |
 |---|---|
-| Channel **width/height** | nothing — fixed, so the composition stays learnable |
-| Meter **level line** | this capability's expected load, `mean(range) ÷ capacity` |
-| Meter **fill gradient** | light falling away from the level; the eye lands on the level, not the block |
-| Meter **ticks** | a real scale in whole days, 4–6 graduations across the tallest |
-| **Bracket** on the meter's right | the low-to-high range this could actually run |
+| Module **width/height** | nothing — uniform, so the composition stays learnable |
+| **Curve** in the recessed window | the summed triangular density of this capability's three-point range |
+| Curve **width** | how wide the range runs, against the widest range in the release |
+| Curve **height** | how concentrated it is — a tall narrow peak is a well-understood capability |
+| **Vertical hairline** under the peak | the `likely` value's position inside the range |
+| **Numbers under the window** | that same range in real days: low, likely, high |
+| Curve **hue** | certainty: teal low, blue moderate, indigo high |
 | **Hatching** | placeholder estimates / unmapped work — the one texture, one meaning |
-| Dashed violet border | Hermes candidate or manual draft — hypothetical, not Reality |
+| Dashed violet border, module floating | Hermes candidate or manual draft — hypothetical, not Reality |
 | Amber tag | a coverage gap, not a capability |
-| Channel **dark, meter drained** | muted: out of this release, still in Reality |
-| **Mint dot** on the switch | engaged and feeding the master |
+| Module **drained, in the right column** | out of this release, still in Reality |
+| **Empty recess** in the deck | a seat: a module was lifted from here, or could be set down here |
+| **Amber strip** under the deck | real open decision gates, ending in the measured floor |
 
 Colour follows the suite rule — state, never category. Every capability that is
 simply *in* the release is neutral warm white; violet means hypothetical, amber
 means a gap, mint means engaged.
 
 ## Feature Detail
+
+Summoned as a **docked plugin panel** on the right rather than a floating
+window: it belongs to a module you selected, so it sits alongside the deck
+rather than covering it. The take-out control and the door to Forecast are
+pinned to its footer, reachable from every mode. Picking a module up closes the
+panel — it is docked over the destination, and lifting something is a statement
+that you are done reading about it.
 
 Five modes, each showing what the model holds or saying plainly that it holds
 nothing: **Overview** (what it is, load, share, certainty, coverage, the fenced
