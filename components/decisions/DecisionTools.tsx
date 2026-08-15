@@ -542,16 +542,24 @@ export function ConnectTool({
 
         <div>
           <Question n={4} text="How long could resolving it take?" hint="Sampled exactly like any other three-point estimate — this is uncertainty, not a deadline." />
-          <div className="mt-1.5 flex gap-2">
+          {/* One timing module, matching the readout the gate and the
+              inspector both use — the same estimate, entered in the same
+              shape it will be read in. */}
+          <div
+            className="i-meter mt-1.5 flex gap-2 px-2.5 py-2"
+            style={{ borderColor: errors.estimate ? "var(--i-red)" : undefined }}
+          >
             {(
               [
-                ["Low", low, setLow, "gate-low"],
-                ["Likely", likely, setLikely, "gate-likely"],
-                ["High", high, setHigh, "gate-high"],
+                ["Low", low, setLow, "gate-low", false],
+                ["Likely", likely, setLikely, "gate-likely", true],
+                ["High", high, setHigh, "gate-high", false],
               ] as const
-            ).map(([label, value, set, shoot]) => (
+            ).map(([label, value, set, shoot, strong]) => (
               <div key={label} className="flex-1">
-                <div className="i-label">{label}</div>
+                <div className="i-label" style={{ fontSize: 8.5, color: strong ? "var(--i-text-soft)" : undefined }}>
+                  {label}
+                </div>
                 <div className="relative">
                   <input
                     data-shoot={shoot}
@@ -560,10 +568,15 @@ export function ConnectTool({
                     step="0.5"
                     value={value}
                     onChange={(e) => set(e.target.value)}
-                    className="mt-1 w-full rounded-md px-2.5 py-2 text-[13px] i-readout"
-                    style={{ ...inputStyle, borderColor: errors.estimate ? "var(--i-red)" : "var(--i-border-strong)" }}
+                    className="i-readout mt-1 w-full rounded px-2 py-1.5"
+                    style={{
+                      background: "var(--i-panel)",
+                      border: `1px solid ${strong ? "var(--i-border-strong)" : "var(--i-border)"}`,
+                      color: strong ? "var(--i-text)" : "var(--i-text-soft)",
+                      fontSize: strong ? 17 : 13,
+                    }}
                   />
-                  <span className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-[10px] text-[var(--i-text-faint)]">
+                  <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-[9.5px] text-[var(--i-text-faint)]">
                     d
                   </span>
                 </div>

@@ -5,10 +5,18 @@
 // The circuit is deliberately terse: a gate module says what it is, not
 // what it is based on. Everything that requires reading -- the transcript
 // excerpt, why the dependency is serial, which package it came from --
-// belongs here, so the main surface stays legible at a glance (§19).
+// belongs here, so the main surface stays legible at a glance.
+//
+// Material rules, so this does not become a stack of bordered rectangles:
+//
+//   * facts sit in RECESSED wells (nothing here is operable)
+//   * every group is introduced by one micro-label, never a box
+//   * quoted evidence is backed by its source and inset like a meter
+//   * the only RAISED things are the actions, grouped at the end and
+//     ordered Scenario -> Delivery -> Reality
 //
 // It is also the only place a Decision's Reality can be changed, which is
-// why deciding asks for a resolution rather than flipping a status silently.
+// why deciding asks for a resolution rather than flipping a status.
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
@@ -33,6 +41,18 @@ const KIND_LABEL: Record<string, string> = {
   manual: "Manual",
   finding: "Audit finding",
 };
+
+// A migrated evidence row carries sourceLabel "Migrated from audit finding"
+// AND kind "finding", which printed as "AUDIT FINDING · MIGRATED FROM AUDIT
+// FINDING". One provenance line, said once.
+function provenanceLine(kind: string, sourceLabel: string | null, externalRef: string | null): string {
+  const label = KIND_LABEL[kind] ?? kind;
+  const parts: string[] = [];
+  if (sourceLabel && sourceLabel.toLowerCase().includes(label.toLowerCase())) parts.push(sourceLabel);
+  else parts.push(label, ...(sourceLabel ? [sourceLabel] : []));
+  if (externalRef) parts.push(externalRef);
+  return parts.join(" · ");
+}
 
 export default function DecisionInspector({
   decision,
@@ -60,78 +80,159 @@ export default function DecisionInspector({
   onAcceptCandidate: () => void;
   onDismissCandidate: () => void;
   onAttachToExisting: (decisionId: string) => void;
-  /** Open/decided decisions in the candidate's project — §32's "attach to
-      an existing decision instead of creating a second one". */
+  /** Open/decided decisions in the candidate's project — the "attach to an
+      existing decision instead of creating a second one" path. */
   attachTargets: DecisionRow[];
   busy: boolean;
 }) {
-  if (candidate) {
-    return (
-      <Shell title="Inspecting" onClose={onClose}>
-        <CandidateBody
-          candidate={candidate}
-          onAccept={onAcceptCandidate}
-          onDismiss={onDismissCandidate}
-          onAttach={onAttachToExisting}
-          attachTargets={attachTargets}
-          busy={busy}
-        />
-      </Shell>
-    );
-  }
-  if (decision) {
-    return (
-      <Shell title="Inspecting" onClose={onClose}>
-        <DecisionBody
-          decision={decision}
-          assumed={assumed}
-          onAssume={onAssume}
-          onConnect={onConnect}
-          onDisconnect={onDisconnect}
-          onUpdate={onUpdate}
-          busy={busy}
-        />
-      </Shell>
-    );
-  }
-  return (
-    <Shell title="Inspecting" onClose={onClose}>
-      <div data-shoot="inspector-empty" className="px-4 py-6 text-[11px] text-[var(--i-text-faint)] leading-relaxed">
-        Select a candidate, an open decision, a gate or a decided choice to
-        see its evidence, provenance and what — if anything — waits on it.
-      </div>
-    </Shell>
-  );
-}
-
-function Shell({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) {
   return (
     <aside
       data-shoot="decision-inspector"
       className="shrink-0 flex flex-col overflow-hidden"
-      style={{ width: 330, background: "var(--i-panel)", borderLeft: "1px solid var(--i-border)" }}
+      style={{ width: 336, background: "var(--i-panel)", borderLeft: "1px solid var(--i-border)" }}
     >
-      <div className="shrink-0 flex items-center gap-2 px-4 py-2.5" style={{ borderBottom: "1px solid var(--i-border)" }}>
-        <span className="i-label">{title}</span>
+      <div
+        className="shrink-0 flex items-center gap-2 px-4 py-2.5"
+        style={{ borderBottom: "1px solid var(--i-border)" }}
+      >
+        <span className="i-label">Inspecting</span>
         <button
           onClick={onClose}
           data-shoot="inspector-close"
-          className="ml-auto text-[13px] leading-none text-[var(--i-text-faint)] hover:text-[var(--i-text)]"
+          className="ml-auto text-[14px] leading-none text-[var(--i-text-faint)] hover:text-[var(--i-text)]"
           aria-label="Close inspector"
         >
           ×
         </button>
       </div>
-      <div className="flex-1 overflow-y-auto">{children}</div>
+
+      <div className="flex-1 overflow-y-auto">
+        {candidate ? (
+          <CandidateBody
+            candidate={candidate}
+            onAccept={onAcceptCandidate}
+            onDismiss={onDismissCandidate}
+            onAttach={onAttachToExisting}
+            attachTargets={attachTargets}
+            busy={busy}
+          />
+        ) : decision ? (
+          <DecisionBody
+            decision={decision}
+            assumed={assumed}
+            onAssume={onAssume}
+            onConnect={onConnect}
+            onDisconnect={onDisconnect}
+            onUpdate={onUpdate}
+            busy={busy}
+          />
+        ) : (
+          <div
+            data-shoot="inspector-empty"
+            className="px-4 py-6 text-[11.5px] leading-relaxed text-[var(--i-text-faint)]"
+          >
+            Select a candidate, an open decision, a gate or a decided choice to see its evidence, provenance
+            and what — if anything — waits on it.
+          </div>
+        )}
+      </div>
     </aside>
   );
 }
 
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
+// ── SHARED MATERIAL ────────────────────────────────────────────────────
+function Group({ label, children, tight }: { label: string; children: React.ReactNode; tight?: boolean }) {
   return (
-    <div className="px-4 py-2.5" style={{ borderTop: "1px solid var(--i-border)" }}>
-      <div className="i-label">{label}</div>
-      <div className="mt-1.5 text-[12px] text-[var(--i-text)] leading-relaxed">{children}</div>
+    <section className={`px-4 ${tight ? "pt-2.5 pb-1" : "py-2.5"}`}>
+      <div className="i-label mb-1.5">{label}</div>
+      {children}
+    </section>
+  );
+}
+
+function Rule() {
+  return <div aria-hidden className="mx-4 my-0.5" style={{ height: 1, background: "var(--i-border)" }} />;
+}
+
+/** A read-only fact. Cut into the panel, because nothing here is operable. */
+function Well({ children, accent }: { children: React.ReactNode; accent?: string }) {
+  return (
+    <div
+      className="rounded px-2.5 py-2 text-[11.5px] leading-relaxed text-[var(--i-text-soft)]"
+      style={{
+        background: "var(--i-recess)",
+        boxShadow: "inset 0 1px 4px rgba(0,0,0,0.5)",
+        borderLeft: accent ? `2px solid ${accent}` : undefined,
+      }}
+    >
+      {children}
+    </div>
+  );
+}
+
+function Pair({ label, value }: { label: string; value: React.ReactNode }) {
+  return (
+    <div className="flex-1 min-w-0">
+      <div className="i-label" style={{ fontSize: 8.5 }}>
+        {label}
+      </div>
+      <div className="mt-1 truncate text-[12px] text-[var(--i-text)]">{value}</div>
+    </div>
+  );
+}
+
+// ── THE TIMING INSTRUMENT ──────────────────────────────────────────────
+// One readout, not three cells. The track carries the range, the likely
+// value is the only thing at display scale, and the two bounds sit under
+// their own ends of the track so the distribution is the shape you read.
+function TimingInstrument({ low, likely, high, accent }: { low: number; likely: number; high: number; accent: string }) {
+  const pos = Math.max(8, Math.min(92, ((likely - low) / Math.max(0.01, high - low)) * 100));
+  return (
+    <div className="i-meter px-3 pb-2 pt-3">
+      {/* The track carries the RANGE and marks where likely falls in it.
+          The number itself is read once, large, below — printing it twice
+          made the module look like two controls. */}
+      <div className="relative h-[4px] rounded-full" style={{ background: "rgba(255,255,255,0.07)" }}>
+        <div
+          className="absolute inset-y-0 rounded-full"
+          style={{ left: "3%", right: "3%", background: accent, opacity: 0.3 }}
+        />
+        <span
+          className="absolute rounded-full"
+          style={{
+            left: `${pos}%`,
+            top: -3,
+            width: 10,
+            height: 10,
+            transform: "translateX(-50%)",
+            background: accent,
+            boxShadow: "0 0 8px rgba(0,0,0,0.6)",
+          }}
+        />
+      </div>
+      <div className="mt-2.5 flex items-end">
+        <span className="flex-1">
+          <span className="block i-readout text-[13px] text-[var(--i-text-soft)]">{low}d</span>
+          <span className="i-label" style={{ fontSize: 8.5 }}>
+            low
+          </span>
+        </span>
+        <span className="flex-1 text-center">
+          <span className="block i-readout text-[24px] leading-none" style={{ color: accent }}>
+            {likely}
+            <span className="text-[12px] font-normal text-[var(--i-text-faint)]">d</span>
+          </span>
+          <span className="i-label" style={{ fontSize: 8.5 }}>
+            likely
+          </span>
+        </span>
+        <span className="flex-1 text-right">
+          <span className="block i-readout text-[13px] text-[var(--i-text-soft)]">{high}d</span>
+          <span className="i-label" style={{ fontSize: 8.5 }}>
+            high
+          </span>
+        </span>
+      </div>
     </div>
   );
 }
@@ -155,66 +256,70 @@ function CandidateBody({
   const [attachTo, setAttachTo] = useState("");
   return (
     <div>
-      <div className="px-4 pt-3 pb-2.5">
+      <header className="px-4 pb-3 pt-3.5">
         <div className="flex items-center gap-2">
           <span className="i-label">{shortId("C", candidate.id)}</span>
           <span
-            className="rounded px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-[0.1em]"
+            className="rounded px-1.5 py-[3px] text-[8.5px] font-bold uppercase tracking-[0.14em]"
             style={{ background: "var(--i-violet-soft)", color: LANE_COLOR.candidate }}
           >
             Candidate
           </span>
         </div>
-        <h2 className="mt-1.5 text-[15px] font-semibold text-[var(--i-text)] leading-snug">{candidate.title}</h2>
+        <h2 className="mt-2 text-[16px] font-semibold leading-[1.25] text-[var(--i-text)]">{candidate.title}</h2>
         {candidate.question && (
-          <p className="mt-1 text-[12px] text-[var(--i-text-soft)]">{candidate.question}</p>
+          <p className="mt-1 text-[12px] leading-snug text-[var(--i-text-soft)]">{candidate.question}</p>
         )}
-      </div>
+      </header>
 
-      <Field label="Not yet reality">
-        <span className="text-[var(--i-text-soft)]">
-          This is a suggestion from {candidate.sourceLabel}. It is not a decision, has no gate, and has no
-          effect on any forecast until you accept it.
-        </span>
-      </Field>
+      <Group label="Not yet reality" tight>
+        <Well accent={LANE_COLOR.candidate}>
+          A suggestion from {candidate.sourceLabel}. It is not a decision, holds no gate, and moves no
+          forecast until you accept it.
+        </Well>
+      </Group>
 
-      <Field label="Project">{candidate.scope.name}</Field>
+      <Group label="Project" tight>
+        <div className="text-[12px] text-[var(--i-text)]">{candidate.scope.name}</div>
+      </Group>
 
-      <Field label={`Evidence · ${candidate.excerpts.length}`}>
+      <Rule />
+
+      <Group label={`Evidence · ${candidate.excerpts.length}`}>
         {candidate.excerpts.length === 0 ? (
-          <span className="text-[var(--i-text-faint)]">No cited evidence yet.</span>
+          <span className="text-[11.5px] text-[var(--i-text-faint)]">No cited evidence yet.</span>
         ) : (
-          <div className="space-y-2">
+          <div className="space-y-1.5">
             {candidate.excerpts.map((x, i) => (
-              <blockquote
-                key={i}
-                className="rounded px-2.5 py-2 text-[11.5px] text-[var(--i-text-soft)] leading-relaxed"
-                style={{ background: "var(--i-recess)", borderLeft: `2px solid ${LANE_COLOR.candidate}` }}
-              >
+              <Well key={i} accent={LANE_COLOR.candidate}>
+                <span className="mb-1 block text-[9.5px] uppercase tracking-[0.1em] text-[var(--i-text-faint)]">
+                  {candidate.sourceLabel}
+                  {candidate.evidenceRefs[i] ? ` · ${candidate.evidenceRefs[i]}` : ""}
+                </span>
                 {x}
-                {candidate.evidenceRefs[i] && (
-                  <span className="mt-1 block text-[10px] text-[var(--i-text-faint)]">
-                    ref {candidate.evidenceRefs[i]}
-                  </span>
-                )}
-              </blockquote>
+              </Well>
             ))}
           </div>
         )}
-      </Field>
+      </Group>
 
-      <div className="px-4 py-3 space-y-2" style={{ borderTop: "1px solid var(--i-border)" }}>
+      <Actions>
+        <div className="i-label">Intake</div>
         <button
           data-shoot="candidate-accept"
           onClick={onAccept}
           disabled={busy}
-          className="w-full rounded-md px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.1em] disabled:opacity-40"
-          style={{ background: "var(--i-violet-soft)", color: LANE_COLOR.candidate, border: "1px solid var(--i-violet)" }}
+          className="w-full rounded-md px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.12em] disabled:opacity-40"
+          style={{
+            background: "var(--i-violet-soft)",
+            color: LANE_COLOR.candidate,
+            border: "1px solid var(--i-violet)",
+          }}
         >
           Accept as open decision
         </button>
-        <p className="text-[10px] text-[var(--i-text-faint)] leading-relaxed">
-          Accepting creates a real open decision with this evidence attached. It still gates nothing.
+        <p className="text-[10px] leading-relaxed text-[var(--i-text-faint)]">
+          Creates a real open decision with this evidence attached. It still gates nothing.
         </p>
 
         {attachTargets.length > 0 && (
@@ -224,7 +329,7 @@ function CandidateBody({
               data-shoot="candidate-attach-select"
               value={attachTo}
               onChange={(e) => setAttachTo(e.target.value)}
-              className="w-full rounded-md px-2 py-1.5 text-[11px]"
+              className="w-full rounded px-2 py-1.5 text-[11px]"
               style={{ background: "var(--i-recess)", border: "1px solid var(--i-border-strong)", color: "var(--i-text)" }}
             >
               <option value="">Attach evidence to…</option>
@@ -238,10 +343,10 @@ function CandidateBody({
               data-shoot="candidate-attach"
               onClick={() => attachTo && onAttach(attachTo)}
               disabled={!attachTo || busy}
-              className="mt-1.5 w-full rounded-md px-3 py-1.5 text-[11px] text-[var(--i-text-soft)] disabled:opacity-30"
+              className="mt-1.5 w-full rounded px-3 py-1.5 text-[11px] text-[var(--i-text-soft)] disabled:opacity-30"
               style={{ border: "1px solid var(--i-border-strong)" }}
             >
-              Attach evidence to that one instead
+              Attach to that one instead
             </button>
           </div>
         )}
@@ -250,12 +355,12 @@ function CandidateBody({
           data-shoot="candidate-dismiss"
           onClick={onDismiss}
           disabled={busy}
-          className="w-full rounded-md px-3 py-1.5 text-[11px] text-[var(--i-text-faint)] hover:text-[var(--i-text-soft)] disabled:opacity-40"
+          className="w-full rounded px-3 py-1.5 text-[11px] text-[var(--i-text-faint)] hover:text-[var(--i-text-soft)] disabled:opacity-40"
           style={{ border: "1px solid var(--i-border)" }}
         >
           Not a decision — dismiss
         </button>
-      </div>
+      </Actions>
     </div>
   );
 }
@@ -280,6 +385,7 @@ function DecisionBody({
 }) {
   const lane = laneOf(decision);
   const gating = forecastActive(decision);
+  const tone = assumed ? "var(--i-violet)" : LANE_COLOR[lane];
   const [deciding, setDeciding] = useState(false);
   const [chosen, setChosen] = useState(decision.chosenOption ?? "");
   const [resolution, setResolution] = useState(decision.resolution ?? "");
@@ -292,11 +398,11 @@ function DecisionBody({
 
   return (
     <div>
-      <div className="px-4 pt-3 pb-2.5">
-        <div className="flex items-center gap-2">
+      <header className="px-4 pb-3 pt-3.5">
+        <div className="flex flex-wrap items-center gap-1.5">
           <span className="i-label">{shortId("D", decision.id)}</span>
           <span
-            className="rounded px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-[0.1em]"
+            className="rounded px-1.5 py-[3px] text-[8.5px] font-bold uppercase tracking-[0.14em]"
             style={{ background: `${LANE_COLOR[lane]}22`, color: LANE_COLOR[lane] }}
           >
             {gating ? "Gate" : lane}
@@ -304,144 +410,144 @@ function DecisionBody({
           {assumed && (
             <span
               data-shoot="inspector-assumed"
-              className="rounded px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-[0.1em]"
+              className="rounded px-1.5 py-[3px] text-[8.5px] font-bold uppercase tracking-[0.14em]"
               style={{ background: "var(--i-violet-soft)", color: "var(--i-violet)" }}
             >
               Assumed in scenario
             </span>
           )}
         </div>
-        <h2 className="mt-1.5 text-[15px] font-semibold text-[var(--i-text)] leading-snug">{decision.title}</h2>
-        {decision.rationale && <p className="mt-1 text-[12px] text-[var(--i-text-soft)]">{decision.rationale}</p>}
-      </div>
+        <h2 className="mt-2 text-[16px] font-semibold leading-[1.25] text-[var(--i-text)]">{decision.title}</h2>
+        {decision.rationale && (
+          <p className="mt-1 text-[12px] leading-snug text-[var(--i-text-soft)]">{decision.rationale}</p>
+        )}
+      </header>
 
-      <Field label="Status">
-        <div className="flex items-center gap-2">
-          <span style={{ color: LANE_COLOR[lane] }} data-shoot="inspector-status">
-            {decision.status}
-          </span>
-          {assumed && (
-            <span className="text-[11px] text-[var(--i-text-faint)]">
-              — open in Reality, assumed decided in this scenario
-            </span>
-          )}
+      {/* THE FACTS, in one recessed strip rather than four bordered rows. */}
+      <section className="px-4 pb-2.5">
+        <div className="i-meter flex gap-3 px-3 py-2">
+          <Pair
+            label="Status"
+            value={
+              <span data-shoot="inspector-status" style={{ color: LANE_COLOR[lane] }}>
+                {decision.status}
+              </span>
+            }
+          />
+          <Pair label="Project" value={decision.scope.name} />
         </div>
-      </Field>
+        {(decision.owner || decision.neededBy) && (
+          <div className="i-meter mt-1.5 flex gap-3 px-3 py-2">
+            <Pair label="Owner" value={decision.owner ?? "—"} />
+            <Pair label="Needed by" value={decision.neededBy ? fmtFull(new Date(decision.neededBy)) : "—"} />
+          </div>
+        )}
+        {assumed && (
+          <p className="mt-1.5 text-[10.5px] leading-relaxed" style={{ color: "var(--i-violet)" }}>
+            Open in Reality. This scenario assumes it decided and has withdrawn it from the delivery path.
+          </p>
+        )}
+      </section>
 
-      <Field label="Project">
-        <div className="flex items-center gap-2">
-          {decision.scope.name}
-          <Link
-            href="/scope"
-            data-shoot="door-scope"
-            className="ml-auto text-[11px] text-[var(--i-text-faint)] hover:text-[var(--i-violet)]"
-          >
-            Open in Scope →
-          </Link>
-        </div>
-      </Field>
+      <Rule />
 
-      {decision.owner && <Field label="Owner">{decision.owner}</Field>}
-      {decision.neededBy && <Field label="Needed by">{fmtFull(new Date(decision.neededBy))}</Field>}
-
-      {/* ── THE GATE, OR ITS DELIBERATE ABSENCE ────────────────────────── */}
+      {/* ── THE GATE, OR ITS DELIBERATE ABSENCE ──────────────────────── */}
       {decision.gate ? (
         <>
-          <Field label="What it gates">
-            <div className="flex items-baseline justify-between gap-3">
-              <span>{decision.scope.name}</span>
-              <span className="text-[10px] uppercase tracking-[0.1em] text-[var(--i-text-faint)]">
-                {decision.gate.serial ? "Serial dependency" : "Non-serial"}
-              </span>
+          <Group label="What it gates">
+            <div className="i-meter flex gap-3 px-3 py-2">
+              <Pair label="Delivery" value={decision.scope.name} />
+              <Pair
+                label="Relationship"
+                value={decision.gate.serial ? "Serial dependency" : "Non-serial"}
+              />
             </div>
-            <p className="mt-1.5 text-[11.5px] text-[var(--i-text-soft)]">{decision.gate.dependency}</p>
-          </Field>
-          <Field label="Evidence for gate">
-            <p className="text-[11.5px] text-[var(--i-text-soft)]">{decision.gate.evidenceForGate}</p>
+            <div className="mt-1.5">
+              <Well accent={tone}>{decision.gate.dependency}</Well>
+            </div>
+          </Group>
+
+          <Group label="Evidence for gate" tight>
+            <Well>{decision.gate.evidenceForGate}</Well>
             {decision.gate.provenance === "migrated" && (
-              <p className="mt-1.5 text-[10px]" style={{ color: "var(--i-amber)" }}>
-                Migrated from a legacy blocking finding — this claim has not been re-stated by a human.
+              <p className="mt-1.5 text-[10px] leading-relaxed" style={{ color: "var(--i-amber)" }}>
+                Migrated from a legacy blocking finding — no human has re-stated this claim.
               </p>
             )}
-          </Field>
-          <Field label="Timing (days)">
-            <div className="i-meter flex items-center gap-3 px-3 py-2">
-              <Readout label="Low" value={decision.gate.low} />
-              <Readout label="Likely" value={decision.gate.likely} strong />
-              <Readout label="High" value={decision.gate.high} />
-            </div>
-          </Field>
+          </Group>
+
+          <Group label="Timing · days to resolve">
+            <TimingInstrument low={decision.gate.low} likely={decision.gate.likely} high={decision.gate.high} accent={tone} />
+          </Group>
         </>
       ) : (
-        <Field label="Delivery">
-          <div
-            data-shoot="inspector-no-gate"
-            className="rounded px-2.5 py-2 text-[11.5px] text-[var(--i-text-soft)]"
-            style={{ background: "var(--i-recess)" }}
-          >
-            No direct forecast effect. Nothing has been established as waiting on this choice, so it does not
-            appear in the delivery path and moves no date.
+        <Group label="Delivery">
+          <div data-shoot="inspector-no-gate">
+            <Well>
+              No direct forecast effect. Nothing has been established as waiting on this choice, so it does
+              not appear in the delivery path and moves no date.
+            </Well>
           </div>
-        </Field>
+        </Group>
       )}
 
       {decision.options.length > 0 && (
-        <Field label="Options">
-          <ul className="space-y-1">
-            {decision.options.map((o) => (
-              <li key={o.id} className="flex items-center gap-2 text-[11.5px]">
-                <span
-                  aria-hidden
-                  className="h-2.5 w-2.5 rounded-full shrink-0"
-                  style={{
-                    border: `1px solid ${decision.chosenOption === o.label ? "var(--i-mint)" : "var(--i-border-strong)"}`,
-                    background: decision.chosenOption === o.label ? "var(--i-mint)" : "transparent",
-                  }}
-                />
-                <span className={decision.chosenOption === o.label ? "text-[var(--i-text)]" : "text-[var(--i-text-soft)]"}>
-                  {o.label}
-                </span>
-                {o.note && <span className="ml-auto text-[10px] text-[var(--i-text-faint)]">{o.note}</span>}
-              </li>
-            ))}
-          </ul>
-          <p className="mt-1.5 text-[10px] text-[var(--i-text-faint)]">
-            Options are product truth only. Nothing in the engine models one option landing sooner than another.
-          </p>
-        </Field>
+        <>
+          <Rule />
+          <Group label="Options">
+            <ul className="space-y-1.5">
+              {decision.options.map((o) => (
+                <li key={o.id} className="flex items-center gap-2 text-[11.5px]">
+                  <span
+                    aria-hidden
+                    className="h-2.5 w-2.5 shrink-0 rounded-full"
+                    style={{
+                      border: `1px solid ${decision.chosenOption === o.label ? "var(--i-mint)" : "var(--i-border-strong)"}`,
+                      background: decision.chosenOption === o.label ? "var(--i-mint)" : "transparent",
+                    }}
+                  />
+                  <span className={decision.chosenOption === o.label ? "text-[var(--i-text)]" : "text-[var(--i-text-soft)]"}>
+                    {o.label}
+                  </span>
+                  {o.note && <span className="ml-auto text-[9.5px] text-[var(--i-text-faint)]">{o.note}</span>}
+                </li>
+              ))}
+            </ul>
+            <p className="mt-2 text-[10px] leading-relaxed text-[var(--i-text-faint)]">
+              Product truth only. Nothing in the engine models one option landing sooner than another.
+            </p>
+          </Group>
+        </>
       )}
 
-      <Field label={`Evidence · ${decision.evidence.length}`}>
+      <Rule />
+
+      <Group label={`Evidence · ${decision.evidence.length}`}>
         {decision.evidence.length === 0 ? (
-          <span className="text-[var(--i-text-faint)]">No cited evidence yet.</span>
+          <span className="text-[11.5px] text-[var(--i-text-faint)]">No cited evidence yet.</span>
         ) : (
-          <div className="space-y-2">
+          <div className="space-y-1.5">
             {decision.evidence.map((e) => (
-              <blockquote
-                key={e.id}
-                data-shoot="evidence-item"
-                className="rounded px-2.5 py-2 text-[11.5px] text-[var(--i-text-soft)] leading-relaxed"
-                style={{ background: "var(--i-recess)", borderLeft: "2px solid var(--i-border-strong)" }}
-              >
-                <span className="mb-1 block text-[10px] text-[var(--i-text-faint)]">
-                  {KIND_LABEL[e.kind] ?? e.kind}
-                  {e.sourceLabel ? ` · ${e.sourceLabel}` : ""}
-                  {e.externalRef ? ` · ${e.externalRef}` : ""}
-                </span>
-                {e.excerpt}
-                {e.contextSnapshotId && (
-                  <span className="mt-1 block text-[10px] text-[var(--i-text-faint)]">
-                    snapshot {e.contextSnapshotId.slice(-8)}
+              <div key={e.id} data-shoot="evidence-item">
+                <Well accent="var(--i-border-strong)">
+                  <span className="mb-1 block text-[9.5px] uppercase tracking-[0.1em] text-[var(--i-text-faint)]">
+                    {provenanceLine(e.kind, e.sourceLabel, e.externalRef)}
                   </span>
-                )}
-              </blockquote>
+                  {e.excerpt}
+                  {e.contextSnapshotId && (
+                    <span className="mt-1 block text-[9.5px] text-[var(--i-text-faint)]">
+                      snapshot {e.contextSnapshotId.slice(-8)}
+                    </span>
+                  )}
+                </Well>
+              </div>
             ))}
           </div>
         )}
-      </Field>
+      </Group>
 
       {decision.relatedIssues.length > 0 && (
-        <Field label="Related work">
+        <Group label="Related work" tight>
           <div className="flex flex-wrap gap-1.5">
             {decision.relatedIssues.map((i) => (
               <span
@@ -453,11 +559,11 @@ function DecisionBody({
               </span>
             ))}
           </div>
-        </Field>
+        </Group>
       )}
 
-      {/* ── ACTIONS ────────────────────────────────────────────────────── */}
-      <div className="px-4 py-3 space-y-2" style={{ borderTop: "1px solid var(--i-border)" }}>
+      {/* ── ACTIONS: SCENARIO → DELIVERY → REALITY ─────────────────────── */}
+      <Actions>
         {gating ? (
           <>
             <div className="i-label">Scenario</div>
@@ -465,7 +571,7 @@ function DecisionBody({
               data-shoot="inspector-assume"
               onClick={() => onAssume(!assumed)}
               disabled={busy}
-              className="w-full rounded-md px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.1em] disabled:opacity-40"
+              className="w-full rounded-md px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.12em] disabled:opacity-40"
               style={{
                 background: assumed ? "transparent" : "var(--i-violet-soft)",
                 color: assumed ? "var(--i-text-soft)" : "var(--i-violet)",
@@ -477,7 +583,7 @@ function DecisionBody({
             <Link
               href="/forecast"
               data-shoot="door-forecast"
-              className="block w-full rounded-md px-3 py-1.5 text-center text-[11px] text-[var(--i-text-soft)] hover:text-[var(--i-text)]"
+              className="block w-full rounded px-3 py-1.5 text-center text-[11px] text-[var(--i-text-soft)] hover:text-[var(--i-text)]"
               style={{ border: "1px solid var(--i-border-strong)" }}
             >
               See consequence in Forecast →
@@ -485,41 +591,46 @@ function DecisionBody({
           </>
         ) : (
           decision.status === "open" && (
-            <p data-shoot="inspector-no-lever" className="text-[10px] text-[var(--i-text-faint)] leading-relaxed">
-              No scenario lever: assuming an ungated decision resolved would change nothing the engine can see.
-              Connect it to delivery first, if delivery really is waiting.
+            <p data-shoot="inspector-no-lever" className="text-[10px] leading-relaxed text-[var(--i-text-faint)]">
+              No scenario lever: assuming an ungated decision resolved would change nothing the engine can
+              see. Connect it to delivery first, if delivery really is waiting.
             </p>
           )
         )}
 
-        {decision.status === "open" &&
-          (decision.gate ? (
-            <button
-              data-shoot="disconnect-gate"
-              onClick={onDisconnect}
-              disabled={busy}
-              className="w-full rounded-md px-3 py-1.5 text-[11px] text-[var(--i-text-soft)] disabled:opacity-40"
-              style={{ border: "1px solid var(--i-border-strong)" }}
-            >
-              Disconnect from delivery
-            </button>
-          ) : (
-            <button
-              data-shoot="connect-gate"
-              onClick={onConnect}
-              disabled={busy}
-              className="w-full rounded-md px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.1em]"
-              style={{ border: "1px solid var(--i-border-strong)", color: "var(--i-text)" }}
-            >
-              Connect to delivery…
-            </button>
-          ))}
+        {decision.status === "open" && (
+          <>
+            <div className="i-label pt-1">Delivery</div>
+            {decision.gate ? (
+              <button
+                data-shoot="disconnect-gate"
+                onClick={onDisconnect}
+                disabled={busy}
+                className="w-full rounded px-3 py-1.5 text-[11px] text-[var(--i-text-soft)] disabled:opacity-40"
+                style={{ border: "1px solid var(--i-border-strong)" }}
+              >
+                Disconnect from delivery
+              </button>
+            ) : (
+              <button
+                data-shoot="connect-gate"
+                onClick={onConnect}
+                disabled={busy}
+                className="w-full rounded-md px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.12em]"
+                style={{ border: "1px solid var(--i-border-strong)", color: "var(--i-text)" }}
+              >
+                Connect to delivery…
+              </button>
+            )}
+          </>
+        )}
 
+        <div className="i-label pt-1">Reality</div>
         {decision.status === "open" && !deciding && (
           <button
             data-shoot="decide-open"
             onClick={() => setDeciding(true)}
-            className="w-full rounded-md px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.1em]"
+            className="w-full rounded-md px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.12em]"
             style={{ background: "var(--i-mint-soft)", color: "var(--i-mint)", border: "1px solid rgba(74,217,168,0.5)" }}
           >
             Mark decided…
@@ -586,7 +697,7 @@ function DecisionBody({
             data-shoot="reopen"
             onClick={() => void onUpdate({ status: "open" })}
             disabled={busy}
-            className="w-full rounded-md px-3 py-1.5 text-[11px] text-[var(--i-text-soft)] disabled:opacity-40"
+            className="w-full rounded px-3 py-1.5 text-[11px] text-[var(--i-text-soft)] disabled:opacity-40"
             style={{ border: "1px solid var(--i-border-strong)" }}
           >
             Reopen
@@ -598,28 +709,35 @@ function DecisionBody({
             data-shoot="dismiss-decision"
             onClick={() => void onUpdate({ status: "dismissed" })}
             disabled={busy}
-            className="w-full rounded-md px-3 py-1.5 text-[11px] text-[var(--i-text-faint)] hover:text-[var(--i-text-soft)] disabled:opacity-40"
+            className="w-full rounded px-3 py-1.5 text-[11px] text-[var(--i-text-faint)] hover:text-[var(--i-text-soft)] disabled:opacity-40"
             style={{ border: "1px solid var(--i-border)" }}
           >
             Not a decision — dismiss
           </button>
         )}
-      </div>
+
+        <Link
+          href="/scope"
+          data-shoot="door-scope"
+          className="block w-full rounded px-3 py-1.5 text-center text-[11px] text-[var(--i-text-faint)] hover:text-[var(--i-text-soft)]"
+          style={{ border: "1px solid var(--i-border)" }}
+        >
+          Open in Scope →
+        </Link>
+      </Actions>
     </div>
   );
 }
 
-function Readout({ label, value, strong }: { label: string; value: number; strong?: boolean }) {
+/** The only raised region in the inspector: everything above reads, this
+    operates. Separated by a hard edge rather than by another border. */
+function Actions({ children }: { children: React.ReactNode }) {
   return (
-    <div className="flex-1">
-      <div className="i-label">{label}</div>
-      <div
-        className="mt-0.5 i-readout"
-        style={{ fontSize: strong ? 17 : 14, color: strong ? "var(--i-text)" : "var(--i-text-soft)" }}
-      >
-        {value}
-        <span className="text-[10px] font-normal text-[var(--i-text-faint)]">d</span>
-      </div>
+    <div
+      className="mt-1 space-y-2 px-4 py-3.5"
+      style={{ borderTop: "1px solid var(--i-border-strong)", background: "rgba(255,255,255,0.015)" }}
+    >
+      {children}
     </div>
   );
 }

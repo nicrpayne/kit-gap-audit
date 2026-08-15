@@ -71,10 +71,10 @@ await settle(5000);
 await p.click('[data-shoot="filter-candidates"]');
 await settle(900);
 check(
-  "16 the empty candidate tray is quiet, not a placeholder card",
+  "15 the empty candidate tray is quiet, not a placeholder card",
   (await p.locator('[data-shoot="candidates-empty"]').count()) === 1
 );
-await shot("16-empty-candidates");
+await shot("15-zero-candidate-state");
 await p.click('[data-shoot="filter-all"]');
 await settle(900);
 
@@ -85,17 +85,37 @@ check(
   (await p.locator('[data-shoot="circuit-clear"]').count()) === 1 &&
     (await p.locator('[data-shoot^="gate-"]').count()) === 0
 );
-await shot("02-no-gate-circuit");
 
 await p.selectOption('[data-shoot="circuit-scope"]', "platform");
 await settle(1600);
 check("03 one gate", (await p.locator('[data-shoot^="gate-"]').count()) === 1);
-await shot("03-one-gate");
 
 await p.selectOption('[data-shoot="circuit-scope"]', "jsa");
 await settle(1600);
-check("04 multiple gates are inserted into the same delivery path", (await p.locator('[data-shoot^="gate-"]').count()) === 2);
-await shot("04-multiple-gates");
+check("02 multiple gates are inserted into the same delivery path", (await p.locator('[data-shoot^="gate-"]').count()) === 2);
+check(
+  "16 gates on another project are surfaced as a compact door, not a second circuit",
+  (await p.locator('[data-shoot="gates-elsewhere"]').count()) === 1
+);
+await shot("02-two-gates-in-circuit");
+await shot("16-multiple-gates-and-secondary");
+
+// ── THE CONDUCTOR IS THE CLAIM ─────────────────────────────────────────
+// A live gate must BREAK the path, not decorate it. Read off computed
+// style rather than asserted in prose: a solid conductor across a gate
+// would mean the picture and the engine disagree.
+const seated = p.locator('[data-shoot^="gate-"]').first();
+check(
+  "the seated module's contact pads are lit, and the conductor stops at them",
+  await seated.evaluate((el) => {
+    const pad = el.querySelector("span[aria-hidden]");
+    return !!pad && getComputedStyle(pad).backgroundColor === "rgb(239, 107, 91)";
+  })
+);
+await seated.click();
+await settle(900);
+check("05 selecting a gate opens the inspector on its claim", (await p.locator('[data-shoot="disconnect-gate"]').count()) === 1);
+await shot("05-gate-selected");
 
 // ── I. MANUAL CREATION IS IMMEDIATE ────────────────────────────────────
 const openBefore = await countOf("count-open");
@@ -107,7 +127,7 @@ check(
   (await p.inputValue('[data-shoot="new-decision-scope"]')) === "jsa"
 );
 await p.fill('[data-shoot="new-decision-context"]', "Structured fields or a single string — raised in refinement.");
-await shot("10-manual-creation");
+await shot("17-manual-creation");
 await p.click('[data-shoot="new-decision-submit"]');
 await settle(2600);
 // A tool left open blocks every later click behind its backdrop, and the
@@ -128,7 +148,7 @@ check(
   "I …and it offers no fake forecast lever",
   (await p.locator('[data-shoot="inspector-no-lever"]').count()) === 1
 );
-await shot("06-open-non-gating-selected");
+await shot("04-open-non-gating-selected");
 
 const addressId = await p.getAttribute('[data-shoot="connect-gate"]', "data-shoot").then(() => null);
 void addressId;
@@ -148,14 +168,14 @@ check(
   "G a candidate is drawn unseated — dashed, and touching no conductor",
   await p.locator('[data-shoot^="candidate-"]').first().evaluate((el) => getComputedStyle(el).borderStyle === "dashed")
 );
-await shot("01-mixed-state");
+await shot("01-mixed-reality");
 
 const firstCandidate = p.locator('[data-shoot^="candidate-"]').first();
 await firstCandidate.click();
 await settle(900);
 check("05 selecting a candidate opens the inspector on it", (await p.locator('[data-shoot="candidate-accept"]').count()) === 1);
-await shot("05-candidate-selected");
-await shot("09-evidence-inspector");
+await shot("03-candidate-selected");
+await shot("14-evidence-inspector");
 
 const gatesBeforeAccept = await p.locator('[data-shoot^="gate-"]').count();
 await p.click('[data-shoot="candidate-accept"]');
@@ -169,7 +189,7 @@ check(
   "H the cited transcript excerpts came across with it",
   (await p.locator('[data-shoot="evidence-item"]').count()) >= 2
 );
-await shot("15-candidate-acceptance");
+await shot("18-candidate-acceptance");
 
 // ── C. CONNECT TO DELIVERY, FROM THE SURFACE ───────────────────────────
 const gatingBefore = await countOf("count-gating");
@@ -188,7 +208,7 @@ await p.fill('[data-shoot="gate-evidence"]', "Refinement call on 14 Aug — the 
 await p.fill('[data-shoot="gate-low"]', "3");
 await p.fill('[data-shoot="gate-likely"]', "12");
 await p.fill('[data-shoot="gate-high"]', "25");
-await shot("11-gate-creation-flow");
+await shot("06-connect-to-delivery-tool");
 await p.click('[data-shoot="gate-submit"]');
 await settle(3400);
 
@@ -197,7 +217,7 @@ check(
   (await p.locator('[data-shoot^="gate-"]').count()) === gatesBeforeAccept + 1 &&
     (await countOf("count-gating")) === gatingBefore + 1
 );
-await shot("07-gating-selected");
+await shot("07-open-decision-seated-into-circuit");
 
 // ── D. ASSUME DECIDED IS A SCENARIO ────────────────────────────────────
 // Dates are read from their own elements rather than parsed out of a
@@ -212,13 +232,30 @@ const dateOf = (shoot) =>
 
 const realityLanding = await p.locator('[data-shoot="reality-landing"]').innerText();
 const realityDate = await dateOf("reality-date");
+await shot("08-scenario-before-assume-decided");
+
 const assumeButton = p.locator('[data-shoot="inspector-assume"]');
+// The instant after the press, before the consequence has settled: the
+// module should already be moving, which is what "physical release first,
+// interpretation last" means in practice.
 await assumeButton.click();
-await settle(2600);
+await p.waitForTimeout(260);
+await shot("09-gate-mid-release");
+await settle(2400);
 
 check(
-  "D the gate lifts off the bus rather than disappearing",
+  "D the gate withdraws from its socket rather than disappearing",
   (await p.locator('[data-shoot^="gate-"][data-assumed="true"]').count()) === 1
+);
+// The withdrawal is a real displacement, not a colour change.
+check(
+  "D …and the withdrawal is an actual displacement out of the path",
+  await p
+    .locator('[data-shoot^="gate-"][data-assumed="true"]')
+    .evaluate((el) => new DOMMatrix(getComputedStyle(el).transform).m42 <= -30),
+  await p
+    .locator('[data-shoot^="gate-"][data-assumed="true"]')
+    .evaluate((el) => `translateY(${new DOMMatrix(getComputedStyle(el).transform).m42}px)`)
 );
 check(
   "D Reality still says the decision is OPEN",
@@ -231,7 +268,6 @@ check(
   scenarioDate !== realityDate,
   `${realityDate} -> ${scenarioDate}`
 );
-await shot("12-assume-decided");
 // innerText reflects text-transform, and the badge is uppercased.
 check(
   "D the node stops counting a gate that is no longer holding it",
@@ -242,7 +278,48 @@ check(
 // inspector that released it.
 await p.click('[data-shoot="inspector-close"]');
 await settle(900);
-await shot("13-released-circuit");
+await shot("10-released-gate-conductor-closed");
+
+// ── THE CLEARED PATH ───────────────────────────────────────────────────
+// Release every remaining gate and the circuit must read continuous. This
+// is the state the whole metaphor exists to make legible.
+//
+// This detour has to put the scenario back EXACTLY where it found it: the
+// cross-instrument assertions below compare Forecast against a date that
+// was computed with one specific gate released, so "some gate is released"
+// is not good enough.
+const releasedGateId = (
+  await p.locator('[data-shoot^="gate-"][data-assumed="true"]').getAttribute("data-shoot")
+).replace("gate-", "");
+
+const gateIds = async (assumed) =>
+  p
+    .locator(`[data-shoot^="gate-"][data-assumed="${assumed}"]`)
+    .evaluateAll((els) => els.map((e) => e.getAttribute("data-shoot").replace("gate-", "")));
+
+for (const id of await gateIds("false")) {
+  await p.click(`[data-shoot="assume-${id}"]`);
+  await settle(1100);
+}
+await settle(1800);
+check(
+  "11 with every gate released the circuit reads as one continuous path",
+  (await p.locator('[data-shoot="circuit-clear"]').count()) === 1 &&
+    (await p.locator('[data-shoot^="gate-"][data-assumed="false"]').count()) === 0
+);
+await shot("11-all-gates-cleared");
+
+for (const id of await gateIds("true")) {
+  await p.click(`[data-shoot="assume-${id}"]`);
+  await settle(900);
+}
+await p.click(`[data-shoot="assume-${releasedGateId}"]`);
+await settle(2200);
+check(
+  "11 …and the detour restored exactly the one release it started from",
+  (await p.locator('[data-shoot^="gate-"][data-assumed="true"]').count()) === 1 &&
+    (await p.locator(`[data-shoot="gate-${releasedGateId}"]`).getAttribute("data-assumed")) === "true"
+);
 await p.locator('[data-shoot^="gate-"][data-assumed="true"]').click();
 await settle(800);
 
@@ -283,7 +360,7 @@ check(
 );
 const backToReality = await p.locator('[data-shoot="reality-landing"]').innerText();
 check("E …and returns to exactly the Reality landing", backToReality === realityLanding, `"${backToReality}"`);
-await shot("14-after-discard");
+await shot("12-undo-gate-reseated");
 
 await rail("Forecast", 4200);
 const fcReality = await forecastDate("jsa");
@@ -310,7 +387,7 @@ check(
   (await p.locator('[data-shoot^="gate-"]').count()) === gatesBeforeAccept
 );
 check("F …and it is kept as memory rather than deleted", (await countOf("count-decided")) >= 1);
-await shot("08-decided-selected");
+await shot("13-decided-memory");
 
 await rail("Forecast", 4200);
 const fcAfterDecide = await forecastDate("jsa");
@@ -362,13 +439,31 @@ try {
   await vsettle(3600);
   check("VIDEO the gate reached the circuit without the harness picking the project", (await v.locator('[data-shoot^="gate-"]').count()) >= 3);
 
-  // D + E. assume decided → gate releases → circuit opens → consequence
+  // C. assume decided → module withdraws → conductor closes → consequence
   await v.click('[data-shoot="inspector-assume"]');
   await vsettle(4200);
 
-  // F. discard → gate reseats → Reality returns
+  // D. through the existing door to Forecast, and back, to show the same
+  // scenario is one world rather than one screen's opinion.
+  await v.click('[data-shoot="door-forecast"]');
+  await vsettle(4200);
+  await v.click('a[title="Decisions"]');
+  await vsettle(4000);
+
+  // E. stop assuming → the module reseats and the circuit breaks again
   await v.click('[data-shoot="discard"]');
   await vsettle(3600);
+
+  // F. mark decided in Reality → the gate leaves the active circuit for
+  // good and settles into Decision Memory
+  await v.locator('[data-shoot^="gate-"]').last().click();
+  await vsettle(1400);
+  await v.click('[data-shoot="decide-open"]');
+  await vsettle(900);
+  await v.fill('[data-shoot="decide-resolution"]', "Structured fields. Migrating later costs more.");
+  await vsettle(700);
+  await v.click('[data-shoot="decide-confirm"]');
+  await vsettle(4200);
 } catch (e) {
   await v.screenshot({ path: `${out}/video-failure.png` });
   console.log("VIDEO SEQUENCE FAILED:", e.message.split("\n")[0]);

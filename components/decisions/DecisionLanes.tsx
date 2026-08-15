@@ -1,81 +1,93 @@
 "use client";
 
-// THE FOUR LANES BENEATH THE CIRCUIT.
+// THE BANKS BENEATH THE CIRCUIT.
 //
-// Each lane is a different material because each is a different KIND of
-// truth, not a different priority:
+// Three trays in one chassis, each a different KIND of truth rather than a
+// different priority:
 //
-//   CANDIDATES  violet, unseated  — a machine's suggestion. Not Reality.
-//   OPEN        amber, seated     — a real unresolved choice. No forecast effect.
-//   DECIDED     mint, settled     — institutional memory. Never deleted.
-//   DISMISSED   graphite, collapsed — not a decision. Takes no space.
+//   CANDIDATE BAY    violet, spectral   — the machine's intake. Not Reality.
+//   OPEN BANK        amber, seated      — real unresolved choices, no gate.
+//   DECISION MEMORY  mint, latched      — settled, kept.
+//   DISMISSED        graphite, one line — not a decision, takes no space.
 //
-// None of them connect to the delivery path above. That absence is the
-// point: only a gate is drawn touching the circuit.
+// Not one of them touches the conductor above. That absence is the product
+// lesson: a real decision is not a delivery gate, and the geometry says so
+// before any label is read.
+//
+// Banks size to their contents. A single open decision gets a tray the
+// width of one module, not a 1100px empty panel -- dead chassis space is
+// composition, not something to fill.
 
 import { LANE_COLOR, shortId, type CandidateRow, type DecisionRow } from "@/lib/decisions/model";
 import { fmtDay } from "@/lib/instrument/useProject";
 
-function LaneHead({
+function Bank({
+  shoot,
+  emptyShoot,
   tone,
   title,
   sub,
   count,
   glyph,
+  empty,
+  children,
 }: {
+  shoot: string;
+  /** Addressed separately so a proof can assert the quiet empty state
+      exists rather than inferring it from the absence of modules. */
+  emptyShoot: string;
   tone: string;
   title: string;
   sub: string;
   count: number;
   glyph: React.ReactNode;
-}) {
-  return (
-    <div className="shrink-0 flex items-start gap-2.5 pr-4" style={{ width: 210 }}>
-      <div
-        className="i-meter grid place-items-center rounded-lg"
-        style={{ width: 34, height: 34, color: tone }}
-        aria-hidden
-      >
-        {glyph}
-      </div>
-      <div className="min-w-0">
-        <div className="text-[11px] font-semibold uppercase tracking-[0.14em]" style={{ color: tone }}>
-          {title}
-        </div>
-        <div className="mt-0.5 text-[10px] leading-tight text-[var(--i-text-faint)]">{sub}</div>
-        <div className="mt-1 text-[13px] i-readout" style={{ color: "var(--i-text-soft)" }}>
-          {count}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function LaneShell({
-  shoot,
-  tone,
-  wash,
-  children,
-}: {
-  shoot: string;
-  tone: string;
-  wash: string;
-  children: React.ReactNode;
+  empty: string;
+  children?: React.ReactNode;
 }) {
   return (
     <div
       data-shoot={shoot}
-      className="flex items-stretch rounded-lg px-3 py-3"
-      style={{ background: "var(--i-panel)", border: "1px solid var(--i-border)", borderLeft: `2px solid ${tone}`, backgroundImage: `linear-gradient(90deg, ${wash}, transparent 22%)` }}
+      className="flex max-w-full items-stretch gap-3 self-start rounded-lg py-2.5 pl-2.5 pr-3"
+      style={{
+        width: "fit-content",
+        background: "var(--i-panel)",
+        border: "1px solid var(--i-border)",
+        borderLeftColor: tone,
+        borderLeftWidth: 2,
+      }}
     >
-      {children}
+      <div className="flex shrink-0 items-center gap-2.5" style={{ width: 186 }}>
+        <span className="i-meter grid h-8 w-8 shrink-0 place-items-center rounded-md" style={{ color: tone }} aria-hidden>
+          {glyph}
+        </span>
+        <span className="min-w-0">
+          <span
+            className="block whitespace-nowrap text-[9.5px] font-bold uppercase tracking-[0.13em]"
+            style={{ color: tone }}
+          >
+            {title}
+          </span>
+          <span className="mt-[3px] block text-[9.5px] leading-tight text-[var(--i-text-faint)]">{sub}</span>
+        </span>
+        <span className="ml-auto i-readout shrink-0 text-[15px]" style={{ color: count > 0 ? tone : "var(--i-text-faint)" }}>
+          {count}
+        </span>
+      </div>
+
+      {count === 0 ? (
+        <div data-shoot={emptyShoot} className="flex items-center pl-1 text-[10.5px] text-[var(--i-text-faint)]">
+          {empty}
+        </div>
+      ) : (
+        <div className="flex min-w-0 gap-2 overflow-x-auto">{children}</div>
+      )}
     </div>
   );
 }
 
-// ── CANDIDATES ─────────────────────────────────────────────────────────
-// Deliberately lifted off the surface and dashed: it has not been seated
-// into Reality, and it must not read as though it had been.
+// ── CANDIDATE BAY ──────────────────────────────────────────────────────
+// Lifted off the chassis and dashed on every edge: this module has not
+// been seated into Reality, and must not read as though it had been.
 export function CandidateTray({
   candidates,
   selectedId,
@@ -86,58 +98,52 @@ export function CandidateTray({
   onSelect: (id: string) => void;
 }) {
   return (
-    <LaneShell shoot="lane-candidates" tone={LANE_COLOR.candidate} wash="rgba(155,140,250,0.07)">
-      <LaneHead
-        tone={LANE_COLOR.candidate}
-        title="Candidates"
-        sub="Machine-suggested. Not yet accepted."
-        count={candidates.length}
-        glyph={<Sparkle />}
-      />
-      {candidates.length === 0 ? (
-        <EmptyNote shoot="candidates-empty">No new candidate decisions.</EmptyNote>
-      ) : (
-        <div className="flex-1 min-w-0 flex gap-2.5 overflow-x-auto pb-1">
-          {candidates.map((c) => (
-            <button
-              key={c.id}
-              data-shoot={`candidate-${c.id}`}
-              onClick={() => onSelect(c.id)}
-              className="shrink-0 text-left rounded-lg px-3 py-2.5 transition-all duration-200 hover:-translate-y-[1px]"
-              style={{
-                width: 236,
-                background: "var(--i-panel-raised)",
-                border: `1px dashed ${selectedId === c.id ? "var(--i-violet)" : "rgba(155,140,250,0.45)"}`,
-                boxShadow: "0 6px 12px rgba(0,0,0,0.45)",
-              }}
-            >
-              <div className="flex items-center gap-2">
-                <span className="i-label">{shortId("C", c.id)}</span>
-                <span
-                  className="ml-auto h-1.5 w-1.5 rounded-full"
-                  style={{ background: LANE_COLOR.candidate }}
-                  aria-hidden
-                />
-              </div>
-              <div className="mt-1 text-[12.5px] font-semibold text-[var(--i-text)] leading-tight line-clamp-2">
-                {c.title}
-              </div>
-              {c.question && (
-                <div className="mt-0.5 text-[11px] text-[var(--i-text-faint)] line-clamp-1">{c.question}</div>
-              )}
-              <div className="mt-2 flex items-center gap-2 text-[10px] text-[var(--i-text-faint)]">
-                <span className="truncate">From: {c.sourceLabel}</span>
-                <span className="ml-auto shrink-0">{c.excerpts.length} evidence</span>
-              </div>
-            </button>
-          ))}
-        </div>
-      )}
-    </LaneShell>
+    <Bank
+      shoot="lane-candidates"
+      emptyShoot="candidates-empty"
+      tone={LANE_COLOR.candidate}
+      title="Candidate bay"
+      sub="Machine-suggested · unaccepted"
+      count={candidates.length}
+      glyph={<Sparkle />}
+      empty="No new candidate decisions."
+    >
+      {candidates.map((c) => (
+        <button
+          key={c.id}
+          data-shoot={`candidate-${c.id}`}
+          onClick={() => onSelect(c.id)}
+          className="shrink-0 rounded-md px-2.5 py-2 text-left transition-transform duration-200 hover:-translate-y-[2px]"
+          style={{
+            width: 218,
+            background: "var(--i-panel-raised)",
+            border: `1px dashed ${selectedId === c.id ? "var(--i-violet)" : "rgba(155,140,250,0.5)"}`,
+            boxShadow: "0 7px 14px rgba(0,0,0,0.5)",
+          }}
+        >
+          <div className="flex items-center gap-1.5">
+            <span className="i-label">{shortId("C", c.id)}</span>
+            <span
+              aria-hidden
+              className="ml-auto h-1.5 w-1.5 rounded-full"
+              style={{ background: LANE_COLOR.candidate, boxShadow: "0 0 6px rgba(155,140,250,0.7)" }}
+            />
+          </div>
+          <div className="mt-1 text-[12px] font-semibold leading-[1.25] text-[var(--i-text)] line-clamp-2">
+            {c.title}
+          </div>
+          <div className="mt-1.5 flex items-center gap-2 text-[9.5px] text-[var(--i-text-faint)]">
+            <span className="truncate">{c.sourceLabel}</span>
+            <span className="ml-auto shrink-0">{c.excerpts.length} ev</span>
+          </div>
+        </button>
+      ))}
+    </Bank>
   );
 }
 
-// ── OPEN ───────────────────────────────────────────────────────────────
+// ── OPEN BANK ──────────────────────────────────────────────────────────
+// Seated, solid, amber — and connected to nothing.
 export function OpenLane({
   decisions,
   selectedId,
@@ -148,58 +154,52 @@ export function OpenLane({
   onSelect: (id: string) => void;
 }) {
   return (
-    <LaneShell shoot="lane-open" tone={LANE_COLOR.open} wash="rgba(224,176,74,0.07)">
-      <LaneHead
-        tone={LANE_COLOR.open}
-        title="Open"
-        sub="Accepted decisions. Not resolved. No forecast effect."
-        count={decisions.length}
-        glyph={<Clock />}
-      />
-      {decisions.length === 0 ? (
-        <EmptyNote shoot="open-empty">Nothing unresolved here.</EmptyNote>
-      ) : (
-        <div className="flex-1 min-w-0 flex gap-2.5 overflow-x-auto pb-1">
-          {decisions.map((d) => (
-            <button
-              key={d.id}
-              data-shoot={`open-${d.id}`}
-              onClick={() => onSelect(d.id)}
-              className="i-control shrink-0 text-left px-3 py-2.5 transition-transform duration-200 hover:-translate-y-[1px]"
-              style={{
-                width: 248,
-                borderColor: selectedId === d.id ? "var(--i-violet)" : "rgba(224,176,74,0.4)",
-              }}
-            >
-              <div className="flex items-center gap-2">
-                <span className="i-label">{shortId("D", d.id)}</span>
-                <Clock className="ml-auto" color={LANE_COLOR.open} />
-              </div>
-              <div className="mt-1 text-[12.5px] font-semibold text-[var(--i-text)] leading-tight line-clamp-2">
-                {d.title}
-              </div>
-              <div className="mt-0.5 text-[11px] text-[var(--i-text-faint)] line-clamp-1">
-                {d.rationale ?? d.scope.name}
-              </div>
-              <div className="mt-2 flex items-center gap-2.5 text-[10px] text-[var(--i-text-faint)]">
-                {d.owner && <span className="truncate max-w-[92px]">{d.owner}</span>}
-                <span>{d.evidence.length} ev</span>
-                {d.options.length > 0 && <span>{d.options.length} opt</span>}
-                {d.neededBy && (
-                  <span className="ml-auto shrink-0" style={{ color: LANE_COLOR.open }}>
-                    {fmtDay(new Date(d.neededBy))}
-                  </span>
-                )}
-              </div>
-            </button>
-          ))}
-        </div>
-      )}
-    </LaneShell>
+    <Bank
+      shoot="lane-open"
+      emptyShoot="open-empty"
+      tone={LANE_COLOR.open}
+      title="Open bank"
+      sub="Accepted · unresolved · no gate"
+      count={decisions.length}
+      glyph={<Clock />}
+      empty="Nothing unresolved here."
+    >
+      {decisions.map((d) => (
+        <button
+          key={d.id}
+          data-shoot={`open-${d.id}`}
+          onClick={() => onSelect(d.id)}
+          className="i-control shrink-0 px-2.5 py-2 text-left transition-transform duration-200 hover:-translate-y-[1px]"
+          style={{
+            width: 228,
+            borderColor: selectedId === d.id ? "var(--i-violet)" : "rgba(224,176,74,0.42)",
+          }}
+        >
+          <div className="flex items-center gap-1.5">
+            <span className="i-label">{shortId("D", d.id)}</span>
+            <Clock className="ml-auto" color={LANE_COLOR.open} />
+          </div>
+          <div className="mt-1 text-[12px] font-semibold leading-[1.25] text-[var(--i-text)] line-clamp-2">
+            {d.title}
+          </div>
+          <div className="mt-1.5 flex items-center gap-2 text-[9.5px] text-[var(--i-text-faint)]">
+            <span className="truncate">{d.owner ?? d.scope.name}</span>
+            <span>{d.evidence.length} ev</span>
+            {d.neededBy && (
+              <span className="ml-auto shrink-0" style={{ color: LANE_COLOR.open }}>
+                {fmtDay(new Date(d.neededBy))}
+              </span>
+            )}
+          </div>
+        </button>
+      ))}
+    </Bank>
   );
 }
 
-// ── DECIDED ────────────────────────────────────────────────────────────
+// ── DECISION MEMORY ────────────────────────────────────────────────────
+// Latched: recessed rather than raised, because there is nothing left to
+// operate. Quieter than active uncertainty, and never deleted.
 export function DecidedBand({
   decisions,
   selectedId,
@@ -210,62 +210,55 @@ export function DecidedBand({
   onSelect: (id: string) => void;
 }) {
   return (
-    <LaneShell shoot="lane-decided" tone={LANE_COLOR.decided} wash="rgba(74,217,168,0.06)">
-      <LaneHead
-        tone={LANE_COLOR.decided}
-        title="Decided"
-        sub="Resolved choices. Kept as memory."
-        count={decisions.length}
-        glyph={<Check />}
-      />
-      {decisions.length === 0 ? (
-        <EmptyNote shoot="decided-empty">No decisions have been settled yet.</EmptyNote>
-      ) : (
-        <div className="flex-1 min-w-0 flex gap-2.5 overflow-x-auto pb-1">
-          {decisions.map((d) => (
-            <button
-              key={d.id}
-              data-shoot={`decided-${d.id}`}
-              onClick={() => onSelect(d.id)}
-              className="shrink-0 text-left rounded-lg px-3 py-2.5"
-              style={{
-                width: 248,
-                background: "var(--i-recess)",
-                border: `1px solid ${selectedId === d.id ? "var(--i-violet)" : "rgba(74,217,168,0.28)"}`,
-              }}
-            >
-              <div className="flex items-center gap-2">
-                <span className="i-label">{shortId("D", d.id)}</span>
-                <span
-                  className="ml-auto rounded px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-[0.1em]"
-                  style={{ background: "var(--i-mint-soft)", color: LANE_COLOR.decided }}
-                >
-                  Decided
-                </span>
-              </div>
-              <div className="mt-1 text-[12.5px] font-semibold text-[var(--i-text-soft)] leading-tight line-clamp-2">
-                {d.title}
-              </div>
-              {(d.chosenOption || d.resolution) && (
-                <div className="mt-0.5 text-[11px] line-clamp-1" style={{ color: LANE_COLOR.decided }}>
-                  {d.chosenOption ?? d.resolution}
-                </div>
-              )}
-              <div className="mt-2 flex items-center gap-2.5 text-[10px] text-[var(--i-text-faint)]">
-                {d.decidedAt && <span>Decided {fmtDay(new Date(d.decidedAt))}</span>}
-                <span className="ml-auto">{d.evidence.length} ev</span>
-              </div>
-            </button>
-          ))}
-        </div>
-      )}
-    </LaneShell>
+    <Bank
+      shoot="lane-decided"
+      emptyShoot="decided-empty"
+      tone={LANE_COLOR.decided}
+      title="Decision memory"
+      sub="Settled · kept as history"
+      count={decisions.length}
+      glyph={<Check />}
+      empty="No decisions have been settled yet."
+    >
+      {decisions.map((d) => (
+        <button
+          key={d.id}
+          data-shoot={`decided-${d.id}`}
+          onClick={() => onSelect(d.id)}
+          className="shrink-0 rounded-md px-2.5 py-2 text-left"
+          style={{
+            width: 218,
+            background: "var(--i-recess)",
+            border: `1px solid ${selectedId === d.id ? "var(--i-violet)" : "rgba(74,217,168,0.24)"}`,
+            boxShadow: "0 2px 6px rgba(0,0,0,0.5) inset",
+          }}
+        >
+          <div className="flex items-center gap-1.5">
+            <span className="i-label">{shortId("D", d.id)}</span>
+            <span
+              aria-hidden
+              className="ml-auto h-1.5 w-1.5 rounded-full"
+              style={{ background: LANE_COLOR.decided }}
+            />
+          </div>
+          <div className="mt-1 text-[12px] font-medium leading-[1.25] text-[var(--i-text-soft)] line-clamp-2">
+            {d.title}
+          </div>
+          <div className="mt-1.5 flex items-center gap-2 text-[9.5px]">
+            <span className="truncate" style={{ color: LANE_COLOR.decided }}>
+              {d.chosenOption ?? d.resolution ?? "settled"}
+            </span>
+            {d.decidedAt && (
+              <span className="ml-auto shrink-0 text-[var(--i-text-faint)]">{fmtDay(new Date(d.decidedAt))}</span>
+            )}
+          </div>
+        </button>
+      ))}
+    </Bank>
   );
 }
 
 // ── DISMISSED ──────────────────────────────────────────────────────────
-// One line. A dismissed decision is not a decision, and giving it a lane
-// would be giving it standing it does not have.
 export function DismissedBar({
   decisions,
   expanded,
@@ -282,32 +275,34 @@ export function DismissedBar({
   return (
     <div
       data-shoot="lane-dismissed"
-      className="rounded-lg px-3 py-2"
-      style={{ background: "var(--i-panel)", border: "1px solid var(--i-border)", borderLeft: "2px solid var(--i-reality)" }}
+      className="max-w-full self-start rounded-md px-3 py-1.5"
+      style={{
+        width: "fit-content",
+        minWidth: 360,
+        background: "var(--i-panel)",
+        border: "1px solid var(--i-border)",
+        borderLeft: "2px solid var(--i-reality)",
+      }}
     >
       <button onClick={onToggle} className="flex w-full items-center gap-2.5 text-left" disabled={decisions.length === 0}>
-        <span className="i-label" style={{ color: "var(--i-text-soft)" }}>
+        <span className="text-[9.5px] font-bold uppercase tracking-[0.16em] text-[var(--i-text-faint)]">
           Dismissed
         </span>
-        <span className="text-[10px] text-[var(--i-text-faint)]">
-          Not a real decision · no longer relevant · never in the forecast
-        </span>
-        <span className="ml-auto text-[12px] i-readout text-[var(--i-text-soft)]">{decisions.length}</span>
+        <span className="text-[9.5px] text-[var(--i-text-faint)]">not a decision · never in the forecast</span>
+        <span className="ml-auto i-readout text-[12px] text-[var(--i-text-faint)]">{decisions.length}</span>
         {decisions.length > 0 && (
-          <span className="text-[10px] text-[var(--i-text-faint)]">{expanded ? "hide" : "show"}</span>
+          <span className="text-[9.5px] text-[var(--i-text-faint)]">{expanded ? "hide" : "show"}</span>
         )}
       </button>
       {expanded && decisions.length > 0 && (
-        <div className="mt-2 flex flex-wrap gap-2">
+        <div className="mt-1.5 flex flex-wrap gap-1.5 pb-1">
           {decisions.map((d) => (
             <button
               key={d.id}
               data-shoot={`dismissed-${d.id}`}
               onClick={() => onSelect(d.id)}
-              className="rounded px-2 py-1 text-[11px] text-[var(--i-text-faint)]"
-              style={{
-                border: `1px solid ${selectedId === d.id ? "var(--i-violet)" : "var(--i-border)"}`,
-              }}
+              className="rounded px-2 py-1 text-[10.5px] text-[var(--i-text-faint)]"
+              style={{ border: `1px solid ${selectedId === d.id ? "var(--i-violet)" : "var(--i-border)"}` }}
             >
               {d.title}
             </button>
@@ -318,21 +313,9 @@ export function DismissedBar({
   );
 }
 
-function EmptyNote({ shoot, children }: { shoot: string; children: React.ReactNode }) {
-  return (
-    <div
-      data-shoot={shoot}
-      className="flex-1 flex items-center px-3 text-[11px] text-[var(--i-text-faint)]"
-      style={{ minHeight: 74 }}
-    >
-      {children}
-    </div>
-  );
-}
-
 function Sparkle() {
   return (
-    <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+    <svg width="15" height="15" viewBox="0 0 16 16" fill="none">
       <path d="M7.4 2.6 8.9 6.3l3.7 1.5-3.7 1.5-1.5 3.7-1.5-3.7L2 8.1l3.9-1.5z" fill="currentColor" />
       <circle cx="12.4" cy="3.6" r="1.15" fill="currentColor" opacity="0.55" />
     </svg>
@@ -342,8 +325,8 @@ function Clock({ className, color }: { className?: string; color?: string }) {
   return (
     <svg
       className={className}
-      width="14"
-      height="14"
+      width="13"
+      height="13"
       viewBox="0 0 16 16"
       fill="none"
       stroke={color ?? "currentColor"}

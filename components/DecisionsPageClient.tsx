@@ -92,8 +92,16 @@ export default function DecisionsPageClient() {
     return { origin: o, downstream: down };
   }, [project.data, project.preview, project.baseline, project.scenario.resolvedGateIds, activeScopeId, gatingAll]);
 
+  // DETERMINISTIC PRESENTATION ORDER, and nothing more. The engine sums
+  // gate durations in series and knows of no ordering between two gates on
+  // the same scope, so sorting by when each was recorded is a stable way to
+  // draw them -- not a claim about which must be settled first. The circuit
+  // says so in a caption when there is more than one.
   const circuitGates = useMemo(
-    () => gatingAll.filter((d) => d.gate!.targetScopeId === activeScopeId),
+    () =>
+      gatingAll
+        .filter((d) => d.gate!.targetScopeId === activeScopeId)
+        .sort((a, b) => a.createdAt.localeCompare(b.createdAt)),
     [gatingAll, activeScopeId]
   );
   const elsewhere = useMemo(() => {
@@ -115,6 +123,18 @@ export default function DecisionsPageClient() {
     selection?.kind === "candidate" ? candidates.find((c) => c.id === selection.id) ?? null : null;
 
   // ── SCENARIO ──────────────────────────────────────────────────────────
+  // CONSEQUENCE LAST. Releasing a gate is a physical event; the date it
+  // buys is an interpretation of that event, and showing both at once
+  // makes neither legible. So the circuit moves first, and this flag gives
+  // the resulting date a brief moment of presence before it settles into
+  // the shared strip where it lives permanently.
+  const [flash, setFlash] = useState(false);
+  useEffect(() => {
+    if (!flash) return;
+    const t = setTimeout(() => setFlash(false), 3600);
+    return () => clearTimeout(t);
+  }, [flash]);
+
   const assumeGate = useCallback(
     (gateId: string, assume: boolean) => {
       project.setScenario((s) => {
@@ -123,6 +143,7 @@ export default function DecisionsPageClient() {
         else next.delete(gateId);
         return { ...s, resolvedGateIds: next };
       });
+      setFlash(true);
     },
     [project]
   );
@@ -207,33 +228,45 @@ export default function DecisionsPageClient() {
       <div className="flex min-h-0 flex-1">
         <div className="flex min-w-0 flex-1 flex-col">
           {/* ── FILTERS + WHICH PATH ──────────────────────────────────── */}
+          {/* One recessed counter strip rather than a row of filter chips.
+              It reads as instrument segmentation and must not compete with
+              the circuit for the first look. */}
           <div
-            className="shrink-0 flex flex-wrap items-center gap-1.5 px-5 py-2"
+            className="shrink-0 flex flex-wrap items-center gap-3 px-6 py-1.5"
             style={{ borderBottom: "1px solid var(--i-border)" }}
           >
-            {(
-              [
-                ["all", "All", decisions.length + candidates.length],
-                ["candidates", "Candidates", candidates.length],
-                ["open", "Open", openLane.length],
-                ["gating", "Gating", gatingAll.length],
-                ["decided", "Decided", decided.length],
-              ] as const
-            ).map(([key, label, count]) => (
-              <button
-                key={key}
-                data-shoot={`filter-${key}`}
-                onClick={() => setFilter(key)}
-                className="rounded-full px-2.5 py-1 text-[11px] transition-colors"
-                style={{
-                  border: `1px solid ${filter === key ? "var(--i-violet)" : "var(--i-border)"}`,
-                  background: filter === key ? "var(--i-violet-soft)" : "transparent",
-                  color: filter === key ? "var(--i-violet)" : "var(--i-text-soft)",
-                }}
-              >
-                {label} <span className="text-[var(--i-text-faint)]">{count}</span>
-              </button>
-            ))}
+            <div className="i-meter flex items-stretch overflow-hidden rounded-md">
+              {(
+                [
+                  ["all", "All", decisions.length + candidates.length, "var(--i-text-soft)"],
+                  ["candidates", "Cand", candidates.length, LANE_COLOR.candidate],
+                  ["open", "Open", openLane.length, LANE_COLOR.open],
+                  ["gating", "Gating", gatingAll.length, LANE_COLOR.gating],
+                  ["decided", "Decided", decided.length, LANE_COLOR.decided],
+                ] as const
+              ).map(([key, label, count, tone], i) => (
+                <button
+                  key={key}
+                  data-shoot={`filter-${key}`}
+                  onClick={() => setFilter(key)}
+                  className="flex items-baseline gap-1.5 px-2.5 py-1 transition-colors"
+                  style={{
+                    borderLeft: i === 0 ? "none" : "1px solid rgba(255,255,255,0.05)",
+                    background: filter === key ? "rgba(255,255,255,0.055)" : "transparent",
+                  }}
+                >
+                  <span
+                    className="text-[9px] font-semibold uppercase tracking-[0.14em]"
+                    style={{ color: filter === key ? "var(--i-text)" : "var(--i-text-faint)" }}
+                  >
+                    {label}
+                  </span>
+                  <span className="i-readout text-[11px]" style={{ color: count > 0 ? tone : "var(--i-text-faint)" }}>
+                    {count}
+                  </span>
+                </button>
+              ))}
+            </div>
 
             <div className="ml-auto flex items-center gap-2">
               <span className="i-label">Delivery path</span>
@@ -241,7 +274,7 @@ export default function DecisionsPageClient() {
                 data-shoot="circuit-scope"
                 value={activeScopeId ?? ""}
                 onChange={(e) => setScopeId(e.target.value)}
-                className="rounded-md px-2 py-1 text-[11px]"
+                className="rounded px-2 py-1 text-[11px]"
                 style={{ background: "var(--i-recess)", border: "1px solid var(--i-border-strong)", color: "var(--i-text)" }}
               >
                 {scopes.map((s) => (
@@ -276,28 +309,61 @@ export default function DecisionsPageClient() {
                   />
                 )}
 
-                {/* Gates that hold a DIFFERENT path. They are real and they
-                    are gating -- they just are not gating this circuit, and
-                    silently omitting them would make the count above look
-                    wrong. */}
+                {/* The consequence, given a moment of presence and then
+                    left to the shared strip. Never permanently large. */}
+                {flash && project.active && baselineDate && previewDate && deltaDays !== 0 && (
+                  <div className="flex px-6 pt-3">
+                    <div
+                      data-shoot="consequence-flash"
+                      className="i-fadeup ml-auto flex items-center gap-4 rounded-lg px-4 py-2.5"
+                      style={{
+                        background: "var(--i-recess)",
+                        border: `1px solid ${deltaDays < 0 ? "rgba(74,217,168,0.4)" : "rgba(224,176,74,0.4)"}`,
+                      }}
+                    >
+                      <span className="i-label">Date consequence</span>
+                      <span className="flex items-baseline gap-2">
+                        <span className="i-readout text-[13px] text-[var(--i-text-faint)]">{fmtDay(baselineDate)}</span>
+                        <span className="text-[11px] text-[var(--i-text-faint)]">→</span>
+                        <span
+                          className="i-readout text-[19px]"
+                          style={{ color: deltaDays < 0 ? "var(--i-mint)" : "var(--i-amber)" }}
+                        >
+                          {fmtDay(previewDate)}
+                        </span>
+                      </span>
+                      <span
+                        className="text-[10px] font-semibold uppercase tracking-[0.14em]"
+                        style={{ color: deltaDays < 0 ? "var(--i-mint)" : "var(--i-amber)" }}
+                      >
+                        {Math.abs(deltaDays)} day{Math.abs(deltaDays) === 1 ? "" : "s"}{" "}
+                        {deltaDays < 0 ? "earlier" : "later"}
+                      </span>
+                    </div>
+                  </div>
+                )}
+
+                {/* Gates that hold a DIFFERENT path. Real, gating, and not
+                    gating THIS circuit -- a compact door rather than a
+                    second circuit crowding the first. */}
                 {elsewhere.length > 0 && (
-                  <div data-shoot="gates-elsewhere" className="flex flex-wrap items-center gap-2 px-5 pt-2">
+                  <div data-shoot="gates-elsewhere" className="flex flex-wrap items-center gap-2 px-6 pt-3">
                     <span className="i-label">Also gating</span>
                     {elsewhere.map(([id, count]) => (
                       <button
                         key={id}
                         data-shoot={`elsewhere-${id}`}
                         onClick={() => setScopeId(id)}
-                        className="rounded-full px-2.5 py-1 text-[11px] transition-colors hover:brightness-125"
-                        style={{ border: "1px solid rgba(239,107,91,0.4)", color: "var(--i-red)" }}
+                        className="rounded px-2 py-[3px] text-[10px] transition-colors hover:brightness-125"
+                        style={{ border: "1px solid rgba(239,107,91,0.35)", color: "var(--i-red)" }}
                       >
-                        {scopeNameById.get(id) ?? id} · {count} gate{count === 1 ? "" : "s"}
+                        {scopeNameById.get(id) ?? id} · {count} gate{count === 1 ? "" : "s"} →
                       </button>
                     ))}
                   </div>
                 )}
 
-                <div className="space-y-2.5 px-5 pb-4 pt-3">
+                <div className="flex flex-col gap-2 px-6 pb-4 pt-4">
                   {show("candidates") && (
                     <CandidateTray
                       candidates={candidates}
@@ -337,7 +403,7 @@ export default function DecisionsPageClient() {
           {/* ── STATUS STRIP ──────────────────────────────────────────── */}
           <div
             data-shoot="decision-status-strip"
-            className="shrink-0 flex flex-wrap items-center gap-x-5 gap-y-1 px-5 py-2.5"
+            className="shrink-0 flex flex-wrap items-center gap-x-5 gap-y-1 px-6 py-2"
             style={{ background: "var(--i-panel)", borderTop: "1px solid var(--i-border)" }}
           >
             <span className="i-label">Shared</span>
@@ -509,7 +575,7 @@ function Count({ value, label, tone, shoot }: { value: number; label: string; to
 
 function Legend() {
   return (
-    <div className="flex flex-wrap items-center gap-x-5 gap-y-1 px-1 pt-1">
+    <div className="flex flex-wrap items-center gap-x-4 gap-y-1 pt-1">
       <span className="i-label">Legend</span>
       {(
         [
