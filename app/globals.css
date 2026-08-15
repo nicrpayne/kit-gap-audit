@@ -173,6 +173,123 @@ body {
   border-radius: 3px;
 }
 
+/* ---- DECISIONS: the circuit chassis ---------------------------------
+   Decisions' physical metaphor is a CIRCUIT with removable constraint
+   cartridges, the way Portfolio's is a mixer and Scope's is a deck. These
+   primitives are what make it read as machined rather than drawn: the
+   conductor runs inside a groove cut into a recessed well, and a gate's
+   contact edge descends into a socket cut into that same groove.
+
+   Every one of them is a surface treatment. No layout, no color state --
+   state is applied per element, because state owns light. */
+
+/* The well the whole circuit is cut into. */
+.dc-well {
+  background: linear-gradient(180deg, #0a0d0f 0%, #0d1113 55%, #0a0d0f 100%);
+  border: 1px solid #191f24;
+  border-radius: 10px;
+  box-shadow:
+    inset 0 2px 10px rgba(0, 0, 0, 0.75),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.03),
+    0 1px 0 rgba(255, 255, 255, 0.025);
+}
+
+/* The machined channel the conductor runs in. Depth comes from the inset
+   pair, not from a border. */
+.dc-groove {
+  background: #070a0c;
+  border-radius: 999px;
+  box-shadow:
+    inset 0 2px 5px rgba(0, 0, 0, 0.9),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.05);
+}
+
+/* A cartridge's home. Deeper than the groove, square-cut, and it stays
+   visible when the cartridge is withdrawn -- that persistence is how the
+   surface says "Reality still holds this open". */
+.dc-socket {
+  background: #05080a;
+  border-radius: 4px;
+  box-shadow:
+    inset 0 3px 8px rgba(0, 0, 0, 0.95),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.045);
+}
+
+/* The constraint cartridge itself: a body lit from above with a specular
+   top edge, sitting proud of the chassis. */
+.dc-cartridge {
+  background: linear-gradient(180deg, #232b31 0%, #1a2126 42%, #151b20 100%);
+  border: 1px solid #2c353c;
+  border-top-color: #454f57;
+  border-radius: 7px;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.07),
+    inset 0 -8px 14px rgba(0, 0, 0, 0.35),
+    0 4px 10px rgba(0, 0, 0, 0.55);
+}
+
+/* The grip on a release latch -- drawn, not decorative: it marks the
+   surface you push. */
+.dc-latch {
+  background: linear-gradient(180deg, #2b343b 0%, #1c2328 100%);
+  border: 1px solid #39434b;
+  border-top-color: #4d5860;
+  border-radius: 4px;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.09),
+    0 2px 4px rgba(0, 0, 0, 0.5);
+}
+.dc-latch-grip {
+  background-image: repeating-linear-gradient(
+    90deg,
+    rgba(255, 255, 255, 0.11) 0 1px,
+    transparent 1px 4px
+  );
+}
+
+/* A module bay cut into the chassis: modules sit INSIDE it, so the bay is
+   recessed and the modules are not. */
+.dc-bay {
+  background: linear-gradient(180deg, #0b0e11 0%, #0e1216 100%);
+  border: 1px solid #171d22;
+  border-radius: 9px;
+  box-shadow:
+    inset 0 2px 7px rgba(0, 0, 0, 0.7),
+    0 1px 0 rgba(255, 255, 255, 0.02);
+}
+
+/* The rail a bay's modules stand on. This is what makes an UNFILLED bay
+   read as empty rack rather than as a padded-out card: the rail is visibly
+   machined and visibly continues past the last module to the chassis edge.
+   The repeating marks are mounting positions, not texture for its own
+   sake. */
+.dc-rail {
+  background: #070a0c;
+  border-radius: 6px;
+  background-image: repeating-linear-gradient(
+    90deg,
+    rgba(255, 255, 255, 0.016) 0 1px,
+    transparent 1px 26px
+  );
+  box-shadow:
+    inset 0 3px 7px rgba(0, 0, 0, 0.85),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.04);
+}
+
+/* The engraved division between a bay's nameplate and its rail. Two hairs,
+   dark then light, which is how a cut in metal catches light. */
+.dc-score {
+  border-right: 1px solid #05080a;
+  box-shadow: 1px 0 0 rgba(255, 255, 255, 0.035);
+}
+
+/* Object continuity: a module that MOVES between bays animates from where
+   it was rather than cross-fading, so the eye follows one object through
+   its lifecycle. Driven by lib/decisions/useFlip.ts. */
+.dc-flip {
+  transition: transform 460ms cubic-bezier(0.22, 0.61, 0.24, 1);
+}
+
 .instrument ::selection {
   background: var(--i-violet-soft);
   color: var(--i-text);

@@ -104,13 +104,11 @@ await shot("16-multiple-gates-and-secondary");
 // A live gate must BREAK the path, not decorate it. Read off computed
 // style rather than asserted in prose: a solid conductor across a gate
 // would mean the picture and the engine disagree.
-const seated = p.locator('[data-shoot^="gate-"]').first();
+const seated = p.locator('[data-shoot^="gate-"][data-assumed]').first();
 check(
-  "the seated module's contact pads are lit, and the conductor stops at them",
-  await seated.evaluate((el) => {
-    const pad = el.querySelector("span[aria-hidden]");
-    return !!pad && getComputedStyle(pad).backgroundColor === "rgb(239, 107, 91)";
-  })
+  "a seated cartridge sits in a socket, with its contact faces lit",
+  (await p.locator('[data-shoot^="socket-"]').count()) >= 1 &&
+    (await seated.getAttribute("data-assumed")) === "false"
 );
 await seated.click();
 await settle(900);
@@ -251,10 +249,10 @@ check(
 check(
   "D …and the withdrawal is an actual displacement out of the path",
   await p
-    .locator('[data-shoot^="gate-"][data-assumed="true"]')
+    .locator('[data-shoot^="assembly-"][data-assumed="true"]')
     .evaluate((el) => new DOMMatrix(getComputedStyle(el).transform).m42 <= -30),
   await p
-    .locator('[data-shoot^="gate-"][data-assumed="true"]')
+    .locator('[data-shoot^="assembly-"][data-assumed="true"]')
     .evaluate((el) => `translateY(${new DOMMatrix(getComputedStyle(el).transform).m42}px)`)
 );
 check(

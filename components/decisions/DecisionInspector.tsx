@@ -106,7 +106,7 @@ export default function DecisionInspector({
         </button>
       </div>
 
-      <div className="flex-1 overflow-y-auto">
+      <div className="flex min-h-0 flex-1 flex-col">
         {candidate ? (
           <CandidateBody
             candidate={candidate}
@@ -141,18 +141,23 @@ export default function DecisionInspector({
 }
 
 // ── SHARED MATERIAL ────────────────────────────────────────────────────
+// Groups are divided by a SCORE -- one dark hair with a light one under
+// it -- not by whitespace. Whitespace between sections is what made this
+// read as a stacked web form; a cut edge is what a panel does, and it lets
+// the sections sit much tighter without running together.
 function Group({ label, children, tight }: { label: string; children: React.ReactNode; tight?: boolean }) {
   return (
-    <section className={`px-4 ${tight ? "pt-2.5 pb-1" : "py-2.5"}`}>
-      <div className="i-label mb-1.5">{label}</div>
+    <section
+      className={`px-4 ${tight ? "pt-2 pb-1" : "pb-2 pt-2"}`}
+      style={tight ? undefined : { borderTop: "1px solid #0a0e11", boxShadow: "inset 0 1px 0 rgba(255,255,255,0.028)" }}
+    >
+      <div className="i-label mb-1">{label}</div>
       {children}
     </section>
   );
 }
 
-function Rule() {
-  return <div aria-hidden className="mx-4 my-0.5" style={{ height: 1, background: "var(--i-border)" }} />;
-}
+
 
 /** A read-only fact. Cut into the panel, because nothing here is operable. */
 function Well({ children, accent }: { children: React.ReactNode; accent?: string }) {
@@ -255,8 +260,14 @@ function CandidateBody({
 }) {
   const [attachTo, setAttachTo] = useState("");
   return (
-    <div>
-      <header className="px-4 pb-3 pt-3.5">
+    <>
+      <header
+        className="shrink-0 px-4 pb-3 pt-3.5"
+        style={{
+          background: "linear-gradient(180deg, rgba(255,255,255,0.035) 0%, transparent 100%)",
+          borderBottom: "1px solid var(--i-border)",
+        }}
+      >
         <div className="flex items-center gap-2">
           <span className="i-label">{shortId("C", candidate.id)}</span>
           <span
@@ -272,6 +283,7 @@ function CandidateBody({
         )}
       </header>
 
+      <div className="min-h-0 flex-1 overflow-y-auto">
       <Group label="Not yet reality" tight>
         <Well accent={LANE_COLOR.candidate}>
           A suggestion from {candidate.sourceLabel}. It is not a decision, holds no gate, and moves no
@@ -283,7 +295,6 @@ function CandidateBody({
         <div className="text-[12px] text-[var(--i-text)]">{candidate.scope.name}</div>
       </Group>
 
-      <Rule />
 
       <Group label={`Evidence · ${candidate.excerpts.length}`}>
         {candidate.excerpts.length === 0 ? (
@@ -302,6 +313,8 @@ function CandidateBody({
           </div>
         )}
       </Group>
+
+      </div>
 
       <Actions>
         <div className="i-label">Intake</div>
@@ -361,7 +374,7 @@ function CandidateBody({
           Not a decision — dismiss
         </button>
       </Actions>
-    </div>
+    </>
   );
 }
 
@@ -397,8 +410,14 @@ function DecisionBody({
   }, [decision.id, decision.chosenOption, decision.resolution]);
 
   return (
-    <div>
-      <header className="px-4 pb-3 pt-3.5">
+    <>
+      <header
+        className="shrink-0 px-4 pb-3.5 pt-3.5"
+        style={{
+          background: "linear-gradient(180deg, rgba(255,255,255,0.035) 0%, transparent 100%)",
+          borderBottom: "1px solid var(--i-border)",
+        }}
+      >
         <div className="flex flex-wrap items-center gap-1.5">
           <span className="i-label">{shortId("D", decision.id)}</span>
           <span
@@ -417,14 +436,30 @@ function DecisionBody({
             </span>
           )}
         </div>
-        <h2 className="mt-2 text-[16px] font-semibold leading-[1.25] text-[var(--i-text)]">{decision.title}</h2>
+        <h2 className="mt-2 text-[17px] font-semibold leading-[1.22] text-[var(--i-text)]">{decision.title}</h2>
         {decision.rationale && (
-          <p className="mt-1 text-[12px] leading-snug text-[var(--i-text-soft)]">{decision.rationale}</p>
+          <p className="mt-1.5 text-[12px] leading-snug text-[var(--i-text-soft)]">{decision.rationale}</p>
         )}
+        <div
+          className="mt-2.5 flex items-center gap-2 rounded px-2.5 py-1.5"
+          style={{ background: "#05080a", boxShadow: "inset 0 2px 6px rgba(0,0,0,0.8)" }}
+        >
+          <span
+            aria-hidden
+            className="h-[6px] w-[6px] rounded-full"
+            style={{ background: tone, boxShadow: `0 0 6px ${tone}` }}
+          />
+          <span className="text-[10.5px]" style={{ color: tone }}>
+            {gating ? `Holding ${decision.scope.name}` : decision.status === "open" ? "Open · holding nothing" : decision.status}
+          </span>
+          <span className="ml-auto i-label" style={{ fontSize: 8.5 }}>
+            {decision.scope.name}
+          </span>
+        </div>
       </header>
 
-      {/* THE FACTS, in one recessed strip rather than four bordered rows. */}
-      <section className="px-4 pb-2.5">
+      <div className="min-h-0 flex-1 overflow-y-auto">
+      <section className="px-4 pb-2.5 pt-3">
         <div className="i-meter flex gap-3 px-3 py-2">
           <Pair
             label="Status"
@@ -434,14 +469,9 @@ function DecisionBody({
               </span>
             }
           />
-          <Pair label="Project" value={decision.scope.name} />
+          <Pair label="Owner" value={decision.owner ?? "—"} />
+          <Pair label="Needed by" value={decision.neededBy ? fmtFull(new Date(decision.neededBy)) : "—"} />
         </div>
-        {(decision.owner || decision.neededBy) && (
-          <div className="i-meter mt-1.5 flex gap-3 px-3 py-2">
-            <Pair label="Owner" value={decision.owner ?? "—"} />
-            <Pair label="Needed by" value={decision.neededBy ? fmtFull(new Date(decision.neededBy)) : "—"} />
-          </div>
-        )}
         {assumed && (
           <p className="mt-1.5 text-[10.5px] leading-relaxed" style={{ color: "var(--i-violet)" }}>
             Open in Reality. This scenario assumes it decided and has withdrawn it from the delivery path.
@@ -449,7 +479,6 @@ function DecisionBody({
         )}
       </section>
 
-      <Rule />
 
       {/* ── THE GATE, OR ITS DELIBERATE ABSENCE ──────────────────────── */}
       {decision.gate ? (
@@ -493,8 +522,7 @@ function DecisionBody({
 
       {decision.options.length > 0 && (
         <>
-          <Rule />
-          <Group label="Options">
+              <Group label="Options">
             <ul className="space-y-1.5">
               {decision.options.map((o) => (
                 <li key={o.id} className="flex items-center gap-2 text-[11.5px]">
@@ -520,7 +548,6 @@ function DecisionBody({
         </>
       )}
 
-      <Rule />
 
       <Group label={`Evidence · ${decision.evidence.length}`}>
         {decision.evidence.length === 0 ? (
@@ -561,6 +588,8 @@ function DecisionBody({
           </div>
         </Group>
       )}
+
+      </div>
 
       {/* ── ACTIONS: SCENARIO → DELIVERY → REALITY ─────────────────────── */}
       <Actions>
@@ -725,7 +754,7 @@ function DecisionBody({
           Open in Scope →
         </Link>
       </Actions>
-    </div>
+    </>
   );
 }
 
@@ -734,8 +763,12 @@ function DecisionBody({
 function Actions({ children }: { children: React.ReactNode }) {
   return (
     <div
-      className="mt-1 space-y-2 px-4 py-3.5"
-      style={{ borderTop: "1px solid var(--i-border-strong)", background: "rgba(255,255,255,0.015)" }}
+      className="shrink-0 space-y-1.5 overflow-y-auto px-4 py-3"
+      style={{
+        maxHeight: "46%",
+        borderTop: "1px solid var(--i-border-strong)",
+        background: "linear-gradient(180deg, rgba(255,255,255,0.03) 0%, rgba(255,255,255,0.008) 100%)",
+      }}
     >
       {children}
     </div>
