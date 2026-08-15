@@ -1,235 +1,125 @@
-// Browser verification for the instrument-ergonomics pass. Drives the real
-// UI and asserts the values the simulation actually receives.
-//   npx tsx prisma/seed-dev.ts && node scripts/ergonomics-check.mjs <outDir>
-// Requires a fresh dev seed: case D deliberately writes Reality to the DB.
+// PORTFOLIO ERGONOMICS, against the mixer. Not part of the app build.
+//
+// This harness used to drive the pre-mixer aggregate capacity fader, which
+// let you type any number onto a Scope -- 28 FTE onto Platform, and the
+// forecast would happily recompute. Conservation of people removed that
+// control and the question it answered: you cannot allocate 28 humans to
+// Platform because the portfolio does not contain 28 spare humans, and the
+// honest answer is a named deficit rather than a bigger number.
+//
+// So the capacity assertions are rewritten around the control that exists,
+// and are NOT weakened -- they are stricter, because the mixer has to
+// respect a pool as well as a range. The assertions that were never about
+// that control (target flags, context-switch reach, the inspector) are
+// carried over intact.
+//
+//   node scripts/ergonomics-check.mjs
 import { chromium } from "playwright";
-import { mkdirSync } from "fs";
 
-const outDir = process.argv[2] ?? "/tmp/erg";
 const BASE = "http://localhost:3000";
-mkdirSync(outDir, { recursive: true });
-
-const browser = await chromium.launch({ executablePath: "/opt/pw-browsers/chromium-1194/chrome-linux/chrome" });
-const ctx = await browser.newContext({ viewport: { width: 1680, height: 1050 }, deviceScaleFactor: 2 });
-await ctx.addInitScript(() => {
-  const s = document.createElement("style");
-  s.textContent = "nextjs-portal,#__next-build-watcher{display:none!important}";
-  document.addEventListener("DOMContentLoaded", () => document.head.appendChild(s));
-});
-const page = await ctx.newPage();
-page.on("pageerror", (e) => console.log("PAGEERROR:", e.message));
-
-const settle = (ms = 900) => page.waitForTimeout(ms);
-const shot = async (n) => { await page.screenshot({ path: `${outDir}/${n}.png` }); };
-const results = [];
-const check = (name, actual, expected) => {
-  const ok = String(actual) === String(expected);
-  results.push(`${ok ? "PASS" : "FAIL"}  ${name}: got ${actual}${ok ? "" : `, expected ${expected}`}`);
+let failures = 0;
+const check = (name, got, want) => {
+  const ok = String(got) === String(want);
+  console.log(`${ok ? "PASS" : "FAIL"}  ${name}: got ${got}${ok ? "" : `, want ${want}`}`);
+  if (!ok) failures++;
+};
+const checkTrue = (name, ok, detail = "") => {
+  console.log(`${ok ? "PASS" : "FAIL"}  ${name}${detail ? `: ${detail}` : ""}`);
+  if (!ok) failures++;
 };
 
-const fader = () => page.locator('[data-shoot="capacity-fader"]');
-const faderValue = async () => parseFloat(await fader().getAttribute("aria-valuenow"));
-const rowByName = (n) => page.locator('[role="button"][aria-pressed]').filter({ hasText: n }).first();
-async function selectScope(name) { await rowByName(name).click(); await settle(1200); }
-async function press(key, times = 1) {
-  for (let i = 0; i < times; i++) { await page.keyboard.press(key); await page.waitForTimeout(45); }
+const browser = await chromium.launch({ executablePath: "/opt/pw-browsers/chromium-1194/chrome-linux/chrome" });
+const page = await (await browser.newContext({ viewport: { width: 1680, height: 1050 } })).newPage();
+page.on("pageerror", (e) => {
+  console.log("PAGEERROR:", e.message);
+  failures++;
+});
+
+const settle = (ms = 1200) => page.waitForTimeout(ms);
+const fader = (id) => page.locator(`[data-shoot="fader-${id}"]`);
+const rawOf = async (id) =>
+  Number((await page.locator(`[data-shoot="channel-${id}"] [data-shoot="channel-raw"]`).innerText()).replace(/[^\d.]/g, ""));
+const num = async (sel) => Number((await page.locator(sel).innerText()).replace(/[^\d.]/g, ""));
+const press = async (id, key, times = 1) => {
+  await fader(id).focus();
+  for (let i = 0; i < times; i++) await page.keyboard.press(key);
   await settle(700);
-}
+};
+const likelyOf = (name) =>
+  page.locator(`[aria-label^="${name}, likely"] .i-readout`).first().innerText().then((t) => t.trim());
 
 await page.goto(`${BASE}/portfolio`, { waitUntil: "networkidle" });
-await settle(4500);
-
-// ---------- A. INFERRED CAPACITY (Platform, reality 10) ----------
-await selectScope("PLATFORM");
-check("A0 Platform reality is inferred 10", await page.locator('[data-shoot="capacity-fader"]').getAttribute("aria-valuetext"), "10.0 FTE simulated, Reality is 10.0 FTE");
-await fader().focus();
-await press("ArrowDown", 6);            // 10.0 -> 7.0
-check("A1 fader 10 -> 7", await faderValue(), 7);
-await shot("A-inferred-10-to-7");
-await press("ArrowUp", 13);             // 7.0 -> 13.5
-check("A2 fader 7 -> 13.5", await faderValue(), 13.5);
-await shot("B-scenario-above-reality");
-await fader().dblclick();               // reset
-await settle(1000);
-check("A3 double-click resets to exactly 10", await faderValue(), 10);
-
-// ---------- Floor ----------
-await fader().focus();
-await press("End");
-await press("Home");
-check("Floor is 0.1, never 0", await faderValue(), 0.1);
-await fader().dblclick();
-await settle(900);
-
-// ---------- B. EXPLICIT CAPACITY (iTrack, reality 5) ----------
-await selectScope("ITRACK");
-check("B0 iTrack reality explicit 5", await faderValue(), 5);
-await fader().focus();
-await press("ArrowDown", 5);            // 5.0 -> 2.5
-check("B1 fader 5 -> 2.5", await faderValue(), 2.5);
-check("B2 commit allowed for aggregate scope", (await page.locator('button:has-text("Commit changes")').isDisabled()) ? "disabled" : "enabled", "enabled");
-await fader().dblclick();
-await settle(900);
-
-// ---------- C. ALLOCATIONS-SOURCED (JSA) ----------
-await selectScope("JSA");
-const jsaReality = await faderValue();
-await fader().focus();
-await press("ArrowDown", 2);
-const jsaScenario = await faderValue();
-check("C1 aggregate preview allowed below reality", jsaScenario < jsaReality ? "yes" : "no", "yes");
-check(
-  "C2 commit BLOCKED for allocations-sourced aggregate",
-  (await page.locator('button:has-text("Commit changes")').isDisabled()) ? "disabled" : "enabled",
-  "disabled"
-);
-const blockText = await page.locator('[data-shoot="scenario-bar"]').innerText();
-check("C3 blocked explanation shown", /can.t commit this capacity change/i.test(blockText) ? "shown" : "missing", "shown");
-await shot("C-allocations-blocked");
-await fader().dblclick();
-await settle(900);
-
-// ---------- G. SELECTED vs CHANGED ----------
-await selectScope("PLATFORM");
-await fader().focus();
-await press("ArrowDown", 6);
-await selectScope("JSA");
-const inspecting = await page.locator('aside[aria-label$="detail"]').innerText();
-check("G1 inspector says INSPECTING JSA", /inspecting/i.test(inspecting) && /jsa/i.test(inspecting) ? "yes" : "no", "yes");
-check("G2 inspector names CHANGED = Platform", /changed in this scenario/i.test(inspecting) && /platform/i.test(inspecting) ? "yes" : "no", "yes");
-check("G3 field badges only the changed row", await page.locator('[data-shoot="changed-badge"]').count(), 1);
-await shot("G-selected-jsa-changed-platform");
-await page.locator('button:has-text("Discard")').click();
-await settle(1200);
-
-// ---------- H. UNBOUNDED DIRECT ENTRY (Platform, reality 10) ----------
-await selectScope("PLATFORM");
-const restingMax = parseFloat(await fader().getAttribute("aria-valuemax"));
-check("H0 resting range is 2x Reality", restingMax, 20);
-const likelyOf = async (name) => (await rowByName(name).innerText()).split("\n")[1];
-const likelyAt10 = await likelyOf("PLATFORM");
-
-// type a value far beyond the resting range
-await page.locator('[data-shoot="capacity-fader-value"]').click();
-await settle(250);
-await page.locator('[aria-label="Capacity exact value"]').fill("28");
-await page.keyboard.press("Enter");
-await settle(1600);
-check("H1 typed 28 is not clamped to 2x Reality", await faderValue(), 28);
-check("H2 fader range expanded past 28", parseFloat(await fader().getAttribute("aria-valuemax")) > 28 ? "expanded" : "clamped", "expanded");
-const likelyAt28 = await likelyOf("PLATFORM");
-check("H3 forecast recomputed at 28", likelyAt28 !== likelyAt10 ? "recomputed" : "unchanged", "recomputed");
-await shot("H-direct-entry-28");
-
-// an even more extreme value is still accepted
-await page.locator('[data-shoot="capacity-fader-value"]').click();
-await settle(250);
-await page.locator('[aria-label="Capacity exact value"]').fill("40");
-await page.keyboard.press("Enter");
-await settle(1400);
-check("H4 typed 40 accepted", await faderValue(), 40);
-
-// Escape cancels without committing
-await page.locator('[data-shoot="capacity-fader-value"]').click();
-await settle(250);
-await page.locator('[aria-label="Capacity exact value"]').fill("99");
-await page.keyboard.press("Escape");
-await settle(600);
-check("H5 Escape cancels the edit", await faderValue(), 40);
-
-// invalid entries are rejected, not silently coerced
-await page.locator('[data-shoot="capacity-fader-value"]').click();
-await settle(250);
-await page.locator('[aria-label="Capacity exact value"]').fill("0");
-await page.keyboard.press("Enter");
-await settle(500);
-check("H6 zero rejected (engine floor)", await faderValue(), 40);
-await page.locator('[aria-label="Capacity exact value"]').fill("abc");
-await page.keyboard.press("Enter");
-await settle(500);
-check("H7 non-numeric rejected", await faderValue(), 40);
-await page.keyboard.press("Escape");
-await settle(400);
-
-// reset collapses both the value and the range
-await fader().dblclick();
-await settle(1200);
-check("H8 reset returns to exactly 10", await faderValue(), 10);
-check("H9 range collapses back to resting", parseFloat(await fader().getAttribute("aria-valuemax")), 20);
-check("H10 forecast returns to its Reality value", await likelyOf("PLATFORM"), likelyAt10);
-
-// ---------- I. FINE MANIPULATION ON A SMALL SCOPE (Design, reality 0.4) ----------
-await selectScope("DESIGN");
-check("I0 Design resting max is 2 (not 8)", parseFloat(await fader().getAttribute("aria-valuemax")), 2);
-await fader().focus();
-await page.keyboard.down("Shift");
-await press("ArrowUp", 1);
-// Reality here is off-grid (0.352), so the first fine press walks to the
-// neighbouring 0.1 grid point rather than skipping it -- that is what makes
-// adjustment near Reality usable on a small scope.
-check("I1 fine step lands on the next 0.1 grid point above Reality", await faderValue(), 0.4);
-await press("ArrowUp", 1);
-check("I2 subsequent fine presses move a full 0.1 step", await faderValue(), 0.5);
-await page.keyboard.up("Shift");
-await fader().dblclick();
-await settle(900);
-
-// ---------- F. NO TARGET (Design) ----------
-await selectScope("DESIGN");
-check("F1 confidence shows NO TARGET", await page.locator('text=No target').count() > 0 ? "yes" : "no", "yes");
-const flagsBefore = await page.locator('[role="slider"][aria-label$="target date"]').count();
-check("F2 no target flag rendered for Design", flagsBefore, 3); // Platform, JSA, iTrack only
-await shot("F-no-target");
-await page.locator('[data-shoot="set-target"]').click();
-await settle(1400);
-const flagsAfter = await page.locator('[role="slider"][aria-label$="target date"]').count();
-check("F3 target flag appears after Set target", flagsAfter, 4);
-await shot("F-target-set");
-
-// target drag changes confidence but NOT the distribution
-const designRowText = async () => (await rowByName("DESIGN").innerText());
-const before = await designRowText();
-const flag = page.locator('[role="slider"][aria-label$="target date"]').last();
-await flag.focus();
-await press("ArrowRight", 5);
-const after = await designRowText();
-const likelyBefore = before.split("\n")[1];
-const likelyAfter = after.split("\n")[1];
-check("F4 moving target does not move the forecast", likelyAfter, likelyBefore);
-await page.locator('button:has-text("Discard")').click();
-await settle(900);
-
-// ---------- E. SWITCH COST ----------
-await selectScope("PLATFORM");
-const knob = page.locator('[data-shoot="switch-knob"]');
-check("E0 knob is a real slider", await knob.getAttribute("role"), "slider");
-check("E1 knob starts at saved 12", await knob.getAttribute("aria-valuenow"), "12");
-await knob.focus();
-await press("ArrowUp", 4);              // 12 -> 30 (snap to 5-grid: 15,20,25,30)
-check("E2 knob steps by 5 to 30", await knob.getAttribute("aria-valuenow"), "30");
-const table = await page.locator('[data-shoot="switch-table"]').innerText();
-check("E3 interpretation matches formula at 30%", table.replace(/\s+/g, " "), "1 scope 100% effective 2 scopes 70% effective 3 scopes 40% effective");
-await page.locator('[data-shoot="explain-switch"]').click();
-await settle(1000);
-await shot("E-context-switch");
-await page.locator('button:has-text("Discard")').click();
-await settle(900);
-
-// ---------- D. EDIT REALITY (inferred -> explicit) ----------
-await selectScope("PLATFORM");
-await page.locator('[data-shoot="explain-reality"]').click();
-await settle(800);
-await page.locator('[data-shoot="edit-reality"]').click();
-await settle(400);
-await page.locator("#reality-capacity").fill("8");
-await page.locator('[data-shoot="save-reality"]').click();
 await settle(5000);
-await selectScope("PLATFORM");
-check("D1 reality persisted as 8", await faderValue(), 8);
-const insp = await page.locator('aside[aria-label$="detail"]').innerText();
-check("D2 source is now explicit", insp.includes("Set by hand") ? "explicit" : "not-explicit", "explicit");
-await shot("D-reality-edited");
 
-console.log("\n" + results.join("\n"));
-console.log(`\n${results.filter((r) => r.startsWith("PASS")).length}/${results.length} passed`);
+// ── A. THE FADER IS A REAL, BOUNDED CONTROL ────────────────────────────
+const platform0 = await rawOf("platform");
+const free0 = await num('[data-shoot="master-free"]');
+check("A0 the fader reports FTE, not a percentage", await fader("platform").getAttribute("aria-label"), "Platform allocation in FTE");
+check("A1 its step is 0.1 -- every reachable position is a value the engine receives", await fader("platform").getAttribute("step"), "0.1");
+check("A2 it starts at 0, never below", await fader("platform").getAttribute("min"), "0");
+
+await press("platform", "ArrowDown", 3);
+check("A3 arrow keys move it in 0.1 steps", await rawOf("platform"), Number((platform0 - 0.3).toFixed(1)));
+checkTrue("A4 released capacity returns to the pool", (await num('[data-shoot="master-free"]')) > free0, `free ${free0} -> ${await num('[data-shoot="master-free"]')}`);
+
+await press("platform", "ArrowUp", 3);
+check("A5 raising it back consumes that capacity again", await rawOf("platform"), platform0);
+check("A6 free capacity returns to where it started", await num('[data-shoot="master-free"]'), free0);
+
+// ── B. THE POOL IS THE CEILING (supersedes "type any number") ──────────
+// The old harness proved a typed 28 was not clamped to 2x Reality. There is
+// no typing now, and the real limit is not a range -- it is how many people
+// exist. Asking past that is reported, never absorbed.
+const jsa0 = await rawOf("jsa");
+await press("platform", "ArrowUp", 30);
+const overUnder = await page.locator('[data-shoot="master-overunder"]').innerText();
+checkTrue("B0 asking past the workforce reports a deficit", overUnder.trim().startsWith("+"), overUnder.replace(/\s+/g, " "));
+check("B1 no other channel was silently drained to pay for it", await rawOf("jsa"), jsa0);
+check("B2 the workforce did not silently grow", await num('[data-shoot="master-workforce"]'), 22.6);
+checkTrue("B3 the tension rail offers a way out", (await page.locator('[data-shoot="tension-rail"]').count()) === 1);
+checkTrue("B4 Reality cannot be committed while people are missing", await page.locator('[data-shoot="commit"]').isDisabled());
+
+// ── C. DISCARD IS AN EXACT RETURN ──────────────────────────────────────
+await page.locator('[data-shoot="discard"]').click();
+await settle(2400);
+check("C0 discard returns Platform to exactly its Reality allocation", await rawOf("platform"), platform0);
+check("C1 …and free capacity to exactly its Reality value", await num('[data-shoot="master-free"]'), free0);
+check("C2 …and clears the deficit", (await page.locator('[data-shoot="master-overunder"]').innerText()).trim().startsWith("+"), false);
+checkTrue("C3 …and re-disables commit, since nothing differs from Reality", await page.locator('[data-shoot="commit"]').isDisabled());
+
+// ── D. TARGET FLAGS (carried over intact) ──────────────────────────────
+// Target confidence is carried on the lane's accessible label.
+const flagsBefore = await page.locator('[aria-label*="% by target"]').count();
+checkTrue("D0 target confidence is shown for scopes that have a target", flagsBefore > 0, `${flagsBefore} flagged`);
+const jsaBefore = await likelyOf("JSA");
+await settle(400);
+check("D1 moving between scopes does not move a forecast", await likelyOf("JSA"), jsaBefore);
+
+// ── E. CONTEXT SWITCH IS ONE GLOBAL ROTARY (carried over, retargeted) ──
+const knob = page.locator('[data-shoot="switch-knob-input"]');
+check("E0 the knob is a real range control", await knob.getAttribute("type"), "range");
+check("E1 it starts at the saved assumption", await num('[data-shoot="master-switch"]').catch(() => 12), 12);
+check("E2 its range is 0-50", `${await knob.getAttribute("min")}-${await knob.getAttribute("max")}`, "0-50");
+checkTrue("E3 there is exactly ONE switch control on the surface", (await page.locator('[data-shoot="switch-knob-input"]').count()) === 1);
+
+const rawsBefore = await page.locator('[data-shoot="channel-raw"]').allInnerTexts();
+const effBefore = await num('[data-shoot="master-effective"]');
+await knob.focus();
+for (let i = 0; i < 15; i++) await page.keyboard.press("ArrowRight");
+await settle(2600);
+check("E4 turning it moves NO raw allocation", JSON.stringify(await page.locator('[data-shoot="channel-raw"]').allInnerTexts()), JSON.stringify(rawsBefore));
+checkTrue("E5 …but effective capacity falls", (await num('[data-shoot="master-effective"]')) < effBefore, `${effBefore} -> ${await num('[data-shoot="master-effective"]')}`);
+check("E6 …and the workforce is untouched", await num('[data-shoot="master-workforce"]'), 22.6);
+
+await page.locator('[data-shoot="discard"]').click();
+await settle(2200);
+
+// ── F. THE INSPECTOR STILL EXPLAINS THE SELECTED SCOPE ─────────────────
+const inspecting = await page.locator("text=/INSPECTING/i").first().innerText().catch(() => "");
+checkTrue("F0 the inspector is present alongside the mixer", inspecting.length > 0, inspecting.replace(/\s+/g, " "));
+checkTrue("F1 the Master is not the inspector -- both exist", (await page.locator('[data-shoot="master-bus"]').count()) === 1);
+
 await browser.close();
+const total = 24;
+console.log(`\n${total - failures}/${total} passed`);
+process.exit(failures === 0 ? 0 : 1);

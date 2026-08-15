@@ -98,6 +98,7 @@ export default function MasterBus({
       style={{
         width: 208,
         minHeight: RACK_H,
+        alignSelf: "stretch",
         background: "linear-gradient(180deg, #1a2025 0%, #101417 100%)",
         border: `1px solid ${alarm ? "var(--i-red)" : "var(--i-border-strong)"}`,
         boxShadow: alarm

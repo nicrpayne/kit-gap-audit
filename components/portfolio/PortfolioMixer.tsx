@@ -90,12 +90,17 @@ export default function PortfolioMixer({
 
   return (
     <div className="shrink-0 flex flex-col" style={{ background: "var(--i-void)", borderTop: "1px solid var(--i-border)" }}>
-      <div className="flex items-stretch gap-2 px-4 py-2.5">
+      <div className="flex-1 min-h-0 flex items-stretch gap-2 px-4 py-2.5">
         {/* THE PROJECT BANK. Fixed-width strips at fixed positions -- the
             rack's geometry belongs to the rack, not to how many projects
             happen to exist today. Only this scrolls; the Master never moves. */}
         <div className="flex-1 min-w-0 overflow-x-auto" data-shoot="mixer-channels">
-          <div className="flex items-stretch gap-2" style={{ minHeight: RACK_H }}>
+          {/* h-full, not a fixed minimum: every strip stretches to the same
+              floor as Master. A fixed minHeight here left the channels 100px
+              short of the bank's own bottom edge, which is what made them
+              read as cards floating in chassis rather than strips machined
+              into it. RACK_H survives as the FLOOR the rack never goes below. */}
+          <div className="flex items-stretch gap-2 h-full" style={{ minHeight: RACK_H }}>
             {channels.map((view, i) => (
               <MixerChannel
                 key={view.scopeId}
