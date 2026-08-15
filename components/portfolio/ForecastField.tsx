@@ -35,6 +35,12 @@ export interface FieldScope {
       "what I changed" and "what I'm looking at" are different questions and
       never share a visual state -- violet means changed, full stop. */
   changed: boolean;
+  /** The mixer channel below is being touched. The lane wakes so the
+      coupling between control and consequence is instant -- this is
+      presentation only and never means "changed". */
+  active?: boolean;
+  /** Something else is being touched; recede so the active pair reads. */
+  recede?: boolean;
 }
 
 export interface AxisSpec {
@@ -349,13 +355,19 @@ export default function ForecastField({
               className="relative outline-none transition-colors duration-150"
               style={{
                 flex: "1 1 0",
-                minHeight: 116,
+                minHeight: 84,
                 maxHeight: 260,
                 paddingLeft: NAME_COL,
                 // Selection is a NEUTRAL structural highlight -- a lifted
                 // panel, not a colour. Colour here would collide with
                 // "changed", which is what violet means everywhere else.
-                background: selected ? "rgba(243,240,230,0.035)" : undefined,
+                background: s.active
+                  ? "rgba(243,240,230,0.055)"
+                  : selected
+                    ? "rgba(243,240,230,0.035)"
+                    : undefined,
+                opacity: s.recede ? 0.45 : 1,
+                transition: "opacity 200ms ease, background-color 200ms ease",
                 borderBottom: "1px solid var(--i-border)",
               }}
             >

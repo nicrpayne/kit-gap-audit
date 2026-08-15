@@ -12,7 +12,7 @@
 // sit under the channels, where a tension appears and is resolved.
 
 import { useMemo } from "react";
-import MixerChannel, { type ChannelView } from "./MixerChannel";
+import MixerChannel, { DormantChannel, CHANNEL_W, RACK_H, type ChannelView } from "./MixerChannel";
 import MasterBus from "./MasterBus";
 import type { MasterReading, DonorSuggestion, SplitPersonView } from "@/lib/capacity/workforce";
 
@@ -44,7 +44,15 @@ interface Props {
   onContextSwitch: (pct: number) => void;
   onWorkforce: (fte: number) => void;
   onOpenSplits: (scopeId: string | null) => void;
+  onOpenGates: (scopeId: string) => void;
   onExplainSwitchCost: () => void;
+  /** Channel under the pointer -- wakes its swim lane above. */
+  hoveredScopeId: string | null;
+  onHover: (scopeId: string | null) => void;
+  /** The two channels mid-transfer; both wake, everything else recedes. */
+  transferPair: string[];
+  /** How many physical positions the rack keeps beyond the live projects. */
+  dormantCount: number;
 }
 
 export default function PortfolioMixer({
@@ -68,7 +76,12 @@ export default function PortfolioMixer({
   onContextSwitch,
   onWorkforce,
   onOpenSplits,
+  onOpenGates,
   onExplainSwitchCost,
+  hoveredScopeId,
+  onHover,
+  transferPair,
+  dormantCount,
 }: Props) {
   const indexByScope = useMemo(
     () => new Map(channels.map((c, i) => [c.scopeId, i])),
@@ -77,10 +90,12 @@ export default function PortfolioMixer({
 
   return (
     <div className="shrink-0 flex flex-col" style={{ background: "var(--i-void)", borderTop: "1px solid var(--i-border)" }}>
-      <div className="flex items-stretch gap-2.5 px-4 py-2.5">
-        {/* CHANNELS -- scroll horizontally; the Master never moves */}
+      <div className="flex items-stretch gap-2 px-4 py-2.5">
+        {/* THE PROJECT BANK. Fixed-width strips at fixed positions -- the
+            rack's geometry belongs to the rack, not to how many projects
+            happen to exist today. Only this scrolls; the Master never moves. */}
         <div className="flex-1 min-w-0 overflow-x-auto" data-shoot="mixer-channels">
-          <div className="flex items-stretch gap-2.5" style={{ minHeight: 262 }}>
+          <div className="flex items-stretch gap-2" style={{ minHeight: RACK_H }}>
             {channels.map((view, i) => (
               <MixerChannel
                 key={view.scopeId}
@@ -88,16 +103,22 @@ export default function PortfolioMixer({
                 view={view}
                 faderMax={faderMax}
                 selected={view.scopeId === selectedScopeId}
+                hovered={hoveredScopeId === view.scopeId || transferPair.includes(view.scopeId)}
+                dimmed={
+                  (transferPair.length > 0 && !transferPair.includes(view.scopeId)) ||
+                  (!!hoveredScopeId && hoveredScopeId !== view.scopeId && transferPair.length === 0)
+                }
                 onSelect={() => onSelect(view.scopeId)}
+                onHover={(on) => onHover(on ? view.scopeId : null)}
                 onFader={(raw) => onFader(view.scopeId, raw)}
                 onOpenSplits={() => onOpenSplits(view.scopeId)}
+                onOpenGates={() => onOpenGates(view.scopeId)}
               />
             ))}
-            {channels.length === 0 && (
-              <div className="flex items-center px-4 text-[11px] text-[var(--i-text-faint)]">
-                No projects configured yet.
-              </div>
-            )}
+            {/* Powered-off strips fill the rack to its physical width. */}
+            {Array.from({ length: dormantCount }, (_, i) => (
+              <DormantChannel key={`dormant-${i}`} index={channels.length + i + 1} />
+            ))}
           </div>
         </div>
 
@@ -156,53 +177,73 @@ export default function PortfolioMixer({
         </div>
       )}
 
-      {/* ── SUGGESTED MOVES ──────────────────────────────────────────────
-          Only ever shown when the machine is actually being asked for
-          something it cannot do, and every option is derived from real
-          capacity that really exists. */}
+      {/* ── CAPACITY TENSION RAIL ────────────────────────────────────────
+          Not a validation error. The machine is exposing a tension in the
+          system: this much human capacity is being asked for and does not
+          exist. It reads as a rail on the chassis, and every way out of it
+          is a real, available physical action. */}
       {deficitScopeId && deficitFte > 1e-6 && (
         <div
-          className="px-4 py-2.5 flex items-center gap-2 overflow-x-auto"
-          data-shoot="suggested-moves"
-          style={{ borderTop: "1px solid rgba(239,107,91,0.3)", background: "var(--i-red-soft)" }}
+          data-shoot="tension-rail"
+          className="px-4 py-2.5"
+          style={{
+            borderTop: "1px solid rgba(239,107,91,0.35)",
+            background: "linear-gradient(180deg, rgba(239,107,91,0.10) 0%, rgba(239,107,91,0.03) 100%)",
+          }}
         >
-          <span className="i-label shrink-0" style={{ color: "var(--i-red)" }}>
-            Resolve {deficitFte.toFixed(1)} FTE
-          </span>
-          {donors.slice(0, 3).map((d) => (
-            <button
-              key={d.scopeId}
-              onClick={() => onTakeFrom(d.scopeId)}
-              data-shoot={`take-from-${d.scopeId}`}
-              className="shrink-0 rounded-md px-2.5 py-1.5 text-[10px] transition-colors hover:brightness-125"
-              style={{ background: "var(--i-panel)", border: "1px solid var(--i-border-strong)", color: "var(--i-text)" }}
-            >
-              Take {Math.min(deficitFte, d.availableFte).toFixed(1)} from{" "}
-              <strong>{scopeNameById.get(d.scopeId) ?? d.scopeId}</strong>
-              <span className="ml-1 text-[var(--i-text-faint)]">has {d.availableFte.toFixed(1)}</span>
-            </button>
-          ))}
-          {splits.length === 0 && master.free <= 1e-6 && (
+          <div className="flex items-baseline gap-2">
+            <span className="text-[8px] uppercase tracking-[0.16em]" style={{ color: "var(--i-red)" }}>
+              Capacity required
+            </span>
+            <span className="i-readout text-[15px] leading-none" style={{ color: "var(--i-red)" }}>
+              +{deficitFte.toFixed(1)}
+              <span className="text-[8px] ml-0.5 text-[var(--i-text-faint)]">FTE</span>
+            </span>
+            <span className="text-[9px] text-[var(--i-text-soft)]">
+              on {scopeNameById.get(deficitScopeId) ?? deficitScopeId} — Reality can&rsquo;t be committed until this resolves
+            </span>
+          </div>
+
+          <div
+            className="mt-2 h-px"
+            style={{ background: "linear-gradient(90deg, rgba(239,107,91,0.45) 0%, transparent 70%)" }}
+            aria-hidden
+          />
+
+          <div className="mt-2 flex items-center gap-2 flex-wrap">
+            <span className="text-[8px] uppercase tracking-[0.14em] text-[var(--i-text-faint)]">Take from</span>
+            {donors.slice(0, 3).map((d) => (
+              <button
+                key={d.scopeId}
+                onClick={() => onTakeFrom(d.scopeId)}
+                onMouseEnter={() => onHover(d.scopeId)}
+                onMouseLeave={() => onHover(null)}
+                data-shoot={`take-from-${d.scopeId}`}
+                className="rounded px-2 py-1 text-[9.5px] tabular-nums transition-colors hover:brightness-125"
+                style={{ background: "var(--i-panel)", border: "1px solid var(--i-border-strong)", color: "var(--i-text)" }}
+              >
+                {scopeNameById.get(d.scopeId) ?? d.scopeId}
+                <span style={{ color: "var(--i-red)" }}> −{Math.min(deficitFte, d.availableFte).toFixed(1)}</span>
+              </button>
+            ))}
+            <span className="mx-1 text-[var(--i-border-strong)]">|</span>
             <button
               onClick={onSplitSomeone}
               data-shoot="split-someone"
-              className="shrink-0 rounded-md px-2.5 py-1.5 text-[10px] hover:brightness-125"
-              style={{ background: "var(--i-panel)", border: "1px solid var(--i-border-strong)", color: "var(--i-text)" }}
+              className="rounded px-2 py-1 text-[9.5px] hover:brightness-125"
+              style={{ background: "var(--i-panel)", border: "1px solid var(--i-border-strong)", color: "var(--i-text-soft)" }}
             >
               Split a person
             </button>
-          )}
-          <button
-            onClick={() => onHire(Math.ceil(deficitFte))}
-            data-shoot="hire"
-            className="shrink-0 rounded-md px-2.5 py-1.5 text-[10px] font-medium hover:brightness-110"
-            style={{ background: "var(--i-violet)", color: "var(--i-void)" }}
-          >
-            Increase workforce by {Math.ceil(deficitFte).toFixed(1)}
-          </button>
-          <span className="shrink-0 text-[9.5px] text-[var(--i-text-soft)]">
-            Reality can&rsquo;t be committed while people are missing.
-          </span>
+            <button
+              onClick={() => onHire(Math.ceil(deficitFte))}
+              data-shoot="hire"
+              className="rounded px-2 py-1 text-[9.5px] font-medium hover:brightness-110"
+              style={{ background: "var(--i-violet)", color: "var(--i-void)" }}
+            >
+              Increase workforce +{Math.ceil(deficitFte).toFixed(1)}
+            </button>
+          </div>
         </div>
       )}
     </div>

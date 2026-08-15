@@ -88,7 +88,7 @@ check(
   `JSA still ${jsaRawBefore} FTE`
 );
 check("The workforce was not quietly grown", (await num('[data-shoot="master-workforce"]')) === workforce0, `${workforce0} FTE`);
-check("Suggested moves appear, drawn from real capacity", (await p.locator('[data-shoot="suggested-moves"]').count()) === 1);
+check("The capacity tension rail wakes, offering only real capacity", (await p.locator('[data-shoot="tension-rail"]').count()) === 1);
 check("Reality cannot be committed while people are missing", await p.locator('[data-shoot="commit"]').isDisabled().catch(() => true));
 await shot("3-required");
 
@@ -128,7 +128,7 @@ const effBefore = await num('[data-shoot="master-effective"]');
 const allocBefore = await text('[data-shoot="master-allocated"]');
 const designLaneBefore = await laneDate("Design");
 
-const knob = p.locator('[data-shoot="switch-knob"]');
+const knob = p.locator('[data-shoot="switch-knob-input"]');
 await knob.focus();
 for (let i = 0; i < 18; i++) await p.keyboard.press("ArrowRight");
 await settle(3000);

@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import {
   resolveCapacity,
   validateAllocations,
@@ -179,6 +179,7 @@ function axisTicks(startDate: Date, minDay: number, maxDay: number): { day: numb
 
 export default function PortfolioPageClient() {
   const pathname = usePathname();
+  const router = useRouter();
 
   const [data, setData] = useState<PortfolioInputsResponse | null>(null);
   const [loading, setLoading] = useState(true);
@@ -195,6 +196,12 @@ export default function PortfolioPageClient() {
   const [requiredByScope, setRequiredByScope] = useState<Map<string, number>>(new Map());
   const [switchCostPct, setSwitchCostPct] = useState(0);
   const [patchbayOpen, setPatchbayOpen] = useState(false);
+  // Which channel the pointer is on, so its swim lane above can wake. Pure
+  // presentation -- it never touches the scenario.
+  const [hoveredScopeId, setHoveredScopeId] = useState<string | null>(null);
+  // The two channels mid-transfer. Held briefly so both strips and both
+  // lanes read as one action rather than two coincidences.
+  const [transferPair, setTransferPair] = useState<string[]>([]);
   const [patchbayError, setPatchbayError] = useState<string | null>(null);
 
   const [saving, setSaving] = useState(false);
@@ -473,8 +480,13 @@ export default function PortfolioPageClient() {
       dependsOnScopeIds: s.dependsOnScopeIds,
       targetDate: s.targetDate,
       changed: changedScopeIds.has(s.scopeId),
+      // The lane wakes when its channel below is touched -- the coupling
+      // that makes "this fader controls THAT project" instant.
+      active: hoveredScopeId === s.scopeId || transferPair.includes(s.scopeId),
+      recede: (!!hoveredScopeId || transferPair.length > 0) &&
+        hoveredScopeId !== s.scopeId && !transferPair.includes(s.scopeId),
     }));
-  }, [data, changedScopeIds]);
+  }, [data, changedScopeIds, hoveredScopeId, transferPair]);
 
   // Every channel whose allocation the scenario has moved. Under the
   // embodied model there is no such thing as an unpersistable capacity
@@ -550,6 +562,11 @@ export default function PortfolioPageClient() {
       const recipient = [...requiredByScope.entries()].find(([, v]) => v > 1e-6);
       if (!recipient) return;
       const [scopeId, needed] = recipient;
+      // PHYSICAL ACTION FIRST. Both strips light before the numbers move, so
+      // the eye reads one person crossing the rack rather than two unrelated
+      // readouts changing.
+      setTransferPair([donorScopeId, scopeId]);
+      window.setTimeout(() => setTransferPair([]), 1500);
       const result = transferBetweenChannels(workforceState, donorScopeId, scopeId, needed, switchCostPct);
       setScenarioAllocations(result.allocations);
       setRequiredByScope((prev) => {
@@ -849,6 +866,7 @@ export default function PortfolioPageClient() {
         splitPeople: reading.splitPeople,
         required: reading.required,
         changed: changedScopeIds.has(s.scopeId),
+        gateCount: s.gates.length,
         completionDays: p?.completionDaysSorted ?? [],
       };
     });
@@ -1077,7 +1095,12 @@ export default function PortfolioPageClient() {
               onContextSwitch={(pct) => setSwitchCostPct(Math.round(pct))}
               onWorkforce={onWorkforce}
               onOpenSplits={() => setPatchbayOpen(true)}
+              onOpenGates={() => router.push("/decisions")}
               onExplainSwitchCost={() => openInspector("switchCost")}
+              hoveredScopeId={hoveredScopeId}
+              onHover={setHoveredScopeId}
+              transferPair={transferPair}
+              dormantCount={Math.max(1, 8 - channelViews.length)}
             />
           </div>
 

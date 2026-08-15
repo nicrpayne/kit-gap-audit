@@ -360,3 +360,23 @@ body {
 @media (prefers-reduced-motion: reduce) {
   .mixer-fader::-webkit-slider-thumb { transition: none; }
 }
+
+/* The rotary cap's hit area. The knob is drawn in SVG underneath; this
+   input contributes grab area, keyboard and assistive semantics only --
+   a div with pointer listeners would have thrown all three away. */
+.rotary-input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  margin: 0;
+  -webkit-appearance: none;
+  appearance: none;
+  touch-action: none;
+}
+.rotary-input:focus-visible {
+  opacity: 0;
+  outline: none;
+}
+.rotary-input:focus-visible + * { outline: none; }
