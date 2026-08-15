@@ -58,15 +58,15 @@ function Trace({ days, accent }: { days: number[]; accent: string }) {
     for (const d of days) bins[Math.min(BINS - 1, Math.floor(((d - lo) / span) * BINS))]++;
     const peak = Math.max(...bins, 1);
     return bins
-      .map((b, i) => `${(i / (BINS - 1)) * 100},${28 - (b / peak) * 24}`)
+      .map((b, i) => `${(i / (BINS - 1)) * 100},${21 - (b / peak) * 18}`)
       .reduce((acc, pt, i) => (i === 0 ? `M${pt}` : `${acc} L${pt}`), "");
   }, [days]);
 
   return (
-    <svg viewBox="0 0 100 30" preserveAspectRatio="none" className="w-full h-[30px]" aria-hidden>
+    <svg viewBox="0 0 100 22" preserveAspectRatio="none" className="w-full h-[22px]" aria-hidden>
       {path && (
         <>
-          <path d={`${path} L100,30 L0,30 Z`} fill={accent} opacity="0.10" />
+          <path d={`${path} L100,22 L0,22 Z`} fill={accent} opacity="0.10" />
           <path d={path} fill="none" stroke={accent} strokeWidth="1.1" vectorEffect="non-scaling-stroke" opacity="0.85" />
         </>
       )}
@@ -84,14 +84,14 @@ export default function MixerChannel({ index, view, faderMax, selected, onSelect
       onClick={onSelect}
       className="shrink-0 flex flex-col rounded-lg transition-colors duration-200"
       style={{
-        width: 188,
+        width: 178,
         background: "var(--i-panel)",
         border: `1px solid ${selected ? "var(--i-border-strong)" : "var(--i-border)"}`,
         boxShadow: selected ? "inset 0 0 0 1px rgba(243,240,230,0.04)" : undefined,
       }}
     >
       {/* identity */}
-      <div className="px-3 pt-2.5 pb-2">
+      <div className="px-3 pt-2 pb-1.5">
         <div className="flex items-center justify-between">
           <span className="text-[9.5px] tabular-nums text-[var(--i-text-faint)]">{index}</span>
           {changed && (
@@ -111,7 +111,7 @@ export default function MixerChannel({ index, view, faderMax, selected, onSelect
         <div className="mt-1.5 flex items-baseline gap-1.5">
           <span
             data-shoot="channel-date"
-            className="i-readout text-[20px] leading-none"
+            className="i-readout text-[18px] leading-none"
             style={{ color: changed ? "var(--i-violet)" : "var(--i-text)" }}
           >
             {view.likelyDate}
@@ -133,7 +133,7 @@ export default function MixerChannel({ index, view, faderMax, selected, onSelect
       </div>
 
       {/* RAW vs EFFECTIVE -- the channel's whole lesson, side by side */}
-      <div className="px-3 pt-1.5 pb-2.5 flex items-start justify-between gap-2">
+      <div className="px-3 pt-1 pb-2 flex items-start justify-between gap-2">
         <div>
           <div className="i-readout text-[14px] leading-none" data-shoot="channel-raw">
             {raw.toFixed(1)}
@@ -155,7 +155,7 @@ export default function MixerChannel({ index, view, faderMax, selected, onSelect
       </div>
 
       {/* the fader */}
-      <div className="flex-1 px-3 pb-2 flex items-stretch justify-center gap-2.5" style={{ minHeight: 150 }}>
+      <div className="flex-1 px-3 pb-1.5 flex items-stretch justify-center gap-2.5" style={{ minHeight: 96 }}>
         <div className="flex flex-col justify-between py-0.5 text-[8.5px] tabular-nums text-[var(--i-text-faint)]">
           <span>{faderMax}</span>
           <span>{Math.round(faderMax / 2)}</span>
@@ -217,7 +217,7 @@ export default function MixerChannel({ index, view, faderMax, selected, onSelect
         }}
         data-shoot={`splits-${view.scopeId}`}
         disabled={splitPeople === 0}
-        className="px-3 py-2 text-left text-[9.5px] transition-colors disabled:cursor-default"
+        className="px-3 py-1.5 text-left text-[9.5px] transition-colors disabled:cursor-default"
         style={{ borderTop: "1px solid var(--i-border)", color: splitPeople > 0 ? "var(--i-amber)" : "var(--i-text-faint)" }}
       >
         {splitPeople === 0 ? (

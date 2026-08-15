@@ -94,7 +94,7 @@ export default function MasterBus({
       data-shoot="master-bus"
       className="shrink-0 flex flex-col rounded-lg"
       style={{
-        width: 232,
+        width: 224,
         background: "var(--i-panel)",
         border: `1px solid ${alarm ? "var(--i-red)" : "var(--i-border-strong)"}`,
         boxShadow: alarm ? "0 0 0 1px var(--i-red-soft), 0 0 24px var(--i-red-soft)" : undefined,
@@ -105,7 +105,7 @@ export default function MasterBus({
         <div className="i-label">Master · people</div>
       </div>
 
-      <div className="px-3.5 py-3 space-y-3.5">
+      <div className="px-3.5 py-2.5 space-y-2.5">
         {/* WORKFORCE -- the only control that changes how many humans exist */}
         <div>
           <div className="flex items-center justify-between">
@@ -161,7 +161,7 @@ export default function MasterBus({
             </div>
           ) : (
             <div className="mt-1 flex items-baseline gap-1">
-              <span className="i-readout text-[24px] leading-none" data-shoot="master-workforce">
+              <span className="i-readout text-[21px] leading-none" data-shoot="master-workforce">
                 {reading.workforce.toFixed(1)}
               </span>
               <span className="text-[10px] text-[var(--i-text-faint)]">FTE</span>

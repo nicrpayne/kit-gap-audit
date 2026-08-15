@@ -146,6 +146,7 @@ export default function ScenarioBar({
         </button>
         <button
           onClick={onDiscard}
+          data-shoot="discard"
           disabled={saving || (!dirty && !hasPendingTargets)}
           className="rounded-md px-2.5 py-1.5 text-[11px] text-[var(--i-text-soft)] hover:text-[var(--i-text)] disabled:opacity-25 transition-colors"
           style={{ border: "1px solid var(--i-border-strong)" }}
@@ -154,6 +155,7 @@ export default function ScenarioBar({
         </button>
         <button
           onClick={onCommit}
+          data-shoot="commit"
           disabled={saving || !dirty || !canCommit}
           className="rounded-md px-3 py-1.5 text-[11px] font-semibold disabled:opacity-25 transition-[filter] hover:brightness-110"
           style={{ background: "var(--i-violet)", color: "var(--i-void)" }}

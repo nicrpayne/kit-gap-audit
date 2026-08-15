@@ -67,9 +67,9 @@ const forecastPlatformDate = async () => {
 };
 // Portfolio: the same Scope's band readout on the field.
 const portfolioPlatformDate = async () => {
+  // Read only -- with five lanes the field can be scrolled, and clicking to
+  // select is not what this proof is about.
   const band = p.locator('[aria-label^="Platform, likely"]');
-  await band.click();
-  await settle(1200);
   return (await band.locator(".i-readout").first().innerText()).trim().toUpperCase();
 };
 
@@ -84,15 +84,20 @@ const goPortfolio = async () => {
   await settle(4200);
 };
 
-// The real "this changes what the system believes is true" control.
+// The real "this changes what the system believes is true" control: the
+// mixer's Platform fader, committed. Capacity is embodied now (see
+// lib/capacity/workforce.ts), so a Reality change means moving people --
+// there is no flat per-project number left to type into.
 const setPlatformCapacity = async (fte) => {
-  await p.locator('[aria-label^="Platform, likely"]').click();
-  await settle(900);
-  await p.locator('[data-shoot="edit-reality"]').click();
-  await settle(500);
-  await p.locator("#reality-capacity").fill(String(fte));
-  await p.locator('[data-shoot="save-reality"]').click();
-  await settle(3200);
+  const fader = p.locator('[data-shoot="fader-platform"]');
+  await fader.focus();
+  const current = Number((await p.locator('[data-shoot="channel-platform"] [data-shoot="channel-raw"]').innerText()).replace(/[^\d.]/g, ""));
+  const steps = Math.round(Math.abs(fte - current) / 0.1);
+  const key = fte > current ? "ArrowUp" : "ArrowDown";
+  for (let i = 0; i < steps; i++) await p.keyboard.press(key);
+  await settle(1400);
+  await p.locator('[data-shoot="commit"]').click();
+  await settle(3600);
 };
 
 const readCapacity = () =>
@@ -131,11 +136,14 @@ await shot("2-portfolio-agrees");
 //    WITHOUT leaving the route.
 // ═══════════════════════════════════════════════════════════════════════
 const readsBeforeSave = projectReads;
-const capacity1 = Number(capacity0) + 6;
+// A RELEASE, not a raise. Capacity is conserved now: raising a channel
+// beyond free capacity is correctly refused at commit, so the Reality
+// change this proof commits has to be one the portfolio can actually make.
+const capacity1 = Number(capacity0) - 3;
 await setPlatformCapacity(capacity1);
 
 const persisted = await readCapacity();
-check("Platform's capacity persisted", Number(persisted) === capacity1, `${capacity0} -> ${persisted}`);
+check("Platform's capacity persisted", Math.abs(Number(persisted) - capacity1) < 0.05, `${capacity0} -> ${persisted}`);
 check(
   "Committing Reality revalidates shared project truth in place",
   projectReads > readsBeforeSave,
@@ -201,9 +209,9 @@ await shot("5-scenario-composed");
 // raise is the wrong instrument for asserting that a date moved. Halving it
 // always bites.
 await goPortfolio();
-const capacity2 = Math.max(1, Math.floor(Number(capacity0) / 2));
+const capacity2 = Math.max(1, Number(capacity0) - 6);
 await setPlatformCapacity(capacity2);
-check("Reality moved again underneath the live Scenario", Number(await readCapacity()) === capacity2, `-> ${capacity2}`);
+check("Reality moved again underneath the live Scenario", Math.abs(Number(await readCapacity()) - capacity2) < 0.05, `-> ${capacity2}`);
 const portfolio2 = await portfolioPlatformDate();
 console.log(`      current Reality now puts Platform at ${portfolio2}`);
 
@@ -247,7 +255,7 @@ await shot("7-discard-to-current-reality");
 // ═══════════════════════════════════════════════════════════════════════
 await setPlatformCapacity(Number(capacity0));
 const restored = await readCapacity();
-check("Platform's capacity restored", Number(restored) === Number(capacity0), `back to ${restored}`);
+check("Platform's capacity restored", Math.abs(Number(restored) - Number(capacity0)) < 0.05, `back to ${restored}`);
 
 await p.reload({ waitUntil: "networkidle" });
 await settle(4200);

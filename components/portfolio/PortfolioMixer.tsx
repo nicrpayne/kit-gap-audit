@@ -77,10 +77,10 @@ export default function PortfolioMixer({
 
   return (
     <div className="shrink-0 flex flex-col" style={{ background: "var(--i-void)", borderTop: "1px solid var(--i-border)" }}>
-      <div className="flex items-stretch gap-2.5 px-4 py-3">
+      <div className="flex items-stretch gap-2.5 px-4 py-2.5">
         {/* CHANNELS -- scroll horizontally; the Master never moves */}
         <div className="flex-1 min-w-0 overflow-x-auto" data-shoot="mixer-channels">
-          <div className="flex items-stretch gap-2.5" style={{ minHeight: 336 }}>
+          <div className="flex items-stretch gap-2.5" style={{ minHeight: 262 }}>
             {channels.map((view, i) => (
               <MixerChannel
                 key={view.scopeId}
