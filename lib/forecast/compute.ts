@@ -14,7 +14,12 @@ import { runPortfolioSimulation, type ScopeSimulationSpec } from "@/lib/forecast
 import type { SimulationResult } from "@/lib/forecast/simulate";
 import { estimateContentHash, findingContentHash } from "@/lib/estimate/run";
 import { buildReleaseContext } from "@/lib/estimate/context";
-import { resolveCapacity, type CapacityContributor } from "@/lib/capacity/resolve";
+import {
+  resolveCapacity,
+  asCapacityResolution,
+  type CapacityContributor,
+  type CapacityResolution,
+} from "@/lib/capacity/resolve";
 
 export interface ForecastFinding {
   id: string;
@@ -168,14 +173,12 @@ async function buildScopeSimInputs(scope: Scope): Promise<ScopeSimBundle> {
   const contextIssues = [notionWarning, figmaWarning].filter((w): w is string => !!w);
   const contextComplete = !notionFailed && !figmaFailed && contextIssues.length === 0;
 
-  // Capacity fallback chain, stage 1: named-person Allocations override a
-  // Scope's own explicit teamCapacity. Stage 2 (explicit-or-null ->
-  // inferred from assignees) happens inside buildForecastInputs, which is
-  // the only place with the Linear issue data that inference needs.
-  // With zero Person rows anywhere (every Scope predating this feature),
-  // resolveCapacity always returns { capacity: null, source: null },
-  // making this whole block a no-op -- scope.teamCapacity flows through
-  // exactly as it did before Allocations existed.
+  // Capacity at this Scope's DECLARED resolution (see
+  // Scope.capacityResolution): a "named" Scope's roster is its capacity, a
+  // "team" Scope's number is. Never both. Stage 2 of the fallback ("team"
+  // with no number -> inferred from assignees) happens inside
+  // buildForecastInputs, the only place with the Linear issue data that
+  // inference needs.
   const [people, allocations, portfolioSettings] = await Promise.all([
     prisma.person.findMany({ where: { active: true } }),
     prisma.allocation.findMany(),
@@ -186,7 +189,8 @@ async function buildScopeSimInputs(scope: Scope): Promise<ScopeSimBundle> {
     scope.teamCapacity ?? null,
     people,
     allocations,
-    portfolioSettings?.contextSwitchCostPct ?? 0
+    portfolioSettings?.contextSwitchCostPct ?? 0,
+    asCapacityResolution(scope.capacityResolution)
   );
 
   const inputs = buildForecastInputs(issues, findings, resolved.capacity, {
@@ -306,6 +310,11 @@ export interface PortfolioScopeInput {
   gates: ForecastInputs["gates"];
   teamCapacity: number;
   capacitySource: CapacitySource;
+  // How precisely this Scope's team is known -- DECLARED, not derived from
+  // whether Allocation rows happen to exist (see Scope.capacityResolution).
+  // Clients key their capacity editing on this: a "team" Scope has no
+  // roster to move a person into, and must not offer one.
+  capacityResolution: CapacityResolution;
   capacityContributors: CapacityContributor[];
   // Raw Scope.teamCapacity (or null), separate from the fully-resolved
   // `teamCapacity` above -- a hypothetical-override recompute (see
@@ -445,6 +454,7 @@ export async function buildPortfolioInputs(): Promise<PortfolioInputs> {
       gates: bundle.inputs.gates,
       teamCapacity: bundle.inputs.teamCapacity,
       capacitySource: bundle.inputs.capacitySource,
+      capacityResolution: asCapacityResolution(scope.capacityResolution),
       capacityContributors: bundle.capacityContributors,
       explicitTeamCapacity: scope.teamCapacity,
       lastReport,

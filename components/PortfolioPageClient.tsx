@@ -9,6 +9,8 @@ import {
   type PersonLike,
   type AllocationLike,
   type CapacityContributor,
+  type CapacityResolution,
+  hasEmptyNamedRoster,
 } from "@/lib/capacity/resolve";
 import { runPortfolioSimulation } from "@/lib/forecast/portfolio";
 import { confidenceAtDay, type SimulationResult, type WorkItem, type DecisionGate } from "@/lib/forecast/simulate";
@@ -26,6 +28,7 @@ import ScenarioInspector, {
 } from "@/components/portfolio/ScenarioInspector";
 import ScenarioBar, { type ScenarioCapacityLine } from "@/components/portfolio/ScenarioBar";
 import AllocationDrawer from "@/components/portfolio/AllocationDrawer";
+import CapacityResolutionDialog from "@/components/portfolio/CapacityResolutionDialog";
 import InstrumentRail from "@/components/instrument/InstrumentRail";
 import CommandMenu from "@/components/instrument/CommandMenu";
 import { mutateReality } from "@/lib/instrument/reality";
@@ -62,6 +65,7 @@ interface ScopeInputRow {
   gates: DecisionGate[];
   teamCapacity: number;
   capacitySource: "allocations" | "explicit" | "inferred";
+  capacityResolution: CapacityResolution;
   explicitTeamCapacity: number | null;
   lastReport: { generatedAt: string; likelyDate: string; confidenceAtTarget: number | null } | null;
   reportHistory: {
@@ -190,6 +194,14 @@ export default function PortfolioPageClient() {
 
   const [pendingTargets, setPendingTargets] = useState<Map<string, string>>(new Map());
 
+  // The deliberate "start tracking this Scope by name" flow. Kept entirely
+  // separate from `fractions` (the allocation grid's draft): that map edits
+  // a roster, this one proposes that a roster should exist at all.
+  const [convertingScopeId, setConvertingScopeId] = useState<string | null>(null);
+  const [resolutionRoster, setResolutionRoster] = useState<Map<string, number>>(new Map());
+  const [resolutionSaving, setResolutionSaving] = useState(false);
+  const [resolutionError, setResolutionError] = useState<string | null>(null);
+
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
@@ -246,6 +258,7 @@ export default function PortfolioPageClient() {
       explicitTeamCapacity: s.explicitTeamCapacity,
       teamCapacity: s.teamCapacity,
       capacitySource: s.capacitySource,
+      capacityResolution: s.capacityResolution,
       startDate,
       targetDate: s.targetDate ? new Date(s.targetDate) : null,
     }));
@@ -355,9 +368,20 @@ export default function PortfolioPageClient() {
         out.set(s.scopeId, override);
         continue;
       }
-      if (s.capacitySource === "allocations") {
-        const resolved = resolveCapacity(s.scopeId, s.explicitTeamCapacity, allPeople, currentAllocations, switchCostPct);
-        out.set(s.scopeId, resolved.capacity ?? s.teamCapacity);
+      // Same rule as the simulation (lib/scenario/inputDelta.ts): a named
+      // Scope's roster IS its capacity, a team Scope's number is, and the
+      // two are never added. An emptied roster reads 0 rather than falling
+      // back to the dormant estimate -- the bar refuses to commit that.
+      if (s.capacityResolution === "named") {
+        const resolved = resolveCapacity(
+          s.scopeId,
+          s.explicitTeamCapacity,
+          allPeople,
+          currentAllocations,
+          switchCostPct,
+          "named"
+        );
+        out.set(s.scopeId, resolved.capacity ?? 0);
       } else {
         out.set(s.scopeId, s.teamCapacity);
       }
@@ -506,6 +530,19 @@ export default function PortfolioPageClient() {
     return out;
   }, [data, capacityOverrides]);
 
+  // A Scope tracked by name that the draft has emptied. Its capacity is
+  // genuinely 0, which the engine would quietly simulate as 1 FTE -- a
+  // one-person forecast for work nobody is doing. Previewing it is fine
+  // ("what if we pulled everyone off?"); recording it is not, because the
+  // resulting date would be a fiction. Switching the Scope back to a team
+  // estimate is the honest way to say "we no longer track who is here".
+  const emptiedNamedScopes = useMemo(() => {
+    if (!data) return [];
+    return data.scopes
+      .filter((s) => hasEmptyNamedRoster(s.scopeId, allPeople, currentAllocations, s.capacityResolution))
+      .map((s) => ({ scopeId: s.scopeId, scopeName: s.name }));
+  }, [data, allPeople, currentAllocations]);
+
   // Context-switch reach, derived entirely from Reality's own sources.
   const switchCostScopes: SwitchCostScopeView[] = useMemo(() => {
     if (!data) return [];
@@ -534,6 +571,113 @@ export default function PortfolioPageClient() {
     [switchCostScopes]
   );
   const trackedScopeCount = switchCostScopes.filter((s) => s.source === "allocations").length;
+
+  // ---- allocation resolution (team estimate <-> named roster) ----------
+
+  const convertingScope = useMemo(
+    () => (convertingScopeId ? data?.scopes.find((s) => s.scopeId === convertingScopeId) ?? null : null),
+    [convertingScopeId, data]
+  );
+
+  // Who could go on this Scope, and how much of each of them is actually
+  // free. Capacity is one fixed pool, so "available" means time not already
+  // committed elsewhere -- naming someone here spends time that exists,
+  // it never creates more.
+  const resolutionCandidates = useMemo(() => {
+    if (!data || !convertingScopeId) return [];
+    const committed = new Map<string, number>();
+    for (const a of data.allocations) {
+      if (a.scopeId === convertingScopeId || a.fraction <= 0) continue;
+      committed.set(a.personId, (committed.get(a.personId) ?? 0) + a.fraction);
+    }
+    return data.people
+      .filter((p) => p.active)
+      .map((p) => ({
+        personId: p.id,
+        name: p.name,
+        fte: p.fte,
+        availableFraction: Math.max(0, 1 - (committed.get(p.id) ?? 0)),
+      }));
+  }, [data, convertingScopeId]);
+
+  // The consequence, through the same engine the Forecast uses -- a
+  // resolution override rather than a bespoke calculation, so what the
+  // dialog promises is exactly what committing produces.
+  const resolutionPreview = useMemo(() => {
+    if (!data || !scenarioScopes || !convertingScopeId) return null;
+    const allocations: AllocationLike[] = data.allocations
+      .filter((a) => a.scopeId !== convertingScopeId && a.fraction > 0)
+      .map((a) => ({ personId: a.personId, scopeId: a.scopeId, fraction: a.fraction }));
+    for (const [personId, fraction] of resolutionRoster) {
+      if (fraction > 1e-6) allocations.push({ personId, scopeId: convertingScopeId, fraction });
+    }
+    try {
+      const specs = applyScenarioInputDelta(scenarioScopes, data.people, {
+        allocations,
+        hypotheticalPeople: [],
+        contextSwitchCostPct: data.contextSwitchCostPct,
+        resolutionOverrideByScope: { [convertingScopeId]: "named" },
+      });
+      const results = runPortfolioSimulation(specs);
+      return {
+        result: results.get(convertingScopeId) ?? null,
+        capacity: specs.find((s) => s.scopeId === convertingScopeId)?.teamCapacity ?? 0,
+      };
+    } catch {
+      return null;
+    }
+  }, [data, scenarioScopes, convertingScopeId, resolutionRoster]);
+
+  // Switching resolution can move a date by the better part of a year, and
+  // "Aug 25 → May 18" hides exactly the part that matters. Carry the year
+  // on both sides whenever they disagree about it.
+  const resolutionNow = convertingScopeId ? baseline?.get(convertingScopeId)?.likelyDate ?? null : null;
+  const resolutionThen = resolutionPreview?.result?.likelyDate ?? null;
+  const crossesYear =
+    !!resolutionNow && !!resolutionThen && resolutionNow.getUTCFullYear() !== resolutionThen.getUTCFullYear();
+  const fmtLikely = (d: Date | undefined | null) =>
+    d
+      ? d.toLocaleDateString(undefined, {
+          month: "short",
+          day: "numeric",
+          ...(crossesYear ? { year: "numeric" as const } : {}),
+          timeZone: "UTC",
+        })
+      : null;
+  const resolutionCurrentDate = fmtLikely(resolutionNow);
+  const resolutionProposedDate = fmtLikely(resolutionThen);
+  const resolutionProposedCapacity = resolutionPreview?.capacity ?? 0;
+
+  const openResolutionDialog = useCallback((scopeId: string) => {
+    setConvertingScopeId(scopeId);
+    setResolutionRoster(new Map());
+    setResolutionError(null);
+  }, []);
+
+  async function confirmResolutionChange() {
+    if (!convertingScopeId) return;
+    setResolutionSaving(true);
+    setResolutionError(null);
+    try {
+      const roster = [...resolutionRoster.entries()]
+        .filter(([, fraction]) => fraction > 1e-6)
+        .map(([personId, fraction]) => ({ personId, fraction }));
+      const res = await mutateReality(`/api/scopes/${convertingScopeId}/capacity-resolution`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ resolution: "named", roster }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body.error ?? "Couldn't change how this Scope is tracked.");
+      setConvertingScopeId(null);
+      setResolutionRoster(new Map());
+      await load();
+    } catch (err) {
+      setResolutionError(err instanceof Error ? err.message : "Couldn't change how this Scope is tracked.");
+    } finally {
+      setResolutionSaving(false);
+    }
+  }
 
   // ---- interaction handlers -------------------------------------------
 
@@ -650,7 +794,8 @@ export default function PortfolioPageClient() {
   //   commit is not.
   // - Named-person allocation changes commit as they always did, with the
   //   same eligibility rules.
-  const canCommit = overAllocated.length === 0 && blockedCapacityScopes.length === 0;
+  const canCommit =
+    overAllocated.length === 0 && blockedCapacityScopes.length === 0 && emptiedNamedScopes.length === 0;
 
   async function save() {
     if (!data || !canCommit) return;
@@ -844,6 +989,7 @@ export default function PortfolioPageClient() {
           switchCostChanged={switchCostChanged}
           aggregateConversions={aggregateConversions}
           blockedCapacityScopes={blockedCapacityScopes}
+          emptiedNamedScopes={emptiedNamedScopes}
           blockedMoves={blockedMoves.map((m) => ({
             personId: m.personId,
             personName: m.personName,
@@ -989,7 +1135,12 @@ export default function PortfolioPageClient() {
       <AllocationDrawer
         open={allocationsOpen}
         onClose={() => setAllocationsOpen(false)}
-        scopes={data.scopes.map((s) => ({ scopeId: s.scopeId, name: s.name }))}
+        scopes={data.scopes.map((s) => ({
+          scopeId: s.scopeId,
+          name: s.name,
+          resolution: s.capacityResolution,
+          teamEstimate: s.teamCapacity,
+        }))}
         people={allPeople}
         fractionFor={(personId, scopeId) => fractions.get(pairKey(personId, scopeId)) ?? 0}
         onSetFraction={setFraction}
@@ -999,7 +1150,34 @@ export default function PortfolioPageClient() {
         onRemovePerson={(personId) => removePerson(personId)}
         removingId={removingId}
         removeError={removeError}
+        onConvertToNamed={openResolutionDialog}
       />
+
+      {convertingScope && (
+        <CapacityResolutionDialog
+          open
+          scopeName={convertingScope.name}
+          teamEstimate={convertingScope.teamCapacity}
+          contextSwitchCostPct={data.contextSwitchCostPct}
+          candidates={resolutionCandidates}
+          roster={resolutionRoster}
+          onSetFraction={(personId, fraction) =>
+            setResolutionRoster((prev) => {
+              const next = new Map(prev);
+              if (fraction <= 1e-6) next.delete(personId);
+              else next.set(personId, fraction);
+              return next;
+            })
+          }
+          currentDate={resolutionCurrentDate}
+          proposedDate={resolutionProposedDate}
+          proposedCapacity={resolutionProposedCapacity}
+          saving={resolutionSaving}
+          error={resolutionError}
+          onConfirm={confirmResolutionChange}
+          onCancel={() => setConvertingScopeId(null)}
+        />
+      )}
     </>
   );
 }

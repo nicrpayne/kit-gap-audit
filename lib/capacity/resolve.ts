@@ -31,6 +31,29 @@ export interface CapacityContributor {
 
 export type CapacitySource = "allocations" | "explicit";
 
+// HOW PRECISELY WE KNOW WHO IS ON A SCOPE. See Scope.capacityResolution in
+// prisma/schema.prisma for the full reasoning. The short version, because
+// it is the invariant this whole module exists to protect:
+//
+//   There is ONE portfolio capacity pool. People are the capacity.
+//   Naming someone does not create capacity -- it only says, more
+//   precisely, where capacity that already existed is going.
+//
+// So "team" and "named" are two resolutions of one fact, and exactly one
+// of them is authoritative for a given Scope at a given moment. They are
+// never summed. A 10 FTE team estimate plus a 2.5 FTE named roster is not
+// 12.5 FTE of humans; it is one team, described twice, and the more
+// precise description wins.
+export type CapacityResolution = "team" | "named";
+
+// Scope.capacityResolution is a String column (Prisma has no enum here),
+// so every read narrows through this. Anything unrecognised is treated as
+// "team": the coarser description is the safe one to fall back to, since
+// it can never invent a roster that isn't there.
+export function asCapacityResolution(raw: string | null | undefined): CapacityResolution {
+  return raw === "named" ? "named" : "team";
+}
+
 export interface ResolvedCapacity {
   // null when this Scope has neither allocations nor an explicit
   // teamCapacity -- callers fall back to their own inference (e.g.
@@ -75,25 +98,32 @@ function countScopesPerPerson(allocations: AllocationLike[]): Map<string, number
   return counts;
 }
 
-// Fallback chain, stage 1 (allocations -> explicit override). Stage 2
-// (explicit-or-null -> inferred from assignees) lives in
-// buildForecastInputs, since it needs Linear issue data this module
-// doesn't have -- see lib/forecast/build.ts.
+// Resolve one Scope's capacity at its DECLARED resolution.
+//
+// `resolution` decides which description of the team is authoritative, and
+// the other is not consulted at all -- that exclusivity is the point. A
+// "named" Scope reads its roster and ignores explicitTeamCapacity; a "team"
+// Scope reads its number and ignores allocations. Nothing here ever adds
+// one to the other.
+//
+// Stage 2 of the fallback ("team" with no number -> inferred from Linear
+// assignees) lives in buildForecastInputs, since it needs issue data this
+// module deliberately doesn't have -- see lib/forecast/build.ts.
 export function resolveCapacity(
   scopeId: string,
   explicitTeamCapacity: number | null,
   people: PersonLike[],
   allocations: AllocationLike[],
-  contextSwitchCostPct: number
+  contextSwitchCostPct: number,
+  resolution: CapacityResolution
 ): ResolvedCapacity {
-  const activeById = new Map(people.filter((p) => p.active).map((p) => [p.id, p]));
-  const scopeCounts = countScopesPerPerson(allocations);
+  if (resolution === "named") {
+    const activeById = new Map(people.filter((p) => p.active).map((p) => [p.id, p]));
+    const scopeCounts = countScopesPerPerson(allocations);
+    const relevant = allocations.filter(
+      (a) => a.scopeId === scopeId && a.fraction > 0 && activeById.has(a.personId)
+    );
 
-  const relevant = allocations.filter(
-    (a) => a.scopeId === scopeId && a.fraction > 0 && activeById.has(a.personId)
-  );
-
-  if (relevant.length > 0) {
     const contributors: CapacityContributor[] = relevant.map((a) => {
       const person = activeById.get(a.personId)!;
       const scopeCount = scopeCounts.get(a.personId) ?? 1;
@@ -108,6 +138,11 @@ export function resolveCapacity(
         effectiveFte: a.fraction * person.fte * switchFactor,
       };
     });
+
+    // An empty roster resolves to 0, NOT to the dormant team estimate.
+    // Falling back here is what used to let removing the last person
+    // silently reinstate a stale aggregate number; callers surface the
+    // empty-roster state instead (see hasEmptyNamedRoster below).
     const capacity = contributors.reduce((sum, c) => sum + c.effectiveFte, 0);
     return { capacity, source: "allocations", contributors };
   }
@@ -117,6 +152,22 @@ export function resolveCapacity(
   }
 
   return { capacity: null, source: null, contributors: [] };
+}
+
+// A Scope tracked by name with nobody on it. Not a number the simulation
+// can honour -- the engine rewrites a capacity of 0 to 1 FTE (see
+// lib/capacity/limits.ts), which would quietly report a one-person
+// forecast for work nobody is doing. Callers must surface this and refuse
+// to commit it, rather than showing a date derived from it.
+export function hasEmptyNamedRoster(
+  scopeId: string,
+  people: PersonLike[],
+  allocations: AllocationLike[],
+  resolution: CapacityResolution
+): boolean {
+  if (resolution !== "named") return false;
+  const activeIds = new Set(people.filter((p) => p.active).map((p) => p.id));
+  return !allocations.some((a) => a.scopeId === scopeId && a.fraction > 0 && activeIds.has(a.personId));
 }
 
 export interface OverAllocation {

@@ -17,7 +17,12 @@
 // now call applyScenarioInputDelta below instead of rebuilding
 // ScopeSimulationSpec[] themselves.
 
-import { resolveCapacity, type PersonLike, type AllocationLike } from "@/lib/capacity/resolve";
+import {
+  resolveCapacity,
+  type PersonLike,
+  type AllocationLike,
+  type CapacityResolution,
+} from "@/lib/capacity/resolve";
 import { clampSimulatedCapacity } from "@/lib/capacity/limits";
 import type { ScopeSimulationSpec } from "@/lib/forecast/portfolio";
 import type { WorkItem, DecisionGate } from "@/lib/forecast/simulate";
@@ -52,6 +57,13 @@ export interface ScenarioInputDelta {
   // Omitted entirely (or an empty object) = no aggregate override anywhere,
   // which reproduces the pre-existing behaviour exactly.
   capacityOverrideByScope?: Record<string, number>;
+  // Scopes to simulate at a DIFFERENT allocation resolution than Reality
+  // currently declares -- "what would Platform be if we tracked it by name
+  // instead of as 10 FTE?". This is how the conversion preview gets its
+  // number: through the same engine, on the same path, rather than a
+  // bespoke calculation that could disagree with what committing does.
+  // Changes no Reality; omitted = simulate every Scope as declared.
+  resolutionOverrideByScope?: Record<string, CapacityResolution>;
   // The COMPLETE hypothetical allocation set to simulate against -- not a
   // diff layered on top of saved allocations. This matches how the
   // allocation grid and POST /api/portfolio/preview already treat
@@ -82,16 +94,16 @@ export interface ScenarioInputScope {
   // re-deriving THAT inference would need Linear issue data this pure,
   // isomorphic module deliberately doesn't have.
   teamCapacity: number;
-  // Reality's OWN capacity source for this Scope, computed from Reality's
-  // saved allocations/explicit value/inference -- BEFORE anything in this
-  // scenario is applied. This is the fact that decides how a scenario's
-  // allocation-shaped changes may be applied (see applyScenarioInputDelta
-  // below); it never changes as a result of the scenario itself, which is
-  // exactly the invariant that fixes the "+1 developer makes the date
-  // later" bug: a scenario must not be able to switch a Scope's
-  // authoritative capacity source merely by introducing an allocation-
-  // shaped entry.
+  // Reality's OWN resolved capacity source for this Scope, BEFORE anything
+  // in this scenario is applied. Reported for display; the math below keys
+  // on capacityResolution instead.
   capacitySource: CapacitySource;
+  // Reality's DECLARED allocation resolution for this Scope. A scenario
+  // never changes it implicitly: introducing an allocation-shaped entry
+  // must not be able to switch how a Scope is modelled, which is what made
+  // "+1 developer" move a date the wrong way. Only an explicit
+  // resolutionOverrideByScope entry simulates the other resolution.
+  capacityResolution: CapacityResolution;
   startDate: Date;
   targetDate: Date | null;
 }
@@ -103,36 +115,33 @@ export interface ScenarioInputScope {
 // NEVER changes resolveCapacity's own fallback semantics, which stay
 // correct for authoritative Reality (see docs/SCENARIO-MODEL.md).
 //
-// The branch below is keyed on s.capacitySource -- Reality's OWN,
-// scenario-independent source for this Scope -- not on whether a given
-// allocation entry belongs to a real or hypothetical person. That
-// distinction matters: a scope's authoritative source must never flip
-// merely because the scenario introduces an allocation-shaped change,
-// whether that change is a net-new hypothetical person or an existing
-// real person moved in from another scope. Both are handled identically
-// here, additively, once the Scope is aggregate-sourced.
+// ONE POOL, TWO RESOLUTIONS -- NEVER A SUM.
 //
-// - capacitySource === "allocations": Reality already tracks this Scope
-//   at person level, so every allocation-shaped change (real reallocation
-//   AND net-new hypothetical people) is folded into ONE resolveCapacity
-//   call against the full current allocation picture -- identical to how
-//   this always worked, and correct, because there's no aggregate number
-//   at risk of being silently discarded.
-// - capacitySource === "explicit" | "inferred": Reality is an aggregate
-//   number with no enumerable contributor list. s.teamCapacity (the
-//   already-resolved aggregate baseline) is preserved untouched, and a
-//   SECOND resolveCapacity call -- with explicitTeamCapacity forced to
-//   null so it can never itself resolve to "explicit" -- computes only
-//   the scenario's ADDITIVE contribution for this one Scope, correctly
-//   switch-cost-adjusted (it still receives the full, unfiltered,
-//   cross-scope delta.allocations array, so a multi-scope contributor's
-//   switchFactor is computed from their whole picture, not a per-scope
-//   slice). That contribution is added on top of the preserved baseline.
+// An earlier version of this function added a scenario's named
+// allocations ON TOP OF an aggregate Scope's team estimate, so dragging
+// one person onto a 10 FTE Platform previewed 10.5 FTE. That invented
+// half a person. Worse, it was unpersistable and disagreed with what
+// Reality would have resolved to (0.5), so the preview was answering a
+// different question from the one Commit would record.
+//
+// The corrected rule matches how humans actually work: a team is a team,
+// however precisely we happen to describe it. So the branch below reads
+// the Scope's DECLARED resolution and consults exactly one description:
+//
+// - "named": the roster IS the capacity. resolveCapacity sums the
+//   scenario's allocations for this Scope, switch-cost-adjusted against
+//   the full cross-scope picture (so a multi-scope contributor's
+//   switchFactor reflects their whole week, not a per-scope slice). The
+//   dormant team estimate is not consulted.
+// - "team": the estimate IS the capacity, and allocation-shaped entries
+//   in the scenario are ignored for this Scope entirely -- there is no
+//   roster here to move someone into. Moving a person here is not a
+//   capacity change, it is a request to change how the Scope is modelled,
+//   which is what resolutionOverrideByScope exists to preview.
 //
 // Passing a delta built from Reality's own saved allocations/people/
-// contextSwitchCostPct (hypotheticalPeople: []) reproduces the baseline
-// forecast exactly in both branches -- see docs/SCENARIO-MODEL.md for the
-// proof.
+// contextSwitchCostPct reproduces the baseline forecast exactly in both
+// branches -- see docs/SCENARIO-MODEL.md.
 export function applyScenarioInputDelta(
   scopes: ScenarioInputScope[],
   realityPeople: PersonLike[],
@@ -148,14 +157,24 @@ export function applyScenarioInputDelta(
     // is the one sanctioned way to bypass resolveCapacity, and it applies
     // to the hypothetical only -- Reality is never rewritten to achieve it.
     const override = overrides[s.scopeId];
+    const resolution = delta.resolutionOverrideByScope?.[s.scopeId] ?? s.capacityResolution;
     if (override !== undefined) {
       teamCapacity = clampSimulatedCapacity(override);
-    } else if (s.capacitySource === "allocations") {
-      const resolved = resolveCapacity(s.scopeId, s.explicitTeamCapacity, people, delta.allocations, delta.contextSwitchCostPct);
-      teamCapacity = resolved.capacity ?? s.teamCapacity;
+    } else if (resolution === "named") {
+      const resolved = resolveCapacity(
+        s.scopeId,
+        s.explicitTeamCapacity,
+        people,
+        delta.allocations,
+        delta.contextSwitchCostPct,
+        "named"
+      );
+      // An empty roster is 0, not a quiet fall back to the dormant
+      // estimate. Callers refuse to commit that state rather than
+      // simulating a team that isn't there (see hasEmptyNamedRoster).
+      teamCapacity = resolved.capacity ?? 0;
     } else {
-      const additive = resolveCapacity(s.scopeId, null, people, delta.allocations, delta.contextSwitchCostPct);
-      teamCapacity = s.teamCapacity + (additive.capacity ?? 0);
+      teamCapacity = s.teamCapacity;
     }
     return {
       scopeId: s.scopeId,

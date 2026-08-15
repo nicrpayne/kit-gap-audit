@@ -56,6 +56,9 @@ interface ScenarioBarProps {
   aggregateConversions: AggregateConversionLine[];
   blockedCapacityScopes: BlockedCapacityScope[];
   blockedMoves: BlockedMoveLine[];
+  /** Named Scopes the draft has emptied -- 0 FTE is not a forecastable
+      state, so these block Commit outright. */
+  emptiedNamedScopes: { scopeId: string; scopeName: string }[];
   onCommit: () => void;
   onDiscard: () => void;
   onOpenAllocations: () => void;
@@ -75,6 +78,7 @@ export default function ScenarioBar({
   aggregateConversions,
   blockedCapacityScopes,
   blockedMoves,
+  emptiedNamedScopes,
   onCommit,
   onDiscard,
   onOpenAllocations,
@@ -180,6 +184,22 @@ export default function ScenarioBar({
                 People
               </button>
               , or reset the fader to commit everything else.
+            </div>
+          ))}
+        </div>
+      )}
+
+      {dirty && emptiedNamedScopes.length > 0 && (
+        <div
+          className="px-4 py-2.5 text-[11px] space-y-1"
+          style={{ background: "var(--i-red-soft)", borderTop: "1px solid rgba(239,107,91,0.3)" }}
+        >
+          <div className="font-semibold text-[var(--i-red)]">Can&rsquo;t commit an empty team:</div>
+          {emptiedNamedScopes.map((s) => (
+            <div key={s.scopeId} className="text-[var(--i-text-soft)]">
+              <strong className="text-[var(--i-text)]">{s.scopeName}</strong> is tracked by named people and this
+              change leaves nobody on it. That isn&rsquo;t 0 capacity in the forecast — it has no honest answer at all.
+              Put someone back, or switch {s.scopeName} to a team estimate to say we no longer track who is here.
             </div>
           ))}
         </div>

@@ -37,6 +37,44 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
 // without losing their allocation history -- this is for genuine mistakes.
 export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
+
+  // Removing someone can empty a named Scope's roster just as effectively
+  // as zeroing their allocation, and an empty roster is not a state the
+  // forecast can represent honestly -- a capacity of 0 gets inferred back
+  // into a made-up team size downstream (see buildForecastInputs). Refuse,
+  // and name the Scopes, rather than quietly re-modelling them.
+  const theirScopes = await prisma.allocation.findMany({
+    where: { personId: id, fraction: { gt: 0 } },
+    select: { scopeId: true },
+  });
+  if (theirScopes.length > 0) {
+    const scopeIds = [...new Set(theirScopes.map((a) => a.scopeId))];
+    const named = await prisma.scope.findMany({
+      where: { id: { in: scopeIds }, capacityResolution: "named" },
+      select: { id: true, name: true },
+    });
+    const others = await prisma.allocation.findMany({
+      where: { scopeId: { in: named.map((s) => s.id) }, personId: { not: id }, fraction: { gt: 0 } },
+      select: { scopeId: true, person: { select: { active: true } } },
+    });
+    const stillStaffed = new Set(others.filter((a) => a.person.active).map((a) => a.scopeId));
+    const wouldEmpty = named.filter((s) => !stillStaffed.has(s.id));
+    if (wouldEmpty.length > 0) {
+      const one = wouldEmpty.length === 1;
+      return NextResponse.json(
+        {
+          error:
+            `They are the only person on ${wouldEmpty.map((s) => s.name).join(", ")}. ` +
+            `Removing them would leave ${one ? "that Scope" : "those Scopes"} tracked by name with nobody on ` +
+            `${one ? "it" : "them"}, which has no honest forecast. Assign someone else first, or switch ` +
+            `${one ? "it" : "them"} back to a team estimate.`,
+          scopeIds: wouldEmpty.map((s) => s.id),
+        },
+        { status: 409 }
+      );
+    }
+  }
+
   try {
     await prisma.person.delete({ where: { id } });
   } catch {

@@ -175,6 +175,7 @@ export async function POST(req: NextRequest) {
     explicitTeamCapacity: s.explicitTeamCapacity,
     teamCapacity: s.teamCapacity,
     capacitySource: s.capacitySource,
+    capacityResolution: s.capacityResolution,
     startDate: portfolio.startDate,
     targetDate: s.targetDate,
   }));

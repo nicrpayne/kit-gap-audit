@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { validateAllocations } from "@/lib/capacity/resolve";
+import { validateAllocations, asCapacityResolution } from "@/lib/capacity/resolve";
 
 export async function GET(req: NextRequest) {
   const scopeId = req.nextUrl.searchParams.get("scopeId");
@@ -18,6 +18,40 @@ interface AllocationInput {
   personId?: string;
   scopeId?: string;
   fraction?: number;
+}
+
+// Which "named" Scopes would be left with no active contributor if the
+// given people's allocations were replaced by `toWrite`. Shared by the
+// allocation write below and by person deletion, which can empty a roster
+// just as effectively by removing the last person on it.
+async function namedScopesEmptiedBy(
+  replacedPersonIds: string[],
+  toWrite: { personId: string; scopeId: string; fraction: number }[]
+): Promise<{ id: string; name: string }[]> {
+  const namedScopes = await prisma.scope.findMany({
+    where: { capacityResolution: "named" },
+    select: { id: true, name: true },
+  });
+  if (namedScopes.length === 0) return [];
+
+  const replaced = new Set(replacedPersonIds);
+  // Everyone else's committed rows survive this write untouched.
+  const survivors = await prisma.allocation.findMany({
+    where: { personId: { notIn: replacedPersonIds }, fraction: { gt: 0 } },
+    select: { scopeId: true, person: { select: { active: true } } },
+  });
+
+  const stillStaffed = new Set<string>();
+  for (const a of survivors) if (a.person.active) stillStaffed.add(a.scopeId);
+
+  const activeIds = new Set(
+    (await prisma.person.findMany({ where: { id: { in: [...replaced] }, active: true }, select: { id: true } })).map(
+      (p) => p.id
+    )
+  );
+  for (const a of toWrite) if (a.fraction > 0 && activeIds.has(a.personId)) stillStaffed.add(a.scopeId);
+
+  return namedScopes.filter((s) => !stillStaffed.has(s.id));
 }
 
 // Full replace, scoped to whichever people are mentioned in the payload --
@@ -85,50 +119,65 @@ export async function PUT(req: NextRequest) {
   // slider dragged to 0 means "no allocation," not "an allocation of 0."
   const toWrite = body.allocations.filter((a) => a.fraction! > 1e-6) as Required<AllocationInput>[];
 
-  // Server-side invariant, independent of any UI: a Scope's authoritative
-  // capacity source (allocations vs. explicit/inferred) is exactly "does
-  // this Scope have any Allocation row at all" -- see
-  // lib/capacity/resolve.ts's resolveCapacity, unchanged by this check.
-  // Writing the FIRST-ever Allocation row for a Scope that currently has
-  // none would silently flip it from an aggregate (explicit/inferred)
-  // number to a person-level model containing only whoever's in THIS
-  // request -- discarding the aggregate baseline the same way the
-  // "+1 developer" bug did, just via a direct API call instead of the UI.
-  // The client (PortfolioPageClient.tsx's save()) already avoids sending
-  // these rows; this is defense-in-depth for any other caller (a script,
-  // Hermes, a future UI path) that might not. Determined with a single,
-  // cheap Allocation query -- no Linear call, no forecast computation, no
-  // need to distinguish "explicit" from "inferred" (both are exactly
-  // "zero existing Allocation rows for this Scope," which is all this
-  // check needs to know).
+  // Server-side invariant, independent of any UI: this endpoint edits a
+  // roster, and only a Scope that HAS a roster has one to edit. A Scope
+  // declared at "team" resolution is described by a single number standing
+  // in for whoever is on it (see Scope.capacityResolution) -- writing an
+  // allocation here would re-model the Scope as person-level while
+  // knowing only whoever happens to be in THIS request, silently replacing
+  // a 10 FTE team with however few names were sent.
+  //
+  // Changing resolution is a deliberate operation with its own endpoint,
+  // POST /api/scopes/:id/capacity-resolution, which requires a non-empty
+  // roster and checks the portfolio invariant. This check keys on the
+  // declared resolution rather than on "are there any rows yet", so a
+  // Scope cannot be converted by accident from any caller -- UI, script or
+  // otherwise.
   const scopesToWrite = [...new Set(toWrite.map((a) => a.scopeId))];
   if (scopesToWrite.length > 0) {
-    const scopesWithExistingAllocations = await prisma.allocation.findMany({
-      where: { scopeId: { in: scopesToWrite } },
-      select: { scopeId: true },
-      distinct: ["scopeId"],
+    const targets = await prisma.scope.findMany({
+      where: { id: { in: scopesToWrite } },
+      select: { id: true, name: true, capacityResolution: true },
     });
-    const alreadyAllocationsSourced = new Set(scopesWithExistingAllocations.map((a) => a.scopeId));
-    const aggregateScopeIds = scopesToWrite.filter((id) => !alreadyAllocationsSourced.has(id));
-    if (aggregateScopeIds.length > 0) {
-      const scopeNameById = new Map(scopeRows.map((s) => [s.id, s.name]));
-      const names = aggregateScopeIds.map((id) => scopeNameById.get(id) ?? id);
+    const teamScopes = targets.filter((s) => asCapacityResolution(s.capacityResolution) !== "named");
+    if (teamScopes.length > 0) {
+      const names = teamScopes.map((s) => s.name);
+      const one = teamScopes.length === 1;
       return NextResponse.json(
         {
           error:
             `Can't write a person-level allocation onto ${names.join(", ")} -- ` +
-            `${names.length === 1 ? "it currently has" : "they currently have"} no tracked allocations, ` +
-            `so ${names.length === 1 ? "its" : "their"} capacity is a single aggregate number (explicit or inferred from Linear), ` +
-            `with no roster this endpoint could safely treat as complete. Writing any allocation here -- even a multi-person one -- ` +
-            `would silently and partially convert ${names.length === 1 ? "it" : "them"} to a person-level model that may be missing ` +
-            `whoever else the aggregate number represents. For an anonymous/net-new capacity change, update the Scope's ` +
-            `teamCapacity via PATCH /api/scopes/:id instead. Converting a Scope to full person-level tracking is a deliberate ` +
-            `action not yet supported by this endpoint.`,
-          scopeIds: aggregateScopeIds,
+            `${one ? "it is" : "they are"} tracked as a team estimate, not as a roster, so there is nobody here to move ` +
+            `someone alongside. Naming people does not add capacity; it changes how ${one ? "this Scope is" : "these Scopes are"} ` +
+            `modelled. Do that deliberately via POST /api/scopes/:id/capacity-resolution, or change the estimate itself with ` +
+            `PATCH /api/scopes/:id.`,
+          scopeIds: teamScopes.map((s) => s.id),
         },
         { status: 409 }
       );
     }
+  }
+
+  // A named Scope must never end up with nobody on it. Its capacity would
+  // be 0, and buildForecastInputs treats a non-positive capacity as "no
+  // number configured" and infers one from Linear assignees -- so an
+  // emptied roster would silently resurface as a made-up team size rather
+  // than as the absence it actually is. Saying "we no longer track who is
+  // here" is a resolution change, with its own endpoint.
+  const emptied = await namedScopesEmptiedBy(personIds, toWrite);
+  if (emptied.length > 0) {
+    const one = emptied.length === 1;
+    return NextResponse.json(
+      {
+        error:
+          `This would leave ${emptied.map((s) => s.name).join(", ")} with nobody on ${one ? "it" : "them"}. ` +
+          `${one ? "That Scope is" : "Those Scopes are"} tracked by named people, so an empty roster has no capacity ` +
+          `and no honest forecast. Reassign someone, or switch ${one ? "it" : "them"} back to a team estimate via ` +
+          `POST /api/scopes/:id/capacity-resolution.`,
+        scopeIds: emptied.map((s) => s.id),
+      },
+      { status: 409 }
+    );
   }
 
   const validationErrors = validateAllocations(people, toWrite);

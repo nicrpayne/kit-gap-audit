@@ -10,11 +10,16 @@
 // answer ("what if we had more people"), this is the precise one ("who,
 // exactly, and how split").
 
-import type { PersonLike } from "@/lib/capacity/resolve";
+import type { PersonLike, CapacityResolution } from "@/lib/capacity/resolve";
 
 export interface DrawerScope {
   scopeId: string;
   name: string;
+  /** How precisely this Scope's team is known. A "team" Scope has no
+      roster to edit here -- see the note in the grid below. */
+  resolution: CapacityResolution;
+  /** The flat number a "team" Scope is currently modelled as. */
+  teamEstimate: number;
 }
 
 interface AllocationDrawerProps {
@@ -30,6 +35,8 @@ interface AllocationDrawerProps {
   onRemovePerson: (personId: string) => void;
   removingId: string | null;
   removeError: string | null;
+  /** Open the deliberate "start tracking this Scope by name" flow. */
+  onConvertToNamed: (scopeId: string) => void;
 }
 
 export default function AllocationDrawer({
@@ -45,9 +52,11 @@ export default function AllocationDrawer({
   onRemovePerson,
   removingId,
   removeError,
+  onConvertToNamed,
 }: AllocationDrawerProps) {
   if (!open) return null;
   const overIds = new Set(overAllocated.map((o) => o.personId));
+  const teamScopes = scopes.filter((s) => s.resolution !== "named");
 
   return (
     <div
@@ -95,6 +104,9 @@ export default function AllocationDrawer({
                   {scopes.map((s) => (
                     <th key={s.scopeId} className="text-left font-medium py-1.5 px-2 whitespace-nowrap text-[var(--i-text-soft)]">
                       {s.name}
+                      <div className="mt-0.5 text-[9.5px] font-normal uppercase tracking-[0.1em] text-[var(--i-text-faint)]">
+                        {s.resolution === "named" ? "by name" : `${s.teamEstimate.toFixed(1)} FTE team`}
+                      </div>
                     </th>
                   ))}
                   <th className="text-left font-medium py-1.5 px-2 text-[var(--i-text-soft)]">Total</th>
@@ -112,6 +124,25 @@ export default function AllocationDrawer({
                         <span className="text-[var(--i-text-faint)]"> · {person.fte} FTE</span>
                       </td>
                       {scopes.map((s) => {
+                        // A team-estimate Scope has no roster to edit. It
+                        // used to render a live slider here that moved the
+                        // forecast and then persisted nothing on Commit --
+                        // the control said "you can put someone here" and
+                        // the model had no way to record it. Naming people
+                        // is a change of resolution, not an allocation, so
+                        // it belongs to the deliberate flow below.
+                        if (s.resolution !== "named") {
+                          return (
+                            <td key={s.scopeId} className="py-2 px-2">
+                              <span
+                                className="text-[var(--i-text-faint)] tabular-nums"
+                                title={`${s.name} is modelled as ${s.teamEstimate.toFixed(1)} FTE, not as a roster — nobody is named here.`}
+                              >
+                                —
+                              </span>
+                            </td>
+                          );
+                        }
                         const pct = Math.round(fractionFor(person.id, s.scopeId) * 100);
                         return (
                           <td key={s.scopeId} className="py-2 px-2">
@@ -159,6 +190,33 @@ export default function AllocationDrawer({
                 </tr>
               </tfoot>
             </table>
+          )}
+
+          {teamScopes.length > 0 && (
+            <div className="mt-4 space-y-2">
+              {teamScopes.map((s) => (
+                <div
+                  key={s.scopeId}
+                  className="rounded-md px-3.5 py-3 flex items-start justify-between gap-4"
+                  style={{ background: "var(--i-panel)", border: "1px solid var(--i-border)" }}
+                >
+                  <p className="text-[11px] leading-relaxed text-[var(--i-text-soft)]">
+                    <strong className="text-[var(--i-text)]">{s.name}</strong> is modelled as{" "}
+                    <strong className="text-[var(--i-text)]">{s.teamEstimate.toFixed(1)} FTE</strong>. People are not
+                    assigned individually, so there is nobody here to move. Assigning people doesn&rsquo;t add capacity
+                    — it switches {s.name} from a team estimate to a named roster, and that roster becomes its capacity.
+                  </p>
+                  <button
+                    onClick={() => onConvertToNamed(s.scopeId)}
+                    data-shoot={`assign-people-${s.scopeId}`}
+                    className="shrink-0 rounded-md px-2.5 py-1.5 text-[10.5px] text-[var(--i-text-soft)] hover:text-[var(--i-text)] whitespace-nowrap"
+                    style={{ border: "1px solid var(--i-border-strong)" }}
+                  >
+                    Assign people
+                  </button>
+                </div>
+              ))}
+            </div>
           )}
 
           <p className="mt-4 text-[10.5px] text-[var(--i-text-faint)] leading-relaxed">

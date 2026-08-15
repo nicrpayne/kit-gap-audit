@@ -15,6 +15,23 @@ model Scope {
   labelFilter  String? // optional label name to further narrow, e.g. "JSA"
   targetDate   DateTime? // release target the Forecast confidence is measured against
   teamCapacity Float? // parallel "developer equivalents"; null = infer from assignees
+  // HOW PRECISELY WE KNOW WHO IS ON THIS WORK -- not a second kind of
+  // capacity. There is one portfolio capacity pool: people are the
+  // capacity, projects consume it, and naming someone never creates any.
+  //
+  //   "team"  -- we know roughly how big the team is, not who is on it.
+  //              teamCapacity above (or an inference from Linear
+  //              assignees) stands in for whoever they are.
+  //   "named" -- the roster is enumerated as Allocation rows, and that
+  //              roster IS the capacity. teamCapacity is kept but dormant,
+  //              so switching back is lossless.
+  //
+  // These are two RESOLUTIONS of the same underlying fact, never two
+  // sources to be added together. Declared rather than derived from "does
+  // this Scope have any Allocation row", so that changing resolution is an
+  // explicit Reality operation with a name -- and so that removing the
+  // last person can never silently reinstate a stale aggregate number.
+  capacityResolution String @default("team")
   includeTriage Boolean  @default(false) // count Triage-state tickets in the Forecast (audit always sees them)
   estimationContext String? // free text fed to the AI estimator: team makeup, stack, what this release is
   notionPageIds String[] @default([]) // Notion requirements/scoping pages pulled in as estimator context

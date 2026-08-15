@@ -16,6 +16,7 @@ import { applyScenarioInputDelta, type ScenarioInputDelta, type ScenarioInputSco
 import { computeMomentum } from "@/lib/momentum/compute";
 import { computeMomentumTrend, type MomentumTrend } from "@/lib/momentum/trend";
 import { realityRevision, subscribeReality } from "@/lib/instrument/reality";
+import type { CapacityResolution } from "@/lib/capacity/resolve";
 
 // The provenance the Scope instrument reads. Produced by describeItems in
 // lib/forecast/compute.ts by joining each simulated item back to the Linear
@@ -50,6 +51,7 @@ export interface ProjectScope {
   gates: DecisionGate[];
   teamCapacity: number;
   capacitySource: "allocations" | "explicit" | "inferred";
+  capacityResolution: CapacityResolution;
   explicitTeamCapacity: number | null;
   lastReport: { generatedAt: string; likelyDate: string; confidenceAtTarget: number | null } | null;
   reportHistory: {
@@ -360,6 +362,7 @@ export function useProject(): ProjectModel {
       explicitTeamCapacity: s.explicitTeamCapacity,
       teamCapacity: s.teamCapacity,
       capacitySource: s.capacitySource,
+      capacityResolution: s.capacityResolution,
       startDate,
       targetDate: s.targetDate ? new Date(s.targetDate) : null,
     }));
