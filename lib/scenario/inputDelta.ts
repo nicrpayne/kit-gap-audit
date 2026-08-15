@@ -103,36 +103,23 @@ export interface ScenarioInputScope {
 // NEVER changes resolveCapacity's own fallback semantics, which stay
 // correct for authoritative Reality (see docs/SCENARIO-MODEL.md).
 //
-// The branch below is keyed on s.capacitySource -- Reality's OWN,
-// scenario-independent source for this Scope -- not on whether a given
-// allocation entry belongs to a real or hypothetical person. That
-// distinction matters: a scope's authoritative source must never flip
-// merely because the scenario introduces an allocation-shaped change,
-// whether that change is a net-new hypothetical person or an existing
-// real person moved in from another scope. Both are handled identically
-// here, additively, once the Scope is aggregate-sourced.
+// ONE POOL, ONE BRANCH. Capacity is embodied (lib/capacity/workforce.ts):
+// a Scope's capacity is the people on it, so the scenario's allocation set
+// is simply resolved the same way Reality's is. Hypothetical people are
+// people too -- a scenario that hires puts real capacity in the pool for
+// the duration of the hypothetical, and it flows through the identical
+// path.
 //
-// - capacitySource === "allocations": Reality already tracks this Scope
-//   at person level, so every allocation-shaped change (real reallocation
-//   AND net-new hypothetical people) is folded into ONE resolveCapacity
-//   call against the full current allocation picture -- identical to how
-//   this always worked, and correct, because there's no aggregate number
-//   at risk of being silently discarded.
-// - capacitySource === "explicit" | "inferred": Reality is an aggregate
-//   number with no enumerable contributor list. s.teamCapacity (the
-//   already-resolved aggregate baseline) is preserved untouched, and a
-//   SECOND resolveCapacity call -- with explicitTeamCapacity forced to
-//   null so it can never itself resolve to "explicit" -- computes only
-//   the scenario's ADDITIVE contribution for this one Scope, correctly
-//   switch-cost-adjusted (it still receives the full, unfiltered,
-//   cross-scope delta.allocations array, so a multi-scope contributor's
-//   switchFactor is computed from their whole picture, not a per-scope
-//   slice). That contribution is added on top of the preserved baseline.
+// An earlier version branched on whether a Scope was "aggregate" or
+// "person-level", and ADDED a scenario's named allocations on top of an
+// aggregate Scope's flat number. That invented humans: dragging one person
+// onto a 10 FTE Platform previewed 11 FTE. It was also unpersistable, so
+// the preview answered a different question from the one Commit recorded.
+// There is no aggregate number left to add to, and no branch to get wrong.
 //
 // Passing a delta built from Reality's own saved allocations/people/
-// contextSwitchCostPct (hypotheticalPeople: []) reproduces the baseline
-// forecast exactly in both branches -- see docs/SCENARIO-MODEL.md for the
-// proof.
+// contextSwitchCostPct reproduces the baseline forecast exactly -- see
+// docs/SCENARIO-MODEL.md.
 export function applyScenarioInputDelta(
   scopes: ScenarioInputScope[],
   realityPeople: PersonLike[],
@@ -150,12 +137,9 @@ export function applyScenarioInputDelta(
     const override = overrides[s.scopeId];
     if (override !== undefined) {
       teamCapacity = clampSimulatedCapacity(override);
-    } else if (s.capacitySource === "allocations") {
-      const resolved = resolveCapacity(s.scopeId, s.explicitTeamCapacity, people, delta.allocations, delta.contextSwitchCostPct);
-      teamCapacity = resolved.capacity ?? s.teamCapacity;
     } else {
-      const additive = resolveCapacity(s.scopeId, null, people, delta.allocations, delta.contextSwitchCostPct);
-      teamCapacity = s.teamCapacity + (additive.capacity ?? 0);
+      const resolved = resolveCapacity(s.scopeId, people, delta.allocations, delta.contextSwitchCostPct);
+      teamCapacity = resolved.capacity ?? s.teamCapacity;
     }
     return {
       scopeId: s.scopeId,

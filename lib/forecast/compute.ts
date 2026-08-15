@@ -181,13 +181,7 @@ async function buildScopeSimInputs(scope: Scope): Promise<ScopeSimBundle> {
     prisma.allocation.findMany(),
     prisma.portfolioSettings.findUnique({ where: { id: "singleton" } }),
   ]);
-  const resolved = resolveCapacity(
-    scope.id,
-    scope.teamCapacity ?? null,
-    people,
-    allocations,
-    portfolioSettings?.contextSwitchCostPct ?? 0
-  );
+  const resolved = resolveCapacity(scope.id, people, allocations, portfolioSettings?.contextSwitchCostPct ?? 0);
 
   const inputs = buildForecastInputs(issues, findings, resolved.capacity, {
     includeTriage: scope.includeTriage,

@@ -356,7 +356,7 @@ export default function PortfolioPageClient() {
         continue;
       }
       if (s.capacitySource === "allocations") {
-        const resolved = resolveCapacity(s.scopeId, s.explicitTeamCapacity, allPeople, currentAllocations, switchCostPct);
+        const resolved = resolveCapacity(s.scopeId, allPeople, currentAllocations, switchCostPct);
         out.set(s.scopeId, resolved.capacity ?? s.teamCapacity);
       } else {
         out.set(s.scopeId, s.teamCapacity);

@@ -1,0 +1,14 @@
+-- Person.synthetic: marks an anonymous capacity unit generated to stand in
+-- for a legacy Scope.teamCapacity number.
+--
+-- Capacity is embodied now (see lib/capacity/workforce.ts): a Scope's
+-- capacity is the people on it. teamCapacity described a team without
+-- saying who was on it, which let the portfolio claim more capacity than it
+-- had humans. scripts/migrate-embodied-capacity.ts converts each legacy
+-- number into the units it always stood for; this flag makes that
+-- reversible and lets the Master bus distinguish inherited assumption from
+-- people who were actually named.
+--
+-- Additive and non-breaking. Scope.teamCapacity is deliberately LEFT IN
+-- PLACE for rollback and history -- it is simply no longer read.
+ALTER TABLE "Person" ADD COLUMN "synthetic" BOOLEAN NOT NULL DEFAULT false;

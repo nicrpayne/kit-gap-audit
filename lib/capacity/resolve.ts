@@ -75,13 +75,23 @@ function countScopesPerPerson(allocations: AllocationLike[]): Map<string, number
   return counts;
 }
 
-// Fallback chain, stage 1 (allocations -> explicit override). Stage 2
-// (explicit-or-null -> inferred from assignees) lives in
-// buildForecastInputs, since it needs Linear issue data this module
-// doesn't have -- see lib/forecast/build.ts.
+// CAPACITY IS EMBODIED. A Scope's capacity is the people allocated to it,
+// and nothing else -- see lib/capacity/workforce.ts for the product law.
+//
+// Scope.teamCapacity is NO LONGER consulted here. It was a second,
+// disembodied way to say how big a team is, and holding both meant the
+// portfolio could claim more capacity than it had humans (a 10 FTE flat
+// number on one Scope plus a 3 FTE roster on another is not 13 people, it
+// is one team described twice and one described properly). The column
+// survives for rollback and history; scripts/migrate-embodied-capacity.ts
+// converts each legacy number into the anonymous units it stood for, so
+// this function returns the same figure it used to.
+//
+// A Scope with no allocations at all resolves to null, and
+// buildForecastInputs still falls back to inferring from Linear assignees
+// -- the correct behaviour for a Scope nobody has staffed yet.
 export function resolveCapacity(
   scopeId: string,
-  explicitTeamCapacity: number | null,
   people: PersonLike[],
   allocations: AllocationLike[],
   contextSwitchCostPct: number
@@ -110,10 +120,6 @@ export function resolveCapacity(
     });
     const capacity = contributors.reduce((sum, c) => sum + c.effectiveFte, 0);
     return { capacity, source: "allocations", contributors };
-  }
-
-  if (explicitTeamCapacity != null && explicitTeamCapacity > 0) {
-    return { capacity: explicitTeamCapacity, source: "explicit", contributors: [] };
   }
 
   return { capacity: null, source: null, contributors: [] };
