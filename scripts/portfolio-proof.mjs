@@ -92,6 +92,14 @@ check("Forecast reads the capacity Portfolio committed", platformAfter !== platf
 await shot("p4-forecast-after");
 
 // ── 2. …and composes with the gate lever, in one scenario ───────────────
+// The assumptions panel starts collapsed, so the gate buttons are not in
+// the DOM until it is opened. Without this click the check below silently
+// took its "no gate to assume" branch on every run and proved nothing.
+const macros = p.locator('[data-shoot="toggle-macros"]');
+if ((await macros.count()) > 0) {
+  await macros.click();
+  await settle(900);
+}
 const gate = p.locator('[data-shoot="macro-gate"]').first();
 if ((await gate.count()) > 0) {
   await gate.click();

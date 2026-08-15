@@ -11,6 +11,7 @@ import {
   SourcePolicyViolationError,
 } from "@/lib/context/snapshot";
 import { PackageValidationError } from "@/lib/context/validate";
+import { harvestCandidates } from "@/lib/decisions/candidates";
 
 interface RefreshContextDoc {
   label: string;
@@ -137,6 +138,16 @@ export async function POST(req: NextRequest) {
     }
   }
 
+  // DECISION CANDIDATES, from the package's own derived claims. This is
+  // where a refinement call turns into a tray of suggestions -- and it is
+  // deliberately the ONLY automatic consequence of those claims. No
+  // Decision, no Finding, no gate, and no date moves; see
+  // lib/decisions/candidates.ts.
+  let decisionCandidates: Awaited<ReturnType<typeof harvestCandidates>> | undefined;
+  if (contextSnapshotId) {
+    decisionCandidates = await harvestCandidates({ id: contextSnapshotId });
+  }
+
   let audit:
     | { sourceId: string | null; findingCount: number; rejectedFindings: { title: string; type: string; reason: string }[] }
     | undefined;
@@ -232,6 +243,8 @@ export async function POST(req: NextRequest) {
     // the same id is what audit-created Findings (contextSnapshotId) and
     // the generated Report (contextSnapshotId), if any, both point back to.
     contextSnapshotId,
+    // Suggestions raised for human review by this package. Never Reality.
+    decisionCandidates,
     audit,
     estimate: estimateSummary,
     forecast: {

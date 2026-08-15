@@ -13,15 +13,16 @@
 // compact form) read this one list, so the two can never disagree about
 // where the boundary is.
 //
-// RELEASE BOUNDARY: this release promotes exactly three instruments --
-// Portfolio (already an instrument in production), plus Forecast and Scope.
-// Every other destination keeps its production Workbench surface until its
-// own instrument has been designed and accepted. Timeline is deliberately
-// absent from this list: production presents it through the Nav's separate
-// "Coming next" group, and it should not appear here as a peer of finished
-// instruments until it is one.
+// RELEASE BOUNDARY: this release promotes Portfolio (already an instrument
+// in production), Forecast, Scope, and now Decisions -- the last built
+// against its own approved visual contract rather than inherited from the
+// old experimental instrument suite. Every other destination keeps its
+// production Workbench surface until its own instrument has been designed
+// and accepted. Timeline is deliberately absent from this list: production
+// presents it through the Nav's separate "Coming next" group, and it should
+// not appear here as a peer of finished instruments until it is one.
 
-export const INSTRUMENT_ROUTES = ["/portfolio", "/forecast", "/scope"] as const;
+export const INSTRUMENT_ROUTES = ["/portfolio", "/forecast", "/scope", "/decisions"] as const;
 
 export function isInstrumentRoute(pathname: string): boolean {
   return INSTRUMENT_ROUTES.some((r) => pathname === r || pathname.startsWith(r + "/"));
@@ -45,7 +46,13 @@ export interface ShellDestination {
 export const DESTINATIONS: ShellDestination[] = [
   { href: "/", label: "Dashboard" },
   { href: "/audit", label: "Audit" },
-  { href: "/decisions", label: "Decisions" },
+  {
+    href: "/decisions",
+    label: "Decisions",
+    instrument: true,
+    owns: "Which choices are unresolved, and which are actually holding delivery",
+    verb: "Release the gate",
+  },
   {
     href: "/forecast",
     label: "Forecast",
