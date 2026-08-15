@@ -183,7 +183,24 @@ async function buildScopeSimInputs(scope: Scope): Promise<ScopeSimBundle> {
   ]);
   const resolved = resolveCapacity(scope.id, people, allocations, portfolioSettings?.contextSwitchCostPct ?? 0);
 
+  // SERIAL GATES, from the Decision model. A Decision reaches the forecast
+  // only through a DecisionGate row that names what waits, why it is
+  // serial, and on what evidence -- see prisma/schema.prisma. An open
+  // Decision with no gate has zero effect here, which is the whole point.
+  const gateRows = await prisma.decisionGate.findMany({
+    where: { targetScopeId: scope.id, serial: true, decision: { status: "open" } },
+    select: { id: true, low: true, likely: true, high: true, decision: { select: { title: true } } },
+  });
+  const gates = gateRows.map((g) => ({
+    id: g.id,
+    label: g.decision.title,
+    low: g.low,
+    likely: g.likely,
+    high: g.high,
+  }));
+
   const inputs = buildForecastInputs(issues, findings, resolved.capacity, {
+    gates,
     includeTriage: scope.includeTriage,
     estimates,
     hashFor: (i) => estimateContentHash(i, contextHash),

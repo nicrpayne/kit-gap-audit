@@ -86,9 +86,21 @@ function classifyEstimateHint(hint: string | null): { tp: ThreePoint; source: Es
   return { tp: HINT_PLACEHOLDER, source: "finding_placeholder" };
 }
 
-// Serial time-to-decide for a blocking decision -- doesn't shrink with
-// more developers, so it's a gate, not a divisible work item.
-const DECISION_GATE_ESTIMATE: ThreePoint = { low: 1, likely: 4, high: 10 };
+// The timing every legacy gate used before Decisions existed. Kept as the
+// migration's backfill value so no date moves; new gates carry their own
+// three-point estimate, answered when the gate is created.
+export const LEGACY_GATE_ESTIMATE: ThreePoint = { low: 1, likely: 4, high: 10 };
+
+// A GATE SUPPLIED BY THE DECISION MODEL.
+//
+// Gates no longer come from Finding.type + a boolean. A Decision reaches
+// the forecast only through a DecisionGate row, which had to say what
+// waits, why the wait is serial, and on what evidence. Callers resolve
+// those rows and hand them in; this module does not query.
+export interface SuppliedGate extends ThreePoint {
+  id: string;
+  label: string;
+}
 
 // How much of the forecast rests on real estimates vs. placeholder guesses.
 export interface EstimateQuality {
@@ -200,6 +212,10 @@ export function buildForecastInputs(
     hashFor?: (issue: LinearIssueSummary) => string;
     findingEstimates?: Map<string, WorkEstimateLike>;
     findingHashFor?: (finding: { title: string; estimateHint: string | null }) => string;
+    /** Serial gates from DecisionGate rows, already resolved by the caller
+        (lib/forecast/compute.ts). Absent = this Scope has no gated
+        Decisions, which is a perfectly ordinary state. */
+    gates?: SuppliedGate[];
     // Caller's classification of configuredCapacity when it's non-null --
     // "allocations" if resolved from named-person Allocations, otherwise
     // "explicit" (a Scope's own teamCapacity, today's only source).
@@ -315,13 +331,17 @@ export function buildForecastInputs(
   ai.flagged.sort((a, b) => b.aiLikelyDays - a.aiLikelyDays);
   ai.flagged = ai.flagged.slice(0, 8);
 
-  const blockingDecisions = findings.filter(
-    (f) => f.type === "decision" && f.status === "open" && f.blocking
-  );
-  const gates: DecisionGate[] = blockingDecisions.map((f) => ({
-    id: f.id,
-    label: f.title,
-    ...DECISION_GATE_ESTIMATE,
+  // EXACTLY ONE GATE PATH. Legacy decision Findings no longer produce
+  // gates -- scripts/migrate-decisions.ts converted them into Decisions
+  // with explicit DecisionGate rows, and the caller supplies those. A
+  // Finding of type "decision" is now purely an audit observation, and the
+  // rows survive only as history.
+  const gates: DecisionGate[] = (options?.gates ?? []).map((g) => ({
+    id: g.id,
+    label: g.label,
+    low: g.low,
+    likely: g.likely,
+    high: g.high,
   }));
 
   let teamCapacity = configuredCapacity ?? 0;

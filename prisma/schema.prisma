@@ -32,6 +32,9 @@ model Scope {
   contextDocs  ContextDoc[]
   allocations  Allocation[]
   contextSnapshots ContextSnapshot[]
+  decisions    Decision[]
+  gatedBy      DecisionGate[] @relation("GatedScope")
+  decisionCandidates DecisionCandidate[]
 }
 
 // Tracking POLICY for a recurring source -- "should we currently keep
@@ -284,6 +287,165 @@ model Finding {
   contextSnapshotId String?
   contextSnapshot   ContextSnapshot? @relation(fields: [contextSnapshotId], references: [id])
   evidenceRefs      String[] @default([])
+}
+
+// A CHOICE, not an observation.
+//
+// A Finding is something the audit NOTICED. A Decision is something the
+// project has to DECIDE. Those were the same row for a long time
+// (Finding.type = "decision"), and overloading them is what let "this is a
+// decision" silently mean "this delays delivery" -- the address-storage
+// question and a blocking vendor choice were indistinguishable to the
+// forecast.
+//
+// THE LAW THIS MODEL EXISTS TO ENFORCE:
+//
+//   An OPEN Decision has NO forecast effect.
+//
+// A Decision touches the forecast only through DecisionGate below, which
+// has to say what waits, why the wait is serial, and on what evidence.
+// "How should addresses be stored?" can be open, real and important
+// forever while changing no date at all.
+model Decision {
+  id        String   @id @default(cuid())
+  scopeId   String
+  scope     Scope    @relation(fields: [scopeId], references: [id], onDelete: Cascade)
+  // The question, phrased as a question.
+  title     String
+  status    String   @default("open") // open | decided | dismissed
+  owner     String?
+  rationale String?
+  // When the answer is needed by. Advisory only -- it feeds no simulation.
+  neededBy  DateTime?
+  // Choices under consideration. Options are optional: plenty of real
+  // decisions are "we have to decide X" long before anyone has enumerated
+  // the ways X could go. Shape: [{ id, label, note? }].
+  options   Json     @default("[]")
+  chosenOption String?
+  resolution   String?
+  decidedAt    DateTime?
+  dismissReason String?
+  // Linear identifiers this choice touches. Display + navigation only.
+  relatedIssues String[] @default([])
+
+  // WHERE THIS CAME FROM. A Decision migrated from a legacy Finding keeps
+  // a pointer to it so the migration is idempotent and reversible, and so
+  // history survives -- the Finding row is never deleted.
+  sourceFindingId String?  @unique
+  // The candidate this was promoted from, when it began as a machine
+  // suggestion. Also the idempotency key for acceptance.
+  sourceClaimKey  String?  @unique
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  gate     DecisionGate?
+  evidence DecisionEvidence[]
+
+  @@index([scopeId, status])
+}
+
+// THE ONLY WAY A DECISION REACHES THE FORECAST.
+//
+// Its existence is the claim "delivery is physically waiting on this
+// choice". Every field is required because a gate that cannot say what
+// waits, why the wait is serial, or on what evidence, is an assertion
+// nobody can check -- and the old model made exactly that assertion from
+// a boolean.
+//
+// ENGINE LIMIT, stated honestly: lib/forecast/simulate.ts adds gate
+// samples serially, to the whole scope. So only a genuinely serial,
+// scope-wide dependency belongs here. A choice that could be resolved in
+// parallel with the work stays an open Decision with no gate rather than
+// being forced through serial math that would misreport it.
+model DecisionGate {
+  id         String   @id @default(cuid())
+  decisionId String   @unique
+  decision   Decision @relation(fields: [decisionId], references: [id], onDelete: Cascade)
+
+  // WHAT WAITS. Structured, not free text: the forecast reads this.
+  // Scope-level only in V1 -- Features have no durable identity yet, and
+  // fake precision is worse than a smaller true model.
+  targetScopeId String
+  targetScope   Scope  @relation("GatedScope", fields: [targetScopeId], references: [id], onDelete: Cascade)
+
+  // WHY IT IS SERIAL, and WHAT SUPPORTS THAT. Prose, but required prose:
+  // a human has to be able to audit the claim.
+  dependency      String
+  evidenceForGate String
+
+  // How long resolving the choice could take. Sampled exactly like any
+  // other three-point estimate. Legacy migrated gates carry 1/4/10, which
+  // is what the old hard-coded constant used, so no date moves.
+  low    Float
+  likely Float
+  high   Float
+
+  // True for every gate today; the column exists so a future concurrent
+  // model can be added without a migration that silently reinterprets
+  // existing rows.
+  serial Boolean @default(true)
+
+  // "migrated" marks a gate created by the legacy backfill rather than by
+  // someone answering the connect-to-delivery questions.
+  provenance String @default("manual") // manual | migrated
+  createdAt  DateTime @default(now())
+
+  @@index([targetScopeId])
+}
+
+// One citation. A Decision may carry several, from different sources --
+// the same choice argued in a transcript, a Linear comment and a
+// spreadsheet is ONE Decision with three pieces of evidence, not three
+// decisions.
+model DecisionEvidence {
+  id         String   @id @default(cuid())
+  decisionId String
+  decision   Decision @relation(fields: [decisionId], references: [id], onDelete: Cascade)
+
+  kind    String // "context_package" | "linear" | "manual" | "finding"
+  excerpt String
+  // Provenance, as specific as the source allows. All optional because
+  // different sources can honestly supply different amounts.
+  contextSnapshotId String?
+  evidenceItemId    String?
+  externalRef       String?
+  sourceLabel       String?
+  createdAt DateTime @default(now())
+
+  @@index([decisionId])
+}
+
+// A machine suggestion that has NOT been accepted as Reality.
+//
+// Hermes noticing a debate must never create project truth. A candidate is
+// the visible form of a DerivedClaim (lib/context/package.ts), which that
+// module already documents as "never itself a Finding, forecast input,
+// Linear ticket, or Reality". This row exists only so a candidate can be
+// dismissed durably and so acceptance can be idempotent -- it is a
+// disposition record, not a Decision.
+model DecisionCandidate {
+  id       String @id @default(cuid())
+  // Stable across re-imports of the same claim: snapshot + claim id.
+  claimKey String @unique
+
+  scopeId String
+  scope   Scope  @relation(fields: [scopeId], references: [id], onDelete: Cascade)
+
+  title      String
+  question   String?
+  sourceLabel String // "Hermes · Refinement call", "Linear #2431", ...
+  contextSnapshotId String?
+  // EvidenceItem ids within the snapshot's package, carried verbatim so
+  // acceptance can copy real citations rather than inventing them.
+  evidenceRefs String[] @default([])
+  excerpts     String[] @default([])
+
+  status     String   @default("pending") // pending | accepted | dismissed
+  acceptedDecisionId String?
+  createdAt  DateTime @default(now())
+
+  @@index([scopeId, status])
 }
 
 model AuditRun {
