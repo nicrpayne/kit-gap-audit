@@ -15,6 +15,18 @@ function daysFromNow(n: number): Date {
 
 async function main() {
   // Wipe the local dev graph so reseeding is idempotent.
+  //
+  // The Decision and Context layers arrived after this script did, and both
+  // hold foreign keys into Scope. Leaving them behind made `scope.deleteMany`
+  // fail on ContextSnapshot_scopeId_fkey, so a second reseed silently did
+  // nothing and later proof runs inherited the previous run's decisions --
+  // which is how a correct duplicate-title warning got mistaken for a tool
+  // that would not close. Wipe them first, deepest child outwards.
+  await prisma.decisionEvidence.deleteMany({});
+  await prisma.decisionGate.deleteMany({});
+  await prisma.decisionCandidate.deleteMany({});
+  await prisma.decision.deleteMany({});
+  await prisma.contextSnapshot.deleteMany({});
   await prisma.finding.deleteMany({});
   await prisma.source.deleteMany({});
   await prisma.report.deleteMany({});
