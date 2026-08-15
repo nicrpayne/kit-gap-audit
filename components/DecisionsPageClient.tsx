@@ -24,6 +24,7 @@ import { CandidateTray, DecidedBand, DismissedBar, OpenLane } from "@/components
 import DecisionInspector, { type Selection } from "@/components/decisions/DecisionInspector";
 import { ConnectTool, ImportTool, NewDecisionTool } from "@/components/decisions/DecisionTools";
 import { useDecisions } from "@/lib/decisions/useDecisions";
+import { useFlip } from "@/lib/decisions/useFlip";
 import { EMPTY_SCENARIO, fmtDay, useProject } from "@/lib/instrument/useProject";
 import { LANE_COLOR, forecastActive, openNotGating, type DecisionRow } from "@/lib/decisions/model";
 
@@ -186,6 +187,12 @@ export default function DecisionsPageClient() {
 
   const show = (lane: Filter) => filter === "all" || filter === lane;
 
+  // A decision that changes seating -- candidate accepted into the open
+  // bank, open decision inserted into a socket, gate decided into memory --
+  // is ONE object moving, and the eye should be able to follow it. These
+  // are the generations that can move a module between bays.
+  useFlip([decisions, candidates, activeScopeId, filter, project.scenario.resolvedGateIds]);
+
   return (
     <InstrumentShell
       scopes={scopes.map((s) => ({ scopeId: s.id, name: s.name }))}
@@ -347,7 +354,7 @@ export default function DecisionsPageClient() {
                     gating THIS circuit -- a compact door rather than a
                     second circuit crowding the first. */}
                 {elsewhere.length > 0 && (
-                  <div data-shoot="gates-elsewhere" className="flex flex-wrap items-center gap-2 px-6 pt-3">
+                  <div data-shoot="gates-elsewhere" className="flex flex-wrap items-center gap-2 px-6 pt-2.5">
                     <span className="i-label">Also gating</span>
                     {elsewhere.map(([id, count]) => (
                       <button
@@ -363,7 +370,7 @@ export default function DecisionsPageClient() {
                   </div>
                 )}
 
-                <div className="flex flex-col gap-2 px-6 pb-4 pt-4">
+                <div className="flex flex-col gap-1 px-6 pb-4 pt-3.5">
                   {show("candidates") && (
                     <CandidateTray
                       candidates={candidates}
@@ -575,7 +582,12 @@ function Count({ value, label, tone, shoot }: { value: number; label: string; to
 
 function Legend() {
   return (
-    <div className="flex flex-wrap items-center gap-x-4 gap-y-1 pt-1">
+    // Engraved on the chassis under the bays, the way a legend is silk-
+    // screened onto a panel -- not set as a paragraph on a page.
+    <div
+      className="flex flex-wrap items-center gap-x-4 gap-y-1 rounded-md px-3 py-1.5"
+      style={{ background: "#090c0f", boxShadow: "inset 0 1px 4px rgba(0,0,0,0.55)" }}
+    >
       <span className="i-label">Legend</span>
       {(
         [
