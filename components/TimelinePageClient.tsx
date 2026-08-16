@@ -40,6 +40,13 @@ import Transport, { type Speed } from "@/components/timeline/Transport";
 import AddEventTool from "@/components/timeline/AddEventTool";
 
 const MIN_SPAN = 21 * DAY;
+/** How long a crossed event stays articulated before settling back into
+    the score. Long enough to read a short title, short enough that a dense
+    afternoon does not become a queue. */
+const ARTICULATE_MS = 2100;
+/** How long the previous memory band lingers as a ghost, and the delta
+    chip states the movement. */
+const MEMORY_GHOST_MS = 2400;
 
 export default function TimelinePageClient() {
   const router = useRouter();
@@ -58,6 +65,16 @@ export default function TimelinePageClient() {
   const [tool, setTool] = useState<{ editing: TimelineEntry | null } | null>(null);
   const [intakeOpen, setIntakeOpen] = useState(false);
   const [reducedMotion, setReducedMotion] = useState(false);
+  // Events the playhead has just crossed. Held briefly so the note can be
+  // read, then released back into the accumulated score.
+  const [articulating, setArticulating] = useState<Set<string>>(new Set());
+  const articulateAt = useRef<Map<string, number>>(new Map());
+  const prevCrossed = useRef<Set<string>>(new Set());
+  // The snapshot each lane's memory band just moved OFF, and by how much.
+  const [ghostByScope, setGhost] = useState<Record<string, ForecastSnapshot | null>>({});
+  const [deltaByScope, setDelta] = useState<Record<string, { fromLikely: string; toLikely: string; days: number } | null>>({});
+  const prevMemory = useRef<Record<string, ForecastSnapshot | null>>({});
+  const ghostTimers = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
 
   const fieldHost = useRef<HTMLDivElement>(null);
   const raf = useRef<number | null>(null);
@@ -157,6 +174,12 @@ export default function TimelinePageClient() {
   useEffect(() => {
     if (playing || playheadT === null) return;
     setCrossed(crossedAt(pastEvents, playheadT));
+    // Articulation belongs to playback. Scrubbing is a different act, and
+    // leaving modules open under a dragged playhead would be noise.
+    if (articulateAt.current.size > 0) {
+      articulateAt.current.clear();
+      setArticulating(new Set());
+    }
   }, [playheadT, pastEvents, playing]);
 
   // ── PLAYBACK ───────────────────────────────────────────────────────
@@ -183,6 +206,18 @@ export default function TimelinePageClient() {
       const { t, crossed: c, done } = playheadAt(plan, elapsed);
       setPlayheadT(t);
       setCrossed(c);
+      // Newly crossed since the last frame: struck now, readable for a beat.
+      const wall = performance.now();
+      for (const id of c) if (!prevCrossed.current.has(id)) articulateAt.current.set(id, wall);
+      prevCrossed.current = c;
+      const live = new Set<string>();
+      for (const [id, at] of articulateAt.current) {
+        if (wall - at < ARTICULATE_MS) live.add(id);
+        else articulateAt.current.delete(id);
+      }
+      setArticulating((prev) =>
+        prev.size === live.size && [...live].every((id) => prev.has(id)) ? prev : live
+      );
       if (done) {
         // STOPS AT NOW. Future plans stay visible ahead, un-crossed.
         setPlaying(false);
@@ -214,6 +249,31 @@ export default function TimelinePageClient() {
     }
     return out;
   }, [data, playheadT]);
+
+  // REPORT TRANSITION CHOREOGRAPHY. When a lane's remembered snapshot
+  // changes identity, the one it left becomes a ghost and the movement
+  // between the two STORED likely dates is stated. Both settle away.
+  useEffect(() => {
+    for (const [scopeId, next] of Object.entries(memoryByScope)) {
+      const prev = prevMemory.current[scopeId] ?? null;
+      if (prev && next && prev.reportId !== next.reportId) {
+        const days = Math.round(
+          (new Date(next.likelyDate).getTime() - new Date(prev.likelyDate).getTime()) / DAY
+        );
+        setGhost((g) => ({ ...g, [scopeId]: prev }));
+        setDelta((d) => ({ ...d, [scopeId]: { fromLikely: prev.likelyDate, toLikely: next.likelyDate, days } }));
+        clearTimeout(ghostTimers.current.get(scopeId));
+        ghostTimers.current.set(
+          scopeId,
+          setTimeout(() => {
+            setGhost((g) => ({ ...g, [scopeId]: null }));
+            setDelta((d) => ({ ...d, [scopeId]: null }));
+          }, MEMORY_GHOST_MS)
+        );
+      }
+      prevMemory.current[scopeId] = next;
+    }
+  }, [memoryByScope]);
 
   const atNow = playheadT !== null && Math.abs(playheadT - nowT) < 12 * 3600 * 1000;
 
@@ -327,96 +387,117 @@ export default function TimelinePageClient() {
   const dateless = data.candidates.filter((c) => !c.date);
   const memoryLanes = data.lanes.filter((l) => memoryByScope[l.scopeId]);
 
+  const memoryLead = memoryLanes.length > 0 ? memoryByScope[memoryLanes[0].scopeId]! : null;
+
   const stateBar = (
     <>
-      {/* ── TOP: identity, as-of readout, live vs historical ────────── */}
+      {/* ── THE MASTER DISPLAY ───────────────────────────────────────
+          One instrument readout, not a row of cards. It answers two
+          questions at once: what date is the needle on, and is the
+          forecast being shown a LIVE one or a REMEMBERED one. Those two
+          are never allowed to blur, so they are given different material
+          and the banner says which is which in words. */}
       <div
-        className="shrink-0 flex items-stretch gap-4 px-4"
+        className="shrink-0 flex items-stretch"
         style={{
-          height: 76,
-          borderBottom: "1px solid var(--i-border)",
-          background: "linear-gradient(180deg, var(--i-panel) 0%, #12171a 100%)",
+          height: 86,
+          borderBottom: "1px solid var(--i-border-strong)",
+          background: "linear-gradient(180deg, #1a2126 0%, #12181c 100%)",
+          boxShadow: "inset 0 1px 0 rgba(243,240,230,0.05)",
         }}
       >
-        <div className="flex flex-col justify-center" style={{ minWidth: 128 }}>
+        <div className="flex flex-col justify-center px-4" style={{ minWidth: 132 }}>
           <div className="i-label">Timeline</div>
-          <div className="text-[10px] text-[var(--i-text-faint)] mt-0.5">Play the project</div>
+          <div className="text-[10px] text-[var(--i-text-faint)] mt-1">Play the project</div>
         </div>
 
-        {/* THE AS-OF READOUT. The single most important thing on the
-            surface during playback: what date are we at, and is the
-            forecast being shown a live one or a remembered one. */}
-        <div className="flex items-center gap-5 pl-4" style={{ borderLeft: "1px solid var(--i-border)" }}>
-          <div>
-            <div className="text-[8px] uppercase tracking-[0.16em] text-[var(--i-text-faint)]">
-              {atNow ? "Live now" : "Playhead"}
-            </div>
-            <div className="i-readout text-[19px] leading-none mt-1" style={{ color: atNow ? "var(--i-mint)" : "var(--i-violet)" }}>
-              {fmtFull(playheadT)}
-            </div>
+        {/* AS-OF: the mode, then the date. Cut into the chassis. */}
+        <div
+          data-shoot="memory-banner"
+          className="flex flex-col justify-center px-4 my-2 rounded-lg"
+          style={{
+            background: "var(--i-recess)",
+            border: `1px solid ${atNow ? "rgba(70,195,214,0.4)" : "rgba(155,140,250,0.4)"}`,
+            boxShadow: "inset 0 2px 9px rgba(0,0,0,0.7)",
+            minWidth: 226,
+          }}
+        >
+          <div className="flex items-center gap-1.5">
+            <span
+              className="h-[6px] w-[6px] rounded-full"
+              style={{
+                background: atNow ? "var(--i-signal)" : "var(--i-violet)",
+                boxShadow: `0 0 8px ${atNow ? "var(--i-signal)" : "var(--i-violet)"}`,
+              }}
+            />
+            <span
+              className="text-[8px] uppercase tracking-[0.2em]"
+              style={{ color: atNow ? "var(--i-signal)" : "var(--i-violet)" }}
+            >
+              {atNow ? "Live now" : "As remembered"}
+            </span>
           </div>
           <div
-            data-shoot="memory-banner"
-            className="rounded px-2.5 py-1.5"
-            style={{
-              background: atNow ? "var(--i-mint-soft)" : "var(--i-violet-soft)",
-              border: `1px solid ${atNow ? "var(--i-mint)" : "var(--i-violet)"}`,
-            }}
+            className="i-readout text-[22px] leading-none mt-1.5"
+            style={{ color: atNow ? "var(--i-signal)" : "var(--i-violet)" }}
           >
-            <div className="text-[8px] uppercase tracking-[0.14em]" style={{ color: atNow ? "var(--i-mint)" : "var(--i-violet)" }}>
-              {atNow ? "Live forecast" : "Forecast as remembered"}
-            </div>
-            <div className="text-[9.5px] text-[var(--i-text-soft)] mt-0.5">
-              {atNow
-                ? "Current project truth"
-                : memoryLanes.length === 0
-                  ? "No forecast snapshot yet"
-                  : `Last report ${fmtDay(new Date(memoryByScope[memoryLanes[0].scopeId]!.generatedAt).getTime())}`}
-            </div>
+            {fmtFull(playheadT)}
+          </div>
+          <div className="text-[8.5px] text-[var(--i-text-faint)] mt-1.5">
+            {atNow
+              ? "Current project truth"
+              : memoryLead
+                ? `Last report ${fmtDay(new Date(memoryLead.generatedAt).getTime())}`
+                : "No forecast snapshot yet"}
           </div>
         </div>
 
-        {/* per-lane remembered landing — steps only at a Report */}
-        <div className="flex-1 min-w-0 flex items-center gap-2 overflow-x-auto" data-shoot="memory-readout">
-          {data.lanes.map((lane) => {
+        {/* THE REMEMBERED LANDING, per lane. One readout strip, spatially
+            aligned with the lanes below it rather than six loose cards. */}
+        <div className="flex-1 min-w-0 flex items-stretch my-2 mx-2 rounded-lg overflow-hidden"
+          data-shoot="memory-readout"
+          style={{ background: "var(--i-recess)", border: "1px solid #1c2227", boxShadow: "inset 0 2px 9px rgba(0,0,0,0.65)" }}>
+          {data.lanes.map((lane, i) => {
             const m = memoryByScope[lane.scopeId];
             const stale = m ? Math.floor((playheadT - new Date(m.generatedAt).getTime()) / DAY) : null;
             return (
               <div
                 key={lane.scopeId}
                 data-shoot={`memory-${lane.scopeId}`}
-                className="shrink-0 rounded px-2.5 py-1.5"
-                style={{ background: "var(--i-void)", border: "1px solid var(--i-border)", minWidth: 118 }}
+                className="flex-1 min-w-0 flex flex-col justify-center px-3"
+                style={{ borderLeft: i === 0 ? undefined : "1px solid rgba(38,45,51,0.7)" }}
               >
-                <div className="text-[8px] uppercase tracking-[0.12em] text-[var(--i-text-faint)] truncate">{lane.name}</div>
+                <div className="text-[8px] uppercase tracking-[0.14em] text-[var(--i-text-faint)] truncate">{lane.name}</div>
                 {m ? (
                   <>
-                    <div className="i-readout text-[13px] leading-none mt-1" data-shoot={`memory-likely-${lane.scopeId}`} style={{ color: "var(--i-violet)" }}>
+                    <div className="i-readout text-[16px] leading-none mt-1.5" data-shoot={`memory-likely-${lane.scopeId}`} style={{ color: "var(--i-violet)" }}>
                       {fmtDay(new Date(m.likelyDate).getTime())}
                     </div>
-                    <div className="text-[8px] text-[var(--i-text-faint)] mt-1 tabular-nums">
+                    <div className="text-[8px] text-[var(--i-text-faint)] mt-1.5 tabular-nums truncate">
                       {fmtDay(new Date(m.earliestDate).getTime())} – {fmtDay(new Date(m.latestDate).getTime())}
                       {m.confidenceAtTarget !== null && ` · ${m.confidenceAtTarget}%`}
+                      {stale !== null && stale > 0 && ` · held ${stale}d`}
                     </div>
-                    {stale !== null && stale > 0 && (
-                      <div className="text-[7.5px] text-[var(--i-text-faint)] mt-0.5">held {stale}d</div>
-                    )}
                   </>
                 ) : (
-                  <div className="text-[9px] text-[var(--i-text-faint)] mt-1.5">no snapshot yet</div>
+                  <div className="text-[10px] text-[var(--i-text-faint)] mt-2">—</div>
                 )}
               </div>
             );
           })}
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 pr-4">
           {dateless.length > 0 && (
             <button
               onClick={() => setIntakeOpen((v) => !v)}
               data-shoot="event-intake-toggle"
-              className="rounded-md px-2.5 py-1.5 text-[10px] hover:brightness-125"
-              style={{ background: "var(--i-panel-raised)", border: "1px solid var(--i-violet)", color: "var(--i-violet)" }}
+              className="rounded-md px-2.5 py-2 text-[10px] hover:brightness-125"
+              style={{
+                background: intakeOpen ? "var(--i-violet-soft)" : "linear-gradient(180deg, #262f35 0%, #131a1e 100%)",
+                border: "1px solid var(--i-violet)",
+                color: "var(--i-violet)",
+              }}
             >
               Event intake · {dateless.length}
             </button>
@@ -424,8 +505,12 @@ export default function TimelinePageClient() {
           <button
             onClick={() => setTool({ editing: null })}
             data-shoot="add-event"
-            className="rounded-md px-3 py-1.5 text-[10px] font-medium hover:brightness-110"
-            style={{ background: "var(--i-violet)", color: "var(--i-void)" }}
+            className="rounded-md px-3.5 py-2 text-[10.5px] font-medium hover:brightness-110"
+            style={{
+              background: "linear-gradient(180deg, #b6a9ff 0%, var(--i-violet) 100%)",
+              color: "var(--i-void)",
+              boxShadow: "0 2px 8px rgba(155,140,250,0.3), inset 0 1px 0 rgba(255,255,255,0.35)",
+            }}
           >
             + Add event
           </button>
@@ -471,6 +556,9 @@ export default function TimelinePageClient() {
               bounds={bounds}
               reducedMotion={reducedMotion}
               laneH={laneH}
+              articulating={articulating}
+              ghostByScope={ghostByScope}
+              deltaByScope={deltaByScope}
             />
           </div>
 

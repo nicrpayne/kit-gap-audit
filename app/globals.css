@@ -497,3 +497,28 @@ body {
   border: 1px solid var(--i-border-strong);
 }
 .timeline-zoom:focus-visible::-webkit-slider-thumb { border-color: var(--i-violet); }
+
+/* ---- TIMELINE ------------------------------------------------------- */
+
+/* An event articulating as the playhead crosses it. Damped rise, no
+   bounce: the note is struck and becomes readable, it does not spring. */
+@keyframes tl-articulate {
+  from { opacity: 0; transform: translate(-50%, -100%) translateY(5px); }
+  to   { opacity: 1; transform: translate(-50%, -100%) translateY(0); }
+}
+
+/* The delta a Report transition briefly states. Appears, holds, settles --
+   it is an observation about two stored numbers, not a celebration. */
+@keyframes tl-delta {
+  0%   { opacity: 0; transform: translateY(4px); }
+  14%  { opacity: 1; transform: translateY(0); }
+  76%  { opacity: 1; transform: translateY(0); }
+  100% { opacity: 0; transform: translateY(-3px); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-shoot^="event-module-"],
+  [data-shoot="memory-delta"] {
+    animation: none !important;
+  }
+}

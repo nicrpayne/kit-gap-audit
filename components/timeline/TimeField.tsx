@@ -17,6 +17,8 @@
 import { useCallback, useEffect, useMemo, useRef } from "react";
 import type { TimelineEntry, TimelineLane, ForecastSnapshot, TimelineCandidate } from "@/lib/timeline/entries";
 import { xFor, tFor, ticksFor, scaleFor, fmtDay, type TimeView } from "@/lib/timeline/geometry";
+import { FAMILY_COLOR } from "./familyColor";
+import EventModule from "./EventModule";
 
 export const HEADER_H = 34;
 export const LANE_HEADER_W = 146;
@@ -25,18 +27,9 @@ export const LANE_HEADER_W = 146;
     a hero that occupies a third of the screen is not one. Clamped so four
     lanes do not become four enormous empty strips, and eight still fit. */
 export const MIN_LANE_H = 84;
-export const MAX_LANE_H = 152;
+export const MAX_LANE_H = 198;
 
-// One material per source of truth. Not a palette — a vocabulary, so the
-// score reads as a small closed set rather than a rainbow.
-export const FAMILY_COLOR: Record<string, string> = {
-  forecast: "var(--i-violet)",
-  decision: "var(--i-amber)",
-  finding: "var(--i-red)",
-  context: "#8fb8e8",
-  work: "var(--i-mint)",
-  landmark: "var(--i-signal)",
-};
+export { FAMILY_COLOR };
 
 interface Props {
   lanes: TimelineLane[];
@@ -58,15 +51,21 @@ interface Props {
   bounds: { startT: number; endT: number };
   reducedMotion: boolean;
   laneH: number;
+  /** Events the playhead has just crossed and is briefly articulating. */
+  articulating: Set<string>;
+  /** Per lane, the snapshot the memory band just moved OFF -- drawn as a
+      fading ghost so the movement is legible instead of a teleport. */
+  ghostByScope: Record<string, ForecastSnapshot | null>;
+  deltaByScope: Record<string, { fromLikely: string; toLikely: string; days: number } | null>;
 }
 
 /** The compact object every event on the score is drawn as. One family,
     six materials, three states (ahead / crossed / selected). */
 function EventMark({
-  entry, x, y, crossed, selected, onSelect, reducedMotion,
+  entry, x, y, crossed, selected, woken, onSelect, reducedMotion,
 }: {
   entry: TimelineEntry; x: number; y: number; crossed: boolean; selected: boolean;
-  onSelect: () => void; reducedMotion: boolean;
+  woken: boolean; onSelect: () => void; reducedMotion: boolean;
 }) {
   const color = FAMILY_COLOR[entry.family] ?? "var(--i-text-soft)";
   const planned = entry.temporalState === "planned";
@@ -75,8 +74,12 @@ function EventMark({
 
   // Reports are the spine of forecast memory, so they get a taller, more
   // deliberate mark. Everything else is a compact node.
-  const w = isReport ? 3 : 9;
-  const h = isReport ? 26 : 9;
+  // Bigger at rest than before -- a 9px diamond is a symbol to be studied,
+  // not an object to be read. Woken marks grow further so the eye can
+  // follow the playhead without hunting.
+  const w = isReport ? 4 : 12;
+  const h = isReport ? 34 : 12;
+  const k = woken ? 1.45 : 1;
 
   return (
     <g
@@ -89,81 +92,123 @@ function EventMark({
       data-overdue={overdue || undefined}
     >
       {/* grab area, larger than the drawn mark */}
-      <rect x={-6} y={-12} width={12} height={24} fill="transparent" />
-      {selected && (
-        <circle r={13} fill="none" stroke={color} strokeWidth={1} opacity={0.9} />
+      <rect x={-8} y={-14} width={16} height={28} fill="transparent" />
+      {(selected || woken) && (
+        <circle r={15} fill="none" stroke={color} strokeWidth={1} opacity={selected ? 0.95 : 0.6} />
       )}
+      {woken && <circle r={20} fill={color} opacity={0.11} />}
       {isReport ? (
         <rect
-          x={-w / 2} y={-h / 2} width={w} height={h} rx={1.5}
+          x={(-w * k) / 2} y={(-h * k) / 2} width={w * k} height={h * k} rx={1.5}
           fill={crossed ? color : "none"}
           stroke={color}
-          strokeWidth={1}
-          opacity={crossed ? 0.95 : 0.34}
-          style={reducedMotion ? undefined : { transition: "opacity 320ms ease, fill 320ms ease" }}
+          strokeWidth={1.2}
+          opacity={crossed ? 1 : 0.4}
+          style={reducedMotion ? undefined : { transition: "opacity 320ms ease, fill 320ms ease, x 200ms ease, width 200ms ease" }}
         />
       ) : planned ? (
         // INTENT: outlined, hollow, unsettled. Overdue keeps the outline
         // and takes a warning stroke — it is still not history.
         <rect
-          x={-w / 2} y={-h / 2} width={w} height={h}
+          x={(-w * k) / 2} y={(-h * k) / 2} width={w * k} height={h * k}
           transform="rotate(45)"
           fill="none"
           stroke={overdue ? "var(--i-red)" : color}
-          strokeWidth={overdue ? 1.6 : 1.1}
-          strokeDasharray={overdue ? undefined : "2 1.6"}
-          opacity={0.95}
+          strokeWidth={overdue ? 1.8 : 1.3}
+          strokeDasharray={overdue ? undefined : "2.4 1.8"}
+          opacity={0.98}
         />
       ) : (
         <rect
-          x={-w / 2} y={-h / 2} width={w} height={h}
+          x={(-w * k) / 2} y={(-h * k) / 2} width={w * k} height={h * k}
           transform="rotate(45)"
-          fill={color}
+          fill={crossed ? color : "#0d1114"}
           stroke={color}
-          strokeWidth={1}
-          opacity={crossed ? 1 : 0.3}
-          style={reducedMotion ? undefined : { transition: "opacity 320ms ease" }}
+          strokeWidth={1.3}
+          opacity={crossed ? 1 : 0.42}
+          style={reducedMotion ? undefined : { transition: "opacity 320ms ease, fill 320ms ease" }}
         />
       )}
       {crossed && !planned && (
-        <circle r={selected ? 11 : 8} fill={color} opacity={selected ? 0.2 : 0.1} />
+        <circle r={selected ? 13 : 10} fill={color} opacity={selected ? 0.22 : 0.12} />
       )}
     </g>
   );
 }
 
-/** FORECAST MEMORY. p10–p90 is UNCERTAINTY, not duration, so it is drawn
-    as a soft tapered band with a hard p50 marker — deliberately unlike the
-    solid rectangle a duration span uses. It moves only when the playhead
-    crosses a Report; between Reports it holds. */
+/** FORECAST MEMORY — the remembered future, and a hero object.
+ *
+ * p10–p90 is UNCERTAINTY, not duration. It is drawn as a machined capsule
+ * cut into the lane, with hard end terminals and a dominant p50 blade —
+ * deliberately unlike the flat rectangle a duration span uses, so the two
+ * can never be confused. Only three stored numbers are drawn; there is no
+ * synthesized density curve, because p10/p50/p90 is all a Report kept.
+ *
+ * It moves only when the playhead crosses a Report. Between Reports it
+ * holds, and the ghost of the previous band is what makes that movement
+ * readable rather than a teleport.
+ */
 function MemoryBand({
-  snap, view, y, held,
-}: { snap: ForecastSnapshot; view: TimeView; y: number; held: boolean }) {
+  snap, view, y, ghost, reducedMotion,
+}: { snap: ForecastSnapshot; view: TimeView; y: number; ghost?: boolean; reducedMotion?: boolean }) {
   const x10 = xFor(view, new Date(snap.earliestDate).getTime());
   const x50 = xFor(view, new Date(snap.likelyDate).getTime());
   const x90 = xFor(view, new Date(snap.latestDate).getTime());
   const xT = snap.targetDate ? xFor(view, new Date(snap.targetDate).getTime()) : null;
-  const h = 15;
-  const id = `mem-${snap.reportId}`;
+  const h = 26;
+  const id = `mem-${snap.reportId}${ghost ? "-g" : ""}`;
+  const op = ghost ? 0.3 : 1;
 
   return (
-    <g data-shoot="forecast-memory" style={{ transition: "transform 420ms cubic-bezier(0.22,0.61,0.36,1)" }}>
+    <g
+      data-shoot={ghost ? "forecast-memory-ghost" : "forecast-memory"}
+      opacity={op}
+      style={reducedMotion ? undefined : { transition: "opacity 520ms ease" }}
+    >
       <defs>
         <linearGradient id={id} x1="0" x2="1">
-          <stop offset="0%" stopColor="var(--i-violet)" stopOpacity={0.06} />
-          <stop offset="50%" stopColor="var(--i-violet)" stopOpacity={held ? 0.3 : 0.42} />
-          <stop offset="100%" stopColor="var(--i-violet)" stopOpacity={0.06} />
+          <stop offset="0%" stopColor="var(--i-violet)" stopOpacity={0.05} />
+          <stop offset="26%" stopColor="var(--i-violet)" stopOpacity={0.3} />
+          <stop offset="50%" stopColor="var(--i-violet)" stopOpacity={0.46} />
+          <stop offset="74%" stopColor="var(--i-violet)" stopOpacity={0.3} />
+          <stop offset="100%" stopColor="var(--i-violet)" stopOpacity={0.05} />
+        </linearGradient>
+        <linearGradient id={`${id}-d`} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor="#ffffff" stopOpacity={0.1} />
+          <stop offset="55%" stopColor="#000000" stopOpacity={0} />
+          <stop offset="100%" stopColor="#000000" stopOpacity={0.28} />
         </linearGradient>
       </defs>
+      {/* the recess the band sits in */}
+      <rect
+        x={x10 - 2} y={y - h / 2 - 2} width={Math.max(6, x90 - x10 + 4)} height={h + 4} rx={(h + 4) / 2}
+        fill="#070a0c" opacity={ghost ? 0 : 0.75}
+      />
       <rect x={x10} y={y - h / 2} width={Math.max(2, x90 - x10)} height={h} rx={h / 2} fill={`url(#${id})`} />
-      <line x1={x10} y1={y} x2={x90} y2={y} stroke="var(--i-violet)" strokeWidth={0.75} opacity={0.35} />
-      {/* p50 — what we believed the likely landing was */}
-      <rect x={x50 - 1.2} y={y - 9} width={2.4} height={18} rx={1} fill="var(--i-violet)" opacity={0.95} />
+      <rect x={x10} y={y - h / 2} width={Math.max(2, x90 - x10)} height={h} rx={h / 2} fill={`url(#${id}-d)`} />
+      <rect
+        x={x10} y={y - h / 2} width={Math.max(2, x90 - x10)} height={h} rx={h / 2}
+        fill="none" stroke="var(--i-violet)" strokeWidth={0.9} opacity={0.4}
+      />
+      {/* p10 / p90 terminals — the range has ends, and they are stated */}
+      {[x10, x90].map((x, i) => (
+        <g key={i}>
+          <rect x={x - 1} y={y - h / 2 + 3} width={2} height={h - 6} rx={1} fill="var(--i-violet)" opacity={0.7} />
+        </g>
+      ))}
+      {/* p50 — DOMINANT. What we believed the likely landing was. */}
+      <rect x={x50 - 2} y={y - h / 2 - 5} width={4} height={h + 10} rx={1.5} fill="var(--i-violet)" />
+      <rect x={x50 - 2} y={y - h / 2 - 5} width={4} height={h + 10} rx={1.5} fill="#ffffff" opacity={0.18} />
+      {!ghost && (
+        <text x={x50} y={y - h / 2 - 9} fontSize={8.5} textAnchor="middle" fill="var(--i-violet)" style={{ letterSpacing: "0.06em" }}>
+          {fmtDay(new Date(snap.likelyDate).getTime())}
+        </text>
+      )}
       {/* the target AS IT WAS at that Report. A flag, never a fader. */}
-      {xT !== null && (
+      {xT !== null && !ghost && (
         <g transform={`translate(${xT},${y})`} data-shoot="memory-target">
-          <line x1={0} y1={-13} x2={0} y2={13} stroke="var(--i-amber)" strokeWidth={1} opacity={0.85} strokeDasharray="3 2" />
-          <path d="M0,-13 L8,-10 L0,-7 Z" fill="var(--i-amber)" opacity={0.9} />
+          <line x1={0} y1={-h / 2 - 4} x2={0} y2={h / 2 + 4} stroke="var(--i-amber)" strokeWidth={1} opacity={0.85} strokeDasharray="3 2" />
+          <path d={`M0,${-h / 2 - 4} L9,${-h / 2 - 1} L0,${-h / 2 + 2} Z`} fill="var(--i-amber)" opacity={0.95} />
         </g>
       )}
     </g>
@@ -173,7 +218,7 @@ function MemoryBand({
 export default function TimeField({
   lanes, entries, candidates, memoryByScope, view, nowT, playheadT, crossed,
   selectedId, hoveredLane, onSelect, onHoverLane, onScrub, onOpenScope,
-  onViewChange, bounds, reducedMotion, laneH,
+  onViewChange, bounds, reducedMotion, laneH, articulating, ghostByScope, deltaByScope,
 }: Props) {
   const hostRef = useRef<HTMLDivElement>(null);
   const dragging = useRef(false);
@@ -308,9 +353,18 @@ export default function TimeField({
               <line x1="0" y1="0" x2="0" y2="6" stroke="var(--i-border-strong)" strokeWidth="0.8" opacity="0.55" />
             </pattern>
             <linearGradient id="pastGlow" x1="0" x2="1">
-              <stop offset="0%" stopColor="var(--i-violet)" stopOpacity={0.0} />
-              <stop offset="100%" stopColor="var(--i-violet)" stopOpacity={0.09} />
+              <stop offset="0%" stopColor="var(--i-violet)" stopOpacity={0.05} />
+              <stop offset="72%" stopColor="var(--i-violet)" stopOpacity={0.13} />
+              <stop offset="100%" stopColor="var(--i-violet)" stopOpacity={0.26} />
             </linearGradient>
+            <linearGradient id="playedEdge" x1="0" x2="1">
+              <stop offset="0%" stopColor="var(--i-violet)" stopOpacity={0} />
+              <stop offset="100%" stopColor="var(--i-violet)" stopOpacity={0.3} />
+            </linearGradient>
+            <pattern id="playedGrain" width="3" height="3" patternUnits="userSpaceOnUse">
+              <rect width="3" height="3" fill="none" />
+              <circle cx="0.6" cy="0.6" r="0.4" fill="var(--i-violet)" opacity="0.16" />
+            </pattern>
           </defs>
           {/* INTENT GROUND. Everything right of NOW sits on a lighter,
               hatched surface -- the past/future difference is material,
@@ -323,7 +377,15 @@ export default function TimeField({
 
           {/* MEMORY GROUND — crossed history sits on a faintly lit surface
               that grows behind the playhead as the story unfolds. */}
+          {/* PLAYED HISTORY. The part of the story already told carries a
+              developed-film material that the un-played part does not —
+              the narrative arc from BEGINNING to NOW, made physical. */}
           <rect x={0} y={0} width={Math.max(0, Math.min(playX, nowX))} height={height} fill="url(#pastGlow)" />
+          <rect x={0} y={0} width={Math.max(0, Math.min(playX, nowX))} height={height} fill="url(#playedGrain)" />
+          <rect
+            x={Math.max(0, Math.min(playX, nowX)) - 26} y={0} width={26} height={height}
+            fill="url(#playedEdge)" opacity={0.5}
+          />
 
           {/* time grid */}
           {ticks.map((t) => {
@@ -334,6 +396,24 @@ export default function TimeField({
                 <text x={x + 4} y={14} fontSize={9} fill="var(--i-text-faint)" style={{ letterSpacing: "0.08em" }}>
                   {t.label}
                 </text>
+              </g>
+            );
+          })}
+
+          {/* LANE TRACKS. Each lane carries a resting score line so events
+              are articulations ON a track rather than marks floating in a
+              void — and so a quiet stretch still reads as a track that
+              nothing happened on, which is information. */}
+          {lanes.map((lane, i) => {
+            const yTrack = HEADER_H + i * laneH + laneH * 0.36;
+            return (
+              <g key={`track-${lane.scopeId}`}>
+                <rect x={0} y={yTrack - 3} width={view.width} height={6} rx={3} fill="#070a0c" opacity={0.6} />
+                <line x1={0} y1={yTrack} x2={view.width} y2={yTrack} stroke="var(--i-border-strong)" strokeWidth={0.9} opacity={0.5} />
+                <line
+                  x1={0} y1={yTrack} x2={Math.max(0, Math.min(playX, nowX))} y2={yTrack}
+                  stroke="var(--i-violet)" strokeWidth={1.4} opacity={0.42}
+                />
               </g>
             );
           })}
@@ -372,12 +452,16 @@ export default function TimeField({
 
           {/* per-lane content */}
           {lanes.map((lane, i) => {
-            const yMid = HEADER_H + i * laneH + laneH / 2;
+            const yTrack = HEADER_H + i * laneH + laneH * 0.36;
+            const yMem = HEADER_H + i * laneH + laneH * 0.74;
             const mem = memoryByScope[lane.scopeId] ?? null;
             const laneEntries = byLane.get(lane.scopeId) ?? [];
             return (
               <g key={lane.scopeId}>
-                {mem && <MemoryBand snap={mem} view={view} y={yMid + 20} held />}
+                {ghostByScope[lane.scopeId] && (
+                  <MemoryBand snap={ghostByScope[lane.scopeId]!} view={view} y={yMem} ghost reducedMotion={reducedMotion} />
+                )}
+                {mem && <MemoryBand snap={mem} view={view} y={yMem} reducedMotion={reducedMotion} />}
                 {laneEntries.map((e) => {
                   const t = new Date(e.date).getTime();
                   const x = xFor(view, t);
@@ -389,16 +473,17 @@ export default function TimeField({
                     <g key={e.id}>
                       {endT && (
                         <rect
-                          x={x} y={yMid - 4} width={Math.max(2, xFor(view, endT) - x)} height={8} rx={2}
+                          x={x} y={yTrack - 5} width={Math.max(2, xFor(view, endT) - x)} height={10} rx={3}
                           fill={FAMILY_COLOR[e.family]} opacity={crossed.has(e.id) ? 0.28 : 0.12}
                           stroke={FAMILY_COLOR[e.family]} strokeWidth={0.6} strokeOpacity={0.5}
                           data-shoot="duration-span"
                         />
                       )}
                       <EventMark
-                        entry={e} x={x} y={yMid - 12}
+                        entry={e} x={x} y={yTrack}
                         crossed={crossed.has(e.id)}
                         selected={selectedId === e.id}
+                        woken={articulating.has(e.id)}
                         onSelect={() => onSelect(e.id)}
                         reducedMotion={reducedMotion}
                       />
@@ -414,7 +499,7 @@ export default function TimeField({
                     return (
                       <g
                         key={c.id}
-                        transform={`translate(${x},${yMid - 12})`}
+                        transform={`translate(${x},${yTrack})`}
                         data-shoot={`candidate-${c.id}`}
                         onClick={(ev) => { ev.stopPropagation(); onSelect(`candidate:${c.id}`); }}
                         style={{ cursor: "pointer" }}
@@ -435,11 +520,20 @@ export default function TimeField({
             );
           })}
 
-          {/* NOW — a hard boundary in the material. */}
-          <line x1={nowX} y1={0} x2={nowX} y2={height} stroke="var(--i-mint)" strokeWidth={1} opacity={0.55} />
-          <text x={nowX + 5} y={height - 6} fontSize={8} fill="var(--i-mint)" opacity={0.75} style={{ letterSpacing: "0.16em" }}>
-            NOW
-          </text>
+          {/* NOW — the seam between MEMORY and INTENT. A landmark, with a
+              terminal at each end, not a hairline. Restrained, never neon. */}
+          <g data-shoot="now-seam">
+            <rect x={nowX - 3} y={0} width={6} height={height} fill="var(--i-signal)" opacity={0.05} />
+            <line x1={nowX} y1={0} x2={nowX} y2={height} stroke="var(--i-signal)" strokeWidth={1.4} opacity={0.75} />
+            <rect x={nowX - 3.5} y={0} width={7} height={5} rx={1} fill="var(--i-signal)" opacity={0.85} />
+            <rect x={nowX - 3.5} y={height - 5} width={7} height={5} rx={1} fill="var(--i-signal)" opacity={0.85} />
+            <text
+              x={nowX + 7} y={height - 8} fontSize={8.5} fill="var(--i-signal)" opacity={0.95}
+              style={{ letterSpacing: "0.22em", fontWeight: 600 }}
+            >
+              NOW
+            </text>
+          </g>
 
           {/* THE PLAYHEAD — hero object. */}
           <g
@@ -447,12 +541,92 @@ export default function TimeField({
             style={reducedMotion ? undefined : { transition: "transform 90ms linear" }}
             transform={`translate(${playX},0)`}
           >
-            <line x1={0} y1={0} x2={0} y2={height} stroke="var(--i-violet)" strokeWidth={14} opacity={0.07} />
-            <line x1={0} y1={0} x2={0} y2={height} stroke="var(--i-violet)" strokeWidth={6} opacity={0.16} />
-            <line x1={0} y1={0} x2={0} y2={height} stroke="var(--i-violet)" strokeWidth={1.75} />
-            <line x1={0} y1={0} x2={0} y2={height} stroke="#d8d0ff" strokeWidth={0.6} opacity={0.75} />
+            <line x1={0} y1={0} x2={0} y2={height} stroke="var(--i-violet)" strokeWidth={22} opacity={0.05} />
+            <line x1={0} y1={0} x2={0} y2={height} stroke="var(--i-violet)" strokeWidth={9} opacity={0.13} />
+            <line x1={0} y1={0} x2={0} y2={height} stroke="var(--i-violet)" strokeWidth={2} />
+            <line x1={0} y1={0} x2={0} y2={height} stroke="#e2dcff" strokeWidth={0.7} opacity={0.85} />
+            {/* the needle makes contact with every track it passes */}
+            {lanes.map((lane, i) => (
+              <g key={`contact-${lane.scopeId}`}>
+                <circle cx={0} cy={HEADER_H + i * laneH + laneH * 0.36} r={4.5} fill="var(--i-violet)" opacity={0.9} />
+                <circle cx={0} cy={HEADER_H + i * laneH + laneH * 0.36} r={9} fill="var(--i-violet)" opacity={0.14} />
+              </g>
+            ))}
+            <rect x={-5} y={0} width={10} height={7} rx={1.5} fill="var(--i-violet)" />
           </g>
         </svg>
+
+        {/* ARTICULATED EVENTS. The transient readable module a note gets
+            as it is struck, plus the held module for the selection. Both
+            stay attached to their exact date and lane. */}
+        {lanes.map((lane, i) => {
+          const yTrack = HEADER_H + i * laneH + laneH * 0.36;
+          return (entries.filter((e) => e.scopeId === lane.scopeId) ?? []).map((e) => {
+            const held = selectedId === e.id;
+            const live = articulating.has(e.id);
+            if (!held && !live) return null;
+            const x = xFor(view, new Date(e.date).getTime());
+            if (x < -40 || x > view.width + 40) return null;
+            const modW = laneH < 110 ? 176 : 208;
+            const clamped = Math.min(view.width - modW / 2 - 6, Math.max(modW / 2 + 6, x));
+            return (
+              <EventModule
+                key={`mod-${e.id}`}
+                entry={e}
+                x={clamped}
+                stemDx={x - clamped}
+                y={yTrack - 18}
+                phase={held ? "held" : "articulating"}
+                reducedMotion={reducedMotion}
+                compact={laneH < 110}
+              />
+            );
+          });
+        })}
+
+        {/* THE REPORT TRANSITION. What the remembered future just did,
+            stated as the movement between two stored numbers. Never
+            attributed to anything — the adjacent event did not cause it. */}
+        {lanes.map((lane, i) => {
+          const d = deltaByScope[lane.scopeId];
+          if (!d) return null;
+          const yMem = HEADER_H + i * laneH + laneH * 0.74;
+          const later = d.days > 0;
+          return (
+            <div
+              key={`delta-${lane.scopeId}`}
+              data-shoot="memory-delta"
+              className="absolute pointer-events-none rounded-md px-2.5 py-1.5 whitespace-nowrap"
+              style={{
+                left: Math.min(view.width - 190, Math.max(6, xFor(view, new Date(d.toLikely).getTime()) - 84)),
+                top: yMem - 54,
+                background: "linear-gradient(180deg, #1a1526 0%, #12101a 100%)",
+                border: "1px solid var(--i-violet)",
+                boxShadow: "0 10px 26px rgba(0,0,0,0.7)",
+                animation: reducedMotion ? undefined : "tl-delta 2400ms ease forwards",
+                zIndex: 28,
+              }}
+            >
+              <div className="text-[7.5px] uppercase tracking-[0.16em]" style={{ color: "var(--i-violet)" }}>
+                Forecast memory updated
+              </div>
+              <div className="mt-1 flex items-baseline gap-1.5">
+                <span className="i-readout text-[11px]" style={{ color: "var(--i-text-faint)" }}>
+                  {fmtDay(new Date(d.fromLikely).getTime())}
+                </span>
+                <span className="text-[10px]" style={{ color: "var(--i-text-faint)" }}>→</span>
+                <span className="i-readout text-[13px]" style={{ color: "var(--i-violet)" }}>
+                  {fmtDay(new Date(d.toLikely).getTime())}
+                </span>
+                {d.days !== 0 && (
+                  <span className="text-[9px]" style={{ color: later ? "var(--i-red)" : "var(--i-mint)" }}>
+                    {Math.abs(d.days)}d {later ? "later" : "earlier"}
+                  </span>
+                )}
+              </div>
+            </div>
+          );
+        })}
 
         {/* playhead date flag, in DOM so the type is crisp */}
         <div
@@ -461,8 +635,13 @@ export default function TimeField({
           data-shoot="playhead-flag"
         >
           <div
-            className="i-readout text-[10px] px-1.5 py-[3px] rounded-[3px] whitespace-nowrap"
-            style={{ background: "var(--i-violet)", color: "var(--i-void)", letterSpacing: "0.02em" }}
+            className="i-readout text-[11.5px] px-2 py-[4px] rounded-[4px] whitespace-nowrap"
+            style={{
+              background: "linear-gradient(180deg, #b1a4ff 0%, var(--i-violet) 100%)",
+              color: "var(--i-void)",
+              letterSpacing: "0.02em",
+              boxShadow: "0 3px 12px rgba(155,140,250,0.4), inset 0 1px 0 rgba(255,255,255,0.4)",
+            }}
           >
             {fmtDay(playheadT)}
           </div>

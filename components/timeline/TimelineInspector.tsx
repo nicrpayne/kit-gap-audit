@@ -32,18 +32,65 @@ const HEAD_STYLE: React.CSSProperties = {
   boxShadow: "inset 0 -1px 0 rgba(255,255,255,0.03)",
 };
 
-const Row = ({ label, value, tone }: { label: string; value: React.ReactNode; tone?: string }) => (
-  <div className="flex items-baseline justify-between gap-3 py-[5px]" style={{ borderBottom: "1px solid var(--i-border)" }}>
+// Facts sit in a recessed well, not on a stack of hairlines. A row of
+// horizontal rules reads as a database dump; a cut-in panel reads as an
+// instrument readout, which is what these numbers are.
+const Row = ({ label, value, tone, big }: { label: string; value: React.ReactNode; tone?: string; big?: boolean }) => (
+  <div className="flex items-baseline justify-between gap-3 px-2.5 py-[6px]">
     <span className="text-[8px] uppercase tracking-[0.14em] text-[var(--i-text-faint)] shrink-0">{label}</span>
-    <span className="text-[11px] text-right" style={{ color: tone ?? "var(--i-text)" }}>{value}</span>
+    <span
+      className={big ? "i-readout text-[13px] text-right" : "text-[11px] text-right"}
+      style={{ color: tone ?? "var(--i-text)" }}
+    >
+      {value}
+    </span>
+  </div>
+);
+
+const Well = ({ children }: { children: React.ReactNode }) => (
+  <div
+    className="rounded-md overflow-hidden divide-y"
+    style={{
+      background: "var(--i-recess)",
+      border: "1px solid #1c2227",
+      boxShadow: "inset 0 2px 7px rgba(0,0,0,0.6)",
+      borderColor: "rgba(38,45,51,0.55)",
+    }}
+  >
+    {children}
   </div>
 );
 
 const Section = ({ title, children }: { title: string; children: React.ReactNode }) => (
-  <div className="mt-4">
+  <div className="mt-3.5">
     <div className="i-label mb-1.5">{title}</div>
     {children}
   </div>
+);
+
+const Quote = ({ children, label }: { children: React.ReactNode; label?: string }) => (
+  <div
+    className="rounded-md p-2.5 mb-1.5"
+    style={{ background: "var(--i-recess)", border: "1px solid #1c2227", boxShadow: "inset 0 2px 6px rgba(0,0,0,0.55)" }}
+  >
+    <div className="text-[10.5px] leading-[1.55] text-[var(--i-text-soft)]">{children}</div>
+    {label && <div className="mt-1.5 text-[8.5px] text-[var(--i-text-faint)]">{label}</div>}
+  </div>
+);
+
+const Door = ({ onClick, shoot, color, children }: { onClick: () => void; shoot: string; color: string; children: React.ReactNode }) => (
+  <button
+    onClick={onClick}
+    data-shoot={shoot}
+    className="mt-4 w-full rounded-md py-2.5 text-[11px] font-medium hover:brightness-110 transition-[filter]"
+    style={{
+      background: `linear-gradient(180deg, ${color} 0%, color-mix(in srgb, ${color} 78%, #000) 100%)`,
+      color: "var(--i-void)",
+      boxShadow: `0 2px 10px color-mix(in srgb, ${color} 34%, transparent), inset 0 1px 0 rgba(255,255,255,0.32)`,
+    }}
+  >
+    {children}
+  </button>
 );
 
 function ReportBody({ snap, onOpenForecast }: { snap: ForecastSnapshot; onOpenForecast: () => void }) {
@@ -51,21 +98,49 @@ function ReportBody({ snap, onOpenForecast }: { snap: ForecastSnapshot; onOpenFo
   const delta = snap.likelyDateDeltaDays;
   return (
     <>
+      {/* The remembered landing, as an instrument readout: p50 dominant,
+          the range around it, the target it was measured against. */}
       <Section title="What we believed then">
-        <Row label="Generated" value={fmtFull(new Date(snap.generatedAt).getTime())} />
-        <Row label="p10 earliest" value={d(snap.earliestDate)} />
-        <Row label="p50 likely" value={d(snap.likelyDate)} tone="var(--i-violet)" />
-        <Row label="p90 latest" value={d(snap.latestDate)} />
-        <Row label="Target then" value={d(snap.targetDate)} tone="var(--i-amber)" />
-        <Row
-          label="Confidence"
-          value={snap.confidenceAtTarget === null ? "—" : `${snap.confidenceAtTarget}%`}
-        />
+        <div
+          className="rounded-md px-3 py-3 mb-1.5"
+          style={{
+            background: "linear-gradient(180deg, #191527 0%, #101018 100%)",
+            border: "1px solid rgba(155,140,250,0.4)",
+            boxShadow: "inset 0 2px 9px rgba(0,0,0,0.6)",
+          }}
+        >
+          <div className="text-[8px] uppercase tracking-[0.18em]" style={{ color: "var(--i-violet)" }}>p50 likely</div>
+          <div className="i-readout text-[21px] leading-none mt-1.5" style={{ color: "var(--i-violet)" }}>
+            {d(snap.likelyDate)}
+          </div>
+          <div className="mt-2.5 flex items-center gap-1.5">
+            <span className="i-readout text-[10px] text-[var(--i-text-soft)]">{d(snap.earliestDate)}</span>
+            <div className="flex-1 h-[6px] rounded-full relative" style={{ background: "#070a0c" }}>
+              <div className="absolute inset-y-0 left-0 right-0 rounded-full"
+                style={{ background: "linear-gradient(90deg, rgba(155,140,250,0.1), rgba(155,140,250,0.45), rgba(155,140,250,0.1))" }} />
+              <div className="absolute top-[-3px] bottom-[-3px] w-[3px] rounded-sm" style={{ left: "50%", background: "var(--i-violet)" }} />
+            </div>
+            <span className="i-readout text-[10px] text-[var(--i-text-soft)]">{d(snap.latestDate)}</span>
+          </div>
+          <div className="mt-1 flex justify-between text-[7.5px] uppercase tracking-[0.14em] text-[var(--i-text-faint)]">
+            <span>p10</span><span>p90</span>
+          </div>
+        </div>
+        <Well>
+          <Row label="Generated" value={fmtFull(new Date(snap.generatedAt).getTime())} />
+          <Row label="Target then" value={d(snap.targetDate)} tone="var(--i-amber)" big />
+          <Row
+            label="Confidence"
+            value={snap.confidenceAtTarget === null ? "—" : `${snap.confidenceAtTarget}%`}
+            big
+          />
+        </Well>
       </Section>
 
       {/* The Report's OWN stored counts, phrased as movement since the
           previous report. No attribution to any adjacent event. */}
       <Section title="Since previous report">
+        <Well>
         <Row
           label="Likely date"
           value={delta === null ? "first report" : delta === 0 ? "unmoved" : `${delta > 0 ? "+" : ""}${delta} days`}
@@ -74,6 +149,7 @@ function ReportBody({ snap, onOpenForecast }: { snap: ForecastSnapshot; onOpenFo
         <Row label="Shipped" value={snap.shippedCount} />
         <Row label="Blocking" value={snap.blockingCount} tone={snap.blockingCount > 0 ? "var(--i-red)" : undefined} />
         <Row label="Resolved" value={snap.resolvedSinceLastCount} />
+        </Well>
       </Section>
 
       {snap.summaryMarkdown && (
@@ -87,14 +163,7 @@ function ReportBody({ snap, onOpenForecast }: { snap: ForecastSnapshot; onOpenFo
         </Section>
       )}
 
-      <button
-        onClick={onOpenForecast}
-        data-shoot="open-forecast"
-        className="mt-4 w-full rounded-md py-2 text-[11px] font-medium hover:brightness-110"
-        style={{ background: "var(--i-violet)", color: "var(--i-void)" }}
-      >
-        Open Forecast
-      </button>
+      <Door onClick={onOpenForecast} shoot="open-forecast" color="#9b8cfa">Open Forecast</Door>
     </>
   );
 }
@@ -179,19 +248,18 @@ export default function TimelineInspector({
         </div>
         <div className="px-4 pb-4">
           <Section title="Provenance">
+            <Well>
             <Row label="Source" value={candidate.sourceLabel} />
             <Row label="Proposed kind" value={candidate.kind} />
             <Row label="Proposed date" value={candidate.date ? fmtFull(new Date(candidate.date).getTime()) : "none — evidence does not say"} tone={needsDate ? "var(--i-amber)" : undefined} />
             <Row label="Project" value={laneName ?? "—"} />
+            </Well>
           </Section>
 
           {candidate.excerpts.length > 0 && (
             <Section title="Evidence">
               {candidate.excerpts.map((x, i) => (
-                <div key={i} className="text-[10.5px] leading-[1.5] text-[var(--i-text-soft)] rounded p-2 mb-1.5"
-                  style={{ background: "var(--i-recess)", border: "1px solid var(--i-border)" }}>
-                  “{x}”
-                </div>
+                <Quote key={i}>“{x}”</Quote>
               ))}
             </Section>
           )}
@@ -294,11 +362,13 @@ export default function TimelineInspector({
 
       <div className="px-4 pb-4">
         <Section title="When">
+          <Well>
           <Row label="Date" value={fmtFull(new Date(e.date).getTime())} />
           {e.endDate && <Row label="Ends" value={fmtFull(new Date(e.endDate).getTime())} />}
           <Row label="Project" value={laneName ?? "—"} />
           <Row label="State" value={planned ? (overdue ? "planned · overdue" : "planned") : "occurred"} />
           {e.sourceLabel && <Row label="Source" value={e.sourceLabel} />}
+          </Well>
         </Section>
 
         {e.kind === "report" && (
@@ -308,6 +378,7 @@ export default function TimelineInspector({
         {e.family === "decision" && (
           <>
             <Section title="Decision">
+              <Well>
               {typeof detail.owner === "string" && <Row label="Owner" value={detail.owner} />}
               {typeof detail.status === "string" && <Row label="Status" value={detail.status} />}
               {typeof detail.neededBy === "string" && <Row label="Needed by" value={fmtFull(new Date(detail.neededBy).getTime())} />}
@@ -324,6 +395,7 @@ export default function TimelineInspector({
               {typeof detail.low === "number" && (
                 <Row label="Gate estimate" value={`${detail.low} / ${detail.likely} / ${detail.high} days`} />
               )}
+              </Well>
             </Section>
             {e.kind === "decision_needed_by" && (
               <p className="mt-3 text-[10px] leading-relaxed text-[var(--i-text-faint)]">
@@ -341,40 +413,30 @@ export default function TimelineInspector({
             {Array.isArray(detail.evidence) && (detail.evidence as { excerpt: string; sourceLabel: string }[]).length > 0 && (
               <Section title="Evidence">
                 {(detail.evidence as { excerpt: string; sourceLabel: string }[]).slice(0, 3).map((ev, i) => (
-                  <div key={i} className="text-[10.5px] leading-[1.5] text-[var(--i-text-soft)] rounded p-2 mb-1.5"
-                    style={{ background: "var(--i-recess)", border: "1px solid var(--i-border)" }}>
-                    “{ev.excerpt}”
-                    <div className="mt-1 text-[8.5px] text-[var(--i-text-faint)]">{ev.sourceLabel}</div>
-                  </div>
+                  <Quote key={i} label={ev.sourceLabel}>“{ev.excerpt}”</Quote>
                 ))}
               </Section>
             )}
-            <button
-              onClick={() => onOpenDecisions(String(detail.decisionId))}
-              data-shoot="open-decisions"
-              className="mt-4 w-full rounded-md py-2 text-[11px] font-medium hover:brightness-110"
-              style={{ background: "var(--i-amber)", color: "var(--i-void)" }}
-            >
+            <Door onClick={() => onOpenDecisions(String(detail.decisionId))} shoot="open-decisions" color="#e0b04a">
               Open Decisions
-            </button>
+            </Door>
           </>
         )}
 
         {e.kind === "context_observed" && (
           <>
             <Section title="Observation">
+              <Well>
               <Row label="Source type" value={String(detail.sourceType ?? "—")} />
               <Row label="Producer" value={String(detail.producer ?? "—")} />
               <Row label="Observed at" value={fmtFull(new Date(String(detail.observedAt)).getTime())} />
               {typeof detail.detailNote === "string" && detail.detailNote && <Row label="Detail" value={detail.detailNote} />}
+              </Well>
             </Section>
             {Array.isArray(detail.excerpts) && (detail.excerpts as string[]).length > 0 && (
               <Section title="Evidence">
                 {(detail.excerpts as string[]).map((x, i) => (
-                  <div key={i} className="text-[10.5px] leading-[1.5] text-[var(--i-text-soft)] rounded p-2 mb-1.5"
-                    style={{ background: "var(--i-recess)", border: "1px solid var(--i-border)" }}>
-                    “{x}”
-                  </div>
+                  <Quote key={i}>“{x}”</Quote>
                 ))}
               </Section>
             )}
@@ -384,8 +446,10 @@ export default function TimelineInspector({
         {e.kind === "work_completed" && (
           <>
             <Section title="Work">
+              <Well>
               <Row label="Identifier" value={String(detail.identifier ?? "—")} />
               <Row label="Completed" value={fmtFull(new Date(String(detail.completedAt)).getTime())} />
+              </Well>
             </Section>
             <p className="mt-3 text-[10px] leading-relaxed text-[var(--i-text-faint)]">
               {String(detail.limitation ?? "")}
@@ -396,9 +460,11 @@ export default function TimelineInspector({
         {e.kind === "landmark" && (
           <>
             <Section title="Landmark">
+              <Well>
               <Row label="Kind" value={String(detail.landmarkKind ?? "event")} />
               <Row label="Added by" value={String(detail.source) === "candidate" ? "accepted candidate" : "hand"} />
               {typeof detail.note === "string" && detail.note && <Row label="Note" value={detail.note} />}
+              </Well>
             </Section>
             <button
               onClick={() => onEditEvent(e)}

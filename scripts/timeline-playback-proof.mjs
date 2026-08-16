@@ -56,7 +56,7 @@ const playheadDate = () => p.locator('[data-shoot="playhead-date"]').innerText()
 const crossedCount = async () =>
   Number((await p.locator('[data-shoot="crossed-count"]').innerText()).split("/")[0].replace(/\D/g, ""));
 const memoryOf = async (scopeId) =>
-  p.locator(`[data-shoot="memory-likely-${scopeId}"]`).innerText().catch(() => null);
+  p.locator(`[data-shoot="memory-likely-${scopeId}"]`).innerText({ timeout: 200 }).catch(() => null);
 const laneIds = await p.locator('[data-shoot^="lane-header-"]').evaluateAll((els) =>
   els.map((e) => e.getAttribute("data-shoot").replace("lane-header-", "")));
 
@@ -70,8 +70,27 @@ const startDate = await playheadDate();
 const startCrossed = await crossedCount();
 check("Jump to beginning moves the playhead back to the earliest event", startCrossed <= 1, `${startDate}, crossed=${startCrossed}`);
 
+// Geometry that must not move while the story plays or an event is
+// selected: an instrument whose field jumps under an inspector update is
+// not one you can watch.
+const geometry = () =>
+  p.evaluate(() => {
+    const r = (s) => {
+      const e = document.querySelector(s);
+      if (!e) return null;
+      const b = e.getBoundingClientRect();
+      return [+b.top.toFixed(1), +b.left.toFixed(1), +b.width.toFixed(1), +b.height.toFixed(1)];
+    };
+    return { field: r('[data-shoot="time-field"]'), transport: r('[data-shoot="transport"]') };
+  });
+const geomBefore = await geometry();
+
 // Sample continuously while it plays.
 const samples = [];
+let sawArticulation = 0;
+let sawGhost = 0;
+let sawDelta = 0;
+const geomDuring = [];
 const requestsAtPlay = requests.length;
 await p.locator('[data-shoot="play"]').click();
 
@@ -84,6 +103,12 @@ while (Date.now() < deadline) {
     Promise.all(laneIds.map((id) => memoryOf(id))),
   ]);
   samples.push({ date, crossed, mem, t: Date.now() });
+  // Articulation, the memory ghost and the stated delta are what make the
+  // story readable; each must actually occur during a real run.
+  sawArticulation = Math.max(sawArticulation, await p.locator('[data-shoot^="event-module-"]').count());
+  sawGhost = Math.max(sawGhost, await p.locator('[data-shoot="forecast-memory-ghost"]').count());
+  sawDelta = Math.max(sawDelta, await p.locator('[data-shoot="memory-delta"]').count());
+  if (geomDuring.length < 26) geomDuring.push(await geometry());
   if (crossed < lastCrossed) check("playhead never un-crosses events mid-run", false, `${lastCrossed} → ${crossed}`);
   lastCrossed = crossed;
   // stopped?
@@ -106,6 +131,23 @@ check(
 const parsed = samples.map((s) => new Date(s.date).getTime());
 check("The playhead advanced monotonically", parsed.every((v, i) => i === 0 || parsed[i - 1] <= v), `${samples.length} samples`);
 check("Events accumulated as they were crossed", lastCrossed > startCrossed, `${startCrossed} → ${lastCrossed}`);
+check("Events ARTICULATE as they are crossed — the note becomes readable",
+  sawArticulation > 0, `${sawArticulation} modules open at once, peak`);
+check("The previous memory band lingers as a ghost when the band steps",
+  sawGhost > 0, `${sawGhost} ghost band(s)`);
+check("The step states the movement between two stored likely dates",
+  sawDelta > 0, `${sawDelta} delta readout(s)`);
+{
+  const drift = (k) => {
+    const vals = geomDuring.map((g) => g[k]).filter(Boolean);
+    if (vals.length === 0) return 0;
+    return Math.max(...[0, 1, 2, 3].map((i) => Math.max(...vals.map((v) => v[i])) - Math.min(...vals.map((v) => v[i]))));
+  };
+  check("The time field does not move while the story plays", drift("field") === 0, `${drift("field").toFixed(1)}px`);
+  check("The transport does not move while the story plays", drift("transport") === 0, `${drift("transport").toFixed(1)}px`);
+}
+check("Articulation SETTLES — no module is left open once playback ends",
+  (await p.locator('[data-shoot^="event-module-"][data-phase="articulating"]').count()) === 0);
 check("Crossed events stay illuminated behind the playhead",
   (await p.locator('[data-shoot^="event-"][data-crossed="true"]').count()) > 0,
   `${await p.locator('[data-shoot^="event-"][data-crossed="true"]').count()} lit`);
@@ -236,6 +278,25 @@ await new Promise((r) => setTimeout(r, 600));
 const finalProj = await (await fetch(`${BASE}/api/timeline`)).json();
 check("Reality restored — the proof landmark is gone",
   !finalProj.entries.some((e) => e.title === "PROOF playback landmark"));
+
+// Selecting must not resize the field either — the inspector swapping
+// content is not allowed to move the score under the pointer.
+{
+  await p.goto(`${BASE}/timeline`, { waitUntil: "networkidle" });
+  await p.waitForSelector('[data-shoot="time-field"]', { timeout: 20000 });
+  await p.waitForTimeout(2200);
+  const before = await geometry();
+  const rep = finalProj.entries.find((e) => e.kind === "report");
+  const ctxE = finalProj.entries.find((e) => e.kind === "context_observed");
+  for (const e of [rep, ctxE].filter(Boolean)) {
+    await p.locator(`[data-shoot="event-${e.id}"]`).dispatchEvent("click");
+    await p.waitForTimeout(700);
+  }
+  const after = await geometry();
+  check("Selecting events never resizes the time field",
+    JSON.stringify(before.field) === JSON.stringify(after.field),
+    `${JSON.stringify(before.field)} → ${JSON.stringify(after.field)}`);
+}
 
 await b.close();
 console.log(`\n${failures === 0 ? "ALL TIMELINE PLAYBACK PROOFS PASS" : `${failures} FAILURE(S)`}`);
