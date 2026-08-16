@@ -423,59 +423,28 @@ body {
 }
 .i-tether { animation: i-tether 420ms cubic-bezier(0.2, 0, 0.2, 1); transform-origin: 50% 0; }
 
-/* THE MIXER FADER.
-   A vertical throw, drawn as material: the slot is cut into the panel
-   (MixerChannel paints it) and this input contributes only the cap and the
-   hit area. Rotating a horizontal range keeps native keyboard and pointer
-   behaviour -- arrow keys, drag, and screen-reader semantics all survive,
-   which a div-with-listeners would have thrown away. */
-.mixer-fader {
-  -webkit-appearance: none;
-  appearance: none;
-  position: absolute;
-  left: 50%;
-  top: 50%;
-  width: 100%;
-  height: 34px;
-  transform: translate(-50%, -50%) rotate(-90deg);
-  transform-origin: center;
-  background: transparent;
-  cursor: ns-resize;
-  margin: 0;
+/* THE MIXER FADER lived here as a rotated `<input type="range">`. The
+   rotation is what killed it: `width: 100%` resolved against the 30px-wide
+   box BEFORE the -90deg transform, so the travel axis was 30px long -- 17
+   usable pixels for the whole 0-6 FTE range -- sitting as a 30px band in
+   the middle of a 187px slot the eye read as the control. The fader you
+   could see and the fader that existed were different objects.
+   It is now components/portfolio/ChannelFader.tsx: one un-rotated element
+   that is simultaneously the drawn slot and the hit area, with its track
+   measured once per drag. Nothing here replaced it -- the geometry had to
+   stop being expressed as a transform. */
+.channel-fader:focus-visible {
+  outline: 1px solid var(--i-violet);
+  outline-offset: 2px;
+  border-radius: 4px;
 }
-.mixer-fader::-webkit-slider-runnable-track { background: transparent; height: 34px; }
-.mixer-fader::-moz-range-track { background: transparent; height: 34px; }
-.mixer-fader::-webkit-slider-thumb {
-  -webkit-appearance: none;
-  appearance: none;
-  width: 13px;
-  height: 26px;
-  border-radius: 3px;
-  background: linear-gradient(180deg, var(--i-panel-raised) 0%, #12171a 100%);
-  border: 1px solid var(--i-border-strong);
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.6), inset 0 1px 0 rgba(243, 240, 230, 0.09);
-  transition: border-color 140ms ease, box-shadow 140ms ease;
-}
-.mixer-fader::-moz-range-thumb {
-  width: 13px;
-  height: 26px;
-  border-radius: 3px;
-  background: linear-gradient(180deg, var(--i-panel-raised) 0%, #12171a 100%);
-  border: 1px solid var(--i-border-strong);
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.6), inset 0 1px 0 rgba(243, 240, 230, 0.09);
-}
-/* The cap picks up light on hover and grips on press -- the only motion a
-   fader should have. No bounce: a real one does not spring back at you. */
-.mixer-fader:hover::-webkit-slider-thumb { border-color: var(--i-text-faint); }
-.mixer-fader:active::-webkit-slider-thumb {
-  border-color: var(--i-violet);
-  box-shadow: 0 0 0 1px var(--i-violet-soft), 0 1px 3px rgba(0, 0, 0, 0.6);
-}
-.mixer-fader:focus-visible::-webkit-slider-thumb { border-color: var(--i-violet); }
-.mixer-fader:focus { outline: none; }
-
-@media (prefers-reduced-motion: reduce) {
-  .mixer-fader::-webkit-slider-thumb { transition: none; }
+/* While a hand is on it the cap is already lit and the value is pinned
+   beside it; a ring around the whole throw as well is just noise. Focus
+   that arrived by pointer gets no ring either -- the ring exists to tell a
+   keyboard user where they are. */
+.channel-fader[data-dragging]:focus-visible,
+.channel-fader[data-pointer-focus]:focus-visible {
+  outline: none;
 }
 
 /* The rotary cap's hit area. The knob is drawn in SVG underneath; this

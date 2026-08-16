@@ -17,6 +17,7 @@
 // about how humans work, and it lives once, on the Master.
 
 import { useMemo } from "react";
+import ChannelFader from "./ChannelFader";
 
 export const CHANNEL_W = 148;
 export const RACK_H = 292;
@@ -99,6 +100,12 @@ export default function MixerChannel({
   const { raw, effective, splitRaw, splitPeople, required, changed, accent } = view;
   const friction = raw - effective;
   const alive = hovered || selected;
+  // What the hand asked for. readChannel() already folds `required` into
+  // `raw` -- an unstaffable request is carried as a dedicated phantom person
+  // -- so `raw` IS the requested value and must not have `required` added to
+  // it again. What the fader was missing was never the request; it was a
+  // ceiling low enough to hide it (see faderMax in PortfolioPageClient).
+  const requested = raw;
 
   return (
     <div
@@ -157,12 +164,25 @@ export default function MixerChannel({
         <Trace days={view.completionDays} accent={accent} alive={alive} />
       </div>
 
-      {/* RAW over EFFECTIVE -- stacked, so the strip stays narrow */}
+      {/* RAW over EFFECTIVE -- stacked, so the strip stays narrow.
+          RAW is the fader's target, so the control and the readout always
+          agree. When the portfolio cannot staff that target the gap is
+          stated inline, on the row that already exists -- a shortfall must
+          never add or remove a line, or the strip would resize under a
+          drag. EFF stays derived from what is actually staffed, because
+          effectiveness is a fact about real people. */}
       <div className="px-2.5 pt-1.5 pb-2" style={{ borderBottom: "1px solid var(--i-border)" }}>
         <div className="flex items-baseline justify-between">
           <span className="text-[8px] uppercase tracking-[0.1em] text-[var(--i-text-faint)]">raw</span>
-          <span className="i-readout text-[13px] leading-none" data-shoot="channel-raw">
-            {raw.toFixed(1)}
+          <span className="flex items-baseline gap-1">
+            {required > 1e-6 && (
+              <span className="text-[8.5px] tabular-nums leading-none" style={{ color: "var(--i-red)" }} data-shoot="channel-short">
+                −{required.toFixed(1)}
+              </span>
+            )}
+            <span className="i-readout text-[13px] leading-none" data-shoot="channel-raw">
+              {requested.toFixed(1)}
+            </span>
           </span>
         </div>
         <div className="mt-1 flex items-baseline justify-between">
@@ -177,67 +197,18 @@ export default function MixerChannel({
         </div>
       </div>
 
-      {/* THE FADER -- real travel, fixed slot */}
-      <div className="flex-1 px-2.5 py-2.5 flex items-stretch justify-center gap-2">
-        <div className="flex flex-col justify-between py-1 text-[7.5px] tabular-nums text-[var(--i-text-faint)]">
-          <span>{faderMax}</span>
-          <span>{Math.round(faderMax / 2)}</span>
-          <span>0</span>
-        </div>
-        <div className="relative flex items-center" style={{ width: 30 }}>
-          {/* the slot is CUT IN to the chassis */}
-          <div
-            className="absolute left-1/2 -translate-x-1/2 rounded-full"
-            style={{
-              width: 6,
-              top: 2,
-              bottom: 2,
-              background: "var(--i-recess)",
-              boxShadow: "inset 0 1px 2px rgba(0,0,0,0.8)",
-              border: "1px solid rgba(0,0,0,0.5)",
-            }}
-            aria-hidden
-          />
-          {/* filled travel reads as material risen in the slot */}
-          <div
-            className="absolute left-1/2 -translate-x-1/2 rounded-full pointer-events-none"
-            style={{
-              width: 6,
-              bottom: 2,
-              height: `calc(${Math.min(100, (raw / faderMax) * 100)}% - 4px)`,
-              background: changed ? "var(--i-violet)" : accent,
-              opacity: changed ? 0.95 : alive ? 0.7 : 0.5,
-              transition: "height 260ms cubic-bezier(0.22,0.61,0.36,1), opacity 200ms ease, background 200ms ease",
-            }}
-            aria-hidden
-          />
-          {required > 1e-6 && (
-            <div
-              className="absolute left-1/2 -translate-x-1/2 rounded-full pointer-events-none"
-              style={{
-                width: 6,
-                bottom: `${Math.min(100, ((raw - required) / faderMax) * 100)}%`,
-                height: `${Math.min(100, (required / faderMax) * 100)}%`,
-                background: "repeating-linear-gradient(45deg, var(--i-red) 0 3px, transparent 3px 6px)",
-                transition: "height 260ms cubic-bezier(0.22,0.61,0.36,1), bottom 260ms cubic-bezier(0.22,0.61,0.36,1)",
-              }}
-              aria-hidden
-            />
-          )}
-          <input
-            type="range"
-            min={0}
-            max={faderMax}
-            step={0.1}
-            value={Math.min(raw, faderMax)}
-            aria-label={`${view.name} allocation in FTE`}
-            data-shoot={`fader-${view.scopeId}`}
-            onChange={(e) => onFader(Number(e.target.value))}
-            onClick={(e) => e.stopPropagation()}
-            className="mixer-fader"
-          />
-        </div>
-      </div>
+      {/* THE FADER -- real travel, and the element you grab is the element
+          you see. See ChannelFader.tsx for what this replaced and why. */}
+      <ChannelFader
+        scopeId={view.scopeId}
+        label={view.name}
+        value={requested}
+        max={faderMax}
+        accent={accent}
+        changed={changed}
+        required={required}
+        onChange={onFader}
+      />
 
       {/* split exposure, and gates if this project has any */}
       <div style={{ borderTop: "1px solid var(--i-border)" }}>
@@ -318,17 +289,24 @@ export function DormantChannel({ index, onPatch }: { index: number; onPatch?: ()
         <div className="mt-1 h-[13px]" />
       </div>
 
-      {/* the parked fader */}
-      <div className="flex-1 px-2.5 py-2.5 flex items-stretch justify-center gap-2">
-        <div className="w-[10px]" aria-hidden />
-        <div className="relative flex items-center" style={{ width: 30 }} aria-hidden>
+      {/* the parked fader -- same geometry as a live one, powered off */}
+      <div className="flex-1 px-2.5 py-2.5 flex items-stretch justify-center gap-1.5">
+        <div className="shrink-0" style={{ width: 13 }} aria-hidden />
+        <div className="relative" style={{ width: 30 }} aria-hidden>
           <div
             className="absolute left-1/2 -translate-x-1/2 rounded-full"
-            style={{ width: 6, top: 2, bottom: 2, background: "#080a0c", border: "1px solid rgba(0,0,0,0.5)" }}
+            style={{ width: 6, top: 0, bottom: 0, background: "#080a0c", border: "1px solid rgba(0,0,0,0.5)" }}
           />
           <div
-            className="absolute left-1/2 -translate-x-1/2 rounded-[2px]"
-            style={{ width: 12, height: 22, bottom: 2, background: "#12171a", border: "1px solid #1b2126" }}
+            className="absolute left-1/2 rounded-[3px]"
+            style={{
+              width: 22,
+              height: 13,
+              bottom: -6.5,
+              transform: "translateX(-50%)",
+              background: "#12171a",
+              border: "1px solid #1b2126",
+            }}
           />
         </div>
       </div>

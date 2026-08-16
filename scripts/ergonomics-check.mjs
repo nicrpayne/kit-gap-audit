@@ -55,16 +55,43 @@ await settle(5000);
 const platform0 = await rawOf("platform");
 const free0 = await num('[data-shoot="master-free"]');
 check("A0 the fader reports FTE, not a percentage", await fader("platform").getAttribute("aria-label"), "Platform allocation in FTE");
-check("A1 its step is 0.1 -- every reachable position is a value the engine receives", await fader("platform").getAttribute("step"), "0.1");
-check("A2 it starts at 0, never below", await fader("platform").getAttribute("min"), "0");
+// The unit is a PERSON. It used to be 0.1, expressed as an <input step>;
+// the control is no longer an <input>, and tenths were never a quantity
+// anyone plans in. Halves survive, behind Alt, because 0.5 of a person is
+// real. See components/portfolio/ChannelFader.tsx.
+check("A1 it is a real slider with a stated range", await fader("platform").getAttribute("role"), "slider");
+check("A2 it starts at 0, never below", await fader("platform").getAttribute("aria-valuemin"), "0");
+
+// Raise before lowering, so the assertion is not made against the floor.
+await press("platform", "ArrowUp", 3);
+const platformUp = await rawOf("platform");
+const freeUp = await num('[data-shoot="master-free"]');
+check("A3 one arrow press is one whole person", platformUp, Number((platform0 + 3).toFixed(1)));
+
+await press("platform", "ArrowDown", 1);
+check("A4 lowering releases exactly one person", await rawOf("platform"), Number((platformUp - 1).toFixed(1)));
+checkTrue(
+  "A5 released capacity returns to the pool",
+  (await num('[data-shoot="master-free"]')) >= freeUp,
+  `free ${freeUp} -> ${await num('[data-shoot="master-free"]')}`
+);
 
 await press("platform", "ArrowDown", 3);
-check("A3 arrow keys move it in 0.1 steps", await rawOf("platform"), Number((platform0 - 0.3).toFixed(1)));
-checkTrue("A4 released capacity returns to the pool", (await num('[data-shoot="master-free"]')) > free0, `free ${free0} -> ${await num('[data-shoot="master-free"]')}`);
+check("A6 the fader returns to where it started and the pool with it", await rawOf("platform"), platform0);
+check("A6b free capacity returns to where it started", await num('[data-shoot="master-free"]'), free0);
 
-await press("platform", "ArrowUp", 3);
-check("A5 raising it back consumes that capacity again", await rawOf("platform"), platform0);
-check("A6 free capacity returns to where it started", await num('[data-shoot="master-free"]'), free0);
+// Halves are reachable, and only deliberately.
+await press("platform", "ArrowUp", 2);
+const beforeHalf = await rawOf("platform");
+await page.keyboard.down("Alt");
+await press("platform", "ArrowDown", 1);
+await page.keyboard.up("Alt");
+check("A7 Alt+arrow reaches a half person", await rawOf("platform"), Number((beforeHalf - 0.5).toFixed(1)));
+await page.keyboard.down("Alt");
+await press("platform", "ArrowUp", 1);
+await page.keyboard.up("Alt");
+await press("platform", "ArrowDown", 2);
+check("A8 back to Reality with no residue", await rawOf("platform"), platform0);
 
 // ── B. THE POOL IS THE CEILING (supersedes "type any number") ──────────
 // The old harness proved a typed 28 was not clamped to 2x Reality. There is

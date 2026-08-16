@@ -43,12 +43,16 @@ const text = async (sel) => (await p.locator(sel).innerText()).replace(/\s+/g, "
 const laneDate = (name) =>
   p.locator(`[aria-label^="${name}, likely"] .i-readout`).first().innerText().then((t) => t.trim());
 
-// Drive a vertical fader by keyboard: deterministic, and it exercises the
-// same handler a drag does.
-const nudge = async (scopeId, steps, key = "ArrowUp") => {
+// Drive a vertical fader by keyboard. NOTE the unit: one arrow press is one
+// whole FTE, and Alt+arrow is half of one. It used to be 0.1, which is why
+// every count in this file changed when the fader learned to speak in
+// people. This harness proves the MODEL; the pointer behaviour it cannot
+// see is proved in fader-direct-manipulation-proof.mjs -- keyboard-only
+// coverage here is exactly what let a 17px-travel fader ship.
+const nudge = async (scopeId, people, key = "ArrowUp") => {
   const f = p.locator(`[data-shoot="fader-${scopeId}"]`);
   await f.focus();
-  for (let i = 0; i < steps; i++) await p.keyboard.press(key);
+  for (let i = 0; i < people; i++) await p.keyboard.press(key);
   await settle(900);
 };
 
@@ -70,16 +74,28 @@ check(
 await shot("1-reality");
 
 // ── 1. RAISE: free capacity is consumed first ───────────────────────────
-await nudge("platform", 2);
+// One person. The roster this runs against keeps only a fraction of an FTE
+// genuinely free, so a whole-person request necessarily runs past the pool
+// -- which is the sharper test anyway: free capacity must be spent BEFORE
+// anything is declared missing, never alongside it.
+await nudge("platform", 1);
 const free1 = await num('[data-shoot="master-free"]');
 const platformRaw1 = await num('[data-shoot="channel-platform"] [data-shoot="channel-raw"]');
+const deficit1 = parseFloat((await text('[data-shoot="master-overunder"]')).replace(/[^\d.]/g, "")) || 0;
 check("Raising Platform consumed free capacity", platformRaw1 > platformRaw0 && free1 < free0, `${platformRaw0} -> ${platformRaw1} FTE, free ${free0} -> ${free1}`);
+check(
+  "Free capacity was spent before anything was declared missing",
+  Math.abs(deficit1 - (1 - free0)) < 0.05,
+  `asked +1.0, had ${free0} free, reported +${deficit1.toFixed(1)} missing`
+);
 check("The workforce did not change", (await num('[data-shoot="master-workforce"]')) === workforce0, `${workforce0} FTE`);
 await shot("2-consumed-free");
 
 // ── 2. RAISE PAST THE POOL: a named deficit, not a silent theft ─────────
+// Two more people, so the shortfall is real but still inside what a single
+// donor channel can actually cover -- step 3 has to be able to resolve it.
 const jsaRawBefore = await num('[data-shoot="channel-jsa"] [data-shoot="channel-raw"]');
-await nudge("platform", 12);
+await nudge("platform", 2);
 const overUnder = await text('[data-shoot="master-overunder"]');
 check("Asking for more than exists is reported, not absorbed", overUnder.startsWith("+"), overUnder);
 check(

@@ -61,9 +61,12 @@ const commitChannel = async (scopeId, targetRaw) => {
   );
   const fader = p.locator(`[data-shoot="fader-${scopeId}"]`);
   await fader.focus();
-  const steps = Math.round(Math.abs(targetRaw - cur) / 0.1);
+  // One arrow press is one whole person. This used to divide by 0.1, which
+  // silently became a 10x overshoot the moment the fader started speaking
+  // in people -- the scenario went so far past the workforce that Commit
+  // stayed disabled and this harness hung on it.
   const key = targetRaw > cur ? "ArrowUp" : "ArrowDown";
-  for (let i = 0; i < steps; i++) await p.keyboard.press(key);
+  for (let i = 0; i < Math.round(Math.abs(targetRaw - cur)); i++) await p.keyboard.press(key);
   await settle(1500);
   await p.locator('[data-shoot="commit"]').click();
   await settle(3800);

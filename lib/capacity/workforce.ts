@@ -295,6 +295,45 @@ export function setChannelRaw(
 }
 
 /**
+ * Settle outstanding requests against capacity that is now free.
+ *
+ * A channel dragged past the pool keeps its requested value and carries the
+ * unmet part as `required`. That claim stays open. When capacity later comes
+ * free -- another channel came down, or the workforce grew -- the claim is
+ * paid out of what is genuinely free.
+ *
+ * This cannot become auto-donation: it settles by RAISING each pending
+ * channel through setChannelRaw, which only ever consumes free capacity. No
+ * path here lowers a channel the user did not touch. A neighbour's fader
+ * moves only when the user moves it, or through an explicit named transfer.
+ *
+ * `skipScopeId` is the channel the user currently has hold of; its own value
+ * is whatever the hand just asked for and is never re-derived here.
+ */
+export function settlePending(
+  people: PersonLike[],
+  allocations: AllocationLike[],
+  pending: Map<string, number>,
+  contextSwitchCostPct = 0,
+  skipScopeId?: string
+): { allocations: AllocationLike[]; required: Map<string, number> } {
+  let current = allocations;
+  const required = new Map(pending);
+  // Stable order, so the same free person always lands on the same claim.
+  for (const scopeId of [...pending.keys()].sort()) {
+    const shortfall = pending.get(scopeId) ?? 0;
+    if (scopeId === skipScopeId || shortfall <= EPS) continue;
+    const state: WorkforceState = { people, allocations: current };
+    const target = readChannel(state, scopeId, contextSwitchCostPct).raw + shortfall;
+    const settled = setChannelRaw(state, scopeId, target, contextSwitchCostPct);
+    current = settled.allocations;
+    if (settled.required > EPS) required.set(scopeId, settled.required);
+    else required.delete(scopeId);
+  }
+  return { allocations: current, required };
+}
+
+/**
  * One coordinated physical action: capacity leaves the donor and arrives at
  * the recipient in the same transaction. This is what "take 1.0 from JSA"
  * means -- not two independent edits that happen to cancel out.

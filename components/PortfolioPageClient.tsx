@@ -14,6 +14,7 @@ import {
   readChannel,
   readMaster,
   setChannelRaw,
+  settlePending,
   transferBetweenChannels,
   setPersonSplit,
   splitPeople,
@@ -541,18 +542,34 @@ export default function PortfolioPageClient() {
   // never invents a person. Lowering returns capacity to free. Both are
   // transactions on the same finite workforce -- see
   // lib/capacity/workforce.ts.
+  //
+  // The fader holds the REQUESTED value, not the achieved one. readChannel()
+  // already carries an unmet request as a phantom dedicated person, so the
+  // request survives in the model; what hid it was the fader's ceiling
+  // (faderMax, below), which used to sit at HALF the workforce. Past it the
+  // cap stopped moving while the underlying value kept climbing -- the
+  // control looked stuck at exactly the moment it was being asked for most.
+  // The control obeys; the model explains; Reality commit is what refuses.
   const onFader = useCallback(
     (scopeId: string, requestedRaw: number) => {
       const result = setChannelRaw(workforceState, scopeId, requestedRaw, switchCostPct);
-      setScenarioAllocations(result.allocations);
-      setRequiredByScope((prev) => {
-        const next = new Map(prev);
-        if (result.required > 1e-6) next.set(scopeId, result.required);
-        else next.delete(scopeId);
-        return next;
-      });
+      const pending = new Map(requiredByScope);
+      if (result.required > 1e-6) pending.set(scopeId, result.required);
+      else pending.delete(scopeId);
+      // Lowering this channel may have freed the people another channel was
+      // already asking for. Settle those claims before rendering, so the
+      // shortfall clears in the same gesture that resolved it.
+      const settled = settlePending(
+        workforceState.people,
+        result.allocations,
+        pending,
+        switchCostPct,
+        scopeId
+      );
+      setScenarioAllocations(settled.allocations);
+      setRequiredByScope(settled.required);
     },
-    [workforceState, switchCostPct]
+    [workforceState, switchCostPct, requiredByScope]
   );
 
   // Resolving a deficit by taking from a named donor: both channels move as
@@ -842,7 +859,17 @@ export default function PortfolioPageClient() {
 
   // One shared fader ceiling, so channels are visually comparable and a
   // fader's travel means the same thing everywhere on the surface.
-  const faderMax = useMemo(() => Math.max(6, Math.ceil(master.workforce / 2)), [master.workforce]);
+  //
+  // Derived from the workforce, never from any channel's current value:
+  // if the ceiling responded to what a channel is asking for, the scale
+  // would rescale under the hand mid-drag. It carries two people of
+  // headroom above the whole workforce so a shortfall can always be
+  // auditioned, and it is a floor of six so a small team still gets a
+  // readable throw. Six is a minimum, not the model's maximum.
+  const faderMax = useMemo(
+    () => Math.max(6, Math.ceil(master.workforce) + 2),
+    [master.workforce]
+  );
 
   const channelViews: ChannelView[] = useMemo(() => {
     if (!data) return [];

@@ -22,6 +22,13 @@ import type { MasterReading, DonorSuggestion, SplitPersonView } from "@/lib/capa
 // still means the portfolio cannot do what is being asked.
 export const CHANNEL_ACCENTS = ["#9b8cfa", "#46c3d6", "#4ad9a8", "#e0b04a", "#ef8f5b", "#8fa6c4"];
 
+// Reserved footprints for the two rails below the rack. Both used to mount
+// and unmount with their contents, which moved the mixer -- and therefore
+// every fader -- while a drag was in progress. They are fixed objects now;
+// only their treatment changes. See the tension rail below.
+export const SPLIT_BRIDGE_H = 36;
+export const TENSION_RAIL_H = 80;
+
 interface Props {
   channels: ChannelView[];
   master: MasterReading;
@@ -87,6 +94,7 @@ export default function PortfolioMixer({
     () => new Map(channels.map((c, i) => [c.scopeId, i])),
     [channels]
   );
+  const deficit = !!deficitScopeId && deficitFte > 1e-6;
 
   return (
     <div className="shrink-0 flex flex-col" style={{ background: "var(--i-void)", borderTop: "1px solid var(--i-border)" }}>
@@ -143,12 +151,19 @@ export default function PortfolioMixer({
           rather than cables across the whole surface -- you should be able
           to glance and see "these two channels share a person", not read a
           wiring diagram. */}
-      {splits.length > 0 && (
-        <div
-          className="px-4 py-2 flex items-center gap-2 overflow-x-auto"
-          data-shoot="split-bridge"
-          style={{ borderTop: "1px solid var(--i-border)", background: "var(--i-bg)" }}
-        >
+      <div
+        className="px-4 flex items-center gap-2 overflow-x-auto overflow-y-hidden"
+        data-shoot="split-bridge"
+        style={{
+          height: SPLIT_BRIDGE_H,
+          borderTop: "1px solid var(--i-border)",
+          background: "var(--i-bg)",
+        }}
+      >
+        {splits.length === 0 ? (
+          <span className="i-label shrink-0 text-[var(--i-text-faint)]">No shared people</span>
+        ) : (
+          <>
           <span className="i-label shrink-0" style={{ color: "var(--i-amber)" }}>
             Shared
           </span>
@@ -179,78 +194,111 @@ export default function PortfolioMixer({
           {splits.length > 6 && (
             <span className="shrink-0 text-[9.5px] text-[var(--i-text-faint)]">+{splits.length - 6} more</span>
           )}
-        </div>
-      )}
+          </>
+        )}
+      </div>
 
       {/* ── CAPACITY TENSION RAIL ────────────────────────────────────────
           Not a validation error. The machine is exposing a tension in the
           system: this much human capacity is being asked for and does not
           exist. It reads as a rail on the chassis, and every way out of it
           is a real, available physical action. */}
-      {deficitScopeId && deficitFte > 1e-6 && (
-        <div
-          data-shoot="tension-rail"
-          className="px-4 py-2.5"
-          style={{
-            borderTop: "1px solid rgba(239,107,91,0.35)",
-            background: "linear-gradient(180deg, rgba(239,107,91,0.10) 0%, rgba(239,107,91,0.03) 100%)",
-          }}
-        >
-          <div className="flex items-baseline gap-2">
-            <span className="text-[8px] uppercase tracking-[0.16em]" style={{ color: "var(--i-red)" }}>
-              Capacity required
-            </span>
-            <span className="i-readout text-[15px] leading-none" style={{ color: "var(--i-red)" }}>
-              +{deficitFte.toFixed(1)}
-              <span className="text-[8px] ml-0.5 text-[var(--i-text-faint)]">FTE</span>
-            </span>
-            <span className="text-[9px] text-[var(--i-text-soft)]">
-              on {scopeNameById.get(deficitScopeId) ?? deficitScopeId} — Reality can&rsquo;t be committed until this resolves
-            </span>
-          </div>
-
-          <div
-            className="mt-2 h-px"
-            style={{ background: "linear-gradient(90deg, rgba(239,107,91,0.45) 0%, transparent 70%)" }}
-            aria-hidden
-          />
-
-          <div className="mt-2 flex items-center gap-2 flex-wrap">
-            <span className="text-[8px] uppercase tracking-[0.14em] text-[var(--i-text-faint)]">Take from</span>
-            {donors.slice(0, 3).map((d) => (
-              <button
-                key={d.scopeId}
-                onClick={() => onTakeFrom(d.scopeId)}
-                onMouseEnter={() => onHover(d.scopeId)}
-                onMouseLeave={() => onHover(null)}
-                data-shoot={`take-from-${d.scopeId}`}
-                className="rounded px-2 py-1 text-[9.5px] tabular-nums transition-colors hover:brightness-125"
-                style={{ background: "var(--i-panel)", border: "1px solid var(--i-border-strong)", color: "var(--i-text)" }}
-              >
-                {scopeNameById.get(d.scopeId) ?? d.scopeId}
-                <span style={{ color: "var(--i-red)" }}> −{Math.min(deficitFte, d.availableFte).toFixed(1)}</span>
-              </button>
-            ))}
-            <span className="mx-1 text-[var(--i-border-strong)]">|</span>
-            <button
-              onClick={onSplitSomeone}
-              data-shoot="split-someone"
-              className="rounded px-2 py-1 text-[9.5px] hover:brightness-125"
-              style={{ background: "var(--i-panel)", border: "1px solid var(--i-border-strong)", color: "var(--i-text-soft)" }}
-            >
-              Split a person
-            </button>
-            <button
-              onClick={() => onHire(Math.ceil(deficitFte))}
-              data-shoot="hire"
-              className="rounded px-2 py-1 text-[9.5px] font-medium hover:brightness-110"
-              style={{ background: "var(--i-violet)", color: "var(--i-void)" }}
-            >
-              Increase workforce +{Math.ceil(deficitFte).toFixed(1)}
-            </button>
-          </div>
+      {/* The rail is ALWAYS here, at exactly this height. It used to mount
+          and unmount with the shortfall, which moved the whole mixer 79.8px
+          -- while the live fader element was only 30px tall, so a rail
+          appearing mid-drag pulled the control out from under the pointer
+          entirely. A tension the instrument is designed to express must not
+          be able to resize the instrument. Balanced is dormant, shortfall is
+          lit; the geometry is identical in both. */}
+      <div
+        data-shoot="tension-rail"
+        data-state={deficit ? "shortfall" : "balanced"}
+        className="px-4 py-2.5 flex flex-col justify-center"
+        style={{
+          height: TENSION_RAIL_H,
+          borderTop: `1px solid ${deficit ? "rgba(239,107,91,0.35)" : "var(--i-border)"}`,
+          background: deficit
+            ? "linear-gradient(180deg, rgba(239,107,91,0.10) 0%, rgba(239,107,91,0.03) 100%)"
+            : "var(--i-void)",
+          transition: "background 220ms ease, border-color 220ms ease",
+        }}
+      >
+        <div className="flex items-baseline gap-2">
+          <span
+            className="text-[8px] uppercase tracking-[0.16em]"
+            style={{ color: deficit ? "var(--i-red)" : "var(--i-text-faint)" }}
+          >
+            Capacity required
+          </span>
+          <span
+            data-shoot="tension-value"
+            className="i-readout text-[15px] leading-none"
+            style={{ color: deficit ? "var(--i-red)" : "var(--i-text-faint)" }}
+          >
+            {deficit ? `+${deficitFte.toFixed(1)}` : "0.0"}
+            <span className="text-[8px] ml-0.5 text-[var(--i-text-faint)]">FTE</span>
+          </span>
+          <span className="text-[9px] text-[var(--i-text-soft)]">
+            {deficit
+              ? `on ${scopeNameById.get(deficitScopeId!) ?? deficitScopeId} — Reality can't be committed until this resolves`
+              : "portfolio balanced — every allocation is staffed by someone who exists"}
+          </span>
         </div>
-      )}
+
+        <div
+          className="mt-2 h-px"
+          style={{
+            background: deficit
+              ? "linear-gradient(90deg, rgba(239,107,91,0.45) 0%, transparent 70%)"
+              : "linear-gradient(90deg, var(--i-border) 0%, transparent 70%)",
+          }}
+          aria-hidden
+        />
+
+        {/* The ways out. Present at the same height when balanced, inert --
+            reserving the row is what keeps the rail one fixed object. */}
+        <div
+          className="mt-2 flex items-center gap-2 flex-wrap"
+          style={{ opacity: deficit ? 1 : 0.28, pointerEvents: deficit ? "auto" : "none" }}
+          aria-hidden={!deficit}
+        >
+          <span className="text-[8px] uppercase tracking-[0.14em] text-[var(--i-text-faint)]">Take from</span>
+          {(deficit ? donors.slice(0, 3) : []).map((d) => (
+            <button
+              key={d.scopeId}
+              onClick={() => onTakeFrom(d.scopeId)}
+              onMouseEnter={() => onHover(d.scopeId)}
+              onMouseLeave={() => onHover(null)}
+              data-shoot={`take-from-${d.scopeId}`}
+              className="rounded px-2 py-1 text-[9.5px] tabular-nums transition-colors hover:brightness-125"
+              style={{ background: "var(--i-panel)", border: "1px solid var(--i-border-strong)", color: "var(--i-text)" }}
+            >
+              {scopeNameById.get(d.scopeId) ?? d.scopeId}
+              <span style={{ color: "var(--i-red)" }}> −{Math.min(deficitFte, d.availableFte).toFixed(1)}</span>
+            </button>
+          ))}
+          {!deficit && <span className="text-[9.5px] text-[var(--i-text-faint)]">—</span>}
+          <span className="mx-1 text-[var(--i-border-strong)]">|</span>
+          <button
+            onClick={onSplitSomeone}
+            data-shoot="split-someone"
+            disabled={!deficit}
+            className="rounded px-2 py-1 text-[9.5px] hover:brightness-125"
+            style={{ background: "var(--i-panel)", border: "1px solid var(--i-border-strong)", color: "var(--i-text-soft)" }}
+          >
+            Split a person
+          </button>
+          <button
+            onClick={() => onHire(Math.ceil(deficitFte))}
+            data-shoot="hire"
+            disabled={!deficit}
+            className="rounded px-2 py-1 text-[9.5px] font-medium hover:brightness-110"
+            style={{ background: "var(--i-violet)", color: "var(--i-void)" }}
+          >
+            Increase workforce +{Math.max(1, Math.ceil(deficitFte)).toFixed(1)}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
