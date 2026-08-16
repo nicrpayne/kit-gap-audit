@@ -27,7 +27,10 @@ await p.goto(`${BASE}/timeline`, { waitUntil: "networkidle" });
 await p.waitForSelector('[data-shoot="time-field"]', { timeout: 30000 });
 await p.waitForTimeout(2600);
 
-const markers = () => p.locator('[data-shoot^="event-"]:not([data-shoot^="event-module-"]):not([data-shoot="event-intake-toggle"])').count();
+/** A landmark is a plan object with its own handle; everything else is
+    a mark on the historical score. */
+const handle = (e) => (e.family === "landmark" ? `plan-${e.id}` : `event-${e.id}`);
+const markers = () => p.locator('[data-shoot^="event-"]:not([data-shoot^="event-module-"]):not([data-shoot="event-intake-toggle"]), [data-shoot^="plan-"]:not([data-shoot="plan-drag-readout"]):not([data-shoot="plan-ownership"])').count();
 const geometry = () =>
   p.evaluate(() => {
     const r = (s) => {
@@ -174,7 +177,7 @@ if (work) {
 // ── 8. overdue is obvious without a legend ─────────────────────────
 const overdue = projA.entries.find((e) => e.detail?.overdue === true);
 if (overdue) {
-  const el = p.locator(`[data-shoot="event-${overdue.id}"]`);
+  const el = p.locator(`[data-shoot="${handle(overdue)}"]`);
   check("An overdue plan is marked as state, not as a colour to look up",
     (await el.locator('[data-shoot="overdue-mark"]').count()) === 1 &&
     (await el.getAttribute("data-overdue")) === "true",

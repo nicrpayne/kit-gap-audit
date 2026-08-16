@@ -14,11 +14,16 @@
 // named OVERDUE. Converting it would erase the most useful thing on the
 // screen.
 
-import { useCallback, useEffect, useMemo, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { TimelineEntry, TimelineLane, ForecastSnapshot, TimelineCandidate } from "@/lib/timeline/entries";
 import { xFor, tFor, ticksFor, scaleFor, fmtDay, type TimeView } from "@/lib/timeline/geometry";
 import { FAMILY_COLOR } from "./familyColor";
 import EventModule from "./EventModule";
+import PlanObjectView from "./PlanObject";
+import {
+  isPlanObject, planObjectFor, packPlanRows, labelWidth, laneZones, planRowHeight,
+  retime, snapDay, type LaneBox, type PlanGrip, type PlanObject,
+} from "@/lib/timeline/plan";
 import { prominenceFor, layerFor, type LayerState } from "@/lib/timeline/story";
 
 export const HEADER_H = 34;
@@ -55,7 +60,13 @@ interface Props {
   onViewChange: (next: { startT: number; endT: number }) => void;
   bounds: { startT: number; endT: number };
   reducedMotion: boolean;
-  laneH: number;
+  /** Per-lane geometry. Lanes are no longer uniform: opening one gives it
+      the depth to show its plan while its siblings compress. */
+  laneBoxes: LaneBox[];
+  onToggleExpand: (scopeId: string) => void;
+  /** Commit a retimed plan object. Called ONCE, on release -- never per
+      pointermove. Everything before that is a local preview. */
+  onPlanRetime: (id: string, next: { date: string; endDate: string | null }) => void;
   /** Events the playhead has just crossed and is briefly articulating. */
   articulating: Set<string>;
   /** Per lane, the snapshot the memory band just moved OFF -- drawn as a
@@ -259,24 +270,46 @@ function MemoryBand({
 export default function TimeField({
   lanes, entries, candidates, memoryByScope, view, nowT, playheadT, crossed,
   selectedId, hoveredLane, onSelect, onHoverLane, onScrub, onOpenScope,
-  onViewChange, bounds, reducedMotion, laneH, articulating, ghostByScope, deltaByScope,
+  onViewChange, bounds, reducedMotion, laneBoxes, onToggleExpand,
+  onPlanRetime, articulating, ghostByScope, deltaByScope,
   layers, hoveredId, onHoverEvent,
 }: Props) {
   const hostRef = useRef<HTMLDivElement>(null);
   const dragging = useRef(false);
   const scale = scaleFor(view);
   const ticks = useMemo(() => ticksFor(view, scale), [view, scale]);
-  const height = HEADER_H + lanes.length * laneH;
+  const boxOf = useMemo(() => new Map(laneBoxes.map((b) => [b.scopeId, b])), [laneBoxes]);
+  const height = HEADER_H + laneBoxes.reduce((s, b) => s + b.height, 0);
 
   const laneIndex = useMemo(() => new Map(lanes.map((l, i) => [l.scopeId, i])), [lanes]);
+  // THE SCORE AND THE PLAN ARE DIFFERENT SURFACES.
+  //
+  // Derived entries -- Reports, decisions, work, context, findings -- are
+  // marks on the historical score line: things that happened, owned
+  // elsewhere, arranged in time by this instrument and by nobody else.
+  //
+  // Landmarks are the rows Timeline owns, and they become PLAN OBJECTS in
+  // their own band: named, sized to their real duration, and arrangeable.
+  // The split is by source of truth, not by whether the date is ahead --
+  // an occurred landmark stays the same object with its face filled in.
   const byLane = useMemo(() => {
     const m = new Map<string, TimelineEntry[]>();
     // Layer filtering is a DRAWING decision. `entries` is untouched, and
     // the client still hands playback the full occurred set, so turning a
     // layer off never changes what the story crosses.
-    for (const e of entries.filter((x) => layers[layerFor(x)])) {
+    for (const e of entries.filter((x) => layers[layerFor(x)] && !isPlanObject(x))) {
       const list = m.get(e.scopeId) ?? [];
       list.push(e);
+      m.set(e.scopeId, list);
+    }
+    return m;
+  }, [entries, layers]);
+
+  const planByLane = useMemo(() => {
+    const m = new Map<string, PlanObject[]>();
+    for (const e of entries.filter((x) => layers[layerFor(x)] && isPlanObject(x))) {
+      const list = m.get(e.scopeId) ?? [];
+      list.push(planObjectFor(e));
       m.set(e.scopeId, list);
     }
     return m;
@@ -317,6 +350,114 @@ export default function TimeField({
 
   const nowX = xFor(view, nowT);
   const playX = xFor(view, playheadT);
+
+  // ── PLAN LAYOUT ────────────────────────────────────────────────────
+  //
+  // Two activities running at the same time must LOOK like two activities
+  // running at the same time. Each lane packs its plan objects into as many
+  // compact subtracks as the overlap actually requires -- one row when
+  // nothing overlaps, more only when something does. That is the useful
+  // half of a Gantt; the rest of a Gantt is a task tracker.
+  const planLayout = useMemo(() => {
+    const out = new Map<string, { obj: PlanObject; x0: number; x1: number; row: number }[]>();
+    const rows = new Map<string, number>();
+    for (const [scopeId, objs] of planByLane) {
+      const compact = (boxOf.get(scopeId)?.height ?? 0) < 130;
+      const extents = objs.map((o) => {
+        const x0 = xFor(view, o.startT);
+        const x1 = o.endT !== null
+          ? Math.max(x0 + 14, xFor(view, o.endT))
+          : x0 + labelWidth(o.entry.title, compact);
+        return { id: o.entry.id, x0, x1 };
+      });
+      const { rowOf, rowCount } = packPlanRows(extents);
+      rows.set(scopeId, rowCount);
+      out.set(
+        scopeId,
+        objs.map((o, i) => ({ obj: o, x0: extents[i].x0, x1: extents[i].x1, row: rowOf.get(o.entry.id) ?? 0 }))
+      );
+    }
+    return { placed: out, rowCount: rows };
+  }, [planByLane, view, boxOf]);
+
+  /** A lane's bands, sized to the plan subtracks it actually carries — so
+      an opened lane spends its extra height on readable rows rather than on
+      a taller empty strip. */
+  const zonesOf = useCallback(
+    (box: LaneBox) => laneZones(box, planLayout.rowCount.get(box.scopeId) ?? 1),
+    [planLayout]
+  );
+
+  // ── RETIMING A PLAN OBJECT ─────────────────────────────────────────
+  //
+  // The Portfolio fader's law, applied to a horizontal axis: the pixels-to-
+  // time conversion is fixed at pointerdown and never re-read, because
+  // anything that resizes elsewhere mid-gesture would move the coordinate
+  // system under the hand. Pointer capture keeps the gesture attached to the
+  // object even when the pointer leaves it.
+  //
+  // NOTHING GOES OVER THE NETWORK UNTIL RELEASE. While dragging, the object
+  // is drawn from local preview state at 60fps; on release the retimed dates
+  // are committed once, deliberately.
+  const [planDrag, setPlanDrag] = useState<{
+    id: string; grip: PlanGrip; date: number; endDate: number | null; moved: boolean;
+    /** The row the object sits on, so the readout can appear beside the
+        hand rather than in a fixed corner of a different project's lane. */
+    y: number;
+  } | null>(null);
+  const dragGeom = useRef<{ msPerPx: number; clientX0: number; obj: PlanObject } | null>(null);
+
+  const beginPlanDrag = useCallback(
+    (obj: PlanObject, grip: PlanGrip, y: number, e: React.PointerEvent) => {
+      const el = hostRef.current;
+      if (!el || !obj.draggable) return;
+      // A plan drag is not a scrub. Stopping here is what keeps the playhead
+      // from chasing the pointer while an object is being placed.
+      e.stopPropagation();
+      e.preventDefault();
+      const b = el.getBoundingClientRect();
+      dragGeom.current = {
+        msPerPx: (view.endT - view.startT) / Math.max(1, b.width),
+        clientX0: e.clientX,
+        obj,
+      };
+      (e.currentTarget as Element).setPointerCapture(e.pointerId);
+      setPlanDrag({ id: obj.entry.id, grip, date: obj.startT, endDate: obj.endT, moved: false, y });
+    },
+    [view]
+  );
+
+  const movePlanDrag = useCallback((e: React.PointerEvent) => {
+    const g = dragGeom.current;
+    if (!g || !planDrag) return;
+    const dt = (e.clientX - g.clientX0) * g.msPerPx;
+    const next = retime(g.obj, planDrag.grip, dt);
+    setPlanDrag((p) =>
+      p && p.date === next.date && p.endDate === next.endDate
+        ? p
+        : p && { ...p, date: next.date, endDate: next.endDate, moved: true }
+    );
+  }, [planDrag]);
+
+  const endPlanDrag = useCallback((e: React.PointerEvent) => {
+    const g = dragGeom.current;
+    const d = planDrag;
+    dragGeom.current = null;
+    setPlanDrag(null);
+    if (e.currentTarget instanceof Element && e.currentTarget.hasPointerCapture(e.pointerId)) {
+      e.currentTarget.releasePointerCapture(e.pointerId);
+    }
+    if (!g || !d) return;
+    // A press that never moved is a SELECTION, not a retime. So is a drag
+    // that snapped back to the day it started on. Either way there is
+    // nothing to write, and writing anyway would burn a mutation on a click.
+    if (!d.moved) return;
+    if (d.date === snapDay(g.obj.startT) && d.endDate === (g.obj.endT === null ? null : snapDay(g.obj.endT))) return;
+    onPlanRetime(d.id, {
+      date: new Date(d.date).toISOString(),
+      endDate: d.endDate === null ? null : new Date(d.endDate).toISOString(),
+    });
+  }, [planDrag, onPlanRetime]);
 
   // SCRUBBING. Pointer capture and a rect measured once per gesture, for
   // the same reason the Portfolio fader does it: nothing changing size
@@ -379,22 +520,36 @@ export default function TimeField({
         {lanes.map((lane) => {
           const mem = memoryByScope[lane.scopeId] ?? null;
           const alive = hoveredLane === lane.scopeId;
+          const box = boxOf.get(lane.scopeId);
+          const open = box?.expanded ?? false;
+          const tight = (box?.height ?? 0) < 108;
+          const planned = (planByLane.get(lane.scopeId) ?? []).filter((o) => o.planned).length;
           return (
-            <button
+            <div
               key={lane.scopeId}
-              onClick={() => onOpenScope(lane.scopeId)}
               onMouseEnter={() => onHoverLane(lane.scopeId)}
               onMouseLeave={() => onHoverLane(null)}
               data-shoot={`lane-header-${lane.scopeId}`}
-              className="w-full text-left px-3 flex flex-col justify-center transition-colors"
+              data-expanded={open || undefined}
+              className="w-full px-3 flex flex-col justify-center transition-colors relative"
               style={{
-                height: laneH,
+                height: box?.height ?? 0,
                 borderBottom: "1px solid var(--i-border)",
-                background: alive ? "var(--i-panel)" : "transparent",
+                background: open ? "var(--i-panel)" : alive ? "rgba(38,47,53,0.5)" : "transparent",
               }}
-              title="Open in Scope"
             >
-              <span className="text-[11px] uppercase tracking-[0.1em] text-[var(--i-text)] truncate">{lane.name}</span>
+              {/* THE DOOR IS THE NAME. The header now carries two
+                  affordances, so the whole row can no longer navigate away
+                  — clicking dead space should not throw you into another
+                  instrument while you are reaching for the chevron. */}
+              <button
+                onClick={() => onOpenScope(lane.scopeId)}
+                data-shoot={`lane-open-${lane.scopeId}`}
+                className="text-left hover:brightness-125 transition-[filter]"
+                title="Open in Scope"
+              >
+                <span className="block text-[11px] uppercase tracking-[0.1em] text-[var(--i-text)] truncate">{lane.name}</span>
+              </button>
               {mem ? (
                 <span className="i-readout text-[13px] leading-none mt-1" style={{ color: "var(--i-violet)" }}>
                   {fmtDay(new Date(mem.likelyDate).getTime())}
@@ -402,12 +557,35 @@ export default function TimeField({
               ) : (
                 <span className="text-[9px] mt-1 text-[var(--i-text-faint)]">no snapshot yet</span>
               )}
-              {lane.dependsOnScopeIds.length > 0 && (
+              {!tight && lane.dependsOnScopeIds.length > 0 && (
                 <span className="text-[8px] mt-1 text-[var(--i-text-faint)] truncate">
                   waits on {lane.dependsOnScopeIds.map((d) => lanes.find((l) => l.scopeId === d)?.name ?? "—").join(", ")}
                 </span>
               )}
-            </button>
+              {/* DEPTH ON DEMAND. One project's plan can be opened up without
+                  every project being permanently enormous. */}
+              <button
+                onClick={() => onToggleExpand(lane.scopeId)}
+                data-shoot={`lane-expand-${lane.scopeId}`}
+                aria-expanded={open}
+                title={open ? "Collapse this project" : "Open this project's plan"}
+                className="absolute right-2 top-2 rounded flex items-center gap-1 px-1.5 py-1 hover:brightness-150 transition-[filter]"
+                style={{
+                  background: open ? "var(--i-violet-soft)" : "transparent",
+                  border: `1px solid ${open ? "var(--i-violet)" : "transparent"}`,
+                }}
+              >
+                {planned > 0 && (
+                  <span className="text-[8px] tabular-nums" style={{ color: open ? "var(--i-violet)" : "var(--i-text-faint)" }}>
+                    {planned}
+                  </span>
+                )}
+                <svg width="9" height="9" viewBox="0 0 10 10" fill="none"
+                  stroke={open ? "var(--i-violet)" : "var(--i-text-faint)"} strokeWidth="1.4">
+                  {open ? <path d="M2 6.5 L5 3.5 L8 6.5" /> : <path d="M2 3.5 L5 6.5 L8 3.5" />}
+                </svg>
+              </button>
+            </div>
           );
         })}
       </div>
@@ -418,9 +596,13 @@ export default function TimeField({
         className="relative flex-1 min-w-0 overflow-hidden"
         style={{ cursor: "crosshair", touchAction: "none" }}
         onPointerDown={beginScrub}
-        onPointerMove={moveScrub}
-        onPointerUp={endScrub}
-        onPointerCancel={endScrub}
+        // Pointer capture retargets to the grip and the event still bubbles
+        // here, so one pair of handlers serves both gestures. A plan drag
+        // always wins: it stopped propagation at pointerdown, so the
+        // scrubber never armed.
+        onPointerMove={(e) => (planDrag ? movePlanDrag(e) : moveScrub(e))}
+        onPointerUp={(e) => (planDrag ? endPlanDrag(e) : endScrub(e))}
+        onPointerCancel={(e) => (planDrag ? endPlanDrag(e) : endScrub(e))}
         onClick={() => onSelect(null)}
       >
         <svg width="100%" height={height} style={{ display: "block" }}>
@@ -482,29 +664,49 @@ export default function TimeField({
               are articulations ON a track rather than marks floating in a
               void — and so a quiet stretch still reads as a track that
               nothing happened on, which is information. */}
-          {lanes.map((lane, i) => {
-            const yTrack = HEADER_H + i * laneH + laneH * 0.36;
+          {laneBoxes.map((box) => {
+            const z = zonesOf(box);
+            const yTrack = HEADER_H + z.scoreY;
             return (
-              <g key={`track-${lane.scopeId}`}>
+              <g key={`track-${box.scopeId}`}>
                 <rect x={0} y={yTrack - 3} width={view.width} height={6} rx={3} fill="#070a0c" opacity={0.6} />
                 <line x1={0} y1={yTrack} x2={view.width} y2={yTrack} stroke="var(--i-border-strong)" strokeWidth={0.9} opacity={0.5} />
                 <line
                   x1={0} y1={yTrack} x2={Math.max(0, Math.min(playX, nowX))} y2={yTrack}
                   stroke="var(--i-violet)" strokeWidth={1.4} opacity={0.42}
                 />
+                {/* THE PLAN BED. The band the lane's plan objects are
+                    seated in, cut into the surface so an object reads as
+                    sitting IN the project rather than floating over it. It
+                    runs the full width — a plan that has happened is still
+                    a plan object, and it must not look unseated merely for
+                    being behind NOW — and deepens on the intent side. */}
+                <rect
+                  x={0} y={HEADER_H + z.planTop - 3}
+                  width={view.width} height={z.planRoom + 6} rx={4}
+                  fill="#080b0d" opacity={0.34}
+                />
+                <rect
+                  x={nowX} y={HEADER_H + z.planTop - 3}
+                  width={Math.max(0, view.width - nowX)} height={z.planRoom + 6} rx={4}
+                  fill="#080b0d" opacity={box.expanded ? 0.5 : 0.34}
+                />
               </g>
             );
           })}
 
           {/* lane separators */}
-          {lanes.map((lane, i) => (
-            <g key={lane.scopeId}>
+          {laneBoxes.map((box) => (
+            <g key={box.scopeId}>
               <line
-                x1={0} y1={HEADER_H + (i + 1) * laneH} x2={view.width} y2={HEADER_H + (i + 1) * laneH}
+                x1={0} y1={HEADER_H + box.top + box.height} x2={view.width} y2={HEADER_H + box.top + box.height}
                 stroke="var(--i-border)" strokeWidth={0.75} opacity={0.7}
               />
-              {hoveredLane === lane.scopeId && (
-                <rect x={0} y={HEADER_H + i * laneH} width={view.width} height={laneH} fill="var(--i-text)" opacity={0.02} />
+              {(hoveredLane === box.scopeId || box.expanded) && (
+                <rect
+                  x={0} y={HEADER_H + box.top} width={view.width} height={box.height}
+                  fill="var(--i-text)" opacity={box.expanded ? 0.028 : 0.02}
+                />
               )}
             </g>
           ))}
@@ -521,8 +723,11 @@ export default function TimeField({
               // what happened.
               const show = layers.dependencies || hoveredLane === lane.scopeId || hoveredLane === depId;
               if (!show) return null;
-              const y1 = HEADER_H + j * laneH + laneH / 2;
-              const y2 = HEADER_H + i * laneH + laneH / 2;
+              const bj = laneBoxes[j];
+              const bi = laneBoxes[i];
+              if (!bj || !bi) return null;
+              const y1 = HEADER_H + bj.top + bj.height / 2;
+              const y2 = HEADER_H + bi.top + bi.height / 2;
               const x = Math.max(10, nowX - 26);
               return (
                 <path
@@ -540,11 +745,19 @@ export default function TimeField({
 
           {/* per-lane content */}
           {lanes.map((lane, i) => {
-            const yTrack = HEADER_H + i * laneH + laneH * 0.36;
-            const yMem = HEADER_H + i * laneH + laneH * 0.74;
+            const box = laneBoxes[i];
+            if (!box) return null;
+            const z = zonesOf(box);
+            const yTrack = HEADER_H + z.scoreY;
+            const yMem = HEADER_H + z.memY;
             const mem = memoryByScope[lane.scopeId] ?? null;
             const laneEntries = byLane.get(lane.scopeId) ?? [];
             const grabCells = grabByLane.get(lane.scopeId) ?? new Map();
+            const placed = planLayout.placed.get(lane.scopeId) ?? [];
+            const rowCount = planLayout.rowCount.get(lane.scopeId) ?? 0;
+            const rowH = planRowHeight(z.planRoom, Math.max(1, rowCount));
+            const objH = Math.max(9, rowH - 4);
+            const compact = box.height < 130;
             return (
               <g key={lane.scopeId}>
                 {ghostByScope[lane.scopeId] && (
@@ -609,6 +822,41 @@ export default function TimeField({
                       </g>
                     );
                   })}
+
+                {/* ── THE PLAN ─────────────────────────────────────────
+                    Named objects at real calendar width, stacked into as
+                    many subtracks as the overlap needs. Drawn last within
+                    the lane so a plan object is always reachable above the
+                    marks and the bed it sits in. */}
+                {placed.map(({ obj, x0, x1, row }) => {
+                  const live = planDrag?.id === obj.entry.id ? planDrag : null;
+                  // While dragging, geometry comes from the LOCAL preview.
+                  // Nothing has been written yet, and nothing will be until
+                  // the pointer is released.
+                  const sx = live ? xFor(view, live.date) : x0;
+                  const ex = live
+                    ? (live.endDate !== null ? Math.max(sx + 14, xFor(view, live.endDate)) : sx + labelWidth(obj.entry.title, compact))
+                    : x1;
+                  if (ex < -60 || sx > view.width + 60) return null;
+                  return (
+                    <PlanObjectView
+                      key={obj.entry.id}
+                      obj={obj}
+                      x0={sx}
+                      x1={ex}
+                      y={HEADER_H + z.planTop + row * rowH}
+                      h={objH}
+                      selected={selectedId === obj.entry.id}
+                      hovered={hoveredId === obj.entry.id}
+                      dragging={!!live}
+                      compact={compact}
+                      reducedMotion={reducedMotion}
+                      onSelect={() => onSelect(obj.entry.id)}
+                      onHover={(on) => onHoverEvent(on ? obj.entry.id : null)}
+                      onGrip={(grip, ev) => beginPlanDrag(obj, grip, HEADER_H + z.planTop + row * rowH, ev)}
+                    />
+                  );
+                })}
               </g>
             );
           })}
@@ -639,12 +887,15 @@ export default function TimeField({
             <line x1={0} y1={0} x2={0} y2={height} stroke="var(--i-violet)" strokeWidth={2} />
             <line x1={0} y1={0} x2={0} y2={height} stroke="#e2dcff" strokeWidth={0.7} opacity={0.85} />
             {/* the needle makes contact with every track it passes */}
-            {lanes.map((lane, i) => (
-              <g key={`contact-${lane.scopeId}`}>
-                <circle cx={0} cy={HEADER_H + i * laneH + laneH * 0.36} r={4.5} fill="var(--i-violet)" opacity={0.9} />
-                <circle cx={0} cy={HEADER_H + i * laneH + laneH * 0.36} r={9} fill="var(--i-violet)" opacity={0.14} />
-              </g>
-            ))}
+            {laneBoxes.map((box) => {
+              const cy = HEADER_H + zonesOf(box).scoreY;
+              return (
+                <g key={`contact-${box.scopeId}`}>
+                  <circle cx={0} cy={cy} r={4.5} fill="var(--i-violet)" opacity={0.9} />
+                  <circle cx={0} cy={cy} r={9} fill="var(--i-violet)" opacity={0.14} />
+                </g>
+              );
+            })}
             <rect x={-5} y={0} width={10} height={7} rx={1.5} fill="var(--i-violet)" />
           </g>
         </svg>
@@ -652,9 +903,10 @@ export default function TimeField({
         {/* ARTICULATED EVENTS. The transient readable module a note gets
             as it is struck, plus the held module for the selection. Both
             stay attached to their exact date and lane. */}
-        {lanes.map((lane, i) => {
-          const yTrack = HEADER_H + i * laneH + laneH * 0.36;
-          return (byLane.get(lane.scopeId) ?? []).map((e) => {
+        {laneBoxes.map((box) => {
+          const yTrack = HEADER_H + zonesOf(box).scoreY;
+          const compact = box.height < 110;
+          return (byLane.get(box.scopeId) ?? []).map((e) => {
             const held = selectedId === e.id;
             const live = articulating.has(e.id);
             // HOVER EXPLAINS. Pointing at a mark says what it is in words,
@@ -663,7 +915,7 @@ export default function TimeField({
             if (!held && !live && !peek) return null;
             const x = xFor(view, new Date(e.date).getTime());
             if (x < -40 || x > view.width + 40) return null;
-            const modW = laneH < 110 ? 176 : 208;
+            const modW = compact ? 176 : 208;
             const clamped = Math.min(view.width - modW / 2 - 6, Math.max(modW / 2 + 6, x));
             return (
               <EventModule
@@ -674,7 +926,7 @@ export default function TimeField({
                 y={yTrack - 18}
                 phase={held ? "held" : live ? "articulating" : "peek"}
                 reducedMotion={reducedMotion}
-                compact={laneH < 110}
+                compact={compact}
               />
             );
           });
@@ -683,10 +935,11 @@ export default function TimeField({
         {/* THE REPORT TRANSITION. What the remembered future just did,
             stated as the movement between two stored numbers. Never
             attributed to anything — the adjacent event did not cause it. */}
-        {lanes.map((lane, i) => {
+        {laneBoxes.map((box) => {
+          const lane = { scopeId: box.scopeId };
           const d = deltaByScope[lane.scopeId];
           if (!d) return null;
-          const yMem = HEADER_H + i * laneH + laneH * 0.74;
+          const yMem = HEADER_H + zonesOf(box).memY;
           const later = d.days > 0;
           return (
             <div
@@ -723,6 +976,44 @@ export default function TimeField({
             </div>
           );
         })}
+
+        {/* THE DATES UNDER THE HAND. While a plan object is being retimed it
+            states exactly where it will land — a drag that only shows a
+            block sliding is asking you to guess. */}
+        {planDrag && (
+          <div
+            data-shoot="plan-drag-readout"
+            className="absolute pointer-events-none rounded-md px-2.5 py-1.5 whitespace-nowrap"
+            style={{
+              left: Math.min(view.width - 180, Math.max(6, xFor(view, planDrag.date) - 10)),
+              top: Math.max(4, planDrag.y - 52),
+              background: "linear-gradient(180deg, #1a1526 0%, #12101a 100%)",
+              border: "1px solid var(--i-violet)",
+              boxShadow: "0 10px 26px rgba(0,0,0,0.72)",
+              zIndex: 30,
+            }}
+          >
+            <div className="text-[7.5px] uppercase tracking-[0.16em]" style={{ color: "var(--i-violet)" }}>
+              {planDrag.grip === "move" ? "Rescheduling" : planDrag.grip === "start" ? "Start" : "End"}
+            </div>
+            <div className="mt-1 flex items-baseline gap-1.5">
+              <span className="i-readout text-[12.5px]" style={{ color: "var(--i-violet)" }}>
+                {fmtDay(planDrag.date)}
+              </span>
+              {planDrag.endDate !== null && (
+                <>
+                  <span className="text-[10px]" style={{ color: "var(--i-text-faint)" }}>→</span>
+                  <span className="i-readout text-[12.5px]" style={{ color: "var(--i-violet)" }}>
+                    {fmtDay(planDrag.endDate)}
+                  </span>
+                  <span className="text-[9px]" style={{ color: "var(--i-text-faint)" }}>
+                    {Math.round((planDrag.endDate - planDrag.date) / 86400000)}d
+                  </span>
+                </>
+              )}
+            </div>
+          </div>
+        )}
 
         {/* playhead date flag, in DOM so the type is crisp */}
         <div

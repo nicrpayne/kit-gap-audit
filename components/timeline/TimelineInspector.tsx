@@ -342,12 +342,30 @@ export default function TimelineInspector({
       <div className="px-4 pb-4">
         <Section title="When">
           <Well>
-          <Row label="Date" value={fmtFull(new Date(e.date).getTime())} />
+          <Row label={e.endDate ? "Starts" : "Date"} value={fmtFull(new Date(e.date).getTime())} />
           {e.endDate && <Row label="Ends" value={fmtFull(new Date(e.endDate).getTime())} />}
+          {/* EXACT, IN NUMBERS. A span dragged by hand landed somewhere
+              specific, and the record has to be able to say where without
+              anyone measuring pixels. */}
+          {e.endDate && (
+            <Row
+              label="Duration"
+              value={`${Math.round(
+                (new Date(e.endDate).getTime() - new Date(e.date).getTime()) / 86400000
+              )} days`}
+            />
+          )}
           <Row label="Project" value={laneName ?? "—"} />
           <Row label="State" value={planned ? (overdue ? "planned · overdue" : "planned") : "occurred"} />
           {e.sourceLabel && <Row label="Source" value={e.sourceLabel} />}
           </Well>
+          {e.editable && (
+            <p className="mt-1.5 text-[9px] text-[var(--i-text-faint)]" data-shoot="plan-ownership">
+              {planned
+                ? "Timeline owns this timing — drag it on the score, or edit it here."
+                : "This one has happened. It can be edited here, but it does not move by dragging."}
+            </p>
+          )}
         </Section>
 
         {e.kind === "report" && (

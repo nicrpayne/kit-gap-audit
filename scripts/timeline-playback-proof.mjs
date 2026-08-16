@@ -52,6 +52,9 @@ await p.goto(`${BASE}/timeline`, { waitUntil: "networkidle" });
 await p.waitForSelector('[data-shoot="time-field"]', { timeout: 30000 });
 await p.waitForTimeout(2500);
 
+/** A landmark is a plan object with its own handle; everything else is
+    a mark on the historical score. */
+const handle = (e) => (e.family === "landmark" ? `plan-${e.id}` : `event-${e.id}`);
 const playheadDate = () => p.locator('[data-shoot="playhead-date"]').innerText();
 const crossedCount = async () =>
   Number((await p.locator('[data-shoot="crossed-count"]').innerText()).split("/")[0].replace(/\D/g, ""));
@@ -188,8 +191,13 @@ const futurePlanned = projection.entries.filter(
   (e) => e.temporalState === "planned" && new Date(e.date).getTime() > nowT
 );
 if (futurePlanned.length > 0) {
-  const anyCrossed = await p.locator(`[data-shoot="event-${futurePlanned[0].id}"][data-crossed="true"]`).count();
-  check("Future planned events were NOT played through", anyCrossed === 0, futurePlanned[0].title.slice(0, 40));
+  // A plan is never crossed: playback travels through what HAPPENED, and
+  // an intent carries no crossed state at all for it to be marked with.
+  const el = p.locator(`[data-shoot="${handle(futurePlanned[0])}"]`);
+  const drawn = await el.count();
+  const anyCrossed = await el.evaluate((n) => n.getAttribute("data-crossed")).catch(() => null);
+  check("Future planned events were NOT played through", drawn === 1 && anyCrossed === null,
+    `${futurePlanned[0].title.slice(0, 34)} drawn=${drawn} crossed=${anyCrossed}`);
 } else {
   check("A future planned event exists to check", false, "none");
 }
@@ -197,7 +205,7 @@ if (futurePlanned.length > 0) {
 // ── overdue plan survives ──────────────────────────────────────────
 const overdue = projection.entries.find((e) => e.temporalState === "planned" && e.detail?.overdue === true);
 if (overdue) {
-  const el = p.locator(`[data-shoot="event-${overdue.id}"]`);
+  const el = p.locator(`[data-shoot="${handle(overdue)}"]`);
   check("A planned event behind NOW is still drawn as planned, marked overdue",
     (await el.getAttribute("data-planned")) === "true" && (await el.getAttribute("data-overdue")) === "true",
     overdue.title.slice(0, 40));
@@ -207,7 +215,7 @@ if (overdue) {
 
 // ── scrub into the future, inspect a plan ──────────────────────────
 if (futurePlanned.length > 0) {
-  await p.locator(`[data-shoot="event-${futurePlanned[0].id}"]`).dispatchEvent("click");
+  await p.locator(`[data-shoot="${handle(futurePlanned[0])}"]`).dispatchEvent("click");
   await p.waitForTimeout(700);
   check("A future planned landmark is inspectable and reads PLANNED",
     (await p.locator('[data-shoot="planned-badge"]').count()) > 0,
@@ -265,7 +273,9 @@ if (decisionEntry) {
 }
 await p.waitForSelector('[data-shoot="time-field"]', { timeout: 20000 });
 await p.waitForTimeout(1800); // let the route finish hydrating before clicking
-await p.locator(`[data-shoot="lane-header-${laneIds[0]}"]`).click();
+// The door to Scope is the project NAME. The header carries an expand
+// control too, so the whole row no longer navigates away.
+await p.locator(`[data-shoot="lane-open-${laneIds[0]}"]`).click();
 await p.waitForURL(/\/scope/, { timeout: 15000 }).catch(() => {});
 check("Lane → Open Scope navigates to Scope", p.url().includes("/scope"), p.url().replace(BASE, ""));
 
@@ -298,7 +308,7 @@ check("Reality restored — the proof landmark is gone",
   const rep = finalProj.entries.find((e) => e.kind === "report");
   const ctxE = finalProj.entries.find((e) => e.kind === "context_observed");
   for (const e of [rep, ctxE].filter(Boolean)) {
-    await p.locator(`[data-shoot="event-${e.id}"]`).dispatchEvent("click");
+    await p.locator(`[data-shoot="${handle(e)}"]`).dispatchEvent("click");
     await p.waitForTimeout(700);
   }
   const after = await geometry();

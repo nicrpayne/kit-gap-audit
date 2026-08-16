@@ -34,6 +34,9 @@ await p.addInitScript(() => {
   });
 });
 
+/** A landmark is a plan object with its own handle; everything else is
+    a mark on the historical score. */
+const handle = (e) => (e.family === "landmark" ? `plan-${e.id}` : `event-${e.id}`);
 const shot = (n) => p.screenshot({ path: `${out}/${n}.png` });
 const settle = (ms = 900) => p.waitForTimeout(ms);
 const sel = async (id) => { await p.locator(`[data-shoot="event-${id}"]`).dispatchEvent("click"); await settle(800); };
@@ -218,7 +221,7 @@ if (raised) { await p.locator(`[data-shoot="event-${raised.id}"]`).dispatchEvent
   await settle(1500);
 }
 if (futureLm) {
-  await p.locator(`[data-shoot="event-${futureLm.id}"]`).dispatchEvent("click");
+  await p.locator(`[data-shoot="${handle(futureLm)}"]`).dispatchEvent("click");
   await settle(2400);
 }
 // K. return to NOW

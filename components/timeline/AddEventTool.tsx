@@ -38,7 +38,14 @@ export default function AddEventTool({ lanes, editing, defaultScopeId, defaultDa
   const [title, setTitle] = useState(editing?.title ?? "");
   const [date, setDate] = useState(isoDay(editing ? new Date(editing.date).getTime() : defaultDate));
   const [endDate, setEndDate] = useState(editing?.endDate ? isoDay(new Date(editing.endDate).getTime()) : "");
-  const [state, setState] = useState<"occurred" | "planned">(editing?.temporalState ?? "occurred");
+  // A FORM DEFAULT, NOT AN INFERENCE. The field stays required and explicit,
+  // the server still refuses to derive it, and a planned landmark whose date
+  // passes stays planned. This only pre-selects the answer a person adding
+  // something in the future almost always means, where the alternative was
+  // pre-selecting the one they almost never do.
+  const [state, setState] = useState<"occurred" | "planned">(
+    editing?.temporalState ?? (defaultDate > Date.now() ? "planned" : "occurred")
+  );
   const [kind, setKind] = useState<string>(
     editing ? String((editing.detail as { landmarkKind?: string }).landmarkKind ?? "event") : "event"
   );
@@ -47,6 +54,12 @@ export default function AddEventTool({ lanes, editing, defaultScopeId, defaultDa
   );
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+
+  const isSpan = endDate !== "";
+  const days =
+    isSpan && date && endDate
+      ? Math.round((new Date(`${endDate}T12:00:00Z`).getTime() - new Date(`${date}T12:00:00Z`).getTime()) / 86400000)
+      : null;
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
@@ -94,17 +107,62 @@ export default function AddEventTool({ lanes, editing, defaultScopeId, defaultDa
             />
           </div>
 
+          {/* SHAPE, ASKED FIRST. A moment and an activity are different
+              objects on the score — a pin at a date, or a block across a
+              stretch of calendar — so the shape is a decision rather than
+              something you discover by leaving a field blank. */}
+          <div>
+            <label className="text-[8px] uppercase tracking-[0.14em] text-[var(--i-text-faint)]">Shape</label>
+            <div className="mt-1 flex rounded overflow-hidden" style={{ border: "1px solid var(--i-border-strong)" }}>
+              {([
+                { k: "point", label: "A moment", hint: "Customer rollout · Oct 5" },
+                { k: "span", label: "An activity", hint: "Marketing plan · Aug 24 → Sep 11" },
+              ] as const).map((s) => {
+                const on = (s.k === "span") === isSpan;
+                return (
+                  <button
+                    key={s.k}
+                    onClick={() => {
+                      if (s.k === "span" && !endDate) {
+                        // Two weeks is a starting length, not a claim. It is
+                        // immediately visible and immediately draggable.
+                        setEndDate(isoDay(new Date(`${date}T12:00:00Z`).getTime() + 14 * 86400000));
+                      }
+                      if (s.k === "point") setEndDate("");
+                    }}
+                    data-shoot={`event-shape-${s.k}`}
+                    title={s.hint}
+                    className="flex-1 py-1.5 text-[10px] transition-colors"
+                    style={{
+                      background: on ? "var(--i-panel-raised)" : "var(--i-void)",
+                      color: on ? "var(--i-text)" : "var(--i-text-faint)",
+                      borderRight: s.k === "point" ? "1px solid var(--i-border-strong)" : undefined,
+                    }}
+                  >
+                    {s.label}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
           <div className="flex gap-3">
             <div className="flex-1">
-              <label className="text-[8px] uppercase tracking-[0.14em] text-[var(--i-text-faint)]">When</label>
+              <label className="text-[8px] uppercase tracking-[0.14em] text-[var(--i-text-faint)]">
+                {isSpan ? "Starts" : "When"}
+              </label>
               <input type="date" value={date} onChange={(e) => setDate(e.target.value)} data-shoot="event-date"
                 className="mt-1 w-full rounded px-2 py-1.5 text-[11px]" style={field} />
             </div>
-            <div className="flex-1">
-              <label className="text-[8px] uppercase tracking-[0.14em] text-[var(--i-text-faint)]">End (optional)</label>
-              <input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} data-shoot="event-end"
-                className="mt-1 w-full rounded px-2 py-1.5 text-[11px]" style={field} />
-            </div>
+            {isSpan && (
+              <div className="flex-1">
+                <label className="text-[8px] uppercase tracking-[0.14em] text-[var(--i-text-faint)]">
+                  Ends{days !== null ? ` · ${days}d` : ""}
+                </label>
+                <input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} data-shoot="event-end"
+                  className="mt-1 w-full rounded px-2 py-1.5 text-[11px]" style={field} />
+              </div>
+            )}
           </div>
 
           <div>

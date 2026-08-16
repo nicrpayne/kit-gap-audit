@@ -495,6 +495,9 @@ export async function buildTimeline(): Promise<TimelineProjection> {
   // Enough past to hold the story, enough future to see intent. NOW sits
   // left of centre because there is more ahead than behind.
   const times = entries.map((e) => new Date(e.date).getTime());
+  // A span reaches past its own start. Ranging on the start alone would cut
+  // the far end of a plan off the axis it was drawn to be read on.
+  for (const e of entries) if (e.endDate) times.push(new Date(e.endDate).getTime());
   for (const s of scopes) if (s.targetDate) times.push(s.targetDate.getTime());
   for (const list of Object.values(snapshotsByScope)) {
     const last = list[list.length - 1];

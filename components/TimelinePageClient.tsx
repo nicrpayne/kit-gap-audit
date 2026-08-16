@@ -27,7 +27,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import type {
-  TimelineProjection, TimelineEntry, ForecastSnapshot, TimelineCandidate,
+  TimelineProjection, TimelineEntry, ForecastSnapshot,
 } from "@/lib/timeline/entries";
 import { forecastMemoryAt } from "@/lib/timeline/entries";
 import { buildPlaybackPlan, playheadAt, crossedAt, type PlaybackPlan } from "@/lib/timeline/playback";
@@ -39,7 +39,9 @@ import TimelineInspector from "@/components/timeline/TimelineInspector";
 import Transport, { type Speed } from "@/components/timeline/Transport";
 import AddEventTool from "@/components/timeline/AddEventTool";
 import LayersControl from "@/components/timeline/LayersControl";
+import LanesControl, { applyLaneView, EMPTY_LANE_VIEW, type LaneView } from "@/components/timeline/LanesControl";
 import { STORY_LAYERS, type LayerState } from "@/lib/timeline/story";
+import { layoutLanes } from "@/lib/timeline/plan";
 
 const MIN_SPAN = 21 * DAY;
 /** How long a crossed event stays articulated before settling back into
@@ -72,6 +74,12 @@ export default function TimelinePageClient() {
   // -- a layer decides what the first glance carries, not what is true.
   const [layers, setLayers] = useState<LayerState>(STORY_LAYERS);
   const [hoveredId, setHoveredId] = useState<string | null>(null);
+  // ALSO PRESENTATION ONLY. Which projects this timeline draws, and in what
+  // order. Scope owns what is in the release; this owns what is on screen.
+  const [laneView, setLaneView] = useState<LaneView>(EMPTY_LANE_VIEW);
+  // One project may be opened to the depth its plan needs while its
+  // siblings compress. Null means every lane shares the well evenly.
+  const [expandedLane, setExpandedLane] = useState<string | null>(null);
   // Events the playhead has just crossed. Held briefly so the note can be
   // read, then released back into the accumulated score.
   const [articulating, setArticulating] = useState<Set<string>>(new Set());
@@ -157,10 +165,35 @@ export default function TimelinePageClient() {
   // CENTRED rather than stretched: four lanes at 220px each would be four
   // tall empty strips with a thin line of events adrift in the middle,
   // which is worse than honest margin above and below.
-  const laneH = useMemo(() => {
-    const n = Math.max(1, data?.lanes.length ?? 1);
-    return Math.max(MIN_LANE_H, Math.min(MAX_LANE_H, Math.floor((fieldH - HEADER_H - 8) / n)));
-  }, [fieldH, data]);
+  // THE LANES THIS TIMELINE DRAWS. A view over the projection's lanes —
+  // hiding one changes what is on screen and nothing else, so playback,
+  // forecast memory and every stored row are unaffected.
+  const visibleLanes = useMemo(
+    () => (data ? applyLaneView(data.lanes, laneView) : []),
+    [data, laneView]
+  );
+
+  // How many plan subtracks a lane could need. Its object count is a safe
+  // upper bound on its row count without having to know the view width,
+  // which is what lets the layout be decided before the field is packed.
+  const planCountByScope = useMemo(() => {
+    const m: Record<string, number> = {};
+    for (const e of data?.entries ?? []) if (e.family === "landmark") m[e.scopeId] = (m[e.scopeId] ?? 0) + 1;
+    return m;
+  }, [data]);
+
+  const laneBoxes = useMemo(
+    () =>
+      layoutLanes(
+        visibleLanes.map((l) => l.scopeId),
+        expandedLane,
+        Math.max(120, fieldH - HEADER_H - 8),
+        MIN_LANE_H,
+        MAX_LANE_H,
+        (scopeId) => planCountByScope[scopeId] ?? 1
+      ),
+    [visibleLanes, expandedLane, fieldH, planCountByScope]
+  );
 
   // ── the playable set ───────────────────────────────────────────────
   // Only what actually HAPPENED can be crossed by automatic playback.
@@ -348,6 +381,34 @@ export default function TimelinePageClient() {
     }
   };
 
+  // RETIME, COMMITTED ONCE.
+  //
+  // The drag itself is local: TimeField previews the object against fixed
+  // geometry and never touches the network. This runs exactly once, on
+  // release, with the dates the hand actually landed on — which is the
+  // whole reason dragging a plan feels like moving a part rather than
+  // filling in a form.
+  //
+  // It goes through mutateReality like every other write, so Forecast,
+  // Scope and Decisions all see a fresh world without a reload. Moving a
+  // plan object does NOT move any forecast: a TimelineEvent feeds no
+  // simulation, and planning something is not the same as gating it.
+  const retimePlanObject = useCallback(
+    async (id: string, next: { date: string; endDate: string | null }) => {
+      const res = await mutateReality(`/api/timeline-events/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(next),
+      });
+      if (!res.ok) {
+        setErr((await res.json().catch(() => ({}))).error ?? "Could not move that plan object");
+        return;
+      }
+      await load();
+    },
+    [load]
+  );
+
   const deleteEvent = async (id: string) => {
     const res = await mutateReality(`/api/timeline-events/${id}`, { method: "DELETE" });
     if (!res.ok) throw new Error("Could not delete");
@@ -392,7 +453,7 @@ export default function TimelinePageClient() {
   }
 
   const dateless = data.candidates.filter((c) => !c.date);
-  const memoryLanes = data.lanes.filter((l) => memoryByScope[l.scopeId]);
+  const memoryLanes = visibleLanes.filter((l) => memoryByScope[l.scopeId]);
 
   const memoryLead = memoryLanes.length > 0 ? memoryByScope[memoryLanes[0].scopeId]! : null;
 
@@ -464,7 +525,7 @@ export default function TimelinePageClient() {
         <div className="flex-1 min-w-0 flex items-stretch my-2 mx-2 rounded-lg overflow-hidden"
           data-shoot="memory-readout"
           style={{ background: "var(--i-recess)", border: "1px solid #1c2227", boxShadow: "inset 0 2px 9px rgba(0,0,0,0.65)" }}>
-          {data.lanes.map((lane, i) => {
+          {visibleLanes.map((lane, i) => {
             const m = memoryByScope[lane.scopeId];
             const stale = m ? Math.floor((playheadT - new Date(m.generatedAt).getTime()) / DAY) : null;
             return (
@@ -509,6 +570,7 @@ export default function TimelinePageClient() {
         </div>
 
         <div className="flex items-center gap-2 pr-4">
+          <LanesControl lanes={data.lanes} value={laneView} onChange={setLaneView} />
           <LayersControl value={layers} onChange={setLayers} />
           {dateless.length > 0 && (
             <button
@@ -559,7 +621,7 @@ export default function TimelinePageClient() {
             }}
           >
             <TimeField
-              lanes={data.lanes}
+              lanes={visibleLanes}
               entries={data.entries}
               candidates={data.candidates}
               snapshotsByScope={data.snapshotsByScope}
@@ -577,7 +639,9 @@ export default function TimelinePageClient() {
               onViewChange={setView}
               bounds={bounds}
               reducedMotion={reducedMotion}
-              laneH={laneH}
+              laneBoxes={laneBoxes}
+              onToggleExpand={(scopeId) => setExpandedLane((cur) => (cur === scopeId ? null : scopeId))}
+              onPlanRetime={retimePlanObject}
               articulating={articulating}
               ghostByScope={ghostByScope}
               deltaByScope={deltaByScope}

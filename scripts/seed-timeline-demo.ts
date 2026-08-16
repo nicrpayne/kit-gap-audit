@@ -93,6 +93,57 @@ async function main() {
       kind: "milestone",
       note: "Was meant to land last week. Still not done.",
     },
+
+    // ── THE PLAN, RIGHT OF NOW ────────────────────────────────────
+    // Business activity with real duration, deliberately OVERLAPPING, so
+    // the subtrack packing has something honest to prove itself against.
+    // These are the sort of thing Linear will never know: a marketing
+    // window, a field pilot, a submission date. Every one is something a
+    // person would type into + Add event, or accept from a transcript.
+    {
+      scopeId: jsa.id,
+      title: "Marketing plan",
+      date: new Date(now + 8 * DAY),
+      endDate: new Date(now + 26 * DAY),
+      temporalState: "planned",
+      kind: "phase",
+      note: "Campaign build, ahead of the pilot.",
+    },
+    {
+      scopeId: jsa.id,
+      title: "Field readiness",
+      date: new Date(now + 19 * DAY),
+      endDate: new Date(now + 40 * DAY),
+      temporalState: "planned",
+      kind: "phase",
+      note: "Overlaps marketing on purpose — the two run together.",
+    },
+    {
+      scopeId: platform.id,
+      title: "App Store submission",
+      date: new Date(now + 44 * DAY),
+      temporalState: "planned",
+      kind: "milestone",
+      note: "Review window is unpredictable; treated as a fixed date.",
+    },
+    {
+      scopeId: platform.id,
+      title: "Hardening",
+      date: new Date(now + 21 * DAY),
+      endDate: new Date(now + 42 * DAY),
+      temporalState: "planned",
+      kind: "phase",
+      note: null,
+    },
+    {
+      scopeId: design.id,
+      title: "Brand refresh",
+      date: new Date(now + 12 * DAY),
+      endDate: new Date(now + 33 * DAY),
+      temporalState: "planned",
+      kind: "phase",
+      note: null,
+    },
   ];
   for (const l of landmarks) {
     const exists = await prisma.timelineEvent.findFirst({ where: { scopeId: l.scopeId, title: l.title } });
