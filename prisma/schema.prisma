@@ -35,6 +35,8 @@ model Scope {
   decisions    Decision[]
   gatedBy      DecisionGate[] @relation("GatedScope")
   decisionCandidates DecisionCandidate[]
+  timelineEvents     TimelineEvent[]
+  timelineEventCandidates TimelineEventCandidate[]
 }
 
 // Tracking POLICY for a recurring source -- "should we currently keep
@@ -114,6 +116,7 @@ model ContextSnapshot {
   findings  Finding[]
   reports   Report[]
   auditRuns AuditRun[]
+  timelineEvents TimelineEvent[]
 
   @@unique([producer, packageId])
 }
@@ -465,4 +468,88 @@ model AuditRun {
   findingCount Int
   model        String
   createdAt    DateTime @default(now())
+}
+
+// ── TIMELINE ───────────────────────────────────────────────────────────
+//
+// Timeline is a PROJECTION over records that already exist. A Report, a
+// Decision, a Finding, a context observation and a completed Linear issue
+// are all timestamped facts owned by their own instrument, and Timeline
+// reads them (lib/timeline/entries.ts) rather than copying them. There is
+// deliberately no event ledger here: duplicating a Decision's createdAt
+// into a second table would create a second source of truth that could
+// disagree with the first.
+//
+// This model exists for the one class of landmark nothing else owns -- a
+// kickoff, a launch, a phase, a delivery someone states by hand or accepts
+// from a machine suggestion. Those have no home anywhere else in the
+// schema, so Timeline owns them.
+model TimelineEvent {
+  id      String @id @default(cuid())
+  scopeId String
+  scope   Scope  @relation(fields: [scopeId], references: [id], onDelete: Cascade)
+
+  kind  String // event | milestone | kickoff | delivery | phase
+  title String
+  date  DateTime
+  // Set only for a genuine duration. Most landmarks are points; a span is
+  // NOT the default, because a timeline of bars is a Gantt chart.
+  endDate DateTime?
+
+  // STORED, NEVER COMPUTED. `date < now ? "occurred" : "planned"` is the
+  // one inference this model refuses to make: a planned milestone whose
+  // date has passed is OVERDUE, which is information worth keeping, not a
+  // thing that silently became history because the clock moved.
+  temporalState String @default("occurred") // occurred | planned
+
+  note String?
+
+  // WHERE IT CAME FROM. A landmark someone typed and a landmark accepted
+  // from a Hermes claim are both Reality, but they are not equally
+  // attested, and the difference has to survive.
+  source            String  @default("manual") // manual | candidate | import
+  sourceLabel       String?
+  contextSnapshotId String?
+  contextSnapshot   ContextSnapshot? @relation(fields: [contextSnapshotId], references: [id])
+  evidenceRefs      String[] @default([])
+  externalRef       String?
+  // The candidate this was seated from; also the idempotency key, so a
+  // retried acceptance updates rather than duplicating.
+  sourceClaimKey String? @unique
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([scopeId, date])
+}
+
+// A machine noticed something that looks like a project landmark. That is
+// a DISPOSITION RECORD, not Timeline Reality -- exactly the boundary
+// DecisionCandidate draws, for exactly the same reason.
+//
+// `date` is nullable on purpose. A DerivedClaim carries no date, and
+// inferring one from prose ("we kicked off last week") would be the model
+// inventing history. A dateless candidate waits in Event Intake until a
+// human supplies the date; it cannot be accepted without one.
+model TimelineEventCandidate {
+  id       String @id @default(cuid())
+  claimKey String @unique
+
+  scopeId String
+  scope   Scope  @relation(fields: [scopeId], references: [id], onDelete: Cascade)
+
+  title String
+  date  DateTime?
+  kind  String @default("event")
+
+  sourceLabel       String
+  contextSnapshotId String?
+  evidenceRefs      String[] @default([])
+  excerpts          String[] @default([])
+
+  status          String   @default("pending") // pending | accepted | dismissed
+  acceptedEventId String?
+  createdAt       DateTime @default(now())
+
+  @@index([scopeId, status])
 }

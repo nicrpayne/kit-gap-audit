@@ -12,6 +12,7 @@ import {
 } from "@/lib/context/snapshot";
 import { PackageValidationError } from "@/lib/context/validate";
 import { harvestCandidates } from "@/lib/decisions/candidates";
+import { harvestTimelineCandidates } from "@/lib/timeline/candidates";
 
 interface RefreshContextDoc {
   label: string;
@@ -144,8 +145,15 @@ export async function POST(req: NextRequest) {
   // Decision, no Finding, no gate, and no date moves; see
   // lib/decisions/candidates.ts.
   let decisionCandidates: Awaited<ReturnType<typeof harvestCandidates>> | undefined;
+  // TIMELINE EVENT CANDIDATES, from the same claims, under the same law.
+  // A claim that reads like a landmark ("Construct Electric kicked off")
+  // becomes a suggestion in Event Intake -- never a TimelineEvent, and
+  // never a date. See lib/timeline/candidates.ts for why most of these
+  // arrive dateless.
+  let timelineCandidates: Awaited<ReturnType<typeof harvestTimelineCandidates>> | undefined;
   if (contextSnapshotId) {
     decisionCandidates = await harvestCandidates({ id: contextSnapshotId });
+    timelineCandidates = await harvestTimelineCandidates({ id: contextSnapshotId });
   }
 
   let audit:
@@ -245,6 +253,7 @@ export async function POST(req: NextRequest) {
     contextSnapshotId,
     // Suggestions raised for human review by this package. Never Reality.
     decisionCandidates,
+    timelineCandidates,
     audit,
     estimate: estimateSummary,
     forecast: {

@@ -18,11 +18,11 @@
 // against its own approved visual contract rather than inherited from the
 // old experimental instrument suite. Every other destination keeps its
 // production Workbench surface until its own instrument has been designed
-// and accepted. Timeline is deliberately absent from this list: production
-// presents it through the Nav's separate "Coming next" group, and it should
-// not appear here as a peer of finished instruments until it is one.
+// and accepted. Timeline joins the list here: it was "Coming next" while it
+// was a ComingNext stub, and it is now a built instrument with its own
+// visual contract, so it takes its place as a peer.
 
-export const INSTRUMENT_ROUTES = ["/portfolio", "/forecast", "/scope", "/decisions"] as const;
+export const INSTRUMENT_ROUTES = ["/portfolio", "/forecast", "/scope", "/decisions", "/timeline"] as const;
 
 export function isInstrumentRoute(pathname: string): boolean {
   return INSTRUMENT_ROUTES.some((r) => pathname === r || pathname.startsWith(r + "/"));
@@ -73,6 +73,13 @@ export const DESTINATIONS: ShellDestination[] = [
     instrument: true,
     owns: "People, allocation and the portfolio-wide switching assumption",
     verb: "Play the people",
+  },
+  {
+    href: "/timeline",
+    label: "Timeline",
+    instrument: true,
+    owns: "The project's relationship with time -- what happened, when, and what we believed then",
+    verb: "Play the project",
   },
   { href: "/reports", label: "Reports" },
   { href: "/scopes", label: "Scopes settings" },

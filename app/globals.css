@@ -466,3 +466,34 @@ body {
   outline: none;
 }
 .rotary-input:focus-visible + * { outline: none; }
+
+/* Timeline's zoom slider. A plain horizontal range, styled to match the
+   transport's other controls -- no rotation, after what that cost the
+   mixer fader (see the note where .mixer-fader used to live). */
+.timeline-zoom {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 3px;
+  border-radius: 999px;
+  background: var(--i-recess);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.8);
+  cursor: pointer;
+}
+.timeline-zoom::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  background: linear-gradient(180deg, var(--i-panel-raised) 0%, #12171a 100%);
+  border: 1px solid var(--i-border-strong);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.6);
+}
+.timeline-zoom::-moz-range-thumb {
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  background: linear-gradient(180deg, var(--i-panel-raised) 0%, #12171a 100%);
+  border: 1px solid var(--i-border-strong);
+}
+.timeline-zoom:focus-visible::-webkit-slider-thumb { border-color: var(--i-violet); }
