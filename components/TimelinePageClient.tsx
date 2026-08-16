@@ -38,6 +38,8 @@ import TimeField, { HEADER_H, MIN_LANE_H, MAX_LANE_H, LANE_HEADER_W } from "@/co
 import TimelineInspector from "@/components/timeline/TimelineInspector";
 import Transport, { type Speed } from "@/components/timeline/Transport";
 import AddEventTool from "@/components/timeline/AddEventTool";
+import LayersControl from "@/components/timeline/LayersControl";
+import { STORY_LAYERS, type LayerState } from "@/lib/timeline/story";
 
 const MIN_SPAN = 21 * DAY;
 /** How long a crossed event stays articulated before settling back into
@@ -65,6 +67,11 @@ export default function TimelinePageClient() {
   const [tool, setTool] = useState<{ editing: TimelineEntry | null } | null>(null);
   const [intakeOpen, setIntakeOpen] = useState(false);
   const [reducedMotion, setReducedMotion] = useState(false);
+  // PRESENTATION ONLY. Which layers the score draws. The projection is
+  // whole regardless, and playback crosses every occurred entry either way
+  // -- a layer decides what the first glance carries, not what is true.
+  const [layers, setLayers] = useState<LayerState>(STORY_LAYERS);
+  const [hoveredId, setHoveredId] = useState<string | null>(null);
   // Events the playhead has just crossed. Held briefly so the note can be
   // read, then released back into the accumulated score.
   const [articulating, setArticulating] = useState<Set<string>>(new Set());
@@ -464,8 +471,13 @@ export default function TimelinePageClient() {
               <div
                 key={lane.scopeId}
                 data-shoot={`memory-${lane.scopeId}`}
-                className="flex-1 min-w-0 flex flex-col justify-center px-3"
-                style={{ borderLeft: i === 0 ? undefined : "1px solid rgba(38,45,51,0.7)" }}
+                className="flex-1 min-w-0 flex flex-col justify-center px-3 transition-colors"
+                onMouseEnter={() => setHoveredLane(lane.scopeId)}
+                onMouseLeave={() => setHoveredLane(null)}
+                style={{
+                  borderLeft: i === 0 ? undefined : "1px solid rgba(38,45,51,0.7)",
+                  background: hoveredLane === lane.scopeId ? "rgba(155,140,250,0.05)" : undefined,
+                }}
               >
                 <div className="text-[8px] uppercase tracking-[0.14em] text-[var(--i-text-faint)] truncate">{lane.name}</div>
                 {m ? (
@@ -473,7 +485,16 @@ export default function TimelinePageClient() {
                     <div className="i-readout text-[16px] leading-none mt-1.5" data-shoot={`memory-likely-${lane.scopeId}`} style={{ color: "var(--i-violet)" }}>
                       {fmtDay(new Date(m.likelyDate).getTime())}
                     </div>
-                    <div className="text-[8px] text-[var(--i-text-faint)] mt-1.5 tabular-nums truncate">
+                    {/* SECONDARY DISCLOSURE. The range, the confidence and
+                        how long the belief has been held are all true and
+                        all kept -- they simply are not things you need
+                        before you have asked. Pointing at the project
+                        reveals them; so does selecting its Report. */}
+                    <div
+                      className="text-[8px] mt-1.5 tabular-nums truncate transition-opacity duration-200"
+                      data-shoot={`memory-detail-${lane.scopeId}`}
+                      style={{ color: "var(--i-text-faint)", opacity: hoveredLane === lane.scopeId ? 1 : 0 }}
+                    >
                       {fmtDay(new Date(m.earliestDate).getTime())} – {fmtDay(new Date(m.latestDate).getTime())}
                       {m.confidenceAtTarget !== null && ` · ${m.confidenceAtTarget}%`}
                       {stale !== null && stale > 0 && ` · held ${stale}d`}
@@ -488,6 +509,7 @@ export default function TimelinePageClient() {
         </div>
 
         <div className="flex items-center gap-2 pr-4">
+          <LayersControl value={layers} onChange={setLayers} />
           {dateless.length > 0 && (
             <button
               onClick={() => setIntakeOpen((v) => !v)}
@@ -559,6 +581,9 @@ export default function TimelinePageClient() {
               articulating={articulating}
               ghostByScope={ghostByScope}
               deltaByScope={deltaByScope}
+              layers={layers}
+              hoveredId={hoveredId}
+              onHoverEvent={setHoveredId}
             />
           </div>
 

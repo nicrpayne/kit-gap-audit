@@ -193,38 +193,17 @@ export default function TimelineInspector({
         <div className="px-4 py-3" style={HEAD_STYLE}>
           <div className="i-label">Inspecting</div>
         </div>
-        <div className="flex-1 flex flex-col items-center justify-center px-7 text-center gap-4">
-          {/* The panel is furnished even when nothing is selected — an
-              instrument with a blank slab down one side reads as broken,
-              and the legend is the one thing worth saying here anyway. */}
-          <div className="w-full rounded-md p-3" style={{ background: "var(--i-recess)", border: "1px solid var(--i-border)" }}>
-            <div className="i-label mb-2">The score</div>
-            <div className="grid grid-cols-2 gap-x-2 gap-y-1.5">
-              {[
-                ["forecast", "Report"],
-                ["decision", "Decision"],
-                ["work", "Work done"],
-                ["context", "Context"],
-                ["landmark", "Landmark"],
-                ["finding", "Finding"],
-              ].map(([fam, label]) => (
-                <div key={fam} className="flex items-center gap-1.5">
-                  <span className="h-[7px] w-[7px] shrink-0" style={{ background: FAMILY_COLOR[fam], transform: "rotate(45deg)" }} />
-                  <span className="text-[9px] text-[var(--i-text-soft)]">{label}</span>
-                </div>
-              ))}
-              <div className="flex items-center gap-1.5">
-                <span className="h-[7px] w-[7px] shrink-0" style={{ border: "1px solid var(--i-text-faint)", transform: "rotate(45deg)" }} />
-                <span className="text-[9px] text-[var(--i-text-soft)]">Planned</span>
-              </div>
-              <div className="flex items-center gap-1.5">
-                <span className="h-[7px] w-[7px] shrink-0" style={{ border: "1px dashed var(--i-violet)", transform: "rotate(45deg)" }} />
-                <span className="text-[9px] text-[var(--i-text-soft)]">Candidate</span>
-              </div>
-            </div>
-          </div>
-          <p className="text-[11px] leading-relaxed text-[var(--i-text-faint)]">
-            Select a moment on the score, or press play and let the project tell it.
+        <div className="flex-1 flex flex-col items-center justify-center px-7 text-center gap-3">
+          {/* NO LEGEND. It used to live here, and its presence was the tell:
+              a surface that needs a colour key is one you have to decode
+              before you can read it. The events explain themselves now —
+              point at one, select one, or press play and let each say what
+              it is in words as it is crossed. */}
+          <p className="text-[11.5px] leading-relaxed text-[var(--i-text-soft)]">
+            Press play and the project tells its own story.
+          </p>
+          <p className="text-[10.5px] leading-relaxed text-[var(--i-text-faint)]">
+            Or point at any moment on the score to see what it was, and select it for the full record.
           </p>
         </div>
       </div>

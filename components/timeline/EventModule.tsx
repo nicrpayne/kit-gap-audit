@@ -42,7 +42,7 @@ export default function EventModule({
   x: number;
   y: number;
   /** `articulating` is the transient playback state; `held` is selection. */
-  phase: "articulating" | "held";
+  phase: "articulating" | "held" | "peek";
   reducedMotion: boolean;
   compact: boolean;
   /** How far the true date sits from the clamped card centre. The stem
@@ -65,8 +65,8 @@ export default function EventModule({
         width: w,
         transform: "translate(-50%, -100%)",
         // Damped, not bouncy. A project history is not a game.
-        animation: reducedMotion ? undefined : "tl-articulate 260ms cubic-bezier(0.22,0.61,0.36,1)",
-        zIndex: phase === "held" ? 30 : 25,
+        animation: reducedMotion ? undefined : "tl-articulate 180ms cubic-bezier(0.22,0.61,0.36,1)",
+        zIndex: phase === "held" ? 30 : phase === "peek" ? 24 : 25,
       }}
     >
       <div

@@ -19,9 +19,14 @@ import type { TimelineEntry, TimelineLane, ForecastSnapshot, TimelineCandidate }
 import { xFor, tFor, ticksFor, scaleFor, fmtDay, type TimeView } from "@/lib/timeline/geometry";
 import { FAMILY_COLOR } from "./familyColor";
 import EventModule from "./EventModule";
+import { prominenceFor, layerFor, type LayerState } from "@/lib/timeline/story";
 
 export const HEADER_H = 34;
 export const LANE_HEADER_W = 146;
+/** How far a marker's hit area reaches when it has room, and the floor it
+    keeps when neighbours crowd it. See `grabByLane`. */
+const GRAB_HALF = 8;
+const MIN_GRAB_HALF = 2;
 /** The field FILLS the instrument. Lanes grow to use the height rather than
     sitting in a short band above a void -- the time field is the hero, and
     a hero that occupies a third of the screen is not one. Clamped so four
@@ -57,81 +62,117 @@ interface Props {
       fading ghost so the movement is legible instead of a teleport. */
   ghostByScope: Record<string, ForecastSnapshot | null>;
   deltaByScope: Record<string, { fromLikely: string; toLikely: string; days: number } | null>;
+  /** PRESENTATION ONLY. Which layers are drawn; the projection is whole
+      whatever this says, and playback crosses every occurred entry either
+      way. */
+  layers: LayerState;
+  hoveredId: string | null;
+  onHoverEvent: (id: string | null) => void;
 }
 
-/** The compact object every event on the score is drawn as. One family,
-    six materials, three states (ahead / crossed / selected). */
+/** ONE EVENT OBJECT FAMILY.
+ *
+ * Every point in time is the same primitive: a small rotated node. What
+ * differs is STATE, not type — because a surface where you must remember
+ * that amber means Decision is a surface you have to decode before you can
+ * read it, and the legend that made that possible was compensating for the
+ * interface rather than explaining it.
+ *
+ * At rest the node is a quiet graphite object carrying only a faint trace
+ * of its family's material. Attention is what colours it: woken, selected
+ * or articulating, it takes the family colour fully and says its type in
+ * words. State that matters at a glance — planned, overdue — keeps its own
+ * unmistakable treatment, because "this was supposed to have happened" is
+ * worth seeing before you ask anything.
+ */
 function EventMark({
-  entry, x, y, crossed, selected, woken, onSelect, reducedMotion,
+  entry, x, y, crossed, selected, woken, prominence, grabL, grabR, onSelect, onHover, reducedMotion,
 }: {
   entry: TimelineEntry; x: number; y: number; crossed: boolean; selected: boolean;
-  woken: boolean; onSelect: () => void; reducedMotion: boolean;
+  woken: boolean; prominence: "primary" | "secondary"; grabL: number; grabR: number;
+  onSelect: () => void; onHover: (on: boolean) => void; reducedMotion: boolean;
 }) {
   const color = FAMILY_COLOR[entry.family] ?? "var(--i-text-soft)";
   const planned = entry.temporalState === "planned";
   const overdue = planned && Boolean((entry.detail as { overdue?: boolean }).overdue);
   const isReport = entry.kind === "report";
+  const lit = woken || selected;
+  const secondary = prominence === "secondary";
 
-  // Reports are the spine of forecast memory, so they get a taller, more
-  // deliberate mark. Everything else is a compact node.
-  // Bigger at rest than before -- a 9px diamond is a symbol to be studied,
-  // not an object to be read. Woken marks grow further so the eye can
-  // follow the playhead without hunting.
-  const w = isReport ? 4 : 12;
-  const h = isReport ? 34 : 12;
-  const k = woken ? 1.45 : 1;
+  // Scale carries prominence; colour carries attention.
+  const base = isReport ? { w: 3, h: 22 } : { w: 11, h: 11 };
+  const k = lit ? 1.5 : secondary ? 0.72 : 1;
+  const w = base.w * k;
+  const h = base.h * k;
+
+  // The resting object. Graphite, with the family only as a trace.
+  const restFill = "#1b2228";
+  const restStroke = crossed ? color : "var(--i-border-strong)";
+  const restOpacity = secondary ? (crossed ? 0.5 : 0.26) : crossed ? 0.95 : 0.5;
 
   return (
     <g
       transform={`translate(${x},${y})`}
       onClick={(e) => { e.stopPropagation(); onSelect(); }}
+      onMouseEnter={() => onHover(true)}
+      onMouseLeave={() => onHover(false)}
       style={{ cursor: "pointer" }}
       data-shoot={`event-${entry.id}`}
       data-crossed={crossed || undefined}
       data-planned={planned || undefined}
       data-overdue={overdue || undefined}
+      data-prominence={prominence}
     >
-      {/* grab area, larger than the drawn mark */}
-      <rect x={-8} y={-14} width={16} height={28} fill="transparent" />
-      {(selected || woken) && (
-        <circle r={15} fill="none" stroke={color} strokeWidth={1} opacity={selected ? 0.95 : 0.6} />
-      )}
-      {woken && <circle r={20} fill={color} opacity={0.11} />}
-      {isReport ? (
-        <rect
-          x={(-w * k) / 2} y={(-h * k) / 2} width={w * k} height={h * k} rx={1.5}
-          fill={crossed ? color : "none"}
-          stroke={color}
-          strokeWidth={1.2}
-          opacity={crossed ? 1 : 0.4}
-          style={reducedMotion ? undefined : { transition: "opacity 320ms ease, fill 320ms ease, x 200ms ease, width 200ms ease" }}
-        />
+      {/* The ONLY hit target. Everything drawn below is inert, so a lit
+          marker's 38px halo can never stand between the pointer and the
+          neighbour it is covering. */}
+      <rect x={-grabL} y={-14} width={grabL + grabR} height={28} fill="transparent" />
+      <g style={{ pointerEvents: "none" }}>
+      {lit && <circle r={19} fill={color} opacity={0.13} />}
+      {lit && <circle r={14} fill="none" stroke={color} strokeWidth={1} opacity={selected ? 0.95 : 0.65} />}
+
+      {overdue ? (
+        // OVERDUE. The one state that outranks everything: a plan whose
+        // date has passed, still drawn as a plan, ringed so it cannot be
+        // mistaken for history. No legend needed to feel wrong.
+        <g data-shoot="overdue-mark">
+          <circle r={11} fill="var(--i-red)" opacity={0.12} />
+          <circle r={11} fill="none" stroke="var(--i-red)" strokeWidth={1.1} opacity={0.75} />
+          <rect
+            x={-w / 2} y={-h / 2} width={w} height={h} transform="rotate(45)"
+            fill="none" stroke="var(--i-red)" strokeWidth={1.9}
+          />
+        </g>
       ) : planned ? (
-        // INTENT: outlined, hollow, unsettled. Overdue keeps the outline
-        // and takes a warning stroke — it is still not history.
+        // INTENT. Hollow and unsettled, because it has not happened.
         <rect
-          x={(-w * k) / 2} y={(-h * k) / 2} width={w * k} height={h * k}
-          transform="rotate(45)"
-          fill="none"
-          stroke={overdue ? "var(--i-red)" : color}
-          strokeWidth={overdue ? 1.8 : 1.3}
-          strokeDasharray={overdue ? undefined : "2.4 1.8"}
-          opacity={0.98}
+          x={-w / 2} y={-h / 2} width={w} height={h} transform="rotate(45)"
+          fill="#0d1114"
+          stroke={lit ? color : "var(--i-text-faint)"}
+          strokeWidth={1.3}
+          strokeDasharray="2.4 1.8"
+          opacity={0.95}
+        />
+      ) : isReport ? (
+        <rect
+          x={-w / 2} y={-h / 2} width={w} height={h} rx={1.5}
+          fill={lit ? color : restFill}
+          stroke={lit ? color : restStroke}
+          strokeWidth={1.1}
+          opacity={lit ? 1 : restOpacity}
+          style={reducedMotion ? undefined : { transition: "opacity 260ms ease, fill 260ms ease" }}
         />
       ) : (
         <rect
-          x={(-w * k) / 2} y={(-h * k) / 2} width={w * k} height={h * k}
-          transform="rotate(45)"
-          fill={crossed ? color : "#0d1114"}
-          stroke={color}
-          strokeWidth={1.3}
-          opacity={crossed ? 1 : 0.42}
-          style={reducedMotion ? undefined : { transition: "opacity 320ms ease, fill 320ms ease" }}
+          x={-w / 2} y={-h / 2} width={w} height={h} transform="rotate(45)"
+          fill={lit ? color : restFill}
+          stroke={lit ? color : restStroke}
+          strokeWidth={1.2}
+          opacity={lit ? 1 : restOpacity}
+          style={reducedMotion ? undefined : { transition: "opacity 260ms ease, fill 260ms ease" }}
         />
       )}
-      {crossed && !planned && (
-        <circle r={selected ? 13 : 10} fill={color} opacity={selected ? 0.22 : 0.12} />
-      )}
+      </g>
     </g>
   );
 }
@@ -219,6 +260,7 @@ export default function TimeField({
   lanes, entries, candidates, memoryByScope, view, nowT, playheadT, crossed,
   selectedId, hoveredLane, onSelect, onHoverLane, onScrub, onOpenScope,
   onViewChange, bounds, reducedMotion, laneH, articulating, ghostByScope, deltaByScope,
+  layers, hoveredId, onHoverEvent,
 }: Props) {
   const hostRef = useRef<HTMLDivElement>(null);
   const dragging = useRef(false);
@@ -229,13 +271,49 @@ export default function TimeField({
   const laneIndex = useMemo(() => new Map(lanes.map((l, i) => [l.scopeId, i])), [lanes]);
   const byLane = useMemo(() => {
     const m = new Map<string, TimelineEntry[]>();
-    for (const e of entries) {
+    // Layer filtering is a DRAWING decision. `entries` is untouched, and
+    // the client still hands playback the full occurred set, so turning a
+    // layer off never changes what the story crosses.
+    for (const e of entries.filter((x) => layers[layerFor(x)])) {
       const list = m.get(e.scopeId) ?? [];
       list.push(e);
       m.set(e.scopeId, list);
     }
     return m;
-  }, [entries]);
+  }, [entries, layers]);
+
+  // POINT AT A THING, GET THAT THING.
+  //
+  // An 11px diamond is too small to catch reliably, so every marker carries
+  // a transparent grab rect wider than the shape it stands for. At a dense
+  // zoom two neighbours sit closer together than that rect is wide, and the
+  // one drawn later swallows the earlier one's own centre — the marker
+  // becomes literally unreachable by pointer, which is how a resting event
+  // stops being able to explain itself.
+  //
+  // Each marker therefore claims only up to the midpoint between itself and
+  // its nearest neighbour on that lane, separately on each side. The cells
+  // tile the lane instead of overlapping it, so the nearest event always
+  // wins and every drawn event owns the pixels directly above it.
+  const grabByLane = useMemo(() => {
+    const out = new Map<string, Map<string, { l: number; r: number }>>();
+    for (const [scopeId, list] of byLane) {
+      const xs = list
+        .map((e) => ({ id: e.id, x: xFor(view, new Date(e.date).getTime()) }))
+        .sort((a, b) => a.x - b.x);
+      const cells = new Map<string, { l: number; r: number }>();
+      for (let i = 0; i < xs.length; i++) {
+        const left = i > 0 ? (xs[i].x - xs[i - 1].x) / 2 : GRAB_HALF;
+        const right = i < xs.length - 1 ? (xs[i + 1].x - xs[i].x) / 2 : GRAB_HALF;
+        cells.set(xs[i].id, {
+          l: Math.max(MIN_GRAB_HALF, Math.min(GRAB_HALF, left)),
+          r: Math.max(MIN_GRAB_HALF, Math.min(GRAB_HALF, right)),
+        });
+      }
+      out.set(scopeId, cells);
+    }
+    return out;
+  }, [byLane, view]);
 
   const nowX = xFor(view, nowT);
   const playX = xFor(view, playheadT);
@@ -437,6 +515,12 @@ export default function TimeField({
             lane.dependsOnScopeIds.map((depId) => {
               const j = laneIndex.get(depId);
               if (j === undefined) return null;
+              // Structural context, not a beat in the story. Off unless the
+              // layer is on or this lane is under the pointer — connecting
+              // geometry should never be something you must read to follow
+              // what happened.
+              const show = layers.dependencies || hoveredLane === lane.scopeId || hoveredLane === depId;
+              if (!show) return null;
               const y1 = HEADER_H + j * laneH + laneH / 2;
               const y2 = HEADER_H + i * laneH + laneH / 2;
               const x = Math.max(10, nowX - 26);
@@ -444,7 +528,11 @@ export default function TimeField({
                 <path
                   key={`${lane.scopeId}-${depId}`}
                   d={`M${x},${y1} C${x + 16},${y1} ${x + 16},${y2} ${x},${y2}`}
-                  fill="none" stroke="var(--i-text-faint)" strokeWidth={0.85} opacity={0.3} strokeDasharray="2 3"
+                  fill="none"
+                  stroke={hoveredLane === lane.scopeId || hoveredLane === depId ? "var(--i-signal)" : "var(--i-text-faint)"}
+                  strokeWidth={0.9}
+                  opacity={hoveredLane === lane.scopeId || hoveredLane === depId ? 0.6 : 0.24}
+                  strokeDasharray="2 3"
                 />
               );
             })
@@ -456,6 +544,7 @@ export default function TimeField({
             const yMem = HEADER_H + i * laneH + laneH * 0.74;
             const mem = memoryByScope[lane.scopeId] ?? null;
             const laneEntries = byLane.get(lane.scopeId) ?? [];
+            const grabCells = grabByLane.get(lane.scopeId) ?? new Map();
             return (
               <g key={lane.scopeId}>
                 {ghostByScope[lane.scopeId] && (
@@ -483,8 +572,12 @@ export default function TimeField({
                         entry={e} x={x} y={yTrack}
                         crossed={crossed.has(e.id)}
                         selected={selectedId === e.id}
-                        woken={articulating.has(e.id)}
+                        woken={articulating.has(e.id) || hoveredId === e.id}
+                        prominence={prominenceFor(e)}
+                        grabL={grabCells.get(e.id)?.l ?? GRAB_HALF}
+                        grabR={grabCells.get(e.id)?.r ?? GRAB_HALF}
                         onSelect={() => onSelect(e.id)}
+                        onHover={(on) => onHoverEvent(on ? e.id : null)}
                         reducedMotion={reducedMotion}
                       />
                     </g>
@@ -561,10 +654,13 @@ export default function TimeField({
             stay attached to their exact date and lane. */}
         {lanes.map((lane, i) => {
           const yTrack = HEADER_H + i * laneH + laneH * 0.36;
-          return (entries.filter((e) => e.scopeId === lane.scopeId) ?? []).map((e) => {
+          return (byLane.get(lane.scopeId) ?? []).map((e) => {
             const held = selectedId === e.id;
             const live = articulating.has(e.id);
-            if (!held && !live) return null;
+            // HOVER EXPLAINS. Pointing at a mark says what it is in words,
+            // which is what makes a colour key unnecessary.
+            const peek = hoveredId === e.id && !held && !live;
+            if (!held && !live && !peek) return null;
             const x = xFor(view, new Date(e.date).getTime());
             if (x < -40 || x > view.width + 40) return null;
             const modW = laneH < 110 ? 176 : 208;
@@ -576,7 +672,7 @@ export default function TimeField({
                 x={clamped}
                 stemDx={x - clamped}
                 y={yTrack - 18}
-                phase={held ? "held" : "articulating"}
+                phase={held ? "held" : live ? "articulating" : "peek"}
                 reducedMotion={reducedMotion}
                 compact={laneH < 110}
               />

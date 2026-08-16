@@ -285,6 +285,15 @@ check("Reality restored — the proof landmark is gone",
   await p.goto(`${BASE}/timeline`, { waitUntil: "networkidle" });
   await p.waitForSelector('[data-shoot="time-field"]', { timeout: 20000 });
   await p.waitForTimeout(2200);
+  // Context is not drawn on the default Story surface, so this check turns
+  // every layer on first. The entry was always in the projection — Layers
+  // only decides what the first glance carries.
+  await p.locator('[data-shoot="layers-toggle"]').click();
+  await p.waitForTimeout(400);
+  await p.locator('[data-shoot="layers-everything"]').click();
+  await p.waitForTimeout(600);
+  await p.keyboard.press("Escape");
+  await p.waitForTimeout(400);
   const before = await geometry();
   const rep = finalProj.entries.find((e) => e.kind === "report");
   const ctxE = finalProj.entries.find((e) => e.kind === "context_observed");
