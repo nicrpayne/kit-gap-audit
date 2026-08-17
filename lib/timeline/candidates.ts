@@ -54,6 +54,24 @@ export function dateFromEvidence(
   return null;
 }
 
+/** The same rule for the other end. A duration is only ever as good as the
+    evidence that stated it, so there is no fallback: no explicit end means
+    no span, and the candidate arrives as a moment rather than as a guess
+    dressed up as an activity. Only consulted once a start date was found —
+    an end without a beginning is not a duration. */
+export function endDateFromEvidence(
+  data: Record<string, JsonValue> | undefined
+): Date | null {
+  if (!data) return null;
+  for (const key of ["endsOn", "ends_on", "endedOn", "endDate", "concludedOn"]) {
+    const v = data[key];
+    if (typeof v !== "string") continue;
+    const d = new Date(v);
+    if (!Number.isNaN(d.getTime())) return d;
+  }
+  return null;
+}
+
 export interface TimelineHarvestResult {
   scannedSnapshots: number;
   imported: number;
@@ -109,16 +127,25 @@ export async function harvestTimelineCandidates(
         .filter((e): e is NonNullable<typeof e> => e !== undefined);
       // First evidence item that honestly states a date wins. No prose.
       let date: Date | null = null;
+      let endDate: Date | null = null;
       for (const e of cited) {
         date = dateFromEvidence(e.data);
-        if (date) break;
+        if (date) {
+          // The end, if any, comes from the SAME evidence item that supplied
+          // the start. Stitching a start from one note to an end from
+          // another would be the model composing a duration nobody stated.
+          endDate = endDateFromEvidence(e.data);
+          break;
+        }
       }
+      if (endDate && date && endDate.getTime() <= date.getTime()) endDate = null;
       await prisma.timelineEventCandidate.create({
         data: {
           claimKey,
           scopeId: snap.scopeId,
           title: claim.statement,
           date,
+          endDate,
           kind: landmarkKindFor(claim.kind),
           sourceLabel,
           contextSnapshotId: snap.id,

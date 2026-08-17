@@ -100,6 +100,18 @@ interface Props {
   onHoverEvent: (id: string | null) => void;
   /** The story is being told. The intent side steps back while it runs. */
   playing: boolean;
+  /** A candidate is being carried out of Event Intake. Non-null for the whole
+      flight; the field tracks the pointer itself from here. */
+  intakeCandidate: TimelineCandidate | null;
+  /** Where the piece left the tray. PRIMITIVES, deliberately: as an object
+      this changed identity on every render, so the effect below tore down and
+      re-armed continuously and reset the pointer to its starting point each
+      time — the piece could be lifted but never actually travelled. */
+  intakeStartX: number;
+  intakeStartY: number;
+  /** Released. Called exactly once per flight, with the placement the pointer
+      landed on, or null if it landed nowhere. The field never writes. */
+  onIntakeEnd: (target: { scopeId: string; date: string; endDate: string | null } | null) => void;
 }
 
 /** ONE EVENT OBJECT FAMILY.
@@ -510,6 +522,7 @@ export default function TimeField({
   onViewChange, bounds, reducedMotion, laneBoxes, onToggleExpand,
   onPlanRetime, onPlanCreate, articulating, ghostByScope, deltaByScope,
   layers, hoveredId, onHoverEvent, playing,
+  intakeCandidate, intakeStartX, intakeStartY, onIntakeEnd,
 }: Props) {
   const hostRef = useRef<HTMLDivElement>(null);
   const dragging = useRef(false);
@@ -895,6 +908,78 @@ export default function TimeField({
     setCreating(null);
     setDraftTitle("");
   }, []);
+
+  // ── CARRYING A CANDIDATE ONTO THE SCORE ────────────────────────────
+  //
+  // The gesture starts in the Event Intake tray, which is HTML, and finishes
+  // on the score, which is SVG — so it cannot use pointer capture on a single
+  // element the way the plan drags do. It listens on the window instead, for
+  // exactly as long as something is in the hand.
+  //
+  // Every other law is unchanged and is the reason this feels the same as
+  // retiming a plan object: the field's rect is measured ONCE, when the piece
+  // leaves the tray, and never re-read; the axis mapping comes from that
+  // frozen rect; the position is local state at 60fps; and NOTHING crosses
+  // the network until release, at which point the page makes exactly one
+  // call. A candidate crossing the score writes nothing, ever.
+  const [intakePoint, setIntakePoint] = useState<{ x: number; y: number } | null>(null);
+  const intakeGeom = useRef<{ left: number; top: number; width: number; height: number } | null>(null);
+  /** The live placement, recomputed from the frozen geometry as the hand
+      moves. Null whenever the pointer is not over a project's band. */
+  const intakeTargetRef = useRef<{ scopeId: string; date: string; endDate: string | null } | null>(null);
+
+  useEffect(() => {
+    if (!intakeCandidate) {
+      intakeGeom.current = null;
+      intakeTargetRef.current = null;
+      setIntakePoint(null);
+      return;
+    }
+    const el = hostRef.current;
+    if (!el) return;
+    const b = el.getBoundingClientRect();
+    intakeGeom.current = { left: b.left, top: b.top, width: b.width, height: b.height };
+    setIntakePoint({ x: intakeStartX, y: intakeStartY });
+
+    const onMove = (e: PointerEvent) => setIntakePoint({ x: e.clientX, y: e.clientY });
+    const onUp = () => onIntakeEnd(intakeTargetRef.current);
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+    window.addEventListener("pointercancel", onUp);
+    return () => {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+      window.removeEventListener("pointercancel", onUp);
+    };
+  }, [intakeCandidate, intakeStartX, intakeStartY, onIntakeEnd]);
+
+  /** WHERE IT WOULD LAND. X is the day, Y is the project — and a dormant rail
+      is as valid a target as an open lane, because requiring someone to
+      expand a project before they may put anything in it is the interface
+      asking to be operated rather than used. */
+  const intakePlan = useMemo(() => {
+    const c = intakeCandidate;
+    const g = intakeGeom.current;
+    const pt = intakePoint;
+    if (!c || !g || !pt || !c.date) return null;
+    const inside = pt.x >= g.left && pt.x <= g.left + g.width && pt.y >= g.top && pt.y <= g.top + g.height;
+    if (!inside) return null;
+    const lane = laneAtY(laneBoxes, pt.y - g.top - HEADER_H);
+    if (!lane) return null;
+    const t = snapDay(tFor({ ...view, width: g.width }, pt.x - g.left));
+    // DURATION IS CARRIED, NOT RECOMPUTED. A ten-day activity stays ten days
+    // wherever it is dropped; only its start moves with the hand.
+    const held = c.endDate ? new Date(c.endDate).getTime() - new Date(c.date).getTime() : 0;
+    return { lane, t, endT: held > 0 ? t + held : null };
+  }, [intakeCandidate, intakePoint, laneBoxes, view]);
+
+  intakeTargetRef.current = intakePlan
+    ? {
+        scopeId: intakePlan.lane.scopeId,
+        date: new Date(intakePlan.t).toISOString(),
+        endDate: intakePlan.endT === null ? null : new Date(intakePlan.endT).toISOString(),
+      }
+    : null;
 
   // SCRUBBING. Pointer capture and a rect measured once per gesture, for
   // the same reason the Portfolio fader does it: nothing changing size
@@ -1498,6 +1583,105 @@ export default function TimeField({
             );
           })}
 
+          {/* ── THE PLACEMENT PREVIEW ───────────────────────────────────
+              A real preview of the thing about to exist: the project's own
+              band, the exact day under the pointer, the duration the
+              candidate carries, and the subtrack it would pack into by the
+              same first-fit rule the real objects use.
+              It is drawn in CANDIDATE material — dashed, translucent, no cast
+              shadow — because until the pointer comes up it is still a
+              suggestion, and a ghost that looked like Reality would be
+              claiming something that has not happened. */}
+          {intakePlan && (() => {
+            const box = intakePlan.lane;
+            const z = zonesOf(box);
+            const rows = Math.max(1, planLayout.rowCount.get(box.scopeId) ?? 1);
+            const sx = xFor(view, intakePlan.t);
+            const ex = intakePlan.endT !== null
+              ? Math.max(sx + 14, xFor(view, intakePlan.endT))
+              : sx;
+            const placed = planLayout.placed.get(box.scopeId) ?? [];
+            // WHICH SUBTRACK IT WOULD PACK INTO — including a NEW one.
+            //
+            // First-fit, the same rule packPlanRows uses. The row is NOT
+            // clamped to the rows that already exist: if the piece overlaps
+            // everything currently on the lane it needs a row of its own, and
+            // clamping it back onto an occupied row drew the preview straight
+            // through a plan object it will not actually collide with. The
+            // band is then divided by the row count the DROP will produce, so
+            // what is shown is the layout that is about to happen.
+            let row = 0;
+            if (!box.dormant) {
+              for (let r = 0; r <= rows; r++) {
+                const clash = placed.some(
+                  (q) => q.row === r && !(ex < q.x0 - 8 || sx > q.x1 + 8)
+                );
+                if (!clash) { row = r; break; }
+                row = r + 1;
+              }
+            }
+            // THE ROWS THAT EXIST DO NOT MOVE.
+            //
+            // Re-dividing the band by "rows + 1" for the preview alone put the
+            // new piece on a pitch the drawn objects were not using, so row 3
+            // of four landed exactly where row 2 of three already was. The
+            // preview uses the SAME row height as everything else on the lane
+            // and, when it needs a row of its own, appears just below the last
+            // one — in the clearance the band already reserves.
+            const rowH = box.dormant ? 0 : planRowHeight(z.planRoom, rows);
+            const objH = box.dormant ? 13 : Math.max(11, Math.min(24, rowH - 5));
+            const y = box.dormant
+              ? HEADER_H + z.scoreY - objH / 2
+              : HEADER_H + z.planTop + row * rowH;
+            const span = intakePlan.endT !== null;
+            const days = span ? Math.round((intakePlan.endT! - intakePlan.t) / 86400000) : null;
+            return (
+              <g
+                data-shoot="intake-preview"
+                data-scope={box.scopeId}
+                data-date={new Date(intakePlan.t).toISOString()}
+                data-end={intakePlan.endT === null ? undefined : new Date(intakePlan.endT).toISOString()}
+                style={{ pointerEvents: "none" }}
+              >
+                {/* the project that would receive it */}
+                <rect
+                  x={0} y={HEADER_H + box.top} width={view.width} height={box.height}
+                  fill="var(--i-violet)" opacity={0.06}
+                />
+                <rect
+                  x={0} y={HEADER_H + box.top + 0.5} width={view.width} height={box.height - 1}
+                  fill="none" stroke="var(--i-violet)" strokeWidth={1} opacity={0.45}
+                />
+                {span ? (
+                  <rect
+                    x={sx} y={y} width={Math.max(14, ex - sx)} height={objH} rx={Math.min(3.5, objH / 3)}
+                    fill="rgba(58,48,92,0.6)"
+                    stroke="var(--i-violet)" strokeWidth={1.2} strokeDasharray="4 2.5"
+                  />
+                ) : (
+                  <g transform={`translate(${sx},${y})`}>
+                    <line x1={0} y1={0} x2={0} y2={objH} stroke="var(--i-violet)" strokeWidth={1.4} opacity={0.9} />
+                    <rect
+                      x={-4.6} y={objH / 2 - 4.6} width={9.2} height={9.2}
+                      transform={`rotate(45 0 ${objH / 2})`}
+                      fill="rgba(58,48,92,0.7)" stroke="var(--i-violet)" strokeWidth={1.4} strokeDasharray="2.4 1.8"
+                    />
+                  </g>
+                )}
+                {/* WHERE, WHEN, HOW LONG — beside the hand, in the
+                    instrument's own words rather than a tooltip. */}
+                <g transform={`translate(${sx + (span ? Math.max(14, ex - sx) + 9 : 13)},${y + objH / 2})`}>
+                  <text x={0} y={-4} fontSize={8} fill="var(--i-violet)" style={{ letterSpacing: "0.14em" }}>
+                    {(lanes.find((l) => l.scopeId === box.scopeId)?.name ?? "").toUpperCase()}
+                  </text>
+                  <text x={0} y={7} fontSize={9} fill="#ffffff" opacity={0.9} style={{ letterSpacing: "0.04em" }}>
+                    {fmtDay(intakePlan.t)}{days !== null ? ` · ${days}d` : ""}
+                  </text>
+                </g>
+              </g>
+            );
+          })()}
+
           {/* THE FUTURE STEPS BACK WHILE THE STORY IS TOLD.
               Playback is an argument about what already happened, and a
               fully lit plan competing with it splits the attention it is
@@ -1799,6 +1983,39 @@ export default function TimeField({
           </div>
         </div>
       </div>
+
+      {/* THE PIECE IN THE HAND.
+          Fixed to the viewport, because the gesture starts in the tray and
+          finishes on the score and has to be continuous across both. It stays
+          CANDIDATE material the whole way — this is the thing you are
+          carrying, not the thing you have made — and it hands over completely
+          once the score can answer the question itself. The preview already
+          says the project, the day and the duration, at the exact place it
+          will happen; a chip repeating that on top of it is two answers
+          fighting over the one spot the eye is on. */}
+      {intakeCandidate && intakePoint && (
+        <div
+          data-shoot="intake-flight"
+          data-over={intakePlan ? intakePlan.lane.scopeId : undefined}
+          className="fixed pointer-events-none rounded-md px-2.5 py-1.5"
+          style={{
+            left: intakePoint.x + 12,
+            top: intakePoint.y - 12,
+            zIndex: 60,
+            maxWidth: 210,
+            opacity: intakePlan ? 0 : 0.96,
+            background: "linear-gradient(180deg, rgba(58,48,92,0.92) 0%, rgba(30,26,48,0.94) 100%)",
+            border: "1px dashed var(--i-violet)",
+            boxShadow: "0 8px 22px rgba(0,0,0,0.55)",
+            transition: reducedMotion ? undefined : "opacity 140ms ease",
+          }}
+        >
+          <div className="text-[10.5px] text-[var(--i-text)] truncate">{intakeCandidate.title}</div>
+          <div className="text-[8px] mt-0.5 truncate" style={{ color: "var(--i-violet)" }}>
+            {intakePlan ? "Release to place" : "Candidate · not on the timeline"}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

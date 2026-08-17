@@ -35,7 +35,29 @@ export type TimelineCommand =
   /** The row did not exist before. Undo removes it. */
   | { kind: "create"; id: string; snapshot: PlanSnapshot; label: string }
   /** The row existed before and does not now. Undo puts it back. */
-  | { kind: "delete"; id: string; snapshot: PlanSnapshot; label: string };
+  | { kind: "delete"; id: string; snapshot: PlanSnapshot; label: string }
+  /**
+   * A candidate was taken out of Event Intake and placed on the score.
+   *
+   * ONE COMMAND, NOT TWO. Placing is a single act to the person doing it, so
+   * it has to be a single act to ⌘Z — nobody should have to undo "create the
+   * landmark" and then separately undo "accept the candidate". It is one
+   * entry here, and the API makes it one operation at the other end too:
+   * deleting an event that came from a candidate restores that candidate to
+   * pending in the same transaction. So the inverse is still just a DELETE,
+   * and this needs no transaction framework to sit on top of.
+   *
+   * `candidateId` is what redo re-accepts. The placement — scope, date, end,
+   * state — is carried so redo puts it back exactly where it was, not back
+   * where the source originally suggested.
+   */
+  | {
+      kind: "place";
+      id: string;
+      candidateId: string;
+      placement: { scopeId: string; date: string; endDate: string | null; temporalState: string };
+      label: string;
+    };
 
 export interface UndoState {
   past: TimelineCommand[];

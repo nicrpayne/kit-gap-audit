@@ -540,7 +540,12 @@ model TimelineEventCandidate {
 
   title String
   date  DateTime?
-  kind  String @default("event")
+  // A SUGGESTED END, held to the same standard as the suggested start: it
+  // exists only when structured evidence metadata stated one. Never derived
+  // from prose, never a default duration — an activity whose length nobody
+  // wrote down arrives as a moment, not as a guessed span.
+  endDate DateTime?
+  kind    String @default("event")
 
   sourceLabel       String
   contextSnapshotId String?

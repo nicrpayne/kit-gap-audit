@@ -229,6 +229,146 @@ async function main() {
     });
   }
 
+  // ── EVENT INTAKE, AS IT ACTUALLY ARRIVES ──────────────────────────
+  //
+  // Two more packages, so the tray holds a believable mixture rather than a
+  // pile of one shape. Both go through the real harvester from real
+  // ContextSnapshots — nothing is inserted straight into the candidate
+  // table — so the provenance on screen is provenance the product produced.
+  //
+  // The dates come only from structured evidence metadata, using the keys the
+  // harvester already recognises. `eventDate` rather than `occurredOn` for
+  // anything ahead of us: "occurred on" would be the fixture claiming a
+  // future event already happened, which is the exact class of lie this whole
+  // boundary exists to prevent.
+  const itrack = byName.get("iTrack") ?? scopes[0];
+  const packageId2 = "timeline-demo-2";
+  if (!(await prisma.contextSnapshot.findFirst({ where: { producer: "hermes", packageId: packageId2 } }))) {
+    const observedAt = new Date(now - 5 * DAY).toISOString();
+    const kickoffStart = new Date(now + 30 * DAY);
+    kickoffStart.setUTCHours(0, 0, 0, 0);
+    const kickoffEnd = new Date(kickoffStart.getTime() + 12 * DAY);
+    await prisma.contextSnapshot.create({
+      data: {
+        scopeId: itrack.id,
+        packageId: packageId2,
+        packageVersion: "1",
+        producer: "hermes",
+        contextHash: `demo-${packageId2}`,
+        completenessSummary: {},
+        package: {
+          version: 1,
+          packageId: packageId2,
+          producer: "hermes",
+          generatedAt: observedAt,
+          scopeId: itrack.id,
+          sources: [
+            {
+              sourceType: "contextDoc",
+              sourceRef: "Aug 12 refinement call",
+              registrationId: null,
+              role: "transcript",
+              status: "included",
+              observedAt,
+              succeeded: true,
+              detail: "Transcript pushed by Hermes",
+            },
+          ],
+          evidence: [
+            {
+              id: "ev-mktg",
+              sourceRef: "Aug 12 refinement call",
+              kind: "note",
+              excerpt:
+                "Marketing want their kickoff the week of the 16th and reckon it runs about a fortnight to the launch comms handover.",
+              data: { eventDate: kickoffStart.toISOString(), endsOn: kickoffEnd.toISOString() },
+            },
+            {
+              id: "ev-training",
+              sourceRef: "Aug 12 refinement call",
+              kind: "note",
+              excerpt:
+                "We still owe the customer a training plan — nobody has said when, and it depends on the pilot landing.",
+            },
+          ],
+          derivedClaims: [
+            {
+              id: "claim-mktg",
+              kind: "phase",
+              statement: "Marketing kickoff",
+              evidenceRefs: ["ev-mktg"],
+            },
+            {
+              id: "claim-training",
+              kind: "milestone",
+              statement: "Customer training plan",
+              evidenceRefs: ["ev-training"],
+            },
+          ],
+          completeness: { expectedSources: [], missingSources: [], excludedSources: [] },
+          warnings: [],
+        },
+      },
+    });
+  }
+
+  // A registered Notion source, read by the app itself rather than by
+  // Hermes — so the tray shows two different provenances, both real.
+  const packageId3 = "timeline-demo-3";
+  if (!(await prisma.contextSnapshot.findFirst({ where: { producer: "gap_app", packageId: packageId3 } }))) {
+    const observedAt = new Date(now - 2 * DAY).toISOString();
+    const reviewOn = new Date(now + 46 * DAY);
+    reviewOn.setUTCHours(0, 0, 0, 0);
+    await prisma.contextSnapshot.create({
+      data: {
+        scopeId: platform.id,
+        packageId: packageId3,
+        packageVersion: "1",
+        producer: "gap_app",
+        contextHash: `demo-${packageId3}`,
+        completenessSummary: {},
+        package: {
+          version: 1,
+          packageId: packageId3,
+          producer: "gap_app",
+          generatedAt: observedAt,
+          scopeId: platform.id,
+          sources: [
+            {
+              sourceType: "notion",
+              sourceRef: "Launch readiness",
+              registrationId: null,
+              role: "plan",
+              status: "included",
+              observedAt,
+              succeeded: true,
+              detail: "Registered Notion page",
+            },
+          ],
+          evidence: [
+            {
+              id: "ev-exec",
+              sourceRef: "Launch readiness",
+              kind: "note",
+              excerpt: "Executive launch review — go/no-go on the store submission.",
+              data: { eventDate: reviewOn.toISOString() },
+            },
+          ],
+          derivedClaims: [
+            {
+              id: "claim-exec",
+              kind: "milestone",
+              statement: "Executive launch review",
+              evidenceRefs: ["ev-exec"],
+            },
+          ],
+          completeness: { expectedSources: [], missingSources: [], excludedSources: [] },
+          warnings: [],
+        },
+      },
+    });
+  }
+
   const harvest = await harvestTimelineCandidates({});
   console.log(
     `timeline demo: landmarks=${await prisma.timelineEvent.count()} ` +

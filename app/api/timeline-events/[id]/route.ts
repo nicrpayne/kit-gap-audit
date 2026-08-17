@@ -79,10 +79,45 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   return NextResponse.json({ event });
 }
 
+// REMOVING A LANDMARK, AND PUTTING BACK WHAT IT WAS MADE FROM.
+//
+// A landmark seated from a candidate is one half of a pair: the event, and
+// the intake item marked `accepted` that points at it. Deleting only the
+// event would leave the other half orphaned — the candidate would still read
+// as accepted, still be excluded from Event Intake, and its material would be
+// gone from the product entirely with nothing to show for it.
+//
+// So removal is the inverse of acceptance, in one transaction: the event goes
+// and its candidate returns to `pending`, exactly as it was, with its own
+// suggested project and date untouched (acceptance never wrote to them). That
+// is what makes "undo a placement" a single logical operation rather than two
+// the user has to know about, and it is why the client needs no compound
+// rollback of its own.
+//
+// A hand-made landmark has no `sourceClaimKey` and no candidate, so for it
+// this is exactly the delete it always was.
 export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const existing = await prisma.timelineEvent.findUnique({ where: { id }, select: { id: true } });
+  const existing = await prisma.timelineEvent.findUnique({
+    where: { id },
+    select: { id: true, sourceClaimKey: true },
+  });
   if (!existing) return NextResponse.json({ error: "Timeline event not found" }, { status: 404 });
-  await prisma.timelineEvent.delete({ where: { id } });
-  return NextResponse.json({ ok: true });
+
+  const restored = await prisma.$transaction(async (tx) => {
+    await tx.timelineEvent.delete({ where: { id } });
+    if (!existing.sourceClaimKey) return null;
+    const candidate = await tx.timelineEventCandidate.findUnique({
+      where: { claimKey: existing.sourceClaimKey },
+      select: { id: true },
+    });
+    if (!candidate) return null;
+    await tx.timelineEventCandidate.update({
+      where: { id: candidate.id },
+      data: { status: "pending", acceptedEventId: null },
+    });
+    return candidate.id;
+  });
+
+  return NextResponse.json({ ok: true, restoredCandidateId: restored });
 }

@@ -103,6 +103,9 @@ export interface TimelineCandidate {
   scopeId: string;
   title: string;
   date: string | null;
+  /** A suggested END, present only when evidence stated one. Its presence is
+      what makes a candidate an ACTIVITY rather than a moment. */
+  endDate: string | null;
   kind: string;
   sourceLabel: string;
   excerpts: string[];
@@ -475,6 +478,15 @@ export async function buildTimeline(): Promise<TimelineProjection> {
         landmarkKind: e.kind,
         note: e.note,
         source: e.source,
+        // WHERE IT CAME FROM, ALL THE WAY TO THE SCREEN.
+        //
+        // The row has carried this since candidates existed, and acceptance
+        // copies it verbatim — but the projection was dropping it, so a
+        // landmark seated from a Hermes reading arrived in the UI able to say
+        // only "accepted candidate". The attestation existed and was
+        // unreachable, which is the same as not having it. A placed piece can
+        // now name its own origin.
+        sourceLabel: e.sourceLabel,
         evidenceRefs: e.evidenceRefs,
         contextSnapshotId: e.contextSnapshotId,
         externalRef: e.externalRef,
@@ -523,6 +535,7 @@ export async function buildTimeline(): Promise<TimelineProjection> {
       scopeId: c.scopeId,
       title: c.title,
       date: c.date ? iso(c.date) : null,
+      endDate: c.endDate ? iso(c.endDate) : null,
       kind: c.kind,
       sourceLabel: c.sourceLabel,
       excerpts: c.excerpts,

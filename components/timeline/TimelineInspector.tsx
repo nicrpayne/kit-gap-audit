@@ -265,12 +265,37 @@ export default function TimelineInspector({
           </div>
         </div>
         <div className="px-4 pb-4">
-          <Section title="Provenance">
+          {/* WHAT THE SOURCE PROPOSED — and it is a proposal, which is why
+              this section is called Suggested rather than Details. Placing it
+              somewhere else does not correct any of this; the source keeps its
+              record and Timeline keeps the placement. */}
+          <Section title="Suggested">
             <Well>
-            <Row label="Source" value={candidate.sourceLabel} />
-            <Row label="Proposed kind" value={candidate.kind} />
-            <Row label="Proposed date" value={candidate.date ? fmtFull(new Date(candidate.date).getTime()) : "none — evidence does not say"} tone={needsDate ? "var(--i-amber)" : undefined} />
-            <Row label="Project" value={laneName ?? "—"} />
+              <Row label="Project" value={laneName ?? "—"} />
+              <Row
+                label="Date"
+                value={candidate.date ? fmtFull(new Date(candidate.date).getTime()) : "not established"}
+                tone={needsDate ? "var(--i-amber)" : undefined}
+              />
+              {candidate.date && candidate.endDate && (
+                <Row
+                  label="Runs"
+                  value={`${Math.max(1, Math.round((new Date(candidate.endDate).getTime() - new Date(candidate.date).getTime()) / 86400000))} days`}
+                />
+              )}
+              <Row label="Shape" value={candidate.endDate ? "activity" : "moment"} />
+              <Row label="Kind" value={candidate.kind} />
+            </Well>
+          </Section>
+
+          <Section title="Source">
+            <Well>
+              <Row label="From" value={candidate.sourceLabel} />
+              <Row
+                label="Status"
+                value={needsDate ? "Candidate · needs timing" : "Candidate · not on the timeline"}
+                tone="var(--i-violet)"
+              />
             </Well>
           </Section>
 
@@ -315,8 +340,20 @@ export default function TimelineInspector({
               }}
               className="flex-1 rounded-md py-2 text-[11px] font-medium disabled:opacity-35 hover:brightness-110"
               style={{ background: "var(--i-violet)", color: "var(--i-void)" }}
+              title={
+                needsDate
+                  ? "Supply the date to place this on the timeline"
+                  : "Place this on the timeline at the suggested project and date"
+              }
             >
-              Accept
+              {/* THE PATH THAT IS NOT A DRAG.
+                  Dragging is the good way to do this, and it is not the only
+                  way: a keyboard reaches this button, and it places the piece
+                  at exactly what the source suggested. Naming it for the act
+                  rather than for the workflow — "Place on timeline", not
+                  "Accept" — is also the honest description of what pressing
+                  it does. */}
+              Place on timeline
             </button>
             <button
               data-shoot="dismiss-candidate"
@@ -397,7 +434,11 @@ export default function TimelineInspector({
           )}
           <Row label="Project" value={laneName ?? "—"} />
           <Row label="State" value={planned ? (overdue ? "planned · overdue" : "planned") : "occurred"} />
-          {e.sourceLabel && <Row label="Source" value={e.sourceLabel} />}
+          {/* A landmark's own origin has its own section below — printing it
+              here as well said "hermes · Aug 12 refinement call" twice in one
+              panel. Everything else on the score keeps it, because nothing
+              else has an Origin section to put it in. */}
+          {e.sourceLabel && e.family !== "landmark" && <Row label="Source" value={e.sourceLabel} />}
           </Well>
           {e.editable && (
             <p className="mt-1.5 text-[9px] text-[var(--i-text-faint)]" data-shoot="plan-ownership">
@@ -499,10 +540,26 @@ export default function TimelineInspector({
             <Section title="Landmark">
               <Well>
               <Row label="Kind" value={String(detail.landmarkKind ?? "event")} />
-              <Row label="Added by" value={String(detail.source) === "candidate" ? "accepted candidate" : "hand"} />
+              <Row label="Added by" value={String(detail.source) === "candidate" ? "placed from intake" : "hand"} />
               {typeof detail.note === "string" && detail.note && <Row label="Note" value={detail.note} />}
               </Well>
             </Section>
+            {/* WHERE IT CAME FROM, STILL DISCOVERABLE — AND LOWER DOWN.
+                A piece placed from Event Intake is ordinary Reality now, so
+                its timing and its project come first; but the reading it
+                began as is a real thing about it and must not disappear the
+                moment it is seated. Rendered only when it HAS an origin, so a
+                hand-made landmark carries no empty section. */}
+            {String(detail.source) === "candidate" && typeof detail.sourceLabel === "string" && (
+              <Section title="Origin">
+                <Well>
+                  <Row label="From" value={detail.sourceLabel} tone="var(--i-violet)" />
+                  {Array.isArray(detail.evidenceRefs) && detail.evidenceRefs.length > 0 && (
+                    <Row label="Evidence" value={`${detail.evidenceRefs.length} cited`} />
+                  )}
+                </Well>
+              </Section>
+            )}
             <button
               onClick={() => onEditEvent(e)}
               data-shoot="edit-event"

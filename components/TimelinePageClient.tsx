@@ -27,7 +27,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import type {
-  TimelineProjection, TimelineEntry, ForecastSnapshot,
+  TimelineProjection, TimelineEntry, TimelineCandidate, ForecastSnapshot,
 } from "@/lib/timeline/entries";
 import { forecastMemoryAt } from "@/lib/timeline/entries";
 import { buildPlaybackPlan, playheadAt, crossedAt, type PlaybackPlan } from "@/lib/timeline/playback";
@@ -547,11 +547,35 @@ export default function TimelinePageClient() {
         } else {
           setSelectedId(await post(cmd.snapshot));
         }
-      } else {
+      } else if (cmd.kind === "delete") {
         if (dir === "undo") setSelectedId(await post(cmd.snapshot));
         else {
           await mutateReality(`/api/timeline-events/${cmd.id}`, { method: "DELETE" });
           setSelectedId(null);
+        }
+      } else {
+        // A PLACEMENT, REVERSED AS ONE THING.
+        //
+        // Undo is a plain DELETE: the API restores the candidate to Event
+        // Intake in the same transaction that removes the event, so there is
+        // no second call and no window in which the material exists in
+        // neither place. Redo re-accepts the SAME candidate at the SAME
+        // placement — the row that comes back is new, so the stack is
+        // remapped onto its id exactly as it is for a create.
+        if (dir === "undo") {
+          await mutateReality(`/api/timeline-events/${cmd.id}`, { method: "DELETE" });
+          setSelectedId(null);
+        } else {
+          const r = await mutateReality(`/api/timeline-candidates/${cmd.candidateId}/accept`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(cmd.placement),
+          });
+          const j = await r.json().catch(() => ({}));
+          if (r.ok && j.event?.id) {
+            pushUndo((u) => remapId(u, cmd.id, j.event.id));
+            setSelectedId(j.event.id);
+          }
         }
       }
       await load();
@@ -665,19 +689,120 @@ export default function TimelinePageClient() {
     await load();
   };
 
+  // THE SAME ACT, WITHOUT A POINTER.
+  //
+  // The inspector's button and the drag land in exactly one place, so a
+  // keyboard user gets the same object, the same provenance and the same
+  // single undo entry as someone who dragged it. It places at the SUGGESTED
+  // project and date, which is the only placement a button can honestly make;
+  // choosing a different one is what the drag is for.
   const acceptCandidate = async (id: string, date: string | null) => {
-    const res = await mutateReality(`/api/timeline-candidates/${id}/accept`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(date ? { date } : {}),
+    const c = data?.candidates.find((x) => x.id === id);
+    if (!c) return;
+    const start = date ?? c.date;
+    if (!start) return;
+    const held = c.date && c.endDate
+      ? new Date(c.endDate).getTime() - new Date(c.date).getTime()
+      : 0;
+    const failure = await placeCandidate(c, {
+      scopeId: c.scopeId,
+      date: start,
+      endDate: held > 0 ? new Date(new Date(start).getTime() + held).toISOString() : null,
     });
-    const j = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(j.error ?? "Could not accept");
-    const fresh = await load();
-    // Seat the selection onto the landmark it became, so acceptance reads
-    // as the candidate becoming real rather than as something vanishing.
-    if (j.event?.id && fresh) setSelectedId(j.event.id);
+    // Thrown, not swallowed: the inspector owns this message, because it owns
+    // the date field the refusal is usually about.
+    if (failure) throw new Error(failure);
   };
+
+  // ── A CANDIDATE IN THE HAND ────────────────────────────────────────
+  //
+  // The page owns WHICH piece is being carried, because the page owns the
+  // write. It does not own where the pointer is or what that means: the
+  // pointer-to-date-and-project mapping belongs to the field, which owns the
+  // axis and the lane geometry, and freezes both at pointerdown exactly as
+  // every other drag on this surface does. So this is a two-line handshake —
+  // "here is the material" down, "here is where it landed" back.
+  const [intake, setIntake] = useState<{ candidate: TimelineCandidate; clientX: number; clientY: number } | null>(null);
+  const intakeRef = useRef<TimelineCandidate | null>(null);
+
+  const beginIntakeDrag = useCallback((candidate: TimelineCandidate, e: React.PointerEvent) => {
+    // NO DATE, NO PLACEMENT. A dateless candidate is not draggable at all,
+    // rather than draggable onto a day nobody stated. See the inspector for
+    // what it says instead.
+    if (!candidate.date) return;
+    e.preventDefault();
+    intakeRef.current = candidate;
+    setIntake({ candidate, clientX: e.clientX, clientY: e.clientY });
+  }, []);
+
+  /** Released. A target means a real project under the pointer at a real
+      date; anything else — the header, the chrome, off the field entirely —
+      returns the piece to the rack, having written nothing. */
+  const endIntakeDrag = useCallback(
+    (target: { scopeId: string; date: string; endDate: string | null } | null) => {
+      const held = intakeRef.current;
+      intakeRef.current = null;
+      setIntake(null);
+      if (held && target) void placeCandidateRef.current?.(held, target);
+    },
+    []
+  );
+
+  // ── PLACING A CANDIDATE ────────────────────────────────────────────
+  //
+  // The one write in this whole interaction, and it happens exactly once, on
+  // release. Everything before it — the lift, the flight, the preview, the
+  // readout — is local. Nothing about a candidate crossing the score changes
+  // anything until the pointer comes up on a real project.
+  //
+  // The placement is stated in full rather than left to the candidate's
+  // suggestion, because the point of the gesture is that the human decides:
+  // which project, which day, and whether this is a plan or a record of
+  // something that already happened. `planned` is read off the drop position
+  // against NOW — the same rule the rest of Timeline uses, stored explicitly
+  // and never re-derived from the clock afterwards.
+  const placeCandidate = useCallback(
+    async (
+      candidate: TimelineCandidate,
+      target: { scopeId: string; date: string; endDate: string | null }
+    ) => {
+      const temporalState = new Date(target.date).getTime() >= nowT ? "planned" : "occurred";
+      const res = await mutateReality(`/api/timeline-candidates/${candidate.id}/accept`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...target, temporalState }),
+      });
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        // RETURNED, NOT LOST. A refusal is handed back to whoever asked
+        // rather than blanking the instrument: nothing was written, so the
+        // piece is still pending and the next load puts it back on the rack
+        // by itself.
+        return (j.error as string) ?? "Could not place that on the timeline";
+      }
+      await load();
+      if (j.event?.id) {
+        pushUndo((u) =>
+          record(u, {
+            kind: "place",
+            id: j.event.id,
+            candidateId: candidate.id,
+            placement: { ...target, temporalState },
+            label: `place ${candidate.title}`,
+          })
+        );
+        // It is Reality now, and Reality is what the inspector talks about.
+        setSelectedId(j.event.id);
+      }
+      return null;
+    },
+    [load, pushUndo, nowT]
+  );
+  // `endIntakeDrag` is handed to the field once and must not change identity
+  // mid-gesture, so it reaches the writer through a ref rather than closing
+  // over it.
+  const placeCandidateRef = useRef(placeCandidate);
+  placeCandidateRef.current = placeCandidate;
 
   const dismissCandidate = async (id: string) => {
     await mutateReality(`/api/timeline-candidates/${id}/dismiss`, { method: "POST" });
@@ -700,7 +825,16 @@ export default function TimelinePageClient() {
     );
   }
 
-  const dateless = data.candidates.filter((c) => !c.date);
+  // EVERYTHING WAITING OUTSIDE REALITY.
+  //
+  // The tray used to hold only the DATELESS candidates, on the reasoning that
+  // a dated one already had an honest position on the axis and could be drawn
+  // there. That reasoning was about drawing, and it cost the product its
+  // rack: the pieces you can actually pick up and place were the ones the
+  // tray refused to show. Every pending candidate is material now — the dated
+  // ones because they can be placed, the dateless ones because they are still
+  // real things the project may need.
+  const pending = data.candidates;
   const memoryLanes = visibleLanes.filter((l) => memoryByScope[l.scopeId]);
 
   const memoryLead = memoryLanes.length > 0 ? memoryByScope[memoryLanes[0].scopeId]! : null;
@@ -931,10 +1065,11 @@ export default function TimelinePageClient() {
           )}
           <LanesControl lanes={data.lanes} value={laneView} onChange={setLaneView} />
           <LayersControl value={layers} onChange={setLayers} />
-          {dateless.length > 0 && (
+          {pending.length > 0 && (
             <button
               onClick={() => setIntakeOpen((v) => !v)}
               data-shoot="event-intake-toggle"
+              data-count={pending.length}
               className="rounded-md px-2.5 py-2 text-[10px] hover:brightness-125"
               style={{
                 background: intakeOpen ? "var(--i-violet-soft)" : "linear-gradient(180deg, #262f35 0%, #131a1e 100%)",
@@ -942,7 +1077,7 @@ export default function TimelinePageClient() {
                 color: "var(--i-violet)",
               }}
             >
-              Event intake · {dateless.length}
+              Event intake · {pending.length}
             </button>
           )}
           <button
@@ -1009,6 +1144,10 @@ export default function TimelinePageClient() {
               hoveredId={hoveredId}
               onHoverEvent={setHoveredId}
               playing={playing}
+              intakeCandidate={intake?.candidate ?? null}
+              intakeStartX={intake?.clientX ?? 0}
+              intakeStartY={intake?.clientY ?? 0}
+              onIntakeEnd={endIntakeDrag}
             />
           </div>
 
@@ -1045,46 +1184,93 @@ export default function TimelinePageClient() {
             </div>
           )}
 
-          {/* EVENT INTAKE — dateless candidates have no honest position on
-              the axis, so they wait here rather than being placed. */}
-          {intakeOpen && dateless.length > 0 && (
+          {/* ── EVENT INTAKE — A RACK, NOT A REVIEW QUEUE ─────────────────
+              Pieces the project might need, sitting outside Reality. They
+              rhyme with plan objects because that is what they may become,
+              and they are deliberately UNSEATED: no cast shadow, a dashed
+              edge, translucent, floating a little off the tray floor. You
+              take one off the rack and put it on the score; nothing here is
+              part of the project until you do. */}
+          {intakeOpen && pending.length > 0 && (
             <div
               data-shoot="event-intake"
-              className="shrink-0 px-4 py-2.5 flex items-center gap-2 overflow-x-auto"
-              style={{ borderTop: "1px solid var(--i-violet)", background: "var(--i-bg)" }}
+              className="shrink-0 px-4 py-3 flex items-stretch gap-2.5 overflow-x-auto i-noscrollbar"
+              style={{
+                borderTop: "1px solid rgba(155,140,250,0.45)",
+                background: "linear-gradient(180deg, rgba(26,21,38,0.9) 0%, var(--i-bg) 100%)",
+                boxShadow: "inset 0 6px 14px rgba(0,0,0,0.5)",
+              }}
             >
-              <div className="shrink-0 pr-1">
-                <div className="i-label" style={{ color: "var(--i-violet)" }}>Waiting to be placed</div>
-                <div className="text-[8.5px] text-[var(--i-text-faint)] mt-0.5">
-                  Found in evidence · no date stated
+              <div className="shrink-0 pr-2 self-center">
+                <div className="i-label" style={{ color: "var(--i-violet)" }}>Event intake</div>
+                <div className="text-[8.5px] text-[var(--i-text-faint)] mt-1 max-w-[128px] leading-tight">
+                  Not on the timeline. Drag onto a project to place it.
                 </div>
               </div>
-              {dateless.map((c) => (
-                <button
-                  key={c.id}
-                  onClick={() => setSelectedId(`candidate:${c.id}`)}
-                  data-shoot={`intake-${c.id}`}
-                  className="shrink-0 text-left rounded-md pl-2 pr-2.5 py-1.5 max-w-[260px] hover:brightness-125 transition-[filter,transform] flex items-center gap-2"
-                  style={{
-                    // A CARD OF MATERIAL, not a chip in a list. Same raised
-                    // body as a plan object with a dashed cap, because that
-                    // is exactly what it is: something shaped like a plan
-                    // that is not Reality yet.
-                    background: "linear-gradient(180deg, #232c33 0%, #151b20 100%)",
-                    border: `1px solid ${selectedId === `candidate:${c.id}` ? "var(--i-violet)" : "var(--i-border-strong)"}`,
-                    boxShadow: "0 2px 6px rgba(0,0,0,0.45)",
-                  }}
-                >
-                  <span
-                    className="shrink-0 rounded-[1.4px] self-stretch"
-                    style={{ width: 3, background: "var(--i-violet)", opacity: 0.55 }}
-                  />
-                  <span className="min-w-0">
-                    <span className="block text-[10.5px] text-[var(--i-text)] truncate">{c.title}</span>
-                    <span className="block text-[8.5px] text-[var(--i-text-faint)] truncate mt-0.5">{c.sourceLabel}</span>
-                  </span>
-                </button>
-              ))}
+              {pending.map((c) => {
+                const placeable = Boolean(c.date);
+                const held = intake?.candidate.id === c.id;
+                const days = c.date && c.endDate
+                  ? Math.max(1, Math.round((new Date(c.endDate).getTime() - new Date(c.date).getTime()) / DAY))
+                  : null;
+                const suggested = data.lanes.find((l) => l.scopeId === c.scopeId)?.name ?? null;
+                return (
+                  <div
+                    key={c.id}
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => setSelectedId(`candidate:${c.id}`)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setSelectedId(`candidate:${c.id}`); }
+                    }}
+                    onPointerDown={(e) => beginIntakeDrag(c, e)}
+                    data-shoot={`intake-${c.id}`}
+                    data-placeable={placeable || undefined}
+                    data-held={held || undefined}
+                    className="shrink-0 text-left rounded-md pl-2 pr-3 py-2 flex items-stretch gap-2.5 transition-[filter,opacity,transform]"
+                    style={{
+                      width: 218,
+                      // UNSEATED MATERIAL. Translucent violet with a dashed
+                      // edge — the same language a spectral candidate mark on
+                      // the score already uses, so the two read as the same
+                      // substance in two places.
+                      background: "linear-gradient(180deg, rgba(58,48,92,0.55) 0%, rgba(30,26,48,0.75) 100%)",
+                      border: `1px dashed ${selectedId === `candidate:${c.id}` ? "var(--i-violet)" : "rgba(155,140,250,0.5)"}`,
+                      cursor: placeable ? (held ? "grabbing" : "grab") : "pointer",
+                      opacity: held ? 0.25 : 1,
+                      touchAction: "none",
+                    }}
+                  >
+                    {/* WHAT SHAPE IT WOULD TAKE. A bar for an activity, a pin
+                        for a moment, nothing for something with no timing —
+                        so the shape is known before it is picked up. */}
+                    <span className="shrink-0 self-center" style={{ width: 4 }}>
+                      {days !== null ? (
+                        <span className="block rounded-[2px]" style={{ height: 22, background: "var(--i-violet)", opacity: 0.7 }} />
+                      ) : placeable ? (
+                        <span
+                          className="block"
+                          style={{ width: 4, height: 4, background: "var(--i-violet)", opacity: 0.85, transform: "rotate(45deg)", marginLeft: 0 }}
+                        />
+                      ) : (
+                        <span className="block rounded-[2px]" style={{ height: 22, border: "1px dashed rgba(155,140,250,0.4)" }} />
+                      )}
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block text-[10.5px] text-[var(--i-text)] truncate">{c.title}</span>
+                      <span
+                        className="block text-[8.5px] truncate mt-1 tabular-nums"
+                        style={{ color: placeable ? "var(--i-violet)" : "var(--i-amber)" }}
+                      >
+                        {placeable
+                          ? `${suggested ?? "—"} · ${fmtDay(new Date(c.date!).getTime())}${days !== null ? ` · ${days}d` : ""}`
+                          : "Needs timing"}
+                      </span>
+                      <span className="block text-[8px] text-[var(--i-text-faint)] truncate mt-1">{c.sourceLabel}</span>
+                    </span>
+                  </div>
+                );
+              })}
             </div>
           )}
         </div>
