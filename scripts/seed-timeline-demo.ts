@@ -120,6 +120,15 @@ async function main() {
     },
     {
       scopeId: platform.id,
+      title: "Launch comms",
+      date: new Date(now + 30 * DAY),
+      endDate: new Date(now + 52 * DAY),
+      temporalState: "planned",
+      kind: "phase",
+      note: "Overlaps hardening — the announcement is built while the build settles.",
+    },
+    {
+      scopeId: platform.id,
       title: "App Store submission",
       date: new Date(now + 44 * DAY),
       temporalState: "planned",

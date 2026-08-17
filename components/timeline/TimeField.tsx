@@ -22,7 +22,7 @@ import EventModule from "./EventModule";
 import PlanObjectView from "./PlanObject";
 import {
   isPlanObject, planObjectFor, packPlanRows, labelWidth, laneZones, planRowHeight,
-  retime, snapDay, type LaneBox, type PlanGrip, type PlanObject,
+  retime, snapDay, laneAtY, type LaneBox, type PlanGrip, type PlanObject,
 } from "@/lib/timeline/plan";
 import { prominenceFor, layerFor, type LayerState } from "@/lib/timeline/story";
 
@@ -66,7 +66,10 @@ interface Props {
   onToggleExpand: (scopeId: string) => void;
   /** Commit a retimed plan object. Called ONCE, on release -- never per
       pointermove. Everything before that is a local preview. */
-  onPlanRetime: (id: string, next: { date: string; endDate: string | null }) => void;
+  onPlanRetime: (id: string, next: { date: string; endDate: string | null; scopeId?: string }) => void;
+  /** Seat a newly composed plan object. Called once, when the name is
+      committed — a provisional object that is cancelled writes nothing. */
+  onPlanCreate: (next: { scopeId: string; title: string; date: string; endDate: string | null }) => void;
   /** Events the playhead has just crossed and is briefly articulating. */
   articulating: Set<string>;
   /** Per lane, the snapshot the memory band just moved OFF -- drawn as a
@@ -271,7 +274,7 @@ export default function TimeField({
   lanes, entries, candidates, memoryByScope, view, nowT, playheadT, crossed,
   selectedId, hoveredLane, onSelect, onHoverLane, onScrub, onOpenScope,
   onViewChange, bounds, reducedMotion, laneBoxes, onToggleExpand,
-  onPlanRetime, articulating, ghostByScope, deltaByScope,
+  onPlanRetime, onPlanCreate, articulating, ghostByScope, deltaByScope,
   layers, hoveredId, onHoverEvent,
 }: Props) {
   const hostRef = useRef<HTMLDivElement>(null);
@@ -404,8 +407,13 @@ export default function TimeField({
     /** The row the object sits on, so the readout can appear beside the
         hand rather than in a fixed corner of a different project's lane. */
     y: number;
+    /** The lane the object would land in. Only a body drag may change it —
+        an edge grip is retiming one end, not rehoming the activity. */
+    scopeId: string;
   } | null>(null);
-  const dragGeom = useRef<{ msPerPx: number; clientX0: number; obj: PlanObject } | null>(null);
+  const dragGeom = useRef<{
+    msPerPx: number; clientX0: number; obj: PlanObject; fieldTop: number; homeScopeId: string;
+  } | null>(null);
 
   const beginPlanDrag = useCallback(
     (obj: PlanObject, grip: PlanGrip, y: number, e: React.PointerEvent) => {
@@ -420,9 +428,17 @@ export default function TimeField({
         msPerPx: (view.endT - view.startT) / Math.max(1, b.width),
         clientX0: e.clientX,
         obj,
+        // FROZEN ONCE. Both axes are converted through geometry measured at
+        // pointerdown, so a lane resizing mid-gesture can never move the
+        // coordinate system under the hand.
+        fieldTop: b.top,
+        homeScopeId: obj.entry.scopeId,
       };
       (e.currentTarget as Element).setPointerCapture(e.pointerId);
-      setPlanDrag({ id: obj.entry.id, grip, date: obj.startT, endDate: obj.endT, moved: false, y });
+      setPlanDrag({
+        id: obj.entry.id, grip, date: obj.startT, endDate: obj.endT,
+        moved: false, y, scopeId: obj.entry.scopeId,
+      });
     },
     [view]
   );
@@ -432,12 +448,25 @@ export default function TimeField({
     if (!g || !planDrag) return;
     const dt = (e.clientX - g.clientX0) * g.msPerPx;
     const next = retime(g.obj, planDrag.grip, dt);
+    // WHICH PROJECT IS UNDER THE HAND. Dragging an activity into another
+    // lane says it belongs to that project — the dates come with it, because
+    // moving a thing sideways is not the same as rescheduling it.
+    const overLane = planDrag.grip === "move"
+      ? laneAtY(laneBoxes, e.clientY - g.fieldTop - HEADER_H)
+      : null;
+    const scopeId = overLane?.scopeId ?? (planDrag.grip === "move" ? planDrag.scopeId : g.homeScopeId);
     setPlanDrag((p) =>
-      p && p.date === next.date && p.endDate === next.endDate
+      p && p.date === next.date && p.endDate === next.endDate && p.scopeId === scopeId
         ? p
-        : p && { ...p, date: next.date, endDate: next.endDate, moved: true }
+        : p && {
+            ...p,
+            date: next.date,
+            endDate: next.endDate,
+            scopeId,
+            moved: p.moved || next.date !== g.obj.startT || next.endDate !== g.obj.endT || scopeId !== g.homeScopeId,
+          }
     );
-  }, [planDrag]);
+  }, [planDrag, laneBoxes]);
 
   const endPlanDrag = useCallback((e: React.PointerEvent) => {
     const g = dragGeom.current;
@@ -449,15 +478,105 @@ export default function TimeField({
     }
     if (!g || !d) return;
     // A press that never moved is a SELECTION, not a retime. So is a drag
-    // that snapped back to the day it started on. Either way there is
-    // nothing to write, and writing anyway would burn a mutation on a click.
+    // that snapped back to the day it started on, in the lane it started in.
+    // Either way there is nothing to write, and writing anyway would burn a
+    // mutation on a click.
     if (!d.moved) return;
-    if (d.date === snapDay(g.obj.startT) && d.endDate === (g.obj.endT === null ? null : snapDay(g.obj.endT))) return;
+    const sameDates = d.date === g.obj.startT && d.endDate === g.obj.endT;
+    const sameLane = d.scopeId === g.homeScopeId;
+    if (sameDates && sameLane) return;
     onPlanRetime(d.id, {
       date: new Date(d.date).toISOString(),
       endDate: d.endDate === null ? null : new Date(d.endDate).toISOString(),
+      // Only sent when it actually changed, so an ordinary reschedule never
+      // carries a redundant claim about which project owns the row.
+      scopeId: sameLane ? undefined : d.scopeId,
     });
   }, [planDrag, onPlanRetime]);
+
+  // ── COMPOSING ON THE CANVAS ────────────────────────────────────────
+  //
+  // The plan bed of each lane, right of NOW, IS the creation surface. Press
+  // it and a moment appears at that date; drag it and an activity appears
+  // across those dates; either way the object arrives already asking for
+  // its name. No modal, because reaching into next month and naming what
+  // goes there should not route through a form.
+  //
+  // The bed is a visible recess rather than an invisible hot zone, and it
+  // is the ONLY place that creates — pressing the score line, the forecast
+  // row or anywhere left of NOW still scrubs, so the transport keeps
+  // working everywhere it used to.
+  const [creating, setCreating] = useState<{
+    scopeId: string; t0: number; t1: number; y: number; phase: "dragging" | "naming";
+  } | null>(null);
+  const [draftTitle, setDraftTitle] = useState("");
+  /** Which lane's bed the pointer is over, so the composing surface can
+      say it is composable without every lane glowing all the time. */
+  const [bedLive, setBedLive] = useState<string | null>(null);
+  const createGeom = useRef<{ msPerPx: number; left: number } | null>(null);
+  const draftInput = useRef<HTMLInputElement>(null);
+
+  const beginCreate = useCallback(
+    (scopeId: string, y: number, e: React.PointerEvent) => {
+      const el = hostRef.current;
+      if (!el) return;
+      e.stopPropagation();
+      e.preventDefault();
+      const b = el.getBoundingClientRect();
+      createGeom.current = { msPerPx: (view.endT - view.startT) / Math.max(1, b.width), left: b.left };
+      const t = snapDay(tFor({ ...view, width: b.width }, e.clientX - b.left));
+      (e.currentTarget as Element).setPointerCapture(e.pointerId);
+      setDraftTitle("");
+      setCreating({ scopeId, t0: t, t1: t, y, phase: "dragging" });
+    },
+    [view]
+  );
+
+  const moveCreate = useCallback((e: React.PointerEvent) => {
+    const g = createGeom.current;
+    if (!g || !creating || creating.phase !== "dragging") return;
+    const t = snapDay(view.startT + (e.clientX - g.left) * g.msPerPx);
+    setCreating((c) => (c && c.t1 === t ? c : c && { ...c, t1: t }));
+  }, [creating, view]);
+
+  const endCreate = useCallback((e: React.PointerEvent) => {
+    if (e.currentTarget instanceof Element && e.currentTarget.hasPointerCapture(e.pointerId)) {
+      e.currentTarget.releasePointerCapture(e.pointerId);
+    }
+    createGeom.current = null;
+    // The gesture is over; the object now exists provisionally and wants a
+    // name. Nothing has been written — a provisional object that is never
+    // named leaves no trace at all.
+    setCreating((c) => (c && c.phase === "dragging" ? { ...c, phase: "naming" } : c));
+  }, []);
+
+  // Focus follows creation, so the very next thing a person does is type.
+  useEffect(() => {
+    if (creating?.phase === "naming") draftInput.current?.focus();
+  }, [creating?.phase]);
+
+  const commitCreate = useCallback(() => {
+    const c = creating;
+    const title = draftTitle.trim();
+    if (!c || !title) return;
+    const lo = Math.min(c.t0, c.t1);
+    const hi = Math.max(c.t0, c.t1);
+    setCreating(null);
+    setDraftTitle("");
+    onPlanCreate({
+      scopeId: c.scopeId,
+      title,
+      // A press is a moment; a drag is an activity. The shape comes from the
+      // gesture, which is the whole reason this path needs no shape control.
+      date: new Date(lo).toISOString(),
+      endDate: hi > lo ? new Date(hi).toISOString() : null,
+    });
+  }, [creating, draftTitle, onPlanCreate]);
+
+  const cancelCreate = useCallback(() => {
+    setCreating(null);
+    setDraftTitle("");
+  }, []);
 
   // SCRUBBING. Pointer capture and a rect measured once per gesture, for
   // the same reason the Portfolio fader does it: nothing changing size
@@ -562,27 +681,27 @@ export default function TimeField({
                   waits on {lane.dependsOnScopeIds.map((d) => lanes.find((l) => l.scopeId === d)?.name ?? "—").join(", ")}
                 </span>
               )}
-              {/* DEPTH ON DEMAND. One project's plan can be opened up without
-                  every project being permanently enormous. */}
+              {/* SHOW ME MORE OF THIS PROJECT.
+                  A disclosure chevron and nothing else. It used to carry the
+                  subtrack count, which asked the reader to think about a
+                  layout mechanism they should never have to know exists —
+                  the number was the implementation leaking into the control. */}
               <button
                 onClick={() => onToggleExpand(lane.scopeId)}
                 data-shoot={`lane-expand-${lane.scopeId}`}
                 aria-expanded={open}
-                title={open ? "Collapse this project" : "Open this project's plan"}
-                className="absolute right-2 top-2 rounded flex items-center gap-1 px-1.5 py-1 hover:brightness-150 transition-[filter]"
+                aria-label={open ? `Collapse ${lane.name}` : `Show more of ${lane.name}`}
+                title={open ? `Collapse ${lane.name}` : `Show more of ${lane.name}`}
+                className="absolute right-1.5 top-1.5 rounded p-1.5 hover:brightness-150 transition-[filter]"
                 style={{
                   background: open ? "var(--i-violet-soft)" : "transparent",
-                  border: `1px solid ${open ? "var(--i-violet)" : "transparent"}`,
+                  opacity: open || alive || planned > 0 ? 1 : 0.35,
                 }}
               >
-                {planned > 0 && (
-                  <span className="text-[8px] tabular-nums" style={{ color: open ? "var(--i-violet)" : "var(--i-text-faint)" }}>
-                    {planned}
-                  </span>
-                )}
-                <svg width="9" height="9" viewBox="0 0 10 10" fill="none"
-                  stroke={open ? "var(--i-violet)" : "var(--i-text-faint)"} strokeWidth="1.4">
-                  {open ? <path d="M2 6.5 L5 3.5 L8 6.5" /> : <path d="M2 3.5 L5 6.5 L8 3.5" />}
+                <svg width="10" height="10" viewBox="0 0 10 10" fill="none"
+                  stroke={open ? "var(--i-violet)" : "var(--i-text-soft)"} strokeWidth="1.5"
+                  style={{ transform: open ? "rotate(180deg)" : undefined, transition: reducedMotion ? undefined : "transform 200ms ease" }}>
+                  <path d="M2 3.6 L5 6.6 L8 3.6" />
                 </svg>
               </button>
             </div>
@@ -600,10 +719,10 @@ export default function TimeField({
         // here, so one pair of handlers serves both gestures. A plan drag
         // always wins: it stopped propagation at pointerdown, so the
         // scrubber never armed.
-        onPointerMove={(e) => (planDrag ? movePlanDrag(e) : moveScrub(e))}
-        onPointerUp={(e) => (planDrag ? endPlanDrag(e) : endScrub(e))}
-        onPointerCancel={(e) => (planDrag ? endPlanDrag(e) : endScrub(e))}
-        onClick={() => onSelect(null)}
+        onPointerMove={(e) => (creating ? moveCreate(e) : planDrag ? movePlanDrag(e) : moveScrub(e))}
+        onPointerUp={(e) => (creating ? endCreate(e) : planDrag ? endPlanDrag(e) : endScrub(e))}
+        onPointerCancel={(e) => (creating ? endCreate(e) : planDrag ? endPlanDrag(e) : endScrub(e))}
+        onClick={() => { if (!creating) onSelect(null); }}
       >
         <svg width="100%" height={height} style={{ display: "block" }}>
           {/* FUTURE GROUND. Everything right of NOW sits on a different
@@ -686,11 +805,29 @@ export default function TimeField({
                   width={view.width} height={z.planRoom + 6} rx={4}
                   fill="#080b0d" opacity={0.34}
                 />
+                {/* THE COMPOSING SURFACE. Right of NOW the bed is live:
+                    press it for a moment, drag it for an activity. It wakes
+                    under the pointer so the affordance is discovered by
+                    moving the mouse, not by reading a tip. */}
                 <rect
+                  data-shoot={`plan-bed-${box.scopeId}`}
                   x={nowX} y={HEADER_H + z.planTop - 3}
                   width={Math.max(0, view.width - nowX)} height={z.planRoom + 6} rx={4}
-                  fill="#080b0d" opacity={box.expanded ? 0.5 : 0.34}
+                  fill="#080b0d"
+                  opacity={box.expanded ? 0.5 : 0.34}
+                  style={{ cursor: "cell" }}
+                  onPointerDown={(e) => beginCreate(box.scopeId, HEADER_H + z.planTop, e)}
+                  onMouseEnter={() => setBedLive(box.scopeId)}
+                  onMouseLeave={() => setBedLive((v) => (v === box.scopeId ? null : v))}
                 />
+                {bedLive === box.scopeId && !creating && !planDrag && (
+                  <rect
+                    x={nowX} y={HEADER_H + z.planTop - 3}
+                    width={Math.max(0, view.width - nowX)} height={z.planRoom + 6} rx={4}
+                    fill="none" stroke="var(--i-violet)" strokeWidth={0.9} opacity={0.28}
+                    style={{ pointerEvents: "none" }}
+                  />
+                )}
               </g>
             );
           })}
@@ -707,6 +844,21 @@ export default function TimeField({
                   x={0} y={HEADER_H + box.top} width={view.width} height={box.height}
                   fill="var(--i-text)" opacity={box.expanded ? 0.028 : 0.02}
                 />
+              )}
+              {/* THE DESTINATION. While an activity is carried out of its
+                  lane, the one it would land in wakes — a lane rather than a
+                  drop zone, because the lane already is the target. */}
+              {planDrag && planDrag.grip === "move" && planDrag.scopeId === box.scopeId && (
+                <g data-shoot={`lane-destination-${box.scopeId}`} style={{ pointerEvents: "none" }}>
+                  <rect
+                    x={0} y={HEADER_H + box.top} width={view.width} height={box.height}
+                    fill="var(--i-violet)" opacity={0.05}
+                  />
+                  <rect
+                    x={0} y={HEADER_H + box.top + 0.5} width={view.width} height={box.height - 1}
+                    fill="none" stroke="var(--i-violet)" strokeWidth={1} opacity={0.4}
+                  />
+                </g>
               )}
             </g>
           ))}
@@ -977,6 +1129,67 @@ export default function TimeField({
           );
         })}
 
+        {/* THE PROVISIONAL OBJECT. It exists on the canvas the instant the
+            gesture starts and is stored nowhere until it has a name — so
+            sketching a shape and changing your mind costs exactly nothing. */}
+        {creating && (() => {
+          const lo = Math.min(creating.t0, creating.t1);
+          const hi = Math.max(creating.t0, creating.t1);
+          const x0 = xFor(view, lo);
+          const x1 = xFor(view, hi);
+          const isSpan = hi > lo;
+          const w = Math.max(isSpan ? 20 : 0, x1 - x0);
+          const days = Math.round((hi - lo) / 86400000);
+          return (
+            <div
+              data-shoot="plan-draft"
+              data-draft-span={isSpan || undefined}
+              className="absolute"
+              style={{ left: x0, top: creating.y, zIndex: 32, pointerEvents: creating.phase === "naming" ? "auto" : "none" }}
+            >
+              <div
+                className="rounded-[3px] flex items-center"
+                style={{
+                  width: creating.phase === "naming" ? Math.max(w, 168) : Math.max(w, 6),
+                  height: 22,
+                  background: "linear-gradient(180deg, #2c3740 0%, #1a2127 100%)",
+                  border: "1px solid var(--i-violet)",
+                  boxShadow: "0 6px 18px rgba(0,0,0,0.6)",
+                }}
+              >
+                <span className="shrink-0 rounded-[1.4px]" style={{ width: 3, height: 20, background: "var(--i-violet)", marginLeft: 1 }} />
+                {creating.phase === "naming" ? (
+                  <input
+                    ref={draftInput}
+                    data-shoot="plan-draft-input"
+                    value={draftTitle}
+                    onChange={(e) => setDraftTitle(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") { e.preventDefault(); commitCreate(); }
+                      if (e.key === "Escape") { e.preventDefault(); cancelCreate(); }
+                      e.stopPropagation();
+                    }}
+                    onBlur={cancelCreate}
+                    placeholder={isSpan ? "Name this activity" : "Name this moment"}
+                    className="flex-1 min-w-0 bg-transparent outline-none px-2 text-[10px]"
+                    style={{ color: "var(--i-text)" }}
+                  />
+                ) : null}
+              </div>
+              {/* What the gesture is describing, stated while it happens. */}
+              <div
+                className="mt-1 whitespace-nowrap text-[9px] tabular-nums"
+                style={{ color: "var(--i-violet)", letterSpacing: "0.04em" }}
+              >
+                {isSpan ? `${fmtDay(lo)} → ${fmtDay(hi)} · ${days}d` : fmtDay(lo)}
+                {creating.phase === "naming" && (
+                  <span style={{ color: "var(--i-text-faint)" }}> · ⏎ to place · esc to discard</span>
+                )}
+              </div>
+            </div>
+          );
+        })()}
+
         {/* THE DATES UNDER THE HAND. While a plan object is being retimed it
             states exactly where it will land — a drag that only shows a
             block sliding is asking you to guess. */}
@@ -994,7 +1207,11 @@ export default function TimeField({
             }}
           >
             <div className="text-[7.5px] uppercase tracking-[0.16em]" style={{ color: "var(--i-violet)" }}>
-              {planDrag.grip === "move" ? "Rescheduling" : planDrag.grip === "start" ? "Start" : "End"}
+              {planDrag.grip === "move"
+                ? planDrag.scopeId !== dragGeom.current?.homeScopeId
+                  ? `Moving to ${lanes.find((l) => l.scopeId === planDrag.scopeId)?.name ?? "another project"}`
+                  : "Rescheduling"
+                : "Resizing"}
             </div>
             <div className="mt-1 flex items-baseline gap-1.5">
               <span className="i-readout text-[12.5px]" style={{ color: "var(--i-violet)" }}>

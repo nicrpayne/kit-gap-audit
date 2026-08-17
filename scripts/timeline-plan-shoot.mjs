@@ -42,7 +42,7 @@ await shot("01-live-now-plan-canvas");
 // different objects on the score.
 await p.locator('[data-shoot="add-event"]').click();
 await settle(600);
-await p.locator('[data-shoot="event-title"]').fill("Launch comms");
+await p.locator('[data-shoot="event-title"]').fill("SHOOT Launch comms");
 await p.locator('[data-shoot="event-shape-span"]').click();
 await settle(400);
 const d0 = new Date(Date.now() + 30 * DAY).toISOString().slice(0, 10);
@@ -115,7 +115,7 @@ await fetch(`${BASE}/api/timeline-events/${mk.id}`, {
 // and remove the one this shoot composed
 {
   const after = await proj();
-  const made = after.entries.find((e) => e.title === "Launch comms");
+  const made = after.entries.find((e) => e.title === "SHOOT Launch comms");
   if (made) await fetch(`${BASE}/api/timeline-events/${made.id}`, { method: "DELETE" });
 }
 

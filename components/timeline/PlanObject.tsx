@@ -62,6 +62,13 @@ export default function PlanObject({
   const label = entry.title;
   const fontSize = compact ? 8.6 : 10;
   const w = Math.max(role === "span" ? 14 : 0, x1 - x0);
+  const r = Math.min(3.5, h / 3);
+  /** How much of the title the block can hold before it stops being a word.
+      Below about nine characters an inside label is an abbreviation nobody
+      can read — "Tax en…" says less than nothing — so a short activity puts
+      its name beside itself instead. */
+  const maxChars = Math.floor((w - 14) / (fontSize * 0.56));
+  const roomForLabel = maxChars >= 9;
 
   const common = {
     cursor: draggable ? (dragging ? "grabbing" : "grab") : "pointer",
@@ -139,41 +146,60 @@ export default function PlanObject({
       onMouseLeave={() => onHover(false)}
       style={common}
     >
+      {/* IT SITS ON THE SCORE. A cast shadow under the body is what makes
+          the difference between a part resting on a surface and a bordered
+          rectangle drawn onto one. */}
+      <rect
+        x={0.8} y={2} width={w} height={h} rx={r}
+        fill="#04070a" opacity={dragging ? 0.62 : 0.42}
+        style={{ pointerEvents: "none" }}
+      />
       {/* the body: opaque, raised, and what MOVE grabs */}
       <rect
-        x={0} y={0} width={w} height={h} rx={Math.min(3.5, h / 3)}
+        x={0} y={0} width={w} height={h} rx={r}
         fill={body}
-        stroke={overdue ? "var(--i-red)" : lit ? accent : "#39444d"}
-        strokeWidth={overdue ? 1.5 : lit ? 1.3 : 1}
+        stroke={overdue ? "var(--i-red)" : lit ? accent : "#3d4952"}
+        strokeWidth={overdue ? 1.4 : lit ? 1.2 : 0.9}
+        strokeOpacity={overdue || lit ? 0.95 : 0.7}
         onPointerDown={(e) => draggable && onGrip("move", e)}
       />
       <g style={{ pointerEvents: "none" }}>
-        {/* the machined lip that makes it a part and not a fill */}
-        <line x1={1.5} y1={1} x2={w - 1.5} y2={1} stroke="#ffffff" strokeWidth={0.9} opacity={0.16} />
-        <line x1={1.5} y1={h - 1} x2={w - 1.5} y2={h - 1} stroke="#000000" strokeWidth={0.9} opacity={0.4} />
-        {/* THE CAP. State lives here, so the body can stay one material. */}
-        <rect x={0} y={0} width={3} height={h} rx={1.4} fill={accent} opacity={planned && !overdue ? 0.9 : 1} />
-        {planned && !overdue && (
-          <rect x={0} y={0} width={3} height={h} rx={1.4} fill="var(--i-void)" opacity={0.34} />
-        )}
+        {/* the machined lip: light catches the top, the bottom stays in
+            shadow. Two hairlines, and the block reads as extruded. */}
+        <line x1={r} y1={0.9} x2={w - r} y2={0.9} stroke="#ffffff" strokeWidth={1} opacity={lit ? 0.22 : 0.15} />
+        <line x1={r} y1={h - 0.9} x2={w - r} y2={h - 0.9} stroke="#000000" strokeWidth={1} opacity={0.45} />
+        {/* THE CAP. State lives here, so the body stays one material and the
+            score never turns into a chart of categorical colours. */}
+        <rect x={0} y={0} width={3} height={h} rx={1.4} fill={accent} opacity={planned && !overdue ? 0.62 : 1} />
       </g>
 
       {overdue && (
         <g data-shoot="overdue-mark" style={{ pointerEvents: "none" }}>
-          <rect x={-1.5} y={-1.5} width={w + 3} height={h + 3} rx={Math.min(5, h / 3)}
-            fill="none" stroke="var(--i-red)" strokeWidth={1} opacity={0.4} />
+          <rect x={-1.6} y={-1.6} width={w + 3.2} height={h + 3.2} rx={r + 1.4}
+            fill="none" stroke="var(--i-red)" strokeWidth={1} opacity={0.42} />
         </g>
       )}
 
-      {/* NAMED. A block you cannot read is a coloured rectangle. */}
-      {w > 40 && (
+      {/* NAMED. A block you cannot read is a coloured rectangle — so a
+          short activity puts its name BESIDE itself rather than crushing it
+          into three letters and an ellipsis. */}
+      {roomForLabel ? (
         <text
           x={9} y={h / 2 + fontSize * 0.36}
           fontSize={fontSize}
           fill={lit ? "var(--i-text)" : "var(--i-text-soft)"}
           style={{ pointerEvents: "none", letterSpacing: "0.01em" }}
         >
-          {label.length > Math.floor(w / (fontSize * 0.56)) ? `${label.slice(0, Math.max(1, Math.floor(w / (fontSize * 0.56)) - 1))}…` : label}
+          {label.length > maxChars ? `${label.slice(0, Math.max(1, maxChars - 1))}…` : label}
+        </text>
+      ) : (
+        <text
+          x={w + 6} y={h / 2 + fontSize * 0.36}
+          fontSize={fontSize}
+          fill={lit ? "var(--i-text)" : "var(--i-text-faint)"}
+          style={{ pointerEvents: "none", letterSpacing: "0.01em" }}
+        >
+          {label}
         </text>
       )}
 

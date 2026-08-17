@@ -217,7 +217,15 @@ export function laneZones(box: LaneBox, rowCount = 1): LaneZones {
     // OPENED. The extra height goes to the PLAN BAND -- taller, readable
     // subtracks with the forecast capsule following underneath. An opened
     // lane that merely stretched its empty space would have bought nothing.
-    const scoreY = box.top + OPEN_SCORE_TOP;
+    //
+    // The stack is CENTRED in whatever height the lane got, for the same
+    // reason the field centres its lanes rather than stretching them: the
+    // height a lane asks for is an upper bound on what its plan might need,
+    // and when the packing turns out tighter than that, balanced margin
+    // reads as deliberate where a void at the bottom reads as a bug.
+    const natural = laneHeightForRows(rows);
+    const pad = Math.max(0, (box.height - natural) / 2);
+    const scoreY = box.top + pad + OPEN_SCORE_TOP;
     const planTop = scoreY + OPEN_PLAN_GAP;
     const planRoom = rows * OPEN_ROW_H;
     return { scoreY, planTop, planRoom, memY: planTop + planRoom + OPEN_MEM_GAP };
@@ -236,15 +244,38 @@ export function planRowHeight(room: number, rowCount: number): number {
   return Math.max(11, Math.min(OPEN_ROW_H, Math.floor(room / rowCount)));
 }
 
+/** Which lane a y coordinate falls in, in SVG space (header included).
+    Used to decide the destination while a plan object is dragged
+    vertically out of the lane it started in. */
+export function laneAtY(boxes: LaneBox[], yInLanes: number): LaneBox | null {
+  for (const b of boxes) if (yInLanes >= b.top && yInLanes < b.top + b.height) return b;
+  return null;
+}
+
 // ── RETIMING ─────────────────────────────────────────────────────────
 
 export const SNAP_DAY = 86400000;
 
-/** Days are the unit a plan is expressed in, so a drag lands on one. */
+/**
+ * MAGNETIC, NOT SLIPPERY.
+ *
+ * Days are the unit a plan is expressed in, so a placement lands on one --
+ * the NEAREST one. Flooring would make the surface feel like it was fighting
+ * the hand: releasing a hair before midnight would silently give you the
+ * previous day, and the object would sit one day left of where it was drawn.
+ *
+ * This is for ABSOLUTE placement (composing something new). Retiming an
+ * existing object uses whole-day DELTAS instead -- see `retime`.
+ */
 export function snapDay(t: number): number {
-  const d = new Date(t);
+  const d = new Date(t + SNAP_DAY / 2);
   d.setHours(0, 0, 0, 0);
   return d.getTime();
+}
+
+/** How many whole days a drag of `dtMs` asks for. */
+export function dayDelta(dtMs: number): number {
+  return Math.round(dtMs / SNAP_DAY);
 }
 
 export interface Retimed {
@@ -255,10 +286,16 @@ export interface Retimed {
 /**
  * What a drag of `dtMs` does to an object, per grip.
  *
- * MOVE CONSERVES DURATION. Dragging a two-week span two days later is a
- * two-week span two days later -- the arithmetic is done on the start and
- * the length is carried, never recomputed from two independently snapped
- * ends, which is how a span silently loses a day.
+ * WHOLE DAYS, APPLIED AS A DELTA. The move is `+N days` added to the dates
+ * the object already had, NOT a re-snap of an absolute timestamp. That
+ * distinction is the difference between "+8 days" meaning +8 days and
+ * meaning "+8 days, then rounded to a midnight boundary the object was
+ * never on" -- a row stored at noon would drift by half a day the first
+ * time anyone touched it, and every subsequent move would inherit the
+ * error.
+ *
+ * MOVE CONSERVES DURATION exactly: the length is carried, never recomputed
+ * from two independently rounded ends.
  *
  * Edges may not cross: a span cannot be resized through itself into a
  * negative duration, so each edge stops one day short of the other.
@@ -266,15 +303,14 @@ export interface Retimed {
 export function retime(obj: PlanObject, grip: PlanGrip, dtMs: number): Retimed {
   const start = obj.startT;
   const end = obj.endT;
+  const days = dayDelta(dtMs);
 
   if (grip === "move" || end === null) {
-    const date = snapDay(start + dtMs);
+    const date = start + days * SNAP_DAY;
     return { date, endDate: end === null ? null : date + (end - start) };
   }
   if (grip === "start") {
-    const date = Math.min(snapDay(start + dtMs), snapDay(end) - SNAP_DAY);
-    return { date, endDate: end };
+    return { date: Math.min(start + days * SNAP_DAY, end - SNAP_DAY), endDate: end };
   }
-  const endDate = Math.max(snapDay(end + dtMs), snapDay(start) + SNAP_DAY);
-  return { date: start, endDate };
+  return { date: start, endDate: Math.max(end + days * SNAP_DAY, start + SNAP_DAY) };
 }

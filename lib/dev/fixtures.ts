@@ -166,6 +166,24 @@ const TEAMS: Record<string, TeamFixture> = {
 // between runs but not uniform.
 const POINTS = [3, 5, 2, 8, 3, 1, 5, 2, 8, 3, 5, 2, 3, 8, 1, 5];
 
+/**
+ * ONE CLOCK PER PROCESS, not one per read.
+ *
+ * Completion dates used to be derived from `Date.now()` inside the issue
+ * builder, so two reads a second apart described a subtly different world:
+ * every completedAt shifted by the milliseconds between the calls, and any
+ * completion sitting near another entry's timestamp could swap places in
+ * Timeline's chronological sort. That made "the projection is identical
+ * across two requests" intermittently false for reasons that had nothing to
+ * do with the projection — a fixture that will not hold still cannot be
+ * used to prove anything holds still.
+ *
+ * Anchored at module load: the offsets stay relative to today so the
+ * fixture still looks like a live project, but they stop moving underneath
+ * the thing observing them.
+ */
+const FIXTURE_EPOCH = Date.now();
+
 // identifier for title index i -- kept as its own function so the parent
 // links below and the issues themselves cannot drift apart.
 function identifierFor(teamKey: string, i: number): string {
@@ -218,7 +236,7 @@ export function devFixtureIssues(scope: ScopeFilter): LinearIssueSummary[] {
       estimate: i % 3 === 0 ? null : POINTS[i % POINTS.length],
       assignee,
       labels: [],
-      completedAt: isDone ? new Date(Date.now() - (i + 3) * 86400000).toISOString() : null,
+      completedAt: isDone ? new Date(FIXTURE_EPOCH - (i + 3) * 86400000).toISOString() : null,
       parentIdentifier,
       parentTitle,
       projectName: fixture.epic,

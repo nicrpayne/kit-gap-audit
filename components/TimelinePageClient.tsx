@@ -80,6 +80,10 @@ export default function TimelinePageClient() {
   // One project may be opened to the depth its plan needs while its
   // siblings compress. Null means every lane shares the well evenly.
   const [expandedLane, setExpandedLane] = useState<string | null>(null);
+  // A destructive act, armed rather than undone. A global undo stack would
+  // be a whole architecture; asking once, in place, is the honest small
+  // version of the same protection.
+  const [pendingDelete, setPendingDelete] = useState<string | null>(null);
   // Events the playhead has just crossed. Held briefly so the note can be
   // read, then released back into the accumulated score.
   const [articulating, setArticulating] = useState<Set<string>>(new Set());
@@ -317,6 +321,40 @@ export default function TimelinePageClient() {
 
   const atNow = playheadT !== null && Math.abs(playheadT - nowT) < 12 * 3600 * 1000;
 
+  // ── DELETE, FROM THE SELECTION ─────────────────────────────────────
+  //
+  // Only a Timeline-owned row can go: a Report, a Decision or a Linear
+  // completion has no TimelineEvent behind it, so there is nothing here to
+  // delete and Timeline must not pretend otherwise. `editable` is the same
+  // flag the projection uses and the same one the API enforces by routing.
+  const deletable = useMemo(
+    () => (selectedId ? data?.entries.find((e) => e.id === selectedId && e.editable) ?? null : null),
+    [selectedId, data]
+  );
+
+  useEffect(() => { setPendingDelete(null); }, [selectedId]);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const el = e.target as HTMLElement | null;
+      // Never steal the key from something being typed into — the inline
+      // namer and every form field own Backspace while they have focus.
+      if (el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.isContentEditable)) return;
+      if (e.key === "Escape" && pendingDelete) { setPendingDelete(null); return; }
+      if (e.key !== "Delete" && e.key !== "Backspace") return;
+      if (!deletable) return;
+      e.preventDefault();
+      if (pendingDelete === deletable.id) {
+        setPendingDelete(null);
+        void deleteEvent(deletable.id);
+      } else {
+        setPendingDelete(deletable.id);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  });
+
   const selectedEntry = useMemo(
     () => (selectedId && !selectedId.startsWith("candidate:") ? data?.entries.find((e) => e.id === selectedId) ?? null : null),
     [selectedId, data]
@@ -394,7 +432,7 @@ export default function TimelinePageClient() {
   // plan object does NOT move any forecast: a TimelineEvent feeds no
   // simulation, and planning something is not the same as gating it.
   const retimePlanObject = useCallback(
-    async (id: string, next: { date: string; endDate: string | null }) => {
+    async (id: string, next: { date: string; endDate: string | null; scopeId?: string }) => {
       const res = await mutateReality(`/api/timeline-events/${id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
@@ -405,6 +443,30 @@ export default function TimelinePageClient() {
         return;
       }
       await load();
+    },
+    [load]
+  );
+
+  // COMPOSED ON THE CANVAS. The gesture already decided the project, the
+  // dates and the shape; all that was missing was the name. State is stored
+  // as PLANNED because that is what composing into the future means — and
+  // it is still stored explicitly, never inferred from the date afterwards.
+  const createPlanObject = useCallback(
+    async (next: { scopeId: string; title: string; date: string; endDate: string | null }) => {
+      const res = await mutateReality("/api/timeline-events", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...next, temporalState: "planned", kind: next.endDate ? "phase" : "milestone" }),
+      });
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setErr(j.error ?? "Could not place that on the timeline");
+        return;
+      }
+      await load();
+      // Seat the selection on what was just made, so the thing you composed
+      // is the thing the inspector is talking about.
+      if (j.event?.id) setSelectedId(j.event.id);
     },
     [load]
   );
@@ -642,6 +704,7 @@ export default function TimelinePageClient() {
               laneBoxes={laneBoxes}
               onToggleExpand={(scopeId) => setExpandedLane((cur) => (cur === scopeId ? null : scopeId))}
               onPlanRetime={retimePlanObject}
+              onPlanCreate={createPlanObject}
               articulating={articulating}
               ghostByScope={ghostByScope}
               deltaByScope={deltaByScope}
@@ -650,6 +713,39 @@ export default function TimelinePageClient() {
               onHoverEvent={setHoveredId}
             />
           </div>
+
+          {/* ARMED DELETE. Local, in place, and gone the moment the
+              selection changes — no global undo architecture, no toast
+              queue, just one question asked where the object is. */}
+          {pendingDelete && deletable && (
+            <div
+              data-shoot="delete-confirm"
+              className="shrink-0 px-4 py-2.5 flex items-center gap-3"
+              style={{ borderTop: "1px solid var(--i-red)", background: "rgba(239,107,91,0.07)" }}
+            >
+              <span className="text-[11px]" style={{ color: "var(--i-text)" }}>
+                Remove <strong style={{ color: "var(--i-red)" }}>{deletable.title}</strong> from the timeline?
+              </span>
+              <div className="flex-1" />
+              <button
+                onClick={() => { setPendingDelete(null); void deleteEvent(deletable.id); }}
+                data-shoot="delete-confirm-yes"
+                className="rounded px-3 py-1 text-[10px] hover:brightness-110"
+                style={{ background: "var(--i-red)", color: "var(--i-void)" }}
+              >
+                Delete
+              </button>
+              <button
+                onClick={() => setPendingDelete(null)}
+                data-shoot="delete-confirm-no"
+                className="rounded px-3 py-1 text-[10px]"
+                style={{ border: "1px solid var(--i-border-strong)", color: "var(--i-text-soft)" }}
+              >
+                Keep
+              </button>
+              <span className="text-[9px]" style={{ color: "var(--i-text-faint)" }}>⌫ again · esc</span>
+            </div>
+          )}
 
           {/* EVENT INTAKE — dateless candidates have no honest position on
               the axis, so they wait here rather than being placed. */}

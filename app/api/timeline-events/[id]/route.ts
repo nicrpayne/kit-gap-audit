@@ -21,8 +21,25 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   const existing = await prisma.timelineEvent.findUnique({ where: { id } });
   if (!existing) return NextResponse.json({ error: "Timeline event not found" }, { status: 404 });
 
-  const { title, date, endDate, temporalState, kind, note } = body as Record<string, unknown>;
+  const { scopeId, title, date, endDate, temporalState, kind, note } = body as Record<string, unknown>;
   const data: Record<string, unknown> = {};
+
+  // WHICH PROJECT THIS BELONGS TO.
+  //
+  // Timeline owns its own rows, and "this activity is actually JSA's, not
+  // Platform's" is a statement about the row — so dragging a plan object
+  // into another lane is Timeline retiming its own record, not Timeline
+  // editing Scope. It changes nothing about what is IN the release: the
+  // Scope's composition, capacity and forecast are all untouched, and a
+  // Scope that gains a landmark gains a landmark and nothing else.
+  if (scopeId !== undefined) {
+    if (typeof scopeId !== "string" || !scopeId) {
+      return NextResponse.json({ error: "scopeId must be a Scope id" }, { status: 400 });
+    }
+    const target = await prisma.scope.findUnique({ where: { id: scopeId }, select: { id: true } });
+    if (!target) return NextResponse.json({ error: "Scope not found" }, { status: 404 });
+    data.scopeId = scopeId;
+  }
 
   if (title !== undefined) {
     if (typeof title !== "string" || !title.trim()) return NextResponse.json({ error: "title cannot be empty" }, { status: 400 });
