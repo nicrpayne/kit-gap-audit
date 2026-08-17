@@ -16,6 +16,7 @@
 import { useState } from "react";
 import type { TimelineEntry, TimelineCandidate, ForecastSnapshot } from "@/lib/timeline/entries";
 import { fmtFull } from "@/lib/timeline/geometry";
+import { spokenSourceLabel } from "@/lib/timeline/producer";
 import { FAMILY_COLOR } from "./TimeField";
 
 // One panel material, shared by every inspector state — the recessed
@@ -198,6 +199,12 @@ interface Props {
   onOpenForecast: (scopeId: string) => void;
   onOpenDecisions: (decisionId: string) => void;
   onAcceptCandidate: (id: string, date: string | null) => Promise<void>;
+  /** Establish a dateless candidate's timing WITHOUT placing it. Answering
+      "when" must not also answer "which project". */
+  onSupplyTiming: (id: string, iso: string) => void;
+  /** The timing this session has supplied for the selected candidate, if
+      any — so the panel can say the piece is now draggable. */
+  suppliedDate: string | null;
   onDismissCandidate: (id: string) => Promise<void>;
   onEditEvent: (entry: TimelineEntry) => void;
   /** Put the held thing down. Escape and an empty-field click do the same. */
@@ -207,7 +214,7 @@ interface Props {
 
 export default function TimelineInspector({
   entry, candidate, laneName, onOpenForecast, onOpenDecisions,
-  onAcceptCandidate, onDismissCandidate, onEditEvent, onClose, busy,
+  onAcceptCandidate, onSupplyTiming, suppliedDate, onDismissCandidate, onEditEvent, onClose, busy,
 }: Props) {
   const [dateDraft, setDateDraft] = useState("");
   const [err, setErr] = useState<string | null>(null);
@@ -290,10 +297,10 @@ export default function TimelineInspector({
 
           <Section title="Source">
             <Well>
-              <Row label="From" value={candidate.sourceLabel} />
+              <Row label="From" value={spokenSourceLabel(candidate.sourceLabel)} />
               <Row
                 label="Status"
-                value={needsDate ? "Candidate · needs timing" : "Candidate · not on the timeline"}
+                value={needsDate ? (suppliedDate ? "Candidate · timing set, not placed" : "Candidate · needs timing") : "Candidate · not on the timeline"}
                 tone="var(--i-violet)"
               />
             </Well>
@@ -308,7 +315,7 @@ export default function TimelineInspector({
           )}
 
           {needsDate && (
-            <Section title="Date required">
+            <Section title="Timing">
               <p className="text-[10px] leading-relaxed text-[var(--i-text-faint)] mb-2">
                 Nothing in the evidence says when this happened. Timeline will not infer a date
                 from the statement, so this cannot be seated until you supply one.
@@ -321,39 +328,55 @@ export default function TimelineInspector({
                 className="w-full rounded px-2 py-1.5 text-[11px]"
                 style={{ background: "var(--i-void)", border: "1px solid var(--i-border-strong)", color: "var(--i-text)" }}
               />
+              {suppliedDate && (
+                <p className="text-[10px] leading-relaxed mt-2" style={{ color: "var(--i-violet)" }} data-shoot="timing-set">
+                  Timing set to {fmtFull(new Date(suppliedDate).getTime())}. It is not on the timeline yet —
+                  drag it from Event Intake onto the project it belongs to.
+                </p>
+              )}
             </Section>
           )}
 
           {err && <div className="mt-2 text-[10px]" style={{ color: "var(--i-red)" }}>{err}</div>}
 
           <div className="mt-4 flex gap-2">
+            {/* TWO QUESTIONS, ANSWERED SEPARATELY.
+                A placement needs a WHEN and a WHICH PROJECT. For a dateless
+                candidate the evidence answers neither, and this button used to
+                take a typed date and seat the piece at the source's suggested
+                project in the same press — accepting a suggestion on the
+                human's behalf, which is exactly the boundary Event Intake
+                exists to hold. It now answers only the question it was asked:
+                the timing is established, the piece becomes draggable, and
+                where it goes is still someone's decision.
+                For a candidate the source DID date, the button remains a real
+                one-press path — but it is named for what it does, so pressing
+                it is visibly a person choosing the suggestion rather than the
+                suggestion applying itself. */}
             <button
               data-shoot="accept-candidate"
               disabled={busy || (needsDate && !dateDraft)}
               onClick={async () => {
                 setErr(null);
+                if (needsDate) {
+                  onSupplyTiming(candidate.id, new Date(dateDraft).toISOString());
+                  return;
+                }
                 try {
-                  await onAcceptCandidate(candidate.id, needsDate ? new Date(dateDraft).toISOString() : null);
+                  await onAcceptCandidate(candidate.id, null);
                 } catch (e) {
-                  setErr(e instanceof Error ? e.message : "Could not accept");
+                  setErr(e instanceof Error ? e.message : "Could not place");
                 }
               }}
               className="flex-1 rounded-md py-2 text-[11px] font-medium disabled:opacity-35 hover:brightness-110"
               style={{ background: "var(--i-violet)", color: "var(--i-void)" }}
               title={
                 needsDate
-                  ? "Supply the date to place this on the timeline"
-                  : "Place this on the timeline at the suggested project and date"
+                  ? "Establish the timing. You still choose which project it belongs to."
+                  : "Place it where the source suggested — this project, this date"
               }
             >
-              {/* THE PATH THAT IS NOT A DRAG.
-                  Dragging is the good way to do this, and it is not the only
-                  way: a keyboard reaches this button, and it places the piece
-                  at exactly what the source suggested. Naming it for the act
-                  rather than for the workflow — "Place on timeline", not
-                  "Accept" — is also the honest description of what pressing
-                  it does. */}
-              Place on timeline
+              {needsDate ? "Set timing" : "Use suggested placement"}
             </button>
             <button
               data-shoot="dismiss-candidate"
@@ -438,7 +461,7 @@ export default function TimelineInspector({
               here as well said "hermes · Aug 12 refinement call" twice in one
               panel. Everything else on the score keeps it, because nothing
               else has an Origin section to put it in. */}
-          {e.sourceLabel && e.family !== "landmark" && <Row label="Source" value={e.sourceLabel} />}
+          {e.sourceLabel && e.family !== "landmark" && <Row label="Source" value={spokenSourceLabel(e.sourceLabel)} />}
           </Well>
           {e.editable && (
             <p className="mt-1.5 text-[9px] text-[var(--i-text-faint)]" data-shoot="plan-ownership">
@@ -539,27 +562,40 @@ export default function TimelineInspector({
           <>
             <Section title="Landmark">
               <Well>
+              {/* "Added by" said the same thing the Placement section now
+                  says, in worse words. Kind is what a Landmark section is
+                  actually for. */}
               <Row label="Kind" value={String(detail.landmarkKind ?? "event")} />
-              <Row label="Added by" value={String(detail.source) === "candidate" ? "placed from intake" : "hand"} />
               {typeof detail.note === "string" && detail.note && <Row label="Note" value={detail.note} />}
               </Well>
             </Section>
-            {/* WHERE IT CAME FROM, STILL DISCOVERABLE — AND LOWER DOWN.
-                A piece placed from Event Intake is ordinary Reality now, so
-                its timing and its project come first; but the reading it
-                began as is a real thing about it and must not disappear the
-                moment it is seated. Rendered only when it HAS an origin, so a
-                hand-made landmark carries no empty section. */}
+            {/* TWO DIFFERENT FACTS, TWO DIFFERENT SECTIONS.
+                ORIGIN is where the claim came from — a system, a transcript,
+                the evidence it cited. That is provenance, and it belongs to
+                the claim for as long as the claim exists.
+                PLACEMENT is how this Timeline object came to be on the
+                Timeline. "Placed from Event Intake" is not provenance; it is a
+                fact about this instrument's own history, and filing it under
+                Origin made the panel look like it was attributing the date to
+                Hermes. They are kept apart. */}
             {String(detail.source) === "candidate" && typeof detail.sourceLabel === "string" && (
               <Section title="Origin">
                 <Well>
-                  <Row label="From" value={detail.sourceLabel} tone="var(--i-violet)" />
+                  <Row label="From" value={spokenSourceLabel(detail.sourceLabel)} tone="var(--i-violet)" />
                   {Array.isArray(detail.evidenceRefs) && detail.evidenceRefs.length > 0 && (
                     <Row label="Evidence" value={`${detail.evidenceRefs.length} cited`} />
                   )}
                 </Well>
               </Section>
             )}
+            <Section title="Placement">
+              <Well>
+                <Row
+                  label="Seated"
+                  value={String(detail.source) === "candidate" ? "from Event Intake" : "by hand"}
+                />
+              </Well>
+            </Section>
             <button
               onClick={() => onEditEvent(e)}
               data-shoot="edit-event"

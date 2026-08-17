@@ -109,6 +109,10 @@ interface Props {
       time — the piece could be lifted but never actually travelled. */
   intakeStartX: number;
   intakeStartY: number;
+  /** The one pending candidate whose SUGGESTED position may be shown on the
+      score — because it is being pointed at or is selected. Null at rest, and
+      at rest is the normal state. */
+  revealedCandidateId: string | null;
   /** Released. Called exactly once per flight, with the placement the pointer
       landed on, or null if it landed nowhere. The field never writes. */
   onIntakeEnd: (target: { scopeId: string; date: string; endDate: string | null } | null) => void;
@@ -522,7 +526,7 @@ export default function TimeField({
   onViewChange, bounds, reducedMotion, laneBoxes, onToggleExpand,
   onPlanRetime, onPlanCreate, articulating, ghostByScope, deltaByScope,
   layers, hoveredId, onHoverEvent, playing,
-  intakeCandidate, intakeStartX, intakeStartY, onIntakeEnd,
+  intakeCandidate, intakeStartX, intakeStartY, onIntakeEnd, revealedCandidateId,
 }: Props) {
   const hostRef = useRef<HTMLDivElement>(null);
   const dragging = useRef(false);
@@ -1512,29 +1516,92 @@ export default function TimeField({
                     </g>
                   );
                 })}
-                {/* DATED CANDIDATES — spectral, unmistakably not Reality. */}
+                {/* ── WHERE A CANDIDATE SAYS IT WOULD GO ───────────────
+                    ON DEMAND, NEVER AT REST.
+                    A pending candidate used to sit on the score permanently:
+                    spectral, dashed, correct in every detail — and seated.
+                    Two marks for one piece, one of them in the place reserved
+                    for things the project has actually committed to, which is
+                    exactly the distinction Event Intake exists to hold. A
+                    dashed outline is not enough to carry that weight when the
+                    thing is occupying Reality's own real estate.
+                    So a candidate lives on the RACK. Its suggested position is
+                    still useful and still shown — but only while you are
+                    asking, by pointing at its card or selecting it, and it
+                    leaves again with your attention. The stored suggestion is
+                    untouched; this is which pixels are painted, nothing more. */}
                 {candidates
-                  .filter((c) => c.scopeId === lane.scopeId && c.date)
+                  .filter((c) => c.scopeId === lane.scopeId && c.date && c.id === revealedCandidateId)
                   .map((c) => {
                     const x = xFor(view, new Date(c.date!).getTime());
                     if (x < -20 || x > view.width + 20) return null;
+                    const endT = c.endDate ? new Date(c.endDate).getTime() : null;
+                    const w = endT !== null ? Math.max(14, xFor(view, endT) - x) : 0;
+                    // IN THE SEAT IT WOULD TAKE.
+                    //
+                    // The ghost used to be drawn on the score rail while the
+                    // drag preview — and the object you actually get — go into
+                    // the plan band. Two different answers to one question,
+                    // "where would this go", separated by the height of a lane.
+                    // So the ghost is packed with the same first-fit rule the
+                    // preview uses, on the same row pitch, at the same object
+                    // height: hovering, dragging and dropping all describe one
+                    // place, and only the material says it has not happened.
+                    let row = 0;
+                    if (!box.dormant) {
+                      const ex = endT !== null ? x + w : x + labelWidth(c.title, compact);
+                      for (let r = 0; r <= Math.max(1, rowCount); r++) {
+                        const clash = placed.some(
+                          (q) => q.row === r && !(ex < q.x0 - 8 || x > q.x1 + 8)
+                        );
+                        if (!clash) { row = r; break; }
+                        row = r + 1;
+                      }
+                    }
+                    const gh = box.dormant ? 13 : objH;
+                    const gy = box.dormant
+                      ? yTrack
+                      : HEADER_H + z.planTop + row * rowH + gh / 2;
                     return (
                       <g
                         key={c.id}
-                        transform={`translate(${x},${yTrack})`}
                         data-shoot={`candidate-${c.id}`}
+                        data-suggested
                         onClick={(ev) => { ev.stopPropagation(); onSelect(`candidate:${c.id}`); }}
                         style={{ cursor: "pointer" }}
                       >
-                        <rect x={-6} y={-11} width={12} height={22} fill="transparent" />
-                        <circle r={7} fill="var(--i-violet)" opacity={0.1} />
-                        <rect
-                          x={-4.5} y={-4.5} width={9} height={9} transform="rotate(45)"
-                          fill="none" stroke="var(--i-violet)" strokeWidth={1} strokeDasharray="1.6 1.4" opacity={0.95}
-                        />
-                        {selectedId === `candidate:${c.id}` && (
-                          <circle r={13} fill="none" stroke="var(--i-violet)" strokeWidth={1} />
-                        )}
+                        <g transform={`translate(${x},${gy})`}>
+                          <rect x={-6} y={-gh / 2} width={Math.max(12, w)} height={gh} fill="transparent" />
+                          {/* An activity shows the span it proposes; a moment
+                              shows the day. Both stay hollow and dashed. */}
+                          {endT !== null ? (
+                            <rect
+                              x={0} y={-gh / 2} width={w} height={gh} rx={Math.min(3.5, gh / 3)}
+                              fill="var(--i-violet)" fillOpacity={0.08}
+                              stroke="var(--i-violet)" strokeWidth={1} strokeDasharray="3 2.5" opacity={0.9}
+                            />
+                          ) : (
+                            <>
+                              <circle r={7} fill="var(--i-violet)" opacity={0.1} />
+                              <rect
+                                x={-4.5} y={-4.5} width={9} height={9} transform="rotate(45)"
+                                fill="none" stroke="var(--i-violet)" strokeWidth={1} strokeDasharray="1.6 1.4" opacity={0.95}
+                              />
+                            </>
+                          )}
+                          {selectedId === `candidate:${c.id}` && (
+                            <circle r={Math.max(13, gh)} fill="none" stroke="var(--i-violet)" strokeWidth={1} opacity={0.7} />
+                          )}
+                          {/* NAMED AS A SUGGESTION, so the ghost cannot be
+                              read as something the project has agreed to. */}
+                          <text
+                            x={endT !== null ? w + 8 : 11} y={3}
+                            fontSize={8} fill="var(--i-violet)" opacity={0.85}
+                            style={{ letterSpacing: "0.14em", pointerEvents: "none" }}
+                          >
+                            SUGGESTED
+                          </text>
+                        </g>
                       </g>
                     );
                   })}

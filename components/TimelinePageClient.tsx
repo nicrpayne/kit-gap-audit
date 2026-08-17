@@ -42,6 +42,7 @@ import LayersControl from "@/components/timeline/LayersControl";
 import LanesControl, { applyLaneView, EMPTY_LANE_VIEW, type LaneView } from "@/components/timeline/LanesControl";
 import { STORY_LAYERS, type LayerState } from "@/lib/timeline/story";
 import { layoutLanes, isDormant } from "@/lib/timeline/plan";
+import { spokenSourceLabel } from "@/lib/timeline/producer";
 import {
   EMPTY_UNDO, record, undoTop, redoTop, describe, remapId,
   type UndoState, type TimelineCommand, type PlanSnapshot,
@@ -724,16 +725,38 @@ export default function TimelinePageClient() {
   // "here is the material" down, "here is where it landed" back.
   const [intake, setIntake] = useState<{ candidate: TimelineCandidate; clientX: number; clientY: number } | null>(null);
   const intakeRef = useRef<TimelineCandidate | null>(null);
+  /** The card under the pointer, so the score can show that one candidate's
+      suggested position for as long as it is being asked about. */
+  const [hoveredCandidateId, setHoveredCandidateId] = useState<string | null>(null);
+
+  // TIMING A PERSON SUPPLIED, HELD BUT NOT ACTED ON.
+  //
+  // A dateless candidate cannot be placed because nothing in its evidence says
+  // when. Supplying that date answers exactly one of the two questions a
+  // placement needs — and it must not be read as answering the other. The old
+  // path took the typed date and seated the piece at the source's suggested
+  // PROJECT in the same keystroke, which is the interface accepting a
+  // suggestion on the human's behalf.
+  //
+  // So the date is held here, in this session, and all it does is make the
+  // piece draggable. Nothing is written, no project is chosen, and the
+  // candidate row stays dateless until someone actually places it.
+  const [suppliedTiming, setSuppliedTiming] = useState<Record<string, string>>({});
+  const supplyTiming = useCallback((candidateId: string, iso: string) => {
+    setSuppliedTiming((m) => ({ ...m, [candidateId]: iso }));
+  }, []);
 
   const beginIntakeDrag = useCallback((candidate: TimelineCandidate, e: React.PointerEvent) => {
-    // NO DATE, NO PLACEMENT. A dateless candidate is not draggable at all,
-    // rather than draggable onto a day nobody stated. See the inspector for
-    // what it says instead.
-    if (!candidate.date) return;
+    // NO TIMING, NO PLACEMENT. A candidate with no date is not draggable onto
+    // a day nobody stated — but one whose timing a person has just supplied
+    // is, and it carries that date rather than the source's silence.
+    const date = candidate.date ?? suppliedTiming[candidate.id] ?? null;
+    if (!date) return;
     e.preventDefault();
-    intakeRef.current = candidate;
-    setIntake({ candidate, clientX: e.clientX, clientY: e.clientY });
-  }, []);
+    const held = date === candidate.date ? candidate : { ...candidate, date };
+    intakeRef.current = held;
+    setIntake({ candidate: held, clientX: e.clientX, clientY: e.clientY });
+  }, [suppliedTiming]);
 
   /** Released. A target means a real project under the pointer at a real
       date; anything else — the header, the chrome, off the field entirely —
@@ -1148,6 +1171,13 @@ export default function TimelinePageClient() {
               intakeStartX={intake?.clientX ?? 0}
               intakeStartY={intake?.clientY ?? 0}
               onIntakeEnd={endIntakeDrag}
+              // ASKED FOR, NOT AMBIENT. Pointing at a card or selecting it is
+              // the question "where does this say it goes?"; nothing else puts
+              // a pending candidate on the score.
+              revealedCandidateId={
+                hoveredCandidateId ??
+                (selectedId?.startsWith("candidate:") ? selectedId.slice("candidate:".length) : null)
+              }
             />
           </div>
 
@@ -1208,7 +1238,8 @@ export default function TimelinePageClient() {
                 </div>
               </div>
               {pending.map((c) => {
-                const placeable = Boolean(c.date);
+                const mine = suppliedTiming[c.id] ?? null;
+                const placeable = Boolean(c.date || mine);
                 const held = intake?.candidate.id === c.id;
                 const days = c.date && c.endDate
                   ? Math.max(1, Math.round((new Date(c.endDate).getTime() - new Date(c.date).getTime()) / DAY))
@@ -1224,6 +1255,8 @@ export default function TimelinePageClient() {
                       if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setSelectedId(`candidate:${c.id}`); }
                     }}
                     onPointerDown={(e) => beginIntakeDrag(c, e)}
+                    onMouseEnter={() => setHoveredCandidateId(c.id)}
+                    onMouseLeave={() => setHoveredCandidateId((v) => (v === c.id ? null : v))}
                     data-shoot={`intake-${c.id}`}
                     data-placeable={placeable || undefined}
                     data-held={held || undefined}
@@ -1244,7 +1277,7 @@ export default function TimelinePageClient() {
                     {/* WHAT SHAPE IT WOULD TAKE. A bar for an activity, a pin
                         for a moment, nothing for something with no timing —
                         so the shape is known before it is picked up. */}
-                    <span className="shrink-0 self-center" style={{ width: 4 }}>
+                    <span className="shrink-0 self-center" style={{ width: 4 }} data-timing={mine ? "supplied" : c.date ? "suggested" : "none"}>
                       {days !== null ? (
                         <span className="block rounded-[2px]" style={{ height: 22, background: "var(--i-violet)", opacity: 0.7 }} />
                       ) : placeable ? (
@@ -1262,11 +1295,20 @@ export default function TimelinePageClient() {
                         className="block text-[8.5px] truncate mt-1 tabular-nums"
                         style={{ color: placeable ? "var(--i-violet)" : "var(--i-amber)" }}
                       >
-                        {placeable
-                          ? `${suggested ?? "—"} · ${fmtDay(new Date(c.date!).getTime())}${days !== null ? ` · ${days}d` : ""}`
-                          : "Needs timing"}
+                        {/* THREE STATES, THREE SENTENCES.
+                            The source proposed both a project and a date · the
+                            source proposed neither · YOU supplied the timing
+                            and the project is still yours to choose. The third
+                            deliberately does not name the suggested project,
+                            because naming it here would read as though it had
+                            been settled by typing a date. */}
+                        {c.date
+                          ? `${suggested ?? "—"} · ${fmtDay(new Date(c.date).getTime())}${days !== null ? ` · ${days}d` : ""}`
+                          : mine
+                            ? `${fmtDay(new Date(mine).getTime())} · drag to a project`
+                            : "Needs timing"}
                       </span>
-                      <span className="block text-[8px] text-[var(--i-text-faint)] truncate mt-1">{c.sourceLabel}</span>
+                      <span className="block text-[8px] text-[var(--i-text-faint)] truncate mt-1">{spokenSourceLabel(c.sourceLabel)}</span>
                     </span>
                   </div>
                 );
@@ -1297,6 +1339,8 @@ export default function TimelinePageClient() {
             onOpenForecast={(scopeId) => router.push(`/forecast?scopeId=${scopeId}`)}
             onOpenDecisions={(decisionId) => router.push(`/decisions?decisionId=${decisionId}`)}
             onAcceptCandidate={acceptCandidate}
+            onSupplyTiming={supplyTiming}
+            suppliedDate={selectedCandidate ? suppliedTiming[selectedCandidate.id] ?? null : null}
             onDismissCandidate={dismissCandidate}
             onEditEvent={(e) => setTool({ editing: e })}
             onClose={() => setSelectedId(null)}

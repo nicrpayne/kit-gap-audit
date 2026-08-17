@@ -196,8 +196,22 @@ await openTray();
   check("B7. Candidate material reads as UNSEATED, not as Reality",
     cards.every((c) => c.dashed && (c.shadow === "none" || !/rgba?\(/.test(c.shadow))),
     `dashed=${cards.every((c) => c.dashed)}, shadow=${cards[0].shadow}`);
+  // This used to require the card to print the producer TOKEN verbatim —
+  // `hermes`, `gap_app`. The invariant it was protecting is that provenance
+  // is on the card itself, readable without opening anything; the literal
+  // token was only how that was measured. A later pass made the display layer
+  // speak known producers as names ("Hermes", "Gap App") while the stored
+  // attestation stays byte-identical, so the assertion is now normalised:
+  // the producer must still be NAMED on every card, in whatever casing the
+  // instrument says it. That the stored value is untouched is a separate
+  // claim, proved against the database in the seating-polish proof (D5).
+  const named = (token, text) => {
+    const norm = (s) => s.toLowerCase().replace(/_/g, " ");
+    return norm(text).includes(norm(token));
+  };
   check("B8. Provenance is on the card without a metadata panel",
-    cards.every((c, i) => c.text.includes([activity, moment, undated][i].sourceLabel.split(" · ")[0])));
+    cards.every((c, i) => named([activity, moment, undated][i].sourceLabel.split(" · ")[0], c.text)),
+    cards.map((c) => c.text.replace(/\s+/g, " ").slice(-30)).join(" | "));
 }
 
 // ── C. THE DRAG WRITES NOTHING UNTIL IT IS RELEASED ────────────────
