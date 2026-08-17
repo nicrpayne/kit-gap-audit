@@ -13,6 +13,8 @@
 // There is no undo/redo because Timeline has no edit stack to undo.
 
 import { fmtFull } from "@/lib/timeline/geometry";
+import type { Moment } from "@/lib/timeline/moment";
+import NowPlaying from "./NowPlaying";
 
 export type Speed = 0.5 | 1 | 2;
 
@@ -26,6 +28,10 @@ interface Props {
   zoomPct: number;
   crossedCount: number;
   totalPast: number;
+  /** What the playhead is standing in, already reduced to facts. */
+  moment: Moment | null;
+  laneNames: Record<string, string>;
+  reducedMotion: boolean;
   onPlayPause: () => void;
   onPrev: () => void;
   onNext: () => void;
@@ -88,6 +94,7 @@ const Btn = ({
 
 export default function Transport({
   playing, playheadT, nowT, atNow, speed, scaleLabel, zoomPct, crossedCount, totalPast,
+  moment, laneNames, reducedMotion,
   onPlayPause, onPrev, onNext, onToBeginning, onToNow, onSpeed, onZoom, onScale,
 }: Props) {
   return (
@@ -184,7 +191,16 @@ export default function Transport({
         </div>
       </div>
 
-      <div className="flex-1" />
+      {/* THE STORY READOUT. What the instrument just read off the score,
+          in the dead space that was already sitting between the playhead
+          date and the speed controls. Reserved, so it never pushes a
+          control sideways when it has something to say. */}
+      <NowPlaying
+        moment={moment}
+        laneNames={laneNames}
+        playing={playing}
+        reducedMotion={reducedMotion}
+      />
 
       {/* SPEED — scales the choreography, not the axis */}
       <Bay label="Playback">

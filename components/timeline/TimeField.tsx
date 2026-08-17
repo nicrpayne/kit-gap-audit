@@ -18,7 +18,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { TimelineEntry, TimelineLane, ForecastSnapshot, TimelineCandidate } from "@/lib/timeline/entries";
 import { xFor, tFor, ticksFor, subTicksFor, scaleFor, fmtDay, type TimeView } from "@/lib/timeline/geometry";
 import { FAMILY_COLOR } from "./familyColor";
-import EventModule from "./EventModule";
+import EventModule, { EventGroupModule } from "./EventModule";
 import PlanObjectView from "./PlanObject";
 import {
   isPlanObject, planObjectFor, packPlanRows, labelWidth, laneZones, planRowHeight,
@@ -42,6 +42,10 @@ const MIN_GRAB_HALF = 0.55;
     An 11px diamond with a 2px gap either side needs about 13px to be seen
     as its own object, so anything tighter than that is the smear this
     exists to resolve. */
+/** Struck events within this many pixels of one another are drawn as one
+    grouped module. Slightly wider than a mark, so two events on adjacent
+    days at a quarter scale still read as the same moment. */
+const GROUP_PX = 26;
 const CLUSTER_GAP = 13;
 const CLUSTER_MIN = 3;
 /** How close two runs may sit before they are one run. Roughly the width of
@@ -88,6 +92,10 @@ interface Props {
   onPlanCreate: (next: { scopeId: string; title: string; date: string; endDate: string | null }) => void;
   /** Events the playhead has just crossed and is briefly articulating. */
   articulating: Set<string>;
+  /** Projects the story is touching at this moment. A crossed mark is small
+      and the eye is on the playhead; waking the lane is what makes "this
+      project just did something" visible from anywhere on the screen. */
+  wokenLanes: Set<string>;
   /** Per lane, the snapshot the memory band just moved OFF -- drawn as a
       fading ghost so the movement is legible instead of a teleport. */
   ghostByScope: Record<string, ForecastSnapshot | null>;
@@ -134,10 +142,15 @@ interface Props {
  * worth seeing before you ask anything.
  */
 function EventMark({
-  entry, x, y, crossed, selected, woken, prominence, grabL, grabR, muted, onSelect, onHover, reducedMotion,
+  entry, x, y, crossed, selected, woken, struck, prominence, grabL, grabR, muted, onSelect, onHover, reducedMotion,
 }: {
   entry: TimelineEntry; x: number; y: number; crossed: boolean; selected: boolean;
-  woken: boolean; prominence: "primary" | "secondary"; grabL: number; grabR: number;
+  woken: boolean;
+  /** The playhead is crossing this RIGHT NOW. One expanding ring, once —
+      the note being struck. Distinct from `woken`, which hover also sets:
+      pointing at a mark is not the same event as time reaching it. */
+  struck?: boolean;
+  prominence: "primary" | "secondary"; grabL: number; grabR: number;
   /** This mark belongs to a run drawn as ONE clustered node. It keeps its
       pixels — pointing into the run still reaches the nearest event, which
       then draws itself in full — but at rest it lets the cluster speak for
@@ -200,6 +213,16 @@ function EventMark({
       >
       {lit && <circle r={19} fill={color} opacity={0.13} />}
       {lit && <circle r={14} fill="none" stroke={color} strokeWidth={1} opacity={selected ? 0.95 : 0.65} />}
+      {/* THE STRIKE. A single ring leaving the mark as time reaches it —
+          restrained on purpose: one shape, one pass, no repeat, and it is
+          gone before the module it announced has finished being read. */}
+      {struck && !reducedMotion && (
+        <circle
+          data-shoot="strike-ring"
+          r={14} fill="none" stroke={color} strokeWidth={1.4}
+          style={{ animation: "tl-strike 620ms cubic-bezier(0.16,0.84,0.44,1) forwards", transformOrigin: "center" }}
+        />
+      )}
 
       {overdue ? (
         // OVERDUE. The one state that outranks everything: a plan whose
@@ -524,7 +547,7 @@ export default function TimeField({
   lanes, entries, candidates, memoryByScope, view, nowT, playheadT, crossed,
   selectedId, hoveredLane, onSelect, onHoverLane, onScrub, onOpenScope,
   onViewChange, bounds, reducedMotion, laneBoxes, onToggleExpand,
-  onPlanRetime, onPlanCreate, articulating, ghostByScope, deltaByScope,
+  onPlanRetime, onPlanCreate, articulating, wokenLanes, ghostByScope, deltaByScope,
   layers, hoveredId, onHoverEvent, playing,
   intakeCandidate, intakeStartX, intakeStartY, onIntakeEnd, revealedCandidateId,
 }: Props) {
@@ -1045,7 +1068,7 @@ export default function TimeField({
         <div style={{ height: HEADER_H }} />
         {lanes.map((lane) => {
           const mem = memoryByScope[lane.scopeId] ?? null;
-          const alive = hoveredLane === lane.scopeId;
+          const alive = hoveredLane === lane.scopeId || wokenLanes.has(lane.scopeId);
           const box = boxOf.get(lane.scopeId);
           const open = box?.expanded ?? false;
           const rail = box?.dormant ?? false;
@@ -1394,6 +1417,18 @@ export default function TimeField({
                   fill="var(--i-text)" opacity={box.expanded ? 0.028 : 0.02}
                 />
               )}
+              {/* THE PROJECT THE STORY IS IN. Not a highlight competing with
+                  hover — a violet wash in the memory colour, so a lane
+                  waking during playback reads as "this is being remembered"
+                  rather than "the pointer is here". */}
+              {wokenLanes.has(box.scopeId) && (
+                <rect
+                  data-shoot={`lane-woken-${box.scopeId}`}
+                  x={0} y={HEADER_H + box.top} width={view.width} height={box.height}
+                  fill="var(--i-violet)" opacity={0.05}
+                  style={reducedMotion ? undefined : { transition: "opacity 260ms ease" }}
+                />
+              )}
               {/* THE DESTINATION. While an activity is carried out of its
                   lane, the one it would land in wakes — a lane rather than a
                   drop zone, because the lane already is the target. */}
@@ -1505,6 +1540,7 @@ export default function TimeField({
                         crossed={crossed.has(e.id)}
                         selected={selectedId === e.id}
                         woken={articulating.has(e.id) || hoveredId === e.id}
+                        struck={articulating.has(e.id)}
                         prominence={prominenceFor(e)}
                         grabL={grabCells.get(e.id)?.l ?? GRAB_HALF}
                         grabR={grabCells.get(e.id)?.r ?? GRAB_HALF}
@@ -1857,35 +1893,119 @@ export default function TimeField({
         {laneBoxes.map((box) => {
           const yTrack = HEADER_H + zonesOf(box).scoreY;
           const compact = box.height < 110;
-          return (byLane.get(box.scopeId) ?? []).map((e) => {
+          const modW = compact ? 176 : 208;
+          const laneEntries = byLane.get(box.scopeId) ?? [];
+          const place = (x: number) => Math.min(view.width - modW / 2 - 6, Math.max(modW / 2 + 6, x));
+
+          // ONE OBJECT PER MOMENT, NOT ONE PER EVENT.
+          //
+          // Three things landing on the same afternoon drew three modules at
+          // the same x, stacked exactly: the top one readable, the rest a
+          // smear of borders, and nothing anywhere saying there had been
+          // three. The playback plan already treats a shared moment as one
+          // group; this makes the drawing agree with the pacing. Held and
+          // hovered modules are untouched — those are one thing you pointed
+          // at, and they stay one thing.
+          // A REPORT'S ARTICULATION IS ITS MOVEMENT.
+          //
+          // A crossed Report drew a module saying "Forecast report" — its
+          // title, and the least useful sentence on the screen — directly
+          // beside the chip stating what it actually did to the landing.
+          // Four projects reporting in one week produced four such cards.
+          // Where the chip is speaking for a Report, the Report does not
+          // also speak for itself. A FIRST report has no movement and no
+          // chip, so it keeps its module: something has to mark the
+          // crossing.
+          const chip = deltaByScope[box.scopeId];
+          const struck = laneEntries.filter((e) => {
+            if (!articulating.has(e.id)) return false;
+            if (e.kind !== "report" || !chip) return true;
+            const snap = e.detail as unknown as { likelyDate?: string };
+            return snap?.likelyDate !== chip.toLikely;
+          });
+          const groups: TimelineEntry[][] = [];
+          for (const e of struck) {
+            const x = xFor(view, new Date(e.date).getTime());
+            const g = groups.find(
+              (q) => Math.abs(xFor(view, new Date(q[0].date).getTime()) - x) <= GROUP_PX
+            );
+            if (g) g.push(e);
+            else groups.push([e]);
+          }
+
+          const out: React.ReactNode[] = [];
+          for (const g of groups) {
+            const x = xFor(view, new Date(g[0].date).getTime());
+            if (x < -40 || x > view.width + 40) continue;
+            // A struck event that is ALSO the selection keeps its held
+            // module below; the group would otherwise say the same thing
+            // twice in two materials.
+            const rest = g.filter((e) => e.id !== selectedId);
+            if (rest.length === 0) continue;
+            const clamped = place(x);
+            out.push(
+              rest.length === 1 ? (
+                <EventModule
+                  key={`mod-${rest[0].id}`}
+                  entry={rest[0]}
+                  x={clamped}
+                  stemDx={x - clamped}
+                  y={yTrack - 18}
+                  phase="articulating"
+                  reducedMotion={reducedMotion}
+                  compact={compact}
+                />
+              ) : (
+                <EventGroupModule
+                  key={`grp-${rest[0].id}`}
+                  entries={rest}
+                  x={clamped}
+                  stemDx={x - clamped}
+                  y={yTrack - 18}
+                  reducedMotion={reducedMotion}
+                  compact={compact}
+                />
+              )
+            );
+          }
+
+          for (const e of laneEntries) {
             const held = selectedId === e.id;
-            const live = articulating.has(e.id);
             // HOVER EXPLAINS. Pointing at a mark says what it is in words,
             // which is what makes a colour key unnecessary.
-            const peek = hoveredId === e.id && !held && !live;
-            if (!held && !live && !peek) return null;
+            const peek = hoveredId === e.id && !held && !articulating.has(e.id);
+            if (!held && !peek) continue;
             const x = xFor(view, new Date(e.date).getTime());
-            if (x < -40 || x > view.width + 40) return null;
-            const modW = compact ? 176 : 208;
-            const clamped = Math.min(view.width - modW / 2 - 6, Math.max(modW / 2 + 6, x));
-            return (
+            if (x < -40 || x > view.width + 40) continue;
+            const clamped = place(x);
+            out.push(
               <EventModule
                 key={`mod-${e.id}`}
                 entry={e}
                 x={clamped}
                 stemDx={x - clamped}
                 y={yTrack - 18}
-                phase={held ? "held" : live ? "articulating" : "peek"}
+                phase={held ? "held" : "peek"}
                 reducedMotion={reducedMotion}
                 compact={compact}
               />
             );
-          });
+          }
+          return out;
         })}
 
-        {/* THE REPORT TRANSITION. What the remembered future just did,
-            stated as the movement between two stored numbers. Never
-            attributed to anything — the adjacent event did not cause it. */}
+        {/* THE REPORT TRANSITION, WHERE IT HAPPENED.
+            What the remembered future just did, stated as the movement
+            between two stored numbers. Never attributed to anything — the
+            adjacent event did not cause it.
+
+            It used to carry a "FORECAST MEMORY UPDATED" header over two
+            lines, which made it 44px tall — deep enough to reach up out of
+            the memory row and sit on top of the plan objects above it, so
+            announcing a change to the forecast hid part of the plan. The
+            transport readout now names the movement and whose it is, which
+            leaves this one job: say WHERE on the axis the landing moved to.
+            One line, inside the clearance the memory row already has. */}
         {laneBoxes.map((box) => {
           const lane = { scopeId: box.scopeId };
           const d = deltaByScope[lane.scopeId];
@@ -1894,36 +2014,39 @@ export default function TimeField({
           const later = d.days > 0;
           return (
             <div
-              key={`delta-${lane.scopeId}`}
+              // KEYED TO THE TRANSITION, NOT THE LANE.
+              //
+              // With a per-lane key React reused the same element for the
+              // next Report movement, and a CSS animation does not restart
+              // on a re-render — so stepping through two Reports in a row
+              // showed the second one's numbers wearing the first one's
+              // nearly-finished fade, i.e. invisible. A new movement is a
+              // new object, and gets its own 2.4 seconds.
+              key={`delta-${lane.scopeId}-${d.fromLikely}-${d.toLikely}`}
               data-shoot="memory-delta"
-              className="absolute pointer-events-none rounded-md px-2.5 py-1.5 whitespace-nowrap"
+              className="absolute pointer-events-none rounded-md px-2 py-[3px] whitespace-nowrap flex items-baseline gap-1.5"
               style={{
-                left: Math.min(view.width - 190, Math.max(6, xFor(view, new Date(d.toLikely).getTime()) - 84)),
-                top: yMem - 54,
+                left: Math.min(view.width - 170, Math.max(6, xFor(view, new Date(d.toLikely).getTime()) - 74)),
+                top: yMem - 32,
                 background: "linear-gradient(180deg, #1a1526 0%, #12101a 100%)",
                 border: "1px solid var(--i-violet)",
-                boxShadow: "0 10px 26px rgba(0,0,0,0.7)",
+                boxShadow: "0 8px 20px rgba(0,0,0,0.7)",
                 animation: reducedMotion ? undefined : "tl-delta 2400ms ease forwards",
                 zIndex: 28,
               }}
             >
-              <div className="text-[7.5px] uppercase tracking-[0.16em]" style={{ color: "var(--i-violet)" }}>
-                Forecast memory updated
-              </div>
-              <div className="mt-1 flex items-baseline gap-1.5">
-                <span className="i-readout text-[11px]" style={{ color: "var(--i-text-faint)" }}>
-                  {fmtDay(new Date(d.fromLikely).getTime())}
+              <span className="i-readout text-[10px]" style={{ color: "var(--i-text-faint)" }}>
+                {fmtDay(new Date(d.fromLikely).getTime())}
+              </span>
+              <span className="text-[9px]" style={{ color: "var(--i-text-faint)" }}>→</span>
+              <span className="i-readout text-[12px]" style={{ color: "var(--i-violet)" }}>
+                {fmtDay(new Date(d.toLikely).getTime())}
+              </span>
+              {d.days !== 0 && (
+                <span className="text-[8.5px]" style={{ color: later ? "var(--i-red)" : "var(--i-mint)" }}>
+                  {Math.abs(d.days)}d {later ? "later" : "earlier"}
                 </span>
-                <span className="text-[10px]" style={{ color: "var(--i-text-faint)" }}>→</span>
-                <span className="i-readout text-[13px]" style={{ color: "var(--i-violet)" }}>
-                  {fmtDay(new Date(d.toLikely).getTime())}
-                </span>
-                {d.days !== 0 && (
-                  <span className="text-[9px]" style={{ color: later ? "var(--i-red)" : "var(--i-mint)" }}>
-                    {Math.abs(d.days)}d {later ? "later" : "earlier"}
-                  </span>
-                )}
-              </div>
+              )}
             </div>
           );
         })}

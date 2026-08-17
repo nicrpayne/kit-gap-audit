@@ -17,6 +17,7 @@ import { useState } from "react";
 import type { TimelineEntry, TimelineCandidate, ForecastSnapshot } from "@/lib/timeline/entries";
 import { fmtFull } from "@/lib/timeline/geometry";
 import { spokenSourceLabel } from "@/lib/timeline/producer";
+import { labelFor } from "@/lib/timeline/moment";
 import { FAMILY_COLOR } from "./TimeField";
 
 // One panel material, shared by every inspector state — the recessed
@@ -400,19 +401,6 @@ export default function TimelineInspector({
   const planned = e.temporalState === "planned";
   const overdue = Boolean(detail.overdue);
 
-  const KIND_LABEL: Record<string, string> = {
-    report: "Forecast report",
-    decision_raised: "Decision raised",
-    decision_gated: "Connected to delivery",
-    decision_decided: "Decision decided",
-    decision_needed_by: "Needed by · advisory",
-    finding_raised: "Finding raised",
-    finding_resolved: "Finding resolved",
-    context_observed: "Context observed",
-    work_completed: "Work completed",
-    landmark: "Landmark",
-  };
-
   return (
     <div className={PANEL} style={PANEL_STYLE}>
       <div className="px-4 py-3 relative" style={HEAD_STYLE}>
@@ -423,7 +411,7 @@ export default function TimelineInspector({
           <div className="text-[13px] leading-snug text-[var(--i-text)]">{e.title}</div>
         </div>
         <div className="mt-1.5 flex items-center gap-2 flex-wrap">
-          <span className="text-[9px] uppercase tracking-[0.12em]" style={{ color }}>{KIND_LABEL[e.kind] ?? e.kind}</span>
+          <span className="text-[9px] uppercase tracking-[0.12em]" style={{ color }}>{labelFor(e)}</span>
           {planned && (
             <span
               data-shoot="planned-badge"

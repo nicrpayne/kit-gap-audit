@@ -31,6 +31,7 @@ import type {
 } from "@/lib/timeline/entries";
 import { forecastMemoryAt } from "@/lib/timeline/entries";
 import { buildPlaybackPlan, playheadAt, crossedAt, type PlaybackPlan } from "@/lib/timeline/playback";
+import { momentOf, idsAt } from "@/lib/timeline/moment";
 import { DAY, fmtDay, fmtFull, scaleFor, zoomAbout, windowFollowing } from "@/lib/timeline/geometry";
 import { mutateReality, subscribeReality } from "@/lib/instrument/reality";
 import InstrumentShell from "@/components/instrument/InstrumentShell";
@@ -364,7 +365,17 @@ export default function TimelinePageClient() {
   useEffect(() => {
     for (const [scopeId, next] of Object.entries(memoryByScope)) {
       const prev = prevMemory.current[scopeId] ?? null;
-      if (prev && next && prev.reportId !== next.reportId) {
+      // FORWARD ONLY.
+      //
+      // The chip states a movement in what the project believed. Travelling
+      // BACKWARD through the record is not such a movement — jumping from
+      // Live Now to the first report announced "OCT 5 → SEP 15, 20d
+      // earlier", which reads as the forecast having improved when all that
+      // happened is that the playhead went back in time. The bands still
+      // visibly change; nothing claims a belief moved that did not.
+      const forward =
+        prev && next && new Date(next.generatedAt).getTime() > new Date(prev.generatedAt).getTime();
+      if (forward && prev && next && prev.reportId !== next.reportId) {
         const days = Math.round(
           (new Date(next.likelyDate).getTime() - new Date(prev.likelyDate).getTime()) / DAY
         );
@@ -384,6 +395,45 @@ export default function TimelinePageClient() {
   }, [memoryByScope]);
 
   const atNow = playheadT !== null && Math.abs(playheadT - nowT) < 12 * 3600 * 1000;
+
+  // ── WHAT THE INSTRUMENT IS READING ─────────────────────────────────
+  //
+  // The story readout, from ONE deterministic source. Playing hands it the
+  // ids it has just struck; a playhead HELD in history hands it the ids of
+  // the last group at or before its position. Both go through the same
+  // function, so what the transport says while playing and what it says
+  // after you drag back to the same date are the same sentence.
+  //
+  // Silent at Live Now. This is a playback instrument: it reports what is
+  // being REMEMBERED, and the present is not a memory. Leaving it lit at
+  // NOW would also leave a lane permanently woken under a resting score,
+  // which is the opposite of what the default view is for.
+  //
+  // Nothing here reads a clock or a previous position. A moment is a
+  // function of WHICH IDS, and the ids are a function of WHERE — which is
+  // the whole of the determinism claim.
+  const moment = useMemo(() => {
+    if (!data || playheadT === null) return null;
+    if (!playing && atNow) return null;
+    const ids = playing ? articulating : idsAt(data.entries, playheadT);
+    return momentOf(data.entries, ids, data.snapshotsByScope);
+  }, [data, playheadT, playing, atNow, articulating]);
+
+  const laneNames = useMemo(() => {
+    const out: Record<string, string> = {};
+    for (const l of data?.lanes ?? []) out[l.scopeId] = l.name;
+    return out;
+  }, [data]);
+
+  // WHICH PROJECTS THE STORY IS TOUCHING RIGHT NOW. A crossed mark is small
+  // and the eye is looking at the playhead, not at the lane it landed in;
+  // waking the whole lane is what makes "this project just did something"
+  // visible from anywhere on the screen.
+  const wokenLanes = useMemo(() => {
+    const out = new Set<string>();
+    for (const b of moment?.beats ?? []) out.add(b.scopeId);
+    return out;
+  }, [moment]);
 
   /** The panel exists because something is held. Nothing held, no panel. */
   const inspectorOpen = selectedId !== null;
@@ -1147,6 +1197,7 @@ export default function TimelinePageClient() {
               nowT={nowT}
               playheadT={playheadT}
               crossed={crossed}
+              wokenLanes={wokenLanes}
               selectedId={selectedId}
               hoveredLane={hoveredLane}
               onSelect={(id) => { setPlaying(false); setSelectedId(id); }}
@@ -1360,6 +1411,9 @@ export default function TimelinePageClient() {
         zoomPct={zoomPct}
         crossedCount={crossed.size}
         totalPast={pastEvents.length}
+        moment={moment}
+        laneNames={laneNames}
+        reducedMotion={reducedMotion}
         onPlayPause={() => {
           if (playing) { setPlaying(false); return; }
           // Replaying from NOW would have nothing to cross, so a play from

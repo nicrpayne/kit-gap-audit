@@ -531,9 +531,36 @@ body {
   100% { opacity: 0; transform: translateY(-3px); }
 }
 
+/* THE STORY READOUT arriving. Deliberately NOT tl-articulate: that keyframe
+   carries `translate(-50%, -100%)` because it animates an absolutely
+   positioned module that centres itself over its own date. Borrowing it for
+   an in-flow block threw the block up over its own header for the length of
+   the animation — invisible at a glance, unmistakable in a captured frame. */
+@keyframes tl-readout {
+  from { opacity: 0; transform: translateY(3px); }
+  to   { opacity: 1; transform: none; }
+}
+
+/* THE STRIKE. One ring leaving a mark as the playhead reaches it. A single
+   pass, no repeat, gone before the module it announced has been read --
+   an instrument responding to the score, not a notification asking to be
+   noticed. */
+@keyframes tl-strike {
+  from { opacity: 0.85; transform: scale(0.42); }
+  to   { opacity: 0;    transform: scale(2.4); }
+}
+
 @media (prefers-reduced-motion: reduce) {
   [data-shoot^="event-module-"],
+  [data-shoot^="event-group-"],
+  [data-shoot="strike-ring"],
+  [data-shoot="now-playing"] *,
   [data-shoot="memory-delta"] {
     animation: none !important;
   }
+  /* The ring carries NO information -- it is emphasis on a change the
+     module and the readout both state in words. With motion off it is
+     removed entirely rather than left as a static circle nobody can
+     interpret. */
+  [data-shoot="strike-ring"] { display: none; }
 }

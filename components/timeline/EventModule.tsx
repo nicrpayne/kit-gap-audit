@@ -20,20 +20,8 @@
 
 import type { TimelineEntry } from "@/lib/timeline/entries";
 import { fmtDay } from "@/lib/timeline/geometry";
+import { labelFor } from "@/lib/timeline/moment";
 import { FAMILY_COLOR } from "./familyColor";
-
-export const KIND_LABEL: Record<string, string> = {
-  report: "Forecast report",
-  decision_raised: "Decision raised",
-  decision_gated: "Connected to delivery",
-  decision_decided: "Decision decided",
-  decision_needed_by: "Needed by · advisory",
-  finding_raised: "Finding raised",
-  finding_resolved: "Finding resolved",
-  context_observed: "Context observed",
-  work_completed: "Work completed",
-  landmark: "Landmark",
-};
 
 export default function EventModule({
   entry, x, y, phase, reducedMotion, compact, stemDx = 0,
@@ -111,7 +99,7 @@ export default function EventModule({
             {entry.title}
           </div>
           <div className="mt-[3px] text-[8px] uppercase tracking-[0.12em]" style={{ color }}>
-            {KIND_LABEL[entry.kind] ?? entry.kind}
+            {labelFor(entry)}
           </div>
         </div>
       </div>
@@ -119,6 +107,104 @@ export default function EventModule({
       <div
         style={{
           width: 1, height: 9, background: color, opacity: 0.6,
+          marginLeft: `calc(50% + ${stemDx}px)`,
+        }}
+      />
+    </div>
+  );
+}
+
+/**
+ * SEVERAL NOTES STRUCK TOGETHER.
+ *
+ * Three things landing on one afternoon used to draw three modules at the
+ * same x, stacked exactly on top of each other: the top one legible, the
+ * two beneath it visible only as a smear of borders, and no indication
+ * anywhere that more than one thing had happened. The playback plan already
+ * treats a shared moment as one group for pacing; this makes the drawing
+ * agree with the pacing.
+ *
+ * One object, one stem, one date, and the count stated — then the titles,
+ * as many as fit. It is deliberately the SAME material as a single module,
+ * because it is the same kind of thing: what the instrument just read.
+ */
+export function EventGroupModule({
+  entries, x, y, reducedMotion, compact, stemDx = 0,
+}: {
+  entries: TimelineEntry[];
+  x: number;
+  y: number;
+  reducedMotion: boolean;
+  compact: boolean;
+  stemDx?: number;
+}) {
+  const w = compact ? 176 : 208;
+  const SPELLED = 3;
+  const shown = entries.slice(0, SPELLED);
+  const rest = entries.length - shown.length;
+
+  return (
+    <div
+      data-shoot={`event-group-${entries[0].id}`}
+      data-phase="articulating"
+      data-count={entries.length}
+      className="absolute pointer-events-none"
+      style={{
+        left: x,
+        top: y,
+        width: w,
+        transform: "translate(-50%, -100%)",
+        animation: reducedMotion ? undefined : "tl-articulate 180ms cubic-bezier(0.22,0.61,0.36,1)",
+        zIndex: 26,
+      }}
+    >
+      <div
+        className="rounded-md overflow-hidden"
+        style={{
+          background: "linear-gradient(180deg, #171d22 0%, #10151a 100%)",
+          border: "1px solid var(--i-border-strong)",
+          boxShadow: "0 8px 22px rgba(0,0,0,0.66)",
+        }}
+      >
+        {/* Every family present, as a single edge divided between them —
+            so the module still says WHAT KINDS of thing arrived without
+            needing a swatch per row. */}
+        <div className="flex" style={{ height: 2 }}>
+          {entries.map((e) => (
+            <div key={e.id} className="flex-1" style={{ background: FAMILY_COLOR[e.family] ?? "var(--i-text-soft)" }} />
+          ))}
+        </div>
+        <div className="px-2.5 py-[7px]">
+          <div className="flex items-center gap-1.5">
+            <span className="i-readout text-[10px] leading-none" style={{ color: "var(--i-text-soft)" }}>
+              {fmtDay(new Date(entries[0].date).getTime())}
+            </span>
+            <span
+              className="text-[7px] uppercase tracking-[0.14em] rounded px-1 py-[1px]"
+              style={{ color: "var(--i-violet)", border: "1px solid rgba(155,140,250,0.5)" }}
+            >
+              {entries.length} events
+            </span>
+          </div>
+          {shown.map((e) => (
+            <div key={e.id} className="mt-[3px] flex items-baseline gap-1.5 min-w-0">
+              <span
+                className="shrink-0 rounded-[1px]"
+                style={{ width: 4, height: 4, background: FAMILY_COLOR[e.family] ?? "var(--i-text-soft)" }}
+              />
+              <span className="text-[10.5px] leading-[1.2] text-[var(--i-text)] truncate">{e.title}</span>
+            </div>
+          ))}
+          {rest > 0 && (
+            <div className="mt-[3px] text-[8px] uppercase tracking-[0.12em]" style={{ color: "var(--i-text-faint)" }}>
+              +{rest} more
+            </div>
+          )}
+        </div>
+      </div>
+      <div
+        style={{
+          width: 1, height: 9, background: "var(--i-violet)", opacity: 0.6,
           marginLeft: `calc(50% + ${stemDx}px)`,
         }}
       />
