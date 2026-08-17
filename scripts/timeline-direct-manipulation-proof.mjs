@@ -379,8 +379,32 @@ try {
   const heights = () =>
     p.evaluate(() => [...document.querySelectorAll("[data-shoot^='lane-header-']")].map((e) => Math.round(e.getBoundingClientRect().height)));
   const flat = await heights();
-  check("28. Eight lanes stay compact and all present",
-    flat.length === 8 && flat.every((h) => h >= 60), flat.join("/"));
+  // CONTRACT REPLACED, NARROWLY. This required every one of eight lanes to
+  // be at least 60px tall. The invariant it protects is that DENSITY NEVER
+  // DROPS A PROJECT — that going from four to eight makes each smaller but
+  // never makes one vanish, and that whatever is left is still a usable lane.
+  // Both halves are still checked.
+  //
+  // What changed is that a project with no plan, no forecast and no decisions
+  // is now a rail rather than a room, so "every lane ≥ 60px" became false by
+  // design: a rail is 34px and that is the point of it. The floor is now
+  // applied where it means something — to the projects that actually have a
+  // story — and rails are required to be present, named, and openable, which
+  // is the part the old number was standing in for.
+  const railed = await p.evaluate(() =>
+    [...document.querySelectorAll("[data-shoot^='lane-header-']")].map((e) => ({
+      dormant: e.hasAttribute("data-dormant"),
+      h: Math.round(e.getBoundingClientRect().height),
+      named: (e.textContent ?? "").trim().length > 0,
+    })));
+  check("28. Eight projects are all present — none dropped",
+    railed.length === 8 && railed.every((l) => l.named), flat.join("/"));
+  check("…the ones with a story keep a usable lane",
+    railed.filter((l) => !l.dormant).every((l) => l.h >= 60),
+    railed.filter((l) => !l.dormant).map((l) => l.h).join("/"));
+  check("…and the ones without are rails, not rooms",
+    railed.filter((l) => l.dormant).every((l) => l.h < 60),
+    railed.filter((l) => l.dormant).map((l) => l.h).join("/") || "none dormant");
   const objs = await p.locator('[data-shoot^="plan-"][data-plan-role]').count();
   check("…with the plan still drawn at that density", objs > 0, `${objs} plan objects`);
 
@@ -389,9 +413,21 @@ try {
   const open8 = await heights();
   const i = (await p.evaluate((sid) =>
     [...document.querySelectorAll("[data-shoot^='lane-header-']")].findIndex((e) => e.getAttribute("data-shoot") === `lane-header-${sid}`), jsa.scopeId));
-  check("29. One lane opens legibly while the other seven stay compact",
-    open8[i] > flat[i] * 1.5 && open8.filter((_, k) => k !== i).every((h) => h >= 60),
-    `${flat[i]}px → ${open8[i]}px, siblings ${open8.filter((_, k) => k !== i).join("/")}`);
+  // Same replacement, same reason: the sibling floor now applies to the
+  // siblings that are lanes. The claim that matters — one project opens
+  // substantially while every other project stays present and usable — is
+  // unchanged.
+  const sibs = await p.evaluate((sid) =>
+    [...document.querySelectorAll("[data-shoot^='lane-header-']")]
+      .filter((e) => e.getAttribute("data-shoot") !== `lane-header-${sid}`)
+      .map((e) => ({ dormant: e.hasAttribute("data-dormant"), h: Math.round(e.getBoundingClientRect().height) })),
+    jsa.scopeId);
+  check("29. One lane opens legibly while every other project stays present",
+    open8[i] > flat[i] * 1.5 &&
+      sibs.length === 7 &&
+      sibs.filter((s) => !s.dormant).every((s) => s.h >= 60) &&
+      sibs.filter((s) => s.dormant).every((s) => s.h > 0),
+    `${flat[i]}px → ${open8[i]}px, siblings ${sibs.map((s) => `${s.h}${s.dormant ? "r" : ""}`).join("/")}`);
 } finally {
   for (const id of extra) await db.scope.delete({ where: { id } }).catch(() => {});
   await db.$disconnect();

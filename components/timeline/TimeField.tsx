@@ -31,7 +31,12 @@ export const LANE_HEADER_W = 146;
 /** How far a marker's hit area reaches when it has room, and the floor it
     keeps when neighbours crowd it. See `grabByLane`. */
 const GRAB_HALF = 8;
-const MIN_GRAB_HALF = 2;
+/** The narrowest a grab cell may get. Small enough that cells still TILE at
+    extreme density instead of overlapping — a 2px floor was wide enough to
+    push a cell past the midpoint between two marks a pixel apart, which
+    handed one mark's own centre to its neighbour and made it unreachable.
+    Just above zero, so a cell is never a zero-width rect. */
+const MIN_GRAB_HALF = 0.55;
 /** How close two history marks must be before the run they belong to is
     drawn as one node, and how many it takes to be worth doing.
     An 11px diamond with a 2px gap either side needs about 13px to be seen
@@ -39,6 +44,10 @@ const MIN_GRAB_HALF = 2;
     exists to resolve. */
 const CLUSTER_GAP = 13;
 const CLUSTER_MIN = 3;
+/** How close two runs may sit before they are one run. Roughly the width of
+    the capsule that states a count, because two counts closer than that
+    read as a single number. See the merge pass in `clusters`. */
+const MERGE_GAP = 34;
 /** The field FILLS the instrument. Lanes grow to use the height rather than
     sitting in a short band above a void -- the time field is the hero, and
     a hero that occupies a third of the screen is not one. Clamped so four
@@ -225,22 +234,30 @@ function EventMark({
 }
 
 /**
- * A RUN OF HISTORY, DRAWN ONCE.
+ * A RUN OF HISTORY, DRAWN ONCE — AS ONE OBJECT.
  *
  * Four issues finishing on four consecutive days are four diamonds nine
  * pixels apart: a smear that reads as texture rather than as a count. The
  * eye cannot resolve it, and the one fact it contains — FOUR THINGS
  * HAPPENED HERE — is the fact it fails to deliver.
  *
- * So a tight run draws as one node and says how many. This is PRESENTATION
- * ONLY, in the strictest sense: every member is still in the projection,
- * still crossed by playback, still selectable, and still owns the pixels
- * above it. Point into the run and the nearest event surfaces in full and
- * explains itself; the cluster simply stops competing while it does.
+ * The first version of this fixed the smear and introduced a worse problem:
+ * a pill, a diamond, and a number floating to the right of it. Three marks
+ * for one idea, and where two runs sat near each other the numbers read as a
+ * single value ("4 38"). That is instrumentation, not product language — a
+ * symbol system asking to be decoded.
  *
- * The run's real extent is marked at both ends, because a cluster that drew
- * itself as a single instant would be lying about when those things
- * happened.
+ * So the glyph and its count are now ONE CAPSULE: `◇ 38`, sized to its
+ * contents, with nothing outside it. The run's real extent stays honest, but
+ * it is expressed as TEXTURE — a quiet dotted rail along the score line —
+ * rather than as a second object with ends of its own. At rest the whole
+ * thing recedes to the weight of a watermark; history is context, and it
+ * must not out-argue the plan.
+ *
+ * Still presentation only, in the strictest sense: every member remains in
+ * the projection, remains crossed by playback, remains selectable, and keeps
+ * every pixel of its own hit area. Point into the run and the nearest event
+ * surfaces in full and explains itself while the capsule stands down.
  */
 function HistoryCluster({
   x0, x1, y, count, done, dim, reducedMotion,
@@ -250,7 +267,14 @@ function HistoryCluster({
   const cx = (x0 + x1) / 2;
   const all = done === count;
   const some = done > 0 && !all;
-  const stroke = all ? "var(--i-violet)" : some ? "var(--i-text-soft)" : "var(--i-border-strong)";
+  const tone = all ? "var(--i-violet)" : some ? "var(--i-text-soft)" : "var(--i-text-faint)";
+  const label = String(count);
+  // The capsule is sized to what it holds — a diamond, a hair of space, and
+  // the digits — so it is unmistakably one object rather than a container
+  // with something parked beside it.
+  const digits = label.length * 5.2;
+  const w = 13 + digits + 9;
+  const h = 15;
   return (
     <g
       data-shoot={`history-cluster-${Math.round(x0)}-${y}`}
@@ -262,28 +286,35 @@ function HistoryCluster({
         transition: reducedMotion ? undefined : "opacity 160ms ease",
       }}
     >
-      {/* A TROUGH THE RUN SITS IN. It spans the run's REAL extent, so the
-          cluster says "several things, across these days" rather than
-          collapsing them onto an instant they did not share. */}
-      <rect
-        x={x0 - 8} y={y - 8} width={x1 - x0 + 16} height={16} rx={8}
-        fill="#0a0e11" opacity={0.92}
-        stroke={stroke} strokeWidth={0.8} strokeOpacity={all ? 0.5 : 0.32}
-      />
-      {/* ONE node for the run — the same primitive every event is made of */}
-      <rect
-        x={cx - 5} y={y - 5} width={10} height={10} transform={`rotate(45 ${cx} ${y})`}
-        fill={all ? "#242c34" : "#1b2228"} stroke={stroke} strokeWidth={1.1}
-        strokeOpacity={0.85} opacity={all ? 0.85 : 0.6}
-      />
-      <text
-        x={x1 + 12} y={y + 3.2} fontSize={9}
-        fill={all ? "var(--i-violet)" : "var(--i-text-soft)"}
-        opacity={all ? 0.9 : 0.7}
-        style={{ letterSpacing: "0.04em" }}
-      >
-        {count}
-      </text>
+      {/* THE EXTENT, AS TEXTURE. A dotted rail over the days the run
+          actually covers — so the capsule never claims to be an instant,
+          without spending a second object to say so. */}
+      {x1 - x0 > w && (
+        <line
+          x1={x0} y1={y} x2={x1} y2={y}
+          stroke={tone} strokeWidth={1} strokeDasharray="1 2.5" opacity={0.3}
+        />
+      )}
+      {/* ONE OBJECT: the glyph and the count, in a single quiet capsule. */}
+      <g transform={`translate(${cx - w / 2},${y - h / 2})`} data-shoot="cluster-capsule">
+        <rect
+          x={0} y={0} width={w} height={h} rx={h / 2}
+          fill="#0d1215" opacity={0.78}
+          stroke={tone} strokeWidth={0.8} strokeOpacity={all ? 0.24 : 0.18}
+        />
+        <rect
+          x={5.2} y={h / 2 - 3.4} width={6.8} height={6.8}
+          transform={`rotate(45 8.6 ${h / 2})`}
+          fill={all ? tone : "none"} opacity={all ? 0.34 : 0.8}
+          stroke={tone} strokeWidth={1} strokeOpacity={0.5}
+        />
+        <text
+          x={w - 6} y={h / 2 + 3.1} fontSize={8.5} textAnchor="end"
+          fill={tone} opacity={0.6} style={{ letterSpacing: "0.03em" }}
+        >
+          {label}
+        </text>
+      </g>
     </g>
   );
 }
@@ -301,12 +332,18 @@ function HistoryCluster({
  * readable rather than a teleport.
  */
 function MemoryBand({
-  snap, view, y, ghost, reducedMotion, detailed,
+  snap, view, y, ghost, reducedMotion, detailed, measured,
 }: {
   snap: ForecastSnapshot; view: TimeView; y: number; ghost?: boolean; reducedMotion?: boolean;
-  /** The lane is opened — the capsule states its own ends rather than
-      leaving them to be inferred from the shape. */
+  /** The lane is OPENED. Adds the things that are only worth the ink when
+      this project is the one being worked on: p10/p90 named as dates, and
+      the confidence the Report held. */
   detailed?: boolean;
+  /** The lane is opened OR under the pointer. Adds the measurement to the
+      tie — the bracket ends and the exact "24d clear". At rest the tie is a
+      bare connector: enough to see that a relationship exists and which way
+      it falls, without a number shouting from every lane at once. */
+  measured?: boolean;
 }) {
   const t50 = new Date(snap.likelyDate).getTime();
   const x10 = xFor(view, new Date(snap.earliestDate).getTime());
@@ -344,7 +381,11 @@ function MemoryBand({
     <g
       data-shoot={ghost ? "forecast-memory-ghost" : "forecast-memory"}
       opacity={op}
-      style={reducedMotion ? undefined : { transition: "opacity 520ms ease" }}
+      // A READOUT, NOT A CONTROL. The capsule is computed and cannot be
+      // grabbed, and it is drawn above the lane content — so leaving it
+      // hit-testable would let it stand between the pointer and a mark, for
+      // no purpose. Selecting a forecast is done through its Report.
+      style={reducedMotion ? { pointerEvents: "none" } : { pointerEvents: "none", transition: "opacity 520ms ease" }}
     >
       <defs>
         <linearGradient id={id} x1="0" x2="1">
@@ -377,10 +418,11 @@ function MemoryBand({
           <rect x={x - 1} y={y - h / 2 + 3} width={2} height={h - 6} rx={1} fill="var(--i-violet)" opacity={0.7} />
         </g>
       ))}
-      {/* OPENED: the ends name themselves. The capsule is the same object
-          at the same place; the lane's resolution decides whether its p10
-          and p90 are shapes you read off the axis or dates it tells you. */}
-      {detailed && !ghost && (
+      {/* HOVERED OR OPENED: the ends name themselves. The capsule is the same
+          object at the same place; how closely you are looking decides
+          whether its p10 and p90 are shapes you read off the axis or dates it
+          tells you. */}
+      {measured && !ghost && (
         <g style={{ pointerEvents: "none" }} data-shoot="memory-bounds">
           <text x={x10 - 5} y={y + 3} fontSize={8} textAnchor="end" fill="var(--i-violet)" opacity={0.7}>
             {fmtDay(new Date(snap.earliestDate).getTime())}
@@ -408,28 +450,47 @@ function MemoryBand({
           data-late={!clear || undefined}
           style={{ pointerEvents: "none" }}
         >
+          {/* AT REST: a bare connector. It is drawn in the colour of its own
+              answer, so ahead-or-behind arrives pre-attention, and it is
+              solid for clear and dashed for late so the distinction survives
+              in monochrome. No ticks, no digits — a portfolio of eight lanes
+              all reciting their arithmetic at once is a spreadsheet. */}
           <line
             x1={x50} y1={y + h / 2 + 7} x2={xT!} y2={y + h / 2 + 7}
-            stroke={tieColor} strokeWidth={1} opacity={0.6} strokeDasharray={clear ? undefined : "3 2"}
+            stroke={tieColor} strokeWidth={1}
+            // BEHIND CARRIES FURTHER THAN AHEAD. Being late is the state a
+            // person needs to notice without looking for it, so it keeps more
+            // presence at rest than a project running clear. Still quiet
+            // enough that four lanes of it is not an alarm panel.
+            opacity={measured ? 0.75 : clear ? 0.38 : 0.6}
+            strokeDasharray={clear ? undefined : "3 2"}
+            style={reducedMotion ? undefined : { transition: "opacity 180ms ease" }}
           />
-          {[x50, xT!].map((x, i) => (
-            <line key={i} x1={x} y1={y + h / 2 + 4} x2={x} y2={y + h / 2 + 10} stroke={tieColor} strokeWidth={1} opacity={0.75} />
-          ))}
-          <text
-            x={(x50 + xT!) / 2} y={y + h / 2 + 19}
-            fontSize={8} textAnchor="middle" fill={tieColor} opacity={0.95}
-            style={{ letterSpacing: "0.06em" }}
-          >
-            {gapDays === 0 ? "on target" : `${Math.abs(gapDays!)}d ${clear ? "clear" : "late"}`}
-            {/* HOW SURE WE WERE, ATTACHED TO THE CLAIM IT BELONGS TO.
-                This number is the confidence of hitting the TARGET. Floated
-                beside the flag it landed next to the p50 date and read as
-                "34% confidence, NOV 2" — a sentence about the wrong date.
-                On the tie there is only one thing it can mean. Opened lanes
-                only: it is the third fact about this relationship, not the
-                first. */}
-            {detailed && snap.confidenceAtTarget !== null && ` · ${snap.confidenceAtTarget}% confident`}
-          </text>
+          {/* ON HOVER OR OPEN: the measurement. The bracket closes at both
+              ends and the exact figure appears — the same arithmetic either
+              way, one interaction deeper. */}
+          {measured && (
+            <g style={{ pointerEvents: "none" }}>
+              {[x50, xT!].map((x, i) => (
+                <line key={i} x1={x} y1={y + h / 2 + 4} x2={x} y2={y + h / 2 + 10} stroke={tieColor} strokeWidth={1} opacity={0.75} />
+              ))}
+              <text
+                x={(x50 + xT!) / 2} y={y + h / 2 + 19}
+                fontSize={8} textAnchor="middle" fill={tieColor} opacity={0.95}
+                style={{ letterSpacing: "0.06em" }}
+              >
+                {gapDays === 0 ? "on target" : `${Math.abs(gapDays!)}d ${clear ? "clear" : "late"}`}
+                {/* HOW SURE WE WERE, ATTACHED TO THE CLAIM IT BELONGS TO.
+                    This number is the confidence of hitting the TARGET.
+                    Floated beside the flag it landed next to the p50 date and
+                    read as "34% confidence, NOV 2" — a sentence about the
+                    wrong date. On the tie there is only one thing it can
+                    mean. Opened lanes only: it is the third fact about this
+                    relationship, not the first. */}
+                {detailed && snap.confidenceAtTarget !== null && ` · ${snap.confidenceAtTarget}% confident`}
+              </text>
+            </g>
+          )}
         </g>
       )}
       {/* the target AS IT WAS at that Report. A flag, never a fader. */}
@@ -516,9 +577,13 @@ export default function TimeField({
       for (let i = 0; i < xs.length; i++) {
         const left = i > 0 ? (xs[i].x - xs[i - 1].x) / 2 : GRAB_HALF;
         const right = i < xs.length - 1 ? (xs[i + 1].x - xs[i].x) / 2 : GRAB_HALF;
+        // A HAIR INSIDE THE MIDPOINT. Two cells that meet exactly on the
+        // boundary make the pixel they share ambiguous, and the one drawn
+        // later takes it; backing off a hundredth of a pixel keeps every
+        // mark's own centre its own even when the marks are a pixel apart.
         cells.set(xs[i].id, {
-          l: Math.max(MIN_GRAB_HALF, Math.min(GRAB_HALF, left)),
-          r: Math.max(MIN_GRAB_HALF, Math.min(GRAB_HALF, right)),
+          l: Math.max(MIN_GRAB_HALF, Math.min(GRAB_HALF, left - 0.01)),
+          r: Math.max(MIN_GRAB_HALF, Math.min(GRAB_HALF, right - 0.01)),
         });
       }
       out.set(scopeId, cells);
@@ -548,20 +613,37 @@ export default function TimeField({
         .map((e) => ({ id: e.id, x: xFor(view, new Date(e.date).getTime()) }))
         .filter((p) => p.x < nowX && p.x > -40 && p.x < view.width + 40)
         .sort((a, b) => a.x - b.x);
-      const groups: { x0: number; x1: number; ids: string[] }[] = [];
-      let run: { id: string; x: number }[] = [];
-      const flush = () => {
-        if (run.length >= CLUSTER_MIN) {
-          groups.push({ x0: run[0].x, x1: run[run.length - 1].x, ids: run.map((r) => r.id) });
-          for (const r of run) member.add(r.id);
-        }
-        run = [];
-      };
+      // PASS 1 — segments of marks standing closer than the eye can
+      // separate them.
+      const segs: { x0: number; x1: number; ids: string[] }[] = [];
       for (const p of xs) {
-        if (run.length === 0 || p.x - run[run.length - 1].x <= CLUSTER_GAP) run.push(p);
-        else { flush(); run = [p]; }
+        const last = segs[segs.length - 1];
+        if (last && p.x - last.x1 <= CLUSTER_GAP) { last.x1 = p.x; last.ids.push(p.id); }
+        else segs.push({ x0: p.x, x1: p.x, ids: [p.id] });
       }
-      flush();
+
+      // PASS 2 — TWO CAPSULES CLOSE TOGETHER READ AS ONE NUMBER.
+      //
+      // Two runs separated by less than a capsule's own width put their
+      // counts side by side, and "4" next to "38" reads as four hundred and
+      // thirty-eight or as a pair of coordinates — either way as debug
+      // output. If two dense runs are that close then the dense REGION is
+      // the honest object, so they become one, absorbing any lone mark
+      // stranded between them.
+      const merged: typeof segs = [];
+      for (const s of segs) {
+        const last = merged[merged.length - 1];
+        const dense = !!last && (last.ids.length >= CLUSTER_MIN || s.ids.length >= CLUSTER_MIN);
+        if (last && dense && s.x0 - last.x1 <= MERGE_GAP) {
+          last.x1 = s.x1;
+          last.ids.push(...s.ids);
+        } else {
+          merged.push({ x0: s.x0, x1: s.x1, ids: [...s.ids] });
+        }
+      }
+
+      const groups = merged.filter((g) => g.ids.length >= CLUSTER_MIN);
+      for (const g of groups) for (const id of g.ids) member.add(id);
       byScope.set(scopeId, groups);
     }
     return { byScope, member };
@@ -877,6 +959,7 @@ export default function TimeField({
           const alive = hoveredLane === lane.scopeId;
           const box = boxOf.get(lane.scopeId);
           const open = box?.expanded ?? false;
+          const rail = box?.dormant ?? false;
           const tight = (box?.height ?? 0) < 108;
           const planned = (planByLane.get(lane.scopeId) ?? []).filter((o) => o.planned).length;
           return (
@@ -903,7 +986,8 @@ export default function TimeField({
               title={open ? `Collapse ${lane.name}` : `Show more of ${lane.name}`}
               data-shoot={`lane-header-${lane.scopeId}`}
               data-expanded={open || undefined}
-              className="w-full px-3 flex flex-col justify-start transition-colors relative cursor-pointer"
+              data-dormant={rail || undefined}
+              className={`w-full px-3 flex flex-col transition-colors relative cursor-pointer ${rail ? "justify-center" : "justify-start"}`}
               style={{
                 height: box?.height ?? 0,
                 // BESIDE THE THING IT NAMES.
@@ -914,9 +998,14 @@ export default function TimeField({
                 // it. Seated against the lane's own score line instead, so
                 // the label and the track it labels are at the same height
                 // no matter how the well is divided.
-                paddingTop: Math.max(10, (box?.height ?? 0) * 0.25 - 20),
+                paddingTop: rail ? 0 : Math.max(10, (box?.height ?? 0) * 0.22 - 20),
                 borderBottom: "1px solid var(--i-border)",
                 background: open ? "var(--i-panel)" : alive ? "rgba(38,47,53,0.5)" : "transparent",
+                // A rail is quieter than a project, and wakes fully when
+                // pointed at — so "there is more here if you want it" is
+                // discovered by moving the mouse, not by reading a label.
+                opacity: rail && !alive ? 0.5 : 1,
+                transition: reducedMotion ? undefined : "opacity 160ms ease",
               }}
             >
               {/* THE DOOR IS THE NAME. The header now carries two
@@ -929,16 +1018,25 @@ export default function TimeField({
                 className="text-left hover:brightness-125 transition-[filter] self-start"
                 title="Open in Scope"
               >
-                <span className="block text-[11px] uppercase tracking-[0.1em] text-[var(--i-text)] truncate">{lane.name}</span>
+                <span
+                  className="block uppercase tracking-[0.1em] truncate"
+                  style={{ fontSize: rail ? 9.5 : 11, color: rail ? "var(--i-text-soft)" : "var(--i-text)" }}
+                >
+                  {lane.name}
+                </span>
               </button>
-              {mem ? (
+              {/* A RAIL SAYS ITS NAME AND STOPS. There is no landing to
+                  report — that is what made it a rail — and "no snapshot yet"
+                  repeated down eight rows is noise saying nothing. The master
+                  display already carries the em dash for these projects. */}
+              {rail ? null : mem ? (
                 <span className="i-readout text-[13px] leading-none mt-1" style={{ color: "var(--i-violet)" }}>
                   {fmtDay(new Date(mem.likelyDate).getTime())}
                 </span>
               ) : (
                 <span className="text-[9px] mt-1 text-[var(--i-text-faint)]">no snapshot yet</span>
               )}
-              {!tight && lane.dependsOnScopeIds.length > 0 && (
+              {!rail && !tight && lane.dependsOnScopeIds.length > 0 && (
                 <span className="text-[8px] mt-1 text-[var(--i-text-faint)] truncate">
                   waits on {lane.dependsOnScopeIds.map((d) => lanes.find((l) => l.scopeId === d)?.name ?? "—").join(", ")}
                 </span>
@@ -1019,15 +1117,23 @@ export default function TimeField({
                 and that is exactly the complaint about these objects.
                 Defined once here and shared, so every block on the score is
                 cut from the same billet. */}
+            {/* Four stops, not three. The extra one just under the top edge
+                is the light catch that separates a machined face from a
+                painted rectangle — it is what the eye reads as "there is a
+                top surface here", and it is the whole difference between an
+                object and a disabled form field. Kept to a few points of
+                value: no gloss, no highlight band, no chrome. */}
             <linearGradient id="planBody" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor="#333e47" />
-              <stop offset="50%" stopColor="#262f37" />
-              <stop offset="100%" stopColor="#1b222a" />
+              <stop offset="0%" stopColor="#3a4650" />
+              <stop offset="26%" stopColor="#313c46" />
+              <stop offset="66%" stopColor="#242d35" />
+              <stop offset="100%" stopColor="#1a2128" />
             </linearGradient>
             <linearGradient id="planBodyLit" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor="#44525e" />
-              <stop offset="50%" stopColor="#333f4a" />
-              <stop offset="100%" stopColor="#26303a" />
+              <stop offset="0%" stopColor="#4a5865" />
+              <stop offset="26%" stopColor="#404d59" />
+              <stop offset="66%" stopColor="#303b45" />
+              <stop offset="100%" stopColor="#242e37" />
             </linearGradient>
           </defs>
           {/* INTENT GROUND. Everything right of NOW sits on a lighter,
@@ -1079,40 +1185,50 @@ export default function TimeField({
                   x1={0} y1={yTrack} x2={Math.max(0, Math.min(playX, nowX))} y2={yTrack}
                   stroke="var(--i-violet)" strokeWidth={1.2} opacity={0.24}
                 />
-                {/* THE PLAN BED. The band the lane's plan objects are
-                    seated in, cut into the surface so an object reads as
-                    sitting IN the project rather than floating over it. It
-                    runs the full width — a plan that has happened is still
-                    a plan object, and it must not look unseated merely for
-                    being behind NOW — and deepens on the intent side. */}
-                <rect
-                  x={0} y={HEADER_H + z.planTop - 3}
-                  width={view.width} height={z.planRoom + 6} rx={4}
-                  fill="#080b0d" opacity={0.34}
-                />
-                {/* THE COMPOSING SURFACE. Right of NOW the bed is live:
-                    press it for a moment, drag it for an activity. It wakes
-                    under the pointer so the affordance is discovered by
-                    moving the mouse, not by reading a tip. */}
-                <rect
-                  data-shoot={`plan-bed-${box.scopeId}`}
-                  x={nowX} y={HEADER_H + z.planTop - 3}
-                  width={Math.max(0, view.width - nowX)} height={z.planRoom + 6} rx={4}
-                  fill="#080b0d"
-                  opacity={box.expanded ? 0.5 : 0.34}
-                  style={{ cursor: "cell" }}
-                  onPointerDown={(e) => beginCreate(box.scopeId, HEADER_H + z.planTop, e)}
-                  onDoubleClick={(e) => beginPointDraft(box.scopeId, HEADER_H + z.planTop, e)}
-                  onMouseEnter={() => setBedLive(box.scopeId)}
-                  onMouseLeave={() => setBedLive((v) => (v === box.scopeId ? null : v))}
-                />
-                {bedLive === box.scopeId && !creating && !planDrag && (
-                  <rect
-                    x={nowX} y={HEADER_H + z.planTop - 3}
-                    width={Math.max(0, view.width - nowX)} height={z.planRoom + 6} rx={4}
-                    fill="none" stroke="var(--i-violet)" strokeWidth={0.9} opacity={0.28}
-                    style={{ pointerEvents: "none" }}
-                  />
+                {/* A RAIL HAS NO BED. There are no plan objects to seat and
+                    no room to seat them in, so a dormant lane draws neither
+                    the recess nor the composing surface — a 6px-tall create
+                    target would be an accident waiting to happen. Open the
+                    project (its header is the door) and both come back with
+                    the lane. */}
+                {!box.dormant && (
+                  <>
+                    {/* THE PLAN BED. The band the lane's plan objects are
+                        seated in, cut into the surface so an object reads as
+                        sitting IN the project rather than floating over it.
+                        It runs the full width — a plan that has happened is
+                        still a plan object, and it must not look unseated
+                        merely for being behind NOW. */}
+                    <rect
+                      x={0} y={HEADER_H + z.planTop - 3}
+                      width={view.width} height={z.planRoom + 6} rx={4}
+                      fill="#080b0d" opacity={0.34}
+                    />
+                    {/* THE COMPOSING SURFACE. Right of NOW the bed is live:
+                        press it for a moment, drag it for an activity. It
+                        wakes under the pointer so the affordance is
+                        discovered by moving the mouse, not by reading a tip. */}
+                    <rect
+                      data-shoot={`plan-bed-${box.scopeId}`}
+                      x={nowX} y={HEADER_H + z.planTop - 3}
+                      width={Math.max(0, view.width - nowX)} height={z.planRoom + 6} rx={4}
+                      fill="#080b0d"
+                      opacity={box.expanded ? 0.5 : 0.34}
+                      style={{ cursor: "cell" }}
+                      onPointerDown={(e) => beginCreate(box.scopeId, HEADER_H + z.planTop, e)}
+                      onDoubleClick={(e) => beginPointDraft(box.scopeId, HEADER_H + z.planTop, e)}
+                      onMouseEnter={() => setBedLive(box.scopeId)}
+                      onMouseLeave={() => setBedLive((v) => (v === box.scopeId ? null : v))}
+                    />
+                    {bedLive === box.scopeId && !creating && !planDrag && (
+                      <rect
+                        x={nowX} y={HEADER_H + z.planTop - 3}
+                        width={Math.max(0, view.width - nowX)} height={z.planRoom + 6} rx={4}
+                        fill="none" stroke="var(--i-violet)" strokeWidth={0.9} opacity={0.28}
+                        style={{ pointerEvents: "none" }}
+                      />
+                    )}
+                  </>
                 )}
               </g>
             );
@@ -1138,6 +1254,15 @@ export default function TimeField({
             return (
               <g key={`res-${box.scopeId}`} data-shoot={`lane-resolution-${box.scopeId}`} style={{ pointerEvents: "none" }}>
                 <rect x={0} y={top} width={view.width} height={box.height} fill="#0b0f12" opacity={0.4} />
+                {/* THE WORKSPACE HAS EDGES. Two hairlines, so the opened
+                    project reads as the bay currently being worked in rather
+                    than as a lane that happens to be taller — and so the
+                    margin around a short plan reads as the workspace's own
+                    padding instead of as a void. */}
+                <line x1={0} y1={top + 0.5} x2={view.width} y2={top + 0.5}
+                  stroke="var(--i-violet)" strokeWidth={1} opacity={0.22} />
+                <line x1={0} y1={bot - 0.5} x2={view.width} y2={bot - 0.5}
+                  stroke="var(--i-violet)" strokeWidth={1} opacity={0.22} />
                 {subTicks.map((t) => {
                   const x = xFor(view, t.t);
                   if (x < -20 || x > view.width + 20) return null;
@@ -1281,6 +1406,9 @@ export default function TimeField({
                           fill={FAMILY_COLOR[e.family]} opacity={crossed.has(e.id) ? 0.28 : 0.12}
                           stroke={FAMILY_COLOR[e.family]} strokeWidth={0.6} strokeOpacity={0.5}
                           data-shoot="duration-span"
+                          // Decoration behind its own mark. Left hit-testable
+                          // it would cover the neighbours it runs across.
+                          style={{ pointerEvents: "none" }}
                         />
                       )}
                       <EventMark
@@ -1406,7 +1534,14 @@ export default function TimeField({
               <g key={`mem-${box.scopeId}`}>
                 {ghost && <MemoryBand snap={ghost} view={view} y={yMem} ghost reducedMotion={reducedMotion} />}
                 {mem && (
-                  <MemoryBand snap={mem} view={view} y={yMem} reducedMotion={reducedMotion} detailed={box.expanded} />
+                  <MemoryBand
+                    snap={mem} view={view} y={yMem} reducedMotion={reducedMotion}
+                    detailed={box.expanded}
+                    // HOVER EXPLAINS; OPENING RESOLVES. Pointing at a project
+                    // is already how you ask about it everywhere else on this
+                    // surface, so the measurement needs no control of its own.
+                    measured={box.expanded || hoveredLane === box.scopeId}
+                  />
                 )}
               </g>
             );
@@ -1414,7 +1549,17 @@ export default function TimeField({
 
           {/* NOW — the seam between MEMORY and INTENT. A landmark, with a
               terminal at each end, not a hairline. Restrained, never neon. */}
-          <g data-shoot="now-seam">
+          {/* NEITHER THE SEAM NOR THE PLAYHEAD IS A TARGET.
+              Both are drawn above every lane, and both are PAINTED — so
+              until now they were hit-testable, and the playhead's 22px glow
+              stroke was quietly swallowing every event within eleven pixels
+              of it. Since it rests on NOW, and the densest history is the
+              days just before NOW, the events a person is most likely to ask
+              about were the ones they could not point at. They are marks on
+              the instrument, not controls: the pointer goes through them to
+              the score, and pressing the playhead now scrubs rather than
+              doing nothing. */}
+          <g data-shoot="now-seam" style={{ pointerEvents: "none" }}>
             <rect x={nowX - 3} y={0} width={6} height={height} fill="var(--i-signal)" opacity={0.05} />
             <line x1={nowX} y1={0} x2={nowX} y2={height} stroke="var(--i-signal)" strokeWidth={1.4} opacity={0.75} />
             <rect x={nowX - 3.5} y={0} width={7} height={5} rx={1} fill="var(--i-signal)" opacity={0.85} />
@@ -1430,7 +1575,11 @@ export default function TimeField({
           {/* THE PLAYHEAD — hero object. */}
           <g
             data-shoot="playhead"
-            style={reducedMotion ? undefined : { transition: "transform 90ms linear" }}
+            style={
+              reducedMotion
+                ? { pointerEvents: "none" }
+                : { pointerEvents: "none", transition: "transform 90ms linear" }
+            }
             transform={`translate(${playX},0)`}
           >
             <line x1={0} y1={0} x2={0} y2={height} stroke="var(--i-violet)" strokeWidth={22} opacity={0.05} />

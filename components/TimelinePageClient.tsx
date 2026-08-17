@@ -41,7 +41,7 @@ import AddEventTool from "@/components/timeline/AddEventTool";
 import LayersControl from "@/components/timeline/LayersControl";
 import LanesControl, { applyLaneView, EMPTY_LANE_VIEW, type LaneView } from "@/components/timeline/LanesControl";
 import { STORY_LAYERS, type LayerState } from "@/lib/timeline/story";
-import { layoutLanes } from "@/lib/timeline/plan";
+import { layoutLanes, isDormant } from "@/lib/timeline/plan";
 import {
   EMPTY_UNDO, record, undoTop, redoTop, describe, remapId,
   type UndoState, type TimelineCommand, type PlanSnapshot,
@@ -55,6 +55,12 @@ const ARTICULATE_MS = 2100;
 /** How long the previous memory band lingers as a ghost, and the delta
     chip states the movement. */
 const MEMORY_GHOST_MS = 2400;
+/** The narrowest a project's readout may become before the display stops
+    shrinking and starts scrolling. Wide enough for a truncated name above a
+    date at its floor size — below this the cells are present but no longer
+    doing their job, which is worse than admitting there are more projects
+    than fit. */
+const MIN_CELL_W = 128;
 
 export default function TimelinePageClient() {
   const router = useRouter();
@@ -163,6 +169,20 @@ export default function TimelinePageClient() {
   // when `data` arrives finds a null ref, never attaches, and leaves the
   // field measured at its initial guess — which is exactly how the score
   // ended up drawn at 590px inside an 878px well.
+  // DOES THE READOUT HAVE MORE THAN IT CAN SHOW? Measured, not guessed from
+  // the project count — the answer depends on the window width too.
+  const [readoutOverflows, setReadoutOverflows] = useState(false);
+  const readoutRO = useRef<ResizeObserver | null>(null);
+  const attachReadout = useCallback((el: HTMLDivElement | null) => {
+    readoutRO.current?.disconnect();
+    if (!el) return;
+    const measure = () => setReadoutOverflows(el.scrollWidth > el.clientWidth + 1);
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    readoutRO.current = ro;
+    measure();
+  }, []);
+
   const roRef = useRef<ResizeObserver | null>(null);
   const attachField = useCallback((el: HTMLDivElement | null) => {
     roRef.current?.disconnect();
@@ -201,6 +221,33 @@ export default function TimelinePageClient() {
     return m;
   }, [data]);
 
+  // WHICH PROJECTS HAVE EARNED DEPTH.
+  //
+  // A presentation judgement, made from the projection and nothing else —
+  // see `isDormant` for why the test is three counts rather than a heuristic.
+  // Layers are NOT consulted: dormancy is about whether a project has a story
+  // at all, not about which parts of it are currently drawn, so turning the
+  // Decisions layer off must never collapse a lane that has decisions.
+  const dormantByScope = useMemo(() => {
+    const acc: Record<string, { planObjects: number; hasForecast: boolean; decisions: number }> = {};
+    for (const lane of data?.lanes ?? []) {
+      acc[lane.scopeId] = {
+        planObjects: 0,
+        hasForecast: (data?.snapshotsByScope[lane.scopeId] ?? []).length > 0,
+        decisions: 0,
+      };
+    }
+    for (const e of data?.entries ?? []) {
+      const a = acc[e.scopeId];
+      if (!a) continue;
+      if (e.family === "landmark") a.planObjects += 1;
+      else if (e.family === "decision") a.decisions += 1;
+    }
+    const out: Record<string, boolean> = {};
+    for (const [scopeId, a] of Object.entries(acc)) out[scopeId] = isDormant(a);
+    return out;
+  }, [data]);
+
   const laneBoxes = useMemo(
     () =>
       layoutLanes(
@@ -209,9 +256,10 @@ export default function TimelinePageClient() {
         Math.max(120, fieldH - HEADER_H - 8),
         MIN_LANE_H,
         MAX_LANE_H,
-        (scopeId) => planCountByScope[scopeId] ?? 1
+        (scopeId) => planCountByScope[scopeId] ?? 1,
+        (scopeId) => dormantByScope[scopeId] ?? false
       ),
-    [visibleLanes, expandedLane, fieldH, planCountByScope]
+    [visibleLanes, expandedLane, fieldH, planCountByScope, dormantByScope]
   );
 
   // ── the playable set ───────────────────────────────────────────────
@@ -752,7 +800,20 @@ export default function TimelinePageClient() {
               box each. Pointing at one wakes its lane below, which is what
               makes the association a thing you do rather than a thing you
               have to be told. */}
-          <div className="flex-1 min-w-0 flex items-stretch" data-shoot="memory-readout">
+          {/* LEGIBILITY HAS A FLOOR.
+              Cells used to divide whatever width was left, so the tenth
+              project made all ten unreadable — the display degraded quietly
+              instead of admitting it had run out of room. Each cell now
+              claims MIN_CELL_W and no less; past that the readout SCROLLS
+              inside the same piece of glass. It stays one display, one
+              baseline, no cards, no wrapping, no dropdown, and the page
+              itself never gains a horizontal scrollbar. */}
+          <div className="flex-1 min-w-0 relative flex items-stretch">
+          <div
+            ref={attachReadout}
+            className="flex-1 min-w-0 flex items-stretch overflow-x-auto i-noscrollbar"
+            data-shoot="memory-readout"
+          >
             {visibleLanes.map((lane) => {
               const m = memoryByScope[lane.scopeId];
               const stale = m ? Math.floor((playheadT - new Date(m.generatedAt).getTime()) / DAY) : null;
@@ -761,10 +822,12 @@ export default function TimelinePageClient() {
                 <div
                   key={lane.scopeId}
                   data-shoot={`memory-${lane.scopeId}`}
-                  className="flex-1 min-w-0 flex flex-col justify-center transition-colors"
+                  className="flex flex-col justify-center transition-colors"
                   onMouseEnter={() => setHoveredLane(lane.scopeId)}
                   onMouseLeave={() => setHoveredLane(null)}
                   style={{
+                    flex: `1 1 ${MIN_CELL_W}px`,
+                    minWidth: MIN_CELL_W,
                     paddingLeft: dense ? 11 : 18,
                     paddingRight: 6,
                     background: live ? "rgba(155,140,250,0.06)" : undefined,
@@ -823,6 +886,22 @@ export default function TimelinePageClient() {
                 </div>
               );
             })}
+          </div>
+          {/* MORE THAN FITS, SAID WITHOUT SAYING IT. A soft edge where the
+              readout runs on — the wordless cue every scrolling surface uses.
+              Present only when there is genuinely something under it, and
+              never in the way of the pointer. */}
+          {readoutOverflows && (
+            <div
+              data-shoot="memory-readout-more"
+              className="absolute inset-y-0 right-0"
+              style={{
+                width: 34,
+                pointerEvents: "none",
+                background: "linear-gradient(90deg, rgba(16,21,24,0) 0%, var(--i-recess) 78%)",
+              }}
+            />
+          )}
           </div>
         </div>
 

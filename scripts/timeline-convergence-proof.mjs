@@ -288,9 +288,36 @@ const jsa = laneOf("JSA");
   check("E2. …and every stated gap is the arithmetic of the two stored dates",
     drawn.every((d) => expected.includes(d.gap)),
     drawn.map((d) => `${d.gap}d`).join(", "));
-  check("E3. …with the direction named, never left to the reader",
-    drawn.every((d) => (d.gap < 0 ? d.late && /late/.test(d.says) : !d.late && /(clear|on target)/.test(d.says))),
-    drawn.map((d) => d.says).join(" · "));
+  // CONTRACT REPLACED, NARROWLY. This used to read the words off the tie at
+  // rest. The invariant it protects is that THE DIRECTION OF THE GAP IS
+  // NAMED — that a reader is never left to work out for themselves whether a
+  // project is ahead or behind. That is unchanged and still checked below.
+  //
+  // What changed is when the words are painted. Eight lanes each reciting
+  // "23d late" simultaneously is a spreadsheet, so the semantic-polish pass
+  // moved the measurement one interaction deeper: at rest the tie carries the
+  // direction in its colour and its dash, and pointing at a project spells it
+  // out. So the claim is now made in two halves — the direction is always
+  // encoded, and it is always named on request.
+  check("E3a. …with the direction always encoded, never ambiguous",
+    drawn.every((d) => (d.gap < 0 ? d.late : !d.late)),
+    drawn.map((d) => `${d.gap}d ${d.late ? "late" : "clear"}`).join(" · "));
+
+  const named = [];
+  for (const lane of cur.lanes) {
+    await p.locator(`[data-shoot="lane-header-${lane.scopeId}"]`).hover();
+    await settle(420);
+    const said = await p.evaluate(() =>
+      [...document.querySelectorAll('[data-shoot="forecast-vs-target"]')]
+        .map((e) => ({ gap: +e.getAttribute("data-gap-days"), late: e.hasAttribute("data-late"), says: (e.textContent ?? "").trim() }))
+        .filter((t) => t.says.length > 0));
+    named.push(...said);
+  }
+  await park();
+  check("E3b. …and named in words the moment the project is pointed at",
+    named.length > 0 &&
+      named.every((d) => (d.gap < 0 ? /late/.test(d.says) : /(clear|on target)/.test(d.says))),
+    named.map((d) => d.says).join(" · ") || "nothing named");
 
   const noTarget = cur.lanes.filter((l) => { const s = latest(l.scopeId); return s && !s.targetDate; }).length;
   check("E4. A forecast with no target invents no relationship",

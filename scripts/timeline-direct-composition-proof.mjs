@@ -487,8 +487,22 @@ try {
   await open();
   const heights = await p.evaluate(() =>
     [...document.querySelectorAll("[data-shoot^='lane-header-']")].map((e) => Math.round(e.getBoundingClientRect().height)));
-  check("25. Eight lanes stay legible and all present",
-    heights.length === 8 && heights.every((h) => h >= 60) &&
+  // CONTRACT REPLACED, NARROWLY — same change as assertions 28/29 in the
+  // direct-manipulation proof. The invariant is that eight projects are all
+  // still THERE and the plan is still drawn among them. The "every lane ≥
+  // 60px" clause was a proxy for legibility that a deliberate rail state now
+  // contradicts: a project with no plan, no forecast and no decisions is
+  // 34px on purpose. The floor is kept for the projects that have a story.
+  const kinds = await p.evaluate(() =>
+    [...document.querySelectorAll("[data-shoot^='lane-header-']")].map((e) => ({
+      dormant: e.hasAttribute("data-dormant"),
+      h: Math.round(e.getBoundingClientRect().height),
+      named: (e.textContent ?? "").trim().length > 0,
+    })));
+  check("25. Eight projects stay legible and all present",
+    kinds.length === 8 &&
+      kinds.every((l) => l.named) &&
+      kinds.filter((l) => !l.dormant).every((l) => l.h >= 60) &&
       (await p.locator('[data-shoot^="plan-"][data-plan-role]').count()) > 0,
     heights.join("/"));
 } finally {

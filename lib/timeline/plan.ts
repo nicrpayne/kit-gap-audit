@@ -122,10 +122,46 @@ export interface LaneBox {
   top: number;
   height: number;
   expanded: boolean;
+  /** Nothing here has earned depth yet. Drawn as a thin rail: named, honest,
+      openable, and not occupying a sixth of the screen to say nothing. */
+  dormant: boolean;
 }
 
 export const COMPACT_LANE_H = 76;
 export const MAX_EXPANDED_H = 430;
+/** A rail. Tall enough to carry the project's name and its own score line,
+    short enough that eight of them read as a list rather than as eight
+    empty rooms. */
+export const DORMANT_LANE_H = 34;
+
+// ── WHAT MAKES A PROJECT WORTH VERTICAL SPACE ────────────────────────
+//
+// Lane height is attention, and attention is finite. A project with a plan,
+// a recorded forecast, or decisions in flight has a story that needs room to
+// be told. A project that has none of those has nothing Timeline can show
+// beyond a line of inherited history — and giving it the same band as an
+// active project spends a sixth of the screen saying "nothing here".
+//
+// Deliberately CONSERVATIVE, and deliberately not a heuristic that can
+// drift: three counts, all zero, or the lane stays awake. In particular a
+// lane is NEVER dormant merely for lacking a forecast — Design has no
+// snapshot and a real plan, and it keeps its full lane.
+//
+// This decides DRAWING ONLY. It reads the projection and changes nothing in
+// it; no row, no date, no forecast, and no Scope/Portfolio truth is touched.
+
+export interface LaneActivity {
+  /** TimelineEvent landmarks — the rows Timeline itself owns. */
+  planObjects: number;
+  /** A Report has been recorded for this project. */
+  hasForecast: boolean;
+  /** Decisions raised, connected or settled against it. */
+  decisions: number;
+}
+
+export function isDormant(a: LaneActivity): boolean {
+  return a.planObjects === 0 && !a.hasForecast && a.decisions === 0;
+}
 
 export function layoutLanes(
   scopeIds: string[],
@@ -135,18 +171,33 @@ export function layoutLanes(
   maxH: number,
   /** How many plan subtracks each lane could need. Used only to decide how
       much height an OPENED lane actually asks for. */
-  rowsFor: (scopeId: string) => number = () => 1
+  rowsFor: (scopeId: string) => number = () => 1,
+  /** Which lanes have nothing to show yet. See `isDormant`. */
+  dormantFor: (scopeId: string) => boolean = () => false
 ): LaneBox[] {
-  const n = scopeIds.length;
-  if (n === 0) return [];
+  if (scopeIds.length === 0) return [];
   const heights = new Map<string, number>();
 
   const expanded = expandedId && scopeIds.includes(expandedId) ? expandedId : null;
-  if (!expanded) {
-    const h = Math.max(minH, Math.min(maxH, Math.floor(available / n)));
-    for (const id of scopeIds) heights.set(id, h);
+  // OPENING A LANE WAKES IT. Asking for a project is the strongest possible
+  // signal that it matters, and it outranks any judgement made from content.
+  const asleep = new Set(scopeIds.filter((id) => id !== expanded && dormantFor(id)));
+  const awake = scopeIds.filter((id) => !asleep.has(id));
+  for (const id of asleep) heights.set(id, DORMANT_LANE_H);
+
+  // WHAT THE RAILS DO NOT USE GOES BACK TO THE PROJECTS THAT DO.
+  const room = available - DORMANT_LANE_H * asleep.size;
+  const n = awake.length;
+
+  if (n === 0) {
+    // Every project is a rail. Nothing has earned depth, so nothing takes
+    // it — the rails sit at the top of the well rather than stretching to
+    // fill a screen with nothing in it.
+  } else if (!expanded) {
+    const h = Math.max(minH, Math.min(maxH, Math.floor(room / n)));
+    for (const id of awake) heights.set(id, h);
   } else if (n === 1) {
-    heights.set(expanded, Math.max(minH, Math.min(maxH, available)));
+    heights.set(expanded, Math.max(minH, Math.min(maxH, room)));
   } else {
     // THE WELL IS CONSERVED, AND THE OPENED LANE TAKES ONLY WHAT IT USES.
     //
@@ -158,14 +209,14 @@ export function layoutLanes(
     //
     // This is why expanding at four lanes is a modest change and expanding
     // at eight is a dramatic one — which is exactly the truth of it.
-    const flat = Math.max(minH, Math.min(maxH, Math.floor(available / n)));
+    const flat = Math.max(minH, Math.min(maxH, Math.floor(room / n)));
     const wants = Math.max(flat, laneHeightForRows(rowsFor(expanded)));
-    const open = Math.max(minH, Math.min(MAX_EXPANDED_H, wants, available - COMPACT_LANE_H * (n - 1)));
-    const rest = Math.max(COMPACT_LANE_H * (n - 1), available - open);
+    const open = Math.max(minH, Math.min(MAX_EXPANDED_H, wants, room - COMPACT_LANE_H * (n - 1)));
+    const rest = Math.max(COMPACT_LANE_H * (n - 1), room - open);
     const sibling = Math.floor(rest / (n - 1));
     const slack = rest - sibling * (n - 1);
     let first = true;
-    for (const id of scopeIds) {
+    for (const id of awake) {
       if (id === expanded) { heights.set(id, open); continue; }
       // The rounding remainder lands on one sibling rather than leaving a
       // sub-pixel gap at the bottom of the field.
@@ -177,7 +228,11 @@ export function layoutLanes(
   let y = 0;
   return scopeIds.map((scopeId) => {
     const height = heights.get(scopeId)!;
-    const box = { scopeId, top: y, height, expanded: scopeId === expanded };
+    const box = {
+      scopeId, top: y, height,
+      expanded: scopeId === expanded,
+      dormant: asleep.has(scopeId),
+    };
     y += height;
     return box;
   });
@@ -218,6 +273,15 @@ export function laneHeightForRows(rows: number): number {
 
 export function laneZones(box: LaneBox, rowCount = 1): LaneZones {
   const rows = Math.max(1, rowCount);
+  if (box.dormant) {
+    // A RAIL. Its score line is centred and it spends nothing on bands it
+    // has no content for: no plan bed, because there are no plan objects to
+    // seat, and no forecast row, because there is no snapshot. Whatever
+    // history it does carry is still drawn, still crossed, still reachable —
+    // it simply stops claiming a full lane to do it.
+    const scoreY = box.top + box.height / 2;
+    return { scoreY, planTop: scoreY, planRoom: 0, memY: scoreY };
+  }
   if (box.expanded && box.height >= laneHeightForRows(rows)) {
     // OPENED. The extra height goes to the PLAN BAND -- taller, readable
     // subtracks with the forecast capsule following underneath. An opened
@@ -244,10 +308,18 @@ export function laneZones(box: LaneBox, rowCount = 1): LaneZones {
   // produced 16px slivers. Moving the score up and the capsule down buys
   // that band roughly 20px, which is the difference between a bar and a
   // part.
-  const scoreY = box.top + box.height * 0.25;
+  const scoreY = box.top + box.height * 0.22;
   const memY = box.top + box.height * 0.78;
-  const planTop = scoreY + 12;
-  return { scoreY, planTop, planRoom: Math.max(12, memY - 15 - planTop), memY };
+  const planTop = scoreY + 11;
+  // CLEARANCE FOR WHAT THE CAPSULE SAYS ABOUT ITSELF.
+  //
+  // The forecast capsule prints its likely date ABOVE its own body, so the
+  // plan band cannot simply run down to the capsule's edge — at eight
+  // projects the lanes shorten, the second plan row reaches lower, and
+  // "OCT 5" landed on top of "Launch comms". Reserving the label's own
+  // height here means the two can never collide at any lane height, rather
+  // than only at the ones that were looked at.
+  return { scoreY, planTop, planRoom: Math.max(12, memY - 30 - planTop), memY };
 }
 
 /** Row height that fits `rowCount` rows into the room a lane actually has.

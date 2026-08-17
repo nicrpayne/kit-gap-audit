@@ -198,9 +198,12 @@ export default function PlanObject({
       {/* IT SITS ON THE SCORE. A cast shadow under the body is what makes
           the difference between a part resting on a surface and a bordered
           rectangle drawn onto one. */}
+      {/* RESTRAINED DEPTH. Tight and dark at rest — a part seated on a
+          surface, not a card hovering above one — opening up only as the
+          object is woken and then picked up. */}
       <rect
-        x={0.8} y={2 + lift * 1.4} width={w} height={h} rx={r}
-        fill="#04070a" opacity={0.4 + lift * 0.09}
+        x={0.7} y={1.6 + lift * 1.5} width={w} height={h} rx={r}
+        fill="#04070a" opacity={0.44 + lift * 0.1}
         style={{
           pointerEvents: "none",
           transition: reducedMotion || dragging ? undefined : "y 150ms cubic-bezier(0.32,0.72,0,1), opacity 150ms ease",
@@ -210,28 +213,35 @@ export default function PlanObject({
       <rect
         x={0} y={0} width={w} height={h} rx={r}
         fill={body}
-        stroke={overdue ? "var(--i-red)" : lit ? accent : "#3d4952"}
+        stroke={overdue ? "var(--i-red)" : lit ? accent : "#4a5763"}
         strokeWidth={overdue ? 1.4 : lit ? 1.2 : 0.9}
-        strokeOpacity={overdue || lit ? 0.95 : 0.7}
+        strokeOpacity={overdue || lit ? 0.95 : 0.8}
         onPointerDown={(e) => draggable && onGrip("move", e)}
       />
       <g style={{ pointerEvents: "none" }}>
         {/* the machined lip: light catches the top, the bottom stays in
             shadow. Two hairlines, and the block reads as extruded. */}
-        <line x1={r} y1={0.9} x2={w - r} y2={0.9} stroke="#ffffff" strokeWidth={1} opacity={lit ? 0.26 : 0.18} />
-        <line x1={r} y1={h - 0.9} x2={w - r} y2={h - 0.9} stroke="#000000" strokeWidth={1} opacity={0.45} />
-        {/* TWO ENDS, SO IT HAS EXTENT.
+        <line x1={r} y1={0.9} x2={w - r} y2={0.9} stroke="#ffffff" strokeWidth={1} opacity={lit ? 0.3 : 0.21} />
+        <line x1={r} y1={h - 0.9} x2={w - r} y2={h - 0.9} stroke="#000000" strokeWidth={1} opacity={0.5} />
+        {/* TWO ENDS, SO IT HAS EXTENT — AND THEY ARE INLAID, NOT PAINTED ON.
             A block with a cap at one end reads as a label with a coloured
             edge; the eye finds where it starts and has no reason to travel.
             Capping BOTH ends makes the object a measured length — it begins
             here and it ends there — which is the whole claim a duration is
-            making. State stays on the caps, so the body remains one
-            material and the score never becomes a chart of categorical
+            making.
+            Set INSIDE the body rather than flush with its edge: a bar
+            painted across the outer edge fights the corner radius and reads
+            as a border, while the same bar seated a pixel in reads as a part
+            fitted into the block. State stays on these, so the body remains
+            one material and the score never becomes a chart of categorical
             colours. */}
-        <rect x={0} y={0} width={3} height={h} rx={1.4} fill={accent} opacity={planned && !overdue ? 0.62 : 1} />
         <rect
-          x={w - 3} y={0} width={3} height={h} rx={1.4}
-          fill={accent} opacity={(planned && !overdue ? 0.62 : 1) * 0.85}
+          x={1.5} y={1.6} width={2.4} height={Math.max(2, h - 3.2)} rx={1.2}
+          fill={accent} opacity={planned && !overdue ? 0.72 : 1}
+        />
+        <rect
+          x={w - 3.9} y={1.6} width={2.4} height={Math.max(2, h - 3.2)} rx={1.2}
+          fill={accent} opacity={(planned && !overdue ? 0.72 : 1) * 0.8}
         />
         {/* HOW LONG, MARKED ON THE PART ITSELF. */}
         {measure && (

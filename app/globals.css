@@ -87,6 +87,21 @@ body {
   font-feature-settings: "tnum" 1;
 }
 
+/* A surface that scrolls without saying so. Used where a readout may hold
+   more than fits and must keep its own material: a system scrollbar drawn
+   across a piece of instrument glass is operating-system chrome sitting
+   inside the instrument. The content is still scrollable by wheel, trackpad,
+   drag and keyboard -- only the bar is gone. */
+.i-noscrollbar {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.i-noscrollbar::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+  display: none;
+}
+
 /* Structural micro-label. Uppercase, wide-tracked, quiet -- these do the
    Instrument's organizing work so boxes and rules don't have to. */
 .i-label {
