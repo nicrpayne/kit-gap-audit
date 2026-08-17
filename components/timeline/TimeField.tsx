@@ -119,10 +119,18 @@ function EventMark({
   const w = base.w * k;
   const h = base.h * k;
 
-  // The resting object. Graphite, with the family only as a trace.
+  // NOTATION, NOT SIGNAGE.
+  //
+  // History is the quietest layer on the canvas. It used to sit at nearly
+  // full strength once crossed, which put finished work above the plan in
+  // the visual hierarchy — the exact inversion of what a person is here to
+  // do. A crossed mark is now a trace: present, countable, readable the
+  // moment it is pointed at, and never competing with an object you can
+  // pick up. Attention still colours it fully; rest does not.
   const restFill = "#1b2228";
   const restStroke = crossed ? color : "var(--i-border-strong)";
-  const restOpacity = secondary ? (crossed ? 0.5 : 0.26) : crossed ? 0.95 : 0.5;
+  const restOpacity = secondary ? (crossed ? 0.3 : 0.17) : crossed ? 0.52 : 0.3;
+  const restStrokeOpacity = crossed ? 0.55 : 0.8;
 
   return (
     <g
@@ -173,6 +181,7 @@ function EventMark({
           fill={lit ? color : restFill}
           stroke={lit ? color : restStroke}
           strokeWidth={1.1}
+          strokeOpacity={lit ? 1 : restStrokeOpacity}
           opacity={lit ? 1 : restOpacity}
           style={reducedMotion ? undefined : { transition: "opacity 260ms ease, fill 260ms ease" }}
         />
@@ -182,6 +191,7 @@ function EventMark({
           fill={lit ? color : restFill}
           stroke={lit ? color : restStroke}
           strokeWidth={1.2}
+          strokeOpacity={lit ? 1 : restStrokeOpacity}
           opacity={lit ? 1 : restOpacity}
           style={reducedMotion ? undefined : { transition: "opacity 260ms ease, fill 260ms ease" }}
         />
@@ -544,11 +554,34 @@ export default function TimeField({
       e.currentTarget.releasePointerCapture(e.pointerId);
     }
     createGeom.current = null;
-    // The gesture is over; the object now exists provisionally and wants a
-    // name. Nothing has been written — a provisional object that is never
-    // named leaves no trace at all.
-    setCreating((c) => (c && c.phase === "dragging" ? { ...c, phase: "naming" } : c));
+    // GESTURE BOUNDARIES, DELIBERATE.
+    //
+    // A press that never travelled a day is a CLICK, and a click on empty
+    // space means "put down what I was holding" — not "make me a milestone
+    // I did not ask for". Only a drag that actually spans time becomes an
+    // activity; a moment is asked for explicitly, by double-click. Nothing
+    // has been written either way.
+    setCreating((c) => {
+      if (!c || c.phase !== "dragging") return c;
+      if (c.t0 === c.t1) return null;
+      return { ...c, phase: "naming" };
+    });
   }, []);
+
+  /** A MOMENT, ASKED FOR. Double-click is unambiguous in a way a single
+      click on a large empty surface can never be. */
+  const beginPointDraft = useCallback(
+    (scopeId: string, y: number, e: React.MouseEvent) => {
+      const el = hostRef.current;
+      if (!el) return;
+      e.stopPropagation();
+      const b = el.getBoundingClientRect();
+      const t = snapDay(tFor({ ...view, width: b.width }, e.clientX - b.left));
+      setDraftTitle("");
+      setCreating({ scopeId, t0: t, t1: t, y, phase: "naming" });
+    },
+    [view]
+  );
 
   // Focus follows creation, so the very next thing a person does is type.
   useEffect(() => {
@@ -732,9 +765,9 @@ export default function TimeField({
               <line x1="0" y1="0" x2="0" y2="6" stroke="var(--i-border-strong)" strokeWidth="0.8" opacity="0.55" />
             </pattern>
             <linearGradient id="pastGlow" x1="0" x2="1">
-              <stop offset="0%" stopColor="var(--i-violet)" stopOpacity={0.05} />
-              <stop offset="72%" stopColor="var(--i-violet)" stopOpacity={0.13} />
-              <stop offset="100%" stopColor="var(--i-violet)" stopOpacity={0.26} />
+              <stop offset="0%" stopColor="var(--i-violet)" stopOpacity={0.025} />
+              <stop offset="72%" stopColor="var(--i-violet)" stopOpacity={0.07} />
+              <stop offset="100%" stopColor="var(--i-violet)" stopOpacity={0.16} />
             </linearGradient>
             <linearGradient id="playedEdge" x1="0" x2="1">
               <stop offset="0%" stopColor="var(--i-violet)" stopOpacity={0} />
@@ -771,7 +804,7 @@ export default function TimeField({
             const x = xFor(view, t.t);
             return (
               <g key={t.t}>
-                <line x1={x} y1={HEADER_H - 6} x2={x} y2={height} stroke="var(--i-border)" strokeWidth={t.major ? 1 : 0.5} opacity={t.major ? 0.75 : 0.4} />
+                <line x1={x} y1={HEADER_H - 6} x2={x} y2={height} stroke="var(--i-border)" strokeWidth={t.major ? 1 : 0.5} opacity={t.major ? 0.5 : 0.24} />
                 <text x={x + 4} y={14} fontSize={9} fill="var(--i-text-faint)" style={{ letterSpacing: "0.08em" }}>
                   {t.label}
                 </text>
@@ -788,11 +821,11 @@ export default function TimeField({
             const yTrack = HEADER_H + z.scoreY;
             return (
               <g key={`track-${box.scopeId}`}>
-                <rect x={0} y={yTrack - 3} width={view.width} height={6} rx={3} fill="#070a0c" opacity={0.6} />
-                <line x1={0} y1={yTrack} x2={view.width} y2={yTrack} stroke="var(--i-border-strong)" strokeWidth={0.9} opacity={0.5} />
+                <rect x={0} y={yTrack - 3} width={view.width} height={6} rx={3} fill="#070a0c" opacity={0.5} />
+                <line x1={0} y1={yTrack} x2={view.width} y2={yTrack} stroke="var(--i-border-strong)" strokeWidth={0.9} opacity={0.32} />
                 <line
                   x1={0} y1={yTrack} x2={Math.max(0, Math.min(playX, nowX))} y2={yTrack}
-                  stroke="var(--i-violet)" strokeWidth={1.4} opacity={0.42}
+                  stroke="var(--i-violet)" strokeWidth={1.2} opacity={0.24}
                 />
                 {/* THE PLAN BED. The band the lane's plan objects are
                     seated in, cut into the surface so an object reads as
@@ -817,6 +850,7 @@ export default function TimeField({
                   opacity={box.expanded ? 0.5 : 0.34}
                   style={{ cursor: "cell" }}
                   onPointerDown={(e) => beginCreate(box.scopeId, HEADER_H + z.planTop, e)}
+                  onDoubleClick={(e) => beginPointDraft(box.scopeId, HEADER_H + z.planTop, e)}
                   onMouseEnter={() => setBedLive(box.scopeId)}
                   onMouseLeave={() => setBedLive((v) => (v === box.scopeId ? null : v))}
                 />
@@ -837,7 +871,7 @@ export default function TimeField({
             <g key={box.scopeId}>
               <line
                 x1={0} y1={HEADER_H + box.top + box.height} x2={view.width} y2={HEADER_H + box.top + box.height}
-                stroke="var(--i-border)" strokeWidth={0.75} opacity={0.7}
+                stroke="var(--i-border)" strokeWidth={0.75} opacity={0.45}
               />
               {(hoveredLane === box.scopeId || box.expanded) && (
                 <rect
@@ -1006,6 +1040,11 @@ export default function TimeField({
                       onSelect={() => onSelect(obj.entry.id)}
                       onHover={(on) => onHoverEvent(on ? obj.entry.id : null)}
                       onGrip={(grip, ev) => beginPlanDrag(obj, grip, HEADER_H + z.planTop + row * rowH, ev)}
+                      dates={
+                        obj.endT !== null
+                          ? `${fmtDay(obj.startT)} → ${fmtDay(obj.endT)} · ${Math.round((obj.endT - obj.startT) / 86400000)}d`
+                          : fmtDay(obj.startT)
+                      }
                     />
                   );
                 })}

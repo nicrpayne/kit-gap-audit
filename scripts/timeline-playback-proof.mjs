@@ -311,10 +311,28 @@ check("Reality restored — the proof landmark is gone",
     await p.locator(`[data-shoot="${handle(e)}"]`).dispatchEvent("click");
     await p.waitForTimeout(700);
   }
+  // CONTRACT REPLACED, NARROWLY. The inspector now collapses when nothing
+  // is held, so the FIRST selection reveals it and the field legitimately
+  // re-lays-out — that is this pass's headline change, not a regression.
+  // What this check has always been protecting is the thing that would
+  // actually hurt: the score jumping under the pointer while the panel
+  // merely swaps its contents. So it now asserts exactly that, by
+  // measuring across a change of selection rather than across the reveal.
+  const afterFirst = await geometry();
+  const ctxE2 = finalProj.entries.find((e) => e.kind === "context_observed");
+  if (ctxE2) {
+    await p.locator(`[data-shoot="${handle(ctxE2)}"]`).dispatchEvent("click");
+    await p.waitForTimeout(700);
+  }
   const after = await geometry();
-  check("Selecting events never resizes the time field",
-    JSON.stringify(before.field) === JSON.stringify(after.field),
-    `${JSON.stringify(before.field)} → ${JSON.stringify(after.field)}`);
+  check("Swapping the inspector's contents never resizes the time field",
+    JSON.stringify(afterFirst.field) === JSON.stringify(after.field),
+    `${JSON.stringify(afterFirst.field)} → ${JSON.stringify(after.field)}`);
+  await p.keyboard.press("Escape");
+  await p.waitForTimeout(600);
+  check("…and dismissing gives the canvas its width back",
+    (await geometry()).field[2] > after.field[2],
+    `${after.field[2]}px → ${(await geometry()).field[2]}px`);
 }
 
 await b.close();

@@ -289,6 +289,11 @@ await open();
   await drag(box.x + box.width / 2, box.y + box.height / 2, box.x + box.width / 2 + 6 * DAY * axis.pxPerMs, box.y + box.height / 2);
   await p.mouse.up();
   await p.waitForTimeout(1700);
+  // Dropping selects, and selecting reveals the inspector — a real and
+  // wanted re-layout. Both measurements are taken with nothing held, so
+  // this compares the forecast against itself and not against a panel.
+  await p.keyboard.press("Escape");
+  await p.waitForTimeout(800);
 
   const capsule1 = await p.locator('[data-shoot="forecast-memory"]').first().boundingBox();
   const target1 = await p.locator('[data-shoot="memory-target"]').first().boundingBox();

@@ -21,7 +21,30 @@ import { FAMILY_COLOR } from "./TimeField";
 // One panel material, shared by every inspector state — the recessed
 // header and the raised body are what make it read as the same plug-in
 // family as the Decisions inspector rather than a sidebar.
+/** What the inspector costs when nothing is held. Wide enough to read as a
+    deliberate edge, narrow enough that the canvas keeps the screen. */
+export const SEAM_W = 26;
+export const PANEL_W = 316;
+
 const PANEL = "h-full flex flex-col overflow-y-auto";
+
+/** Put it down. Small, top-right, and out of the way until wanted. */
+function CloseButton({ onClose }: { onClose: () => void }) {
+  return (
+    <button
+      onClick={onClose}
+      data-shoot="inspector-close"
+      aria-label="Close inspector"
+      title="Close (esc)"
+      className="absolute right-2.5 top-2.5 rounded p-1 hover:brightness-150 transition-[filter]"
+      style={{ color: "var(--i-text-faint)" }}
+    >
+      <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.4">
+        <path d="M2 2 L8 8 M8 2 L2 8" />
+      </svg>
+    </button>
+  );
+}
 const PANEL_STYLE: React.CSSProperties = {
   borderLeft: "1px solid var(--i-border)",
   background: "linear-gradient(180deg, var(--i-panel) 0%, #12171a 100%)",
@@ -177,34 +200,38 @@ interface Props {
   onAcceptCandidate: (id: string, date: string | null) => Promise<void>;
   onDismissCandidate: (id: string) => Promise<void>;
   onEditEvent: (entry: TimelineEntry) => void;
+  /** Put the held thing down. Escape and an empty-field click do the same. */
+  onClose: () => void;
   busy: boolean;
 }
 
 export default function TimelineInspector({
   entry, candidate, laneName, onOpenForecast, onOpenDecisions,
-  onAcceptCandidate, onDismissCandidate, onEditEvent, busy,
+  onAcceptCandidate, onDismissCandidate, onEditEvent, onClose, busy,
 }: Props) {
   const [dateDraft, setDateDraft] = useState("");
   const [err, setErr] = useState<string | null>(null);
 
+  // NOTHING SELECTED, NOTHING TO SHOW.
+  //
+  // A 316px panel whose entire content was "press play" was asking a third
+  // of the canvas to hold an instruction. Detail is a consequence of
+  // picking something up, so when nothing is held there is no panel — only
+  // a seam at the edge saying depth is there. The canvas takes the space
+  // back, which is what the canvas is for.
   if (!entry && !candidate) {
     return (
-      <div className={PANEL} style={PANEL_STYLE}>
-        <div className="px-4 py-3" style={HEAD_STYLE}>
-          <div className="i-label">Inspecting</div>
-        </div>
-        <div className="flex-1 flex flex-col items-center justify-center px-7 text-center gap-3">
-          {/* NO LEGEND. It used to live here, and its presence was the tell:
-              a surface that needs a colour key is one you have to decode
-              before you can read it. The events explain themselves now —
-              point at one, select one, or press play and let each say what
-              it is in words as it is crossed. */}
-          <p className="text-[11.5px] leading-relaxed text-[var(--i-text-soft)]">
-            Press play and the project tells its own story.
-          </p>
-          <p className="text-[10.5px] leading-relaxed text-[var(--i-text-faint)]">
-            Or point at any moment on the score to see what it was, and select it for the full record.
-          </p>
+      <div
+        data-shoot="inspector-seam"
+        className="h-full flex flex-col items-center justify-center select-none"
+        style={{ width: SEAM_W, borderLeft: "1px solid var(--i-border)", background: "var(--i-void)" }}
+        title="Select anything on the score to inspect it"
+      >
+        <div
+          className="text-[8px] uppercase tracking-[0.3em] text-[var(--i-text-faint)]"
+          style={{ writingMode: "vertical-rl", opacity: 0.55 }}
+        >
+          Inspect
         </div>
       </div>
     );
@@ -215,8 +242,9 @@ export default function TimelineInspector({
     const needsDate = !candidate.date;
     return (
       <div className={PANEL} style={PANEL_STYLE}>
-        <div className="px-4 py-3" style={HEAD_STYLE}>
+        <div className="px-4 py-3 relative" style={HEAD_STYLE}>
           <div className="i-label">Inspecting · candidate</div>
+          <CloseButton onClose={onClose} />
           <div className="mt-1 text-[13px] leading-snug text-[var(--i-text)]">{candidate.title}</div>
           <div className="mt-1.5 inline-flex items-center gap-1.5 rounded px-1.5 py-[3px]"
             style={{ background: "var(--i-violet-soft)", border: "1px solid var(--i-violet)" }}>
@@ -316,8 +344,9 @@ export default function TimelineInspector({
 
   return (
     <div className={PANEL} style={PANEL_STYLE}>
-      <div className="px-4 py-3" style={HEAD_STYLE}>
+      <div className="px-4 py-3 relative" style={HEAD_STYLE}>
         <div className="i-label">Inspecting</div>
+        <CloseButton onClose={onClose} />
         <div className="mt-1 flex items-start gap-2">
           <span className="mt-[5px] h-[7px] w-[7px] rounded-[1px] shrink-0" style={{ background: color, transform: "rotate(45deg)" }} />
           <div className="text-[13px] leading-snug text-[var(--i-text)]">{e.title}</div>

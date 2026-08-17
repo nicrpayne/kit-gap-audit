@@ -19,7 +19,7 @@ const GRIP_W = 7;
 
 export default function PlanObject({
   obj, x0, x1, y, h, selected, hovered, dragging, compact, reducedMotion,
-  onSelect, onHover, onGrip,
+  onSelect, onHover, onGrip, dates,
 }: {
   obj: Obj;
   x0: number;
@@ -35,9 +35,17 @@ export default function PlanObject({
   onSelect: () => void;
   onHover: (on: boolean) => void;
   onGrip: (grip: PlanGrip, e: React.PointerEvent) => void;
+  /** "SEP 6 → SEP 27 · 21d", shown only while the object is lit. */
+  dates?: string;
 }) {
   const { entry, role, planned, overdue, draggable } = obj;
   const lit = selected || hovered || dragging;
+  // THREE STATES, THREE MATERIALS.
+  //   rest     seated, quiet, obviously a thing
+  //   hover    lifts a little; the light catches its top edge
+  //   held     off the surface entirely — selected or under the hand
+  const held = selected || dragging;
+  const lift = dragging ? 3 : held ? 2 : hovered ? 1 : 0;
 
   // SOLID, BECAUSE IT IS A PART.
   //
@@ -63,17 +71,28 @@ export default function PlanObject({
   const fontSize = compact ? 8.6 : 10;
   const w = Math.max(role === "span" ? 14 : 0, x1 - x0);
   const r = Math.min(3.5, h / 3);
-  /** How much of the title the block can hold before it stops being a word.
-      Below about nine characters an inside label is an abbreviation nobody
-      can read — "Tax en…" says less than nothing — so a short activity puts
-      its name beside itself instead. */
+  /** WHOLE WORDS OR NOTHING.
+      A label goes inside the block only if the block can hold the whole
+      title, or at least enough of it that the truncation still reads as
+      language. "Tax engin…" is not a name — it is the interface admitting
+      it ran out of room — so a short activity puts its full name beside
+      itself instead, where there is space for it. */
   const maxChars = Math.floor((w - 14) / (fontSize * 0.56));
-  const roomForLabel = maxChars >= 9;
+  const roomForLabel = maxChars >= label.length || maxChars >= 14;
 
+  // POSITION AND LIFT IN ONE TRANSFORM.
+  //
+  // A CSS `transform` in `style` REPLACES the SVG `transform` attribute
+  // rather than composing with it, so expressing the hover lift separately
+  // threw every lifted object to the origin. Both live here together, which
+  // is also the only form CSS can transition.
   const common = {
     cursor: draggable ? (dragging ? "grabbing" : "grab") : "pointer",
-    transition: reducedMotion || dragging ? undefined : "filter 160ms ease",
-    filter: lit ? "brightness(1.16)" : undefined,
+    // Quick and low-amplitude. A plan object is a part being placed, not a
+    // toy: it lifts, it settles, it does not bounce.
+    transition: reducedMotion || dragging ? undefined : "transform 150ms cubic-bezier(0.32,0.72,0,1), filter 150ms ease",
+    transform: `translate(${x0}px, ${y - lift}px)`,
+    filter: dragging ? "brightness(1.2)" : hovered && !held ? "brightness(1.08)" : undefined,
   } as const;
 
   // WHAT THIS OBJECT CLAIMS ABOUT ITSELF. Declared once and spread into
@@ -98,7 +117,6 @@ export default function PlanObject({
     return (
       <g
         {...claims}
-        transform={`translate(${x0},${y})`}
         onPointerDown={(e) => draggable && onGrip("move", e)}
         onClick={(e) => { e.stopPropagation(); onSelect(); }}
         onMouseEnter={() => onHover(true)}
@@ -126,7 +144,7 @@ export default function PlanObject({
           <text
             x={9} y={h / 2 + fontSize * 0.36}
             fontSize={fontSize}
-            fill={lit ? "var(--i-text)" : "var(--i-text-soft)"}
+            fill={lit ? "#ffffff" : "var(--i-text)"}
             style={{ letterSpacing: "0.01em" }}
           >
             {label}
@@ -140,7 +158,6 @@ export default function PlanObject({
   return (
     <g
       {...claims}
-      transform={`translate(${x0},${y})`}
       onClick={(e) => { e.stopPropagation(); onSelect(); }}
       onMouseEnter={() => onHover(true)}
       onMouseLeave={() => onHover(false)}
@@ -150,9 +167,12 @@ export default function PlanObject({
           the difference between a part resting on a surface and a bordered
           rectangle drawn onto one. */}
       <rect
-        x={0.8} y={2} width={w} height={h} rx={r}
-        fill="#04070a" opacity={dragging ? 0.62 : 0.42}
-        style={{ pointerEvents: "none" }}
+        x={0.8} y={2 + lift * 1.4} width={w} height={h} rx={r}
+        fill="#04070a" opacity={0.4 + lift * 0.09}
+        style={{
+          pointerEvents: "none",
+          transition: reducedMotion || dragging ? undefined : "y 150ms cubic-bezier(0.32,0.72,0,1), opacity 150ms ease",
+        }}
       />
       {/* the body: opaque, raised, and what MOVE grabs */}
       <rect
@@ -180,6 +200,16 @@ export default function PlanObject({
         </g>
       )}
 
+      {/* SELECTED. A seated underline the exact width of the object — it
+          says "this one" without a halo big enough to obscure its
+          neighbours, and it costs no layout. */}
+      {selected && (
+        <rect
+          x={0} y={h + 3} width={w} height={1.6} rx={0.8}
+          fill={accent} opacity={0.95} style={{ pointerEvents: "none" }}
+        />
+      )}
+
       {/* NAMED. A block you cannot read is a coloured rectangle — so a
           short activity puts its name BESIDE itself rather than crushing it
           into three letters and an ellipsis. */}
@@ -187,7 +217,7 @@ export default function PlanObject({
         <text
           x={9} y={h / 2 + fontSize * 0.36}
           fontSize={fontSize}
-          fill={lit ? "var(--i-text)" : "var(--i-text-soft)"}
+          fill={lit ? "#ffffff" : "var(--i-text)"}
           style={{ pointerEvents: "none", letterSpacing: "0.01em" }}
         >
           {label.length > maxChars ? `${label.slice(0, Math.max(1, maxChars - 1))}…` : label}
@@ -196,10 +226,23 @@ export default function PlanObject({
         <text
           x={w + 6} y={h / 2 + fontSize * 0.36}
           fontSize={fontSize}
-          fill={lit ? "var(--i-text)" : "var(--i-text-faint)"}
+          fill={lit ? "#ffffff" : "var(--i-text-soft)"}
           style={{ pointerEvents: "none", letterSpacing: "0.01em" }}
         >
           {label}
+        </text>
+      )}
+
+      {/* WHEN, ON DEMAND. Pointing at a block says what it spans; nothing
+          says it at rest, because position and width already do. */}
+      {lit && dates && (
+        <text
+          x={0} y={h + 12}
+          fontSize={8.4}
+          fill="var(--i-text-faint)"
+          style={{ pointerEvents: "none", letterSpacing: "0.05em" }}
+        >
+          {dates}
         </text>
       )}
 

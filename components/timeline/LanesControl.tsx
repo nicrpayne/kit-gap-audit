@@ -112,8 +112,8 @@ export default function LanesControl({
           <div className="px-3 py-2.5" style={{ borderBottom: "1px solid var(--i-border)", background: "var(--i-recess)" }}>
             <div className="i-label">Projects on this timeline</div>
             <div className="text-[9px] text-[var(--i-text-faint)] mt-1">
-              A view, not the release. Hiding a project here changes nothing in Scope,
-              Forecast or Portfolio.
+              A view, not the release. Hiding a project changes nothing in Scope,
+              Forecast, Portfolio or playback.
             </div>
           </div>
 
@@ -121,7 +121,7 @@ export default function LanesControl({
             {ordered.map((lane, i) => {
               const on = !hidden.has(lane.scopeId);
               return (
-                <div key={lane.scopeId} className="flex items-center gap-1 px-2 py-[5px]" data-shoot={`lane-row-${lane.scopeId}`}>
+                <div key={lane.scopeId} className="group flex items-center gap-1 px-2 py-[5px]" data-shoot={`lane-row-${lane.scopeId}`}>
                   <button
                     onClick={() =>
                       onChange({
@@ -154,6 +154,23 @@ export default function LanesControl({
                     >
                       {lane.name}
                     </span>
+                  </button>
+                  {/* FOCUS. "Only this one" is the composition move people
+                      actually want, and doing it by unticking six boxes is
+                      not composition, it is admin. */}
+                  <button
+                    onClick={() =>
+                      onChange({
+                        order: value.order.length ? value.order : ordered.map((l) => l.scopeId),
+                        hidden: lanes.filter((l) => l.scopeId !== lane.scopeId).map((l) => l.scopeId),
+                      })
+                    }
+                    data-shoot={`lane-only-${lane.scopeId}`}
+                    className="shrink-0 rounded px-1.5 py-1 text-[8.5px] uppercase tracking-[0.1em] opacity-0 group-hover:opacity-100 hover:brightness-150 transition-[opacity,filter]"
+                    style={{ color: "var(--i-violet)", border: "1px solid var(--i-border-strong)" }}
+                    title={`Show only ${lane.name}`}
+                  >
+                    Only
                   </button>
                   <div className="shrink-0 flex">
                     {([-1, 1] as const).map((dir) => (

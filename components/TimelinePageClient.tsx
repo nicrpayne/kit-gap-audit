@@ -35,13 +35,17 @@ import { DAY, fmtDay, fmtFull, scaleFor, zoomAbout, windowFollowing } from "@/li
 import { mutateReality, subscribeReality } from "@/lib/instrument/reality";
 import InstrumentShell from "@/components/instrument/InstrumentShell";
 import TimeField, { HEADER_H, MIN_LANE_H, MAX_LANE_H, LANE_HEADER_W } from "@/components/timeline/TimeField";
-import TimelineInspector from "@/components/timeline/TimelineInspector";
+import TimelineInspector, { SEAM_W, PANEL_W } from "@/components/timeline/TimelineInspector";
 import Transport, { type Speed } from "@/components/timeline/Transport";
 import AddEventTool from "@/components/timeline/AddEventTool";
 import LayersControl from "@/components/timeline/LayersControl";
 import LanesControl, { applyLaneView, EMPTY_LANE_VIEW, type LaneView } from "@/components/timeline/LanesControl";
 import { STORY_LAYERS, type LayerState } from "@/lib/timeline/story";
 import { layoutLanes } from "@/lib/timeline/plan";
+import {
+  EMPTY_UNDO, record, undoTop, redoTop, describe, remapId,
+  type UndoState, type TimelineCommand, type PlanSnapshot,
+} from "@/lib/timeline/undo";
 
 const MIN_SPAN = 21 * DAY;
 /** How long a crossed event stays articulated before settling back into
@@ -84,6 +88,17 @@ export default function TimelinePageClient() {
   // be a whole architecture; asking once, in place, is the honest small
   // version of the same protection.
   const [pendingDelete, setPendingDelete] = useState<string | null>(null);
+  // WHAT ⌘Z REVERSES. A local command stack over Timeline-owned rows only,
+  // for this editing session only. See lib/timeline/undo.ts for why it is
+  // deliberately not an application-wide architecture.
+  const [undoState, setUndoState] = useState<UndoState>(EMPTY_UNDO);
+  const undoRef = useRef<UndoState>(EMPTY_UNDO);
+  /** The single door onto the stack: ref first (authoritative), state after
+      (for rendering). Nothing else may call setUndoState. */
+  const pushUndo = useCallback((fn: (u: UndoState) => UndoState) => {
+    undoRef.current = fn(undoRef.current);
+    setUndoState(undoRef.current);
+  }, []);
   // Events the playhead has just crossed. Held briefly so the note can be
   // read, then released back into the accumulated score.
   const [articulating, setArticulating] = useState<Set<string>>(new Set());
@@ -321,6 +336,9 @@ export default function TimelinePageClient() {
 
   const atNow = playheadT !== null && Math.abs(playheadT - nowT) < 12 * 3600 * 1000;
 
+  /** The panel exists because something is held. Nothing held, no panel. */
+  const inspectorOpen = selectedId !== null;
+
   // ── DELETE, FROM THE SELECTION ─────────────────────────────────────
   //
   // Only a Timeline-owned row can go: a Report, a Decision or a Linear
@@ -340,7 +358,23 @@ export default function TimelinePageClient() {
       // Never steal the key from something being typed into — the inline
       // namer and every form field own Backspace while they have focus.
       if (el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.isContentEditable)) return;
-      if (e.key === "Escape" && pendingDelete) { setPendingDelete(null); return; }
+      // ⌘Z / Ctrl+Z reverses the last Timeline-owned edit; shift redoes it.
+      // Bound here rather than on the field so it works wherever the eye is,
+      // and guarded above so it never steals a key from a text field.
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "z") {
+        e.preventDefault();
+        if (e.shiftKey) doRedo();
+        else doUndo();
+        return;
+      }
+      if (e.key === "Escape") {
+        // One key, one meaning: put down whatever is currently held. The
+        // armed delete outranks the selection, because it is the more
+        // surprising state to be left in.
+        if (pendingDelete) { setPendingDelete(null); return; }
+        if (selectedId) { setSelectedId(null); return; }
+        return;
+      }
       if (e.key !== "Delete" && e.key !== "Backspace") return;
       if (!deletable) return;
       e.preventDefault();
@@ -419,6 +453,80 @@ export default function TimelinePageClient() {
     }
   };
 
+  /** The row as it stands, in the shape the API takes back. */
+  const snapshotOf = useCallback(
+    (e: TimelineEntry): PlanSnapshot => ({
+      scopeId: e.scopeId,
+      title: e.title,
+      date: e.date,
+      endDate: e.endDate,
+      temporalState: e.temporalState,
+      kind: String((e.detail as { landmarkKind?: string }).landmarkKind ?? "event"),
+      note: ((e.detail as { note?: string | null }).note ?? null) as string | null,
+    }),
+    []
+  );
+
+  // APPLYING A COMMAND, IN EITHER DIRECTION.
+  //
+  // Every inverse is expressed as the same API call a person could make by
+  // hand — there is no privileged rollback path, and no endpoint here can
+  // address a row Timeline does not own. Undoing a create removes the row;
+  // redoing it makes a new one, so the stack is remapped onto the new id.
+  const applyCommand = useCallback(
+    async (cmd: TimelineCommand, dir: "undo" | "redo") => {
+      const post = async (snap: PlanSnapshot) => {
+        const r = await mutateReality("/api/timeline-events", {
+          method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(snap),
+        });
+        const j = await r.json().catch(() => ({}));
+        if (r.ok && j.event?.id) pushUndo((u) => remapId(u, cmd.id, j.event.id));
+        return j.event?.id ?? null;
+      };
+      const patch = (id: string, body: Record<string, unknown>) =>
+        mutateReality(`/api/timeline-events/${id}`, {
+          method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+        });
+
+      if (cmd.kind === "retime") {
+        const to = dir === "undo" ? cmd.before : cmd.after;
+        await patch(cmd.id, { date: to.date, endDate: to.endDate, scopeId: to.scopeId });
+        setSelectedId(cmd.id);
+      } else if (cmd.kind === "create") {
+        if (dir === "undo") {
+          await mutateReality(`/api/timeline-events/${cmd.id}`, { method: "DELETE" });
+          setSelectedId(null);
+        } else {
+          setSelectedId(await post(cmd.snapshot));
+        }
+      } else {
+        if (dir === "undo") setSelectedId(await post(cmd.snapshot));
+        else {
+          await mutateReality(`/api/timeline-events/${cmd.id}`, { method: "DELETE" });
+          setSelectedId(null);
+        }
+      }
+      await load();
+    },
+    [load, pushUndo]
+  );
+
+  const doUndo = useCallback(() => {
+    const { cmd, next } = undoTop(undoRef.current);
+    if (!cmd) return;
+    undoRef.current = next;
+    setUndoState(next);
+    void applyCommand(cmd, "undo");
+  }, [applyCommand]);
+
+  const doRedo = useCallback(() => {
+    const { cmd, next } = redoTop(undoRef.current);
+    if (!cmd) return;
+    undoRef.current = next;
+    setUndoState(next);
+    void applyCommand(cmd, "redo");
+  }, [applyCommand]);
+
   // RETIME, COMMITTED ONCE.
   //
   // The drag itself is local: TimeField previews the object against fixed
@@ -433,6 +541,9 @@ export default function TimelinePageClient() {
   // simulation, and planning something is not the same as gating it.
   const retimePlanObject = useCallback(
     async (id: string, next: { date: string; endDate: string | null; scopeId?: string }) => {
+      // Captured BEFORE the write, from the projection the drag was drawn
+      // against — the only moment the previous timing is still true.
+      const was = data?.entries.find((e) => e.id === id) ?? null;
       const res = await mutateReality(`/api/timeline-events/${id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
@@ -442,9 +553,22 @@ export default function TimelinePageClient() {
         setErr((await res.json().catch(() => ({}))).error ?? "Could not move that plan object");
         return;
       }
+      if (was) {
+        const moved = next.scopeId !== undefined && next.scopeId !== was.scopeId;
+        const resized = next.endDate !== was.endDate && next.date === was.date;
+        pushUndo((u) =>
+          record(u, {
+            kind: "retime",
+            id,
+            before: { scopeId: was.scopeId, date: was.date, endDate: was.endDate },
+            after: { scopeId: next.scopeId ?? was.scopeId, date: next.date, endDate: next.endDate },
+            label: moved ? `move ${was.title}` : resized ? `resize ${was.title}` : `reschedule ${was.title}`,
+          })
+        );
+      }
       await load();
     },
-    [load]
+    [load, data, pushUndo]
   );
 
   // COMPOSED ON THE CANVAS. The gesture already decided the project, the
@@ -464,16 +588,30 @@ export default function TimelinePageClient() {
         return;
       }
       await load();
-      // Seat the selection on what was just made, so the thing you composed
-      // is the thing the inspector is talking about.
-      if (j.event?.id) setSelectedId(j.event.id);
+      if (j.event?.id) {
+        pushUndo((u) =>
+          record(u, {
+            kind: "create",
+            id: j.event.id,
+            snapshot: { ...next, temporalState: "planned", kind: next.endDate ? "phase" : "milestone", note: null },
+            label: `add ${next.title}`,
+          })
+        );
+        // Seat the selection on what was just made, so the thing you composed
+        // is the thing the inspector is talking about.
+        setSelectedId(j.event.id);
+      }
     },
-    [load]
+    [load, pushUndo]
   );
 
   const deleteEvent = async (id: string) => {
+    const was = data?.entries.find((e) => e.id === id) ?? null;
     const res = await mutateReality(`/api/timeline-events/${id}`, { method: "DELETE" });
     if (!res.ok) throw new Error("Could not delete");
+    if (was) {
+      pushUndo((u) => record(u, { kind: "delete", id, snapshot: snapshotOf(was), label: `remove ${was.title}` }));
+    }
     setTool(null);
     setSelectedId(null);
     await load();
@@ -632,6 +770,29 @@ export default function TimelinePageClient() {
         </div>
 
         <div className="flex items-center gap-2 pr-4">
+          {/* WHAT ⌘Z WOULD REVERSE, named. A bare "undo" makes a person
+              guess whether it is safe; saying "undo move Marketing plan"
+              means they never have to. Absent entirely until there is
+              something to undo, so the resting header stays quiet. */}
+          {undoState.past.length > 0 && (
+            <button
+              onClick={doUndo}
+              data-shoot="undo"
+              title={`Undo ${describe(undoState.past[undoState.past.length - 1])} (⌘Z)`}
+              className="rounded-md px-2.5 py-2 text-[10px] hover:brightness-125 transition-[filter] flex items-center gap-1.5 max-w-[190px]"
+              style={{
+                background: "linear-gradient(180deg, #262f35 0%, #131a1e 100%)",
+                border: "1px solid var(--i-border-strong)",
+                color: "var(--i-text-soft)",
+              }}
+            >
+              <svg width="10" height="10" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.4">
+                <path d="M4 3 L1.5 5.5 L4 8" />
+                <path d="M1.5 5.5 H7 a3 3 0 0 1 0 6 H5.5" />
+              </svg>
+              <span className="truncate">{describe(undoState.past[undoState.past.length - 1])}</span>
+            </button>
+          )}
           <LanesControl lanes={data.lanes} value={laneView} onChange={setLaneView} />
           <LayersControl value={layers} onChange={setLayers} />
           {dateless.length > 0 && (
@@ -755,30 +916,57 @@ export default function TimelinePageClient() {
               className="shrink-0 px-4 py-2.5 flex items-center gap-2 overflow-x-auto"
               style={{ borderTop: "1px solid var(--i-violet)", background: "var(--i-bg)" }}
             >
-              <div className="shrink-0">
-                <div className="i-label" style={{ color: "var(--i-violet)" }}>Event intake</div>
-                <div className="text-[8.5px] text-[var(--i-text-faint)]">no date in evidence</div>
+              <div className="shrink-0 pr-1">
+                <div className="i-label" style={{ color: "var(--i-violet)" }}>Waiting to be placed</div>
+                <div className="text-[8.5px] text-[var(--i-text-faint)] mt-0.5">
+                  Found in evidence · no date stated
+                </div>
               </div>
               {dateless.map((c) => (
                 <button
                   key={c.id}
                   onClick={() => setSelectedId(`candidate:${c.id}`)}
                   data-shoot={`intake-${c.id}`}
-                  className="shrink-0 text-left rounded-md px-2.5 py-1.5 max-w-[260px] hover:brightness-125"
+                  className="shrink-0 text-left rounded-md pl-2 pr-2.5 py-1.5 max-w-[260px] hover:brightness-125 transition-[filter,transform] flex items-center gap-2"
                   style={{
-                    background: "var(--i-panel)",
+                    // A CARD OF MATERIAL, not a chip in a list. Same raised
+                    // body as a plan object with a dashed cap, because that
+                    // is exactly what it is: something shaped like a plan
+                    // that is not Reality yet.
+                    background: "linear-gradient(180deg, #232c33 0%, #151b20 100%)",
                     border: `1px solid ${selectedId === `candidate:${c.id}` ? "var(--i-violet)" : "var(--i-border-strong)"}`,
+                    boxShadow: "0 2px 6px rgba(0,0,0,0.45)",
                   }}
                 >
-                  <div className="text-[10.5px] text-[var(--i-text)] truncate">{c.title}</div>
-                  <div className="text-[8.5px] text-[var(--i-text-faint)] truncate mt-0.5">{c.sourceLabel}</div>
+                  <span
+                    className="shrink-0 rounded-[1.4px] self-stretch"
+                    style={{ width: 3, background: "var(--i-violet)", opacity: 0.55 }}
+                  />
+                  <span className="min-w-0">
+                    <span className="block text-[10.5px] text-[var(--i-text)] truncate">{c.title}</span>
+                    <span className="block text-[8.5px] text-[var(--i-text-faint)] truncate mt-0.5">{c.sourceLabel}</span>
+                  </span>
                 </button>
               ))}
             </div>
           )}
         </div>
 
-        <div className="shrink-0" style={{ width: 316 }}>
+        {/* ON DEMAND. Selecting is picking something up, so the panel is a
+            consequence of holding something — not a permanent third of the
+            screen waiting to be given a reason to exist. The field
+            re-measures through its own ResizeObserver, and a drag can never
+            be in flight while this changes, so the calendar mapping stays
+            honest either way. */}
+        <div
+          className="shrink-0"
+          style={{
+            width: inspectorOpen ? PANEL_W : SEAM_W,
+            transition: reducedMotion ? undefined : "width 220ms cubic-bezier(0.32, 0.72, 0, 1)",
+          }}
+          data-shoot="inspector-dock"
+          data-open={inspectorOpen || undefined}
+        >
           <TimelineInspector
             entry={selectedEntry}
             candidate={selectedCandidate}
@@ -788,6 +976,7 @@ export default function TimelinePageClient() {
             onAcceptCandidate={acceptCandidate}
             onDismissCandidate={dismissCandidate}
             onEditEvent={(e) => setTool({ editing: e })}
+            onClose={() => setSelectedId(null)}
             busy={busy}
           />
         </div>

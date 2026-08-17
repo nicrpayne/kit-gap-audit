@@ -58,7 +58,18 @@ check(
   legendHits < 3,
   `${legendHits}/7 family names rendered as a key`
 );
-check("…and says what to do instead", /press play/i.test(body));
+// CONTRACT REPLACED, NARROWLY. "Press play and the project tells its own
+// story" used to live in the empty inspector — a 316px panel whose whole
+// job was to hold an instruction. The direct-composition pass removed the
+// empty panel entirely and gave the space back to the canvas, so the
+// guidance now lives where it always should have: in the affordances. A
+// transport you can press and a seam labelled Inspect explain the surface
+// without a paragraph, which is a stronger version of the same claim.
+check("…and the surface says what to do through its affordances, not a paragraph",
+  (await p.locator('[data-shoot="play"]').count()) === 1 &&
+    (await p.locator('[data-shoot="inspector-seam"]').count()) === 1 &&
+    /inspect/i.test(await p.locator('[data-shoot="inspector-seam"]').innerText()),
+  "play control + inspect seam");
 
 // ── 2. Story is quieter than Everything ────────────────────────────
 const storyCount = await markers();

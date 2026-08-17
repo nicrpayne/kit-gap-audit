@@ -155,6 +155,10 @@ let forecastBefore = null;
 
   await p.mouse.up();
   await p.waitForTimeout(1500);
+  // Dropping selects, and selecting reveals the inspector. Put it down so
+  // the forecast is measured in the same layout state it was measured in.
+  await p.keyboard.press("Escape");
+  await p.waitForTimeout(800);
 
   const after = await proj();
   const mk2 = after.entries.find((e) => e.id === mk.id);
