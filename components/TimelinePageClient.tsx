@@ -657,119 +657,176 @@ export default function TimelinePageClient() {
 
   const memoryLead = memoryLanes.length > 0 ? memoryByScope[memoryLanes[0].scopeId]! : null;
 
+  // HOW MANY PROJECTS SHARE THE DISPLAY. Four should feel luxurious and
+  // eight should still be readable, so the type steps down once rather than
+  // every cell shrinking toward illegibility.
+  const dense = visibleLanes.length > 5;
+
   const stateBar = (
     <>
       {/* ── THE MASTER DISPLAY ───────────────────────────────────────
-          One instrument readout, not a row of cards. It answers two
-          questions at once: what date is the needle on, and is the
-          forecast being shown a LIVE one or a REMEMBERED one. Those two
-          are never allowed to blur, so they are given different material
-          and the banner says which is which in words. */}
+          ONE readout, cut into the chassis. It used to be five separate
+          bordered cards — an instrument name, an as-of panel and one tile
+          per project — which is a SaaS dashboard header sitting above an
+          instrument, and it read like one.
+          Now there is a single piece of display glass. Inside it, hierarchy
+          is done with type size, an accent cap and one hairline: the
+          dominant date is the needle's position, and to its right are the
+          landings each project remembers. No cell has a box of its own,
+          because a box is what you reach for when spacing and type are not
+          doing the work. */}
       <div
-        className="shrink-0 flex items-stretch"
+        className="shrink-0 flex items-stretch gap-3 pl-4 pr-3"
         style={{
-          height: 86,
+          height: 80,
           borderBottom: "1px solid var(--i-border-strong)",
           background: "linear-gradient(180deg, #1a2126 0%, #12181c 100%)",
           boxShadow: "inset 0 1px 0 rgba(243,240,230,0.05)",
         }}
       >
-        <div className="flex flex-col justify-center px-4" style={{ minWidth: 132 }}>
+        <div className="flex flex-col justify-center shrink-0">
           <div className="i-label">Timeline</div>
-          <div className="text-[10px] text-[var(--i-text-faint)] mt-1">Play the project</div>
         </div>
 
-        {/* AS-OF: the mode, then the date. Cut into the chassis. */}
         <div
-          data-shoot="memory-banner"
-          className="flex flex-col justify-center px-4 my-2 rounded-lg"
+          data-shoot="master-ribbon"
+          className="flex-1 min-w-0 my-2.5 rounded-lg flex items-stretch overflow-hidden"
           style={{
             background: "var(--i-recess)",
-            border: `1px solid ${atNow ? "rgba(70,195,214,0.4)" : "rgba(155,140,250,0.4)"}`,
-            boxShadow: "inset 0 2px 9px rgba(0,0,0,0.7)",
-            minWidth: 226,
+            border: "1px solid #1c2227",
+            boxShadow: "inset 0 2px 10px rgba(0,0,0,0.7)",
           }}
         >
-          <div className="flex items-center gap-1.5">
-            <span
-              className="h-[6px] w-[6px] rounded-full"
+          {/* AS-OF. The mode, then the date. The state rides on a cap at
+              the edge of the glass — the same "the body stays one material,
+              the cap carries the state" rule the plan objects follow — so
+              live and remembered are told apart without a second border. */}
+          <div data-shoot="memory-banner" className="shrink-0 flex items-stretch">
+            <div
               style={{
+                width: 3,
                 background: atNow ? "var(--i-signal)" : "var(--i-violet)",
-                boxShadow: `0 0 8px ${atNow ? "var(--i-signal)" : "var(--i-violet)"}`,
+                boxShadow: `0 0 10px ${atNow ? "rgba(70,195,214,0.55)" : "rgba(155,140,250,0.55)"}`,
               }}
             />
-            <span
-              className="text-[8px] uppercase tracking-[0.2em]"
-              style={{ color: atNow ? "var(--i-signal)" : "var(--i-violet)" }}
-            >
-              {atNow ? "Live now" : "As remembered"}
-            </span>
-          </div>
-          <div
-            className="i-readout text-[22px] leading-none mt-1.5"
-            style={{ color: atNow ? "var(--i-signal)" : "var(--i-violet)" }}
-          >
-            {fmtFull(playheadT)}
-          </div>
-          <div className="text-[8.5px] text-[var(--i-text-faint)] mt-1.5">
-            {atNow
-              ? "Current project truth"
-              : memoryLead
-                ? `Last report ${fmtDay(new Date(memoryLead.generatedAt).getTime())}`
-                : "No forecast snapshot yet"}
-          </div>
-        </div>
-
-        {/* THE REMEMBERED LANDING, per lane. One readout strip, spatially
-            aligned with the lanes below it rather than six loose cards. */}
-        <div className="flex-1 min-w-0 flex items-stretch my-2 mx-2 rounded-lg overflow-hidden"
-          data-shoot="memory-readout"
-          style={{ background: "var(--i-recess)", border: "1px solid #1c2227", boxShadow: "inset 0 2px 9px rgba(0,0,0,0.65)" }}>
-          {visibleLanes.map((lane, i) => {
-            const m = memoryByScope[lane.scopeId];
-            const stale = m ? Math.floor((playheadT - new Date(m.generatedAt).getTime()) / DAY) : null;
-            return (
-              <div
-                key={lane.scopeId}
-                data-shoot={`memory-${lane.scopeId}`}
-                className="flex-1 min-w-0 flex flex-col justify-center px-3 transition-colors"
-                onMouseEnter={() => setHoveredLane(lane.scopeId)}
-                onMouseLeave={() => setHoveredLane(null)}
-                style={{
-                  borderLeft: i === 0 ? undefined : "1px solid rgba(38,45,51,0.7)",
-                  background: hoveredLane === lane.scopeId ? "rgba(155,140,250,0.05)" : undefined,
-                }}
-              >
-                <div className="text-[8px] uppercase tracking-[0.14em] text-[var(--i-text-faint)] truncate">{lane.name}</div>
-                {m ? (
-                  <>
-                    <div className="i-readout text-[16px] leading-none mt-1.5" data-shoot={`memory-likely-${lane.scopeId}`} style={{ color: "var(--i-violet)" }}>
-                      {fmtDay(new Date(m.likelyDate).getTime())}
-                    </div>
-                    {/* SECONDARY DISCLOSURE. The range, the confidence and
-                        how long the belief has been held are all true and
-                        all kept -- they simply are not things you need
-                        before you have asked. Pointing at the project
-                        reveals them; so does selecting its Report. */}
-                    <div
-                      className="text-[8px] mt-1.5 tabular-nums truncate transition-opacity duration-200"
-                      data-shoot={`memory-detail-${lane.scopeId}`}
-                      style={{ color: "var(--i-text-faint)", opacity: hoveredLane === lane.scopeId ? 1 : 0 }}
-                    >
-                      {fmtDay(new Date(m.earliestDate).getTime())} – {fmtDay(new Date(m.latestDate).getTime())}
-                      {m.confidenceAtTarget !== null && ` · ${m.confidenceAtTarget}%`}
-                      {stale !== null && stale > 0 && ` · held ${stale}d`}
-                    </div>
-                  </>
-                ) : (
-                  <div className="text-[10px] text-[var(--i-text-faint)] mt-2">—</div>
-                )}
+            <div className="flex flex-col justify-center pl-3.5 pr-5" style={{ minWidth: 214 }}>
+              <div className="flex items-center gap-1.5">
+                <span
+                  className="h-[5px] w-[5px] rounded-full"
+                  style={{
+                    background: atNow ? "var(--i-signal)" : "var(--i-violet)",
+                    boxShadow: `0 0 8px ${atNow ? "var(--i-signal)" : "var(--i-violet)"}`,
+                  }}
+                />
+                <span
+                  className="text-[8px] uppercase tracking-[0.2em]"
+                  style={{ color: atNow ? "var(--i-signal)" : "var(--i-violet)" }}
+                >
+                  {atNow ? "Live now" : "As remembered"}
+                </span>
               </div>
-            );
-          })}
+              <div
+                data-shoot="master-date"
+                className="i-readout text-[25px] leading-none mt-1.5"
+                style={{ color: atNow ? "var(--i-signal)" : "var(--i-violet)" }}
+              >
+                {fmtFull(playheadT)}
+              </div>
+              <div className="text-[8.5px] text-[var(--i-text-faint)] mt-1.5">
+                {atNow
+                  ? "Current project truth"
+                  : memoryLead
+                    ? `Last report ${fmtDay(new Date(memoryLead.generatedAt).getTime())}`
+                    : "No forecast snapshot yet"}
+              </div>
+            </div>
+          </div>
+
+          {/* THE ONE HAIRLINE. Position on the axis is a different kind of
+              fact from where the projects land, and that is the only
+              division this display needs. */}
+          <div className="shrink-0 my-2.5" style={{ width: 1, background: "rgba(45,54,61,0.9)" }} />
+
+          {/* THE REMEMBERED LANDINGS. One row of readouts inside the same
+              glass — separated by space and a shared baseline, never by a
+              box each. Pointing at one wakes its lane below, which is what
+              makes the association a thing you do rather than a thing you
+              have to be told. */}
+          <div className="flex-1 min-w-0 flex items-stretch" data-shoot="memory-readout">
+            {visibleLanes.map((lane) => {
+              const m = memoryByScope[lane.scopeId];
+              const stale = m ? Math.floor((playheadT - new Date(m.generatedAt).getTime()) / DAY) : null;
+              const live = hoveredLane === lane.scopeId;
+              return (
+                <div
+                  key={lane.scopeId}
+                  data-shoot={`memory-${lane.scopeId}`}
+                  className="flex-1 min-w-0 flex flex-col justify-center transition-colors"
+                  onMouseEnter={() => setHoveredLane(lane.scopeId)}
+                  onMouseLeave={() => setHoveredLane(null)}
+                  style={{
+                    paddingLeft: dense ? 11 : 18,
+                    paddingRight: 6,
+                    background: live ? "rgba(155,140,250,0.06)" : undefined,
+                  }}
+                >
+                  <div
+                    className="uppercase tracking-[0.14em] truncate transition-colors"
+                    style={{ fontSize: dense ? 7.5 : 8, color: live ? "var(--i-text-soft)" : "var(--i-text-faint)" }}
+                  >
+                    {lane.name}
+                  </div>
+                  {/* ONE SHAPE PER CELL, WHATEVER IT HAS TO SAY.
+                      A project with no report used to render a single short
+                      line where its siblings render three, so the flex box
+                      centred it differently and its name sat visibly lower
+                      than every other name on the display. The empty state
+                      keeps the full structure — value line, detail line —
+                      so the readout has one baseline across the row. */}
+                  {m ? (
+                    <>
+                      <div
+                        className="i-readout leading-none mt-1.5"
+                        data-shoot={`memory-likely-${lane.scopeId}`}
+                        style={{ fontSize: dense ? 13.5 : 17, color: "var(--i-violet)" }}
+                      >
+                        {fmtDay(new Date(m.likelyDate).getTime())}
+                      </div>
+                      {/* SECONDARY DISCLOSURE. The range, the confidence and
+                          how long the belief has been held are all true and
+                          all kept -- they simply are not things you need
+                          before you have asked. Pointing at the project
+                          reveals them; so does selecting its Report. */}
+                      <div
+                        className="text-[8px] mt-1.5 tabular-nums truncate transition-opacity duration-200"
+                        data-shoot={`memory-detail-${lane.scopeId}`}
+                        style={{ color: "var(--i-text-faint)", opacity: live ? 1 : 0 }}
+                      >
+                        {fmtDay(new Date(m.earliestDate).getTime())} – {fmtDay(new Date(m.latestDate).getTime())}
+                        {m.confidenceAtTarget !== null && ` · ${m.confidenceAtTarget}%`}
+                        {stale !== null && stale > 0 && ` · held ${stale}d`}
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <div
+                        className="i-readout leading-none mt-1.5 text-[var(--i-text-faint)]"
+                        style={{ fontSize: dense ? 13.5 : 17 }}
+                      >
+                        —
+                      </div>
+                      <div className="text-[8px] mt-1.5 truncate" style={{ color: "var(--i-text-faint)", opacity: live ? 1 : 0 }}>
+                        no forecast recorded yet
+                      </div>
+                    </>
+                  )}
+                </div>
+              );
+            })}
+          </div>
         </div>
 
-        <div className="flex items-center gap-2 pr-4">
+        <div className="flex items-center gap-2 shrink-0">
           {/* WHAT ⌘Z WOULD REVERSE, named. A bare "undo" makes a person
               guess whether it is safe; saying "undo move Marketing plan"
               means they never have to. Absent entirely until there is
@@ -872,6 +929,7 @@ export default function TimelinePageClient() {
               layers={layers}
               hoveredId={hoveredId}
               onHoverEvent={setHoveredId}
+              playing={playing}
             />
           </div>
 

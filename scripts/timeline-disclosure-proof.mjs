@@ -30,7 +30,11 @@ await p.waitForTimeout(2600);
 /** A landmark is a plan object with its own handle; everything else is
     a mark on the historical score. */
 const handle = (e) => (e.family === "landmark" ? `plan-${e.id}` : `event-${e.id}`);
-const markers = () => p.locator('[data-shoot^="event-"]:not([data-shoot^="event-module-"]):not([data-shoot="event-intake-toggle"]), [data-shoot^="plan-"]:not([data-shoot="plan-drag-readout"]):not([data-shoot="plan-ownership"])').count();
+// `plan-measure` is the duration marking ON a plan object, not a marker of
+// its own — the same reason `plan-drag-readout` and `plan-ownership` are
+// excluded. Counting it would inflate the drawn total by one per block and
+// make "fewer drawn than known" quietly false.
+const markers = () => p.locator('[data-shoot^="event-"]:not([data-shoot^="event-module-"]):not([data-shoot="event-intake-toggle"]), [data-shoot^="plan-"]:not([data-shoot="plan-drag-readout"]):not([data-shoot="plan-ownership"]):not([data-shoot="plan-measure"])').count();
 const geometry = () =>
   p.evaluate(() => {
     const r = (s) => {
@@ -58,18 +62,29 @@ check(
   legendHits < 3,
   `${legendHits}/7 family names rendered as a key`
 );
-// CONTRACT REPLACED, NARROWLY. "Press play and the project tells its own
-// story" used to live in the empty inspector — a 316px panel whose whole
-// job was to hold an instruction. The direct-composition pass removed the
-// empty panel entirely and gave the space back to the canvas, so the
-// guidance now lives where it always should have: in the affordances. A
-// transport you can press and a seam labelled Inspect explain the surface
-// without a paragraph, which is a stronger version of the same claim.
+// CONTRACT REPLACED, NARROWLY — TWICE, AND FOR THE SAME REASON.
+//
+// Round one: "Press play and the project tells its own story" used to live
+// in the empty inspector — a 316px panel whose whole job was to hold an
+// instruction. The direct-composition pass removed the empty panel and gave
+// the space back to the canvas, so the guidance moved into the affordances.
+//
+// Round two, this pass: the seam itself stopped painting the word
+// "Inspect" down its edge. What the old text-match protected is that THE
+// CLOSED INSPECTOR STILL ANNOUNCES ITSELF — a bare 26px strip with nothing
+// on it is a dead edge nobody would press. That claim is unchanged and is
+// still checked here; only the medium moved, from rotated type to a
+// machined pull grip, with the word kept as the accessible name where it is
+// genuinely needed. The assertion is therefore narrower in one respect
+// (the grip must be drawn) and identical in the rest.
+const seamName = await p.locator('[data-shoot="inspector-seam"]').getAttribute("aria-label");
+const seamMarks = await p.locator('[data-shoot="inspector-seam"] svg rect').count();
 check("…and the surface says what to do through its affordances, not a paragraph",
   (await p.locator('[data-shoot="play"]').count()) === 1 &&
     (await p.locator('[data-shoot="inspector-seam"]').count()) === 1 &&
-    /inspect/i.test(await p.locator('[data-shoot="inspector-seam"]').innerText()),
-  "play control + inspect seam");
+    seamMarks >= 3 &&
+    /inspect/i.test(seamName ?? ""),
+  `play control + ${seamMarks}-mark seam grip named "${seamName}"`);
 
 // ── 2. Story is quieter than Everything ────────────────────────────
 const storyCount = await markers();

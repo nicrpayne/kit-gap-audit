@@ -195,8 +195,13 @@ export interface LaneZones {
 }
 
 /** A comfortable plan row in an opened lane. Compact lanes get whatever
-    their remaining room divides into. */
-export const OPEN_ROW_H = 30;
+    their remaining room divides into.
+
+    Sized for the object PLUS what an opened lane adds under it: at this
+    resolution every plan object states its own dates at rest, and a row
+    that only fits the block would have those dates landing on the object
+    below. The row is the object and its markings, not just the object. */
+export const OPEN_ROW_H = 42;
 const OPEN_SCORE_TOP = 42;
 const OPEN_PLAN_GAP = 16;
 const OPEN_MEM_GAP = 30;
@@ -231,8 +236,16 @@ export function laneZones(box: LaneBox, rowCount = 1): LaneZones {
     return { scoreY, planTop, planRoom, memY: planTop + planRoom + OPEN_MEM_GAP };
   }
   // COMPACT. Proportional, so a lane reads the same at 76px as at 198px.
-  const scoreY = box.top + box.height * 0.3;
-  const memY = box.top + box.height * 0.76;
+  //
+  // The split favours the PLAN. History is a line of small marks and needs
+  // only the room to draw them; the plan band has to hold objects a person
+  // is meant to see as objects, and at the old 0.30/0.76 split a project
+  // with three overlapping activities divided 64px between three rows and
+  // produced 16px slivers. Moving the score up and the capsule down buys
+  // that band roughly 20px, which is the difference between a bar and a
+  // part.
+  const scoreY = box.top + box.height * 0.25;
+  const memY = box.top + box.height * 0.78;
   const planTop = scoreY + 12;
   return { scoreY, planTop, planRoom: Math.max(12, memY - 15 - planTop), memY };
 }

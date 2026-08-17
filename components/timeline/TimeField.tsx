@@ -16,7 +16,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { TimelineEntry, TimelineLane, ForecastSnapshot, TimelineCandidate } from "@/lib/timeline/entries";
-import { xFor, tFor, ticksFor, scaleFor, fmtDay, type TimeView } from "@/lib/timeline/geometry";
+import { xFor, tFor, ticksFor, subTicksFor, scaleFor, fmtDay, type TimeView } from "@/lib/timeline/geometry";
 import { FAMILY_COLOR } from "./familyColor";
 import EventModule from "./EventModule";
 import PlanObjectView from "./PlanObject";
@@ -32,6 +32,13 @@ export const LANE_HEADER_W = 146;
     keeps when neighbours crowd it. See `grabByLane`. */
 const GRAB_HALF = 8;
 const MIN_GRAB_HALF = 2;
+/** How close two history marks must be before the run they belong to is
+    drawn as one node, and how many it takes to be worth doing.
+    An 11px diamond with a 2px gap either side needs about 13px to be seen
+    as its own object, so anything tighter than that is the smear this
+    exists to resolve. */
+const CLUSTER_GAP = 13;
+const CLUSTER_MIN = 3;
 /** The field FILLS the instrument. Lanes grow to use the height rather than
     sitting in a short band above a void -- the time field is the hero, and
     a hero that occupies a third of the screen is not one. Clamped so four
@@ -82,6 +89,8 @@ interface Props {
   layers: LayerState;
   hoveredId: string | null;
   onHoverEvent: (id: string | null) => void;
+  /** The story is being told. The intent side steps back while it runs. */
+  playing: boolean;
 }
 
 /** ONE EVENT OBJECT FAMILY.
@@ -100,10 +109,15 @@ interface Props {
  * worth seeing before you ask anything.
  */
 function EventMark({
-  entry, x, y, crossed, selected, woken, prominence, grabL, grabR, onSelect, onHover, reducedMotion,
+  entry, x, y, crossed, selected, woken, prominence, grabL, grabR, muted, onSelect, onHover, reducedMotion,
 }: {
   entry: TimelineEntry; x: number; y: number; crossed: boolean; selected: boolean;
   woken: boolean; prominence: "primary" | "secondary"; grabL: number; grabR: number;
+  /** This mark belongs to a run drawn as ONE clustered node. It keeps its
+      pixels — pointing into the run still reaches the nearest event, which
+      then draws itself in full — but at rest it lets the cluster speak for
+      it instead of adding another diamond to a smear. */
+  muted?: boolean;
   onSelect: () => void; onHover: (on: boolean) => void; reducedMotion: boolean;
 }) {
   const color = FAMILY_COLOR[entry.family] ?? "var(--i-text-soft)";
@@ -144,12 +158,21 @@ function EventMark({
       data-planned={planned || undefined}
       data-overdue={overdue || undefined}
       data-prominence={prominence}
+      data-muted={muted && !lit ? true : undefined}
     >
       {/* The ONLY hit target. Everything drawn below is inert, so a lit
           marker's 38px halo can never stand between the pointer and the
-          neighbour it is covering. */}
+          neighbour it is covering. Kept at full size even while muted:
+          being drawn as part of a cluster is a decision about ink, never
+          about whether this event can still be reached and asked. */}
       <rect x={-grabL} y={-14} width={grabL + grabR} height={28} fill="transparent" />
-      <g style={{ pointerEvents: "none" }}>
+      <g
+        style={{
+          pointerEvents: "none",
+          opacity: muted && !lit ? 0 : 1,
+          transition: reducedMotion ? undefined : "opacity 160ms ease",
+        }}
+      >
       {lit && <circle r={19} fill={color} opacity={0.13} />}
       {lit && <circle r={14} fill="none" stroke={color} strokeWidth={1} opacity={selected ? 0.95 : 0.65} />}
 
@@ -201,6 +224,70 @@ function EventMark({
   );
 }
 
+/**
+ * A RUN OF HISTORY, DRAWN ONCE.
+ *
+ * Four issues finishing on four consecutive days are four diamonds nine
+ * pixels apart: a smear that reads as texture rather than as a count. The
+ * eye cannot resolve it, and the one fact it contains — FOUR THINGS
+ * HAPPENED HERE — is the fact it fails to deliver.
+ *
+ * So a tight run draws as one node and says how many. This is PRESENTATION
+ * ONLY, in the strictest sense: every member is still in the projection,
+ * still crossed by playback, still selectable, and still owns the pixels
+ * above it. Point into the run and the nearest event surfaces in full and
+ * explains itself; the cluster simply stops competing while it does.
+ *
+ * The run's real extent is marked at both ends, because a cluster that drew
+ * itself as a single instant would be lying about when those things
+ * happened.
+ */
+function HistoryCluster({
+  x0, x1, y, count, done, dim, reducedMotion,
+}: {
+  x0: number; x1: number; y: number; count: number; done: number; dim: boolean; reducedMotion: boolean;
+}) {
+  const cx = (x0 + x1) / 2;
+  const all = done === count;
+  const some = done > 0 && !all;
+  const stroke = all ? "var(--i-violet)" : some ? "var(--i-text-soft)" : "var(--i-border-strong)";
+  return (
+    <g
+      data-shoot={`history-cluster-${Math.round(x0)}-${y}`}
+      data-count={count}
+      data-crossed={all || undefined}
+      style={{
+        pointerEvents: "none",
+        opacity: dim ? 0 : 1,
+        transition: reducedMotion ? undefined : "opacity 160ms ease",
+      }}
+    >
+      {/* A TROUGH THE RUN SITS IN. It spans the run's REAL extent, so the
+          cluster says "several things, across these days" rather than
+          collapsing them onto an instant they did not share. */}
+      <rect
+        x={x0 - 8} y={y - 8} width={x1 - x0 + 16} height={16} rx={8}
+        fill="#0a0e11" opacity={0.92}
+        stroke={stroke} strokeWidth={0.8} strokeOpacity={all ? 0.5 : 0.32}
+      />
+      {/* ONE node for the run — the same primitive every event is made of */}
+      <rect
+        x={cx - 5} y={y - 5} width={10} height={10} transform={`rotate(45 ${cx} ${y})`}
+        fill={all ? "#242c34" : "#1b2228"} stroke={stroke} strokeWidth={1.1}
+        strokeOpacity={0.85} opacity={all ? 0.85 : 0.6}
+      />
+      <text
+        x={x1 + 12} y={y + 3.2} fontSize={9}
+        fill={all ? "var(--i-violet)" : "var(--i-text-soft)"}
+        opacity={all ? 0.9 : 0.7}
+        style={{ letterSpacing: "0.04em" }}
+      >
+        {count}
+      </text>
+    </g>
+  );
+}
+
 /** FORECAST MEMORY — the remembered future, and a hero object.
  *
  * p10–p90 is UNCERTAINTY, not duration. It is drawn as a machined capsule
@@ -214,15 +301,44 @@ function EventMark({
  * readable rather than a teleport.
  */
 function MemoryBand({
-  snap, view, y, ghost, reducedMotion,
-}: { snap: ForecastSnapshot; view: TimeView; y: number; ghost?: boolean; reducedMotion?: boolean }) {
+  snap, view, y, ghost, reducedMotion, detailed,
+}: {
+  snap: ForecastSnapshot; view: TimeView; y: number; ghost?: boolean; reducedMotion?: boolean;
+  /** The lane is opened — the capsule states its own ends rather than
+      leaving them to be inferred from the shape. */
+  detailed?: boolean;
+}) {
+  const t50 = new Date(snap.likelyDate).getTime();
   const x10 = xFor(view, new Date(snap.earliestDate).getTime());
-  const x50 = xFor(view, new Date(snap.likelyDate).getTime());
+  const x50 = xFor(view, t50);
   const x90 = xFor(view, new Date(snap.latestDate).getTime());
-  const xT = snap.targetDate ? xFor(view, new Date(snap.targetDate).getTime()) : null;
+  const tT = snap.targetDate ? new Date(snap.targetDate).getTime() : null;
+  const xT = tT !== null ? xFor(view, tT) : null;
   const h = 26;
   const id = `mem-${snap.reportId}${ghost ? "-g" : ""}`;
   const op = ghost ? 0.3 : 1;
+
+  // ── THE ONE THING A FORECAST AND A TARGET HAVE TO SAY TO EACH OTHER ──
+  //
+  // Two marks sat on the same axis and the reader was left to do the
+  // subtraction: is the likely landing before what we committed to, or
+  // after it, and by how much. That gap is the single most consequential
+  // number on this instrument, and it was the only one not stated.
+  //
+  // It is drawn as a TIE between the two objects — a measured span from the
+  // p50 blade to the target flag, in the colour of its own answer. Both
+  // ends keep their own material: the capsule stays a computed
+  // distribution, the target stays a flag. Nothing here is simulated; this
+  // is the difference between two dates the Report already stored.
+  const gapDays = tT !== null ? Math.round((tT - t50) / 86400000) : null;
+  const clear = gapDays !== null && gapDays >= 0;
+  const tieColor = clear ? "var(--i-mint)" : "var(--i-red)";
+  const showTie =
+    !ghost && xT !== null && gapDays !== null &&
+    // Only when both ends are actually on screen; a tie running off the
+    // edge to a flag nobody can see explains nothing.
+    Math.min(x50, xT) > -40 && Math.max(x50, xT) < view.width + 40 &&
+    Math.abs(xT - x50) >= 3;
 
   return (
     <g
@@ -261,6 +377,19 @@ function MemoryBand({
           <rect x={x - 1} y={y - h / 2 + 3} width={2} height={h - 6} rx={1} fill="var(--i-violet)" opacity={0.7} />
         </g>
       ))}
+      {/* OPENED: the ends name themselves. The capsule is the same object
+          at the same place; the lane's resolution decides whether its p10
+          and p90 are shapes you read off the axis or dates it tells you. */}
+      {detailed && !ghost && (
+        <g style={{ pointerEvents: "none" }} data-shoot="memory-bounds">
+          <text x={x10 - 5} y={y + 3} fontSize={8} textAnchor="end" fill="var(--i-violet)" opacity={0.7}>
+            {fmtDay(new Date(snap.earliestDate).getTime())}
+          </text>
+          <text x={x90 + 5} y={y + 3} fontSize={8} fill="var(--i-violet)" opacity={0.7}>
+            {fmtDay(new Date(snap.latestDate).getTime())}
+          </text>
+        </g>
+      )}
       {/* p50 — DOMINANT. What we believed the likely landing was. */}
       <rect x={x50 - 2} y={y - h / 2 - 5} width={4} height={h + 10} rx={1.5} fill="var(--i-violet)" />
       <rect x={x50 - 2} y={y - h / 2 - 5} width={4} height={h + 10} rx={1.5} fill="#ffffff" opacity={0.18} />
@@ -268,6 +397,40 @@ function MemoryBand({
         <text x={x50} y={y - h / 2 - 9} fontSize={8.5} textAnchor="middle" fill="var(--i-violet)" style={{ letterSpacing: "0.06em" }}>
           {fmtDay(new Date(snap.likelyDate).getTime())}
         </text>
+      )}
+      {/* THE TIE. Drawn under both objects, from the likely landing to the
+          committed date, so the answer — clear, or late, and by how many
+          days — is a thing you see rather than a subtraction you perform. */}
+      {showTie && (
+        <g
+          data-shoot="forecast-vs-target"
+          data-gap-days={gapDays!}
+          data-late={!clear || undefined}
+          style={{ pointerEvents: "none" }}
+        >
+          <line
+            x1={x50} y1={y + h / 2 + 7} x2={xT!} y2={y + h / 2 + 7}
+            stroke={tieColor} strokeWidth={1} opacity={0.6} strokeDasharray={clear ? undefined : "3 2"}
+          />
+          {[x50, xT!].map((x, i) => (
+            <line key={i} x1={x} y1={y + h / 2 + 4} x2={x} y2={y + h / 2 + 10} stroke={tieColor} strokeWidth={1} opacity={0.75} />
+          ))}
+          <text
+            x={(x50 + xT!) / 2} y={y + h / 2 + 19}
+            fontSize={8} textAnchor="middle" fill={tieColor} opacity={0.95}
+            style={{ letterSpacing: "0.06em" }}
+          >
+            {gapDays === 0 ? "on target" : `${Math.abs(gapDays!)}d ${clear ? "clear" : "late"}`}
+            {/* HOW SURE WE WERE, ATTACHED TO THE CLAIM IT BELONGS TO.
+                This number is the confidence of hitting the TARGET. Floated
+                beside the flag it landed next to the p50 date and read as
+                "34% confidence, NOV 2" — a sentence about the wrong date.
+                On the tie there is only one thing it can mean. Opened lanes
+                only: it is the third fact about this relationship, not the
+                first. */}
+            {detailed && snap.confidenceAtTarget !== null && ` · ${snap.confidenceAtTarget}% confident`}
+          </text>
+        </g>
       )}
       {/* the target AS IT WAS at that Report. A flag, never a fader. */}
       {xT !== null && !ghost && (
@@ -285,12 +448,14 @@ export default function TimeField({
   selectedId, hoveredLane, onSelect, onHoverLane, onScrub, onOpenScope,
   onViewChange, bounds, reducedMotion, laneBoxes, onToggleExpand,
   onPlanRetime, onPlanCreate, articulating, ghostByScope, deltaByScope,
-  layers, hoveredId, onHoverEvent,
+  layers, hoveredId, onHoverEvent, playing,
 }: Props) {
   const hostRef = useRef<HTMLDivElement>(null);
   const dragging = useRef(false);
   const scale = scaleFor(view);
   const ticks = useMemo(() => ticksFor(view, scale), [view, scale]);
+  /** The grain an OPENED lane is drawn at. Same window, one step down. */
+  const subTicks = useMemo(() => subTicksFor(view, scale), [view, scale]);
   const boxOf = useMemo(() => new Map(laneBoxes.map((b) => [b.scopeId, b])), [laneBoxes]);
   const height = HEADER_H + laneBoxes.reduce((s, b) => s + b.height, 0);
 
@@ -363,6 +528,44 @@ export default function TimeField({
 
   const nowX = xFor(view, nowT);
   const playX = xFor(view, playheadT);
+
+  // ── RUNS OF HISTORY ────────────────────────────────────────────────
+  //
+  // Marks closer together than the eye can separate are grouped so the run
+  // can be drawn once, with its count. Two deliberate limits:
+  //
+  //   ONLY LEFT OF NOW. Density is a property of what already happened;
+  //   the intent side is sparse by nature and clustering it would summarise
+  //   a plan nobody has made yet.
+  //
+  //   THREE OR MORE. Two adjacent diamonds are legible as two diamonds.
+  //   Collapsing a pair buys nothing and costs a count nobody needed.
+  const clusters = useMemo(() => {
+    const byScope = new Map<string, { x0: number; x1: number; ids: string[] }[]>();
+    const member = new Set<string>();
+    for (const [scopeId, list] of byLane) {
+      const xs = list
+        .map((e) => ({ id: e.id, x: xFor(view, new Date(e.date).getTime()) }))
+        .filter((p) => p.x < nowX && p.x > -40 && p.x < view.width + 40)
+        .sort((a, b) => a.x - b.x);
+      const groups: { x0: number; x1: number; ids: string[] }[] = [];
+      let run: { id: string; x: number }[] = [];
+      const flush = () => {
+        if (run.length >= CLUSTER_MIN) {
+          groups.push({ x0: run[0].x, x1: run[run.length - 1].x, ids: run.map((r) => r.id) });
+          for (const r of run) member.add(r.id);
+        }
+        run = [];
+      };
+      for (const p of xs) {
+        if (run.length === 0 || p.x - run[run.length - 1].x <= CLUSTER_GAP) run.push(p);
+        else { flush(); run = [p]; }
+      }
+      flush();
+      byScope.set(scopeId, groups);
+    }
+    return { byScope, member };
+  }, [byLane, view, nowX]);
 
   // ── PLAN LAYOUT ────────────────────────────────────────────────────
   //
@@ -681,11 +884,37 @@ export default function TimeField({
               key={lane.scopeId}
               onMouseEnter={() => onHoverLane(lane.scopeId)}
               onMouseLeave={() => onHoverLane(null)}
+              // THE PROJECT HEADER IS THE AFFORDANCE.
+              //
+              // Opening a project was a 10px chevron in the corner of a
+              // 200px block — a control you had to find, guarding the one
+              // gesture the surface most wants you to try. The whole header
+              // is the door now. The two things inside it that mean
+              // something else, the name (which opens Scope) and the
+              // chevron (which is the state indicator you can also press),
+              // stop the click from reaching here, so no gesture has two
+              // meanings.
+              onClick={() => onToggleExpand(lane.scopeId)}
+              role="button"
+              tabIndex={0}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onToggleExpand(lane.scopeId); }
+              }}
+              title={open ? `Collapse ${lane.name}` : `Show more of ${lane.name}`}
               data-shoot={`lane-header-${lane.scopeId}`}
               data-expanded={open || undefined}
-              className="w-full px-3 flex flex-col justify-center transition-colors relative"
+              className="w-full px-3 flex flex-col justify-start transition-colors relative cursor-pointer"
               style={{
                 height: box?.height ?? 0,
+                // BESIDE THE THING IT NAMES.
+                //
+                // The name used to float at the vertical centre of a header
+                // that can be 76px or 250px tall, which put it level with
+                // nothing in particular and left a large empty region above
+                // it. Seated against the lane's own score line instead, so
+                // the label and the track it labels are at the same height
+                // no matter how the well is divided.
+                paddingTop: Math.max(10, (box?.height ?? 0) * 0.25 - 20),
                 borderBottom: "1px solid var(--i-border)",
                 background: open ? "var(--i-panel)" : alive ? "rgba(38,47,53,0.5)" : "transparent",
               }}
@@ -695,9 +924,9 @@ export default function TimeField({
                   — clicking dead space should not throw you into another
                   instrument while you are reaching for the chevron. */}
               <button
-                onClick={() => onOpenScope(lane.scopeId)}
+                onClick={(e) => { e.stopPropagation(); onOpenScope(lane.scopeId); }}
                 data-shoot={`lane-open-${lane.scopeId}`}
-                className="text-left hover:brightness-125 transition-[filter]"
+                className="text-left hover:brightness-125 transition-[filter] self-start"
                 title="Open in Scope"
               >
                 <span className="block text-[11px] uppercase tracking-[0.1em] text-[var(--i-text)] truncate">{lane.name}</span>
@@ -714,21 +943,24 @@ export default function TimeField({
                   waits on {lane.dependsOnScopeIds.map((d) => lanes.find((l) => l.scopeId === d)?.name ?? "—").join(", ")}
                 </span>
               )}
-              {/* SHOW ME MORE OF THIS PROJECT.
-                  A disclosure chevron and nothing else. It used to carry the
-                  subtrack count, which asked the reader to think about a
-                  layout mechanism they should never have to know exists —
-                  the number was the implementation leaking into the control. */}
+              {/* WHICH WAY THE PROJECT IS FACING.
+                  Primarily a state indicator now that the header itself is
+                  the door — but still pressable, because a chevron that
+                  cannot be pressed is a lie about what a chevron is. It
+                  used to carry the subtrack count, which asked the reader
+                  to think about a layout mechanism they should never have
+                  to know exists — the number was the implementation leaking
+                  into the control. */}
               <button
-                onClick={() => onToggleExpand(lane.scopeId)}
+                onClick={(e) => { e.stopPropagation(); onToggleExpand(lane.scopeId); }}
                 data-shoot={`lane-expand-${lane.scopeId}`}
                 aria-expanded={open}
                 aria-label={open ? `Collapse ${lane.name}` : `Show more of ${lane.name}`}
                 title={open ? `Collapse ${lane.name}` : `Show more of ${lane.name}`}
-                className="absolute right-1.5 top-1.5 rounded p-1.5 hover:brightness-150 transition-[filter]"
+                className="absolute right-1.5 top-1.5 rounded p-1.5 hover:brightness-150 transition-[filter,opacity]"
                 style={{
                   background: open ? "var(--i-violet-soft)" : "transparent",
-                  opacity: open || alive || planned > 0 ? 1 : 0.35,
+                  opacity: open ? 1 : alive ? 0.9 : planned > 0 ? 0.4 : 0.25,
                 }}
               >
                 <svg width="10" height="10" viewBox="0 0 10 10" fill="none"
@@ -777,6 +1009,26 @@ export default function TimeField({
               <rect width="3" height="3" fill="none" />
               <circle cx="0.6" cy="0.6" r="0.4" fill="var(--i-violet)" opacity="0.16" />
             </pattern>
+            {/* THE PLAN OBJECT'S MATERIAL, AS A REAL PAINT SERVER.
+                SVG `fill` takes a colour or a `url(#…)` — a CSS
+                `linear-gradient()` string is not a value it understands,
+                so the raised extruded body every plan object claimed to
+                have was being dropped and each block was painting as flat
+                black. It looked deliberate, which is why it survived: a
+                black rectangle with a coloured cap reads as a text field,
+                and that is exactly the complaint about these objects.
+                Defined once here and shared, so every block on the score is
+                cut from the same billet. */}
+            <linearGradient id="planBody" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor="#333e47" />
+              <stop offset="50%" stopColor="#262f37" />
+              <stop offset="100%" stopColor="#1b222a" />
+            </linearGradient>
+            <linearGradient id="planBodyLit" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor="#44525e" />
+              <stop offset="50%" stopColor="#333f4a" />
+              <stop offset="100%" stopColor="#26303a" />
+            </linearGradient>
           </defs>
           {/* INTENT GROUND. Everything right of NOW sits on a lighter,
               hatched surface -- the past/future difference is material,
@@ -866,6 +1118,55 @@ export default function TimeField({
             );
           })}
 
+          {/* ── THE OPENED LANE: ONE TIMELINE, TWO RESOLUTIONS ─────────
+              Opening a project used to buy height and nothing else — the
+              same three objects, the same grid, further apart. That is a
+              taller strip, not a closer look, and it is why the gesture had
+              no pay-off.
+              An opened lane is now the SAME window drawn at the next grain
+              down: months resolve into weeks, weeks into days, and the plan
+              bed becomes ruled subtracks so parallel activities read as
+              parallel. Nothing new is known and nothing moves off the
+              shared axis — every mark still sits where the absolute
+              timeline puts it. Only the resolution changes. */}
+          {laneBoxes.filter((b) => b.expanded).map((box) => {
+            const z = zonesOf(box);
+            const rows = Math.max(1, planLayout.rowCount.get(box.scopeId) ?? 1);
+            const rowH = planRowHeight(z.planRoom, rows);
+            const top = HEADER_H + box.top;
+            const bot = top + box.height;
+            return (
+              <g key={`res-${box.scopeId}`} data-shoot={`lane-resolution-${box.scopeId}`} style={{ pointerEvents: "none" }}>
+                <rect x={0} y={top} width={view.width} height={box.height} fill="#0b0f12" opacity={0.4} />
+                {subTicks.map((t) => {
+                  const x = xFor(view, t.t);
+                  if (x < -20 || x > view.width + 20) return null;
+                  return (
+                    <g key={t.t} data-shoot="fine-tick">
+                      <line
+                        x1={x} y1={top + 15} x2={x} y2={bot - 3}
+                        stroke="var(--i-border)" strokeWidth={t.major ? 0.8 : 0.5}
+                        opacity={t.major ? 0.42 : 0.2}
+                      />
+                      <text x={x + 3} y={top + 12} fontSize={7.5} fill="var(--i-text-faint)" opacity={0.5}>
+                        {t.label}
+                      </text>
+                    </g>
+                  );
+                })}
+                {/* ruled subtracks — the parallel structure made visible */}
+                {Array.from({ length: rows }, (_, r) => (
+                  <line
+                    key={r}
+                    x1={0} y1={HEADER_H + z.planTop + r * rowH - 4}
+                    x2={view.width} y2={HEADER_H + z.planTop + r * rowH - 4}
+                    stroke="var(--i-border-strong)" strokeWidth={0.6} opacity={0.35}
+                  />
+                ))}
+              </g>
+            );
+          })}
+
           {/* lane separators */}
           {laneBoxes.map((box) => (
             <g key={box.scopeId}>
@@ -935,21 +1236,36 @@ export default function TimeField({
             if (!box) return null;
             const z = zonesOf(box);
             const yTrack = HEADER_H + z.scoreY;
-            const yMem = HEADER_H + z.memY;
-            const mem = memoryByScope[lane.scopeId] ?? null;
             const laneEntries = byLane.get(lane.scopeId) ?? [];
             const grabCells = grabByLane.get(lane.scopeId) ?? new Map();
             const placed = planLayout.placed.get(lane.scopeId) ?? [];
             const rowCount = planLayout.rowCount.get(lane.scopeId) ?? 0;
             const rowH = planRowHeight(z.planRoom, Math.max(1, rowCount));
-            const objH = Math.max(9, rowH - 4);
+            // A PART YOU COULD PICK UP. Below about 18px a plan object stops
+            // reading as an object and starts reading as a rule with a label
+            // on it; above about 24px it starts to look like a container for
+            // something else. Clamped into that band wherever the lane has
+            // the room, and honestly thinner when it does not.
+            const objH = Math.max(11, Math.min(24, rowH - 5));
             const compact = box.height < 130;
+            const detailed = box.expanded;
+            const laneClusters = clusters.byScope.get(lane.scopeId) ?? [];
             return (
               <g key={lane.scopeId}>
-                {ghostByScope[lane.scopeId] && (
-                  <MemoryBand snap={ghostByScope[lane.scopeId]!} view={view} y={yMem} ghost reducedMotion={reducedMotion} />
-                )}
-                {mem && <MemoryBand snap={mem} view={view} y={yMem} reducedMotion={reducedMotion} />}
+                {laneClusters.map((c) => {
+                  const done = c.ids.reduce((n, id) => n + (crossed.has(id) ? 1 : 0), 0);
+                  const lit = c.ids.some(
+                    (id) => id === selectedId || id === hoveredId || articulating.has(id)
+                  );
+                  return (
+                    <HistoryCluster
+                      key={`cl-${lane.scopeId}-${Math.round(c.x0)}`}
+                      x0={c.x0} x1={c.x1} y={yTrack}
+                      count={c.ids.length} done={done} dim={lit}
+                      reducedMotion={reducedMotion}
+                    />
+                  );
+                })}
                 {laneEntries.map((e) => {
                   const t = new Date(e.date).getTime();
                   const x = xFor(view, t);
@@ -975,6 +1291,7 @@ export default function TimeField({
                         prominence={prominenceFor(e)}
                         grabL={grabCells.get(e.id)?.l ?? GRAB_HALF}
                         grabR={grabCells.get(e.id)?.r ?? GRAB_HALF}
+                        muted={clusters.member.has(e.id)}
                         onSelect={() => onSelect(e.id)}
                         onHover={(on) => onHoverEvent(on ? e.id : null)}
                         reducedMotion={reducedMotion}
@@ -1037,6 +1354,7 @@ export default function TimeField({
                       dragging={!!live}
                       compact={compact}
                       reducedMotion={reducedMotion}
+                      detailed={detailed}
                       onSelect={() => onSelect(obj.entry.id)}
                       onHover={(on) => onHoverEvent(on ? obj.entry.id : null)}
                       onGrip={(grip, ev) => beginPlanDrag(obj, grip, HEADER_H + z.planTop + row * rowH, ev)}
@@ -1048,6 +1366,48 @@ export default function TimeField({
                     />
                   );
                 })}
+              </g>
+            );
+          })}
+
+          {/* THE FUTURE STEPS BACK WHILE THE STORY IS TOLD.
+              Playback is an argument about what already happened, and a
+              fully lit plan competing with it splits the attention it is
+              asking for. RECEDES, NOT HIDDEN: the intent side keeps its
+              objects, its dates and its shape at reduced presence, so a
+              person watching can still see what is coming and can stop the
+              transport the moment it becomes the interesting part. Hiding
+              it would be an edit of the truth; dimming it is emphasis. */}
+          <rect
+            x={nowX} y={0} width={Math.max(0, view.width - nowX)} height={height}
+            fill="#080b0e"
+            data-shoot="future-recede"
+            data-receding={playing || undefined}
+            style={{
+              pointerEvents: "none",
+              opacity: playing ? 0.52 : 0,
+              transition: reducedMotion ? undefined : "opacity 420ms ease",
+            }}
+          />
+
+          {/* FORECAST MEMORY — DRAWN ABOVE THE RECEDE, DELIBERATELY.
+              The capsule sits to the right of NOW, so the scrim would have
+              dimmed it along with the plan — but the remembered forecast is
+              the one thing on the intent side that playback is ABOUT. It
+              steps when a Report is crossed; dimming it would mute the
+              argument the transport exists to make. The plan recedes; what
+              the project believed does not. */}
+          {laneBoxes.map((box) => {
+            const yMem = HEADER_H + zonesOf(box).memY;
+            const mem = memoryByScope[box.scopeId] ?? null;
+            const ghost = ghostByScope[box.scopeId];
+            if (!mem && !ghost) return null;
+            return (
+              <g key={`mem-${box.scopeId}`}>
+                {ghost && <MemoryBand snap={ghost} view={view} y={yMem} ghost reducedMotion={reducedMotion} />}
+                {mem && (
+                  <MemoryBand snap={mem} view={view} y={yMem} reducedMotion={reducedMotion} detailed={box.expanded} />
+                )}
               </g>
             );
           })}

@@ -225,14 +225,25 @@ export default function TimelineInspector({
         data-shoot="inspector-seam"
         className="h-full flex flex-col items-center justify-center select-none"
         style={{ width: SEAM_W, borderLeft: "1px solid var(--i-border)", background: "var(--i-void)" }}
+        aria-label="Inspect"
         title="Select anything on the score to inspect it"
       >
-        <div
-          className="text-[8px] uppercase tracking-[0.3em] text-[var(--i-text-faint)]"
-          style={{ writingMode: "vertical-rl", opacity: 0.55 }}
-        >
-          Inspect
-        </div>
+        {/* A GRIP, NOT A WORD.
+            The seam used to paint "Inspect" vertically down the edge — a
+            label doing a job the shape should do, and the only piece of
+            rotated type on the whole instrument. A machined pull grip says
+            "there is a panel folded away here" in the language everything
+            else on this surface is already speaking. The word survives as
+            the accessible name, where it is genuinely needed and costs the
+            canvas nothing. */}
+        <svg width="10" height="34" viewBox="0 0 10 34" aria-hidden="true" style={{ opacity: 0.5 }}>
+          {[0, 1, 2].map((i) => (
+            <rect
+              key={i} x={2} y={4 + i * 9} width={6} height={1.6} rx={0.8}
+              fill="var(--i-text-faint)"
+            />
+          ))}
+        </svg>
       </div>
     );
   }

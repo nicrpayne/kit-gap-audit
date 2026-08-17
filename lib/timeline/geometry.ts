@@ -87,6 +87,43 @@ export function ticksFor(view: TimeView, scale: TickScale): Tick[] {
   return out;
 }
 
+/**
+ * ONE STEP FINER.
+ *
+ * The field draws a single grid at the scale the window asks for. An OPENED
+ * lane is the same window at the next grain down — quarters resolve into
+ * months, months into weeks, weeks into days — which is what makes opening
+ * a project read as increasing the resolution of one timeline rather than
+ * switching to a second chart of the same data.
+ *
+ * Returns nothing when the finer grain would be too dense to read, so the
+ * opened lane never becomes a hatch pattern. Pure, and derived from the same
+ * window every other mark is placed against.
+ */
+export function subTicksFor(view: TimeView, scale: TickScale): Tick[] {
+  const span = view.endT - view.startT;
+  if (span <= 0 || view.width <= 0) return [];
+  const pxPer = (ms: number) => (ms / span) * view.width;
+
+  if (scale === "quarter") return pxPer(30 * DAY) >= 14 ? ticksFor(view, "month") : [];
+  if (scale === "month") return pxPer(7 * DAY) >= 12 ? ticksFor(view, "week") : [];
+
+  // week -> days. Every midnight in the window, labelled by day of month.
+  if (pxPer(DAY) < 11) return [];
+  const out: Tick[] = [];
+  const d = new Date(Date.UTC(
+    new Date(view.startT).getUTCFullYear(),
+    new Date(view.startT).getUTCMonth(),
+    new Date(view.startT).getUTCDate()
+  ));
+  while (d.getTime() <= view.endT) {
+    const dow = d.getUTCDay();
+    out.push({ t: d.getTime(), label: String(d.getUTCDate()), major: dow === 1 });
+    d.setUTCDate(d.getUTCDate() + 1);
+  }
+  return out;
+}
+
 /** Zoom about a fixed date, so the moment under the pointer stays put. */
 export function zoomAbout(
   view: { startT: number; endT: number },

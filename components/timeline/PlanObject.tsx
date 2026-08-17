@@ -18,7 +18,7 @@ import type { PlanObject as Obj, PlanGrip } from "@/lib/timeline/plan";
 const GRIP_W = 7;
 
 export default function PlanObject({
-  obj, x0, x1, y, h, selected, hovered, dragging, compact, reducedMotion,
+  obj, x0, x1, y, h, selected, hovered, dragging, compact, reducedMotion, detailed,
   onSelect, onHover, onGrip, dates,
 }: {
   obj: Obj;
@@ -32,6 +32,10 @@ export default function PlanObject({
   dragging: boolean;
   compact: boolean;
   reducedMotion: boolean;
+  /** The lane this object sits in is OPENED — the same object, drawn at the
+      higher of the surface's two resolutions. It states its dates at rest
+      instead of waiting to be pointed at. */
+  detailed?: boolean;
   onSelect: () => void;
   onHover: (on: boolean) => void;
   onGrip: (grip: PlanGrip, e: React.PointerEvent) => void;
@@ -63,21 +67,36 @@ export default function PlanObject({
   //               different object when it did.
   //   overdue  -> red cap and red border. A plan, visibly behind.
   const accent = overdue ? "var(--i-red)" : planned ? "var(--i-violet)" : "var(--i-mint)";
-  const body = lit
-    ? "linear-gradient(180deg, #2c3740 0%, #1a2127 100%)"
-    : "linear-gradient(180deg, #232c33 0%, #151b20 100%)";
+  // A PART, NOT A LABEL CHIP.
+  //
+  // These are SVG paint servers, defined once in the field's <defs>. They
+  // replace a CSS `linear-gradient()` string that was being handed to an
+  // SVG `fill`, which is not a value SVG accepts — so the raised body this
+  // object has always claimed to have was silently painting flat black.
+  // A black rectangle with a coloured left edge reads as a text field, and
+  // that is precisely why these never felt like parts you could pick up.
+  const body = lit ? "url(#planBodyLit)" : "url(#planBody)";
 
   const label = entry.title;
   const fontSize = compact ? 8.6 : 10;
   const w = Math.max(role === "span" ? 14 : 0, x1 - x0);
   const r = Math.min(3.5, h / 3);
+  /** HOW LONG, AS A MARKING ON THE PART.
+      Width already states the duration and is the primary cue — but a
+      machined part carries its measurement, and at a glance "34d" resolves
+      the length without anyone having to compare two edges against a grid.
+      Only where the block is genuinely long enough to hold it without
+      crowding the name. */
+  const days = obj.endT !== null ? Math.max(1, Math.round((obj.endT - obj.startT) / 86400000)) : null;
+  const measure = days !== null && w >= 112 && !compact ? `${days}d` : null;
+  const measureW = measure ? measure.length * fontSize * 0.62 + 12 : 0;
   /** WHOLE WORDS OR NOTHING.
       A label goes inside the block only if the block can hold the whole
       title, or at least enough of it that the truncation still reads as
       language. "Tax engin…" is not a name — it is the interface admitting
       it ran out of room — so a short activity puts its full name beside
       itself instead, where there is space for it. */
-  const maxChars = Math.floor((w - 14) / (fontSize * 0.56));
+  const maxChars = Math.floor((w - 14 - measureW) / (fontSize * 0.56));
   const roomForLabel = maxChars >= label.length || maxChars >= 14;
 
   // POSITION AND LIFT IN ONE TRANSFORM.
@@ -149,6 +168,19 @@ export default function PlanObject({
           >
             {label}
           </text>
+          {/* A moment states its date at rest only in an opened lane — the
+              same two-resolution rule the blocks follow. */}
+          {(lit || detailed) && dates && (
+            <text
+              x={9} y={h / 2 + fontSize * 0.36 + 11}
+              fontSize={8.4}
+              fill="var(--i-text-faint)"
+              opacity={lit ? 1 : 0.7}
+              style={{ letterSpacing: "0.05em" }}
+            >
+              {dates}
+            </text>
+          )}
         </g>
       </g>
     );
@@ -186,11 +218,34 @@ export default function PlanObject({
       <g style={{ pointerEvents: "none" }}>
         {/* the machined lip: light catches the top, the bottom stays in
             shadow. Two hairlines, and the block reads as extruded. */}
-        <line x1={r} y1={0.9} x2={w - r} y2={0.9} stroke="#ffffff" strokeWidth={1} opacity={lit ? 0.22 : 0.15} />
+        <line x1={r} y1={0.9} x2={w - r} y2={0.9} stroke="#ffffff" strokeWidth={1} opacity={lit ? 0.26 : 0.18} />
         <line x1={r} y1={h - 0.9} x2={w - r} y2={h - 0.9} stroke="#000000" strokeWidth={1} opacity={0.45} />
-        {/* THE CAP. State lives here, so the body stays one material and the
-            score never turns into a chart of categorical colours. */}
+        {/* TWO ENDS, SO IT HAS EXTENT.
+            A block with a cap at one end reads as a label with a coloured
+            edge; the eye finds where it starts and has no reason to travel.
+            Capping BOTH ends makes the object a measured length — it begins
+            here and it ends there — which is the whole claim a duration is
+            making. State stays on the caps, so the body remains one
+            material and the score never becomes a chart of categorical
+            colours. */}
         <rect x={0} y={0} width={3} height={h} rx={1.4} fill={accent} opacity={planned && !overdue ? 0.62 : 1} />
+        <rect
+          x={w - 3} y={0} width={3} height={h} rx={1.4}
+          fill={accent} opacity={(planned && !overdue ? 0.62 : 1) * 0.85}
+        />
+        {/* HOW LONG, MARKED ON THE PART ITSELF. */}
+        {measure && (
+          <text
+            data-shoot="plan-measure"
+            x={w - 9} y={h / 2 + fontSize * 0.34}
+            fontSize={fontSize * 0.92} textAnchor="end"
+            fill={lit ? accent : "var(--i-text-faint)"}
+            opacity={lit ? 0.95 : 0.62}
+            style={{ letterSpacing: "0.04em" }}
+          >
+            {measure}
+          </text>
+        )}
       </g>
 
       {overdue && (
@@ -233,16 +288,24 @@ export default function PlanObject({
         </text>
       )}
 
-      {/* WHEN, ON DEMAND. Pointing at a block says what it spans; nothing
-          says it at rest, because position and width already do. */}
-      {lit && dates && (
+      {/* WHEN — AT WHICHEVER RESOLUTION THE LANE IS SET TO.
+          In a compact lane, position and width already say when and how
+          long, so the dates wait until the object is pointed at. In an
+          OPENED lane they are stated at rest: same object, same place,
+          finer grain — which is what opening a lane buys. */}
+      {(lit || detailed) && dates && (
         <text
           x={0} y={h + 12}
           fontSize={8.4}
           fill="var(--i-text-faint)"
+          opacity={lit ? 1 : 0.7}
           style={{ pointerEvents: "none", letterSpacing: "0.05em" }}
         >
-          {dates}
+          {/* SAID ONCE. When the block is wide enough to carry its own
+              duration marking, the line underneath does not repeat it —
+              "AUG 25 → SEP 12 · 18d" beside a block already stamped 18d is
+              the interface saying the same thing twice in one breath. */}
+          {measure ? dates.replace(/\s·\s\d+d$/, "") : dates}
         </text>
       )}
 

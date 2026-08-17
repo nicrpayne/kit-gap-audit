@@ -178,11 +178,20 @@ const POINTS = [3, 5, 2, 8, 3, 1, 5, 2, 8, 3, 5, 2, 3, 8, 1, 5];
  * do with the projection — a fixture that will not hold still cannot be
  * used to prove anything holds still.
  *
- * Anchored at module load: the offsets stay relative to today so the
- * fixture still looks like a live project, but they stop moving underneath
- * the thing observing them.
+ * Anchored ONCE PER PROCESS, not once per module evaluation. Anchoring at
+ * module load was not enough: the dev server re-evaluates this module when
+ * anything upstream of it is recompiled, and every re-evaluation moved the
+ * whole fixture history a few seconds later. Two reads of the projection
+ * taken either side of a recompile then disagreed about when work was
+ * completed — which reads exactly like a real instrument writing to rows it
+ * should not touch, and is the reason a "presentation only" assertion could
+ * fail without anything having changed.
+ *
+ * Held on globalThis so a reload finds the epoch already chosen. The
+ * offsets stay relative to today, so the fixture still looks like a live
+ * project; it simply stops moving underneath the thing observing it.
  */
-const FIXTURE_EPOCH = Date.now();
+const FIXTURE_EPOCH: number = ((globalThis as { __kitFixtureEpoch?: number }).__kitFixtureEpoch ??= Date.now());
 
 // identifier for title index i -- kept as its own function so the parent
 // links below and the issues themselves cannot drift apart.
