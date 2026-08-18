@@ -295,6 +295,77 @@ try {
   await rc.close();
 }
 
+// ── 16–18. FREEZE REVIEW: pause, a quiet stretch under way, and the
+//          same moment reached from both directions ──────────────────
+{
+  await open();
+  await p.locator('[data-shoot="to-beginning"]').click();
+  await settle(700);
+  await p.locator('[data-shoot="speed-2"]').click();
+  await settle(250);
+  await p.locator('[data-shoot="play"]').click();
+  let caught = false;
+  for (let i = 0; i < 70 && !caught; i++) {
+    await settle(200);
+    if (await p.evaluate(() =>
+      document.querySelectorAll('[data-shoot^="event-module-"][data-phase="articulating"]').length > 0)) {
+      await p.locator('[data-shoot="play"]').click();
+      caught = true;
+    }
+  }
+  await settle(300);
+  await shot("16-paused-on-a-struck-event");
+  await shot("16b-paused-transport", await transportClip());
+  console.log(`16. paused holding a struck event: ${caught}`);
+  await p.locator('[data-shoot="speed-1"]').click();
+  await settle(300);
+
+  // the widest quiet stretch, WHILE PLAYING — the transport's time bar is
+  // the thing that has to be moving
+  const ts = [...new Set(start.entries
+    .filter((e) => e.temporalState === "occurred" && new Date(e.date).getTime() <= nowT)
+    .map((e) => new Date(e.date).getTime()))].sort((a, b) => a - b);
+  let gapAt = ts[0], widest = 0;
+  for (let i = 1; i < ts.length; i++) {
+    const g = ts[i] - ts[i - 1];
+    if (g > widest) { widest = g; gapAt = ts[i - 1]; }
+  }
+  await open();
+  await stepTo(gapAt);
+  await p.locator('[data-shoot="play"]').click();
+  // The holding window is short — an articulation lasts 2.1s and the pacing
+  // crosses even the widest gap in about 1.7s — so the transport CROP is
+  // taken first: it is a fraction of the cost of a full retina frame, and it
+  // is the part of the picture this state is about.
+  const clip = await transportClip();
+  let held = false;
+  for (let i = 0; i < 90 && !held; i++) {
+    await settle(100);
+    held = await p.evaluate(() =>
+      document.querySelector('[data-shoot="now-playing"]')?.getAttribute("data-holding") === "true");
+    if (held) await shot("17b-quiet-transport", clip);
+  }
+  if (!held) await shot("17b-quiet-transport", clip);
+  await shot("17-quiet-stretch-under-way");
+  console.log(`17. holding through the ${Math.round(widest / DAY)}d gap: ${held}`);
+  await p.locator('[data-shoot="play"]').click().catch(() => {});
+  await settle(400);
+
+  // the same moment, reached forwards and backwards
+  await open();
+  await scrubTo(0.34);
+  await shot("18a-scrub-forward-to-moment", await transportClip());
+  const fwd = await p.evaluate(() =>
+    (document.querySelector('[data-shoot="now-playing"]')?.textContent ?? "").replace(/\s+/g, " ").trim());
+  await scrubTo(0.62);
+  await settle(300);
+  await scrubTo(0.34);
+  await shot("18b-scrub-back-to-moment", await transportClip());
+  const back = await p.evaluate(() =>
+    (document.querySelector('[data-shoot="now-playing"]')?.textContent ?? "").replace(/\s+/g, " ").trim());
+  console.log(`18. same moment both directions: ${fwd === back}`);
+}
+
 // ── ONE FULL RUN, RECORDED ──────────────────────────────────────────
 {
   const vctx = await b.newContext({

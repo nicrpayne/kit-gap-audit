@@ -31,6 +31,11 @@ interface Props {
   /** What the playhead is standing in, already reduced to facts. */
   moment: Moment | null;
   laneNames: Record<string, string>;
+  /** False while the readout is holding the last change through a quiet
+      stretch rather than reporting something just struck. */
+  momentLive: boolean;
+  /** How far through the story the playhead is BY TIME, 0..1. */
+  timePct: number;
   reducedMotion: boolean;
   onPlayPause: () => void;
   onPrev: () => void;
@@ -94,7 +99,7 @@ const Btn = ({
 
 export default function Transport({
   playing, playheadT, nowT, atNow, speed, scaleLabel, zoomPct, crossedCount, totalPast,
-  moment, laneNames, reducedMotion,
+  moment, laneNames, momentLive, timePct, reducedMotion,
   onPlayPause, onPrev, onNext, onToBeginning, onToNow, onSpeed, onZoom, onScale,
 }: Props) {
   return (
@@ -174,14 +179,38 @@ export default function Transport({
         >
           {fmtFull(playheadT)}
         </div>
+        {/* TIME, THEN EVENTS.
+            The bar used to fill by EVENTS CROSSED, which is exactly the
+            quantity that does not move during a quiet stretch: the playhead
+            could travel three weeks and the only moving thing on the screen
+            showed nothing at all, so playback read as stalled rather than as
+            traversing empty time. It now fills by TIME — the playhead's real
+            position between the first event and NOW — which is continuous by
+            construction and is the honest answer to "is this still going".
+            The events crossed keep their own readout beside it, because how
+            much of the STORY has been told is a different question from how
+            much of the CALENDAR has been covered. */}
         <div className="mt-1.5 flex items-center gap-2">
-          <div className="h-[3px] flex-1 rounded-full overflow-hidden" style={{ background: "#070a0c" }}>
+          <div className="h-[3px] flex-1 rounded-full overflow-hidden relative" style={{ background: "#070a0c" }} data-shoot="time-progress">
             <div
               className="h-full rounded-full"
+              data-shoot="time-progress-fill"
               style={{
-                width: `${totalPast === 0 ? 0 : (crossedCount / totalPast) * 100}%`,
+                width: `${Math.max(0, Math.min(1, timePct)) * 100}%`,
                 background: "var(--i-violet)",
-                transition: "width 160ms linear",
+                transition: "width 120ms linear",
+              }}
+            />
+            {/* the story's own progress, as a quiet tick riding the same rail */}
+            <div
+              className="absolute top-0 bottom-0"
+              data-shoot="crossed-progress"
+              style={{
+                left: `${totalPast === 0 ? 0 : (crossedCount / totalPast) * 100}%`,
+                width: 2,
+                background: "#e2dcff",
+                opacity: 0.85,
+                transition: "left 160ms linear",
               }}
             />
           </div>
@@ -199,6 +228,7 @@ export default function Transport({
         moment={moment}
         laneNames={laneNames}
         playing={playing}
+        live={momentLive}
         reducedMotion={reducedMotion}
       />
 

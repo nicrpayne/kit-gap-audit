@@ -155,13 +155,20 @@ let playedState = null;
   await p.locator('[data-shoot="to-beginning"]').click();
   await settle(800);
   const beforeStrike = await p.locator('[data-shoot="strike-ring"]').count();
+  // AT DOUBLE SPEED, so one sampling window covers enough of the story.
+  // The opening weeks of this record are almost entirely Reports, and a
+  // Report deliberately draws no module — its band, its movement chip and
+  // its readout line are its articulation. Sampling only the opening at 1x
+  // therefore saw no module and concluded modules were gone.
+  await p.locator('[data-shoot="speed-2"]').click();
+  await settle(250);
   await p.locator('[data-shoot="play"]').click();
 
   // Watch a whole run, collecting what the readout claimed and what the
   // score was doing at the same instant.
   const seen = [];
   let sawStrike = 0, sawModule = 0, sawWoken = 0, sawGroup = 0;
-  for (let i = 0; i < 34; i++) {
+  for (let i = 0; i < 60; i++) {
     await settle(320);
     const frame = await p.evaluate(() => {
       const np = document.querySelector('[data-shoot="now-playing"]');
@@ -169,8 +176,13 @@ let playedState = null;
         live: np?.getAttribute("data-live") === "true",
         beats: Number(np?.getAttribute("data-beats") ?? 0),
         date: (document.querySelector('[data-shoot="now-playing-date"]')?.textContent ?? "").trim(),
-        titles: [...document.querySelectorAll('[data-shoot="beat-event"]')].map((e) =>
-          (e.textContent ?? "").replace(/\s+/g, " ").trim()),
+        // Only stanzas naming ONE event carry a title; "3 events" is a
+        // count, and a first Report's line is its kind. Both are real
+        // things the readout says, neither is a stored title.
+        titles: [...document.querySelectorAll('[data-shoot^="stanza-"][data-kind="event"] [data-shoot="beat-event"]')]
+          .map((e) => (e.textContent ?? "").replace(/\s+/g, " ").trim()),
+        moduleTitles: [...document.querySelectorAll('[data-shoot^="event-module-"]')]
+          .map((e) => (e.textContent ?? "").replace(/\s+/g, " ").trim()),
         strikes: document.querySelectorAll('[data-shoot="strike-ring"]').length,
         modules: document.querySelectorAll('[data-shoot^="event-module-"][data-phase="articulating"]').length,
         groups: document.querySelectorAll('[data-shoot^="event-group-"]').length,
@@ -184,12 +196,17 @@ let playedState = null;
     if (frame.live) seen.push(frame);
   }
   await p.locator('[data-shoot="play"]').click().catch(() => {});
-  await settle(500);
+  await settle(300);
+  await p.locator('[data-shoot="speed-1"]').click();
+  await settle(400);
 
   check("E1. A crossed event is STRUCK — a mark reacts as time reaches it",
     beforeStrike === 0 && sawStrike > 0, `${beforeStrike} at rest → ${sawStrike} while playing`);
   check("E2. …and becomes readable without being clicked",
     sawModule > 0, `${sawModule} articulating module(s)`);
+  check("E2b. A crossed Report draws no card on the score repeating its own title",
+    !seen.some((f) => f.moduleTitles.some((t) => /forecast report/i.test(t))),
+    seen.flatMap((f) => f.moduleTitles).find((t) => /forecast report/i.test(t)) ?? "no such card");
   check("E3. …and the project it belongs to wakes with it",
     sawWoken > 0, `${sawWoken} lane(s) woken`);
   // SAME LANE, SAME MOMENT — from the fixture's own record.
@@ -646,6 +663,328 @@ let playedState = null;
   check("V5. A fresh load lands on the same Live Now the run started from",
     rest.date === startState.date && JSON.stringify(rest.memories) === JSON.stringify(startState.memories),
     rest.date);
+}
+
+// ── W. THE FREEZE CONDITIONS ───────────────────────────────────────
+//
+// What the final pass changed, held to the same standard as everything it
+// left alone: the readout is still only stored history, the quiet cue
+// writes nothing, the geometry does not move under changing content, and a
+// quieter playhead is still a playhead you can click through.
+{
+  await open();
+
+  // ── the readout says nothing the record does not ──────────────────
+  // Compared case-insensitively: the stanza's project name is uppercased by
+  // CSS, so the DOM text is still the stored casing and matching on the
+  // rendered look would be testing a text-transform, not the name.
+  const laneNameSet = new Set(start.lanes.map((l) => l.name.toLowerCase()));
+  const storedPairs = new Set();
+  const fmt = (iso) => {
+    const d = new Date(iso);
+    return `${d.toLocaleString("en-US", { month: "short", timeZone: "UTC" }).toUpperCase()} ${d.getUTCDate()}`;
+  };
+  for (const series of Object.values(start.snapshotsByScope)) {
+    for (let i = 1; i < series.length; i++) {
+      storedPairs.add(`${fmt(series[i - 1].likelyDate)}>${fmt(series[i].likelyDate)}`);
+    }
+  }
+
+  await p.locator('[data-shoot="to-beginning"]').click();
+  await settle(700);
+  // 2x, for the same reason section E uses it: this record opens with a
+  // dense run of Reports, and a 1x sample of only the opening never reaches
+  // the first quiet stretch this is trying to observe.
+  await p.locator('[data-shoot="speed-2"]').click();
+  await settle(250);
+  await p.locator('[data-shoot="play"]').click();
+  const seenProjects = new Set();
+  const seenMoves = [];
+  const geoms = new Set();
+  let liveSeen = false;
+  for (let i = 0; i < 46; i++) {
+    await settle(300);
+    const f = await p.evaluate(() => {
+      const np = document.querySelector('[data-shoot="now-playing"]');
+      const field = document.querySelector('[data-shoot="time-field"]')?.getBoundingClientRect();
+      return {
+        live: np?.getAttribute("data-live") === "true",
+        holding: np?.getAttribute("data-holding") === "true",
+        projects: [...document.querySelectorAll('[data-shoot^="stanza-"] > div:first-child')]
+          .map((e) => (e.textContent ?? "").trim()),
+        moves: [...document.querySelectorAll('[data-shoot="beat-forecast"]')]
+          .map((e) => (e.textContent ?? "").replace(/\s+/g, " ").trim()),
+        geom: field ? `${Math.round(field.width)}x${Math.round(field.height)}` : "none",
+        clipped: np ? np.scrollHeight > np.clientHeight + 1 || np.scrollWidth > np.clientWidth + 1 : false,
+      };
+    });
+    for (const q of f.projects) if (q) seenProjects.add(q);
+    for (const m of f.moves) seenMoves.push(m);
+    geoms.add(f.geom);
+    liveSeen = liveSeen || f.live;
+    if (f.clipped) { check("W0. The readout never clips its own content", false, "clipped"); break; }
+  }
+  await p.locator('[data-shoot="play"]').click().catch(() => {});
+  await settle(300);
+  await p.locator('[data-shoot="speed-1"]').click();
+  await settle(400);
+
+  check("H1w. Every project the readout names is a real lane",
+    [...seenProjects].every((q) => laneNameSet.has(q.toLowerCase())),
+    [...seenProjects].join(", ") || "none seen");
+  const bogusMove = seenMoves.find((m) => {
+    const mm = /([A-Z]{3} \d+)\s*→\s*([A-Z]{3} \d+)/.exec(m);
+    return mm && !storedPairs.has(`${mm[1]}>${mm[2]}`);
+  });
+  check("I6. Every movement it prints is a pair of STORED Report p50s",
+    !bogusMove, bogusMove ?? `${seenMoves.length} movement(s), all stored`);
+  check("W1. The story display reaches a struck state during a run", liveSeen);
+
+  // PAUSE HOLDS WHAT IT STOPPED ON.
+  //
+  // Pressing pause used to clear the articulation on the same click, so the
+  // module and ring you paused to look at were destroyed by looking. The
+  // playhead does not MOVE when playback stops, and movement is what ends
+  // an articulation.
+  await open();
+  await p.locator('[data-shoot="to-beginning"]').click();
+  await settle(600);
+  await p.locator('[data-shoot="speed-2"]').click();
+  await settle(200);
+  await p.locator('[data-shoot="play"]').click();
+  let paused = null;
+  for (let i = 0; i < 70 && !paused; i++) {
+    await settle(200);
+    const has = await p.evaluate(() =>
+      document.querySelectorAll('[data-shoot^="event-module-"][data-phase="articulating"]').length > 0);
+    if (!has) continue;
+    await p.locator('[data-shoot="play"]').click();
+    await settle(260);
+    paused = await p.evaluate(() => ({
+      modules: document.querySelectorAll('[data-shoot^="event-module-"]').length,
+      date: (document.querySelector('[data-shoot="playhead-date"]')?.textContent ?? "").trim(),
+    }));
+  }
+  await p.locator('[data-shoot="play"]').click().catch(() => {});
+  await settle(200);
+  await p.locator('[data-shoot="speed-1"]').click();
+  await settle(300);
+  check("W4. Pausing on a struck event keeps it on the score",
+    !!paused && paused.modules > 0, paused ? `${paused.modules} module(s) at ${paused.date}` : "never caught one");
+
+  // THE HOLDING STATE, DETERMINISTICALLY.
+  //
+  // Sampling a run and hoping to land in a quiet stretch is a coin toss —
+  // this record opens with Reports back to back. So: park on a real event,
+  // start playing, and watch the window in which the strike expires and the
+  // next event has not yet arrived. That window exists by construction,
+  // because articulation lasts 2.1s and the pacing never crosses two
+  // separate moments faster than that.
+  // Parked on the event that BEGINS the record's widest quiet stretch, found
+  // from the stored dates rather than by stepping a guessed number of times.
+  // The gap after it is the longest in the project, so the window in which
+  // the strike has expired and nothing new has arrived is guaranteed rather
+  // than hoped for.
+  const gapStart = (() => {
+    const ts = [...new Set(start.entries
+      .filter((e) => e.temporalState === "occurred" && new Date(e.date).getTime() <= nowT)
+      .map((e) => new Date(e.date).getTime()))].sort((a, b) => a - b);
+    let at = ts[0], widest = 0;
+    for (let i = 1; i < ts.length; i++) {
+      const g = ts[i] - ts[i - 1];
+      if (g > widest) { widest = g; at = ts[i - 1]; }
+    }
+    return { at, widest };
+  })();
+  await open();
+  await p.locator('[data-shoot="to-beginning"]').click();
+  await settle(600);
+  for (let i = 0; i < 220; i++) {
+    const d = await p.evaluate(() =>
+      (document.querySelector('[data-shoot="playhead-date"]')?.textContent ?? "").trim());
+    if (new Date(`${d} UTC`).getTime() >= gapStart.at) break;
+    await p.locator('[data-shoot="next-event"]').click();
+    await settle(60);
+  }
+  await settle(400);
+  await p.locator('[data-shoot="play"]').click();
+  let holdingSeen = false;
+  let heldText = "";
+  for (let i = 0; i < 45 && !holdingSeen; i++) {
+    await settle(140);
+    const f = await p.evaluate(() => {
+      const np = document.querySelector('[data-shoot="now-playing"]');
+      return {
+        holding: np?.getAttribute("data-holding") === "true",
+        label: (document.querySelector('[data-shoot="now-playing-holding"]')?.textContent ?? "").trim(),
+        text: (np?.textContent ?? "").replace(/\s+/g, " ").trim(),
+      };
+    });
+    if (f.holding) { holdingSeen = true; heldText = `${f.label} · ${f.text.slice(0, 46)}`; }
+  }
+  await p.locator('[data-shoot="play"]').click().catch(() => {});
+  await settle(400);
+  check("W2. Through a quiet stretch it holds the last real change rather than blanking",
+    holdingSeen, heldText || `never held (widest gap ${Math.round(gapStart.widest / DAY)}d)`);
+  check("W3. …and labels it as a recollection, not as something just struck",
+    /last change/i.test(heldText), heldText.slice(0, 40));
+  check("L1w. The score's geometry never moves while the story content changes",
+    geoms.size === 1, [...geoms].join(" | "));
+
+  // ── the quiet cue is presentation only ────────────────────────────
+  // Parked the same deterministic way as W2, so this measures whether the
+  // quiet cue WRITES, not whether a sampling window happened to land in a
+  // gap.
+  const beforeQuiet = await proj();
+  await p.locator('[data-shoot="to-beginning"]').click();
+  await settle(600);
+  for (let i = 0; i < 220; i++) {
+    const d = await p.evaluate(() =>
+      (document.querySelector('[data-shoot="playhead-date"]')?.textContent ?? "").trim());
+    if (new Date(`${d} UTC`).getTime() >= gapStart.at) break;
+    await p.locator('[data-shoot="next-event"]').click();
+    await settle(60);
+  }
+  await settle(400);
+  writes = []; sims = [];
+  await p.locator('[data-shoot="play"]').click();
+  let quietFrames = 0;
+  for (let i = 0; i < 45; i++) {
+    await settle(140);
+    if (await p.evaluate(() => document.querySelector('[data-shoot="now-playing"]')?.getAttribute("data-holding") === "true")) quietFrames++;
+  }
+  await p.locator('[data-shoot="play"]').click().catch(() => {});
+  await settle(400);
+  check("K4. A quiet stretch is reported without writing anything",
+    quietFrames > 0 && writes.length === 0 && sims.length === 0,
+    `${quietFrames} holding frame(s), ${writes.length} write(s)`);
+  const afterQuiet = await proj();
+  check("K5. …and without altering a single stored row",
+    JSON.stringify(afterQuiet.entries.map((e) => [e.id, e.date, e.scopeId, e.temporalState])) ===
+      JSON.stringify(beforeQuiet.entries.map((e) => [e.id, e.date, e.scopeId, e.temporalState])));
+
+  // ── the time bar is time, and it moves when the count does not ────
+  await open();
+  await p.locator('[data-shoot="to-beginning"]').click();
+  await settle(700);
+  const barAt = () => p.evaluate(() => ({
+    w: Number((document.querySelector('[data-shoot="time-progress-fill"]')?.style.width ?? "0").replace("%", "")),
+    crossed: (document.querySelector('[data-shoot="crossed-count"]')?.textContent ?? "").trim(),
+  }));
+  const b0 = await barAt();
+  // Step across a genuinely quiet run of the calendar. The bar must move by
+  // an amount a person could see; the point of the change is that time
+  // traversal is visible when the crossed COUNT barely moves.
+  for (let i = 0; i < 12; i++) {
+    await p.locator('[data-shoot="next-event"]').click();
+    await settle(70);
+  }
+  await settle(400);
+  const b1 = await barAt();
+  check("C1w. The transport shows TIME traversed, not only events crossed",
+    b1.w - b0.w > 1, `${b0.w.toFixed(1)}% → ${b1.w.toFixed(1)}%`);
+  check("C2w. …on a rail that also still carries how much of the STORY is told",
+    b0.crossed !== b1.crossed, `${b0.crossed} → ${b1.crossed}`);
+
+  // ── a quieter playhead is still not in the way ────────────────────
+  const inert = await p.evaluate(() => {
+    const ph = document.querySelector('[data-shoot="playhead"]');
+    if (!ph) return null;
+    const all = [ph, ...ph.querySelectorAll("*")];
+    return all.every((e) => getComputedStyle(e).pointerEvents === "none");
+  });
+  check("M1. The playhead intercepts nothing, at any width", inert === true);
+
+  // THE NEEDLE TAKES THE COLOUR OF WHAT IT POINTS AT. §14's whole colour law
+  // is violet = memory, cyan = now; a violet needle parked on the cyan NOW
+  // seam contradicted it at exactly the moment it matters most.
+  const headColours = await p.evaluate(() => {
+    const read = () => {
+      const g = document.querySelector('[data-shoot="playhead"]');
+      const core = [...(g?.querySelectorAll("line") ?? [])][1];
+      return { atNow: g?.hasAttribute("data-at-now") ?? false, stroke: core?.getAttribute("stroke") ?? "" };
+    };
+    return read();
+  });
+  check("O3. Away from the present the needle reads as memory",
+    headColours.atNow === false && /violet/.test(headColours.stroke),
+    `${headColours.stroke} (atNow=${headColours.atNow})`);
+  await p.locator('[data-shoot="to-now"]').click();
+  await settle(900);
+  const atNowColours = await p.evaluate(() => {
+    const g = document.querySelector('[data-shoot="playhead"]');
+    const core = [...(g?.querySelectorAll("line") ?? [])][1];
+    return { atNow: g?.hasAttribute("data-at-now") ?? false, stroke: core?.getAttribute("stroke") ?? "" };
+  });
+  check("O4. …and on the present it reads as NOW, not as a memory laid over it",
+    atNowColours.atNow === true && /signal/.test(atNowColours.stroke),
+    `${atNowColours.stroke} (atNow=${atNowColours.atNow})`);
+  // and a mark sitting UNDER it is still the thing the pointer finds
+  const hit = await p.evaluate(() => {
+    const ph = document.querySelector('[data-shoot="playhead"]')?.getBoundingClientRect();
+    if (!ph) return "no playhead";
+    const marks = [...document.querySelectorAll('[data-shoot^="event-"]')]
+      .filter((e) => /^event-[a-z0-9]+$/i.test(e.getAttribute("data-shoot") ?? ""));
+    const under = marks.find((m) => {
+      const r = m.getBoundingClientRect();
+      return Math.abs((r.x + r.width / 2) - (ph.x + ph.width / 2)) < 14;
+    });
+    if (!under) return "none under";
+    const r = under.getBoundingClientRect();
+    const top = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2);
+    return under.contains(top) || top?.closest('[data-shoot^="event-"]') === under ? "reachable" : "blocked";
+  });
+  check("M2. …and a mark beneath it is still what the pointer reaches",
+    hit === "reachable" || hit === "none under", hit);
+}
+
+// ── N. FOUR AND EIGHT PROJECTS ─────────────────────────────────────
+{
+  const extra = [];
+  try {
+    const cur = await proj();
+    const four = await p.evaluate(() => {
+      const np = document.querySelector('[data-shoot="now-playing"]');
+      return { stanzas: np?.getAttribute("data-stanzas") ?? "0", clipped: np ? np.scrollHeight > np.clientHeight + 1 : true };
+    });
+    check("N1. At four projects the display holds its content", !four.clipped, `stanzas=${four.stanzas}`);
+
+    for (let i = cur.lanes.length; i < 8; i++) {
+      const n = `Freeze ${i + 1}`;
+      const ex = await db.scope.findFirst({ where: { name: n } });
+      const row = ex ?? (await db.scope.create({ data: { name: n, teamKey: "SOF" } }));
+      if (!ex) extra.push(row.id);
+    }
+    await open();
+    await p.locator('[data-shoot="to-beginning"]').click();
+    await settle(700);
+    await p.locator('[data-shoot="play"]').click();
+    let eight = null;
+    for (let i = 0; i < 30 && !eight; i++) {
+      await settle(300);
+      eight = await p.evaluate(() => {
+        const np = document.querySelector('[data-shoot="now-playing"]');
+        if (np?.getAttribute("data-live") !== "true") return null;
+        return {
+          stanzas: Number(np.getAttribute("data-stanzas") ?? 0),
+          shown: document.querySelectorAll('[data-shoot^="stanza-"]').length,
+          clipped: np.scrollHeight > np.clientHeight + 1 || np.scrollWidth > np.clientWidth + 1,
+          more: (document.querySelector('[data-shoot="now-playing-more"]')?.textContent ?? "").trim(),
+        };
+      });
+    }
+    await p.locator('[data-shoot="play"]').click().catch(() => {});
+    await settle(400);
+    check("N2. At eight projects it still holds its content",
+      !!eight && !eight.clipped, eight ? `${eight.shown} shown of ${eight.stanzas}` : "never went live");
+    check("N3. …and says so when there are more projects than it spells out",
+      !!eight && (eight.stanzas <= eight.shown || eight.more.length > 0),
+      eight?.more || "nothing elided");
+    const lanes8 = await p.evaluate(() => document.querySelectorAll("[data-shoot^='lane-header-']").length);
+    check("N4. …with every project still on the score", lanes8 === 8, `${lanes8} lane(s)`);
+  } finally {
+    for (const id of extra) await db.scope.delete({ where: { id } }).catch(() => {});
+  }
 }
 
 console.log(failures === 0 ? "\nALL PROJECT TIME MACHINE PROOFS PASS" : `\n${failures} FAILURE(S)`);

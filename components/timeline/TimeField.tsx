@@ -71,6 +71,9 @@ interface Props {
   nowT: number;
   playheadT: number;
   crossed: Set<string>;
+  /** The playhead is sitting on NOW. The needle takes the colour of what it
+      is pointing at, so Live Now reads cyan and memory reads violet. */
+  atNow: boolean;
   selectedId: string | null;
   hoveredLane: string | null;
   onSelect: (id: string | null) => void;
@@ -544,7 +547,7 @@ function MemoryBand({
 }
 
 export default function TimeField({
-  lanes, entries, candidates, memoryByScope, view, nowT, playheadT, crossed,
+  lanes, entries, candidates, memoryByScope, view, nowT, playheadT, crossed, atNow,
   selectedId, hoveredLane, onSelect, onHoverLane, onScrub, onOpenScope,
   onViewChange, bounds, reducedMotion, laneBoxes, onToggleExpand,
   onPlanRetime, onPlanCreate, articulating, wokenLanes, ghostByScope, deltaByScope,
@@ -633,6 +636,8 @@ export default function TimeField({
 
   const nowX = xFor(view, nowT);
   const playX = xFor(view, playheadT);
+  /** One colour for the needle, its contacts, its cap and its date puck. */
+  const headColor = atNow ? "var(--i-signal)" : "var(--i-violet)";
 
   // ── RUNS OF HISTORY ────────────────────────────────────────────────
   //
@@ -1206,18 +1211,28 @@ export default function TimeField({
             <pattern id="futureHatch" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(-45)">
               <line x1="0" y1="0" x2="0" y2="6" stroke="var(--i-border-strong)" strokeWidth="0.8" opacity="0.55" />
             </pattern>
+            {/* A READING HEAD, NOT A MOVING WALL.
+                The played region carries a developed-film wash so the part
+                of the story already told is visibly different ground — but
+                it used to ramp to 0.16 violet at the playhead, with a 26px
+                edge on top of that and a 22px bloom on top of THAT. The
+                result was a column of violet louder than the marks it was
+                reading: the eye found the playhead first and the event
+                second, which is backwards. Every ambient value here is now
+                roughly a third of what it was. The wash still says "this
+                has been traversed"; it no longer says it over everything. */}
             <linearGradient id="pastGlow" x1="0" x2="1">
-              <stop offset="0%" stopColor="var(--i-violet)" stopOpacity={0.025} />
-              <stop offset="72%" stopColor="var(--i-violet)" stopOpacity={0.07} />
-              <stop offset="100%" stopColor="var(--i-violet)" stopOpacity={0.16} />
+              <stop offset="0%" stopColor="var(--i-violet)" stopOpacity={0.016} />
+              <stop offset="72%" stopColor="var(--i-violet)" stopOpacity={0.032} />
+              <stop offset="100%" stopColor="var(--i-violet)" stopOpacity={0.055} />
             </linearGradient>
             <linearGradient id="playedEdge" x1="0" x2="1">
               <stop offset="0%" stopColor="var(--i-violet)" stopOpacity={0} />
-              <stop offset="100%" stopColor="var(--i-violet)" stopOpacity={0.3} />
+              <stop offset="100%" stopColor="var(--i-violet)" stopOpacity={0.16} />
             </linearGradient>
             <pattern id="playedGrain" width="3" height="3" patternUnits="userSpaceOnUse">
               <rect width="3" height="3" fill="none" />
-              <circle cx="0.6" cy="0.6" r="0.4" fill="var(--i-violet)" opacity="0.16" />
+              <circle cx="0.6" cy="0.6" r="0.4" fill="var(--i-violet)" opacity="0.075" />
             </pattern>
             {/* THE PLAN OBJECT'S MATERIAL, AS A REAL PAINT SERVER.
                 SVG `fill` takes a colour or a `url(#…)` — a CSS
@@ -1265,8 +1280,8 @@ export default function TimeField({
           <rect x={0} y={0} width={Math.max(0, Math.min(playX, nowX))} height={height} fill="url(#pastGlow)" />
           <rect x={0} y={0} width={Math.max(0, Math.min(playX, nowX))} height={height} fill="url(#playedGrain)" />
           <rect
-            x={Math.max(0, Math.min(playX, nowX)) - 26} y={0} width={26} height={height}
-            fill="url(#playedEdge)" opacity={0.5}
+            x={Math.max(0, Math.min(playX, nowX)) - 13} y={0} width={13} height={height}
+            fill="url(#playedEdge)" opacity={0.45}
           />
 
           {/* time grid */}
@@ -1859,9 +1874,15 @@ export default function TimeField({
             </text>
           </g>
 
-          {/* THE PLAYHEAD — hero object. */}
+          {/* THE PLAYHEAD — hero object.
+              IT TAKES THE COLOUR OF WHAT IT IS POINTING AT. Parked on NOW it
+              is cyan, because at Live Now the needle and the NOW seam are
+              the same fact and a violet line drawn over a cyan one made the
+              present read as a memory. Anywhere else it is violet, which is
+              what this instrument means by remembered. */}
           <g
             data-shoot="playhead"
+            data-at-now={atNow || undefined}
             style={
               reducedMotion
                 ? { pointerEvents: "none" }
@@ -1869,21 +1890,26 @@ export default function TimeField({
             }
             transform={`translate(${playX},0)`}
           >
-            <line x1={0} y1={0} x2={0} y2={height} stroke="var(--i-violet)" strokeWidth={22} opacity={0.05} />
-            <line x1={0} y1={0} x2={0} y2={height} stroke="var(--i-violet)" strokeWidth={9} opacity={0.13} />
-            <line x1={0} y1={0} x2={0} y2={height} stroke="var(--i-violet)" strokeWidth={2} />
-            <line x1={0} y1={0} x2={0} y2={height} stroke="#e2dcff" strokeWidth={0.7} opacity={0.85} />
+            {/* PRECISION FIRST. The 22px bloom is gone and the 9px is halved
+                in both width and strength: what is left is a needle — a
+                crisp 2px shaft with a lit filament down its centre — plus
+                the contacts it makes with each track. Nothing here is wider
+                than a mark, so a strike ring and a forecast chip both read
+                above it rather than through it. */}
+            <line x1={0} y1={0} x2={0} y2={height} stroke={headColor} strokeWidth={5} opacity={0.09} />
+            <line x1={0} y1={0} x2={0} y2={height} stroke={headColor} strokeWidth={2} />
+            <line x1={0} y1={0} x2={0} y2={height} stroke={atNow ? "#d7fbff" : "#e2dcff"} strokeWidth={0.7} opacity={0.85} />
             {/* the needle makes contact with every track it passes */}
             {laneBoxes.map((box) => {
               const cy = HEADER_H + zonesOf(box).scoreY;
               return (
                 <g key={`contact-${box.scopeId}`}>
-                  <circle cx={0} cy={cy} r={4.5} fill="var(--i-violet)" opacity={0.9} />
-                  <circle cx={0} cy={cy} r={9} fill="var(--i-violet)" opacity={0.14} />
+                  <circle cx={0} cy={cy} r={4} fill={headColor} opacity={0.92} />
+                  <circle cx={0} cy={cy} r={7} fill={headColor} opacity={0.1} />
                 </g>
               );
             })}
-            <rect x={-5} y={0} width={10} height={7} rx={1.5} fill="var(--i-violet)" />
+            <rect x={-5} y={0} width={10} height={7} rx={1.5} fill={headColor} />
           </g>
         </svg>
 
@@ -1906,23 +1932,24 @@ export default function TimeField({
           // group; this makes the drawing agree with the pacing. Held and
           // hovered modules are untouched — those are one thing you pointed
           // at, and they stay one thing.
-          // A REPORT'S ARTICULATION IS ITS MOVEMENT.
+          // A REPORT'S ARTICULATION IS ITS BAND, NEVER A CARD.
           //
           // A crossed Report drew a module saying "Forecast report" — its
-          // title, and the least useful sentence on the screen — directly
-          // beside the chip stating what it actually did to the landing.
-          // Four projects reporting in one week produced four such cards.
-          // Where the chip is speaking for a Report, the Report does not
-          // also speak for itself. A FIRST report has no movement and no
-          // chip, so it keeps its module: something has to mark the
-          // crossing.
-          const chip = deltaByScope[box.scopeId];
-          const struck = laneEntries.filter((e) => {
-            if (!articulating.has(e.id)) return false;
-            if (e.kind !== "report" || !chip) return true;
-            const snap = e.detail as unknown as { likelyDate?: string };
-            return snap?.likelyDate !== chip.toLikely;
-          });
+          // title, and the least useful sentence on the screen. Four
+          // projects reporting in one week produced four such cards, and
+          // they were the largest and loudest objects on a canvas whose
+          // whole job at that instant was to show what had actually
+          // changed. A Report already announces itself three ways: the
+          // memory band steps, the movement chip states the two dates, and
+          // the transport readout names the project and the movement. It
+          // does not also need a card repeating its own title.
+          //
+          // This was briefly conditional on the chip being on screen, which
+          // made a piece of the composition depend on a 2.4s timer. Reports
+          // simply do not draw modules.
+          const struck = laneEntries.filter(
+            (e) => articulating.has(e.id) && e.kind !== "report"
+          );
           const groups: TimelineEntry[][] = [];
           for (const e of struck) {
             const x = xFor(view, new Date(e.date).getTime());
@@ -2163,10 +2190,14 @@ export default function TimeField({
           <div
             className="i-readout text-[11.5px] px-2 py-[4px] rounded-[4px] whitespace-nowrap"
             style={{
-              background: "linear-gradient(180deg, #b1a4ff 0%, var(--i-violet) 100%)",
+              background: atNow
+                ? "linear-gradient(180deg, #8fe4f2 0%, var(--i-signal) 100%)"
+                : "linear-gradient(180deg, #b1a4ff 0%, var(--i-violet) 100%)",
               color: "var(--i-void)",
               letterSpacing: "0.02em",
-              boxShadow: "0 3px 12px rgba(155,140,250,0.4), inset 0 1px 0 rgba(255,255,255,0.4)",
+              boxShadow: atNow
+                ? "0 3px 12px rgba(70,195,214,0.4), inset 0 1px 0 rgba(255,255,255,0.4)"
+                : "0 3px 12px rgba(155,140,250,0.4), inset 0 1px 0 rgba(255,255,255,0.4)",
             }}
           >
             {fmtDay(playheadT)}

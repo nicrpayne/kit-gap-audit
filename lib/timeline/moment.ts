@@ -221,3 +221,64 @@ export function idsAt(entries: TimelineEntry[], t: number): Set<string> {
   }
   return out;
 }
+
+/**
+ * A MOMENT, SAID ONE PROJECT AT A TIME.
+ *
+ * The readout's unit is not a beat, it is a PROJECT'S SHARE of the moment:
+ * a date and a project on the first line, what happened to it on the
+ * second. That is the shape a transport display wants — you read down the
+ * projects, not through a list of mixed events — and it is what lets four
+ * projects reporting in the same week fit in one glance.
+ *
+ * One stanza per project, showing its most consequential beat. A forecast
+ * movement outranks an event because it is the rarer thing and the one the
+ * eye is least likely to find on its own; when a project had more than the
+ * beat being shown, the remainder is counted rather than dropped, so the
+ * display never quietly loses something that happened.
+ *
+ * Pure, and derived entirely from the moment it is given.
+ */
+export interface Stanza {
+  scopeId: string;
+  kind: "event" | "events" | "forecast";
+  /** kind === "event" */
+  title?: string;
+  /** kind === "events" — how many landed together on this project. */
+  count?: number;
+  /** kind === "forecast" — both stored p50s and the days between them. */
+  fromLikely?: string;
+  toLikely?: string;
+  days?: number;
+  /** Beats this project had beyond the one being shown. */
+  extra: number;
+}
+
+export function stanzasOf(moment: Moment): Stanza[] {
+  const order: string[] = [];
+  const byScope = new Map<string, Beat[]>();
+  for (const b of moment.beats) {
+    if (!byScope.has(b.scopeId)) { byScope.set(b.scopeId, []); order.push(b.scopeId); }
+    byScope.get(b.scopeId)!.push(b);
+  }
+
+  return order.map((scopeId) => {
+    const beats = byScope.get(scopeId)!;
+    const fc = beats.find((b): b is ForecastBeat => b.kind === "forecast");
+    const events = beats.filter((b): b is EventBeat => b.kind === "event");
+    if (fc) {
+      return {
+        scopeId,
+        kind: "forecast" as const,
+        fromLikely: fc.fromLikely,
+        toLikely: fc.toLikely,
+        days: fc.days,
+        extra: beats.length - 1,
+      };
+    }
+    if (events.length === 1) {
+      return { scopeId, kind: "event" as const, title: events[0].title, extra: 0 };
+    }
+    return { scopeId, kind: "events" as const, count: events.length, extra: 0 };
+  });
+}

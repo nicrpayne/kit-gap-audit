@@ -111,6 +111,11 @@ export default function TimelinePageClient() {
   // read, then released back into the accumulated score.
   const [articulating, setArticulating] = useState<Set<string>>(new Set());
   const articulateAt = useRef<Map<string, number>>(new Map());
+  /** The last playhead value PLAYBACK produced. Pausing leaves the playhead
+      exactly there, so it still matches; dragging changes it, so it does
+      not. That difference is how a pause keeps the articulation it stopped
+      on and a scrub clears it. */
+  const articulatedAtT = useRef<number | null>(null);
   const prevCrossed = useRef<Set<string>>(new Set());
   // The snapshot each lane's memory band just moved OFF, and by how much.
   const [ghostByScope, setGhost] = useState<Record<string, ForecastSnapshot | null>>({});
@@ -283,9 +288,15 @@ export default function TimelinePageClient() {
   useEffect(() => {
     if (playing || playheadT === null) return;
     setCrossed(crossedAt(pastEvents, playheadT));
-    // Articulation belongs to playback. Scrubbing is a different act, and
-    // leaving modules open under a dragged playhead would be noise.
-    if (articulateAt.current.size > 0) {
+    // Articulation belongs to playback. Dragging the playhead is a different
+    // act, and leaving modules open under a dragged playhead would be noise.
+    //
+    // PAUSING IS NOT DRAGGING. This used to clear on any transition to
+    // stopped, so pressing pause to look at the thing that had just been
+    // struck destroyed exactly that thing: the module and its ring vanished
+    // on the same click that was meant to hold them still. What ends an
+    // articulation is the playhead MOVING, so that is what is checked.
+    if (articulateAt.current.size > 0 && playheadT !== articulatedAtT.current) {
       articulateAt.current.clear();
       setArticulating(new Set());
     }
@@ -317,6 +328,7 @@ export default function TimelinePageClient() {
       setCrossed(c);
       // Newly crossed since the last frame: struck now, readable for a beat.
       const wall = performance.now();
+      articulatedAtT.current = t;
       for (const id of c) if (!prevCrossed.current.has(id)) articulateAt.current.set(id, wall);
       prevCrossed.current = c;
       const live = new Set<string>();
@@ -416,7 +428,19 @@ export default function TimelinePageClient() {
     if (!data || playheadT === null) return null;
     if (!playing && atNow) return null;
     const ids = playing ? articulating : idsAt(data.entries, playheadT);
-    return momentOf(data.entries, ids, data.snapshotsByScope);
+    const struck = momentOf(data.entries, ids, data.snapshotsByScope);
+    if (struck) return { moment: struck, live: true };
+    // QUIET TIME IS STILL TIME.
+    //
+    // Between beats the readout used to empty out, which read as the
+    // transport having stopped rather than as the playhead crossing a week
+    // where nothing happened. It now holds the LAST REAL CHANGE, dimmed and
+    // labelled as such — the same moment a held playhead would show, from
+    // the same function. Nothing is invented and no sentence is generated;
+    // what moves during the quiet is the transport's time bar.
+    if (!playing) return null;
+    const last = momentOf(data.entries, idsAt(data.entries, playheadT), data.snapshotsByScope);
+    return last ? { moment: last, live: false } : null;
   }, [data, playheadT, playing, atNow, articulating]);
 
   const laneNames = useMemo(() => {
@@ -429,9 +453,12 @@ export default function TimelinePageClient() {
   // and the eye is looking at the playhead, not at the lane it landed in;
   // waking the whole lane is what makes "this project just did something"
   // visible from anywhere on the screen.
+  // Only what the playhead JUST struck wakes a lane. A held recollection is
+  // not the project doing something.
   const wokenLanes = useMemo(() => {
     const out = new Set<string>();
-    for (const b of moment?.beats ?? []) out.add(b.scopeId);
+    if (!moment?.live) return out;
+    for (const b of moment.moment.beats) out.add(b.scopeId);
     return out;
   }, [moment]);
 
@@ -1197,6 +1224,7 @@ export default function TimelinePageClient() {
               nowT={nowT}
               playheadT={playheadT}
               crossed={crossed}
+              atNow={atNow}
               wokenLanes={wokenLanes}
               selectedId={selectedId}
               hoveredLane={hoveredLane}
@@ -1411,7 +1439,14 @@ export default function TimelinePageClient() {
         zoomPct={zoomPct}
         crossedCount={crossed.size}
         totalPast={pastEvents.length}
-        moment={moment}
+        moment={moment?.moment ?? null}
+        momentLive={moment?.live ?? false}
+        timePct={
+          // The playhead's real position between the story's first event and
+          // NOW. Continuous by construction, so it keeps moving through a
+          // stretch where the crossed count does not.
+          nowT > firstT ? ((playheadT ?? firstT) - firstT) / (nowT - firstT) : 0
+        }
         laneNames={laneNames}
         reducedMotion={reducedMotion}
         onPlayPause={() => {
