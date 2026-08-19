@@ -79,15 +79,15 @@
 
 import { useEffect, useId, useLayoutEffect, useMemo, useReducer, useRef, useState } from "react";
 import type { SimulationResult } from "@/lib/forecast/simulate";
+// The distribution's SHAPE now lives in one place, because Orbit draws the
+// same trials on an arc and two implementations of "how dense is it here"
+// would eventually disagree. Behaviour is unchanged: these are the exact
+// functions that used to sit below, moved, not rewritten.
+import { BINS, Q, quantileSample, density, liveRange, shellHeights } from "@/lib/forecast/shape";
 
-const BINS = 128;
 const VB_W = 1000;
 const VB_H = 420;
 const MID = VB_H / 2;
-
-/** Quantile samples used for morphing — each point is equal probability
-    mass, so binning them reproduces the true histogram shape. */
-const Q = 384;
 
 /** Half-height as a fraction of the object's own on-screen length. */
 const ASPECT = 0.2;
@@ -127,52 +127,10 @@ export interface LivingForecastProps {
   onRealityOpen?: () => void;
 }
 
-function quantileSample(sorted: number[], n = Q): number[] {
-  const out = new Array<number>(n);
-  if (sorted.length === 0) return out.fill(0);
-  for (let i = 0; i < n; i++) {
-    out[i] = sorted[Math.round((i / (n - 1)) * (sorted.length - 1))];
-  }
-  return out;
-}
-
-function density(days: number[], minDay: number, maxDay: number): number[] {
-  const span = maxDay - minDay || 1;
-  const counts = new Array<number>(BINS).fill(0);
-  for (const d of days) {
-    const t = (d - minDay) / span;
-    if (t < 0 || t > 1) continue;
-    counts[Math.min(BINS - 1, Math.max(0, Math.floor(t * BINS)))] += 1;
-  }
-  // Light smoothing only — enough to read as a form, never enough to invent
-  // shape the trials don't have. A genuinely bimodal project stays bimodal.
-  const k = [1, 3, 5, 3, 1];
-  return counts.map((_, i) => {
-    let s = 0;
-    let w = 0;
-    for (let j = -2; j <= 2; j++) {
-      const n = i + j;
-      if (n < 0 || n >= BINS) continue;
-      s += counts[n] * k[j + 2];
-      w += k[j + 2];
-    }
-    return w ? s / w : 0;
-  });
-}
-
-/** First and last bin carrying real mass — the object starts and ends at the
-    trials, not at the canvas edge. */
-function liveRange(d: number[]): [number, number] {
-  const peak = Math.max(...d, 1);
-  const live = d.map((v) => v / peak > 0.004);
-  const first = live.indexOf(true);
-  const last = live.lastIndexOf(true);
-  return first < 0 ? [0, BINS - 1] : [first, last];
-}
-
 /** Height locked to the object's own on-screen length, so the form reads
     horizontally at every scale instead of being stretched into a spike by
-    whatever aspect the viewport happens to have. */
+    whatever aspect the viewport happens to have. CARTESIAN — this one stays
+    here; an arc's "length" is arc length and the constant does not carry. */
 function ampFor(range: [number, number], boxW: number, boxH: number): number {
   const lengthPx = ((range[1] - range[0] + 1) / BINS) * boxW;
   const halfPx = Math.max(MIN_HALF_PX, Math.min(MAX_HALF_PX, lengthPx * ASPECT));
@@ -180,7 +138,8 @@ function ampFor(range: [number, number], boxW: number, boxH: number): number {
 }
 
 /** Closed mirrored form from a per-bin height array, trimmed to the bins
-    that carry real height so no baseline ever runs the canvas. */
+    that carry real height so no baseline ever runs the canvas. CARTESIAN:
+    it mirrors about a horizontal MID and steps along x. */
 function formPath(h: number[], eps: number): string | null {
   let first = -1;
   let last = -1;
@@ -198,14 +157,6 @@ function formPath(h: number[], eps: number): string | null {
   let bot = "";
   for (let i = last; i >= first; i--) bot += ` L ${x(i).toFixed(1)} ${(MID + h[i]).toFixed(1)}`;
   return `${top}${bot} Z`;
-}
-
-/** Heights of the density region above a threshold fraction of the peak —
-    a true isosurface of the same density, renormalised so τ=0 is the full
-    form. This is what makes the body volumetric without inventing shape:
-    inner shells are literally "where the probability is denser". */
-function shellHeights(d: number[], peak: number, amp: number, tau: number): number[] {
-  return d.map((v) => (Math.max(0, v / peak - tau) / (1 - tau)) * amp);
 }
 
 function spindlePath(d: number[], amp: number, range: [number, number]): string {

@@ -124,6 +124,9 @@ function state(over: {
     channel: over.channel ?? channel("jsa", 4, 3.6),
     sim: over.sim ?? sim(100, 60),
     realitySim: over.realitySim ?? null,
+    simulatedTotal: null,
+    capacityBasis: "allocations" as const,
+    teamCapacity: over.channel?.effective ?? 3.6,
   };
   return {
     focusScopeId: "jsa",

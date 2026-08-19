@@ -18,6 +18,7 @@
 
 import { composeFeatures } from "@/lib/scope/features";
 import { readChannel } from "@/lib/capacity/workforce";
+import { clampSimulatedCapacity } from "@/lib/capacity/limits";
 import type { SimulationResult } from "@/lib/forecast/simulate";
 import type { ProjectPayload, SuiteScenario } from "@/lib/instrument/useProject";
 import type { DecisionRow } from "@/lib/decisions/model";
@@ -95,6 +96,14 @@ export function adaptOrbitInput(i: OrbitAdaptInput): OrbitInput | null {
       sim,
       // The ghost exists only when there is something to compare against.
       realitySim: i.scenarioActive ? realitySim : null,
+      // Clamped HERE with the engine's own helper, so the number Orbit
+      // shows is the number applyScenarioInputDelta will simulate — not the
+      // raw value someone typed.
+      simulatedTotal: override === undefined ? null : clampSimulatedCapacity(override),
+      // Copied straight from the payload: which rung of the engine's own
+      // capacity fallback chain this scope is standing on.
+      capacityBasis: s.capacitySource,
+      teamCapacity: s.teamCapacity,
     });
   }
 

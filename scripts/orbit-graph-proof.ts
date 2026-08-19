@@ -93,6 +93,9 @@ const platform: OrbitScopeInput = {
   channel: channel("platform", 3, 3),
   sim: sim(60, 40),
   realitySim: null,
+  simulatedTotal: null,
+  capacityBasis: "allocations" as const,
+  teamCapacity: 4,
 };
 
 const jsa: OrbitScopeInput = {
@@ -111,6 +114,9 @@ const jsa: OrbitScopeInput = {
   channel: channel("jsa", 5, 4), // 1.0 FTE lost to context switching
   sim: sim(100, 60),
   realitySim: null,
+  simulatedTotal: null,
+  capacityBasis: "allocations" as const,
+  teamCapacity: 4,
 };
 
 const gate: OrbitGateInput = {

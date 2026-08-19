@@ -71,6 +71,20 @@ export interface OrbitScopeInput {
   sim: SimulationResult;
   /** The same, under Reality, when a Scenario is active. Null otherwise. */
   realitySim: SimulationResult | null;
+  /** An aggregate capacity override the Scenario is running for this scope,
+      already clamped exactly as the engine clamps it. Null when none. */
+  simulatedTotal: number | null;
+  /** WHERE THIS SCOPE'S CAPACITY ACTUALLY COMES FROM. Not every project has
+      Allocation rows; the engine falls back to an explicit number on the
+      Scope, or infers one from distinct assignees on remaining work. Orbit
+      must draw capacity in all three cases, because in all three cases it
+      is a causal input to the date — and must say which it is, because
+      "four named people" and "four assignees we counted" are not the same
+      claim. */
+  capacityBasis: "allocations" | "explicit" | "inferred";
+  /** The capacity the simulation was actually handed. Used when the basis
+      is not `allocations`, where readChannel has nothing to read. */
+  teamCapacity: number;
 }
 
 export interface OrbitInput {
@@ -188,6 +202,19 @@ export interface OrbitCapacityNode extends OrbitNodeBase {
   /** Asked for by a Scenario but not present in the workforce. Never
       silently manufactured. */
   required: number;
+  /** Where this reading comes from. `allocations` is named people;
+      anything else is a number standing in for them, and the surface must
+      not draw it as though it knows who. */
+  basis: "allocations" | "explicit" | "inferred";
+  /** THE AGGREGATE OVERRIDE, WHEN ONE IS RUNNING. Portfolio's fader can ask
+      the engine to simulate a specific total FTE for a scope, which
+      short-circuits the roster entirely (see applyScenarioInputDelta). When
+      that is set, THIS is the number the simulation actually receives — and
+      `effective` above is still the roster's own reading, unchanged.
+      Both are shown, because "the roster gives 2.9 and we are simulating
+      1.0" is a different sentence from either half of it. Null when no
+      override is running, which is the normal case. */
+  simulatedTotal: number | null;
 }
 
 export type OrbitNode =
@@ -436,7 +463,13 @@ export function buildOrbitGraph(input: OrbitInput): OrbitGraph {
 
   // ── SECOND ORBIT: the people ─────────────────────────────────────────
   for (const s of [focus, ...focus.dependsOnScopeIds.map((d) => scopes.find((x) => x.scopeId === d)).filter(Boolean) as OrbitScopeInput[]]) {
-    if (s.channel.raw <= 0 && s.channel.effective <= 0 && s.channel.required <= 0) continue;
+    const named = s.capacityBasis === "allocations";
+    // What the simulation was handed, whichever rung of the fallback chain
+    // it came from. A project with no Allocation rows still has capacity in
+    // the forecast, and leaving it off the picture would hide a cause.
+    const raw = named ? s.channel.raw : s.teamCapacity;
+    const effective = named ? s.channel.effective : s.teamCapacity;
+    if (raw <= 0 && effective <= 0 && s.channel.required <= 0) continue;
     const id = `capacity:${s.scopeId}`;
     nodes.push({
       id,
@@ -446,12 +479,16 @@ export function buildOrbitGraph(input: OrbitInput): OrbitGraph {
       scenarioLever: { kind: "capacity-override", scopeId: s.scopeId },
       provenance: { source: "lib/capacity/workforce.ts:readChannel", ref: s.scopeId },
       scopeId: s.scopeId,
-      raw: s.channel.raw,
-      effective: s.channel.effective,
-      switchLoss: Math.max(0, s.channel.raw - s.channel.effective),
-      people: s.channel.people,
-      splitPeople: s.channel.splitPeople,
+      raw,
+      effective,
+      // Switch loss is a property of named people being split. Where there
+      // are no named people there is no switch loss to claim.
+      switchLoss: named ? Math.max(0, s.channel.raw - s.channel.effective) : 0,
+      people: named ? s.channel.people : 0,
+      splitPeople: named ? s.channel.splitPeople : 0,
       required: s.channel.required,
+      simulatedTotal: s.simulatedTotal,
+      basis: s.capacityBasis,
     });
     edges.push({
       id: `feeds:${s.scopeId}`,
@@ -463,9 +500,13 @@ export function buildOrbitGraph(input: OrbitInput): OrbitGraph {
       // EFFECTIVE, not raw — the forecast divides effort by what actually
       // arrives, and the difference between the two is the switch loss the
       // node carries separately.
-      quantity: { value: s.channel.effective, unit: "fte" },
+      quantity: { value: s.simulatedTotal ?? effective, unit: "fte" },
       meaning:
-        "These people divide that scope's remaining effort. The figure is effective capacity — physical allocation after context-switch friction — because that is what the simulation receives.",
+        s.simulatedTotal !== null
+          ? "This scenario is simulating a total instead of the roster. The figure is that total, because it is what the simulation receives; the roster's own contribution is unchanged and still stated on the node."
+          : named
+            ? "These people divide that scope's remaining effort. The figure is effective capacity — physical allocation after context-switch friction — because that is what the simulation receives."
+            : "Nobody is allocated to this project on the roster, so the forecast is using a stand-in figure for how many people are on it. It is a real input to the date, and it is a weaker claim than a named team.",
       provenance: { source: "lib/capacity/resolve.ts:resolveCapacity", ref: s.scopeId },
     });
   }
