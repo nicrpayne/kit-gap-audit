@@ -9,6 +9,38 @@
 
 import Link from "next/link";
 import type { ReactNode } from "react";
+import type { Point } from "@/lib/control-room/read";
+
+// ── THE COLOUR LAW, EXTENDED TO DOMAINS ────────────────────────────────
+//
+// The suite already has a law and V2 does not get to bend it:
+//
+//   violet = a Scenario, always. Nothing that is true gets to be violet.
+//   cyan   = Reality, now, the thing we actually believe.
+//   amber  = a target, or something obstructing one.
+//   mint   = capability we have accepted.
+//   red    = a signal raised against the project.
+//
+// A DOMAIN accent is therefore not a free choice of hue — it is the one
+// colour that law already assigns to what the domain is about. Reality is
+// about signals, so it is red. Choices are about gates, so they are amber.
+// Capacity is about people we have, so it is mint. Outcome is the forecast,
+// so it is cyan under Reality and violet the moment a Scenario is running —
+// the ONLY card that changes colour, because it is the only one whose
+// number a Scenario changes.
+//
+// Time is deliberately NOT given a hue. It is the frame the other four are
+// read inside, not a fifth domain, and a colour would make it argue for
+// attention it should never ask for.
+export type Domain = "reality" | "choices" | "capacity" | "outcome" | "time";
+
+export const DOMAIN_ACCENT: Record<Domain, string> = {
+  reality: "var(--i-red)",
+  choices: "var(--i-amber)",
+  capacity: "var(--i-mint)",
+  outcome: "var(--i-signal)",
+  time: "var(--i-text-faint)",
+};
 
 export function Panel({
   title,
@@ -17,6 +49,8 @@ export function Panel({
   children,
   shoot,
   className = "",
+  accent,
+  note,
 }: {
   title: string;
   href?: string;
@@ -24,19 +58,41 @@ export function Panel({
   children: ReactNode;
   shoot?: string;
   className?: string;
+  /** A domain hairline down the left edge, when the panel belongs to one. */
+  accent?: string;
+  /** A fact the panel's header states about itself — never a grade. */
+  note?: string | null;
 }) {
   return (
     <section
       data-shoot={shoot}
-      className={`flex min-h-0 flex-col rounded-lg ${className}`}
+      className={`relative flex min-h-0 flex-col overflow-hidden rounded-lg ${className}`}
       style={{ background: "var(--i-panel)", border: "1px solid var(--i-border)" }}
     >
+      {accent && (
+        <span
+          aria-hidden
+          className="absolute left-0 top-0 h-full w-[2px]"
+          style={{ background: accent, opacity: 0.55 }}
+        />
+      )}
       <header className="flex shrink-0 items-baseline justify-between gap-3 px-3.5 pt-3 pb-2">
-        <h2 className="i-label" style={{ color: "var(--i-text-soft)" }}>
-          {title}
-        </h2>
+        <div className="flex min-w-0 items-baseline gap-2">
+          <h2 className="i-label shrink-0" style={{ color: "var(--i-text-soft)" }}>
+            {title}
+          </h2>
+          {note && (
+            <span className="truncate text-[10.5px]" style={{ color: "var(--i-text-faint)" }}>
+              {note}
+            </span>
+          )}
+        </div>
         {href && (
-          <Link href={href} className="text-[11px] transition-colors hover:underline" style={{ color: "var(--i-signal)" }}>
+          <Link
+            href={href}
+            className="shrink-0 text-[11px] transition-colors hover:underline"
+            style={{ color: "var(--i-signal)" }}
+          >
             {action ?? "Open"} →
           </Link>
         )}
@@ -46,82 +102,166 @@ export function Panel({
   );
 }
 
-/** One of the five. A number you can read at a glance and a second one that
-    stops the first from being misread on its own. */
+/** One of the five.
+ *
+ *  ANATOMY, and why it is this way round:
+ *
+ *    LEAD      one sentence with the dominant number inside it. A person
+ *              reads "2 decisions are holding the date" in one glance;
+ *              nobody reads "gating: 2" in one glance.
+ *    READOUT   the exact model truth, in the model's own units, so the
+ *              sentence above can be checked rather than trusted.
+ *    FOOTNOTE  provenance, or the caveat that stops a misreading.
+ *    SPARK     drawn only where real recorded history exists.
+ *
+ *  The sentence is a rendering of the readout, never a softening of it: if
+ *  the two could ever disagree, the sentence is wrong.
+ */
 export function SummaryCard({
   index,
+  domain,
   title,
-  question,
-  primary,
-  primaryUnit,
-  primaryTone = "text",
-  secondary,
+  leadValue,
+  leadRest,
+  leadTone,
+  readout,
   footnote,
+  spark,
   href,
   shoot,
 }: {
   index: number;
+  domain: Domain;
   title: string;
-  question: string;
-  primary: string;
-  primaryUnit?: string;
-  primaryTone?: "text" | "mint" | "amber" | "signal" | "violet" | "red";
-  secondary: { value: string; label: string }[];
+  leadValue: string;
+  leadRest: string;
+  /** Overrides the domain accent for the number itself — used where the
+      honest reading is "nothing is wrong" and red would lie. */
+  leadTone?: string;
+  readout: string;
   footnote?: string | null;
+  spark?: { points: Point[]; label: string } | null;
   href: string;
   shoot: string;
 }) {
-  const tone =
-    primaryTone === "text" ? "var(--i-text)" : `var(--i-${primaryTone})`;
+  const accent = DOMAIN_ACCENT[domain];
   return (
     <Link
       href={href}
       data-shoot={shoot}
-      className="group flex flex-col rounded-lg px-3.5 py-3 transition-colors"
+      data-domain={domain}
+      className="group relative flex flex-col overflow-hidden rounded-lg px-3.5 py-3 transition-colors hover:bg-[var(--i-panel-raised)]"
       style={{ background: "var(--i-panel)", border: "1px solid var(--i-border)" }}
     >
-      <div className="flex items-center gap-2">
-        <span
-          className="flex h-4 w-4 items-center justify-center rounded text-[9px] font-semibold"
-          style={{ background: "var(--i-panel-raised)", color: "var(--i-text-faint)" }}
-        >
-          {index}
-        </span>
-        <span className="i-label" style={{ color: "var(--i-text-soft)" }}>
-          {title}
-        </span>
-      </div>
-      <p className="pt-0.5 text-[11px] leading-tight" style={{ color: "var(--i-text-faint)" }}>
-        {question}
-      </p>
-      <div className="flex items-baseline gap-1.5 pt-2.5">
-        <span data-shoot={`${shoot}-primary`} className="i-readout text-[26px] leading-none" style={{ color: tone }}>
-          {primary}
-        </span>
-        {primaryUnit && (
-          <span className="text-[12px]" style={{ color: "var(--i-text-faint)" }}>
-            {primaryUnit}
+      <span
+        aria-hidden
+        className="absolute left-0 top-0 h-full w-[2px]"
+        style={{ background: accent, opacity: 0.55 }}
+      />
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex min-w-0 items-baseline gap-1.5">
+          <span className="i-readout shrink-0 text-[9px]" style={{ color: "var(--i-text-faint)" }}>
+            {index}
           </span>
+          <span className="i-label truncate" style={{ color: "var(--i-text-soft)" }}>
+            {title}
+          </span>
+        </div>
+        {spark && spark.points.length > 0 && (
+          <Spark points={spark.points} colour={accent} title={spark.label} shoot={`${shoot}-spark`} />
         )}
       </div>
-      <div className="flex flex-wrap gap-x-4 gap-y-0.5 pt-2">
-        {secondary.map((s) => (
-          <div key={s.label} className="flex items-baseline gap-1.5">
-            <span className="i-readout text-[13px]" style={{ color: "var(--i-text)" }}>
-              {s.value}
-            </span>
-            <span className="text-[10.5px]" style={{ color: "var(--i-text-faint)" }}>
-              {s.label}
-            </span>
-          </div>
-        ))}
-      </div>
+
+      <p className="pt-2 text-[13px] leading-[1.25]" style={{ color: "var(--i-text-soft)" }}>
+        <span
+          data-shoot={`${shoot}-primary`}
+          className="i-readout pr-1.5 text-[24px] leading-none"
+          style={{ color: leadTone ?? accent }}
+        >
+          {leadValue}
+        </span>
+        {leadRest}
+      </p>
+
+      <p
+        data-shoot={`${shoot}-readout`}
+        className="i-readout pt-2 text-[10.5px] leading-snug"
+        style={{ color: "var(--i-text)" }}
+      >
+        {readout}
+      </p>
+
       {footnote && (
-        <p className="pt-2 text-[10.5px] leading-snug" style={{ color: "var(--i-text-faint)" }}>
+        <p className="pt-1 text-[10.5px] leading-snug" style={{ color: "var(--i-text-faint)" }}>
           {footnote}
         </p>
       )}
     </Link>
+  );
+}
+
+/** A tiny line of REAL recorded points. Never a trend drawn from one value:
+    a single point is a dot, and it stays a dot, because two dots would be a
+    claim about a direction nobody measured. */
+export function Spark({
+  points,
+  colour,
+  title,
+  shoot,
+  w = 52,
+  h = 14,
+}: {
+  points: Point[];
+  colour: string;
+  title: string;
+  shoot?: string;
+  w?: number;
+  h?: number;
+}) {
+  if (points.length === 0) return null;
+  const vals = points.map((p) => p.value);
+  const lo = Math.min(...vals);
+  const hi = Math.max(...vals);
+  const span = hi - lo || 1;
+  // Inset by the dot radius on every side, so the line is CLIPPED BY ITS OWN
+  // BOX rather than escaping the card. A stroke that leaves its frame reads
+  // as a graphic accident, not as data.
+  const PAD = 2;
+  const x = (idx: number) => (points.length === 1 ? w / 2 : (idx / (points.length - 1)) * (w - PAD * 2) + PAD);
+  const y = (v: number) => h - PAD - ((v - lo) / span) * (h - PAD * 2);
+
+  return (
+    <svg
+      data-shoot={shoot}
+      data-points={points.length}
+      width={w}
+      height={h}
+      viewBox={`0 0 ${w} ${h}`}
+      className="shrink-0 overflow-hidden"
+      aria-hidden
+    >
+      <title>{title}</title>
+      {/* A baseline, so a short series reads as a PLOT rather than as a
+          stray hairline across the card. It is a frame, not a zero: the
+          scale is the series' own min-to-max and never claims otherwise. */}
+      <line x1={0} x2={w} y1={h - 0.5} y2={h - 0.5} stroke="var(--i-border)" strokeWidth={1} />
+      {points.length === 1 ? (
+        <circle cx={w / 2} cy={h / 2} r={1.8} fill={colour} opacity={0.7} />
+      ) : (
+        <>
+          <polyline
+            points={points.map((p, idx) => `${x(idx)},${y(p.value)}`).join(" ")}
+            fill="none"
+            stroke={colour}
+            strokeWidth={1}
+            strokeLinejoin="round"
+            strokeLinecap="round"
+            opacity={0.5}
+          />
+          <circle cx={x(points.length - 1)} cy={y(points[points.length - 1].value)} r={1.5} fill={colour} opacity={0.9} />
+        </>
+      )}
+    </svg>
   );
 }
 
@@ -177,7 +317,7 @@ export function Row({
     </div>
   );
   return href ? (
-    <Link href={href} className="block hover:bg-[var(--i-panel-raised)] rounded">
+    <Link href={href} className="block rounded hover:bg-[var(--i-panel-raised)]">
       {body}
     </Link>
   ) : (

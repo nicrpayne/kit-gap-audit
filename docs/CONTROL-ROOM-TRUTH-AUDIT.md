@@ -219,3 +219,162 @@ Orbit already focuses by scope (`orbit-focus-<scopeId>`). Control Room links to
    cannot wait on another capability.
 3. **True critical path.** Not derivable at scope granularity (see 7).
 4. **Dependency importance.** No weighting exists and none was invented.
+
+---
+
+# V2 — Instrument pass: audit of every new derived readout
+
+Written **before** the readouts changed, as §25 requires. Two of the four
+panels V2 asks for needed history that may or may not exist; both were
+checked against the schema before a pixel was drawn, and one of them was
+stopped.
+
+## Capacity headline percentage
+
+| | |
+|---|---|
+| **Name** | ARRIVING |
+| **Source** | `readMaster(workforce, scopeIds, contextSwitchCostPct)` — Portfolio's own call |
+| **Formula** | `effective ÷ allocated` |
+| **Unit** | percent of committed time |
+| **Meaning** | Of the human time we have actually committed to this project, how much of it lands on the work rather than being lost crossing between projects. Its complement is exactly context-switch loss. |
+| **Safe?** | **Yes.** Both terms come from the same call, in the same unit, over the same set of people. There is no third quantity hidden in the ratio. |
+| **Why care** | It is the one capacity number a person can act on: it falls when people are split, and it rises when they are not. |
+
+**Deliberately NOT used:** the word *utilization*, and the ratio
+`allocated ÷ workforce`. That second ratio is a real number, but "94% utilized"
+invites a staffing conclusion the model does not support — it says nothing about
+whether the work fits. `free` and `required` are shown as their own figures
+instead, in FTE.
+
+## Forecast confidence history — **REAL, and used**
+
+| | |
+|---|---|
+| **Source** | `Report.confidenceAtTarget`, one row per generated report, via `ProjectScope.reportHistory` |
+| **Formula** | none — the stored integer, plotted at `Report.generatedAt` |
+| **Unit** | percent of trials landing at or before that scope's target |
+| **Safe?** | **Yes.** Stored per report at the time it was generated. Never recomputed, never interpolated, never back-filled. |
+
+Eight weekly reports per project on the live data. A scope with no reports —
+Design has none — is **absent from the chart**, not drawn flat at zero. Points
+where `confidenceAtTarget` is null (no target at that time) are skipped rather
+than treated as 0%.
+
+## Capacity history — **DOES NOT EXIST. Panel stopped as specified.**
+
+`Allocation` has **no timestamps** (`id, personId, scopeId, fraction` and a
+unique constraint — that is the whole row). There is no allocation-history
+table, no capacity snapshot, and `PortfolioSettings` carries only a current
+`contextSwitchCostPct` with an `updatedAt`. **Capacity is a current-state model.**
+
+Per §10 — *"If no trustworthy history exists: STOP this panel and report the gap
+rather than fake it"* — no capacity trend line is drawn. The Capacity Overview
+panel ships as a **current-state composition** instead: per project, RAW as the
+track and EFFECTIVE as the fill, with switch loss as the visible gap and free
+capacity stated. The panel says on its own face that capacity has no history.
+
+Two near-misses were considered and rejected:
+- **Throughput** (`Report.shippedCount` over time) is real history, but it is
+  work *completed*, not capacity. Labelling it "Capacity Overview" would be the
+  exact semantic fudge this audit exists to prevent.
+- **Drawing today's value as a flat line** would be a trend chart asserting
+  stability nobody measured.
+
+## Reality trend — **REAL**
+
+`Report.shippedCount` per report, summed across projects at each report date.
+It is what the report itself recorded as completed since the previous one.
+
+## Choices trend — **REAL**
+
+Count of `decision_decided` timeline entries per week. A direct count of stored
+events, not a derived backlog level. It is labelled *answered per week*, because
+"open decisions over time" would require reconstructing dismissals the event
+stream does not carry.
+
+## System Status — every row is something we can actually know
+
+| Row | Source | Known how |
+|---|---|---|
+| Project data | the browser's own fetch of `/api/instrument/project` | when this page last received it |
+| Forecast | `max(Report.generatedAt)` | stored timestamp |
+| Context | newest `context_observed` entry | `ContextSnapshot.observedAt` |
+| Work items | newest `work_completed` entry | Linear is read live on every request; this is the newest completion it returned |
+| Evidence | `Source` rows in the project payload | `Source.createdAt` of the newest one |
+
+`SourceRegistration` (the tracked-source registry, with its `status = "active"`
+rows) was the first candidate for that last row and was **rejected**: it is not
+in `/api/instrument/project`, and the Control Room is a composition — it does
+not open a data path of its own to fill a status light. The payload's `Source`
+rows are the evidence actually stored, and that is what the row says.
+
+**Not shown, because it cannot be known:** Hermes availability (no health
+endpoint), "integration health", and any overall green/amber/red verdict. A
+feed with no datable timestamp is **omitted from the panel**, not drawn as
+"unknown". The panel's header states the **oldest reading on it** as a fact
+rather than grading itself.
+
+## Next landmark · modelled delay · dependency reach
+
+Unchanged from V1 and already audited above: the earliest planned
+`TimelineEvent`, the sum of `DecisionGate.likely` over open serial gates, and a
+count of declared `dependsOnScopeIds` edges.
+
+## What Changed — source
+
+The Timeline's own typed entries, at or before NOW, grouped by
+`scopeId|title` so one subject is one line. Unchanged from V1 except in
+presentation.
+
+## "Project data" freshness — what it can and cannot mean
+
+The payload carries no fetch stamp, and nothing on the server knows when a
+particular browser last asked. So the age shown is **when this page received
+the payload**, observed by the page itself (`ControlRoomInput.dataReceivedAt`,
+set when the store hands back a new object). It is honest about being a
+client-side fact. What it is NOT: a claim that the database, Linear, or Hermes
+was current at that moment.
+
+## The workspace is a view preference, and is kept away from the model
+
+Presets and panel visibility live in `localStorage` under
+`kit.control-room.workspace.v2` and are read by `lib/control-room/workspace.ts`,
+which imports nothing from the model and touches no API. Three consequences,
+all proven in `scripts/control-room-v2-proof.mjs` §G:
+
+1. Switching preset issues **no non-GET request** of any kind.
+2. The project payload is **substantively identical** before and after a full
+   tour of every preset, the customize dialog and a reset.
+3. Hiding a panel hides a **reading**, never a fact. Turning off Capacity does
+   not change an FTE; the Portfolio instrument is still the owner and still
+   says the same thing.
+
+Editing a preset **forks to Custom** rather than redefining the preset under
+its own name. There is deliberately no drag-and-drop, no resizing and no
+reordering: the page's arrangement is the argument it makes about reading
+order, and a rearrangeable layout stops making it.
+
+## Colour, extended to domains without bending the law
+
+The suite's law is unchanged — violet is a Scenario and only a Scenario, cyan
+is Reality, amber is a target or an obstruction, mint is accepted capability,
+red is a signal raised. V2 assigns each summary card the colour the law
+**already** implies for what that card is about:
+
+| Card | Accent | Because |
+|---|---|---|
+| Reality | red | it is about signals raised against the project |
+| Choices | amber | it is about gates, which are obstructions |
+| Capacity | mint | it is about capability we have |
+| Likely outcome | cyan, **violet under a Scenario** | it is the forecast, and it is the only reading a Scenario changes |
+| Time | none | time is the frame the other four are read inside, not a fifth domain |
+
+Two consequences worth stating because they are easy to get wrong:
+
+- The **forecast confidence history is never violet**, Scenario or not. A
+  hypothetical changes what we expect next; it cannot change what a report
+  stored last month. Proven in §F4.
+- The confidence chart promotes the project that **lands last**. Where that
+  project has never been reported on, **nothing** is promoted — picking
+  another line to emphasise would be inventing a protagonist.

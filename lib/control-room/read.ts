@@ -31,6 +31,11 @@ const days = (a: Date, b: Date) => (a.getTime() - b.getTime()) / DAY;
 export interface ControlRoomInput {
   now: Date;
   data: ProjectPayload;
+  /** When this browser last received `data`. The only honest answer to "how
+      current is the project data?" — the payload carries no fetch stamp of
+      its own, and there is nothing on the server that knows when a
+      particular client last asked. */
+  dataReceivedAt: Date;
   scenario: SuiteScenario;
   scenarioActive: boolean;
   /** The Scenario's simulations, or Reality's when none is set. */
@@ -48,6 +53,20 @@ export interface ControlRoomInput {
   timelineRangeEnd: Date | null;
 }
 
+/** A point somebody actually recorded. Never interpolated, never
+    back-filled, and never synthesised from a current value — a series of
+    length 1 is drawn as a dot, not as a flat line asserting stability. */
+export interface Point {
+  at: Date;
+  value: number;
+}
+
+export interface Series {
+  id: string;
+  label: string;
+  points: Point[];
+}
+
 // ── 1. WHAT IS REAL RIGHT NOW ──────────────────────────────────────────
 
 export interface RealitySummary {
@@ -59,6 +78,9 @@ export interface RealitySummary {
   /** Age in days of the newest piece of observed context, or null if none. */
   evidenceAgeDays: number | null;
   newestEvidenceLabel: string | null;
+  /** Work each report recorded as completed since the previous one. Real
+      stored counts at real report times. */
+  shippedSeries: Point[];
 }
 
 // ── 2. WHAT CHOICES ARE OPEN ───────────────────────────────────────────
@@ -73,6 +95,9 @@ export interface ChoicesSummary {
   dueSoon: number;
   overdue: number;
   decidedRecently: number;
+  /** Decisions answered per week, counted from stored `decision_decided`
+      events. A direct count, not a reconstructed backlog level. */
+  answeredSeries: Point[];
 }
 
 // ── 3. DO WE HAVE ENOUGH EFFECTIVE CAPACITY ────────────────────────────
@@ -100,6 +125,12 @@ export interface CapacitySummary {
   byScope: CapacityChannel[];
   /** Projects whose capacity is a stand-in rather than named people. */
   inferredScopes: number;
+  /** ARRIVING: effective ÷ allocated. Of the time we committed, how much
+      lands on the work rather than being lost crossing between projects.
+      Its complement is exactly context-switch loss. Null when nothing is
+      allocated, because a ratio of nothing is not 100%.
+      DELIBERATELY NOT "utilization" — see the truth audit. */
+  arrivingPct: number | null;
 }
 
 // ── 4. WHERE ARE WE LIKELY TO LAND ─────────────────────────────────────
@@ -122,6 +153,13 @@ export interface OutcomeSummary {
   /** Reality's own likely date while a Scenario is running. */
   realityLikely: Date | null;
   scopesPastTarget: number;
+  /** Per project, the confidence each report stored at the time it ran.
+      Projects that have never been reported on are ABSENT, not flat at
+      zero. Points with no target at the time are skipped. */
+  confidenceHistory: Series[];
+  /** Which way the gating project's confidence has moved since its
+      previous report, in percentage points. Null with fewer than two. */
+  confidenceTrendPts: number | null;
 }
 
 // ── 5. WHERE ARE WE IN TIME ────────────────────────────────────────────
@@ -154,6 +192,22 @@ export interface DependencyRow {
   focusScopeId: string | null;
   /** Orbit's own stable node id, so it opens already selected. */
   selectNodeId: string | null;
+}
+
+// ── 5c. CAN I TRUST WHAT I AM LOOKING AT ───────────────────────────────
+//
+// Only rows we can actually know. No overall verdict, because "healthy"
+// would need thresholds nobody has set; the panel states its OLDEST
+// reading as a fact and lets a person judge.
+
+export interface SystemRow {
+  id: string;
+  label: string;
+  /** What is true, in a few words. */
+  state: string;
+  /** How old the reading is, in days. Null where age is not the point. */
+  ageDays: number | null;
+  href: string;
 }
 
 // ── 6. WHAT IS HOLDING US ──────────────────────────────────────────────
@@ -201,6 +255,10 @@ export interface ControlRoomReading {
   needsReview: number;
   constraints: ConstraintRow[];
   activity: ActivityRow[];
+  system: SystemRow[];
+  /** The oldest reading on the System Status panel, so the header can state
+      a fact instead of grading itself. */
+  oldestReading: SystemRow | null;
   scenarioActive: boolean;
 }
 
@@ -229,6 +287,28 @@ export function readControlRoom(i: ControlRoomInput): ControlRoomReading {
     .filter((e) => e.kind === "context_observed" && new Date(e.date) <= now)
     .sort((a, b) => +new Date(b.date) - +new Date(a.date));
   const newestContext = contextEntries[0] ?? null;
+
+  // WHAT EACH ROUND OF REPORTING RECORDED AS SHIPPED.
+  //
+  // Reports run per project and land minutes apart, so one round of reporting
+  // is bucketed to the day it ran on and the counts are summed. Nothing is
+  // interpolated between rounds and no bucket is invented for a day nobody
+  // reported on: a gap in the series is a gap in the reporting.
+  const dayKey = (d: Date) => d.toISOString().slice(0, 10);
+  const shippedByDay = new Map<string, Point>();
+  for (const s of data.scopes) {
+    for (const r of s.reportHistory) {
+      const at = new Date(r.generatedAt);
+      if (at > now) continue;
+      const hit = shippedByDay.get(dayKey(at));
+      if (hit) {
+        hit.value += r.shippedCount;
+        if (at < hit.at) hit.at = at;
+      } else shippedByDay.set(dayKey(at), { at, value: r.shippedCount });
+    }
+  }
+  const shippedSeries = [...shippedByDay.values()].sort((a, b) => +a.at - +b.at);
+
   const reality: RealitySummary = {
     openSignals: openFindings.length,
     blockingSignals: openFindings.filter((f) => f.blocking).length,
@@ -238,6 +318,7 @@ export function readControlRoom(i: ControlRoomInput): ControlRoomReading {
     sources: data.sources.length,
     evidenceAgeDays: newestContext ? Math.max(0, days(now, new Date(newestContext.date))) : null,
     newestEvidenceLabel: newestContext?.sourceLabel ?? null,
+    shippedSeries,
   };
 
   // ── CHOICES ──────────────────────────────────────────────────────────
@@ -247,6 +328,26 @@ export function readControlRoom(i: ControlRoomInput): ControlRoomReading {
   // product exists to prevent.
   const open = decisions.filter((d) => d.status === "open");
   const gating = open.filter((d) => d.gate?.serial && !scenario.resolvedGateIds.has(d.gate.id));
+
+  // ANSWERED PER WEEK, counted — not a reconstructed backlog level.
+  //
+  // A zero here is a real count over a real seven-day window, so the weeks
+  // between the first answer and now are all present. The series does not
+  // extend back before the first stored answer, because we have no evidence
+  // about weeks the event stream never covered.
+  const WEEK = 7 * DAY;
+  const decidedAt = entries
+    .filter((e) => e.kind === "decision_decided" && new Date(e.date) <= now)
+    .map((e) => +new Date(e.date))
+    .sort((a, b) => a - b);
+  const weekSpan = decidedAt.length ? Math.min(12, Math.ceil((+now - decidedAt[0]) / WEEK)) : 0;
+  const answeredSeries: Point[] = [];
+  for (let w = weekSpan - 1; w >= 0; w--) {
+    const end = +now - w * WEEK;
+    const start = end - WEEK;
+    answeredSeries.push({ at: new Date(end), value: decidedAt.filter((t) => t > start && t <= end).length });
+  }
+
   const choices: ChoicesSummary = {
     open: open.length,
     gating: gating.length,
@@ -257,6 +358,7 @@ export function readControlRoom(i: ControlRoomInput): ControlRoomReading {
     decidedRecently: entries.filter(
       (e) => e.kind === "decision_decided" && +now - +new Date(e.date) <= 14 * DAY && new Date(e.date) <= now
     ).length,
+    answeredSeries,
   };
 
   // ── CAPACITY ─────────────────────────────────────────────────────────
@@ -293,6 +395,11 @@ export function readControlRoom(i: ControlRoomInput): ControlRoomReading {
     splitPeople: byScope.reduce((n, c) => n + (readChannel(workforce, c.scopeId, switchCostPct).splitPeople > 0 ? 1 : 0), 0),
     byScope,
     inferredScopes: data.scopes.filter((s) => s.capacitySource !== "allocations").length,
+    // Both terms come from the SAME readMaster call, in the same unit, over
+    // the same people — so the ratio hides no third quantity. Null rather
+    // than 100% when nothing is allocated: a ratio of nothing is not "all of
+    // it arriving".
+    arrivingPct: master.allocated > 0 ? (master.effective / master.allocated) * 100 : null,
   };
 
   // ── OUTCOME ──────────────────────────────────────────────────────────
@@ -315,6 +422,29 @@ export function readControlRoom(i: ControlRoomInput): ControlRoomReading {
   const gatingSim = gatedByScopeId ? preview.get(gatedByScopeId) ?? null : null;
   const gatingReality = gatedByScopeId ? baseline.get(gatedByScopeId) ?? null : null;
   const target = gatingScope?.targetDate ? new Date(gatingScope.targetDate) : null;
+
+  // WHAT EACH REPORT BELIEVED AT THE TIME IT RAN.
+  //
+  // The stored integer, plotted at its own generatedAt. Never recomputed
+  // against today's model, never interpolated, never back-filled. A project
+  // that has never been reported on is ABSENT — drawing it flat at zero
+  // would assert a measured 0% confidence nobody ever measured. Reports with
+  // no target at the time carry a null and are skipped for the same reason.
+  const confidenceHistory: Series[] = data.scopes
+    .map((s) => ({
+      id: s.scopeId,
+      label: s.name,
+      points: s.reportHistory
+        .filter((r) => r.confidenceAtTarget !== null && new Date(r.generatedAt) <= now)
+        .map((r) => ({ at: new Date(r.generatedAt), value: r.confidenceAtTarget as number }))
+        .sort((a, b) => +a.at - +b.at),
+    }))
+    .filter((s) => s.points.length > 0);
+  const gatingSeries = confidenceHistory.find((s) => s.id === gatedByScopeId) ?? null;
+  const gatingPts = gatingSeries?.points ?? [];
+  const confidenceTrendPts =
+    gatingPts.length >= 2 ? gatingPts[gatingPts.length - 1].value - gatingPts[gatingPts.length - 2].value : null;
+
   const outcome: OutcomeSummary = {
     likely: likelyMs === -Infinity ? null : new Date(likelyMs),
     gatedBy: gatingScope?.name ?? null,
@@ -331,6 +461,8 @@ export function readControlRoom(i: ControlRoomInput): ControlRoomReading {
       : null,
     realityLikely: i.scenarioActive && gatingReality ? gatingReality.likelyDate : null,
     scopesPastTarget,
+    confidenceHistory,
+    confidenceTrendPts,
   };
 
   // ── TIME ─────────────────────────────────────────────────────────────
@@ -636,6 +768,80 @@ export function readControlRoom(i: ControlRoomInput): ControlRoomReading {
       };
     });
 
+  // ── SYSTEM STATUS ────────────────────────────────────────────────────
+  //
+  // HOW OLD IS WHAT I AM LOOKING AT — one row per feed, each one a
+  // timestamp somebody actually stored, and NOTHING ELSE. There is no
+  // green/amber/red verdict here and no "integration health": grading a
+  // feed would require a threshold nobody has set. A feed we cannot date is
+  // OMITTED rather than shown as unknown, per the brief.
+  //
+  // Deliberately absent: Hermes availability. There is no health endpoint,
+  // so "Hermes: OK" would be a guess wearing a status light.
+  const newestWork = entries
+    .filter((e) => e.kind === "work_completed" && new Date(e.date) <= now)
+    .sort((a, b) => +new Date(b.date) - +new Date(a.date))[0];
+  const newestSource = data.sources
+    .map((s) => new Date(s.createdAt))
+    .filter((d) => d <= now)
+    .sort((a, b) => +b - +a)[0];
+  const age = (d: Date | null | undefined) => (d ? Math.max(0, days(now, d)) : null);
+  const plural = (n: number, one: string) => `${n} ${one}${n === 1 ? "" : "s"}`;
+
+  const system: SystemRow[] = [
+    {
+      id: "project",
+      label: "Project data",
+      state: `${plural(data.scopes.length, "project")} · ${data.people.filter((p) => p.active).length} on the roster`,
+      ageDays: age(i.dataReceivedAt),
+      href: "/portfolio",
+    },
+    {
+      id: "forecast",
+      label: "Forecast",
+      state: plural(data.scopes.filter((s) => s.lastReport).length, "project") + " reported",
+      ageDays: age(time.lastForecastAt),
+      href: "/forecast",
+    },
+    newestContext
+      ? {
+          id: "context",
+          label: "Context",
+          state: newestContext.sourceLabel ?? newestContext.title,
+          ageDays: age(new Date(newestContext.date)),
+          href: "/timeline",
+        }
+      : null,
+    newestWork
+      ? {
+          id: "work",
+          label: "Work items",
+          // Linear is read live on every request, so the freshest thing we
+          // can date is the newest completion that read returned.
+          state: "read live · newest completion",
+          ageDays: age(new Date(newestWork.date)),
+          href: "/scope",
+        }
+      : null,
+    newestSource
+      ? {
+          id: "evidence",
+          label: "Evidence",
+          state: plural(data.sources.length, "document"),
+          ageDays: age(newestSource),
+          href: "/audit",
+        }
+      : null,
+  ].filter((r): r is SystemRow => r !== null);
+
+  // A FACT, NOT A GRADE. The header says how stale the stalest feed is and
+  // names it, which a person can act on; "System: Good" is not something
+  // this model can say.
+  const dated = system.filter((r) => r.ageDays !== null);
+  const oldestReading = dated.length
+    ? dated.reduce((worst, r) => (r.ageDays! > worst.ageDays! ? r : worst))
+    : null;
+
   return {
     reality,
     choices,
@@ -646,6 +852,8 @@ export function readControlRoom(i: ControlRoomInput): ControlRoomReading {
     needsReview,
     constraints,
     activity,
+    system,
+    oldestReading,
     scenarioActive: i.scenarioActive,
   };
 }

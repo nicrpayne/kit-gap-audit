@@ -53,7 +53,10 @@ await open();
 
 // ── A. THE SIX QUESTIONS ARE ALL ANSWERED ──────────────────────────────
 {
-  const cards = await p.locator('[data-shoot^="cr-card-"]:not([data-shoot$="-primary"])').count();
+  // The card ROOT is the element carrying data-domain; its readout, spark
+  // and primary readings are stamped underneath it and must not be counted
+  // as cards of their own.
+  const cards = await p.locator('[data-shoot^="cr-card-"][data-domain]').count();
   check("A1. All five summary surfaces are present", cards === 5, `${cards}`);
   check("A2. The Time Machine is the centre, and it is the real instrument",
     (await p.locator('[data-shoot="cr-time-machine"] [data-shoot="time-field"]').count()) === 1);
@@ -82,7 +85,7 @@ await open();
     `${gates.reduce((n, d) => n + d.gate.likely, 0)}d`);
   check("B3. …and the open-decision count", choices.includes(String(openDecisions.length)), `${openDecisions.length} open`);
   check("B4. A decision is not a gate, and the page says both",
-    /open in all/i.test(choices) && /not holding any date/i.test(choices));
+    /\b\d+ open\b/i.test(choices) && /not holding any date/i.test(choices));
 
   const openFindings = proj.findings.filter((f) => f.status === "open");
   const realityCard = await txt('[data-shoot="cr-card-reality"]');
@@ -249,7 +252,12 @@ await open();
     check("H1. A hypothetical made elsewhere is shown here as a Scenario",
       (await p.locator('[data-shoot="cr-scenario"]').count()) === 1);
     const choices = await txt('[data-shoot="cr-card-choices"]');
-    const gatesNow = Number((/(\d+)\s*\n?\s*gates?/.exec(choices) ?? [])[1] ?? -1);
+    // The card leads with a sentence, so the count is read out of the
+    // sentence it leads with: "N decisions are holding the delivery date",
+    // or the phrasing it switches to when none are.
+    const gatesNow = /none holding a date/i.test(choices)
+      ? 0
+      : Number((/(\d+)\s+decisions?\s+(?:are|is)\s+holding/i.exec(choices) ?? [])[1] ?? -1);
     check("H2. …and the gate it assumes answered stops counting", gatesNow >= 0 && gatesNow < 2, `${gatesNow} gates`);
     writes = [];
     await p.click('[data-shoot="cr-discard"]');
