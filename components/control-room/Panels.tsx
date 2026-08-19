@@ -8,39 +8,8 @@
 // each card invents its own weight.
 
 import Link from "next/link";
-import type { ReactNode } from "react";
+import type { CSSProperties, ReactNode } from "react";
 import type { Point } from "@/lib/control-room/read";
-
-// ── THE COLOUR LAW, EXTENDED TO DOMAINS ────────────────────────────────
-//
-// The suite already has a law and V2 does not get to bend it:
-//
-//   violet = a Scenario, always. Nothing that is true gets to be violet.
-//   cyan   = Reality, now, the thing we actually believe.
-//   amber  = a target, or something obstructing one.
-//   mint   = capability we have accepted.
-//   red    = a signal raised against the project.
-//
-// A DOMAIN accent is therefore not a free choice of hue — it is the one
-// colour that law already assigns to what the domain is about. Reality is
-// about signals, so it is red. Choices are about gates, so they are amber.
-// Capacity is about people we have, so it is mint. Outcome is the forecast,
-// so it is cyan under Reality and violet the moment a Scenario is running —
-// the ONLY card that changes colour, because it is the only one whose
-// number a Scenario changes.
-//
-// Time is deliberately NOT given a hue. It is the frame the other four are
-// read inside, not a fifth domain, and a colour would make it argue for
-// attention it should never ask for.
-export type Domain = "reality" | "choices" | "capacity" | "outcome" | "time";
-
-export const DOMAIN_ACCENT: Record<Domain, string> = {
-  reality: "var(--i-red)",
-  choices: "var(--i-amber)",
-  capacity: "var(--i-mint)",
-  outcome: "var(--i-signal)",
-  time: "var(--i-text-faint)",
-};
 
 export function Panel({
   title,
@@ -49,6 +18,7 @@ export function Panel({
   children,
   shoot,
   className = "",
+  style,
   accent,
   note,
 }: {
@@ -58,6 +28,9 @@ export function Panel({
   children: ReactNode;
   shoot?: string;
   className?: string;
+  /** Explicit geometry, for a surface that is sized by its content rather
+      than by the space it happens to be given. */
+  style?: CSSProperties;
   /** A domain hairline down the left edge, when the panel belongs to one. */
   accent?: string;
   /** A fact the panel's header states about itself — never a grade. */
@@ -67,7 +40,7 @@ export function Panel({
     <section
       data-shoot={shoot}
       className={`relative flex min-h-0 flex-col overflow-hidden rounded-lg ${className}`}
-      style={{ background: "var(--i-panel)", border: "1px solid var(--i-border)" }}
+      style={{ background: "var(--i-panel)", border: "1px solid var(--i-border)", ...style }}
     >
       {accent && (
         <span
@@ -99,104 +72,6 @@ export function Panel({
       </header>
       <div className="min-h-0 flex-1 overflow-hidden px-3.5 pb-3.5">{children}</div>
     </section>
-  );
-}
-
-/** One of the five.
- *
- *  ANATOMY, and why it is this way round:
- *
- *    LEAD      one sentence with the dominant number inside it. A person
- *              reads "2 decisions are holding the date" in one glance;
- *              nobody reads "gating: 2" in one glance.
- *    READOUT   the exact model truth, in the model's own units, so the
- *              sentence above can be checked rather than trusted.
- *    FOOTNOTE  provenance, or the caveat that stops a misreading.
- *    SPARK     drawn only where real recorded history exists.
- *
- *  The sentence is a rendering of the readout, never a softening of it: if
- *  the two could ever disagree, the sentence is wrong.
- */
-export function SummaryCard({
-  index,
-  domain,
-  title,
-  leadValue,
-  leadRest,
-  leadTone,
-  readout,
-  footnote,
-  spark,
-  href,
-  shoot,
-}: {
-  index: number;
-  domain: Domain;
-  title: string;
-  leadValue: string;
-  leadRest: string;
-  /** Overrides the domain accent for the number itself — used where the
-      honest reading is "nothing is wrong" and red would lie. */
-  leadTone?: string;
-  readout: string;
-  footnote?: string | null;
-  spark?: { points: Point[]; label: string } | null;
-  href: string;
-  shoot: string;
-}) {
-  const accent = DOMAIN_ACCENT[domain];
-  return (
-    <Link
-      href={href}
-      data-shoot={shoot}
-      data-domain={domain}
-      className="group relative flex flex-col overflow-hidden rounded-lg px-3.5 py-3 transition-colors hover:bg-[var(--i-panel-raised)]"
-      style={{ background: "var(--i-panel)", border: "1px solid var(--i-border)" }}
-    >
-      <span
-        aria-hidden
-        className="absolute left-0 top-0 h-full w-[2px]"
-        style={{ background: accent, opacity: 0.55 }}
-      />
-      <div className="flex items-center justify-between gap-2">
-        <div className="flex min-w-0 items-baseline gap-1.5">
-          <span className="i-readout shrink-0 text-[9px]" style={{ color: "var(--i-text-faint)" }}>
-            {index}
-          </span>
-          <span className="i-label truncate" style={{ color: "var(--i-text-soft)" }}>
-            {title}
-          </span>
-        </div>
-        {spark && spark.points.length > 0 && (
-          <Spark points={spark.points} colour={accent} title={spark.label} shoot={`${shoot}-spark`} />
-        )}
-      </div>
-
-      <p className="pt-2 text-[13px] leading-[1.25]" style={{ color: "var(--i-text-soft)" }}>
-        <span
-          data-shoot={`${shoot}-primary`}
-          className="i-readout pr-1.5 text-[24px] leading-none"
-          style={{ color: leadTone ?? accent }}
-        >
-          {leadValue}
-        </span>
-        {leadRest}
-      </p>
-
-      <p
-        data-shoot={`${shoot}-readout`}
-        className="i-readout pt-2 text-[10.5px] leading-snug"
-        style={{ color: "var(--i-text)" }}
-      >
-        {readout}
-      </p>
-
-      {footnote && (
-        <p className="pt-1 text-[10.5px] leading-snug" style={{ color: "var(--i-text-faint)" }}>
-          {footnote}
-        </p>
-      )}
-    </Link>
   );
 }
 

@@ -1,47 +1,59 @@
 "use client";
 
-// CHOOSING WHAT TO LOOK AT.
+// CHOOSING HOW TO INSPECT THE PROJECT.
+//
+// A lens is a question. Picking one turns on the surfaces that answer it
+// and turns off the ones that do not — that is the whole idea, and it is
+// why the lenses are listed by their question rather than by their contents.
 //
 // This dialog edits a VIEW PREFERENCE in this browser and nothing else. It
-// never writes to the project, never touches a Scenario, and the page says
-// so on its face — because a control that hides "Capacity" sitting next to
+// never writes to the project, never touches a Scenario, and says so on its
+// own face — because a control that hides "Capacity" sitting next to
 // controls that change capacity has to be unambiguous about which it is.
 
-import { PANELS, PRESETS, type PanelGroup, type PanelId, type Workspace, visiblePanels } from "@/lib/control-room/workspace";
+import {
+  LENSES,
+  SURFACES,
+  type LensId,
+  type SurfaceGroup,
+  type SurfaceId,
+  type Workspace,
+  visibleSurfaces,
+} from "@/lib/control-room/lenses";
 
-const GROUPS: PanelGroup[] = ["Summary", "Centre", "Rail", "Lenses"];
+const GROUPS: SurfaceGroup[] = ["Field", "Reading", "Rail", "Surfaces"];
 
-const GROUP_NOTE: Record<PanelGroup, string> = {
-  Summary: "The five questions across the top.",
-  Centre: "The large surface in the middle.",
+const GROUP_NOTE: Record<SurfaceGroup, string> = {
+  Field: "The centre of gravity.",
+  Reading: "The strip across the top.",
   Rail: "The column on the right.",
-  Lenses: "The row along the bottom.",
+  Surfaces: "The row along the bottom.",
 };
 
-export default function Customize({
+export default function LensEditor({
   workspace,
   onToggle,
-  onPreset,
+  onLens,
   onReset,
   onClose,
 }: {
   workspace: Workspace;
-  onToggle: (id: PanelId) => void;
-  onPreset: (id: Workspace["preset"]) => void;
+  onToggle: (id: SurfaceId) => void;
+  onLens: (id: LensId) => void;
   onReset: () => void;
   onClose: () => void;
 }) {
-  const visible = visiblePanels(workspace);
+  const visible = visibleSurfaces(workspace);
 
   return (
     <div
-      data-shoot="cr-customize"
+      data-shoot="cr-lens-editor"
       className="absolute inset-0 z-50 flex items-center justify-center p-6"
-      style={{ background: "rgba(6, 9, 11, 0.72)" }}
+      style={{ background: "rgba(6, 9, 11, 0.74)" }}
       onClick={onClose}
     >
       <div
-        className="flex max-h-full w-[560px] flex-col overflow-hidden rounded-xl"
+        className="flex max-h-full w-[600px] flex-col overflow-hidden rounded-xl"
         style={{ background: "var(--i-panel)", border: "1px solid var(--i-border-strong)" }}
         onClick={(e) => e.stopPropagation()}
       >
@@ -51,46 +63,46 @@ export default function Customize({
         >
           <div>
             <h2 className="text-[14px] font-medium tracking-tight" style={{ color: "var(--i-text)" }}>
-              Customize workspace
+              Lenses
             </h2>
             <p className="pt-1 text-[11px]" style={{ color: "var(--i-text-faint)" }}>
-              Saved in this browser only. Changes nothing about the project.
+              One project, inspected different ways. Saved in this browser only — changes nothing about the project.
             </p>
           </div>
           <button
-            data-shoot="cr-customize-close"
+            data-shoot="cr-lens-editor-close"
             onClick={onClose}
-            className="rounded px-2.5 py-1 text-[11px]"
+            className="shrink-0 rounded px-2.5 py-1 text-[11px]"
             style={{ border: "1px solid var(--i-border-strong)", color: "var(--i-text-soft)" }}
           >
             Done
           </button>
         </header>
 
-        <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
-          <p className="i-label pb-2" style={{ color: "var(--i-text-soft)" }}>
-            Preset
-          </p>
-          <div className="grid grid-cols-2 gap-2 pb-5">
-            {PRESETS.map((p) => {
-              const on = workspace.preset === p.id;
+        <div className="i-noscrollbar min-h-0 flex-1 overflow-y-auto px-5 py-4">
+          <div className="flex flex-col gap-1.5 pb-5">
+            {LENSES.map((l) => {
+              const on = workspace.lens === l.id;
               return (
                 <button
-                  key={p.id}
-                  data-shoot={`cr-preset-${p.id}`}
+                  key={l.id}
+                  data-shoot={`cr-lens-${l.id}`}
                   data-on={on}
-                  onClick={() => onPreset(p.id)}
-                  className="rounded-lg px-3 py-2 text-left transition-colors"
+                  onClick={() => onLens(l.id)}
+                  className="flex items-baseline gap-3 rounded-lg px-3 py-2 text-left transition-colors"
                   style={{
                     background: on ? "var(--i-panel-raised)" : "transparent",
                     border: `1px solid ${on ? "var(--i-border-strong)" : "var(--i-border)"}`,
                   }}
                 >
-                  <span className="block text-[12px]" style={{ color: on ? "var(--i-text)" : "var(--i-text-soft)" }}>
-                    {p.label}
+                  <span
+                    className="w-[74px] shrink-0 text-[12px]"
+                    style={{ color: on ? "var(--i-text)" : "var(--i-text-soft)" }}
+                  >
+                    {l.label}
                   </span>
-                  <span className="block pt-0.5 text-[10.5px] leading-snug" style={{ color: "var(--i-text-faint)" }}>
-                    {p.note}
+                  <span className="min-w-0 text-[11px] leading-snug" style={{ color: "var(--i-text-faint)" }}>
+                    {l.question}
                   </span>
                 </button>
               );
@@ -108,14 +120,14 @@ export default function Customize({
                 </p>
               </div>
               <div className="flex flex-col gap-0.5">
-                {PANELS.filter((p) => p.group === g).map((p) => {
-                  const on = visible.has(p.id);
+                {SURFACES.filter((s) => s.group === g).map((s) => {
+                  const on = visible.has(s.id);
                   return (
                     <button
-                      key={p.id}
-                      data-shoot={`cr-toggle-${p.id}`}
+                      key={s.id}
+                      data-shoot={`cr-surface-${s.id}`}
                       data-on={on}
-                      onClick={() => onToggle(p.id)}
+                      onClick={() => onToggle(s.id)}
                       className="flex items-start gap-2.5 rounded px-2 py-1.5 text-left transition-colors hover:bg-[var(--i-panel-raised)]"
                     >
                       <span
@@ -130,11 +142,14 @@ export default function Customize({
                         {on ? "✓" : ""}
                       </span>
                       <span className="min-w-0">
-                        <span className="block text-[12px]" style={{ color: on ? "var(--i-text)" : "var(--i-text-faint)" }}>
-                          {p.label}
+                        <span
+                          className="block text-[12px]"
+                          style={{ color: on ? "var(--i-text)" : "var(--i-text-faint)" }}
+                        >
+                          {s.label}
                         </span>
                         <span className="block text-[10.5px] leading-snug" style={{ color: "var(--i-text-faint)" }}>
-                          {p.note}
+                          {s.note}
                         </span>
                       </span>
                     </button>
@@ -150,7 +165,7 @@ export default function Customize({
           style={{ borderTop: "1px solid var(--i-border)" }}
         >
           <span className="text-[10.5px]" style={{ color: "var(--i-text-faint)" }}>
-            {visible.size} of {PANELS.length} panels shown
+            {visible.size} of {SURFACES.length} surfaces shown
           </span>
           <button
             data-shoot="cr-reset-workspace"

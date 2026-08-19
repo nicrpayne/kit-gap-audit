@@ -42,9 +42,19 @@ const park = async () => { await p.mouse.move(1674, 1046); await settle(300); };
 const txt = (sel) => p.locator(sel).innerText();
 const api = async (path) => (await fetch(`${BASE}${path}`)).json();
 
+/** V3 organises the surface into lenses. Each law is checked in the lens
+    that owns it. */
+const lens = async (id) => {
+  await p.click(`[data-shoot="cr-lens-pick-${id}"]`);
+  await settle(1400);
+  await park();
+};
+
 const open = async () => {
   await p.goto(`${BASE}/control-room`, { waitUntil: "networkidle" });
-  await p.waitForSelector('[data-shoot="cr-summary"]', { timeout: 30000 });
+  await p.evaluate(() => localStorage.removeItem("kit.control-room.lens.v3"));
+  await p.reload({ waitUntil: "networkidle" });
+  await p.waitForSelector('[data-shoot="cr-reading"]', { timeout: 30000 });
   await p.waitForFunction(() => document.querySelectorAll('[data-shoot^="cr-card-"][data-domain]').length >= 5, {
     timeout: 30000,
   });
@@ -54,7 +64,7 @@ const open = async () => {
 
 /** Back to the shipped default, without relying on the UI to get there. */
 const resetWorkspace = async () => {
-  await p.evaluate(() => localStorage.removeItem("kit.control-room.workspace.v2"));
+  await p.evaluate(() => localStorage.removeItem("kit.control-room.lens.v3"));
   await open();
 };
 
@@ -90,7 +100,7 @@ const tl = await api("/api/timeline");
   // The concept image's vocabulary stays banned, and V2 adds one word of
   // its own to the ban list: the capacity headline is ARRIVING, never
   // "utilization", because the model does not compute utilization.
-  const page = await p.locator('[data-shoot="cr-summary"]').innerText();
+  const page = await p.locator('[data-shoot="cr-reading"]').innerText();
   check("A5. No utilization, buffer, health, risk score or alignment anywhere",
     !/utilization|utilisation|buffer|health|severity|risk score|alignment/i.test(page));
   check("A6. The whole workspace still fits one viewport",
@@ -169,7 +179,7 @@ const tl = await api("/api/timeline");
 
   // C5: CAPACITY HAS NO HISTORY, so no capacity trend is drawn anywhere —
   // and the panel says why rather than leaving a person to wonder.
-  const capPanel = p.locator('[data-shoot="cr-lens-capacity"]');
+  const capPanel = p.locator('[data-shoot="cr-surf-capacity"]');
   const capLines = await capPanel.locator("polyline, path").count();
   check("C5. No capacity trend is drawn, because none can be", capLines === 0, `${capLines} plotted lines`);
   check("C6. …and the panel states the gap instead of leaving it silent",
@@ -189,7 +199,7 @@ const tl = await api("/api/timeline");
 
 // ── D. SYSTEM STATUS IS AGES, NOT GRADES ───────────────────────────────
 {
-  const panel = p.locator('[data-shoot="cr-lens-system"]');
+  const panel = p.locator('[data-shoot="cr-surf-system"]');
   const rows = await panel.locator('[data-shoot^="cr-system-"]').evaluateAll((els) =>
     els.map((e) => e.innerText.replace(/\n/g, " "))
   );
@@ -223,6 +233,8 @@ const tl = await api("/api/timeline");
 
 // ── E. WHAT CHANGED IS THE TIMELINE'S OWN STREAM ───────────────────────
 {
+  // Reading history is Delivery's job in V3, not the daily operating view's.
+  await lens("delivery");
   const panel = p.locator('[data-shoot="cr-activity"]');
   check("E1. The panel is named for the question it answers",
     /what changed/i.test(await panel.locator("header").innerText()));
@@ -238,6 +250,8 @@ const tl = await api("/api/timeline");
 
 // ── F. THE COLOUR LAW STILL HOLDS ──────────────────────────────────────
 {
+  // Every domain has to be on screen to check every domain's hue.
+  await open();
   const hue = (sel) => p.locator(sel).evaluate((e) => getComputedStyle(e).color);
   const VIOLET = "rgb(155, 140, 250)";
   const CYAN = "rgb(70, 195, 214)";
@@ -275,7 +289,7 @@ const tl = await api("/api/timeline");
   if (assumed) {
     await p.click('a[href="/control-room"]');
     await p.waitForURL("**/control-room", { timeout: 15000 });
-    await p.waitForSelector('[data-shoot="cr-summary"]');
+    await p.waitForSelector('[data-shoot="cr-reading"]');
     await settle(3200);
     await park();
     check("F3. A Scenario turns the forecast violet, and only the forecast",
@@ -301,7 +315,7 @@ const tl = await api("/api/timeline");
 // ── G. THE WORKSPACE IS A VIEW, NOT THE PROJECT ────────────────────────
 {
   await resetWorkspace();
-  const shown = () => p.locator('[data-shoot^="cr-card-"][data-domain], [data-shoot^="cr-lens-"], [data-shoot="cr-dependency-watch"]').count();
+  const shown = () => p.locator('[data-shoot^="cr-card-"][data-domain], [data-shoot^="cr-surf-"], [data-shoot="cr-dependency-watch"]').count();
   const beforeCount = await shown();
   // Everything the payload says about the project, EXCEPT its startDate —
   // that is "now" and moves on its own between two requests, so including
@@ -310,46 +324,46 @@ const tl = await api("/api/timeline");
   const beforeProject = substance(await api("/api/instrument/project"));
 
   writes = [];
-  await p.click('[data-shoot="cr-workspace-capacity"]');
+  await p.click('[data-shoot="cr-lens-pick-capacity"]');
   await settle(1200);
   const capacityView = await shown();
   check("G1. A preset changes what is on screen", capacityView !== beforeCount, `${beforeCount} → ${capacityView}`);
   check("G2. …and hiding a panel is not a project change", writes.length === 0, writes.join(", ") || "0 writes");
-  check("G3. …the Capacity workspace drops Dependency Watch",
+  check("G3. …the Capacity lens drops the dependency index",
     (await p.locator('[data-shoot="cr-dependency-watch"]').count()) === 0);
 
-  await p.click('[data-shoot="cr-workspace-dependencies"]');
+  await p.click('[data-shoot="cr-lens-pick-dependency"]');
   await settle(1200);
-  check("G4. …and the Dependencies workspace brings it back",
+  check("G4. …and the Dependency lens brings it back",
     (await p.locator('[data-shoot="cr-dependency-watch"]').count()) === 1);
 
-  const stored = await p.evaluate(() => localStorage.getItem("kit.control-room.workspace.v2"));
+  const stored = await p.evaluate(() => localStorage.getItem("kit.control-room.lens.v3"));
   check("G5. The preference lives in this browser and nowhere else",
-    !!stored && JSON.parse(stored).preset === "dependencies", stored ? "localStorage" : "not stored");
+    !!stored && JSON.parse(stored).lens === "dependency", stored ? "localStorage" : "not stored");
 
   await p.reload({ waitUntil: "networkidle" });
   await p.waitForSelector('[data-shoot="cr-strip"]', { timeout: 30000 });
   await settle(3200);
   check("G6. …and it survives a reload",
-    (await p.locator('[data-shoot="cr-workspace-dependencies"][data-on="true"]').count()) === 1);
+    (await p.locator('[data-shoot="cr-lens-pick-dependency"][data-on="true"]').count()) === 1);
 
   // A PRESET IS A NAMED THING. Editing one under its own name would make
   // the name a lie, so the first toggle forks to Custom.
-  await p.click('[data-shoot="cr-customize-open"]');
-  await p.waitForSelector('[data-shoot="cr-customize"]', { timeout: 15000 });
+  await p.click('[data-shoot="cr-lens-editor-open"]');
+  await p.waitForSelector('[data-shoot="cr-lens-editor"]', { timeout: 15000 });
   await settle(500);
-  await p.click('[data-shoot="cr-toggle-system-status"]');
+  await p.click('[data-shoot="cr-surface-system-status"]');
   await settle(600);
   check("G7. Editing a preset forks it to Custom rather than redefining it",
-    (await p.locator('[data-shoot="cr-preset-custom"][data-on="true"]').count()) === 1);
+    (await p.locator('[data-shoot="cr-lens-custom"][data-on="true"]').count()) === 1);
 
   await p.click('[data-shoot="cr-reset-workspace"]');
   await settle(900);
   check("G8. Reset returns the shipped default and clears the stored preference",
-    (await p.locator('[data-shoot="cr-preset-control-room"][data-on="true"]').count()) === 1 &&
-      (await p.evaluate(() => localStorage.getItem("kit.control-room.workspace.v2"))) === null);
+    (await p.locator('[data-shoot="cr-lens-command"][data-on="true"]').count()) === 1 &&
+      (await p.evaluate(() => localStorage.getItem("kit.control-room.lens.v3"))) === null);
 
-  await p.click('[data-shoot="cr-customize-close"]');
+  await p.click('[data-shoot="cr-lens-editor-close"]');
   await settle(1200);
   check("G9. None of that touched the project",
     substance(await api("/api/instrument/project")) === beforeProject);

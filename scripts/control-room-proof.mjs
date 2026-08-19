@@ -41,13 +41,27 @@ const park = async () => { await p.mouse.move(1674, 1046); await settle(300); };
 const txt = (sel) => p.locator(sel).innerText();
 const open = async () => {
   await p.goto(`${BASE}/control-room`, { waitUntil: "networkidle" });
-  await p.waitForSelector('[data-shoot="cr-summary"]', { timeout: 30000 });
-  await p.waitForFunction(() => document.querySelectorAll('[data-shoot^="cr-card-"]').length >= 5, { timeout: 30000 });
+  // Every section starts from the SHIPPED DEFAULT lens. A section that needs
+  // a different one asks for it explicitly, so no test can be quietly
+  // affected by what the section before it happened to leave selected.
+  await p.evaluate(() => localStorage.removeItem("kit.control-room.lens.v3"));
+  await p.reload({ waitUntil: "networkidle" });
+  await p.waitForSelector('[data-shoot="cr-reading"]', { timeout: 30000 });
+  await p.waitForFunction(() => document.querySelectorAll('[data-shoot^="cr-card-"][data-domain]').length >= 5, { timeout: 30000 });
   await settle(3200);
   await park();
 };
 
 const api = async (path) => (await fetch(`${BASE}${path}`)).json();
+
+/** V3 organises the surface into lenses. Each law below is checked in the
+    lens that owns it, rather than demanding every surface be on screen at
+    once — which is the enterprise-dashboard failure V3 exists to undo. */
+const lens = async (id) => {
+  await p.click(`[data-shoot="cr-lens-pick-${id}"]`);
+  await settle(1400);
+  await park();
+};
 
 await open();
 
@@ -62,8 +76,13 @@ await open();
     (await p.locator('[data-shoot="cr-time-machine"] [data-shoot="time-field"]').count()) === 1);
   check("A3. Dependency Watch is on screen", (await p.locator('[data-shoot="cr-dependency-watch"]').count()) === 1);
   check("A4. Current constraints are on screen", (await p.locator('[data-shoot="cr-constraints"]').count()) === 1);
+  check("A6. The four supporting surfaces are on screen",
+    (await p.locator('[data-shoot^="cr-surf-"]').count()) === 4);
+  // What changed is Delivery's job in V3, not Command's — reading history is
+  // a different task from operating, and the rail had no room for both.
+  await lens("delivery");
   check("A5. Recent activity is on screen", (await p.locator('[data-shoot="cr-activity-row"]').count()) > 0);
-  check("A6. The four lenses are on screen", (await p.locator('[data-shoot^="cr-lens-"]').count()) === 4);
+  await lens("command");
   // A DAILY SURFACE HAS TO FIT. Scrolling to find the constraint that is
   // hurting you is the failure this page exists to avoid.
   const [doc, win] = await p.evaluate(() => [document.documentElement.scrollHeight, window.innerHeight]);
@@ -85,7 +104,8 @@ await open();
     `${gates.reduce((n, d) => n + d.gate.likely, 0)}d`);
   check("B3. …and the open-decision count", choices.includes(String(openDecisions.length)), `${openDecisions.length} open`);
   check("B4. A decision is not a gate, and the page says both",
-    /\b\d+ open\b/i.test(choices) && /not holding any date/i.test(choices));
+    /\b\d+ open\b/i.test(choices) &&
+      /not holding any date/i.test(await p.locator('[data-shoot="cr-inspector"]').innerText()));
 
   const openFindings = proj.findings.filter((f) => f.status === "open");
   const realityCard = await txt('[data-shoot="cr-card-reality"]');
@@ -114,7 +134,7 @@ await open();
   check("B8. EFFECTIVE is raw after switching, and lower", capCard.includes(eff.toFixed(1)) && eff < raw,
     `${eff.toFixed(1)} of ${raw.toFixed(1)}`);
   check("B9. No fabricated utilization or buffer anywhere on the page",
-    !/utilization|buffer|health|alignment/i.test(await p.locator('[data-shoot="cr-summary"]').innerText()));
+    !/utilization|buffer|health|alignment/i.test(await p.locator('[data-shoot="cr-reading"]').innerText()));
 
   // Time: Live Now is the Timeline's NOW, not the browser's clock.
   const now = new Date(tl.now);
@@ -183,7 +203,8 @@ await open();
 {
   await open();
   writes = [];
-  for (const sel of ['[data-shoot="cr-card-reality"]', '[data-shoot="cr-lens-capacity"]', '[data-shoot="cr-activity"]']) {
+  await lens("delivery");
+  for (const sel of ['[data-shoot="cr-card-outcome"]', '[data-shoot="cr-surf-forecast"]', '[data-shoot="cr-activity"]']) {
     await p.locator(sel).hover();
     await settle(220);
   }
@@ -247,7 +268,7 @@ await open();
     // Walk to the Control Room client-side; the hypothetical must be there.
     await p.click('a[href="/control-room"]');
     await p.waitForURL("**/control-room", { timeout: 15000 });
-    await p.waitForSelector('[data-shoot="cr-summary"]');
+    await p.waitForSelector('[data-shoot="cr-reading"]');
     await settle(3000);
     check("H1. A hypothetical made elsewhere is shown here as a Scenario",
       (await p.locator('[data-shoot="cr-scenario"]').count()) === 1);

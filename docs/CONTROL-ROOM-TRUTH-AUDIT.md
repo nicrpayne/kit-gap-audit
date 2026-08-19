@@ -378,3 +378,108 @@ Two consequences worth stating because they are easy to get wrong:
 - The confidence chart promotes the project that **lands last**. Where that
   project has never been reported on, **nothing** is promoted — picking
   another line to emphasise would be inventing a protagonist.
+
+---
+
+# V3 — Command Center pass: audit of the Project Field
+
+V3 added no numbers. It added a **shape** — and a shape makes claims, so
+every line, position and highlight on the Project Field is audited here
+against the field it was read from.
+
+## What each mark on the field is
+
+| Mark | Source | Class | Safe? |
+|---|---|---|---|
+| A lane | one per `ProjectScope` | STRUCTURED | yes — never more, never fewer |
+| Lane order | dependency-tree walk over `Scope.dependsOnScopeIds` | DERIVED | yes — proven: no lane is drawn above something it waits on |
+| P10 / P50 / P90 band | `percentileDay(SimulationResult.completionDaysSorted, n)` and `likelyDate` | DERIVED (the engine's own) | yes |
+| Reality ghost under a Scenario | the same scope's **baseline** simulation | DERIVED | yes |
+| Target flag + slack rule | `Scope.targetDate`, and its distance from P50 | STRUCTURED + DERIVED | yes |
+| Headroom bracket | `readDominance().floorDays` → P50 | DERIVED (Scope's own call) | yes |
+| Release spine | `Scope.dependsOnScopeIds`, drawn from the upstream's P50 | STRUCTURED | yes |
+| "N launches wait on X" | **count of declared edges** out of X | STRUCTURED | yes |
+| Gate clamp | `DecisionGate` rows the engine was handed, joined to `Decision.title` | STRUCTURED | yes |
+| Capacity flow bar | `readChannel().raw` / `.effective` — Portfolio's own call | DERIVED | yes |
+| Highlight on selection | transitive closure over declared edges (`reachOf`) | DERIVED | yes |
+
+## Where the spine is drawn, and why that is honest
+
+The spine drops from the moment an upstream **lands** (its P50) through
+every lane that waits on it, and a branch runs along each of those lanes to
+where that lane lands. Both ends are real P50s from the same simulation
+run, so the horizontal distance is a real number of days.
+
+It is **not** a claim that the downstream starts when the upstream finishes.
+The engine's actual rule (`runPortfolioTrials`) is that a dependent scope
+takes the later of its own completion and its upstream's, per trial. The
+drawing shows the two landings and the gap between them, which is exactly
+what that rule produces — no more.
+
+Lane order was changed in this pass specifically to make the spine truthful:
+ordering by depth alone put roots at the top and dropped spines **through
+lanes that were not on the chain**, which is a false statement however
+decorative. Lanes are now walked as a tree so a spine always covers
+contiguous rows. Proven in `control-room-v3-proof.mjs` §A4.
+
+## Causality — what "this affects that" is allowed to mean
+
+Selecting anything lights `{subject} ∪ transitive-downstream(subject)` and
+dims everything else. That set is computed by walking `dependsOnScopeIds`
+and nothing else. Consequences:
+
+- A project nothing waits on lights **only itself** (§C6), even though a
+  friendlier product would light its neighbours.
+- A gate lights the lane it blocks and that lane's downstream — the lanes
+  that would actually move if the question were answered (§D5).
+- An **edge** lights from its UPSTREAM, not its downstream: the upstream is
+  the thing whose movement travels, and highlighting only the waiting end
+  would show the victim and hide the cause.
+
+There is no weighting, no "impact score", and no ranking of which
+dependency matters most. The only ordering signal is a **count of declared
+edges**, which is why a shared upstream is drawn amber: it is the single
+point whose slip moves more than one launch. That is arithmetic, not
+judgement.
+
+## Capacity is material, not topology
+
+Changing the roster's switching cost changes the flow-bar fill and where
+lanes land. It must never change how many lanes exist or what order they
+sit in — otherwise the drawing would be saying that a staffing change
+altered the project's structure. Proven by moving `contextSwitchCostPct`
+from 12% to 45% through Portfolio's own API and asserting the lane list is
+byte-identical (§E1), while ARRIVING and the landings both move (§E2–E3).
+
+## Still not represented, and still reported rather than faked
+
+Unchanged from V1 and V2, and worth restating because V3's shape makes the
+absences more conspicuous:
+
+1. **Suspected / candidate dependencies.** No model. Nothing in the
+   pipeline proposes a dependency, so the field can only draw declared
+   ones. The unreviewed external claims are kept in the dependency index,
+   dashed and inert, and never drawn on the field.
+2. **Feature-level dependencies and feature-level gates.** Both are
+   scope-level in the schema. The inspector says so in words when a gate is
+   selected, rather than letting the drawing imply otherwise.
+3. **A true critical path.** Not derivable at scope granularity.
+4. **Capacity history.** Still does not exist; the field shows today only.
+
+## Deliberately omitted in V3
+
+- **Drag-and-drop or resizable surfaces.** Position is the argument the page
+  makes about reading order.
+- **Animated flow along the spines.** Motion implies rate, and there is no
+  rate in the model — only two dates and the distance between them.
+- **A "project health" or "pressure" reading on the field.** Asked for by
+  the concept image in spirit; refused for the same reason as V1's severity
+  and V2's utilization.
+- **Violet as the Decisions colour**, which the V3 brief suggested. Violet
+  is the suite-wide signal for *a hypothetical* and is used by Orbit,
+  Scope, Forecast, Timeline and Portfolio for exactly that. Re-pointing it
+  at decisions inside one surface would have broken the one cue that tells
+  a person whether what they are looking at is true. Gates and constraints
+  keep **amber**, which the law already assigns to obstruction, and the
+  brief's other five colour intentions (reality cyan, constraints amber,
+  delivery green, forecast violet-cyan, candidates dashed) are met exactly.
