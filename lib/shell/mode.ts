@@ -22,7 +22,12 @@
 // was a ComingNext stub, and it is now a built instrument with its own
 // visual contract, so it takes its place as a peer.
 
-export const INSTRUMENT_ROUTES = ["/portfolio", "/forecast", "/scope", "/decisions", "/timeline"] as const;
+// /orbit is in this list and deliberately NOT in DESTINATIONS below. It is
+// a development route for the Orbit foundation pass: it needs the Workbench
+// nav to stand down so the wireframe owns the viewport, but it is not an
+// approved instrument and must not sit in the rail next to ones that are.
+// Reachable by URL only until it has a visual contract of its own.
+export const INSTRUMENT_ROUTES = ["/portfolio", "/forecast", "/scope", "/decisions", "/timeline", "/orbit"] as const;
 
 export function isInstrumentRoute(pathname: string): boolean {
   return INSTRUMENT_ROUTES.some((r) => pathname === r || pathname.startsWith(r + "/"));
