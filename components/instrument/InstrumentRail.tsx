@@ -24,6 +24,15 @@ import { DESTINATIONS } from "@/lib/shell/mode";
 // the Forecast Field itself, so the mark for the Instrument depicts the
 // Instrument.
 const ICONS: Record<string, React.ReactNode> = {
+  // A dial with its needle: the surface that reads the whole project and
+  // points you at the part that needs you.
+  "/control-room": (
+    <>
+      <circle cx="7" cy="7" r="5.4" fill="none" strokeWidth="1.3" />
+      <line x1="7" y1="7" x2="10.2" y2="4.4" strokeWidth="1.4" strokeLinecap="round" />
+      <circle cx="7" cy="7" r="1.1" strokeWidth="0" />
+    </>
+  ),
   "/overview": (
     <>
       <rect x="1.4" y="1.4" width="5.6" height="7" rx="1.2" fill="none" strokeWidth="1.3" />

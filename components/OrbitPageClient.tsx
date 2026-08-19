@@ -25,6 +25,7 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import InstrumentShell from "@/components/instrument/InstrumentShell";
 import ScenarioStrip from "@/components/instrument/ScenarioStrip";
 import { useProject, EMPTY_SCENARIO } from "@/lib/instrument/useProject";
@@ -75,8 +76,13 @@ const dateOf = (start: Date, days: number) =>
 export default function OrbitPageClient() {
   const m = useProject();
   const d = useDecisions();
-  const [focusScopeId, setFocusScopeId] = useState<string | null>(null);
-  const [selected, setSelected] = useState<string | null>(null);
+  // ARRIVING FROM SOMEWHERE ELSE. The Control Room sends people here with
+  // a dependency already in mind: ?focus=<scopeId>&select=<node id>. The
+  // ids are Orbit's own stable node ids, so nothing is translated on the
+  // way in and an unknown one simply selects nothing.
+  const params = useSearchParams();
+  const [focusScopeId, setFocusScopeId] = useState<string | null>(params.get("focus"));
+  const [selected, setSelected] = useState<string | null>(params.get("select"));
 
   const scopes = useMemo(() => m.data?.scopes ?? [], [m.data]);
 

@@ -64,7 +64,7 @@ const MEMORY_GHOST_MS = 2400;
     than fit. */
 const MIN_CELL_W = 128;
 
-export default function TimelinePageClient() {
+export default function TimelinePageClient({ embedded = false }: { embedded?: boolean } = {}) {
   const router = useRouter();
   const [data, setData] = useState<TimelineProjection | null>(null);
   const [err, setErr] = useState<string | null>(null);
@@ -910,16 +910,22 @@ export default function TimelinePageClient() {
     await load();
   };
 
+  // EMBEDDED means "somebody else owns the viewport". Same instrument, same
+  // state, same playback -- it just stops claiming the whole screen and
+  // stops drawing its own identity strip, because the Control Room already
+  // said where you are. Nothing below this line branches on it again except
+  // the outermost wrapper.
+  const frame = embedded ? "flex h-full w-full items-center justify-center" : "instrument fixed inset-0 flex items-center justify-center";
   if (err) {
     return (
-      <div className="instrument fixed inset-0 flex items-center justify-center">
+      <div className={frame}>
         <p className="text-[12px]" style={{ color: "var(--i-red)" }}>{err}</p>
       </div>
     );
   }
   if (!data || !view || playheadT === null) {
     return (
-      <div className="instrument fixed inset-0 flex items-center justify-center">
+      <div className={frame}>
         <p className="i-label">Reading the project&rsquo;s history…</p>
       </div>
     );
@@ -1197,8 +1203,8 @@ export default function TimelinePageClient() {
     </>
   );
 
-  return (
-    <InstrumentShell stateBar={stateBar}>
+  const body = (
+    <>
       {/* ── CENTER ──────────────────────────────────────────────────── */}
       <div className="flex-1 min-h-0 flex" style={{ background: "var(--i-void)" }}>
         {/* THE CHASSIS. The time field is cut into the instrument rather
@@ -1477,6 +1483,9 @@ export default function TimelinePageClient() {
           onDelete={deleteEvent}
         />
       )}
-    </InstrumentShell>
+    </>
   );
+
+  if (embedded) return <div className="flex min-h-0 flex-1 flex-col overflow-hidden">{body}</div>;
+  return <InstrumentShell stateBar={stateBar}>{body}</InstrumentShell>;
 }

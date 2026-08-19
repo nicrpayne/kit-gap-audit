@@ -27,7 +27,15 @@
 // nav to stand down so the wireframe owns the viewport, but it is not an
 // approved instrument and must not sit in the rail next to ones that are.
 // Reachable by URL only until it has a visual contract of its own.
-export const INSTRUMENT_ROUTES = ["/portfolio", "/forecast", "/scope", "/decisions", "/timeline", "/orbit"] as const;
+export const INSTRUMENT_ROUTES = [
+  "/control-room",
+  "/portfolio",
+  "/forecast",
+  "/scope",
+  "/decisions",
+  "/timeline",
+  "/orbit",
+] as const;
 
 export function isInstrumentRoute(pathname: string): boolean {
   return INSTRUMENT_ROUTES.some((r) => pathname === r || pathname.startsWith(r + "/"));
@@ -49,6 +57,13 @@ export interface ShellDestination {
 }
 
 export const DESTINATIONS: ShellDestination[] = [
+  {
+    href: "/control-room",
+    label: "Control Room",
+    instrument: true,
+    owns: "What deserves attention right now, and where to go and look",
+    verb: "Where do I look",
+  },
   { href: "/", label: "Dashboard" },
   { href: "/audit", label: "Audit" },
   {
