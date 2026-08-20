@@ -97,49 +97,64 @@ export const LENSES: Lens[] = [
   {
     id: "command",
     label: "Command",
-    question: "What is happening, and where should I look?",
-    // The daily operating view: the project, what it waits on, what is
-    // holding it, and where it lands. "What changed" belongs to Delivery
-    // and Decision — reading history is a different job from operating,
-    // and four panels in the rail left none of them room to be read.
-    surfaces: ALL.filter((s) => s !== "decisions" && s !== "what-changed"),
+    question: "What is happening?",
+    // THE APPROVED MASTER CONTROL ROOM LAYOUT. Telemetry across the top,
+    // the Project Time Machine as the working surface, the operational rail
+    // on the right, the analysis row along the bottom.
+    surfaces: [
+      "time-machine",
+      "reading-reality",
+      "reading-choices",
+      "reading-capacity",
+      "reading-outcome",
+      "reading-time",
+      "system-status",
+      "dependency-watch",
+      "constraints",
+      "what-changed",
+      "forecast-stability",
+      "capacity-overview",
+      "decisions",
+      "release-composition",
+    ],
   },
   {
     id: "delivery",
     label: "Delivery",
-    question: "Are we going to ship?",
+    question: "Will we ship?",
     surfaces: [
-      "field",
       "time-machine",
       "reading-choices",
       "reading-outcome",
       "reading-time",
-      "inspector",
       "constraints",
       "what-changed",
       "forecast-stability",
+      "decisions",
       "release-composition",
     ],
   },
   {
     id: "capacity",
     label: "Capacity",
-    question: "Do we have the ability to execute?",
+    question: "Can we execute?",
     surfaces: [
-      "field",
+      "time-machine",
       "reading-capacity",
       "reading-outcome",
-      "inspector",
+      "reading-time",
       "constraints",
+      "system-status",
       "capacity-overview",
       "release-composition",
-      "system-status",
     ],
   },
   {
     id: "dependency",
     label: "Dependency",
     question: "What can surprise us?",
+    // The PROJECT FIELD is the working surface here, because blast radius
+    // is a shape and the Time Machine cannot draw one.
     surfaces: [
       "field",
       "reading-reality",
@@ -148,12 +163,16 @@ export const LENSES: Lens[] = [
       "inspector",
       "dependency-watch",
       "constraints",
+      "forecast-stability",
+      "system-status",
     ],
   },
   {
     id: "decision",
     label: "Decision",
-    question: "What choices are holding movement?",
+    question: "What choices matter?",
+    // The field again, because a gate is drawn there as a clamp across the
+    // lane it blocks — an obstruction you can see rather than a row.
     surfaces: [
       "field",
       "reading-choices",
@@ -163,6 +182,7 @@ export const LENSES: Lens[] = [
       "constraints",
       "what-changed",
       "decisions",
+      "forecast-stability",
     ],
   },
   { id: "custom", label: "Custom", question: "Your own set.", surfaces: null },

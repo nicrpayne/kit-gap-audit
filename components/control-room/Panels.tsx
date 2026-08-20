@@ -39,23 +39,26 @@ export function Panel({
   return (
     <section
       data-shoot={shoot}
-      className={`relative flex min-h-0 flex-col overflow-hidden rounded-lg ${className}`}
+      className={`relative flex min-h-0 flex-col overflow-hidden rounded-md ${className}`}
       style={{ background: "var(--i-panel)", border: "1px solid var(--i-border)", ...style }}
     >
-      {accent && (
-        <span
-          aria-hidden
-          className="absolute left-0 top-0 h-full w-[2px]"
-          style={{ background: accent, opacity: 0.55 }}
-        />
-      )}
-      <header className="flex shrink-0 items-baseline justify-between gap-3 px-3.5 pt-3 pb-2">
+      {/* THE PANEL'S IDENTITY IS ITS HEADER, not a box around it. The title
+          takes the domain's colour and the rule under it carries a wash of
+          the same — the approved layout's way of saying what a surface is
+          about before you read a word of it. */}
+      <header
+        className="flex shrink-0 items-baseline justify-between gap-3 px-3 pb-1.5 pt-2"
+        style={{ borderBottom: `1px solid ${accent ? "var(--i-border)" : "transparent"}` }}
+      >
         <div className="flex min-w-0 items-baseline gap-2">
-          <h2 className="i-label shrink-0" style={{ color: "var(--i-text-soft)" }}>
+          <h2
+            className="shrink-0 text-[9.5px] font-semibold uppercase tracking-[0.14em]"
+            style={{ color: accent ?? "var(--i-text-soft)" }}
+          >
             {title}
           </h2>
           {note && (
-            <span className="truncate text-[10.5px]" style={{ color: "var(--i-text-faint)" }}>
+            <span className="truncate text-[10px]" style={{ color: "var(--i-text-faint)" }}>
               {note}
             </span>
           )}
@@ -63,15 +66,31 @@ export function Panel({
         {href && (
           <Link
             href={href}
-            className="shrink-0 text-[11px] transition-colors hover:underline"
-            style={{ color: "var(--i-signal)" }}
+            className="shrink-0 text-[10px] transition-colors hover:underline"
+            style={{ color: "var(--i-text-faint)" }}
           >
             {action ?? "Open"} →
           </Link>
         )}
       </header>
-      <div className="min-h-0 flex-1 overflow-hidden px-3.5 pb-3.5">{children}</div>
+      <div className="min-h-0 flex-1 overflow-hidden px-3 pb-2.5 pt-2">{children}</div>
     </section>
+  );
+}
+
+/** The full-width outlined door at the foot of a rail panel, as the
+    approved layout draws it. It is always a link to the owner instrument —
+    the Control Room has no buttons of its own, because it owns nothing. */
+export function PanelDoor({ href, label, tone }: { href: string; label: string; tone?: string }) {
+  return (
+    <Link
+      href={href}
+      data-shoot="cr-panel-door"
+      className="mt-1.5 flex shrink-0 items-center justify-center gap-1.5 rounded-[3px] py-1 text-[10px] transition-colors hover:bg-[var(--i-panel-raised)]"
+      style={{ border: `1px solid ${tone ?? "var(--i-border-strong)"}`, color: tone ?? "var(--i-text-soft)" }}
+    >
+      {label} <span aria-hidden>→</span>
+    </Link>
   );
 }
 
@@ -154,7 +173,7 @@ export function Row({
   title: string;
   detail?: string | null;
   quantity?: string | null;
-  tone?: "soft" | "amber" | "mint" | "signal" | "faint";
+  tone?: "soft" | "amber" | "mint" | "signal" | "violet" | "red" | "faint";
   href?: string;
   shoot?: string;
   /** A claim nobody has accepted. Drawn as not-yet-real, never solid. */
@@ -164,7 +183,7 @@ export function Row({
     <div
       data-shoot={shoot}
       data-candidate={dashed ? "true" : "false"}
-      className="flex items-start justify-between gap-3 rounded px-2 py-1.5 transition-colors"
+      className="flex items-start justify-between gap-3 rounded px-1.5 py-1 transition-colors"
       style={
         dashed
           ? { border: "1px dashed var(--i-border-strong)", background: "transparent" }
@@ -172,18 +191,18 @@ export function Row({
       }
     >
       <div className="min-w-0">
-        <div className="truncate text-[12px]" style={{ color: "var(--i-text)" }}>
+        <div className="truncate text-[11px]" style={{ color: "var(--i-text)" }}>
           {title}
         </div>
         {detail ? (
-          <div className="pt-0.5 text-[11px] leading-snug" style={{ color: "var(--i-text-faint)" }}>
+          <div className="pt-[1px] text-[10px] leading-snug" style={{ color: "var(--i-text-faint)" }}>
             {detail}
           </div>
         ) : null}
       </div>
       {quantity && (
         <span
-          className="i-readout shrink-0 whitespace-nowrap text-[11px]"
+          className="i-readout shrink-0 whitespace-nowrap text-[10px]"
           style={{ color: tone === "soft" ? "var(--i-text-soft)" : `var(--i-${tone})` }}
         >
           {quantity}

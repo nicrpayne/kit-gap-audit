@@ -641,11 +641,16 @@ export function readControlRoom(i: ControlRoomInput): ControlRoomReading {
 
   // ── CURRENT CONSTRAINTS ──────────────────────────────────────────────
   const constraints: ConstraintRow[] = [];
+  // A CONSTRAINT ROW HAS TO NAME ITS CONSEQUENCE. "Unanswered decision" is
+  // a category; "holding JSA" is the thing a person can act on. The scope a
+  // gate blocks is stored (`DecisionGate.targetScopeId`), so the row says
+  // it rather than making the reader go and look.
   for (const d of gating) {
     if (!d.gate) continue;
+    const blocked = scopeName.get(d.gate.targetScopeId) ?? d.scope?.name ?? null;
     constraints.push({
       id: `gate:${d.gate.id}`,
-      label: "Unanswered decision",
+      label: blocked ? `Holding ${blocked} — unanswered decision` : "Unanswered decision",
       detail: d.title,
       quantity: `${d.gate.likely}d modelled`,
       magnitude: d.gate.likely,
@@ -655,8 +660,8 @@ export function readControlRoom(i: ControlRoomInput): ControlRoomReading {
   if (capacity.required > 0.01) {
     constraints.push({
       id: "capacity-required",
-      label: "Capacity asked for and absent",
-      detail: "The plan assumes people the roster does not contain. Nobody has been invented to cover it.",
+      label: "Asked for and not on the roster",
+      detail: "The plan assumes people we do not have. Nobody was invented to cover it.",
       quantity: `${capacity.required.toFixed(1)} FTE`,
       magnitude: capacity.required * 10,
       href: "/portfolio",
@@ -665,8 +670,8 @@ export function readControlRoom(i: ControlRoomInput): ControlRoomReading {
   if (capacity.switchLoss > 0.05) {
     constraints.push({
       id: "switch-loss",
-      label: "Capacity lost to context switching",
-      detail: `${capacity.switchCostPct}% switching cost across people who work on more than one project.`,
+      label: `Lost to switching at ${capacity.switchCostPct}%, across people on more than one project`,
+      detail: "Committed time that never reaches the work",
       quantity: `${capacity.switchLoss.toFixed(1)} FTE`,
       magnitude: capacity.switchLoss * 10,
       href: "/portfolio",
@@ -690,8 +695,8 @@ export function readControlRoom(i: ControlRoomInput): ControlRoomReading {
   if (reality.evidenceAgeDays !== null && reality.evidenceAgeDays > 7) {
     constraints.push({
       id: "stale-context",
-      label: "Evidence is getting old",
-      detail: `The newest thing anyone recorded about this project was ${reality.newestEvidenceLabel ?? "context"}.`,
+      label: `Newest evidence is ${reality.newestEvidenceLabel ?? "context"}`,
+      detail: "Nothing newer has been recorded about this project",
       quantity: `${Math.round(reality.evidenceAgeDays)}d ago`,
       magnitude: reality.evidenceAgeDays,
       href: "/audit",

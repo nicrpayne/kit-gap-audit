@@ -58,8 +58,12 @@ const api = async (path) => (await fetch(`${BASE}${path}`)).json();
     lens that owns it, rather than demanding every surface be on screen at
     once — which is the enterprise-dashboard failure V3 exists to undo. */
 const lens = async (id) => {
+  // V4 puts the workspace switcher behind a Views control, the way a
+  // professional workspace does; opening it is part of picking one.
+  await p.click('[data-shoot="cr-views"]');
+  await settle(350);
   await p.click(`[data-shoot="cr-lens-pick-${id}"]`);
-  await settle(1400);
+  await settle(1500);
   await park();
 };
 
@@ -99,13 +103,18 @@ await open();
   const gates = openDecisions.filter((d) => d.gate?.serial);
   const choices = await txt('[data-shoot="cr-card-choices"]');
   check("B1. The gate count is Decisions' own", new RegExp(`\\b${gates.length}\\b`).test(choices), `${gates.length} gates`);
+  const decisionsPanel = await txt('[data-shoot="cr-surf-decisions"]');
   check("B2. …and so is the modelled delay it states",
-    choices.includes(`${gates.reduce((n, d) => n + d.gate.likely, 0)}d`),
+    decisionsPanel.includes(`${gates.reduce((n, d) => n + d.gate.likely, 0)}d`),
     `${gates.reduce((n, d) => n + d.gate.likely, 0)}d`);
   check("B3. …and the open-decision count", choices.includes(String(openDecisions.length)), `${openDecisions.length} open`);
+  const gatingShown = Number(await txt('[data-shoot="cr-card-choices-primary"]'));
   check("B4. A decision is not a gate, and the page says both",
-    /\b\d+ open\b/i.test(choices) &&
-      /not holding any date/i.test(await p.locator('[data-shoot="cr-inspector"]').innerText()));
+    gatingShown === gates.length &&
+      /holding delivery/i.test(choices) &&
+      new RegExp(`\\b${openDecisions.length}\\b`).test(choices) &&
+      /open decisions/i.test(choices),
+    `${gates.length} holding · ${openDecisions.length} open`);
 
   const openFindings = proj.findings.filter((f) => f.status === "open");
   const realityCard = await txt('[data-shoot="cr-card-reality"]');
@@ -272,13 +281,9 @@ await open();
     await settle(3000);
     check("H1. A hypothetical made elsewhere is shown here as a Scenario",
       (await p.locator('[data-shoot="cr-scenario"]').count()) === 1);
-    const choices = await txt('[data-shoot="cr-card-choices"]');
-    // The card leads with a sentence, so the count is read out of the
-    // sentence it leads with: "N decisions are holding the delivery date",
-    // or the phrasing it switches to when none are.
-    const gatesNow = /none holding a date/i.test(choices)
-      ? 0
-      : Number((/(\d+)\s+decisions?\s+(?:are|is)\s+holding/i.exec(choices) ?? [])[1] ?? -1);
+    // The Choices instrument's headline IS the count of gates holding
+    // delivery, so it is read directly rather than parsed out of prose.
+    const gatesNow = Number(await txt('[data-shoot="cr-card-choices-primary"]'));
     check("H2. …and the gate it assumes answered stops counting", gatesNow >= 0 && gatesNow < 2, `${gatesNow} gates`);
     writes = [];
     await p.click('[data-shoot="cr-discard"]');

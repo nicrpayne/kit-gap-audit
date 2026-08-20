@@ -102,6 +102,14 @@ body {
   display: none;
 }
 
+/* A scrolling list that runs past its panel should say so by fading out,
+   not by slicing a row through the middle. The mask costs 14px at the foot
+   and reads as depth rather than as a rendering fault. */
+.i-fade-b {
+  -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 14px), transparent 100%);
+  mask-image: linear-gradient(to bottom, #000 calc(100% - 14px), transparent 100%);
+}
+
 /* Structural micro-label. Uppercase, wide-tracked, quiet -- these do the
    Instrument's organizing work so boxes and rules don't have to. */
 .i-label {

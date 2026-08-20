@@ -483,3 +483,74 @@ absences more conspicuous:
   keep **amber**, which the law already assigns to obstruction, and the
   brief's other five colour intentions (reality cyan, constraints amber,
   delivery green, forecast violet-cyan, candidates dashed) are met exactly.
+
+---
+
+# V4 — Visual contract pass: where the mockup asked for something we cannot know
+
+V4 implements the approved Master Control Room layout. It added **no new
+readings**. What it changed is composition, hierarchy and colour — plus one
+class of decision that belongs in a truth audit: **every place the approved
+layout asks for a value the model cannot produce, and what was put there
+instead.**
+
+The rule applied throughout: **keep the visual pattern, replace the
+content.** A donut stays a composition graphic; a status list stays a status
+list; a percentage stays a percentage. Only the number changes, to one that
+is real.
+
+| Approved layout asks for | Model has | What is drawn |
+|---|---|---|
+| `68% Utilization` | no utilization model | **ARRIVING** — `effective ÷ allocated`, both from one `readMaster` call. Named "reaching the work". |
+| `12% Buffer` | no buffer concept | `free` FTE, in FTE |
+| `82% Confidence` as a portfolio figure | confidence is per-scope, against that scope's own target | the gating project's `confidenceAtTarget`, **named for that project**; "No target" when it has none |
+| `+9d vs Plan` | no stored plan | P50 − the project's own `targetDate`, called a target |
+| `Scope Alignment 98%` | does not exist | a dated feed row (`Project data`, with its age) |
+| `Capacity Health: Good` · `Integration Health: Good` | no health model | dated feed rows: `Work items`, `Evidence`, each with an age |
+| `All systems nominal` | no verdict is computable | the **oldest reading on the panel**, stated as a fact: "oldest forecast, 10d" |
+| `RISK SIGNALS · 3 Active Risks · High/Medium` | **no severity model** | **CURRENT CONSTRAINTS** — each row states its own real quantity (`4d modelled`, `0.1 FTE`) and names its consequence (`Holding JSA — unanswered decision`) |
+| `PORTFOLIO HEALTH` donut · On Track / At Risk / Blocked / Completed | none of those are states any row has | **RELEASE COMPOSITION** — remaining load days per project, from `composeFeatures`, drawn as bars |
+| `Team Utilization` multi-line history by discipline | **no capacity history exists anywhere** (`Allocation` has no timestamps) and no discipline field | current-state committed-vs-arriving bars per project, header stating "today only · no history" |
+| `+ Add event` | the Control Room writes nothing | **omitted.** A control implying otherwise would be the one lie on the page. |
+| `View Stress Tests →` | no such route | omitted; the constraints panel's door goes to Decisions, which owns the gates it lists |
+
+## Colour: violet now carries two meanings, by direction
+
+The V4 brief assigns **violet to Choices** and also keeps **violet for
+Scenario**. Earlier passes reserved violet exclusively for the hypothetical,
+and that concern was raised and re-affirmed. It is implemented as directed.
+
+Because hue can no longer distinguish a hypothetical on its own, **Scenario
+is now a page MODE** and is signalled four ways at once:
+
+1. a violet rule across the application header,
+2. a solid violet `SCENARIO` badge and a `Back to Reality` control,
+3. the status bar's own cell reading `Scenario — Reality preserved`,
+4. **Reality's own figure drawn beside the changed one** on the Likely
+   Outcome instrument, and the reality ghost on the Project Field.
+
+`control-room-v2-proof.mjs` §F now checks the mode rather than the hue:
+under Reality *none* of those four appear; under a Scenario *all* of them
+do; discarding clears all of them. That is a stronger test than the colour
+check it replaced.
+
+The rest of the brief's colour list matches the law already in place:
+reality cyan, constraints amber, delivery/capacity green, forecast
+cyan→violet, candidates dashed.
+
+## What the working surface is, per workspace
+
+The approved layout makes the **Project Time Machine** the working surface,
+so Command, Delivery and Capacity use it. The **Project Field** answers a
+different question — what waits on what, and what a change reaches — so it
+is the working surface of Dependency and Decision. No workspace is allowed
+to degrade into readings alone; `control-room-v3-proof.mjs` §H1 asserts each
+of the five carries one or the other.
+
+## Unchanged, and still true
+
+Everything audited in V1, V2 and V3 still holds and is still proven:
+41 + 45 + 47 assertions pass against this layout. No simulation, forecast,
+dependency, scenario, freshness or ownership logic was touched — the diff is
+composition, hierarchy and colour, plus the constraint rows now naming the
+project each one is holding.

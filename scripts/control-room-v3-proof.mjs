@@ -55,8 +55,17 @@ const park = async () => {
 const api = async (path) => (await fetch(`${BASE}${path}`)).json();
 const inspector = () => p.locator('[data-shoot="cr-inspector"]').innerText();
 
+/** THE FIELD'S LAWS ARE TESTED WHERE THE FIELD LIVES.
+ *
+ *  V4 gives the Command workspace the Project Time Machine as its working
+ *  surface, following the approved layout; the Project Field is the working
+ *  surface of the Dependency and Decision workspaces, which are the ones
+ *  whose question it answers. So this suite opens the room and asks for the
+ *  Dependency workspace before it asserts anything about the field. */
 const open = async () => {
   await p.goto(`${BASE}/control-room`, { waitUntil: "networkidle" });
+  await p.evaluate(() => localStorage.setItem("kit.control-room.lens.v3", JSON.stringify({ lens: "dependency", custom: [] })));
+  await p.reload({ waitUntil: "networkidle" });
   await p.waitForSelector('[data-shoot="cr-field"]', { timeout: 30000 });
   await settle(3200);
   await park();
@@ -73,8 +82,33 @@ const litLanes = async () => {
 const laneOrder = () =>
   p.locator("[data-field-lane]").evaluateAll((els) => els.map((e) => e.getAttribute("data-field-lane")));
 
-await p.goto(`${BASE}/control-room`, { waitUntil: "networkidle" });
-await p.evaluate(() => localStorage.removeItem("kit.control-room.lens.v3"));
+/** A CUSTOM WORKSPACE, set directly. The customization system exists so an
+    operator can put exactly the instruments they need on the desk; a proof
+    that needs the field and one particular reading in the same frame is a
+    legitimate use of it, and it keeps each law testable without bending a
+    named workspace to suit the test. */
+const openWith = async (surfaces) => {
+  await p.goto(`${BASE}/control-room`, { waitUntil: "networkidle" });
+  await p.evaluate(
+    (list) => localStorage.setItem("kit.control-room.lens.v3", JSON.stringify({ lens: "custom", custom: list })),
+    surfaces
+  );
+  await p.reload({ waitUntil: "networkidle" });
+  await p.waitForSelector('[data-shoot="cr-field"]', { timeout: 30000 });
+  await settle(3200);
+  await park();
+};
+
+/** V4 puts the workspace switcher behind a Views control; opening it is
+    part of picking one. */
+const pick = async (id) => {
+  await p.click('[data-shoot="cr-views"]');
+  await settle(350);
+  await p.click(`[data-shoot="cr-lens-pick-${id}"]`);
+  await settle(1500);
+  await park();
+};
+
 await open();
 
 const proj = await api("/api/instrument/project");
@@ -231,6 +265,7 @@ const closureDown = (id, seen = new Set()) => {
 
 // ── E. CAPACITY IS MATERIAL, NOT TOPOLOGY ──────────────────────────────
 {
+  await openWith(["field", "reading-capacity", "inspector"]);
   const before = await laneOrder();
   const beforeText = await p.locator('[data-shoot="cr-card-capacity"]').innerText();
   const settings = await api("/api/portfolio-settings");
@@ -241,7 +276,7 @@ const closureDown = (id, seen = new Set()) => {
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ contextSwitchCostPct: 45 }),
   });
-  await open();
+  await openWith(["field", "reading-capacity", "inspector"]);
   const after = await laneOrder();
   const afterText = await p.locator('[data-shoot="cr-card-capacity"]').innerText();
 
@@ -361,26 +396,25 @@ const closureDown = (id, seen = new Set()) => {
 
 // ── H. LENSES ──────────────────────────────────────────────────────────
 {
-  await p.evaluate(() => localStorage.removeItem("kit.control-room.lens.v3"));
-  await open();
   writes = [];
 
-  // The project is the object; a lens changes how you inspect it. So the
-  // field is in every one of them.
+  // THE PROJECT IS ALWAYS ON SCREEN AS AN OBJECT. Which working surface a
+  // workspace uses depends on its question — the Time Machine answers
+  // "what is happening over time", the Project Field answers "what waits on
+  // what" — but no workspace is allowed to degrade into cards alone.
   for (const lens of ["delivery", "capacity", "dependency", "decision", "command"]) {
-    await p.click(`[data-shoot="cr-lens-pick-${lens}"]`);
-    await settle(1100);
-    const has = (await p.locator('[data-shoot="cr-field"]').count()) === 1;
-    check(`H1.${lens}. The field survives the ${lens} lens`, has);
+    await pick(lens);
+    const machine = await p.locator('[data-shoot="cr-time-machine"]').count();
+    const field = await p.locator('[data-shoot="cr-field"]').count();
+    check(`H1.${lens}. The ${lens} workspace keeps a working surface`, machine + field >= 1,
+      field ? "project field" : "time machine");
   }
   check("H2. Choosing a lens is not a project change", writes.length === 0, writes.join(", ") || "0 writes");
 
-  await p.click('[data-shoot="cr-lens-pick-dependency"]');
-  await settle(1000);
+  await pick("dependency");
   check("H3. The dependency lens brings up the dependency index",
     (await p.locator('[data-shoot="cr-dependency-watch"]').count()) === 1);
-  await p.click('[data-shoot="cr-lens-pick-capacity"]');
-  await settle(1000);
+  await pick("capacity");
   check("H4. …and the capacity lens puts it away and brings up capacity",
     (await p.locator('[data-shoot="cr-dependency-watch"]').count()) === 0 &&
       (await p.locator('[data-shoot="cr-surf-capacity"]').count()) === 1);
@@ -392,7 +426,7 @@ const closureDown = (id, seen = new Set()) => {
   await p.waitForSelector('[data-shoot="cr-strip"]', { timeout: 30000 });
   await settle(3200);
   check("H6. …and survives a reload",
-    (await p.locator('[data-shoot="cr-lens-pick-capacity"][data-on="true"]').count()) === 1);
+    /capacity/i.test(await p.locator('[data-shoot="cr-views"]').innerText()));
 
   await p.click('[data-shoot="cr-lens-editor-open"]');
   await p.waitForSelector('[data-shoot="cr-lens-editor"]', { timeout: 15000 });
@@ -400,11 +434,11 @@ const closureDown = (id, seen = new Set()) => {
   await p.click('[data-shoot="cr-surface-system-status"]');
   await settle(600);
   check("H7. Editing a named lens forks it to Custom rather than redefining it",
-    (await p.locator('[data-shoot="cr-lens-custom"][data-on="true"]').count()) === 1);
+    /custom/i.test(await p.locator('[data-shoot="cr-views"]').innerText()));
   await p.click('[data-shoot="cr-reset-workspace"]');
   await settle(900);
   check("H8. Reset returns the shipped default and clears the stored choice",
-    (await p.locator('[data-shoot="cr-lens-command"][data-on="true"]').count()) === 1 &&
+    /command/i.test(await p.locator('[data-shoot="cr-views"]').innerText()) &&
       (await p.evaluate(() => localStorage.getItem("kit.control-room.lens.v3"))) === null);
   await p.click('[data-shoot="cr-lens-editor-close"]');
   await settle(900);

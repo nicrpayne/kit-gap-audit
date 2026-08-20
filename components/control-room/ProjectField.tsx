@@ -38,7 +38,7 @@ const LANE_MIN = 58;
 // Letting four lanes stretch across 700px of height made a dense instrument
 // look like an empty spreadsheet; past this the block is CENTRED and the
 // extra height stays as margin.
-const LANE_MAX = 94;
+const LANE_MAX = 130;
 const PAD_R = 18;
 
 /** How tall this field wants to be, for a given number of lanes. The page

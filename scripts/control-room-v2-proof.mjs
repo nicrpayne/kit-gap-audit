@@ -45,8 +45,12 @@ const api = async (path) => (await fetch(`${BASE}${path}`)).json();
 /** V3 organises the surface into lenses. Each law is checked in the lens
     that owns it. */
 const lens = async (id) => {
+  // V4 puts the workspace switcher behind a Views control, the way a
+  // professional workspace does; opening it is part of picking one.
+  await p.click('[data-shoot="cr-views"]');
+  await settle(350);
   await p.click(`[data-shoot="cr-lens-pick-${id}"]`);
-  await settle(1400);
+  await settle(1500);
   await park();
 };
 
@@ -81,21 +85,22 @@ const tl = await api("/api/timeline");
   check("A1. Five cards, one per domain", domains.length === 5, domains.join(", "));
   check("A2. Every domain is distinct", new Set(domains).size === 5);
 
-  // A HEADLINE IS A SENTENCE WITH A NUMBER IN IT, and the exact model truth
-  // sits underneath it. Both halves are required: the sentence alone is
-  // unfalsifiable, the readout alone is what V1 was criticised for.
-  let sentences = 0;
-  let readouts = 0;
+  // A READING IS NEVER A BARE NUMBER. Each instrument states a dominant
+  // figure, what that figure counts, and a second real figure beside it —
+  // so the headline can be checked rather than trusted.
+  let labelled = 0;
+  let seconds = 0;
   for (const d of domains) {
-    const card = `[data-shoot="cr-card-${d === "outcome" ? "outcome" : d}"]`;
-    const lead = await txt(`${card}`);
-    // The lead line is the second line of the card (index/label first).
-    const leadLine = lead.split("\n").find((l) => /[a-z]{4}/i.test(l) && /\d|Clear|No target/.test(l));
-    if (leadLine && leadLine.split(/\s+/).length >= 3) sentences++;
-    if ((await p.locator(`[data-shoot="cr-card-${d}-readout"]`).count()) === 1) readouts++;
+    const lines = (await txt(`[data-shoot="cr-card-${d}"]`)).split("\n").map((x) => x.trim()).filter(Boolean);
+    const primary = (await txt(`[data-shoot="cr-card-${d}-primary"]`)).trim();
+    const idx = lines.indexOf(primary);
+    // The line under the dominant figure says what it counts.
+    if (idx >= 0 && lines[idx + 1] && /[a-z]{3}/i.test(lines[idx + 1])) labelled++;
+    // …and there is a second real figure with its own label.
+    if (lines.length >= idx + 4) seconds++;
   }
-  check("A3. Every card leads with a sentence, not a bare figure", sentences === 5, `${sentences}/5`);
-  check("A4. …and every card still states the exact model truth underneath", readouts === 5, `${readouts}/5`);
+  check("A3. Every instrument says what its number counts", labelled === 5, `${labelled}/5`);
+  check("A4. …and carries a second real figure beside it", seconds === 5, `${seconds}/5`);
 
   // The concept image's vocabulary stays banned, and V2 adds one word of
   // its own to the ban list: the capacity headline is ARRIVING, never
@@ -130,7 +135,7 @@ const tl = await api("/api/timeline");
   check("B1. ARRIVING is effective ÷ allocated, recomputed from the roster",
     cap.includes(`${arriving}%`), `${arriving}%`);
   check("B2. …and it is named for what it means, not called utilization",
-    /reaches the work/i.test(cap) && !/utilis|utiliz/i.test(cap));
+    /reach(es|ing) the work/i.test(cap) && !/utilis|utiliz/i.test(cap));
   check("B3. …with both raw terms still on the card, in FTE",
     cap.includes(raw.toFixed(1)) && cap.includes(eff.toFixed(1)), `${eff.toFixed(1)} of ${raw.toFixed(1)}`);
   // Its complement is exactly the switch loss — the same quantity, said the
@@ -199,7 +204,7 @@ const tl = await api("/api/timeline");
 
 // ── D. SYSTEM STATUS IS AGES, NOT GRADES ───────────────────────────────
 {
-  const panel = p.locator('[data-shoot="cr-surf-system"]');
+  const panel = p.locator('[data-shoot="cr-system-panel"], [data-shoot="cr-surf-system"]').first();
   const rows = await panel.locator('[data-shoot^="cr-system-"]').evaluateAll((els) =>
     els.map((e) => e.innerText.replace(/\n/g, " "))
   );
@@ -220,7 +225,7 @@ const tl = await api("/api/timeline");
   });
   const oldestRow = rows[ages.indexOf(Math.max(...ages))].toLowerCase();
   const header = (await panel.locator("header").innerText()).toLowerCase();
-  const named = /oldest:\s*([a-z ]+),/.exec(header)?.[1]?.trim() ?? "";
+  const named = /oldest\s+([a-z ]+),/.exec(header)?.[1]?.trim() ?? "";
   check("D4. The header names the oldest feed, and it really is the oldest",
     named.length > 0 && oldestRow.startsWith(named), `${named}`);
 
@@ -239,7 +244,16 @@ const tl = await api("/api/timeline");
   check("E1. The panel is named for the question it answers",
     /what changed/i.test(await panel.locator("header").innerText()));
   const titles = await p.locator('[data-shoot="cr-activity-row"]').evaluateAll((els) =>
-    els.map((e) => e.innerText.split("\n")[0].replace(/\s*×\d+$/, "").trim())
+    els.map((e) =>
+      e.innerText
+        .split("\n")
+        .map((x) => x.trim())
+        // The family marker is a glyph on its own line; the subject is the
+        // first line that is actually words.
+        .filter((x) => x && !/^[◆◇•]$/.test(x))[0]
+        .replace(/\s*×\d+$/, "")
+        .trim()
+    )
   );
   const stream = new Set(tl.entries.map((e) => e.title));
   check("E2. Every line is an event the Timeline actually carries",
@@ -258,11 +272,14 @@ const tl = await api("/api/timeline");
 
   const outcome = await hue('[data-shoot="cr-card-outcome-primary"]');
   check("F1. Under Reality the outcome reads cyan — the colour of now", outcome === CYAN, outcome);
-  const others = await Promise.all(
-    ["reality", "choices", "capacity", "time"].map((d) => hue(`[data-shoot="cr-card-${d}-primary"]`))
-  );
-  check("F2. …and nothing that is true is drawn in the Scenario's violet",
-    !others.includes(VIOLET), others.join(", "));
+  // Violet now also belongs to Choices, so a hypothetical is signalled by
+  // the page MODE rather than by hue alone. Under Reality that mode must be
+  // completely absent — no badge, no way back, and the foot says Reality.
+  const badge = await p.locator('[data-shoot="cr-scenario"]').count();
+  const backOut = await p.locator('[data-shoot="cr-discard"]').count();
+  const modeCell = await p.locator('[data-shoot="cr-status-mode"]').innerText();
+  check("F2. Under Reality the page carries no trace of a hypothetical",
+    badge === 0 && backOut === 0 && /reality/i.test(modeCell) && !/scenario/i.test(modeCell), modeCell.replace(/\n/g, " "));
 
   // Make a hypothetical in the instrument that owns the lever, then walk
   // back: the forecast must go violet, and the RECORD must not.
@@ -292,8 +309,14 @@ const tl = await api("/api/timeline");
     await p.waitForSelector('[data-shoot="cr-reading"]');
     await settle(3200);
     await park();
-    check("F3. A Scenario turns the forecast violet, and only the forecast",
-      (await hue('[data-shoot="cr-card-outcome-primary"]')) === VIOLET);
+    check("F3. A Scenario turns the forecast violet AND raises the page mode",
+      (await hue('[data-shoot="cr-card-outcome-primary"]')) === VIOLET &&
+        (await p.locator('[data-shoot="cr-scenario"]').count()) === 1 &&
+        (await p.locator('[data-shoot="cr-discard"]').count()) === 1 &&
+        /scenario/i.test(await p.locator('[data-shoot="cr-status-mode"]').innerText()));
+    // REALITY IS NEVER LOST. Its own date is drawn beside the hypothetical.
+    check("F3b. …and Reality's own date is still on the instrument",
+      (await p.locator('[data-shoot="cr-card-outcome-reality"]').count()) === 1);
     // HISTORY IS REALITY'S RECORD. A hypothetical changes what we expect
     // next; it cannot change what a report said last month.
     const lines = await p
@@ -303,10 +326,13 @@ const tl = await api("/api/timeline");
       lines.length > 0 && !lines.some((s) => s.includes("155, 140, 250")), `${lines.length} lines`);
     await p.click('[data-shoot="cr-discard"]');
     await settle(1800);
-    check("F5. Discarding it puts the colour of now back",
-      (await hue('[data-shoot="cr-card-outcome-primary"]')) === CYAN);
+    check("F5. Discarding it puts the colour of now back, and clears the mode",
+      (await hue('[data-shoot="cr-card-outcome-primary"]')) === CYAN &&
+        (await p.locator('[data-shoot="cr-scenario"]').count()) === 0 &&
+        /reality/i.test(await p.locator('[data-shoot="cr-status-mode"]').innerText()));
   } else {
-    check("F3. A Scenario turns the forecast violet, and only the forecast", false, "no gate to assume");
+    check("F3. A Scenario turns the forecast violet AND raises the page mode", false, "no gate to assume");
+    check("F3b. …and Reality's own date is still on the instrument", false, "n/a");
     check("F4. …but the reported history is never repainted as hypothetical", false, "n/a");
     check("F5. Discarding it puts the colour of now back", false, "n/a");
   }
@@ -324,16 +350,14 @@ const tl = await api("/api/timeline");
   const beforeProject = substance(await api("/api/instrument/project"));
 
   writes = [];
-  await p.click('[data-shoot="cr-lens-pick-capacity"]');
-  await settle(1200);
+  await lens("capacity");
   const capacityView = await shown();
   check("G1. A preset changes what is on screen", capacityView !== beforeCount, `${beforeCount} → ${capacityView}`);
   check("G2. …and hiding a panel is not a project change", writes.length === 0, writes.join(", ") || "0 writes");
   check("G3. …the Capacity lens drops the dependency index",
     (await p.locator('[data-shoot="cr-dependency-watch"]').count()) === 0);
 
-  await p.click('[data-shoot="cr-lens-pick-dependency"]');
-  await settle(1200);
+  await lens("dependency");
   check("G4. …and the Dependency lens brings it back",
     (await p.locator('[data-shoot="cr-dependency-watch"]').count()) === 1);
 
@@ -345,7 +369,7 @@ const tl = await api("/api/timeline");
   await p.waitForSelector('[data-shoot="cr-strip"]', { timeout: 30000 });
   await settle(3200);
   check("G6. …and it survives a reload",
-    (await p.locator('[data-shoot="cr-lens-pick-dependency"][data-on="true"]').count()) === 1);
+    /dependency/i.test(await p.locator('[data-shoot="cr-views"]').innerText()));
 
   // A PRESET IS A NAMED THING. Editing one under its own name would make
   // the name a lie, so the first toggle forks to Custom.
@@ -355,12 +379,12 @@ const tl = await api("/api/timeline");
   await p.click('[data-shoot="cr-surface-system-status"]');
   await settle(600);
   check("G7. Editing a preset forks it to Custom rather than redefining it",
-    (await p.locator('[data-shoot="cr-lens-custom"][data-on="true"]').count()) === 1);
+    /custom/i.test(await p.locator('[data-shoot="cr-views"]').innerText()));
 
   await p.click('[data-shoot="cr-reset-workspace"]');
   await settle(900);
   check("G8. Reset returns the shipped default and clears the stored preference",
-    (await p.locator('[data-shoot="cr-lens-command"][data-on="true"]').count()) === 1 &&
+    /command/i.test(await p.locator('[data-shoot="cr-views"]').innerText()) &&
       (await p.evaluate(() => localStorage.getItem("kit.control-room.lens.v3"))) === null);
 
   await p.click('[data-shoot="cr-lens-editor-close"]');
@@ -375,13 +399,14 @@ const tl = await api("/api/timeline");
   await resetWorkspace();
   // Every V2 door still leads to the instrument that owns the number.
   const doors = await p
-    .locator('[data-shoot^="cr-lens-"] a, [data-shoot^="cr-card-"][data-domain]')
+    .locator('[data-shoot^="cr-surf-"] a, [data-shoot^="cr-card-"][data-domain]')
     .evaluateAll((els) => els.map((e) => e.getAttribute("href")).filter(Boolean));
   const known = ["/forecast", "/portfolio", "/scope", "/decisions", "/timeline", "/audit", "/orbit"];
   check("H1. Every panel is a door into the instrument that owns it",
     doors.length > 0 && doors.every((h) => known.some((k) => h.startsWith(k))), doors.join(" "));
   const sys = await p
-    .locator('[data-shoot^="cr-system-"]')
+    // The rows, not the panel that holds them.
+    .locator('a[data-shoot^="cr-system-"]')
     .evaluateAll((els) => els.map((e) => e.getAttribute("href")));
   check("H2. …including every System Status row", sys.every((h) => known.some((k) => h.startsWith(k))), sys.join(" "));
   check("H3. Reading V2 writes nothing", writes.length === 0, writes.join(", ") || "0 writes");

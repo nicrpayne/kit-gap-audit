@@ -306,7 +306,7 @@ export default function Inspector({
     <section
       data-shoot="cr-inspector"
       data-selection={selection ? `${selection.kind}:${selection.id}` : "none"}
-      className="relative flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg"
+      className="relative flex min-h-0 flex-1 flex-col overflow-hidden rounded-md"
       style={{ background: "var(--i-panel)", border: "1px solid var(--i-border)" }}
     >
       <span aria-hidden className="absolute left-0 top-0 h-full w-[2px]" style={{ background: accent, opacity: 0.6 }} />
