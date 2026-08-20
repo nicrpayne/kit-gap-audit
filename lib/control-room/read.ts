@@ -754,15 +754,20 @@ export function readControlRoom(i: ControlRoomInput): ControlRoomReading {
     else grouped.set(key, { entry: e, subjects: new Set([subjectOf(e)]) });
   }
 
-  const activity: ActivityRow[] = [...grouped.values()]
+  const activity: ActivityRow[] = [...grouped.entries()]
     .slice(0, 9)
-    .map(({ entry: e, subjects }) => {
+    .map(([key, { entry: e, subjects }]) => {
       const count = subjects.size;
       const rid = (e.detail as { reportId?: string }).reportId;
       const rep = e.kind === "report" && rid ? reportById.get(rid) : undefined;
       const delta = rep?.likelyDateDeltaDays ?? null;
       return {
-        id: e.id,
+        // THE ROW'S IDENTITY IS ITS GROUP, not the representative entry's
+        // id. The projection can mint one id for two entries that differ in
+        // title or scope — the seed carries `linear:SOF-100:completed`
+        // twice — which put the same id on two distinct rows and made React
+        // collapse them. The group key is unique by construction.
+        id: key,
         title: e.title,
         at: new Date(e.date),
         kind: e.kind,

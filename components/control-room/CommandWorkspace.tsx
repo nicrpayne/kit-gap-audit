@@ -84,6 +84,20 @@ const consequenceOf = (detail: string) => {
   return parts[parts.length - 1] ?? detail;
 };
 
+// TWO PROJECTS CAN SHARE A NAME — the seed carries `jsa` and `jsa-seed`,
+// both called "JSA" — and two rows reading the same word with different
+// numbers looks like a rendering fault rather than like two real projects.
+// Where a name repeats, the row states the id that distinguishes them.
+// Nothing is invented: the id is the project's own.
+function disambiguate<T extends { scopeId: string; name: string }>(rows: T[]): (T & { display: string })[] {
+  const seen = new Map<string, number>();
+  for (const r of rows) seen.set(r.name, (seen.get(r.name) ?? 0) + 1);
+  // On a collision the ID is the distinguishing fact and it already contains
+  // the name — "jsa" and "jsa-seed" — so it replaces the name outright
+  // rather than being appended to a word that is no longer telling them apart.
+  return rows.map((r) => ({ ...r, display: (seen.get(r.name) ?? 0) > 1 ? r.scopeId : r.name }));
+}
+
 export default function CommandWorkspace({
   r,
   data,
@@ -99,18 +113,34 @@ export default function CommandWorkspace({
 }) {
   const outcomeHue = scenarioActive ? "var(--i-violet)" : HUE.outcome;
 
+  // WHAT CHANGED, with its subjects kept distinct. The same work item title
+  // can land on two different projects — the seed has `jsa` and `jsa-seed`,
+  // both named JSA — and two identical lines read as a duplicated row rather
+  // than as two real events. Where a title repeats, the row names its
+  // project. The name is the project's own; nothing is invented.
+  const scopeNameById = new Map(data.scopes.map((s) => [s.scopeId, s.name] as const));
+  const activityRows = (() => {
+    const rows = r.activity.slice(0, 3);
+    const times = new Map<string, number>();
+    for (const a of rows) times.set(a.title, (times.get(a.title) ?? 0) + 1);
+    return rows.map((a) => ({
+      ...a,
+      scopeLabel: (times.get(a.title) ?? 0) > 1 ? (scopeNameById.get(a.scopeId) ?? a.scopeId) : null,
+    }));
+  })();
+
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden" style={{ background: "var(--i-void)" }}>
       <div className="flex min-h-0 flex-1 flex-col overflow-hidden px-[17px] pt-[18px]">
         {/* ── TITLE ────────────────────────────────────────────────── */}
-        <div className="shrink-0 pb-[22px]">
+        <div className="shrink-0 pb-[15px]">
           <h1
             className="text-[30px] font-bold uppercase leading-none tracking-[0.005em]"
             style={{ color: "var(--i-text)" }}
           >
             Master Control Room
           </h1>
-          <p className="pt-[9px] text-[12.5px] leading-none" style={{ color: "var(--i-text-faint)" }}>
+          <p className="pt-[8px] text-[12px] leading-none" style={{ color: "var(--i-text-faint)" }}>
             Reality → Choices → Capacity → Likely Outcome → Time
           </p>
         </div>
@@ -118,7 +148,7 @@ export default function CommandWorkspace({
         {/* ── TELEMETRY ────────────────────────────────────────────── */}
         <div
           data-shoot="cr-reading"
-          className="grid h-[141px] shrink-0"
+          className="grid h-[134px] shrink-0"
           style={{ gridTemplateColumns: "repeat(5, minmax(0, 1fr))", gap: 9 }}
         >
           <Tile
@@ -210,7 +240,7 @@ export default function CommandWorkspace({
         </div>
 
         {/* ── WORKING SURFACE + ANALYSIS + OPERATIONAL RAIL ────────── */}
-        <div className="flex min-h-0 flex-1 pt-[15px]" style={{ gap: 13 }}>
+        <div className="flex min-h-0 flex-1 pt-[12px]" style={{ gap: 13 }}>
           <div className="flex min-h-0 min-w-0 flex-1 flex-col" style={{ gap: 12 }}>
           {/* THE TIMELINE INSTRUMENT ITSELF, embedded. Not a copy of it and
               not a chart that looks like it — the same component, the same
@@ -250,7 +280,7 @@ export default function CommandWorkspace({
         {/* ── ANALYSIS ROW ─────────────────────────────────────────── */}
           <div
             data-shoot="cr-surfaces"
-            className="grid h-[198px] shrink-0 pt-[12px]"
+            className="grid h-[190px] shrink-0 pt-[10px]"
             style={{ gridTemplateColumns: "1.15fr 1.05fr 0.95fr 1.2fr", gap: 9 }}
           >
             {/* CAPACITY OVERVIEW. The layout wants a multi-line history by
@@ -258,56 +288,76 @@ export default function CommandWorkspace({
                 timestamps and there is no discipline field. So the header
                 says "today only" and the panel shows the real current split
                 per project: committed as the track, arriving as the fill. */}
-            <Bottom title="Capacity Overview" href="/portfolio" shoot="cr-surf-capacity">
-              <p className="flex items-baseline gap-[7px]">
+            <Bottom title="Capacity Overview" href="/portfolio" shoot="cr-surf-capacity" hue={HUE.capacity}>
+              <p className="flex shrink-0 items-baseline gap-[8px]">
                 <span
-                  className="i-readout text-[24px] leading-none"
-                  style={{ color: r.capacity.arrivingPct !== null && r.capacity.arrivingPct >= 95 ? HUE.outcome : HUE.capacity }}
+                  className="i-readout leading-none"
+                  style={{
+                    color: r.capacity.arrivingPct !== null && r.capacity.arrivingPct >= 95 ? HUE.outcome : HUE.capacity,
+                    fontSize: 30,
+                    letterSpacing: "-0.015em",
+                    textShadow: `0 0 20px color-mix(in srgb, ${HUE.capacity} 24%, transparent)`,
+                  }}
                 >
                   {r.capacity.arrivingPct === null ? "—" : `${Math.round(r.capacity.arrivingPct)}%`}
                 </span>
-                <span className="min-w-0 flex-1 self-center">
-                  <span className="block text-[11px] leading-[12px]" style={{ color: "var(--i-text-soft)" }}>
-                    effective capacity
-                  </span>
-                  <span
-                    data-shoot="cr-capacity-nohistory"
-                    className="block text-[10px] leading-[12px]"
-                    style={{ color: "var(--i-text-faint)" }}
-                  >
-                    today only · no history exists
-                  </span>
+                <span
+                  className="min-w-0 flex-1 truncate text-[10px] uppercase leading-[12px] tracking-[0.05em]"
+                  style={{ color: "var(--i-text-soft)" }}
+                >
+                  reaching the work
+                </span>
+                {/* THE GAP IS STATED ON THE PANEL, never in a tooltip. No
+                    capacity history exists anywhere in the model, and a
+                    surface that quietly omitted that would be implying the
+                    bars are a trend. */}
+                <span
+                  data-shoot="cr-capacity-nohistory"
+                  className="w-[52px] shrink-0 text-right text-[9px] leading-[11px]"
+                  style={{ color: "var(--i-text-faint)" }}
+                  title="Allocation carries no timestamps, so no capacity history exists anywhere in the model."
+                >
+                  today only
+                  <br />
+                  no history
                 </span>
               </p>
-              <div className="i-noscrollbar i-fade-b flex min-h-0 flex-1 flex-col gap-[4px] overflow-y-auto pt-[7px]">
-                {r.capacity.byScope.map((c, i) => {
+              <div className="i-noscrollbar flex min-h-0 flex-1 flex-col justify-center gap-[4px] overflow-y-auto pt-[7px]">
+                {disambiguate(r.capacity.byScope).map((c, i) => {
                   const w = Math.max(0.001, ...r.capacity.byScope.map((x) => Math.max(x.raw, x.effective)));
+                  const tone = SERIES[i % 4];
                   return (
-                    <div key={c.scopeId} data-shoot={`cr-capacity-row-${c.scopeId}`}>
-                      <div className="flex items-baseline gap-[7px]">
-                        <span className="h-[7px] w-[7px] shrink-0 rounded-[2px]" style={{ background: SERIES[i % 4] }} />
-                        <span className="min-w-0 flex-1 truncate text-[10.5px]" style={{ color: "var(--i-text-soft)" }}>
-                          {c.name}
-                        </span>
-                        <span className="i-readout shrink-0 text-[10.5px]" style={{ color: "var(--i-text)" }}>
-                          {c.effective.toFixed(1)}
-                          {c.basis === "allocations" ? ` / ${c.raw.toFixed(1)}` : " counted"}
-                        </span>
-                      </div>
-                      <div className="ml-[14px] mt-[2px] h-[4px] rounded-full" style={{ background: "var(--i-recess)" }}>
-                        <div
-                          className="h-full rounded-full"
-                          style={{ width: `${Math.min(100, (c.raw / w) * 100)}%`, background: SERIES[i % 4], opacity: 0.22 }}
+                    <div key={c.scopeId} data-shoot={`cr-capacity-row-${c.scopeId}`} className="flex items-center gap-[8px]">
+                      <span
+                        className="w-[66px] shrink-0 truncate text-[9.5px] uppercase tracking-[0.03em]"
+                        style={{ color: "var(--i-text-soft)" }}
+                        title={c.display}
+                      >
+                        {c.display}
+                      </span>
+                      {/* COMMITTED is the track, ARRIVING is the fill. The gap
+                          between them is the switching loss, and it is the
+                          only thing this row is trying to make visible. */}
+                      <span className="relative h-[9px] min-w-0 flex-1 overflow-hidden rounded-[2px]" style={{ background: "var(--i-recess)" }}>
+                        <span
+                          className="absolute inset-y-0 left-0 rounded-[2px]"
+                          style={{ width: `${Math.min(100, (c.raw / w) * 100)}%`, background: tone, opacity: 0.2 }}
                         />
-                        <div
-                          className="relative -mt-[4px] h-full rounded-full"
+                        <span
+                          className="absolute inset-y-0 left-0 rounded-[2px]"
                           style={{
                             width: `${Math.min(100, (c.effective / w) * 100)}%`,
-                            background: SERIES[i % 4],
-                            opacity: c.basis === "allocations" ? 0.9 : 0.42,
+                            background: `linear-gradient(90deg, color-mix(in srgb, ${tone} 72%, transparent), ${tone})`,
+                            opacity: c.basis === "allocations" ? 1 : 0.45,
                           }}
                         />
-                      </div>
+                      </span>
+                      <span className="i-readout w-[52px] shrink-0 text-right text-[10.5px]" style={{ color: "var(--i-text)" }}>
+                        {c.effective.toFixed(1)}
+                        <span style={{ color: "var(--i-text-faint)" }}>
+                          {c.basis === "allocations" ? `/${c.raw.toFixed(1)}` : " ct"}
+                        </span>
+                      </span>
                     </div>
                   );
                 })}
@@ -319,88 +369,146 @@ export default function CommandWorkspace({
                 this product, so the ring is the remaining load each project
                 carries, from composeFeatures. Colour is project IDENTITY —
                 every segment is named, so no state is implied. */}
-            <Bottom title="Release Composition" href="/scope" shoot="cr-surf-scope">
+            <Bottom title="Release Composition" href="/scope" shoot="cr-surf-scope" hue={HUE.reality}>
               <Composition data={data} scenario={scenario} />
             </Bottom>
 
-            <Bottom title="Decisions Summary" href="/decisions" shoot="cr-surf-decisions">
-              <p className="flex items-baseline gap-[7px]">
-                <span className="i-readout text-[26px] leading-none" style={{ color: "var(--i-text)" }}>
-                  {r.choices.open}
+            {/* A DECISION IS NOT A GATE, and the difference is the whole
+                point of this panel. V5 led with the backlog — 39 in the
+                largest type — which tells you the least useful true thing on
+                the surface. The CONSEQUENCE leads now: two decisions are
+                holding delivery, for eight modelled days. The backlog is
+                still here, still exact, and now correctly sized as context. */}
+            <Bottom title="Decisions Summary" href="/decisions" shoot="cr-surf-decisions" hue={HUE.choices}>
+              <div className="flex shrink-0 items-baseline gap-[9px]">
+                <span
+                  className="i-readout leading-none"
+                  style={{
+                    color: r.choices.gating > 0 ? "var(--i-amber)" : HUE.outcome,
+                    fontSize: 30,
+                    letterSpacing: "-0.015em",
+                    textShadow: `0 0 20px color-mix(in srgb, ${r.choices.gating > 0 ? "var(--i-amber)" : HUE.outcome} 26%, transparent)`,
+                  }}
+                >
+                  {r.choices.gating}
                 </span>
-                <span className="text-[13px]" style={{ color: HUE.choices }}>
-                  Open
+                <span className="min-w-0 flex-1">
+                  <span
+                    className="block truncate text-[10px] uppercase leading-[12px] tracking-[0.05em]"
+                    style={{ color: "var(--i-text-soft)" }}
+                  >
+                    holding delivery
+                  </span>
+                  <span className="block truncate text-[10px] leading-[12px]" style={{ color: "var(--i-text-faint)" }}>
+                    <span className="i-readout" style={{ color: "var(--i-amber)" }}>
+                      {r.choices.modelledDelayDays}d
+                    </span>{" "}
+                    modelled
+                  </span>
                 </span>
-              </p>
-              <p className="pt-[4px] text-[11.5px]" style={{ color: "var(--i-text-soft)" }}>
-                Decisions
-              </p>
-              {/* A DECISION IS NOT A GATE, and the difference is the point.
-                  Both numbers sit side by side because "36 open" without "2
-                  actually holding delivery" is the exact misreading this
-                  product exists to prevent. */}
-              <div className="grid flex-1 grid-cols-3 items-center gap-2 pt-[8px]">
-                <Tally value={String(r.choices.gating)} label="Holding" tone="var(--i-amber)" />
-                <Tally value={`${r.choices.modelledDelayDays}d`} label="Modelled" tone="var(--i-amber)" />
-                <Tally value={String(r.choices.dueSoon)} label="Due 14d" tone="var(--i-text)" />
               </div>
-              <Link
-                href="/decisions"
-                className="mt-auto flex shrink-0 items-center justify-center gap-1.5 rounded-[5px] py-[6px] text-[11px]"
-                style={{ border: "1px solid var(--i-amber)", color: "var(--i-amber)" }}
-              >
-                View Decisions →
-              </Link>
+              <div className="mt-auto grid shrink-0 grid-cols-2 gap-[9px] pt-[10px]">
+                <Tally value={String(r.choices.open)} label="Open decisions" tone="var(--i-text-soft)" />
+                <Tally value={String(r.choices.dueSoon)} label="Due in 14d" tone="var(--i-text-soft)" />
+              </div>
+              <Door href="/decisions" label="View decisions" tone="var(--i-amber)" />
             </Bottom>
 
             {/* FORECAST CONFIDENCE — the one panel whose real history matches
                 the layout's line chart exactly: `Report.confidenceAtTarget`,
                 plotted at each report's own `generatedAt`. A project nobody
                 has reported on is ABSENT, never drawn flat at zero. */}
-            <Bottom title="Forecast Confidence" href="/forecast" shoot="cr-surf-forecast">
-              <p className="text-[11.5px]" style={{ color: "var(--i-text-soft)" }}>
-                {r.outcome.confidence !== null && r.outcome.gatedBy
-                  ? `${r.outcome.gatedBy}, against its target`
-                  : r.outcome.gatedBy
-                    ? `${r.outcome.gatedBy} lands last`
-                    : "Overall confidence"}
-              </p>
-              <p className="flex items-baseline gap-2 pt-[5px]">
-                <span
-                  data-shoot="cr-confidence-now"
-                  className="i-readout text-[26px] leading-none"
-                  style={{ color: r.outcome.confidence === null ? "var(--i-text-faint)" : outcomeHue }}
-                >
-                  {r.outcome.confidence !== null ? `${r.outcome.confidence}%` : "No target"}
-                </span>
-                {r.outcome.confidenceTrendPts !== null && (
-                  <span
-                    data-shoot="cr-confidence-trend"
-                    className="i-readout text-[11px]"
-                    style={{ color: r.outcome.confidenceTrendPts >= 0 ? HUE.outcome : "var(--i-red)" }}
-                  >
-                    {r.outcome.confidenceTrendPts > 0 ? "+" : ""}
-                    {r.outcome.confidenceTrendPts} pts
-                  </span>
-                )}
-              </p>
-              <div className="min-h-0 flex-1 pt-[6px]">
-                {r.outcome.confidenceHistory.length > 0 ? (
-                  <ConfidenceLines
-                    series={r.outcome.confidenceHistory}
-                    gatingId={r.outcome.gatedByScopeId}
-                    now={r.time.now}
-                  />
-                ) : (
-                  <p
-                    data-shoot="cr-confidence-nohistory"
-                    className="text-[10.5px] leading-snug"
-                    style={{ color: "var(--i-text-faint)" }}
-                  >
-                    No report has stored a confidence yet, so there is no history to draw.
+            <Bottom title="Forecast Confidence" href="/forecast" shoot="cr-surf-forecast" hue={HUE.outcome}>
+              {r.outcome.confidence !== null ? (
+                <>
+                  <p className="flex shrink-0 items-baseline gap-[8px]">
+                    <span
+                      data-shoot="cr-confidence-now"
+                      className="i-readout leading-none"
+                      style={{
+                        color: outcomeHue,
+                        fontSize: 30,
+                        letterSpacing: "-0.015em",
+                        textShadow: `0 0 20px color-mix(in srgb, ${outcomeHue} 26%, transparent)`,
+                      }}
+                    >
+                      {r.outcome.confidence}%
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span
+                        className="block truncate text-[10px] uppercase leading-[12px] tracking-[0.05em]"
+                        style={{ color: "var(--i-text-soft)" }}
+                      >
+                        {r.outcome.gatedBy ?? "overall"}
+                      </span>
+                      <span className="block truncate text-[10px] leading-[12px]" style={{ color: "var(--i-text-faint)" }}>
+                        against its target
+                      </span>
+                    </span>
+                    {r.outcome.confidenceTrendPts !== null && (
+                      <span
+                        data-shoot="cr-confidence-trend"
+                        className="i-readout shrink-0 rounded-[3px] px-[5px] py-[2px] text-[10px]"
+                        style={{
+                          color: r.outcome.confidenceTrendPts >= 0 ? HUE.outcome : "var(--i-red)",
+                          background: `color-mix(in srgb, ${r.outcome.confidenceTrendPts >= 0 ? HUE.outcome : "var(--i-red)"} 12%, transparent)`,
+                        }}
+                      >
+                        {r.outcome.confidenceTrendPts > 0 ? "+" : ""}
+                        {r.outcome.confidenceTrendPts} pts
+                      </span>
+                    )}
                   </p>
-                )}
-              </div>
+                  <div className="min-h-0 flex-1 pt-[7px]">
+                    {r.outcome.confidenceHistory.length > 0 ? (
+                      <ConfidenceLines series={r.outcome.confidenceHistory} gatingId={r.outcome.gatedByScopeId} now={r.time.now} />
+                    ) : (
+                      <p data-shoot="cr-confidence-nohistory" className="text-[10.5px] leading-snug" style={{ color: "var(--i-text-faint)" }}>
+                        No report has stored a confidence yet, so there is no history to draw.
+                      </p>
+                    )}
+                  </div>
+                </>
+              ) : (
+                // NO TARGET IS AN ANSWER, and it deserves to be presented as
+                // one. The chart is not the headline here — the reason the
+                // number is unavailable is. Everything below it is context,
+                // and it is explicitly labelled as other projects' history so
+                // it can never be mistaken for the missing figure.
+                <>
+                  <div className="shrink-0">
+                    <p
+                      data-shoot="cr-confidence-now"
+                      className="i-readout leading-none"
+                      style={{ fontSize: 27, letterSpacing: "-0.015em", color: "var(--i-text-faint)" }}
+                    >
+                      No target
+                    </p>
+                    <p className="pt-[6px] text-[10.5px] leading-[13px]" style={{ color: "var(--i-text-soft)" }}>
+                      {r.outcome.gatedBy ? (
+                        <>
+                          <span style={{ color: outcomeHue }}>{r.outcome.gatedBy}</span> lands last and has no target date.
+                        </>
+                      ) : (
+                        "Nothing has been simulated against a target."
+                      )}
+                    </p>
+                    <p className="pt-[2px] text-[10px] leading-[12px]" style={{ color: "var(--i-text-faint)" }}>
+                      Set one on Forecast to measure confidence.
+                    </p>
+                  </div>
+                  {r.outcome.confidenceHistory.length > 0 && (
+                    <div className="mt-auto flex min-h-0 flex-1 flex-col pt-[7px]">
+                      <p className="shrink-0 pb-[3px] text-[9px] uppercase tracking-[0.09em]" style={{ color: "var(--i-text-faint)" }}>
+                        Other projects, as reported
+                      </p>
+                      <div className="min-h-0 flex-1">
+                        <ConfidenceLines series={r.outcome.confidenceHistory} gatingId={r.outcome.gatedByScopeId} now={r.time.now} />
+                      </div>
+                    </div>
+                  )}
+                </>
+              )}
             </Bottom>
           </div>
           </div>
@@ -478,29 +586,44 @@ export default function CommandWorkspace({
                           ? `/orbit?focus=${d.focusScopeId}${d.selectNodeId ? `&select=${encodeURIComponent(d.selectNodeId)}` : ""}`
                           : "/orbit"
                       }
-                      className="flex items-baseline justify-between gap-2 hover:opacity-80"
+                      className="flex items-baseline justify-between gap-[8px] rounded-[3px] hover:bg-[rgba(243,240,230,0.035)]"
                     >
                       <span className="min-w-0 flex-1">
-                        <span className="block truncate text-[11px] leading-[15px]" style={{ color: "var(--i-text-soft)" }}>
+                        <span className="block truncate text-[10.5px] leading-[15px]" style={{ color: "var(--i-text-soft)" }}>
                           {d.subject}
                         </span>
                         {d.kind !== "waits_on" && (
                           <span
                             data-shoot="cr-dep-consequence"
-                            className="block truncate text-[10px] leading-[12px]"
-                            style={{ color: "var(--i-text-faint)" }}
+                            className="block truncate text-[9.5px] leading-[12px]"
+                            style={{ color: "var(--i-amber)", opacity: 0.82 }}
                           >
                             {consequenceOf(d.detail)}
                           </span>
                         )}
                       </span>
+                      {/* ACCEPTED is a state, not a measurement, so it reads
+                          as a quiet chip. A real quantity — "2 downstream" —
+                          reads as a number, because that is what it is. */}
                       <span className="flex shrink-0 items-center gap-[7px]">
-                        <span
-                          className="i-readout text-[11px]"
-                          style={{ color: d.kind === "shared_upstream" ? "var(--i-amber)" : "var(--i-mint)" }}
-                        >
-                          {d.quantity ?? "accepted"}
-                        </span>
+                        {d.quantity ? (
+                          <span
+                            className="i-readout text-[10.5px]"
+                            style={{ color: d.kind === "shared_upstream" ? "var(--i-amber)" : "var(--i-mint)" }}
+                          >
+                            {d.quantity}
+                          </span>
+                        ) : (
+                          <span
+                            className="rounded-[3px] px-[5px] py-[1px] text-[9px] uppercase tracking-[0.06em]"
+                            style={{
+                              color: "var(--i-mint)",
+                              background: "color-mix(in srgb, var(--i-mint) 12%, transparent)",
+                            }}
+                          >
+                            accepted
+                          </span>
+                        )}
                         <Dot colour={d.kind === "shared_upstream" ? "var(--i-amber)" : "var(--i-mint)"} />
                       </span>
                     </Link>
@@ -538,25 +661,51 @@ export default function CommandWorkspace({
                     Nothing is constraining delivery beyond the work itself.
                   </p>
                 )}
-                {r.constraints.slice(0, 5).map((c) => (
-                  <Link
-                    key={c.id}
-                    href={c.href}
-                    data-shoot="cr-constraint"
-                    className="flex items-baseline justify-between gap-2 hover:opacity-80"
-                    title={`${c.detail} — ${c.label}`}
-                  >
-                    <span className="truncate text-[11px]" style={{ color: "var(--i-text-soft)" }}>
-                      {c.detail}
-                    </span>
-                    <span className="flex shrink-0 items-center gap-[7px]">
-                      <span className="i-readout text-[11px]" style={{ color: "var(--i-amber)" }}>
-                        {c.quantity}
+                {/* THE CONSEQUENCE LEADS. V5 put the sentence first and the
+                    quantity last, so the eye had to parse "App Store
+                    submission timeline decision" before learning it costs
+                    four days. The magnitude is now the first thing on the
+                    row, in its own unit, and the subject reads after it. */}
+                {r.constraints.slice(0, 5).map((c) => {
+                  // "4d modelled · JSA" → magnitude "4d", unit "modelled",
+                  // and the project it holds. The magnitude leads, its unit
+                  // rides beside it so "0.1" is never stranded without "FTE",
+                  // and the project it is holding closes the row.
+                  const [measure, ...rest] = c.quantity.split(" · ");
+                  const holding = rest.join(" · ");
+                  const [mag, ...unitWords] = measure.split(" ");
+                  const unit = unitWords.join(" ");
+                  return (
+                    <Link
+                      key={c.id}
+                      href={c.href}
+                      data-shoot="cr-constraint"
+                      className="flex items-baseline gap-[8px] rounded-[3px] hover:bg-[color-mix(in_srgb,var(--i-amber)_7%,transparent)]"
+                      title={`${c.detail} — ${c.label}`}
+                    >
+                      <span className="w-[56px] shrink-0 whitespace-nowrap text-right leading-[16px]">
+                        <span className="i-readout text-[12.5px]" style={{ color: "var(--i-amber)" }}>
+                          {mag}
+                        </span>
+                        {unit && (
+                          <span className="text-[9px]" style={{ color: "color-mix(in srgb, var(--i-amber) 62%, var(--i-text-faint))" }}>
+                            {" "}
+                            {unit}
+                          </span>
+                        )}
                       </span>
+                      <span className="min-w-0 flex-1 truncate text-[10.5px] leading-[16px]" style={{ color: "var(--i-text-soft)" }}>
+                        {c.detail}
+                      </span>
+                      {holding && (
+                        <span className="shrink-0 text-[9px] uppercase leading-[16px] tracking-[0.05em]" style={{ color: "var(--i-text-faint)" }}>
+                          {holding}
+                        </span>
+                      )}
                       <Dot colour="var(--i-amber)" />
-                    </span>
-                  </Link>
-                ))}
+                    </Link>
+                  );
+                })}
               </div>
             </RailPanel>
 
@@ -566,25 +715,30 @@ export default function CommandWorkspace({
               shoot="cr-activity"
               door={{ href: "/timeline", label: "View Timeline", tone: "var(--i-violet)" }}
             >
-              <div className="flex shrink-0 flex-col gap-[2px] pt-[6px]">
-                {r.activity.slice(0, 3).map((a) => (
+              {/* Less log, more instrument: the event's FAMILY is a colour
+                  chip rather than a diamond glyph, and the age sits in a
+                  fixed right column so three rows scan as a column of times
+                  instead of three ragged sentences. */}
+              <div className="flex shrink-0 flex-col gap-[3px] pt-[6px]">
+                {activityRows.map((a) => (
                   <Link
                     key={a.id}
                     href={a.href}
                     data-shoot="cr-activity-row"
-                    className="flex items-baseline justify-between gap-2 leading-[15px] hover:opacity-80"
+                    className="flex items-center gap-[8px] rounded-[3px] leading-[15px] hover:bg-[rgba(243,240,230,0.035)]"
+                    title={a.note ? `${a.title} — ${a.note}` : a.title}
                   >
-                    <span className="flex min-w-0 items-baseline gap-[7px]">
-                      <span className="shrink-0 text-[8px]" style={{ color: familyColour(a.family) }}>
-                        ◆
-                      </span>
-                      <span className="truncate text-[11px]" style={{ color: "var(--i-text-soft)" }}>
-                        {a.title}
-                        {a.count > 1 && <span style={{ color: "var(--i-text-faint)" }}> ×{a.count}</span>}
-                      </span>
+                    <span
+                      aria-hidden
+                      className="h-[10px] w-[2px] shrink-0 rounded-full"
+                      style={{ background: familyColour(a.family) }}
+                    />
+                    <span className="min-w-0 flex-1 truncate text-[10.5px]" style={{ color: "var(--i-text-soft)" }}>
+                      {a.title}
+                      {a.scopeLabel && <span style={{ color: "var(--i-text-faint)" }}> · {a.scopeLabel}</span>}
+                      {a.count > 1 && <span style={{ color: "var(--i-text-faint)" }}> ×{a.count}</span>}
                     </span>
-                    <span className="i-readout shrink-0 text-[10.5px]" style={{ color: "var(--i-text-faint)" }}>
-                      {a.note ? `${a.note} · ` : ""}
+                    <span className="i-readout w-[46px] shrink-0 text-right text-[10px]" style={{ color: "var(--i-text-faint)" }}>
                       {ago(a.at, r.time.now)}
                     </span>
                   </Link>
@@ -661,8 +815,39 @@ export default function CommandWorkspace({
     state — this product has no state model to encode. */
 const SERIES = ["var(--i-signal)", "var(--i-mint)", "var(--i-violet)", "var(--i-amber)"];
 
+// ── MATERIAL ───────────────────────────────────────────────────────────
+//
+// Three levels, and the material is what separates them:
+//
+//   L1  the working surface — the brightest ground, the strongest border
+//   L2  readings, constraints, dependencies — a panel ground with a hairline
+//       inner highlight along its top edge, the way a machined face catches
+//       light
+//   L3  supporting detail — no ground of its own, quieter type
+//
+// The highlight is one pixel at 4% and the shadow is a lift, not a drop.
+// Anything heavier reads as a web card rather than an instrument face.
+const FACE = {
+  background: "linear-gradient(180deg, #171d22 0%, var(--i-panel) 62%)",
+  border: "1px solid var(--i-border-strong)",
+  boxShadow: "inset 0 1px 0 rgba(243,240,230,0.045), 0 1px 2px rgba(0,0,0,0.45)",
+} as const;
+
+/** A panel that belongs to one domain wears a trace of it: a tinted wash
+    down from its top edge and a border warmed towards the hue. */
+const tinted = (hue: string, soft: string) => ({
+  background: `linear-gradient(180deg, ${soft} 0%, rgba(0,0,0,0) 54px), linear-gradient(180deg, #171d22 0%, var(--i-panel) 62%)`,
+  border: `1px solid color-mix(in srgb, ${hue} 30%, var(--i-border-strong))`,
+  boxShadow: "inset 0 1px 0 rgba(243,240,230,0.05), 0 1px 2px rgba(0,0,0,0.45)",
+});
+
 function Dot({ colour }: { colour: string }) {
-  return <span className="h-[6px] w-[6px] shrink-0 rounded-full" style={{ background: colour }} />;
+  return (
+    <span
+      className="h-[6px] w-[6px] shrink-0 rounded-full"
+      style={{ background: colour, boxShadow: `0 0 5px color-mix(in srgb, ${colour} 55%, transparent)` }}
+    />
+  );
 }
 
 function Tile({
@@ -702,38 +887,53 @@ function Tile({
       href={href}
       data-shoot={shoot}
       data-domain={hue}
-      className="relative flex min-w-0 flex-col overflow-hidden rounded-[8px] px-[15px] pb-[3px] pt-[12px] transition-opacity hover:opacity-95"
+      className="group relative flex min-w-0 flex-col overflow-hidden rounded-[8px] px-[15px] pb-0 pt-[11px] transition-[border-color,box-shadow] duration-200"
       style={{
-        background: `linear-gradient(180deg, ${HUE_SOFT[hue]} 0%, rgba(0,0,0,0) 58%), var(--i-panel)`,
-        border: `1px solid color-mix(in srgb, ${c} 62%, var(--i-border))`,
-        opacity: 0.999,
+        background: `linear-gradient(180deg, ${HUE_SOFT[hue]} 0%, rgba(0,0,0,0) 62%), linear-gradient(180deg, #171d22 0%, var(--i-panel) 62%)`,
+        border: `1px solid color-mix(in srgb, ${c} 46%, var(--i-border-strong))`,
+        boxShadow: `inset 0 1px 0 color-mix(in srgb, ${c} 22%, rgba(243,240,230,0.05)), 0 1px 3px rgba(0,0,0,0.5)`,
       }}
     >
       <div className="flex min-w-0 shrink-0 items-center gap-[8px]">
         <span
-          className="flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded-[4px] text-[10.5px] font-bold"
-          style={{ background: c, color: "var(--i-void)" }}
+          className="flex h-[17px] w-[17px] shrink-0 items-center justify-center rounded-[4px] text-[10px] font-bold"
+          style={{ background: c, color: "var(--i-void)", boxShadow: `0 0 9px color-mix(in srgb, ${c} 38%, transparent)` }}
         >
           {index}
         </span>
-        <span className="truncate text-[12.5px] font-semibold uppercase tracking-[0.07em]" style={{ color: c }}>
+        <span className="truncate text-[11.5px] font-semibold uppercase tracking-[0.1em]" style={{ color: c }}>
           {label}
         </span>
       </div>
-      <p className="shrink-0 truncate pt-[5px] text-[11.5px] leading-[14px]" style={{ color: "var(--i-text-faint)" }}>
+      {/* LEVEL 3. The question the instrument answers, kept because the five
+          of them read as one sentence across the row — but kept quiet. */}
+      <p className="shrink-0 truncate pt-[4px] text-[10.5px] leading-[13px]" style={{ color: "var(--i-text-faint)" }}>
         {question}
       </p>
 
-      <div className="flex min-w-0 shrink-0 items-baseline gap-[20px] pt-[7px]">
+      {/* THE NUMBER FIRST. The primary is the largest thing in the tile and
+          carries the full hue; the second figure is a real reading but a
+          smaller, dimmer one, so the eye lands on the headline and only then
+          finds the qualifier beside it. Both were 29px in V5, which is why
+          neither of them led. */}
+      <div className="flex min-w-0 shrink-0 items-baseline gap-[16px] pt-[6px]">
         <span className="min-w-0">
           <span
             data-shoot={`${shoot}-primary`}
             className="i-readout block truncate leading-none"
-            style={{ color: aTone ?? c, fontSize: a.length > 7 ? 20 : 29 }}
+            style={{
+              color: aTone ?? c,
+              fontSize: a.length > 7 ? 22 : 33,
+              letterSpacing: "-0.015em",
+              textShadow: `0 0 22px color-mix(in srgb, ${aTone ?? c} 26%, transparent)`,
+            }}
           >
             {a}
           </span>
-          <span className="block truncate pt-[5px] text-[11px] leading-[13px]" style={{ color: "var(--i-text-faint)" }}>
+          <span
+            className="block truncate pt-[5px] text-[10px] uppercase leading-[12px] tracking-[0.05em]"
+            style={{ color: "var(--i-text-soft)" }}
+          >
             {aLabel}
           </span>
         </span>
@@ -741,11 +941,15 @@ function Tile({
           <span
             data-shoot={`${shoot}-second`}
             className="i-readout block truncate leading-none"
-            style={{ color: bTone ?? c, fontSize: b.length > 7 ? 20 : 29 }}
+            style={{
+              color: bTone ?? `color-mix(in srgb, ${c} 74%, var(--i-text-faint))`,
+              fontSize: b.length > 7 ? 15 : 21,
+              letterSpacing: "-0.01em",
+            }}
           >
             {b}
           </span>
-          <span className="block truncate pt-[5px] text-[11px] leading-[13px]" style={{ color: "var(--i-text-faint)" }}>
+          <span className="block truncate pt-[5px] text-[10px] leading-[12px]" style={{ color: "var(--i-text-faint)" }}>
             {bLabel}
           </span>
         </span>
@@ -763,9 +967,24 @@ function Tile({
 
       {/* REAL RECORDED POINTS ONLY. Where a reading has no history — capacity
           has none anywhere in the model — the floor stays empty. A recess is
-          not a claim; a flat line would be. */}
-      <div className="-mx-[15px] mt-auto h-[26px] shrink-0">
-        {series && series.length > 0 ? <Trace points={series} colour={c} shoot={`${shoot}-spark`} /> : null}
+          not a claim; a flat line would be. The trace sits IN the tile's
+          floor, bleeding to all three edges, so it reads as part of the
+          instrument face rather than a chart parked on top of it. */}
+      <div className="-mx-[15px] mt-auto h-[30px] shrink-0">
+        {series && series.length > 0 ? (
+          <Trace points={series} colour={c} shoot={`${shoot}-spark`} />
+        ) : (
+          // Not empty, and not a claim: a hairline in the domain's colour,
+          // which says "this instrument has a floor" without drawing data
+          // that does not exist.
+          <div
+            className="h-full w-full"
+            style={{
+              background: `linear-gradient(180deg, rgba(0,0,0,0) 0%, color-mix(in srgb, ${c} 7%, transparent) 100%)`,
+              borderTop: `1px solid color-mix(in srgb, ${c} 14%, transparent)`,
+            }}
+          />
+        )}
       </div>
     </Link>
   );
@@ -773,8 +992,8 @@ function Tile({
 
 function Trace({ points, colour, shoot }: { points: Point[]; colour: string; shoot: string }) {
   const W = 100;
-  const H = 26;
-  const PAD = 4;
+  const H = 30;
+  const PAD = 5;
   const vals = points.map((p) => p.value);
   const lo = Math.min(...vals);
   const hi = Math.max(...vals);
@@ -791,19 +1010,33 @@ function Trace({ points, colour, shoot }: { points: Point[]; colour: string; sho
       className="h-full w-full"
       aria-hidden
     >
+      <defs>
+        <linearGradient id={`${shoot}-fill`} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor={colour} stopOpacity={0.34} />
+          <stop offset="100%" stopColor={colour} stopOpacity={0.03} />
+        </linearGradient>
+      </defs>
       {points.length === 1 ? (
-        <circle cx={W / 2} cy={H / 2} r={1.4} fill={colour} vectorEffect="non-scaling-stroke" />
+        <circle cx={W / 2} cy={H / 2} r={1.6} fill={colour} vectorEffect="non-scaling-stroke" />
       ) : (
         <>
-          <polygon points={`0,${H} ${line} ${W},${H}`} fill={colour} opacity={0.13} />
+          <polygon points={`0,${H} ${line} ${W},${H}`} fill={`url(#${shoot}-fill)`} />
           <polyline
             points={line}
             fill="none"
             stroke={colour}
-            strokeWidth={1.4}
+            strokeWidth={1.6}
             strokeLinejoin="round"
             strokeLinecap="round"
-            opacity={0.85}
+            vectorEffect="non-scaling-stroke"
+          />
+          {/* The last reading, marked. It is the one point on the trace the
+              rest of the page is actually about. */}
+          <circle
+            cx={x(points.length - 1)}
+            cy={y(points[points.length - 1].value)}
+            r={1.8}
+            fill={colour}
             vectorEffect="non-scaling-stroke"
           />
         </>
@@ -836,37 +1069,68 @@ function RailPanel({
       data-shoot={shoot}
       className={`flex min-h-0 flex-col overflow-hidden rounded-[8px] px-[15px] pb-[11px] pt-[12px] ${grow ? "min-h-[104px]" : "shrink-0"}`}
       style={{
-        background: "var(--i-panel)",
-        border: "1px solid var(--i-border)",
+        ...tinted(hue, `color-mix(in srgb, ${hue} 7%, transparent)`),
         flex: grow ? `${typeof grow === "string" ? grow : 1} 1 0%` : undefined,
       }}
     >
       <header className="shrink-0">
-        <div className="flex items-center gap-2">
-          <h2 className="text-[11.5px] font-semibold uppercase tracking-[0.1em]" style={{ color: hue }}>
+        <div className="flex items-center gap-[7px]">
+          {/* The panel's domain, stated as a mark before its name — the same
+              relationship the numbered badge has to a telemetry tile. */}
+          <span
+            aria-hidden
+            className="h-[11px] w-[2px] shrink-0 rounded-full"
+            style={{ background: hue, boxShadow: `0 0 6px color-mix(in srgb, ${hue} 45%, transparent)` }}
+          />
+          <h2 className="text-[11px] font-semibold uppercase tracking-[0.11em]" style={{ color: hue }}>
             {title}
           </h2>
           <div className="flex-1" />
           {dot && <Dot colour={dot} />}
         </div>
         {sub && (
-          <p className="truncate pt-[5px] text-[11px]" style={{ color: "var(--i-text-faint)" }}>
+          <p className="truncate pt-[4px] text-[10.5px]" style={{ color: "var(--i-text-faint)" }}>
             {sub}
           </p>
         )}
       </header>
       {children}
-      {door && (
-        <Link
-          href={door.href}
-          data-shoot="cr-panel-door"
-          className="mt-[10px] flex shrink-0 items-center justify-center gap-1.5 rounded-[5px] py-[6px] text-[11px] transition-opacity hover:opacity-80"
-          style={{ border: `1px solid ${door.tone}`, color: door.tone }}
-        >
-          {door.label} →
-        </Link>
-      )}
+      {door && <Door href={door.href} label={door.label} tone={door.tone} />}
     </section>
+  );
+}
+
+// A DOOR, not a call to action. It is the quietest object on the panel
+// until you go near it: a tinted well with a hairline in the panel's own
+// colour, which lights up rather than changing shape. The outlined pill it
+// replaces read as a form button on every surface it appeared on.
+function Door({ href, label, tone }: { href: string; label: string; tone: string }) {
+  return (
+    <Link
+      href={href}
+      data-shoot="cr-panel-door"
+      className="group/door mt-[9px] flex shrink-0 items-center justify-center gap-[6px] rounded-[5px] py-[5px] text-[10.5px] font-medium tracking-[0.02em] transition-[background,border-color,color] duration-150"
+      style={{
+        background: `color-mix(in srgb, ${tone} 9%, transparent)`,
+        border: `1px solid color-mix(in srgb, ${tone} 34%, transparent)`,
+        color: `color-mix(in srgb, ${tone} 88%, var(--i-text))`,
+      }}
+      onMouseEnter={(e) => {
+        e.currentTarget.style.background = `color-mix(in srgb, ${tone} 18%, transparent)`;
+        e.currentTarget.style.borderColor = `color-mix(in srgb, ${tone} 62%, transparent)`;
+        e.currentTarget.style.color = tone;
+      }}
+      onMouseLeave={(e) => {
+        e.currentTarget.style.background = `color-mix(in srgb, ${tone} 9%, transparent)`;
+        e.currentTarget.style.borderColor = `color-mix(in srgb, ${tone} 34%, transparent)`;
+        e.currentTarget.style.color = `color-mix(in srgb, ${tone} 88%, var(--i-text))`;
+      }}
+    >
+      {label}
+      <span aria-hidden style={{ opacity: 0.7 }}>
+        →
+      </span>
+    </Link>
   );
 }
 
@@ -874,25 +1138,39 @@ function Bottom({
   title,
   href,
   shoot,
+  hue,
   children,
 }: {
   title: string;
   href: string;
   shoot: string;
+  /** The domain this analysis surface belongs to. It tints the face and
+      marks the heading, so the bottom row reads in the same colour language
+      as the telemetry above it. */
+  hue: string;
   children: ReactNode;
 }) {
   return (
     <section
       data-shoot={shoot}
-      className="flex min-h-0 flex-col overflow-hidden rounded-[8px] px-[16px] pb-[13px] pt-[13px]"
-      style={{ background: "var(--i-panel)", border: "1px solid var(--i-border)" }}
+      className="flex min-h-0 flex-col overflow-hidden rounded-[8px] px-[15px] pb-[12px] pt-[11px]"
+      style={tinted(hue, `color-mix(in srgb, ${hue} 6%, transparent)`)}
     >
-      <header className="flex shrink-0 items-baseline gap-2 pb-[9px]">
-        <h2 className="truncate text-[11.5px] font-semibold uppercase tracking-[0.07em]" style={{ color: "var(--i-text)" }}>
+      <header className="flex shrink-0 items-center gap-[7px] pb-[8px]">
+        <span
+          aria-hidden
+          className="h-[11px] w-[2px] shrink-0 rounded-full"
+          style={{ background: hue, boxShadow: `0 0 6px color-mix(in srgb, ${hue} 45%, transparent)` }}
+        />
+        <h2 className="truncate text-[11px] font-semibold uppercase tracking-[0.11em]" style={{ color: hue }}>
           {title}
         </h2>
         <div className="flex-1" />
-        <Link href={href} className="shrink-0 text-[10.5px]" style={{ color: "var(--i-text-faint)" }}>
+        <Link
+          href={href}
+          className="shrink-0 text-[10px] transition-colors hover:text-[var(--i-text)]"
+          style={{ color: "var(--i-text-faint)" }}
+        >
           Open →
         </Link>
       </header>
@@ -903,11 +1181,17 @@ function Bottom({
 
 function Tally({ value, label, tone }: { value: string; label: string; tone: string }) {
   return (
-    <div className="min-w-0">
-      <div className="i-readout text-[21px] leading-none" style={{ color: tone }}>
+    // LEVEL 3. A tally is context beneath a headline, so it sits in a well
+    // rather than on the panel face — the recess is what tells the eye it is
+    // supporting detail without having to shrink the number to illegibility.
+    <div
+      className="min-w-0 rounded-[4px] px-[8px] py-[6px]"
+      style={{ background: "rgba(0,0,0,0.22)", border: "1px solid rgba(243,240,230,0.05)" }}
+    >
+      <div className="i-readout text-[17px] leading-none" style={{ color: tone }}>
         {value}
       </div>
-      <div className="truncate pt-[6px] text-[10px] leading-tight" style={{ color: "var(--i-text-faint)" }}>
+      <div className="truncate pt-[4px] text-[9.5px] leading-tight" style={{ color: "var(--i-text-faint)" }}>
         {label}
       </div>
     </div>
@@ -960,12 +1244,13 @@ function Composition({ data, scenario }: { data: ProjectPayload; scenario: Suite
       scenario.draftFeatures,
       scenario.acceptedCandidateIds
     );
-    return { id: s.scopeId, name: s.name, days: comp.loadDays, features: comp.engaged.length };
+    return { scopeId: s.scopeId, id: s.scopeId, name: s.name, days: comp.loadDays, features: comp.engaged.length };
   });
+  const named = disambiguate(parts);
   const total = parts.reduce((n, p) => n + p.days, 0);
 
   const R = 34;
-  const T = 11;
+  const T = 12;
   const C = 2 * Math.PI * R;
   let offset = 0;
 
@@ -997,23 +1282,33 @@ function Composition({ data, scenario }: { data: ProjectPayload; scenario: Suite
           })}
         </svg>
         <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
-          <span className="i-readout text-[17px] leading-none" style={{ color: "var(--i-text)" }}>
+          <span
+            className="i-readout text-[20px] leading-none"
+            style={{ color: "var(--i-text)", letterSpacing: "-0.015em" }}
+          >
             {total.toFixed(0)}d
           </span>
-          <span className="pt-[3px] text-[9px]" style={{ color: "var(--i-text-faint)" }}>
+          <span className="pt-[3px] text-[8.5px] uppercase tracking-[0.09em]" style={{ color: "var(--i-text-faint)" }}>
             remaining
           </span>
         </div>
       </div>
-      <div className="i-noscrollbar flex min-w-0 flex-1 flex-col justify-center gap-[7px] overflow-y-auto">
-        {parts.map((p, i) => (
+      <div className="i-noscrollbar flex min-w-0 flex-1 flex-col justify-center gap-[5px] overflow-y-auto">
+        {named.map((p, i) => (
           <div key={p.id} className="flex items-baseline gap-[7px]">
-            <span className="h-[7px] w-[7px] shrink-0 rounded-[2px]" style={{ background: SERIES[i % 4] }} />
-            <span className="min-w-0 flex-1 truncate text-[10.5px]" style={{ color: "var(--i-text-soft)" }}>
-              {p.name}
+            {/* The chip is the arc, at legend scale — same colour, same
+                rounding — so the eye pairs a name with its segment without
+                counting round the ring. */}
+            <span
+              className="h-[8px] w-[3px] shrink-0 rounded-full"
+              style={{ background: SERIES[i % 4], boxShadow: `0 0 5px color-mix(in srgb, ${SERIES[i % 4]} 50%, transparent)` }}
+            />
+            <span className="min-w-0 flex-1 truncate text-[10px]" style={{ color: "var(--i-text-soft)" }}>
+              {p.display}
             </span>
             <span className="i-readout shrink-0 text-[10.5px]" style={{ color: "var(--i-text)" }}>
-              {p.days.toFixed(1)}d
+              {p.days.toFixed(1)}
+              <span style={{ color: "var(--i-text-faint)" }}>d</span>
             </span>
           </div>
         ))}

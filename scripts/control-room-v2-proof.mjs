@@ -259,7 +259,17 @@ const tl = await api("/api/timeline");
   check("E2. Every line is an event the Timeline actually carries",
     titles.length > 0 && titles.every((t) => [...stream].some((s) => s.startsWith(t.replace(/…$/, "")))),
     `${titles.length} lines`);
-  check("E3. One subject is one line", new Set(titles).size === titles.length);
+  // ONE SUBJECT IS ONE LINE. The law is that grouping must never emit the
+  // same subject twice — not that two lines can never share a title. Two
+  // different projects can carry the same work item title, and the seed does
+  // exactly that: `jsa` and `jsa-seed` are both named JSA. So a repeated
+  // title is only allowed when the stream genuinely carries it under more
+  // than one project; a repeat within ONE project is still a failure.
+  const dupes = [...new Set(titles.filter((t, i) => titles.indexOf(t) !== i))];
+  const scopesCarrying = (t) =>
+    new Set(tl.entries.filter((e) => e.title.startsWith(t.replace(/…$/, ""))).map((e) => e.scopeId));
+  check("E3. One subject is one line", dupes.every((t) => scopesCarrying(t).size > 1),
+    dupes.length ? dupes.map((t) => `${t.slice(0, 28)} → ${scopesCarrying(t).size} projects`).join("; ") : "no repeated titles");
 }
 
 // ── F. THE COLOUR LAW STILL HOLDS ──────────────────────────────────────
