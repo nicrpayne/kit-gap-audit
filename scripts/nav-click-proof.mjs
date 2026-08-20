@@ -63,6 +63,37 @@ check(
 );
 check("…and the rack is actually rendered", (await p.locator('[data-shoot="rail-rack"]').count()) === 1);
 
+// ── A SECOND CLICK SHUTS IT ────────────────────────────────────────────
+// Standing on /portfolio the link has nowhere to take you, which is what
+// frees the click to mean "close this". Third click re-opens.
+const nested = async () => (await entries()).filter((e) => NESTED.includes(e.label)).length;
+await p.click('[data-shoot="instrument-rail"] a[data-rail-entry="Portfolio"]');
+await p.waitForTimeout(1100);
+check("A second click on Portfolio shuts the rack", (await nested()) === 0, `${await nested()} modules visible`);
+check(
+  "…without leaving the page",
+  new URL(p.url()).pathname === "/portfolio",
+  new URL(p.url()).pathname
+);
+check(
+  "…and the parent reports itself collapsed",
+  (await p.getAttribute('[data-shoot="instrument-rail"] a[data-rail-entry="Portfolio"]', "aria-expanded")) === "false"
+);
+await p.click('[data-shoot="instrument-rail"] a[data-rail-entry="Portfolio"]');
+await p.waitForTimeout(1100);
+check("A third click re-opens it", (await nested()) === 3, `${await nested()} modules visible`);
+
+// Shutting it is a "not right now", not a stored preference: leaving and
+// coming back shows you what is there again.
+await p.click('[data-shoot="instrument-rail"] a[data-rail-entry="Portfolio"]');
+await p.waitForTimeout(900);
+await p.goto(`${BASE}/timeline`, { waitUntil: "domcontentloaded", timeout: 180000 });
+await p.waitForSelector('[data-shoot="instrument-rail"]', { timeout: 90000 });
+await p.goto(`${BASE}/portfolio`, { waitUntil: "domcontentloaded", timeout: 180000 });
+await p.waitForSelector('[data-shoot="instrument-rail"]', { timeout: 90000 });
+await p.waitForTimeout(1400);
+check("Shutting it does not persist across a departure and return", (await nested()) === 3);
+
 // ── THE STATE FOLLOWS THE ROUTE, NOT A CLICK ───────────────────────────
 // A pasted link and a refresh have to agree with a click about whether you
 // are inside Portfolio. This is the check that a stored open/closed flag

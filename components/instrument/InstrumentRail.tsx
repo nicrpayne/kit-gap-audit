@@ -15,6 +15,7 @@
 // Hidden entirely (the "⌘\" / chevron state) the simulation owns the full
 // viewport, which is what you want when screen-sharing a scenario.
 
+import { useState, type MouseEvent } from "react";
 import Link from "next/link";
 import { AnimatePresence, MotionConfig, motion } from "motion/react";
 import { DESTINATIONS, type ShellDestination } from "@/lib/shell/mode";
@@ -175,11 +176,16 @@ function RailLink({
   active,
   muted,
   anchor = false,
+  expanded,
+  onClick,
 }: {
   d: ShellDestination;
   active: boolean;
   muted: boolean;
   anchor?: boolean;
+  /** Set only on a parent that owns a rack, for assistive tech. */
+  expanded?: boolean;
+  onClick?: (e: MouseEvent<HTMLAnchorElement>) => void;
 }) {
   const color = active || anchor ? "var(--i-signal)" : muted ? "var(--i-text-faint)" : "var(--i-text-soft)";
   return (
@@ -187,6 +193,8 @@ function RailLink({
       href={d.href}
       title={d.question ?? (d.verb ? `${d.label} — ${d.verb}` : d.label)}
       aria-current={active ? "page" : undefined}
+      aria-expanded={expanded}
+      onClick={onClick}
       data-rail-entry={d.label}
       className={`relative flex flex-col items-center rounded-[8px] px-1 transition-colors hover:text-[var(--i-text)] ${
         muted ? "w-[66px] gap-[3px] px-0 py-[6px]" : "w-[76px] gap-[5px] py-[9px]"
@@ -219,6 +227,42 @@ export default function InstrumentRail({
   onToggle: () => void;
   onOpenCommand: () => void;
 }) {
+  // Racks the user has explicitly shut. Empty by default, so the route
+  // decides — this only ever records a deliberate override.
+  //
+  // It is deliberately NOT persisted. The rail remounts on every
+  // navigation (each route mounts its own InstrumentShell), so leaving
+  // Portfolio and coming back gives you the open rack again, which is the
+  // right default: arriving somewhere should show you what is there.
+  // Shutting it is a "not right now", not a preference.
+  const [shut, setShut] = useState<ReadonlySet<string>>(() => new Set());
+
+  /** Clicking the parent of an open rack shuts it instead of navigating.
+      You are already where the link would take you, so the navigation has
+      nothing to do — which is exactly what makes the click free to mean
+      something else.
+
+      Only while standing on the parent's OWN route. From inside a module
+      (/scope, /orbit) the same click still navigates to Portfolio, because
+      collapsing there would hide the row for the page you are looking at. */
+  const toggleRack = (
+    e: MouseEvent<HTMLAnchorElement>,
+    href: string,
+    onOwnRoute: boolean,
+    childElsewhere: boolean
+  ) => {
+    // Let the browser have modified clicks: open-in-new-tab must still work.
+    if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0) return;
+    if (!onOwnRoute || childElsewhere) return;
+    e.preventDefault();
+    setShut((prev) => {
+      const next = new Set(prev);
+      if (next.has(href)) next.delete(href);
+      else next.add(href);
+      return next;
+    });
+  };
+
   if (hidden) {
     return (
       <button
@@ -278,17 +322,37 @@ export default function InstrumentRail({
       <MotionConfig reducedMotion="user">
         {RAIL_DESTINATIONS.map((d) => {
           const childOn = (d.children ?? []).some((c) => isOn(pathname, c.href));
-          const open = isOn(pathname, d.href) || childOn;
+          const onOwnRoute = isOn(pathname, d.href);
+          // A child standing on a route of ITS OWN, as opposed to Capacity,
+          // which shares /portfolio with its parent. The distinction is the
+          // whole reason the toggle works: on /portfolio a child (Capacity)
+          // does hold the route, but you are not somewhere the rack would
+          // hide by closing, so the click is free to close it. On /scope
+          // you are, so it navigates instead.
+          const childElsewhere = (d.children ?? []).some((c) => c.href !== d.href && isOn(pathname, c.href));
+          // THE ROUTE PROPOSES, THE USER DISPOSES. Being inside Portfolio is
+          // still what opens the rack — that is what makes a pasted /scope
+          // link and a refresh land correctly. Shutting it is an explicit
+          // act, so it lives in state layered on top rather than replacing
+          // the route as the source of truth.
+          const open = (onOwnRoute || childOn) && !shut.has(d.href);
           // A parent whose child holds the route is the anchor, not the
           // destination — the filled active plate belongs to the module.
-          const active = isOn(pathname, d.href) && !childOn;
+          const active = onOwnRoute && !childOn;
           return (
             <div
               key={`${d.href}:${d.label}`}
               className="flex w-full flex-col items-center gap-[3px]"
               {...(d.children ? { role: "group" as const, "aria-label": d.label } : {})}
             >
-              <RailLink d={d} active={active} muted={false} anchor={Boolean(d.children) && open} />
+              <RailLink
+                d={d}
+                active={active}
+                muted={false}
+                anchor={Boolean(d.children) && open}
+                expanded={d.children ? open : undefined}
+                onClick={d.children ? (e) => toggleRack(e, d.href, onOwnRoute, childElsewhere) : undefined}
+              />
 
               {/* NO initial={false} ON THE AnimatePresence BELOW, deliberately.
                   Each route mounts its own InstrumentShell, so the rail
@@ -298,11 +362,13 @@ export default function InstrumentRail({
                   single time rather than just once. Measured with it in
                   place: the rack's height went 0 → 118px in a single frame.
 
-                  The same remount is why closing is instant — the rail
-                  unmounts with the page, so no element survives for an exit
-                  animation to run on. AnimatePresence stays anyway: it costs
-                  nothing and starts working the day the shell is hoisted
-                  into a layout. */}
+                  The same remount is why LEAVING is instant — navigate to
+                  Timeline and the rail unmounts with the page, so no element
+                  survives for an exit animation to run on. Shutting the rack
+                  by clicking Portfolio is different: it deliberately does
+                  not navigate, the rail stays mounted, and AnimatePresence
+                  gets to run the exit properly. Measured: 118px → 0 across
+                  21 frames. */}
               {d.children && (
                 <AnimatePresence>
                   {open && (
