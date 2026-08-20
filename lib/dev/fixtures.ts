@@ -200,7 +200,20 @@ function identifierFor(teamKey: string, i: number): string {
 }
 
 export function devFixtureIssues(scope: ScopeFilter): LinearIssueSummary[] {
-  const fixture = TEAMS[scope.teamKey] ?? TEAMS.SOF;
+  // AN UNKNOWN TEAM HAS NO WORK, and must not be handed someone else's.
+  //
+  // This used to fall back to `TEAMS.SOF`, so every Scope with an
+  // unrecognised team key silently received SOF's ten issues and four
+  // assignees. A brand-new or misconfigured Scope therefore appeared —
+  // in dev and design mode only — with a full backlog and an inferred
+  // capacity of 4 FTE, and those fabricated numbers flowed into the
+  // Control Room's release-load total as if they were measured.
+  //
+  // Production is unaffected either way: with KIT_DEV_FIXTURES unset,
+  // getScopedIssues queries Linear by team key and an unknown team simply
+  // returns nothing. This makes the offline path agree with that.
+  const fixture = TEAMS[scope.teamKey];
+  if (!fixture) return [];
   const issues: LinearIssueSummary[] = [];
 
   // Index -> the Feature issue it hangs from. Everything about the

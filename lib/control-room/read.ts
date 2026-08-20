@@ -103,6 +103,12 @@ export interface ChoicesSummary {
 // ── 3. DO WE HAVE ENOUGH EFFECTIVE CAPACITY ────────────────────────────
 
 export interface CapacityChannel {
+  /** FALSE when the number is a floor, not a reading. `inferCapacityFromAssignees`
+      returns 1 for a scope with nobody on it — a divide-by-zero guard the
+      simulation needs, NOT a measurement. A surface that prints it as "1.0"
+      is asserting a staffing level nobody stated, so the Control Room shows
+      "—" instead. The simulation is untouched; only the claim is. */
+  known: boolean;
   scopeId: string;
   name: string;
   raw: number;
@@ -274,6 +280,19 @@ function upstreamOf(scopeId: string, byId: Map<string, TimelineLane>, seen = new
   return seen;
 }
 
+
+/** A date a person can act on. The year is printed whenever it is not the
+    current one, because "Jan 1" silently means "the next one" to a reader and
+    a stale target is exactly the case where that is wrong. */
+function dateWithYear(d: Date, now: Date = new Date()): string {
+  const sameYear = d.getFullYear() === now.getFullYear();
+  return d.toLocaleDateString(undefined, {
+    month: "short",
+    day: "numeric",
+    ...(sameYear ? {} : { year: "numeric" }),
+  });
+}
+
 export function readControlRoom(i: ControlRoomInput): ControlRoomReading {
   const { now, data, scenario, preview, baseline, floorByScope, decisions, entries, lanes } = i;
   const startDate = new Date(data.startDate);
@@ -381,6 +400,9 @@ export function readControlRoom(i: ControlRoomInput): ControlRoomReading {
       raw: named ? ch.raw : s.teamCapacity,
       effective: named ? ch.effective : s.teamCapacity,
       basis: s.capacitySource,
+      // Real allocations are always known. An inferred figure is only known
+      // if there was something to infer it FROM.
+      known: named || s.items.length > 0,
     };
   });
   const capacity: CapacitySummary = {
@@ -556,7 +578,12 @@ export function readControlRoom(i: ControlRoomInput): ControlRoomReading {
             ? `${overrun}d past ${lane.name}'s target`
             : dom?.dominated
               ? "backlog no longer decides"
-              : "accepted",
+              // DECLARED, NOT ACCEPTED. `dependsOnScopeIds` is a modelling
+              // input somebody typed; there is no review step and no
+              // provenance behind it. "Accepted" implied a ratification that
+              // never happened, and sat one row above genuinely unreviewed
+              // claims where the contrast made the overstatement worse.
+              : "declared",
         causal: true,
         focusScopeId: lane.scopeId,
         selectNodeId: `dependency:${upId}`,
@@ -682,17 +709,38 @@ export function readControlRoom(i: ControlRoomInput): ControlRoomReading {
   for (const s of data.scopes) {
     const r = preview.get(s.scopeId);
     if (!r || !s.targetDate) continue;
-    const over = Math.round(days(r.likelyDate, new Date(s.targetDate)));
-    if (over > 0) {
+    const targetDate = new Date(s.targetDate);
+    const over = Math.round(days(r.likelyDate, targetDate));
+    if (over <= 0) continue;
+
+    // A TARGET IN THE PAST IS NOT A DELIVERY OVERRUN, it is a stale record.
+    // A 1999 target produced "10104d over" and sorted itself to the top of
+    // the constraint list, above every real one, because the list orders by
+    // magnitude. It is now its own kind of problem, sized as the small
+    // data-hygiene task it is rather than as the largest risk on the page.
+    if (targetDate < now) {
+      const stale = Math.round(days(now, targetDate));
       constraints.push({
-        id: `late:${s.scopeId}`,
-        label: `${s.name} lands after its target`,
-        detail: `Likely ${r.likelyDate.toLocaleDateString(undefined, { month: "short", day: "numeric" })}, target ${new Date(s.targetDate).toLocaleDateString(undefined, { month: "short", day: "numeric" })}.`,
-        quantity: `${over}d over`,
-        magnitude: over,
+        id: `stale-target:${s.scopeId}`,
+        label: `${s.name}'s target date is in the past`,
+        detail: `${s.name}'s target was ${dateWithYear(targetDate)}. Set a current one.`,
+        quantity: `${stale}d stale`,
+        magnitude: 0,
         href: "/forecast",
       });
+      continue;
     }
+
+    constraints.push({
+      id: `late:${s.scopeId}`,
+      label: `${s.name} lands after its target`,
+      // ALWAYS NAME THE YEAR when it is not the current one. "target Jan 1"
+      // reads as NEXT January whatever year it actually is.
+      detail: `Likely ${dateWithYear(r.likelyDate)}, target ${dateWithYear(targetDate)}.`,
+      quantity: `${over}d over`,
+      magnitude: over,
+      href: "/forecast",
+    });
   }
   if (reality.evidenceAgeDays !== null && reality.evidenceAgeDays > 7) {
     constraints.push({

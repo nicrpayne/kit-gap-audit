@@ -139,6 +139,13 @@ export default function ControlRoomPageClient() {
   const received = useRef<{ of: unknown; at: Date }>({ of: null, at: new Date() });
   if (m.data && received.current.of !== m.data) received.current = { of: m.data, at: new Date() };
 
+  // Engine errors name scope IDs, which mean nothing in a meeting. This maps
+  // them back to project names wherever one is known.
+  const scopeNameById = useMemo(
+    () => new Map((m.data?.scopes ?? []).map((s) => [s.scopeId, s.name] as const)),
+    [m.data]
+  );
+
   const reading: ControlRoomReading | null = useMemo(() => {
     if (!m.data || !m.preview || !m.baseline || !timeline) return null;
     return readControlRoom({
@@ -209,7 +216,7 @@ export default function ControlRoomPageClient() {
           <HeaderField label="Live now" value={dLong(reading.time.now)} tone="var(--i-signal)" shoot="cr-now" />
           <Divider />
           <HeaderField
-            label="Forecast horizon"
+            label="Timeline span"
             value={reading.time.horizonDays !== null ? `${reading.time.horizonDays} days` : "—"}
             tone="var(--i-signal)"
             shoot="cr-horizon"
@@ -336,10 +343,50 @@ export default function ControlRoomPageClient() {
   ) : null;
 
   if (!reading || !field || !m.startDate) {
+    // A COMPUTATION THAT REFUSED IS NOT A PAGE THAT IS STILL LOADING.
+    // m.error/dec.error/tlError only ever carry FETCH failures, so before
+    // this fourth slot existed a circular dependency — reachable with two
+    // ordinary PATCHes to /api/scopes/:id — left this surface on "Reading
+    // the project…" forever, with no error and no way to diagnose it.
+    const sim = m.simulationError
+      ? m.simulationError.replace(/\b[a-z0-9]{20,}\b/gi, (id) => scopeNameById.get(id) ?? id)
+      : null;
+    const problem = m.error ?? dec.error ?? tlError ?? sim;
     return (
       <InstrumentShell stateBar={strip}>
-        <div className="i-label flex flex-1 items-center justify-center" data-shoot="cr-empty">
-          {m.error ?? dec.error ?? tlError ?? "Reading the project…"}
+        <div className="flex flex-1 items-center justify-center px-10">
+          {problem ? (
+            <div className="max-w-[560px] text-center" data-shoot="cr-blocked">
+              <p
+                className="text-[11px] font-semibold uppercase tracking-[0.14em]"
+                style={{ color: "var(--i-amber)" }}
+              >
+                The forecast is stopped
+              </p>
+              <p className="pt-[10px] text-[15px] leading-[21px]" style={{ color: "var(--i-text)" }}>
+                {problem}
+              </p>
+              <p className="pt-[10px] text-[11.5px] leading-[16px]" style={{ color: "var(--i-text-faint)" }}>
+                Nothing on this page can be trusted until it is fixed, so nothing is shown.
+              </p>
+              <Link
+                href="/scopes"
+                data-shoot="cr-blocked-door"
+                className="mt-[16px] inline-flex items-center gap-[6px] rounded-[5px] px-[10px] py-[6px] text-[11px]"
+                style={{
+                  background: "color-mix(in srgb, var(--i-amber) 12%, transparent)",
+                  border: "1px solid color-mix(in srgb, var(--i-amber) 40%, transparent)",
+                  color: "var(--i-amber)",
+                }}
+              >
+                Fix project dependencies →
+              </Link>
+            </div>
+          ) : (
+            <div className="i-label" data-shoot="cr-empty">
+              Reading the project…
+            </div>
+          )}
         </div>
         {dialog}
       </InstrumentShell>

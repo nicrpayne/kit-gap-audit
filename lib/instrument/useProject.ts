@@ -305,12 +305,43 @@ subscribeReality(() => {
   void load(false);
 });
 
+// WHAT THE ENGINE REFUSED TO DO, said to a person rather than to a log.
+//
+// lib/forecast/portfolio.ts is deliberate about this: rather than looping
+// forever or picking an arbitrary order it throws, naming the exact cycle or
+// the exact missing edge. That is the right behaviour and it is not changed
+// here — this only translates it. The engine's own message names scope IDs,
+// which are meaningless in a meeting, so the caller is expected to be the
+// place that maps IDs to names; the raw message is kept as the fallback so
+// nothing is ever lost.
+export function describeSimulationFailure(e: unknown): string {
+  if (e && typeof e === "object" && "name" in e) {
+    const err = e as { name?: string; message?: string; cycle?: string[]; scopeId?: string; missingDependencyId?: string };
+    if (err.name === "DependencyCycleError" && err.cycle?.length) {
+      return `Circular dependency: ${err.cycle.join(" → ")}. Forecasting is stopped until one of those links is removed.`;
+    }
+    if (err.name === "MissingDependencyError") {
+      return `A project depends on "${err.missingDependencyId}", which no longer exists. Forecasting is stopped until that reference is cleared.`;
+    }
+    if (err.message) return err.message;
+  }
+  return "The forecast could not be computed for this project graph.";
+}
+
 export interface ProjectModel {
   data: ProjectPayload | null;
   loading: boolean;
   error: string | null;
   reload: () => void;
   startDate: Date | null;
+  /** WHY THE FORECAST COULD NOT BE COMPUTED, in a person's words.
+      Distinct from `error`, which only ever carries a fetch failure. The
+      portfolio engine deliberately REFUSES to forecast a graph it cannot
+      order — a circular dependency, or an edge pointing at a project that no
+      longer exists — and names the exact problem. Swallowing that left every
+      consuming surface on a loading state forever, which is the one failure
+      mode a decision surface must never have. */
+  simulationError: string | null;
   /** Reality: what the app currently accepts as true. */
   baseline: Map<string, SimulationResult> | null;
   /** Scenario: the hypothetical, or Reality when nothing is set. */
@@ -365,19 +396,20 @@ export function useProject(): ProjectModel {
     }));
   }, [data, startDate]);
 
-  const baseline = useMemo(() => {
-    if (!data || !scenarioScopes) return null;
+  const baselineAttempt = useMemo(() => {
+    if (!data || !scenarioScopes) return { result: null, reason: null };
     const delta: ScenarioInputDelta = {
       allocations: data.allocations.map((a) => ({ personId: a.personId, scopeId: a.scopeId, fraction: a.fraction })),
       hypotheticalPeople: [],
       contextSwitchCostPct: data.contextSwitchCostPct,
     };
     try {
-      return runPortfolioSimulation(applyScenarioInputDelta(scenarioScopes, data.people, delta));
-    } catch {
-      return null;
+      return { result: runPortfolioSimulation(applyScenarioInputDelta(scenarioScopes, data.people, delta)), reason: null };
+    } catch (e) {
+      return { result: null, reason: describeSimulationFailure(e) };
     }
   }, [data, scenarioScopes]);
+  const baseline = baselineAttempt.result;
 
   // Scenario simulation. Scope exclusions and gate resolutions are applied by
   // FILTERING the spec's items/gates -- which is exactly what the engine
@@ -385,6 +417,7 @@ export function useProject(): ProjectModel {
   // settled". An estimate override MAPS one item's three-point range to the
   // hypothetical one. All three are input substitutions on the existing spec;
   // no new math, and runPortfolioSimulation is called exactly as before.
+  const [simFailure, setSimFailure] = useState<string | null>(null);
   const [preview, setPreview] = useState<Map<string, SimulationResult> | null>(null);
   const [floorByScope, setFloorByScope] = useState<Map<string, SimulationResult> | null>(null);
   const debounce = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -426,8 +459,15 @@ export function useProject(): ProjectModel {
           floors.set(s.scopeId, runPortfolioSimulation(specsFor(s.scopeId)).get(s.scopeId)!);
         }
         setFloorByScope(floors);
-      } catch {
-        /* a dependency cycle can't be created from these surfaces */
+        setSimFailure(null);
+      } catch (e) {
+        // A CYCLE *CAN* REACH THIS. Two ordinary PATCHes to /api/scopes/:id
+        // — A depends on B, then B depends on A — are each individually
+        // valid and together close a loop the engine refuses to order. The
+        // reason is surfaced rather than swallowed; the last good preview is
+        // left in place so the page can say what is wrong instead of going
+        // blank.
+        setSimFailure(describeSimulationFailure(e));
       }
     }, 110);
     return () => {
@@ -493,6 +533,7 @@ export function useProject(): ProjectModel {
     data,
     loading,
     error,
+    simulationError: simFailure ?? baselineAttempt.reason,
     reload,
     startDate,
     baseline,

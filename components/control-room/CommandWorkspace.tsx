@@ -95,7 +95,18 @@ function disambiguate<T extends { scopeId: string; name: string }>(rows: T[]): (
   // On a collision the ID is the distinguishing fact and it already contains
   // the name — "jsa" and "jsa-seed" — so it replaces the name outright
   // rather than being appended to a word that is no longer telling them apart.
-  return rows.map((r) => ({ ...r, display: (seen.get(r.name) ?? 0) > 1 ? r.scopeId : r.name }));
+  // A RAW CUID IS NOT A NAME. Where the id is a readable slug ("jsa-seed")
+  // it distinguishes; where it is a 25-character database id it is worse
+  // than the ambiguity it was meant to fix, so a short ordinal is used and
+  // the full id stays in the row's tooltip.
+  const ordinals = new Map<string, number>();
+  return rows.map((r) => {
+    if ((seen.get(r.name) ?? 0) <= 1) return { ...r, display: r.name };
+    const nth = (ordinals.get(r.name) ?? 0) + 1;
+    ordinals.set(r.name, nth);
+    const readable = /^[a-z0-9]+(-[a-z0-9]+)+$/i.test(r.scopeId) && r.scopeId.length <= 24;
+    return { ...r, display: readable ? r.scopeId : `${r.name} (${nth})` };
+  });
 }
 
 export default function CommandWorkspace({
@@ -123,9 +134,15 @@ export default function CommandWorkspace({
     const rows = r.activity.slice(0, 3);
     const times = new Map<string, number>();
     for (const a of rows) times.set(a.title, (times.get(a.title) ?? 0) + 1);
-    return rows.map((a) => ({
+    // NAMING THE PROJECT IS NOT ENOUGH when the two projects share a name —
+    // which is precisely the case this exists for. The disambiguated label
+    // is used, so two rows never read identically.
+    const named = disambiguate(
+      rows.map((a) => ({ scopeId: a.scopeId, name: scopeNameById.get(a.scopeId) ?? a.scopeId }))
+    );
+    return rows.map((a, i) => ({
       ...a,
-      scopeLabel: (times.get(a.title) ?? 0) > 1 ? (scopeNameById.get(a.scopeId) ?? a.scopeId) : null,
+      scopeLabel: (times.get(a.title) ?? 0) > 1 ? named[i].display : null,
     }));
   })();
 
@@ -288,7 +305,7 @@ export default function CommandWorkspace({
                 timestamps and there is no discipline field. So the header
                 says "today only" and the panel shows the real current split
                 per project: committed as the track, arriving as the fill. */}
-            <Bottom title="Capacity Overview" href="/portfolio" shoot="cr-surf-capacity" hue={HUE.capacity}>
+            <Bottom title={`Capacity · ${r.capacity.byScope.length} projects`} href="/portfolio" shoot="cr-surf-capacity" hue={HUE.capacity}>
               <p className="flex shrink-0 items-baseline gap-[8px]">
                 <span
                   className="i-readout leading-none"
@@ -352,11 +369,27 @@ export default function CommandWorkspace({
                           }}
                         />
                       </span>
-                      <span className="i-readout w-[52px] shrink-0 text-right text-[10.5px]" style={{ color: "var(--i-text)" }}>
-                        {c.effective.toFixed(1)}
-                        <span style={{ color: "var(--i-text-faint)" }}>
-                          {c.basis === "allocations" ? `/${c.raw.toFixed(1)}` : " ct"}
-                        </span>
+                      {/* "ct" abbreviated "counted" and was attached to exactly
+                          the rows that were NOT counted. A row with real
+                          allocations reads effective/committed; an inferred
+                          one is marked `est`; one inferred from nobody is not
+                          a number at all. */}
+                      <span className="i-readout w-[58px] shrink-0 text-right text-[10.5px]" style={{ color: c.known ? "var(--i-text)" : "var(--i-text-faint)" }}>
+                        {!c.known ? (
+                          <span data-shoot="cr-capacity-unknown" title="No allocations and nobody assigned — capacity is not known for this project.">
+                            —<span style={{ color: "var(--i-text-faint)" }}> n/a</span>
+                          </span>
+                        ) : c.basis === "allocations" ? (
+                          <>
+                            {c.effective.toFixed(1)}
+                            <span style={{ color: "var(--i-text-faint)" }}>/{c.raw.toFixed(1)}</span>
+                          </>
+                        ) : (
+                          <>
+                            {c.effective.toFixed(1)}
+                            <span style={{ color: "var(--i-amber)" }} title="Inferred from who is assigned, not from allocations."> est</span>
+                          </>
+                        )}
                       </span>
                     </div>
                   );
@@ -442,7 +475,7 @@ export default function CommandWorkspace({
                         {r.outcome.gatedBy ?? "overall"}
                       </span>
                       <span className="block truncate text-[10px] leading-[12px]" style={{ color: "var(--i-text-faint)" }}>
-                        against its target
+                        simulated now, vs its target
                       </span>
                     </span>
                     {r.outcome.confidenceTrendPts !== null && (
@@ -621,7 +654,7 @@ export default function CommandWorkspace({
                               background: "color-mix(in srgb, var(--i-mint) 12%, transparent)",
                             }}
                           >
-                            accepted
+                            declared
                           </span>
                         )}
                         <Dot colour={d.kind === "shared_upstream" ? "var(--i-amber)" : "var(--i-mint)"} />
@@ -782,7 +815,7 @@ export default function CommandWorkspace({
         />
         <StatusCell
           id="horizon"
-          label="Horizon"
+          label="Timeline span"
           value={r.time.horizonDays !== null ? `${r.time.horizonDays} Days` : "—"}
           tone="var(--i-cool)"
           href="/timeline"

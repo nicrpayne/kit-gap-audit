@@ -87,6 +87,42 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       if (found !== deduped.length) {
         return NextResponse.json({ error: "One or more dependsOnScopeIds values don't exist" }, { status: 400 });
       }
+
+      // A LONGER CYCLE IS REACHABLE FROM HERE, and used to be accepted.
+      // "A depends on B" and "B depends on A" are each individually valid,
+      // so both PATCHes returned 200 and the loop only failed later — at
+      // simulate time, on every surface at once. The graph is walked with
+      // this edit applied so the loop is refused at the moment it would be
+      // closed, and named the way the engine names it.
+      const all = await prisma.scope.findMany({ select: { id: true, name: true, dependsOnScopeIds: true } });
+      const deps = new Map(all.map((x) => [x.id, x.id === id ? deduped : x.dependsOnScopeIds]));
+      const nameOf = new Map(all.map((x) => [x.id, x.name]));
+      const path: string[] = [];
+      const state = new Map<string, "visiting" | "done">();
+      const findCycle = (node: string): string[] | null => {
+        if (state.get(node) === "done") return null;
+        if (state.get(node) === "visiting") return [...path.slice(path.indexOf(node)), node];
+        state.set(node, "visiting");
+        path.push(node);
+        for (const next of deps.get(node) ?? []) {
+          const hit = findCycle(next);
+          if (hit) return hit;
+        }
+        path.pop();
+        state.set(node, "done");
+        return null;
+      };
+      const cycle = findCycle(id);
+      if (cycle) {
+        return NextResponse.json(
+          {
+            error:
+              `That would create a circular dependency: ${cycle.map((c) => nameOf.get(c) ?? c).join(" -> ")}. ` +
+              `A project can't be waiting, directly or indirectly, on something that is waiting on it.`,
+          },
+          { status: 400 }
+        );
+      }
     }
     body.dependsOnScopeIds = deduped;
   }
@@ -135,7 +171,7 @@ export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ 
     prisma.workEstimate.count({ where: { scopeId: id } }),
     prisma.contextDoc.count({ where: { scopeId: id } }),
     prisma.allocation.count({ where: { scopeId: id } }),
-    prisma.scope.findMany({ where: { dependsOnScopeIds: { has: id } }, select: { name: true } }),
+    prisma.scope.findMany({ where: { dependsOnScopeIds: { has: id } }, select: { id: true, name: true, dependsOnScopeIds: true } }),
   ]);
 
   const blockers: string[] = [];
@@ -156,17 +192,22 @@ export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ 
     );
   }
 
-  if (dependents.length > 0) {
-    return NextResponse.json(
-      {
-        error: `Can't delete this Scope -- ${dependents.map((d) => d.name).join(", ")} still list it in dependsOnScopeIds. Remove that dependency first.`,
-      },
-      { status: 409 }
-    );
-  }
-
+  // A DELETED PROJECT USED TO LEAVE A LANDMINE. Refusing the delete pushed
+  // the work onto whoever hit the wall, and any reference that did get
+  // orphaned another way stopped the forecast dead for everyone. The
+  // reference is now cleared as part of the same transaction: the dependency
+  // on THIS scope goes, and every other dependency those projects declare is
+  // preserved exactly as it was.
   try {
-    await prisma.scope.delete({ where: { id } });
+    await prisma.$transaction([
+      ...dependents.map((d) =>
+        prisma.scope.update({
+          where: { id: d.id },
+          data: { dependsOnScopeIds: d.dependsOnScopeIds.filter((x) => x !== id) },
+        })
+      ),
+      prisma.scope.delete({ where: { id } }),
+    ]);
   } catch (error) {
     return NextResponse.json(
       { error: `Couldn't delete that Scope: ${error instanceof Error ? error.message : "unknown error"}` },
