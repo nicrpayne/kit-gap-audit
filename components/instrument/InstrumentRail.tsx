@@ -16,6 +16,7 @@
 // viewport, which is what you want when screen-sharing a scenario.
 
 import Link from "next/link";
+import { AnimatePresence, MotionConfig, motion } from "motion/react";
 import { DESTINATIONS, type ShellDestination } from "@/lib/shell/mode";
 
 // Drawn rather than typed. A 14px text glyph is at the mercy of whatever
@@ -129,22 +130,68 @@ const RAIL_DESTINATIONS = DESTINATIONS.filter((d) => !d.secondary);
 const isOn = (pathname: string, href: string) =>
   href === "/" ? pathname === "/" : pathname === href || pathname.startsWith(href + "/");
 
-/** One rail entry. `muted` is the child treatment: narrower, smaller icon,
-    one step quieter — enough that the eye reads a group without the rail
-    needing a second colour or a box drawn round it. */
-function RailLink({ d, active, muted }: { d: ShellDestination; active: boolean; muted: boolean }) {
+// THE RACK'S PHYSICS. Two springs, both in the vocabulary the instruments
+// already speak (see ScopeInstrument / CapabilityTile): the chassis moves
+// with authority and does not bounce, the modules inside it are lighter and
+// arrive a beat later. Nothing here is decorative easing — the timing is
+// what makes opening Portfolio read as a rack sliding out rather than a
+// menu unfolding.
+const CHASSIS = { type: "spring", stiffness: 380, damping: 34, mass: 0.9 } as const;
+const MODULE = { type: "spring", stiffness: 460, damping: 32, mass: 0.6 } as const;
+
+const rackVariants = {
+  closed: {
+    height: 0,
+    opacity: 0,
+    transition: { ...CHASSIS, staggerChildren: 0.028, staggerDirection: -1 },
+  },
+  open: {
+    height: "auto",
+    opacity: 1,
+    transition: { ...CHASSIS, delayChildren: 0.045, staggerChildren: 0.045 },
+  },
+} as const;
+
+// Children slide down out of the parent rather than fading in place, so the
+// eye reads them as coming FROM Portfolio.
+const moduleVariants = {
+  closed: { opacity: 0, y: -7, transition: MODULE },
+  open: { opacity: 1, y: 0, transition: MODULE },
+} as const;
+
+/** One rail entry.
+
+    `muted` is the child treatment: narrower, smaller icon, one step
+    quieter — enough that the eye reads a nested instrument without the
+    rail needing a second colour or a box drawn round it.
+
+    `anchor` is the parent-while-open treatment. It is deliberately NOT the
+    active treatment: when you are on /portfolio the active thing is the
+    Capacity module inside the rack, and Portfolio is the rack that is
+    open. Giving both the filled backplate would say "you are in two places
+    at once", so the anchor only lights its icon and label. */
+function RailLink({
+  d,
+  active,
+  muted,
+  anchor = false,
+}: {
+  d: ShellDestination;
+  active: boolean;
+  muted: boolean;
+  anchor?: boolean;
+}) {
+  const color = active || anchor ? "var(--i-signal)" : muted ? "var(--i-text-faint)" : "var(--i-text-soft)";
   return (
     <Link
       href={d.href}
       title={d.question ?? (d.verb ? `${d.label} — ${d.verb}` : d.label)}
       aria-current={active ? "page" : undefined}
+      data-rail-entry={d.label}
       className={`relative flex flex-col items-center rounded-[8px] px-1 transition-colors hover:text-[var(--i-text)] ${
-        muted ? "w-[70px] gap-[3px] px-0 py-[6px]" : "w-[76px] gap-[5px] py-[9px]"
+        muted ? "w-[66px] gap-[3px] px-0 py-[6px]" : "w-[76px] gap-[5px] py-[9px]"
       }`}
-      style={{
-        background: active ? "var(--i-signal-soft)" : "transparent",
-        color: active ? "var(--i-signal)" : muted ? "var(--i-text-faint)" : "var(--i-text-soft)",
-      }}
+      style={{ background: active ? "var(--i-signal-soft)" : "transparent", color }}
     >
       {active && (
         <span
@@ -210,49 +257,116 @@ export default function InstrumentRail({
         S
       </Link>
 
-      {/* THE RAIL IS THE WHOLE NAVIGATION, so it has to carry the grouping
-          as well as the destinations. Portfolio's children are INSET under
-          it against a spine rather than listed as peers — same relationship
-          the tree describes, drawn in 92px of instrument rather than in a
-          disclosure. Settings and the old Workbench dashboard stay out:
-          they are reachable, they are not what a leader is looking for
+      {/* PORTFOLIO IS A MODE, NOT A FOLDER.
+
+          The rail shows seven destinations at rest. Capacity, Scope and
+          Dependencies are not among them — they are instruments mounted
+          INSIDE Portfolio, and they become available when you open it, the
+          way a rack reveals its modules. The sidebar's job is to state the
+          product model, not to enumerate every screen that exists.
+
+          The open/closed state is DERIVED FROM THE ROUTE, never stored.
+          That is not a shortcut, it is the correct source of truth: a
+          refresh, a pasted /scope link, the back button and a click all
+          have to agree about whether you are inside Portfolio, and the URL
+          is the only thing that already knows. Nothing to persist, nothing
+          to get out of sync.
+
+          Settings and the old Workbench dashboard stay out entirely: they
+          are reachable, they are not what a leader is looking for
           mid-simulation. */}
-      {RAIL_DESTINATIONS.map((d) => {
-        const active = isOn(pathname, d.href);
-        const inGroup = active || (d.children ?? []).some((c) => isOn(pathname, c.href));
-        return (
-          <div
-            key={`${d.href}:${d.label}`}
-            className="flex w-full flex-col items-center gap-[3px]"
-            // The spine tells a sighted reader that these three belong to
-            // Portfolio. role=group carries the same fact to everyone else.
-            {...(d.children ? { role: "group" as const, "aria-label": d.label } : {})}
-          >
-            {/* A PARENT IS STILL A DESTINATION. Portfolio was briefly a
-                non-clickable heading, to avoid two <a href="/portfolio">
-                once Capacity was listed as a child of the same route. That
-                traded one problem for a worse one: the row looks exactly
-                like every other rail entry, so clicking it and getting
-                nothing reads as a broken app. The duplicate is gone from
-                the destination list instead (see lib/shell/mode.ts) and the
-                parent behaves like what it looks like. */}
-            <RailLink d={d} active={active} muted={false} />
-            {d.children && (
-              <div
-                className="mb-[3px] flex flex-col items-center gap-[2px] pl-[4px]"
-                style={{
-                  borderLeft: `1px solid ${inGroup ? "var(--i-signal)" : "var(--i-border)"}`,
-                  opacity: inGroup ? 1 : 0.82,
-                }}
-              >
-                {d.children.map((c) => (
-                  <RailLink key={`${d.href}:${c.href}:${c.label}`} d={c} active={isOn(pathname, c.href)} muted />
-                ))}
-              </div>
-            )}
-          </div>
-        );
-      })}
+      <MotionConfig reducedMotion="user">
+        {RAIL_DESTINATIONS.map((d) => {
+          const childOn = (d.children ?? []).some((c) => isOn(pathname, c.href));
+          const open = isOn(pathname, d.href) || childOn;
+          // A parent whose child holds the route is the anchor, not the
+          // destination — the filled active plate belongs to the module.
+          const active = isOn(pathname, d.href) && !childOn;
+          return (
+            <div
+              key={`${d.href}:${d.label}`}
+              className="flex w-full flex-col items-center gap-[3px]"
+              {...(d.children ? { role: "group" as const, "aria-label": d.label } : {})}
+            >
+              <RailLink d={d} active={active} muted={false} anchor={Boolean(d.children) && open} />
+
+              {/* NO initial={false} ON THE AnimatePresence BELOW, deliberately.
+                  Each route mounts its own InstrumentShell, so the rail
+                  remounts on every navigation — which means every arrival
+                  looks like AnimatePresence's first render, and
+                  initial={false} would suppress the opening animation every
+                  single time rather than just once. Measured with it in
+                  place: the rack's height went 0 → 118px in a single frame.
+
+                  The same remount is why closing is instant — the rail
+                  unmounts with the page, so no element survives for an exit
+                  animation to run on. AnimatePresence stays anyway: it costs
+                  nothing and starts working the day the shell is hoisted
+                  into a layout. */}
+              {d.children && (
+                <AnimatePresence>
+                  {open && (
+                    <motion.div
+                      key="rack"
+                      data-shoot="rail-rack"
+                      variants={rackVariants}
+                      initial="closed"
+                      animate="open"
+                      exit="closed"
+                      className="relative w-full overflow-hidden"
+                    >
+                      <div className="flex flex-col items-center gap-[2px] py-[3px] pl-[10px]">
+                        {/* The spine, drawn from the parent downward. It
+                            grows rather than appearing, so the rack reads
+                            as extending out of Portfolio. */}
+                        <motion.span
+                          aria-hidden
+                          className="absolute left-[15px] top-0 w-px"
+                          // transformOrigin: top — the spine grows DOWNWARD
+                          // out of Portfolio rather than outward from its
+                          // own middle, which is what makes the rack read
+                          // as extending from the parent.
+                          style={{
+                            background: "var(--i-signal)",
+                            opacity: 0.5,
+                            bottom: 10,
+                            transformOrigin: "top",
+                          }}
+                          initial={{ scaleY: 0 }}
+                          animate={{ scaleY: 1 }}
+                          exit={{ scaleY: 0 }}
+                          transition={CHASSIS}
+                        />
+                        {d.children.map((c) => (
+                          <motion.div
+                            key={`${d.href}:${c.href}:${c.label}`}
+                            variants={moduleVariants}
+                            className="relative"
+                          >
+                            {/* The short arm from spine to module — the
+                                "├" of the tree, drawn rather than typed. */}
+                            <span
+                              aria-hidden
+                              className="absolute top-1/2 h-px"
+                              style={{
+                                left: -5,
+                                width: 5,
+                                background: "var(--i-signal)",
+                                opacity: isOn(pathname, c.href) ? 0.75 : 0.32,
+                              }}
+                            />
+                            <RailLink d={c} active={isOn(pathname, c.href)} muted />
+                          </motion.div>
+                        ))}
+                      </div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              )}
+            </div>
+          );
+        })}
+      </MotionConfig>
 
       <div className="flex-1" />
 
