@@ -292,3 +292,88 @@ Worth recording, because the audit was looking for failures:
 5. Cosmetic.
 
 None of this requires touching the visual design.
+
+---
+
+# ADDENDUM — corrections found while fixing, and what shipped
+
+Two findings above were wrong in ways that matter. Both were discovered while
+implementing the fixes, and both are corrected here rather than quietly
+adjusted, because the severity of a defect depends entirely on whether a
+person can reach it in normal use.
+
+## C1 was UNDERSTATED — it is reachable through the public API
+
+The audit said a cycle required an unusual act. It does not. Two ordinary
+calls, each individually valid and each returning **HTTP 200**:
+
+```
+PATCH /api/scopes/A  { "dependsOnScopeIds": ["B"] }   → 200
+PATCH /api/scopes/B  { "dependsOnScopeIds": ["A"] }   → 200
+```
+
+…and the Control Room is permanently dead. Reproduced end to end. `PATCH`
+checked only the trivial self-reference and explicitly deferred longer cycles
+to simulate time, where the failure was then swallowed. **This was the real
+production blocker in the release.**
+
+## C2 and C3 were OVERSTATED — the API already refused both
+
+The audit reported these as reachable in normal use. They are not. The
+write boundary already rejected:
+
+- a self-dependency (`"A Scope can't depend on itself"`),
+- a dependency on a scope that does not exist,
+- and `DELETE` already refused to remove a scope other scopes depend on.
+
+**I created those states by writing directly to the database with Prisma,
+bypassing the API entirely** — and then reported them as if a user could hit
+them. That was a methodology error: the fixture was not reachable by the path
+I implied. Both are still fixed at the UI layer, because a migration or a
+future bug can produce them, but neither was a live production risk.
+
+## H1 was MISDIAGNOSED — and the true cause was worse
+
+The audit blamed `projectNames: []` meaning "match any project". The real
+cause was one line in `lib/dev/fixtures.ts`:
+
+```ts
+const fixture = TEAMS[scope.teamKey] ?? TEAMS.SOF;   // ← every unknown team
+```
+
+Any scope with an unrecognised team key was handed **SOF's ten issues and four
+assignees**. That is where every `4.0 ct` and `10.7d` came from, and why ten
+empty projects contributed ~107d to a 171d release-load total.
+
+**Production was never affected.** With `KIT_DEV_FIXTURES` unset,
+`getScopedIssues` queries Linear by team key and an unknown team returns
+nothing. This was a dev/design-mode artifact — one that fooled this audit into
+mistaking fabricated fixture data for a production truth bug. The offline path
+now returns empty, matching production.
+
+The remaining half is real and stayed: `inferCapacityFromAssignees` returns
+`1` for a scope with nobody on it. That is a divide-by-zero guard the
+simulation needs, so **the engine was not changed**. The Control Room stops
+presenting it as a measurement and shows `—`.
+
+## Status of every finding
+
+| # | Shipped |
+|---|---|
+| C1 | Cycle refused at `PATCH` (naming the loop) **and** surfaced in the UI if it reaches the data |
+| C2 | Already refused at the boundary; UI now survives it |
+| C3 | Already refused; `DELETE` now clears the reference and preserves all others |
+| H1 | Fixture fallback removed; unknown capacity reads `—` |
+| H2 | `ct` → `est`; inferred is never "counted" |
+| H3 | Past targets are their own category; dates outside this year carry the year |
+| H4 | "Forecast horizon" → "Timeline span" |
+| H5 | Activity rows disambiguate on the resolved label, not the shared name |
+| M1 | "accepted" → "declared" |
+| M2 | Headline named "simulated now" vs the chart's stored reports |
+| M3 | Readable slug or short ordinal, never a raw cuid |
+| M4 | Capacity panel states the project count |
+| X1–X3 | Deferred, as instructed — presentation only, no truth impact |
+
+Proven by `scripts/trust-fixtures-proof.mjs` — 27 assertions over twelve
+adversarial fixtures, created through the public API wherever the API permits
+it, precisely so that reachability is never assumed again.
