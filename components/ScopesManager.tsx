@@ -334,7 +334,7 @@ function EditScopeRow({
           <button
             onClick={onSave}
             disabled={saving}
-            className="rounded-md bg-[var(--color-accent)] text-white px-3.5 py-1.5 text-xs font-medium hover:bg-[var(--color-accent-dark)] disabled:opacity-50"
+            className="i-btn-primary px-3.5 py-1.5 text-xs"
           >
             {saving ? "Saving…" : "Save"}
           </button>
@@ -504,7 +504,7 @@ export default function ScopesManager({ initialScopes }: { initialScopes: ScopeR
         <button
           type="submit"
           disabled={saving}
-          className="rounded-md bg-[var(--color-accent)] text-white px-4 py-2 text-sm font-medium hover:bg-[var(--color-accent-dark)] disabled:opacity-50"
+          className="i-btn-primary px-4 py-2 text-sm"
         >
           {saving ? "Adding…" : "Add scope"}
         </button>

@@ -1,9 +1,13 @@
 import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import AuditNewForm from "@/components/AuditNewForm";
+import SignalSurface, { SurfaceEmpty } from "@/components/instrument/SignalSurface";
 
 export const dynamic = "force-dynamic";
 
+// The form itself is untouched: it was written against the light palette,
+// and SignalSurface's `.i-legacy` scope resolves those tokens to instrument
+// values, so it renders in Signal without a rewrite. See app/globals.css.
 export default async function NewAuditPage() {
   const scopes = await prisma.scope.findMany({
     orderBy: { createdAt: "asc" },
@@ -11,27 +15,23 @@ export default async function NewAuditPage() {
   });
 
   return (
-    <div className="p-10 max-w-3xl">
-      <div className="text-[11px] uppercase tracking-wider text-[var(--color-accent)] mb-2">
-        New audit
-      </div>
-      <h1 className="font-display text-3xl mb-2">What&apos;s missing?</h1>
-      <p className="text-[var(--color-ink-soft)] mb-8">
-        Paste a transcript, notes, or a list of developer estimates. KIT will
-        compare it against the Linear tickets in scope and previously handled
-        findings, and surface what&apos;s missing, undecided, or contradicted.
-      </p>
+    <SignalSurface
+      eyebrow="New audit"
+      title="What's missing?"
+      lede="Paste a transcript, notes, or a list of developer estimates. Signal compares it against the Linear tickets in scope and everything previously handled, and surfaces what is missing, undecided, or contradicted."
+      back={{ href: "/audit", label: "All audits" }}
+    >
       {scopes.length === 0 ? (
-        <div className="text-sm text-[var(--color-ink-soft)] py-12 text-center border border-dashed border-[var(--color-line)] rounded-xl">
+        <SurfaceEmpty>
           No Scope configured yet.{" "}
-          <Link href="/scopes" className="text-[var(--color-accent)] hover:underline">
+          <Link href="/scopes" className="text-[var(--i-signal)] hover:underline">
             Add one
           </Link>{" "}
-          to point KIT at a Linear team before running an audit.
-        </div>
+          to point Signal at a Linear team before running an audit.
+        </SurfaceEmpty>
       ) : (
         <AuditNewForm scopes={scopes} />
       )}
-    </div>
+    </SignalSurface>
   );
 }

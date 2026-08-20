@@ -138,7 +138,7 @@ export default function ReportsPageClient() {
         <button
           onClick={generate}
           disabled={generating || !scopeId}
-          className="rounded-md bg-[var(--color-accent)] text-white px-4 py-2 text-sm font-medium hover:bg-[var(--color-accent-dark)] disabled:opacity-50"
+          className="i-btn-primary px-4 py-2 text-sm"
         >
           {generating ? "Generating…" : "Generate report"}
         </button>
@@ -173,12 +173,12 @@ export default function ReportsPageClient() {
                   onClick={() => setSelected(r)}
                   className={`w-full text-left px-3 py-2 rounded-md text-xs transition-colors ${
                     selected?.id === r.id
-                      ? "bg-[var(--color-ink)] text-white"
+                      ? "bg-[var(--color-accent-soft)] text-[var(--color-ink)] border border-[var(--color-accent)]"
                       : "border border-[var(--color-line)] hover:bg-black/5"
                   }`}
                 >
                   <div className="font-medium">{formatDate(r.generatedAt)}</div>
-                  <div className={selected?.id === r.id ? "text-white/70" : "text-[var(--color-ink-soft)]"}>
+                  <div className={selected?.id === r.id ? "text-[var(--color-accent)]" : "text-[var(--color-ink-soft)]"}>
                     {formatDate(r.likelyDate)}
                     {r.confidenceAtTarget !== null && ` · ${r.confidenceAtTarget}%`}
                   </div>

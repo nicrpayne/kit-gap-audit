@@ -1,12 +1,19 @@
 import type { Metadata } from "next";
 import "./globals.css";
-import Nav from "@/components/Nav";
 
 export const metadata: Metadata = {
-  title: "KIT Gap Audit",
-  description: "Turn messy context into clarity: missing work, decisions, owners, and what they block.",
+  title: "Signal",
+  description:
+    "One instrument for a project's truth: what is happening, what is missing, what is unresolved, and where it lands.",
 };
 
+// ONE SHELL. The root layout used to render the Workbench sidebar beside
+// every page, and each instrument route then hid it and drew its own rail
+// — two navigations, one of which was always standing down. Signal has a
+// single shell now: each page mounts InstrumentShell (directly, or through
+// SignalSurface for the reading surfaces), so the chrome belongs to the
+// application rather than to the layout, and there is nothing left here to
+// disagree with it.
 export default function RootLayout({
   children,
 }: Readonly<{
@@ -14,10 +21,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" className="h-full antialiased">
-      <body className="min-h-full flex bg-[var(--color-paper)] text-[var(--color-ink)]">
-        <Nav />
-        <main className="flex-1 min-h-screen">{children}</main>
-      </body>
+      <body className="min-h-full bg-[var(--i-void)] text-[var(--i-text)]">{children}</body>
     </html>
   );
 }

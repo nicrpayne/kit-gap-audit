@@ -106,7 +106,7 @@ export default function AuditFindings({ initialFindings }: { initialFindings: Fi
               onClick={() => setFilter(f.key)}
               className={`px-3 py-1.5 rounded-full text-xs border transition-colors ${
                 filter === f.key
-                  ? "bg-[var(--color-ink)] text-white border-[var(--color-ink)]"
+                  ? "bg-[var(--color-accent-soft)] text-[var(--color-accent)] border-[var(--color-accent)] font-medium"
                   : "border-[var(--color-line)] text-[var(--color-ink-soft)] hover:bg-black/5"
               }`}
             >
@@ -133,7 +133,7 @@ export default function AuditFindings({ initialFindings }: { initialFindings: Fi
               <button
                 onClick={draftSelected}
                 disabled={bulkDrafting}
-                className="rounded-md bg-[var(--color-accent)] text-white px-3 py-1.5 text-xs font-medium hover:bg-[var(--color-accent-dark)] disabled:opacity-50"
+                className="i-btn-primary px-3 py-1.5 text-xs"
               >
                 {bulkDrafting ? "Drafting…" : `Draft ${selected.size} ticket${selected.size === 1 ? "" : "s"}`}
               </button>

@@ -34,35 +34,44 @@ function LoginForm() {
   }
 
   return (
-    <div className="min-h-screen w-full flex items-center justify-center bg-[var(--color-paper)]">
+    // The first thing anyone sees. It said KIT Gap Audit in Workbench green
+    // while that was the product; the product is Signal, and the door has
+    // to look like the building.
+    <div
+      className="i-legacy flex min-h-screen w-full items-center justify-center px-6"
+      style={{ background: "var(--i-void)" }}
+    >
       <form
         onSubmit={onSubmit}
-        className="w-full max-w-sm bg-[var(--color-card)] border border-[var(--color-line)] rounded-xl p-8 shadow-sm"
+        className="w-full max-w-sm rounded-[12px] p-8"
+        style={{ background: "var(--i-panel)", border: "1px solid var(--i-border)" }}
       >
-        <div className="flex items-center gap-3 mb-6">
-          <div className="h-9 w-9 rounded-md bg-[var(--color-accent)] flex items-center justify-center font-display text-lg font-semibold text-white">
-            K
+        <div className="mb-7 flex items-center gap-3">
+          <div
+            className="flex h-9 w-9 items-center justify-center rounded-[9px] font-display text-lg font-semibold"
+            style={{
+              background: "var(--i-panel-raised)",
+              border: "1px solid var(--i-border-strong)",
+              color: "var(--i-signal)",
+            }}
+          >
+            S
           </div>
-          <div className="font-display text-xl">KIT Gap Audit</div>
+          <div>
+            <div className="font-display text-xl leading-tight text-[var(--i-text)]">Signal</div>
+            <div className="i-label mt-1">KIT</div>
+          </div>
         </div>
-        <label className="block text-sm text-[var(--color-ink-soft)] mb-2">
-          Password
-        </label>
+        <label className="mb-2 block text-[12px] text-[var(--i-text-soft)]">Password</label>
         <input
           type="password"
           autoFocus
           value={password}
           onChange={(e) => setPassword(e.target.value)}
-          className="w-full rounded-md border border-[var(--color-line)] bg-white px-3 py-2 text-sm mb-4 focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)]"
+          className="mb-4 w-full rounded-md border px-3 py-2 text-sm"
         />
-        {error && (
-          <div className="text-sm text-[var(--color-danger)] mb-4">{error}</div>
-        )}
-        <button
-          type="submit"
-          disabled={loading || !password}
-          className="w-full rounded-md bg-[var(--color-accent)] text-white py-2 text-sm font-medium hover:bg-[var(--color-accent-dark)] disabled:opacity-50"
-        >
+        {error && <div className="mb-4 text-[12px] text-[var(--i-red)]">{error}</div>}
+        <button type="submit" disabled={loading || !password} className="i-btn-primary w-full py-2 text-sm">
           {loading ? "Checking…" : "Enter"}
         </button>
       </form>

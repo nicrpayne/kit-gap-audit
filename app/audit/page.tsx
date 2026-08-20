@@ -1,10 +1,15 @@
 import Link from "next/link";
 import { prisma } from "@/lib/prisma";
+import SignalSurface, { SurfaceAction, SurfacePanel, SurfaceEmpty } from "@/components/instrument/SignalSurface";
 
 export const dynamic = "force-dynamic";
 
 const PAGE_SIZE = 20;
 
+// MIGRATED INTO THE SIGNAL SHELL. Same query, same pagination, same links —
+// only the chrome changed. Audit is a reading surface rather than an
+// instrument (there is nothing here to play), so it wears SignalSurface's
+// centred measure inside the one rail rather than owning the viewport.
 export default async function AuditIndexPage({
   searchParams,
 }: {
@@ -30,86 +35,79 @@ export default async function AuditIndexPage({
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
   return (
-    <div className="p-10 max-w-4xl">
-      <div className="flex items-start justify-between mb-8">
-        <div>
-          <div className="text-[11px] uppercase tracking-wider text-[var(--color-accent)] mb-2">
-            Audit
-          </div>
-          <h1 className="font-display text-3xl">Every audit you&apos;ve run</h1>
-        </div>
-        <Link
-          href="/audit/new"
-          className="rounded-md bg-[var(--color-accent)] text-white px-4 py-2.5 text-sm font-medium hover:bg-[var(--color-accent-dark)]"
-        >
-          + New audit
-        </Link>
-      </div>
-
+    <SignalSurface
+      eyebrow="Audit"
+      title="Every audit you've run"
+      lede="Each one compared a source — a transcript, a note, a list of estimates — against the work already tracked, and kept what was missing."
+      actions={<SurfaceAction href="/audit/new">+ New audit</SurfaceAction>}
+    >
       {sources.length === 0 ? (
-        <div className="text-sm text-[var(--color-ink-soft)] py-12 text-center border border-dashed border-[var(--color-line)] rounded-xl">
+        <SurfaceEmpty>
           No audits yet.{" "}
-          <Link href="/audit/new" className="text-[var(--color-accent)] hover:underline">
+          <Link href="/audit/new" className="text-[var(--i-signal)] hover:underline">
             Run your first one
           </Link>
           .
-        </div>
+        </SurfaceEmpty>
       ) : (
-        <div className="border border-[var(--color-line)] rounded-xl bg-[var(--color-card)] divide-y divide-[var(--color-line)]">
-          {sources.map((source) => {
-            const openCount = source.findings.filter((f) => f.status === "open").length;
-            return (
-              <Link
-                key={source.id}
-                href={`/audit/${source.id}`}
-                className="flex items-center justify-between px-5 py-4 hover:bg-black/[0.02] transition-colors"
-              >
-                <div>
-                  <div className="font-medium text-sm">{source.title}</div>
-                  <div className="text-xs text-[var(--color-ink-soft)]">
-                    {source.scope?.name ?? "No scope"} · {source.kind} ·{" "}
-                    {source.createdAt.toISOString().slice(0, 10)}
+        <SurfacePanel>
+          <div className="divide-y" style={{ borderColor: "var(--i-border)" }}>
+            {sources.map((source) => {
+              const openCount = source.findings.filter((f) => f.status === "open").length;
+              return (
+                <Link
+                  key={source.id}
+                  href={`/audit/${source.id}`}
+                  className="flex items-center justify-between gap-4 px-5 py-4 transition-colors hover:bg-white/[0.035]"
+                >
+                  <div className="min-w-0">
+                    <div className="truncate text-[13px] font-medium text-[var(--i-text)]">{source.title}</div>
+                    <div className="mt-0.5 text-[11px] text-[var(--i-text-faint)]">
+                      {source.scope?.name ?? "No scope"} · {source.kind} ·{" "}
+                      {source.createdAt.toISOString().slice(0, 10)}
+                    </div>
                   </div>
-                </div>
-                <div className="text-xs text-[var(--color-ink-soft)] text-right">
-                  <div>
-                    {source._count.findings} finding{source._count.findings === 1 ? "" : "s"}
+                  <div className="shrink-0 text-right text-[11px] text-[var(--i-text-faint)]">
+                    <div className="i-readout text-[13px] text-[var(--i-text-soft)]">
+                      {source._count.findings}
+                    </div>
+                    <div>finding{source._count.findings === 1 ? "" : "s"}</div>
+                    {openCount > 0 && (
+                      <div className="mt-1 font-medium text-[var(--i-amber)]">{openCount} open</div>
+                    )}
                   </div>
-                  {openCount > 0 && (
-                    <div className="text-[var(--color-accent)]">{openCount} open</div>
-                  )}
-                </div>
-              </Link>
-            );
-          })}
-        </div>
+                </Link>
+              );
+            })}
+          </div>
+        </SurfacePanel>
       )}
 
       {totalPages > 1 && (
-        <div className="flex items-center justify-between mt-6 text-sm">
+        <div className="mt-6 flex items-center justify-between text-[12px]">
           <Link
             href={`/audit?page=${page - 1}`}
             aria-disabled={page <= 1}
-            className={`px-3 py-1.5 rounded-md border border-[var(--color-line)] ${
-              page <= 1 ? "pointer-events-none opacity-40" : "hover:bg-black/5"
+            className={`i-control px-3 py-1.5 text-[var(--i-text-soft)] transition-colors hover:text-[var(--i-text)] ${
+              page <= 1 ? "pointer-events-none opacity-35" : ""
             }`}
           >
             ← Newer
           </Link>
-          <span className="text-[var(--color-ink-soft)]">
+          <span className="text-[var(--i-text-faint)]">
             Page {page} of {totalPages}
           </span>
           <Link
             href={`/audit?page=${page + 1}`}
             aria-disabled={page >= totalPages}
-            className={`px-3 py-1.5 rounded-md border border-[var(--color-line)] ${
-              page >= totalPages ? "pointer-events-none opacity-40" : "hover:bg-black/5"
+            className={`i-control px-3 py-1.5 text-[var(--i-text-soft)] transition-colors hover:text-[var(--i-text)] ${
+              page >= totalPages ? "pointer-events-none opacity-35" : ""
             }`}
           >
             Older →
           </Link>
         </div>
       )}
-    </div>
+    </SignalSurface>
   );
 }

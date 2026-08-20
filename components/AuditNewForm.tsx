@@ -195,7 +195,7 @@ export default function AuditNewForm({ scopes }: { scopes: ScopeOption[] }) {
       <button
         type="submit"
         disabled={running}
-        className="rounded-md bg-[var(--color-accent)] text-white px-5 py-2.5 text-sm font-medium hover:bg-[var(--color-accent-dark)] disabled:opacity-50"
+        className="i-btn-primary px-5 py-2.5 text-sm"
       >
         {running ? "Running audit…" : "Run audit"}
       </button>

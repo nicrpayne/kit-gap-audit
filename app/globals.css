@@ -20,8 +20,8 @@
 }
 
 body {
-  background: var(--color-paper);
-  color: var(--color-ink);
+  background: var(--i-void);
+  color: var(--i-text);
   font-family: var(--font-sans);
 }
 
@@ -30,8 +30,8 @@ body {
 }
 
 ::selection {
-  background: var(--color-accent-soft);
-  color: var(--color-ink);
+  background: var(--i-signal-soft);
+  color: var(--i-text);
 }
 
 /* Instrument surface -- the dark simulation environment opened INSIDE the
@@ -42,7 +42,14 @@ body {
    restrained semantic set: mint = favorable movement, violet = active
    scenario/hypothetical state, amber = uncertainty, red = risk/later,
    muted neutral = Reality/baseline reference. See docs/DESIGN-NORTH-STAR.md. */
-.instrument {
+/* The palette lives at the root now rather than inside `.instrument`. It was
+   scoped while the dark surface was a thing you OPENED from inside a light
+   product and nothing outside it was allowed to change; Signal is the dark
+   surface, so the page ground, the login screen and the migrated reading
+   surfaces all need to reach these. `.instrument` keeps its own background,
+   text colour and numerals below -- what moved is the vocabulary, not the
+   treatment. */
+:root {
   /* Depth ladder. Four levels, not two -- the Instrument's physicality
      comes from things sitting ON or being CUT INTO a surface, which needs
      a ground darker than the panels and a recess darker than the ground. */
@@ -75,10 +82,13 @@ body {
      violet without being it. Time is the frame, not a domain. */
   --i-cool: #7f9cf5;
   --i-cool-soft: rgba(127, 156, 245, 0.16);
+}
+
+.instrument {
   background: var(--i-void);
   color: var(--i-text);
   /* Numerals are the Instrument's voice: always tabular so a changing
-     value never reflows, never a serif (that's the Workbench's face). */
+     value never reflows. */
   font-feature-settings: "tnum" 1, "cv01" 1;
 }
 
@@ -353,6 +363,96 @@ body {
 }
 .instrument-ask button:hover:not(:disabled) {
   background: var(--i-violet-soft) !important;
+}
+
+/* ── The retired Workbench, rendered in Signal ────────────────────────────
+   Audit, Reports and Settings were written against the cream palette above.
+   Their MARKUP is fine -- it is honest, accessible, and does the job -- so
+   migrating them into the one Signal shell is a question of what the tokens
+   resolve to, not of rewriting nine hundred lines of forms and lists.
+
+   Same trick as .instrument-ask, one scope wider: shadow the light palette
+   with instrument values so every var(--color-*) in the subtree resolves
+   dark. What a variable cannot reach -- literal `bg-white` on an input, a
+   `hover:bg-black/5` that vanishes on a dark ground -- is handled below or,
+   where it carried real meaning (a selected pill), fixed in the component.
+
+   Contrast is checked, not assumed: --i-text on --i-panel is ~12:1, and
+   --i-text-soft on --i-panel is ~5.6:1, both past AA. */
+.i-legacy {
+  --color-paper: var(--i-bg);
+  --color-ink: var(--i-text);
+  --color-ink-soft: var(--i-text-soft);
+  --color-accent: var(--i-signal);
+  --color-accent-dark: #6fd3e2;
+  --color-accent-soft: var(--i-signal-soft);
+  --color-line: var(--i-border);
+  --color-card: var(--i-panel);
+  --color-danger: var(--i-red);
+  --color-danger-soft: var(--i-red-soft);
+  --color-amber: var(--i-amber);
+  --color-amber-soft: var(--i-amber-soft);
+}
+
+/* Fields are CUT INTO the panel, same law as the instruments: if you can
+   type in it, it is recessed and unlit. This also beats the literal
+   `bg-white` these inputs carry -- .i-legacy input is a more specific
+   selector than the utility class, so no !important is needed. */
+.i-legacy input:not([type="checkbox"]):not([type="radio"]),
+.i-legacy select,
+.i-legacy textarea {
+  background: var(--i-recess);
+  color: var(--i-text);
+  border-color: var(--i-border-strong);
+}
+.i-legacy input::placeholder,
+.i-legacy textarea::placeholder {
+  color: var(--i-text-faint);
+}
+.i-legacy input:focus-visible,
+.i-legacy select:focus-visible,
+.i-legacy textarea:focus-visible {
+  outline: none;
+  border-color: var(--i-signal);
+  box-shadow: 0 0 0 3px var(--i-signal-soft);
+}
+.i-legacy input[type="checkbox"],
+.i-legacy input[type="radio"] {
+  accent-color: var(--i-signal);
+}
+
+/* Group boxes that used white to lift off cream lift off graphite instead. */
+.i-legacy .bg-white {
+  background-color: var(--i-panel-raised);
+}
+
+/* A 5%-black wash is invisible on a dark ground; the same gesture upward. */
+.i-legacy [class*="hover:bg-black"]:hover {
+  background-color: rgba(255, 255, 255, 0.045);
+}
+/* Exact-token match, not a substring: the migrated pages use their own
+   `hover:bg-white/[0.035]` lifts and those must survive untouched. */
+.i-legacy [class~="hover:bg-white"]:hover {
+  background-color: var(--i-panel-raised);
+}
+
+/* The one primary-action treatment these surfaces share. Signal cyan is a
+   light hue, so it carries dark text rather than white -- filling it and
+   then writing white on top is the single most common way a dark theme
+   fails its contrast check. */
+.i-btn-primary {
+  background: var(--i-signal);
+  color: var(--i-void);
+  border: 1px solid var(--i-signal);
+  border-radius: 7px;
+  font-weight: 600;
+  transition: filter 120ms ease-out;
+}
+.i-btn-primary:hover:not(:disabled) {
+  filter: brightness(1.12);
+}
+.i-btn-primary:disabled {
+  opacity: 0.45;
 }
 
 /* ── Forecast motion vocabulary ──────────────────────────────────────────

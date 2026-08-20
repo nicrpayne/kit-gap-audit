@@ -7,7 +7,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { DESTINATIONS } from "@/lib/shell/mode";
+import { ALL_DESTINATIONS } from "@/lib/shell/mode";
 
 export interface CommandScope {
   scopeId: string;
@@ -45,10 +45,19 @@ export default function CommandMenu({
         hint: "Inspect scope",
         run: () => onSelectScope(s.scopeId),
       })),
-      ...DESTINATIONS.map((d) => ({
-        id: `route:${d.href}`,
+      // The hint used to read "Instrument" or "Workbench" — a distinction
+      // that meant something while there were two shells and now means
+      // nothing. It carries the destination's QUESTION instead, which is
+      // also what makes the palette searchable by intent: typing "waiting"
+      // finds Dependencies without knowing the word "orbit".
+      //
+      // Portfolio and Capacity share a href on purpose (see
+      // lib/shell/mode.ts) — two names for one room, both worth being able
+      // to type — so the id carries the label to stay unique.
+      ...ALL_DESTINATIONS.map((d) => ({
+        id: `route:${d.href}:${d.label}`,
         label: d.label,
-        hint: d.instrument ? "Instrument" : "Workbench",
+        hint: d.question ?? d.owns ?? "Go to",
         run: () => router.push(d.href),
       })),
     ];

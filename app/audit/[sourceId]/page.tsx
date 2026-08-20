@@ -1,7 +1,7 @@
 import { notFound } from "next/navigation";
-import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import AuditFindings from "@/components/AuditFindings";
+import SignalSurface from "@/components/instrument/SignalSurface";
 
 export const dynamic = "force-dynamic";
 
@@ -29,29 +29,31 @@ export default async function AuditDetailPage({
   );
 
   return (
-    <div className="p-10 max-w-3xl">
-      <Link href="/audit" className="text-xs text-[var(--color-accent)] hover:underline">
-        ← All audits
-      </Link>
-      <div className="text-[11px] uppercase tracking-wider text-[var(--color-accent)] mt-4 mb-2">
-        {source.scope?.name ?? "No scope"} · {source.kind}
-      </div>
-      <h1 className="font-display text-3xl mb-2">{source.title}</h1>
-      <p className="text-[var(--color-ink-soft)] mb-6">
-        {findings.length} finding{findings.length === 1 ? "" : "s"} from this source.
-      </p>
-
-      <details className="mb-8 border border-[var(--color-line)] rounded-xl bg-[var(--color-card)] group">
-        <summary className="px-5 py-3 text-sm cursor-pointer select-none text-[var(--color-ink-soft)] hover:text-[var(--color-ink)]">
-          View original source ({source.kind}, added{" "}
-          {source.createdAt.toISOString().slice(0, 10)})
+    <SignalSurface
+      eyebrow={`${source.scope?.name ?? "No scope"} · ${source.kind}`}
+      title={source.title}
+      lede={`${findings.length} finding${findings.length === 1 ? "" : "s"} from this source.`}
+      back={{ href: "/audit", label: "All audits" }}
+    >
+      {/* The source text is CUT INTO the panel rather than sitting on it:
+          it is the evidence, not a control, and the instrument's affordance
+          split says a readout is recessed. */}
+      <details
+        className="group mb-8 overflow-hidden rounded-[10px]"
+        style={{ background: "var(--i-panel)", border: "1px solid var(--i-border)" }}
+      >
+        <summary className="cursor-pointer select-none px-5 py-3 text-[12px] text-[var(--i-text-soft)] transition-colors hover:text-[var(--i-text)]">
+          View original source ({source.kind}, added {source.createdAt.toISOString().slice(0, 10)})
         </summary>
-        <div className="px-5 pb-5 pt-1 text-sm whitespace-pre-wrap font-mono leading-relaxed text-[var(--color-ink)] border-t border-[var(--color-line)] max-h-[32rem] overflow-y-auto">
+        <div
+          className="max-h-[32rem] overflow-y-auto whitespace-pre-wrap px-5 pb-5 pt-4 font-mono text-[12px] leading-relaxed text-[var(--i-text-soft)]"
+          style={{ background: "var(--i-recess)", borderTop: "1px solid var(--i-border)" }}
+        >
           {source.content}
         </div>
       </details>
 
       <AuditFindings initialFindings={findings} />
-    </div>
+    </SignalSurface>
   );
 }
