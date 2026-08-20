@@ -860,11 +860,6 @@ const SERIES = ["var(--i-signal)", "var(--i-mint)", "var(--i-violet)", "var(--i-
 //
 // The highlight is one pixel at 4% and the shadow is a lift, not a drop.
 // Anything heavier reads as a web card rather than an instrument face.
-const FACE = {
-  background: "linear-gradient(180deg, #171d22 0%, var(--i-panel) 62%)",
-  border: "1px solid var(--i-border-strong)",
-  boxShadow: "inset 0 1px 0 rgba(243,240,230,0.045), 0 1px 2px rgba(0,0,0,0.45)",
-} as const;
 
 /** A panel that belongs to one domain wears a trace of it: a tinted wash
     down from its top edge and a border warmed towards the hue. */
