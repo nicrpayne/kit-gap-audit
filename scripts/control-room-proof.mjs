@@ -108,11 +108,16 @@ await open();
     decisionsPanel.includes(`${gates.reduce((n, d) => n + d.gate.likely, 0)}d`),
     `${gates.reduce((n, d) => n + d.gate.likely, 0)}d`);
   check("B3. …and the open-decision count", choices.includes(String(openDecisions.length)), `${openDecisions.length} open`);
-  const gatingShown = Number(await txt('[data-shoot="cr-card-choices-primary"]'));
+  // The card carries TWO figures, and which one is the larger type is a
+  // layout decision. What must never vary is that both are on the card,
+  // each under its own name, so the open count is never read as the count
+  // of decisions that are actually holding delivery.
+  const openShown = Number(await txt('[data-shoot="cr-card-choices-primary"]'));
+  const gatingShown = Number(await txt('[data-shoot="cr-card-choices-second"]'));
   check("B4. A decision is not a gate, and the page says both",
-    gatingShown === gates.length &&
+    openShown === openDecisions.length &&
+      gatingShown === gates.length &&
       /holding delivery/i.test(choices) &&
-      new RegExp(`\\b${openDecisions.length}\\b`).test(choices) &&
       /open decisions/i.test(choices),
     `${gates.length} holding · ${openDecisions.length} open`);
 
@@ -223,6 +228,11 @@ await open();
 
 // ── G. IT IS NOT A SNAPSHOT ────────────────────────────────────────────
 {
+  // Read the BEFORE on the same workspace the AFTER will be read on. The
+  // section above finishes on the Delivery lens, and each lens draws the
+  // reading in its own markup — comparing across two of them would be
+  // comparing layouts, not comparing Reality to itself.
+  await open();
   const before = await txt('[data-shoot="cr-card-choices"]');
   const dec = await api("/api/decisions");
   const target = dec.decisions.find((d) => d.gate?.serial && d.status === "open");
@@ -281,9 +291,10 @@ await open();
     await settle(3000);
     check("H1. A hypothetical made elsewhere is shown here as a Scenario",
       (await p.locator('[data-shoot="cr-scenario"]').count()) === 1);
-    // The Choices instrument's headline IS the count of gates holding
-    // delivery, so it is read directly rather than parsed out of prose.
-    const gatesNow = Number(await txt('[data-shoot="cr-card-choices-primary"]'));
+    // The gate count is the card's SECOND figure — the count of decisions
+    // that are actually holding delivery, as distinct from the open count
+    // beside it. Read directly rather than parsed out of prose.
+    const gatesNow = Number(await txt('[data-shoot="cr-card-choices-second"]'));
     check("H2. …and the gate it assumes answered stops counting", gatesNow >= 0 && gatesNow < 2, `${gatesNow} gates`);
     writes = [];
     await p.click('[data-shoot="cr-discard"]');

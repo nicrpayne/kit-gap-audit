@@ -46,6 +46,7 @@ import StatusBar from "@/components/control-room/StatusBar";
 import ProjectField from "@/components/control-room/ProjectField";
 import Inspector from "@/components/control-room/Inspector";
 import ConfidenceChart from "@/components/control-room/ConfidenceChart";
+import CommandWorkspace from "@/components/control-room/CommandWorkspace";
 import LensEditor from "@/components/control-room/LensEditor";
 import { useProject, EMPTY_SCENARIO } from "@/lib/instrument/useProject";
 import { useDecisions } from "@/lib/decisions/useDecisions";
@@ -244,6 +245,20 @@ export default function ControlRoomPageClient() {
         </>
       )}
 
+      {/* The approved header carries an "Add event" control. This surface
+          WRITES NOTHING, so it is a door to the Timeline — which is where an
+          event is actually created — rather than a control that implies
+          otherwise. */}
+      <Link
+        href="/timeline"
+        data-shoot="cr-add-event"
+        title="Events are created on the Timeline"
+        className="mr-2 flex items-center gap-1.5 rounded-[5px] px-2.5 py-1.5 text-[11px] transition-colors hover:bg-[var(--i-panel-raised)]"
+        style={{ border: "1px solid var(--i-border-strong)", color: "var(--i-text)" }}
+      >
+        <span style={{ color: "var(--i-text-faint)" }}>+</span> Add event
+      </Link>
+
       {/* VIEWS. The workspace switcher, exactly the role Premiere gives it:
           one control that changes which tools are on the desk, and never
           anything about the project. */}
@@ -334,6 +349,30 @@ export default function ControlRoomPageClient() {
   const r = reading;
   const gatingConfidence = r.outcome.confidenceHistory.find((s) => s.id === r.outcome.gatedByScopeId) ?? null;
   const forecastTone = m.active ? "var(--i-violet)" : "var(--i-signal)";
+
+  // THE COMMAND WORKSPACE IS A FIXED COMPOSITION, not a set of surfaces
+  // that happen to be on. It is the approved Master Control Room layout,
+  // transcribed, and it is rendered by its own component so its geometry
+  // cannot drift as other workspaces are edited.
+  //
+  // Every other workspace — including a Custom set forked out of Command —
+  // uses the flexible layout below, which honours whatever surfaces are
+  // switched on. That is the whole customization contract: the default is
+  // designed, and the moment you change it, it is yours.
+  if (workspace.lens === "command" && m.data) {
+    return (
+      <InstrumentShell stateBar={strip}>
+        <CommandWorkspace
+          r={r}
+          data={m.data}
+          scenario={m.scenario}
+          scenarioActive={m.active}
+          realityLikely={r.outcome.realityLikely}
+        />
+        {dialog}
+      </InstrumentShell>
+    );
+  }
 
   const readings = (["reality", "choices", "capacity", "outcome", "time"] as const).filter((d) =>
     on(`reading-${d}` as SurfaceId)

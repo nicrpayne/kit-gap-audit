@@ -554,3 +554,118 @@ Everything audited in V1, V2 and V3 still holds and is still proven:
 dependency, scenario, freshness or ownership logic was touched — the diff is
 composition, hierarchy and colour, plus the constraint rows now naming the
 project each one is holding.
+
+# V5 — Exact visual match pass: the Command workspace, transcribed
+
+V5 is a **presentation** pass. It adds no reading, no model, no interaction
+and no data path. `lib/control-room/read.ts` gained exactly one line — the
+gate quantity now carries the project it is holding — and everything else in
+this pass is markup and CSS.
+
+What changed structurally: the Command workspace is no longer drawn by the
+generic panel layout the other four workspaces share. It has its own
+component, `components/control-room/CommandWorkspace.tsx`, which transcribes
+the approved mockup's geometry directly:
+
+```
+title block          30px uppercase, one muted line beneath
+telemetry            5 × 141px tiles, 9px gutters, coloured border, tinted
+                     ground, badge · label · question · two figures with
+                     their captions · a filled trace along the foot
+working surface      the Timeline instrument, dominant
+operational rail     269px, FULL HEIGHT — beside the timeline AND the
+                     analysis row, which is what the mockup shows
+analysis row         198px: capacity · composition · decisions · forecast
+status bar           48px of stored timestamps
+```
+
+Delivery, Capacity, Dependency, Decision and Custom are untouched and still
+render through the V4 layout. The workspace-customization system — presets,
+per-surface show/hide, forking to Custom, reset — is unchanged, and its
+twenty assertions across V2 §G and V3 §H still pass.
+
+## The V5 palette, and what it cost
+
+V5 reassigns the domain hues by direction:
+
+| Domain | V5 hue |
+|---|---|
+| Reality | cyan |
+| Choices | violet |
+| **Capacity** | **amber** (was mint) |
+| **Likely Outcome** | **green** (was cyan) |
+| Time | periwinkle `--i-cool`, added this pass |
+
+Two consequences worth recording:
+
+- **Cyan is no longer "the colour of now."** It is Reality's domain hue.
+  `control-room-v2-proof.mjs` §F1/§F5 asserted the outcome read cyan; they
+  now assert the outcome reads in **its own** colour and specifically not in
+  the Scenario's violet. The law being protected is unchanged — a
+  hypothetical must never be mistaken for a reading — only the constant moved.
+- **Scenario remains a page MODE**, for the reason recorded in V4: violet
+  belongs to Choices, so hue alone cannot carry the hypothetical. All four
+  mode signals are intact and proven.
+
+## Where the mockup asked for something we cannot know — V5 additions
+
+Everything in the V4 table above still applies. V5 added these:
+
+| Mockup asks for | Model has | What is drawn |
+|---|---|---|
+| `+ Add event` in the header | the Control Room writes nothing | kept as a **door to `/timeline`**, where the event is actually recorded. It is a link, not a write. V4 omitted this control entirely; V5 restores the mockup's affordance without the lie. |
+| a dense multi-series capacity chart | **no capacity history exists** — `Allocation` has no timestamps | current split per project, with `today only · no history exists` printed beside the figure rather than in a tooltip |
+| `Active Decisions` | Decisions calls this lane **Open** | `Open Decisions`. The owner instrument's word wins over the mockup's. |
+| `Reaching Work` (tile caption density) | — | `Reaching the Work`, because the shorter form loses the sentence the number is |
+
+## Dependency Watch: the consequence is on the screen, not in a tooltip
+
+The rail row is one line, which is not enough for the sentence that matters
+about a shared upstream. So the panel now **orders the single point of
+failure first** and gives that one row a second line carrying the
+consequence sentence the read model already wrote — "If it slips, they both
+slip." Nothing is generated: `consequenceOf` selects the last sentence of
+`DependencyRow.detail`. Plain `waits_on` edges stay one line, since their
+subject and quantity already say everything they can.
+
+`control-room-proof.mjs` §D3 asserts that sentence is on the row.
+
+## Two Timeline fixes, and why they are not a redesign
+
+The Command workspace embeds the real Timeline in a 1126px column instead of
+the 1444px the standalone route gives it. Two things broke at that width and
+were fixed at the source rather than papered over:
+
+- `NowPlaying` had `min-w-0`, so its quiet state rendered as the fragment
+  `NOTHING AT THE PLAYHEA`. It now has a `112px` floor.
+- The Zoom bay's `width: 168` was a hard width, so the reclaimed space pushed
+  the row off its chassis. It is now a `max-width`, and the bay may shrink.
+
+Both are floors and ceilings, not new layout. Measured on `/timeline`, the
+transport's seven children are `88 · 196 · 232 · 379 · 142 · 129 · 194` —
+byte-identical to before the change, with zero overflow. The standalone
+Timeline is visually unchanged.
+
+## Still not represented, and still reported rather than faked
+
+Unchanged from V1–V4, and worth restating because V5 is the pass most
+tempted to invent:
+
+- no candidate-dependency model in the schema
+- no feature-level gating
+- no critical path at scope granularity
+- nothing writes `capacityOverrideByScope`
+- **no capacity history exists at all**
+- no severity, health or risk model
+
+## Proven
+
+`control-room-proof.mjs` (41), `control-room-v2-proof.mjs` (45) and
+`control-room-v3-proof.mjs` (47) all pass in full against the V5 Command
+workspace. Four assertions were rewritten in this pass — B4 and H2 in V1,
+F1 and F5 in V2 — and in each case the assertion's *subject* is unchanged
+and the *selector or constant* was updated to match a layout decision it had
+hard-coded. G3 in V1 was reading its BEFORE value on the Delivery workspace
+and its AFTER on Command; it now reads both on the same one. That was a
+harness bug, and it was latent until Command stopped sharing Delivery's
+markup.

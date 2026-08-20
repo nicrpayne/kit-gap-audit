@@ -71,6 +71,10 @@ body {
   --i-red: #ef6b5b;
   --i-red-soft: rgba(239, 107, 91, 0.14);
   --i-reality: #6b7278;
+  /* TIME's own hue in the approved layout: a periwinkle that sits beside
+     violet without being it. Time is the frame, not a domain. */
+  --i-cool: #7f9cf5;
+  --i-cool-soft: rgba(127, 156, 245, 0.16);
   background: var(--i-void);
   color: var(--i-text);
   /* Numerals are the Instrument's voice: always tabular so a changing

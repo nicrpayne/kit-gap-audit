@@ -50,9 +50,9 @@ interface Props {
 // A BAY. The transport is not a row of buttons -- it is grouped equipment,
 // and the grouping is what makes it readable at a glance: motion here,
 // speed there, scale there, zoom at the end.
-const Bay = ({ label, children, grow = false }: { label?: string; children: React.ReactNode; grow?: boolean }) => (
+const Bay = ({ label, children, grow = false, shrink = false }: { label?: string; children: React.ReactNode; grow?: boolean; shrink?: boolean }) => (
   <div
-    className={`flex flex-col justify-center gap-1.5 px-3 py-2 rounded-lg ${grow ? "flex-1 min-w-0" : ""}`}
+    className={`flex flex-col justify-center gap-1.5 px-3 py-2 rounded-lg ${grow ? "flex-1 min-w-0" : shrink ? "min-w-0" : ""}`}
     style={{
       background: "linear-gradient(180deg, #12171a 0%, #0c1013 100%)",
       border: "1px solid var(--i-border)",
@@ -272,9 +272,11 @@ export default function Transport({
         </div>
       </Bay>
 
-      {/* ZOOM */}
-      <Bay label="Zoom">
-        <div className="flex items-center gap-2" style={{ width: 168 }}>
+      {/* ZOOM — 168px is the intended length of the throw. It is a ceiling
+          rather than a fixed width so that a narrow embed takes the slack out
+          of the slider instead of pushing a whole bay off the chassis. */}
+      <Bay label="Zoom" shrink>
+        <div className="flex w-[168px] max-w-full items-center gap-2">
           <span className="text-[11px] text-[var(--i-text-faint)]">−</span>
           <input
             type="range" min={0} max={100} step={1} value={zoomPct}

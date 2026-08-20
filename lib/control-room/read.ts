@@ -652,7 +652,9 @@ export function readControlRoom(i: ControlRoomInput): ControlRoomReading {
       id: `gate:${d.gate.id}`,
       label: blocked ? `Holding ${blocked} — unanswered decision` : "Unanswered decision",
       detail: d.title,
-      quantity: `${d.gate.likely}d modelled`,
+      // The quantity slot carries BOTH facts, because a rail row has one
+      // line: how long the model holds for it, and which project it holds.
+      quantity: blocked ? `${d.gate.likely}d modelled · ${blocked}` : `${d.gate.likely}d modelled`,
       magnitude: d.gate.likely,
       href: "/decisions",
     });

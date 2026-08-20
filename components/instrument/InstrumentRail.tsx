@@ -1,8 +1,10 @@
 "use client";
 
-// The Instrument's own navigation: a 48px icon rail that replaces the
+// The Instrument's own navigation: a 92px labelled rail that replaces the
 // Workbench's 256px sidebar for the duration of Instrument Mode, and can be
-// hidden outright.
+// hidden outright. Icon over label, in the approved Master Control Room
+// treatment — wide enough to name every destination, narrow enough that
+// navigation is never the second-largest object on a simulation surface.
 //
 // The reasoning is about visual weight, not about features. Navigation on a
 // simulation surface is a thing you use for two seconds and then stop
@@ -141,18 +143,18 @@ export default function InstrumentRail({
   return (
     <nav
       aria-label="Sections"
-      className="shrink-0 flex flex-col items-center py-3 gap-1"
-      style={{ width: 48, background: "var(--i-panel)", borderRight: "1px solid var(--i-border)" }}
+      data-shoot="instrument-rail"
+      className="i-noscrollbar flex shrink-0 flex-col items-center gap-[3px] overflow-y-auto pb-3 pt-4"
+      style={{ width: 92, background: "var(--i-panel)", borderRight: "1px solid var(--i-border)" }}
     >
       {/* Back to the Workbench. The mark is the exit, and says so on hover. */}
       <Link
         href="/"
         title="Dashboard"
-        className="group relative h-8 w-8 rounded-md flex items-center justify-center text-[13px] font-semibold mb-2 transition-colors"
+        className="mb-3 flex h-[44px] w-[44px] items-center justify-center rounded-[10px] text-[16px] font-semibold transition-colors"
         style={{ background: "var(--i-panel-raised)", border: "1px solid var(--i-border-strong)", color: "var(--i-text)" }}
       >
         K
-        <RailTip>Dashboard</RailTip>
       </Link>
 
       {DESTINATIONS.map((d) => {
@@ -161,17 +163,23 @@ export default function InstrumentRail({
           <Link
             key={d.href}
             href={d.href}
-            title={d.label}
+            title={d.verb ? `${d.label} — ${d.verb}` : d.label}
             aria-current={active ? "page" : undefined}
-            className="group relative h-8 w-8 rounded-md flex items-center justify-center transition-colors hover:text-[var(--i-text)]"
+            className="relative flex w-[76px] flex-col items-center gap-[5px] rounded-[8px] px-1 py-[9px] transition-colors hover:text-[var(--i-text)]"
             style={{
-              background: active ? "var(--i-violet-soft)" : "transparent",
-              color: active ? "var(--i-violet)" : "var(--i-text-soft)",
+              background: active ? "var(--i-signal-soft)" : "transparent",
+              color: active ? "var(--i-signal)" : "var(--i-text-soft)",
             }}
           >
+            {active && (
+              <span
+                aria-hidden
+                className="absolute left-0 top-1/2 h-[26px] w-[2px] -translate-y-1/2 rounded-r"
+                style={{ background: "var(--i-signal)" }}
+              />
+            )}
             <RailIcon href={d.href} />
-            <span className="sr-only">{d.label}</span>
-            <RailTip>{d.verb ? `${d.label} — ${d.verb}` : d.label}</RailTip>
+            <span className="w-full truncate text-center text-[9.5px] leading-none">{d.label}</span>
           </Link>
         );
       })}
@@ -182,31 +190,20 @@ export default function InstrumentRail({
         onClick={onOpenCommand}
         title="Command menu (⌘K)"
         aria-label="Open command menu"
-        className="group relative h-8 w-8 rounded-md flex items-center justify-center text-[11px] text-[var(--i-text-faint)] hover:text-[var(--i-text)] transition-colors"
+        className="flex w-[76px] flex-col items-center gap-[5px] rounded-[8px] py-[9px] text-[var(--i-text-faint)] transition-colors hover:text-[var(--i-text)]"
       >
-        ⌘K
-        <RailTip>Command menu</RailTip>
+        <span className="text-[12px] leading-none">⌘K</span>
+        <span className="text-[9.5px] leading-none">Search</span>
       </button>
       <button
         onClick={onToggle}
         title="Hide navigation (⌘\)"
         aria-label="Hide navigation"
-        className="group relative h-8 w-8 rounded-md flex items-center justify-center text-[var(--i-text-faint)] hover:text-[var(--i-text)] transition-colors"
+        className="flex w-[76px] flex-col items-center gap-[5px] rounded-[8px] py-[9px] text-[var(--i-text-faint)] transition-colors hover:text-[var(--i-text)]"
       >
-        ‹
-        <RailTip>Hide navigation</RailTip>
+        <span className="text-[12px] leading-none">‹</span>
+        <span className="text-[9.5px] leading-none">Collapse</span>
       </button>
     </nav>
-  );
-}
-
-function RailTip({ children }: { children: React.ReactNode }) {
-  return (
-    <span
-      className="pointer-events-none absolute left-full ml-2 whitespace-nowrap rounded px-2 py-1 text-[11px] opacity-0 group-hover:opacity-100 transition-opacity z-30"
-      style={{ background: "var(--i-void)", border: "1px solid var(--i-border-strong)", color: "var(--i-text)" }}
-    >
-      {children}
-    </span>
   );
 }

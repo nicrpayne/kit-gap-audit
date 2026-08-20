@@ -268,10 +268,17 @@ const tl = await api("/api/timeline");
   await open();
   const hue = (sel) => p.locator(sel).evaluate((e) => getComputedStyle(e).color);
   const VIOLET = "rgb(155, 140, 250)";
-  const CYAN = "rgb(70, 195, 214)";
+  // V5 assigns the five domains their own hues: Reality cyan, Choices
+  // violet, Capacity amber, LIKELY OUTCOME GREEN, Time periwinkle. Violet
+  // therefore no longer belongs to the Scenario alone, which is why the
+  // hypothetical is also carried by the page MODE below. What the law still
+  // fixes is that under Reality the outcome reads in ITS OWN colour and
+  // never in the Scenario's.
+  const OUTCOME = "rgb(74, 217, 168)";
 
   const outcome = await hue('[data-shoot="cr-card-outcome-primary"]');
-  check("F1. Under Reality the outcome reads cyan — the colour of now", outcome === CYAN, outcome);
+  check("F1. Under Reality the outcome reads in its own colour, not the Scenario's",
+    outcome === OUTCOME && outcome !== VIOLET, outcome);
   // Violet now also belongs to Choices, so a hypothetical is signalled by
   // the page MODE rather than by hue alone. Under Reality that mode must be
   // completely absent — no badge, no way back, and the foot says Reality.
@@ -326,15 +333,15 @@ const tl = await api("/api/timeline");
       lines.length > 0 && !lines.some((s) => s.includes("155, 140, 250")), `${lines.length} lines`);
     await p.click('[data-shoot="cr-discard"]');
     await settle(1800);
-    check("F5. Discarding it puts the colour of now back, and clears the mode",
-      (await hue('[data-shoot="cr-card-outcome-primary"]')) === CYAN &&
+    check("F5. Discarding it restores the outcome's own colour, and clears the mode",
+      (await hue('[data-shoot="cr-card-outcome-primary"]')) === OUTCOME &&
         (await p.locator('[data-shoot="cr-scenario"]').count()) === 0 &&
         /reality/i.test(await p.locator('[data-shoot="cr-status-mode"]').innerText()));
   } else {
     check("F3. A Scenario turns the forecast violet AND raises the page mode", false, "no gate to assume");
     check("F3b. …and Reality's own date is still on the instrument", false, "n/a");
     check("F4. …but the reported history is never repainted as hypothetical", false, "n/a");
-    check("F5. Discarding it puts the colour of now back", false, "n/a");
+    check("F5. Discarding it restores the outcome's own colour", false, "n/a");
   }
 }
 

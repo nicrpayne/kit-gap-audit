@@ -112,7 +112,11 @@ export default function NowPlaying({
       data-holding={moment && !live ? true : undefined}
       data-beats={moment ? moment.beats.length : 0}
       data-stanzas={stanzas.length}
-      className="flex-1 min-w-0 self-stretch my-1.5 rounded-lg flex flex-col justify-center px-3.5 overflow-hidden"
+      // min-w-[112px] is the width at which the quiet state can still say
+      // "Nothing at the playhead" without slicing a word. Below it the block
+      // was rendering as a clipped fragment; the standalone Timeline gives
+      // this ~379px, so the floor only ever binds inside a narrow embed.
+      className="flex-1 min-w-[112px] self-stretch my-1.5 rounded-lg flex flex-col justify-center px-3.5 overflow-hidden"
       style={{
         background: "var(--i-recess)",
         border: `1px solid ${moment && live ? "rgba(155,140,250,0.5)" : "#1c2227"}`,
