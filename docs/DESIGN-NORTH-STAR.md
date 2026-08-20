@@ -4,52 +4,59 @@ Companion to `docs/PRODUCT-VISION.md` — that document says *why* this app
 exists and what it's for; this one says what it should *feel like* to use,
 and the concrete rules that keep it that way as more of it gets built.
 
-## Two modes under one roof
+## One shell, two treatments
 
-This app has always had one visual identity: the **Workbench** — warm
-cream paper background, deep green nav, serif/editorial headings
-(`--color-paper`, `--color-ink`, `--font-display`, see `app/globals.css`).
-That doesn't go away and doesn't get redesigned. `/audit`, `/decisions`,
-`/forecast`, `/reports`, `/scopes` all stay exactly as they are.
+*(Superseded section: this used to read "Two modes under one roof" and
+described a light **Workbench** shell — cream paper, deep green nav, serif
+headings — living beside a dark **Instrument**, with `lib/shell/mode.ts`
+switching between them per route. That shell is retired. The history is
+kept here because the reasoning still explains why the treatments differ.)*
 
-`/portfolio` is the first route in **Instrument Mode** — a dark, graphite
-simulation environment (`.instrument`-scoped CSS variables, same file).
+Signal is **one application, dark throughout**. Every user-facing route
+renders inside the same shell: the same 92px rail, the same identity
+strip, the same surfaces, the same type. There is no second chrome for a
+route to wear and no route that stands its navigation down for another.
 
-**Instrument Mode owns the viewport.** This is the rule that replaced the
-original "a dark panel inside the light page" arrangement, and the reason
-is a real one: simulating is something you enter, not something you peer
-at through a letterbox. A cream document frame around a dark console makes
-the console read as a widget embedded in somebody else's application. So
-on an Instrument route the Workbench's 256px nav stands down entirely
-(`components/Nav.tsx` returns null), the page renders no eyebrow, heading
-or intro paragraph, and the surface is fixed to the full viewport.
-Navigation becomes a 48px icon rail that can be hidden outright (`⌘\`), so
-the simulation can take the whole screen when it is being presented.
+The two-shell arrangement made sense while the instruments were an
+experiment opened from inside a product. It stopped making sense when the
+instruments became the product — at which point the split's only remaining
+effect was that you could tell which half of the app you were in by its
+colour, which is the opposite of what a shell is for.
 
-Which routes are Instrument Mode lives in one place, `lib/shell/mode.ts`,
-shared by both the Workbench nav and the Instrument rail. **This is a
-presentation switch only** — the route table, the destination list, and
-what any page can reach are all unchanged. Adding a route to that list
-changes what chrome it wears, nothing else.
+What survives is the distinction the split was *actually* about:
 
-Instrument Mode is **dark-first, and only dark**. There is no parallel
-light Instrument theme and none should be built: the surface's whole
-vocabulary — lit travel on a control, recessed meter windows, a luminous
-ridge over a dark field — depends on darkness, and maintaining an inverted
-twin would cost more than it could ever return. The light Workbench
-continues to exist on its own routes.
+- **Instruments** — Control Room, Forecast, Scope, Portfolio, Timeline,
+  Decisions — are for *playing*: direct manipulation, rapid comparison,
+  live numbers. They own the whole viewport, render no eyebrow or intro
+  paragraph, and their rail can be hidden outright (`⌘\`) so a simulation
+  can take the entire screen when it is being presented.
+- **Reading surfaces** — Audit, Reports, Settings, the legacy dashboard —
+  are for *reading*: mostly text, mostly calm. They render through
+  `components/instrument/SignalSurface.tsx`, which gives them a centred
+  measure, generous leading, and a title that behaves like a title, inside
+  that same shell. Long prose in a full-bleed control surface is
+  unpleasant; an instrument owns the viewport, a reading surface owns a
+  column in the middle of it.
 
-Never mix the two languages inside one component: a Workbench-styled
-control does not belong inside the Instrument, and vice versa. That
-includes type — the Workbench's serif display face has no place on the
-Instrument, where numerals are the voice (see below).
+The serif display face belongs to reading surfaces — a title, a heading.
+It has no place on an instrument, where numerals are the voice (see
+below). That rule did not change when the shells merged.
 
-Why a second surface at all, instead of reskinning everything: the
-Workbench is for *reading* (audits, decisions, reports — mostly text,
-mostly calm). The Instrument is for *playing* (direct manipulation, rapid
-comparison, live numbers) — a genuinely different task with a genuinely
-different visual job, the same way a DAW's mixer looks nothing like its
-file browser despite being one application.
+Signal is **dark-first, and only dark**. There is no parallel light theme
+and none should be built: the surface's whole vocabulary — lit travel on a
+control, recessed meter windows, a luminous ridge over a dark field —
+depends on darkness, and maintaining an inverted twin would cost more than
+it could ever return.
+
+`lib/shell/mode.ts` is still the one place the destination list lives,
+shared by the rail and the command menu so they cannot drift apart. What
+it no longer contains is a per-route chrome switch, because there is only
+one chrome to choose.
+
+Legacy components written against the retired cream palette are adapted,
+not forked: a `.i-legacy` scope in `app/globals.css` resolves their
+`--color-*` tokens to instrument values. Reach for that when migrating an
+old surface; write new ones against the `--i-*` tokens directly.
 
 ## Borrow the interaction, not the costume
 

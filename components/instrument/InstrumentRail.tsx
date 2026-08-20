@@ -221,15 +221,22 @@ export default function InstrumentRail({
         const active = isOn(pathname, d.href);
         const inGroup = active || (d.children ?? []).some((c) => isOn(pathname, c.href));
         return (
-          <div key={`${d.href}:${d.label}`} className="flex w-full flex-col items-center gap-[3px]">
+          <div
+            key={`${d.href}:${d.label}`}
+            className="flex w-full flex-col items-center gap-[3px]"
+            // The spine tells a sighted reader that these three belong to
+            // Portfolio. role=group carries the same fact to everyone else.
+            {...(d.children ? { role: "group" as const, "aria-label": d.label } : {})}
+          >
             {/* A PARENT WITH CHILDREN IS A HEADING, NOT A SECOND DOOR.
                 Portfolio's own destination is already one of its children
                 (Capacity is /portfolio — see lib/shell/mode.ts), so making
                 the parent a link too would put two <a href="/portfolio">
-                in one nav: ambiguous to click, ambiguous to a screen
-                reader, and ambiguous to anything selecting by href. */}
+                in one nav: ambiguous to click, ambiguous to read aloud, and
+                ambiguous to anything selecting by href. */}
             {d.children ? (
               <div
+                aria-hidden
                 className="flex w-[76px] flex-col items-center gap-[5px] py-[9px]"
                 style={{ color: inGroup ? "var(--i-text-soft)" : "var(--i-text-faint)" }}
               >
