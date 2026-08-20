@@ -86,11 +86,19 @@ export const DESTINATIONS: ShellDestination[] = [
     question: "How do projects, people, and dependencies interact?",
     owns: "People, allocation and the portfolio-wide switching assumption",
     verb: "Play the people",
-    // PORTFOLIO'S CHILDREN. The brief asked for Overview, Scope, Capacity
-    // and Dependencies. Overview and Capacity are the same room: /portfolio
-    // owns people, allocation and switching, which IS the capacity picture,
-    // and listing it twice would be two doors into one place. The parent row
-    // is the overview; Capacity names what you find there.
+    // PORTFOLIO'S CHILDREN, as specified: Capacity, Scope, Dependencies.
+    //
+    // Capacity and Portfolio resolve to the SAME route today — /portfolio is
+    // the mixer, and the mixer is the capacity picture. Both rows are real
+    // links to it rather than one being an inert heading: a rail entry that
+    // looks like a destination has to behave like one, and a person clicking
+    // either "Portfolio" or "Capacity" wants the same screen, so sending
+    // them there twice is redundant but never wrong.
+    //
+    // If Portfolio should later become a genuine overview distinct from
+    // Capacity, that is a new surface, not a nav change — and this is the
+    // shape it would slot into: the parent keeps /portfolio, Capacity moves
+    // to a route of its own.
     children: [
       {
         href: "/portfolio",

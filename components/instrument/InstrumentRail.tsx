@@ -228,24 +228,15 @@ export default function InstrumentRail({
             // Portfolio. role=group carries the same fact to everyone else.
             {...(d.children ? { role: "group" as const, "aria-label": d.label } : {})}
           >
-            {/* A PARENT WITH CHILDREN IS A HEADING, NOT A SECOND DOOR.
-                Portfolio's own destination is already one of its children
-                (Capacity is /portfolio — see lib/shell/mode.ts), so making
-                the parent a link too would put two <a href="/portfolio">
-                in one nav: ambiguous to click, ambiguous to read aloud, and
-                ambiguous to anything selecting by href. */}
-            {d.children ? (
-              <div
-                aria-hidden
-                className="flex w-[76px] flex-col items-center gap-[5px] py-[9px]"
-                style={{ color: inGroup ? "var(--i-text-soft)" : "var(--i-text-faint)" }}
-              >
-                <RailIcon href={d.href} />
-                <span className="w-full truncate text-center text-[9.5px] leading-none">{d.label}</span>
-              </div>
-            ) : (
-              <RailLink d={d} active={active} muted={false} />
-            )}
+            {/* A PARENT IS STILL A DESTINATION. Portfolio was briefly a
+                non-clickable heading, to avoid two <a href="/portfolio">
+                once Capacity was listed as a child of the same route. That
+                traded one problem for a worse one: the row looks exactly
+                like every other rail entry, so clicking it and getting
+                nothing reads as a broken app. The duplicate is gone from
+                the destination list instead (see lib/shell/mode.ts) and the
+                parent behaves like what it looks like. */}
+            <RailLink d={d} active={active} muted={false} />
             {d.children && (
               <div
                 className="mb-[3px] flex flex-col items-center gap-[2px] pl-[4px]"

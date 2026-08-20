@@ -79,7 +79,11 @@ const goForecast = async () => {
   await settle(4200);
 };
 const goPortfolio = async () => {
-  await p.locator('nav[aria-label="Sections"] a[href="/portfolio"]').click();
+  // The rail carries TWO links to /portfolio by design — the Portfolio
+  // parent and its Capacity child are two names for the same instrument
+  // (see lib/shell/mode.ts). Either one gets you there, so this takes the
+  // first rather than asserting there is only one.
+  await p.locator('nav[aria-label="Sections"] a[href="/portfolio"]').first().click();
   await p.waitForURL("**/portfolio");
   await settle(4200);
 };
