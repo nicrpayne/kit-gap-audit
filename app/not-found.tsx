@@ -12,7 +12,7 @@ export default function NotFound() {
           Not found
         </div>
         <h1 className="font-display mb-3 text-[26px] leading-tight text-[var(--i-text)]">
-          There's nothing at this address
+          There&apos;s nothing at this address
         </h1>
         <p className="mb-7 text-[13px] leading-[1.65] text-[var(--i-text-soft)]">
           The page may have been deleted, or the link may be out of date.
