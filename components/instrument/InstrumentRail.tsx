@@ -15,7 +15,7 @@
 // Hidden entirely (the "⌘\" / chevron state) the simulation owns the full
 // viewport, which is what you want when screen-sharing a scenario.
 
-import { useState, type MouseEvent } from "react";
+import { useEffect, useRef, useState, type MouseEvent } from "react";
 import Link from "next/link";
 import { AnimatePresence, MotionConfig, motion } from "motion/react";
 import { DESTINATIONS, type ShellDestination } from "@/lib/shell/mode";
@@ -131,6 +131,26 @@ const RAIL_DESTINATIONS = DESTINATIONS.filter((d) => !d.secondary);
 const isOn = (pathname: string, href: string) =>
   href === "/" ? pathname === "/" : pathname === href || pathname.startsWith(href + "/");
 
+// DID THE RACK ARRIVE ALREADY OPEN?
+//
+// The rail remounts on every navigation — each route mounts its own
+// InstrumentShell — so moving Capacity → Scope → Dependencies looked to
+// AnimatePresence like the rack appearing for the first time, and it
+// replayed the whole entrance on each click. The rack was never actually
+// closing; it just kept re-introducing itself.
+//
+// This module-scoped flag survives client-side navigation (the module stays
+// loaded) and says whether the rack was open on the page we came from. If
+// it was, the next mount skips its entrance and is simply already there.
+//
+// Read ONLY on the client. Module state on the server is shared between
+// requests, so trusting it during SSR would leak one visitor's navigation
+// into another's markup; `typeof window` keeps the server answer a constant
+// false, which also means the server and the first client render always
+// agree and hydration stays clean.
+let rackWasOpen = false;
+const arrivedOpen = () => typeof window !== "undefined" && rackWasOpen;
+
 // THE RACK'S PHYSICS. Two springs, both in the vocabulary the instruments
 // already speak (see ScopeInstrument / CapabilityTile): the chassis moves
 // with authority and does not bounce, the modules inside it are lighter and
@@ -237,6 +257,15 @@ export default function InstrumentRail({
   // Shutting it is a "not right now", not a preference.
   const [shut, setShut] = useState<ReadonlySet<string>>(() => new Set());
 
+  // Captured once, at mount. `firstMount` is what keeps this honest: it
+  // suppresses the entrance only for the mount that navigation caused, so
+  // re-opening the rack by hand on the same page still animates properly.
+  const firstMount = useRef(true);
+  const carriedOpen = firstMount.current && arrivedOpen();
+  useEffect(() => {
+    firstMount.current = false;
+  }, []);
+
   /** Clicking the parent of an open rack shuts it instead of navigating.
       You are already where the link would take you, so the navigation has
       nothing to do — which is exactly what makes the click free to mean
@@ -262,6 +291,19 @@ export default function InstrumentRail({
       return next;
     });
   };
+
+  // Hand the next mount the answer. Runs after every render, so it also
+  // records a rack the user shut by hand — leave Portfolio with the rack
+  // closed and the rack you come back to will animate open again.
+  const anyRackOpen = RAIL_DESTINATIONS.some(
+    (d) =>
+      Boolean(d.children) &&
+      (isOn(pathname, d.href) || (d.children ?? []).some((c) => isOn(pathname, c.href))) &&
+      !shut.has(d.href)
+  );
+  useEffect(() => {
+    rackWasOpen = anyRackOpen;
+  });
 
   if (hidden) {
     return (
@@ -375,8 +417,14 @@ export default function InstrumentRail({
                     <motion.div
                       key="rack"
                       data-shoot="rail-rack"
+                      data-carried={carriedOpen ? "true" : "false"}
                       variants={rackVariants}
-                      initial="closed"
+                      // initial={false} on THIS mount only, when the rack
+                      // was already open on the page we navigated from:
+                      // moving between Capacity, Scope and Dependencies
+                      // should leave the rack sitting still, not replay its
+                      // entrance three times in a row.
+                      initial={carriedOpen ? false : "closed"}
                       animate="open"
                       exit="closed"
                       className="relative w-full overflow-hidden"
@@ -398,7 +446,11 @@ export default function InstrumentRail({
                             bottom: 10,
                             transformOrigin: "top",
                           }}
-                          initial={{ scaleY: 0 }}
+                          // Its own initial rather than a variant, so it
+                          // needs the same suppression as the rack — without
+                          // this the spine would still draw itself on every
+                          // arrival while everything around it sat still.
+                          initial={carriedOpen ? false : { scaleY: 0 }}
                           animate={{ scaleY: 1 }}
                           exit={{ scaleY: 0 }}
                           transition={CHASSIS}

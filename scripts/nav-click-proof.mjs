@@ -63,6 +63,52 @@ check(
 );
 check("…and the rack is actually rendered", (await p.locator('[data-shoot="rail-rack"]').count()) === 1);
 
+// ── THE RACK ONLY MOVES WHEN IT SHOULD ─────────────────────────────────
+// The rail remounts on every navigation, so without suppression the rack
+// replayed its entrance each time you clicked Capacity, Scope or
+// Dependencies — it looked like it was re-introducing itself on every
+// click. Moving BETWEEN modules must leave it still; opening it must not.
+{
+  // Cross-route clicks have to outlast the navigation before the rack even
+  // exists, so the sample window is generous rather than spring-sized.
+  const watch = (label, ms) =>
+    p.evaluate(async ([lbl, dur]) => {
+      const out = [];
+      document.querySelector(`[data-shoot="instrument-rail"] a[data-rail-entry="${lbl}"]`).click();
+      const t0 = performance.now();
+      return await new Promise((res) => {
+        const tick = () => {
+          const el = document.querySelector('[data-shoot="rail-rack"]');
+          out.push(el ? +el.getBoundingClientRect().height.toFixed(1) : 0);
+          if (performance.now() - t0 > dur) return res(out);
+          requestAnimationFrame(tick);
+        };
+        requestAnimationFrame(tick);
+      });
+    }, [label, ms]);
+  const settle = async (path) => {
+    await p.goto(`${BASE}${path}`, { waitUntil: "domcontentloaded", timeout: 180000 });
+    await p.waitForSelector('[data-shoot="instrument-rail"]', { timeout: 90000 });
+    await p.waitForTimeout(1800);
+  };
+
+  await settle("/control-room");
+  let h = (await watch("Portfolio", 2600)).filter((x) => x > 0);
+  check("Opening Portfolio from outside the group animates", new Set(h).size > 5, `${new Set(h).size} heights`);
+
+  for (const [from, to] of [["/portfolio", "Scope"], ["/scope", "Dependencies"], ["/orbit", "Capacity"]]) {
+    await settle(from);
+    h = (await watch(to, 2600)).filter((x) => x > 0);
+    check(`${from} → ${to} leaves the rack still`, new Set(h).size <= 2, `${new Set(h).size} distinct height(s)`);
+  }
+
+  await settle("/portfolio");
+  await p.click('[data-shoot="instrument-rail"] a[data-rail-entry="Portfolio"]');
+  await p.waitForTimeout(1100);
+  h = (await watch("Portfolio", 1600)).filter((x) => x > 0);
+  check("Re-opening it by hand still animates", new Set(h).size > 5, `${new Set(h).size} heights`);
+}
+
 // ── A SECOND CLICK SHUTS IT ────────────────────────────────────────────
 // Standing on /portfolio the link has nowhere to take you, which is what
 // frees the click to mean "close this". Third click re-opens.
@@ -158,11 +204,15 @@ for (const { label, href } of rows) {
   // not a navigation failure — it is the rack being correctly closed. Start
   // nested entries from inside Portfolio and everything else from outside
   // it, which is also how a person would arrive at each.
-  const from = NESTED.includes(label) ? "/portfolio" : "/control-room";
+  const want = href === "/" ? "/control-room" : href;
+  // Never start where the click is meant to land. Testing the "S" mark or
+  // Control Room from /control-room made waitForURL("**/control-room")
+  // match instantly — it was already true — so the assertion sampled
+  // mid-redirect at "/" and called a working link broken.
+  const from = NESTED.includes(label) ? "/portfolio" : want === "/control-room" ? "/timeline" : "/control-room";
   await p.goto(`${BASE}${from}`, { waitUntil: "domcontentloaded", timeout: 120000 });
   await p.waitForSelector('[data-shoot="instrument-rail"]', { timeout: 90000 });
   await p.waitForTimeout(1400);
-  const want = href === "/" ? "/control-room" : href;
   await p
     .locator(`[data-shoot="instrument-rail"] a[href="${href}"]`)
     .filter({ hasText: label.split(" ")[0] })
