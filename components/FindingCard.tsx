@@ -20,6 +20,17 @@ export interface FindingData {
   dismissReason: string | null;
 }
 
+/** What the preview endpoint returns — the exact issue that would be filed,
+    plus where it would land. Mirrors TicketPayload in lib/findings. */
+export interface TicketPreview {
+  title: string;
+  description: string;
+  teamKey: string;
+  scopeName: string;
+  projectNames: string[];
+  provenance: "source" | "context-package";
+}
+
 const TYPE_LABELS: Record<string, string> = {
   missing_work: "Missing ticket",
   decision: "Decision",
@@ -44,15 +55,64 @@ export default function FindingCard({
   const [reason, setReason] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [preview, setPreview] = useState<TicketPreview | null>(null);
 
+  // STEP ONE IS A READ. "Draft ticket" used to file a real issue in a real
+  // external workspace on one click. It now fetches what WOULD be filed and
+  // shows it; nothing has left Signal at this point.
   async function draftTicket() {
     setBusy(true);
     setError(null);
     try {
-      const res = await fetch(`/api/findings/${finding.id}/ticket`, { method: "POST" });
+      const res = await fetch(`/api/findings/${finding.id}/ticket/preview`);
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
-        throw new Error(body.error ?? "Failed to create ticket.");
+        throw new Error(body.error ?? "Couldn't prepare this ticket.");
+      }
+      const { preview: p } = await res.json();
+      setPreview(p);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Something went wrong.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  // STEP TWO IS THE WRITE, and it is the only thing here that reaches
+  // Linear. Reached solely from the review panel's explicit action.
+  async function createInLinear() {
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/findings/${finding.id}/ticket`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ confirm: true }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error ?? "Failed to create the Linear issue.");
+      }
+      const { finding: updated } = await res.json();
+      onChange(updated);
+      setPreview(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Something went wrong.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  // Returns a stranded finding to an actionable state without pretending to
+  // know what happened in Linear. See app/api/findings/[id]/unlink.
+  async function unlink() {
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/findings/${finding.id}/unlink`, { method: "POST" });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error ?? "Couldn't unlink this finding.");
       }
       const { finding: updated } = await res.json();
       onChange(updated);
@@ -130,14 +190,19 @@ export default function FindingCard({
 
       {error && <div className="text-sm text-[var(--color-danger)] mb-3">{error}</div>}
 
-      {finding.status === "open" && !dismissing && (
-        <div className="flex gap-2">
+      {finding.status === "open" && !dismissing && !preview && (
+        <div className="flex flex-wrap items-center gap-2">
+          {/* Deliberately no longer the primary-filled button. It used to
+              look like the commit action because it WAS one; it is now a
+              read, and the filled treatment belongs to the control that
+              actually writes to Linear. */}
           <button
             onClick={draftTicket}
             disabled={busy}
-            className="rounded-md bg-[var(--color-accent)] text-white px-3 py-1.5 text-xs font-medium hover:bg-[var(--color-accent-dark)] disabled:opacity-50"
+            data-shoot="draft-ticket"
+            className="rounded-md border border-[var(--color-line)] px-3 py-1.5 text-xs font-medium hover:bg-black/5 disabled:opacity-50"
           >
-            {busy ? "Working…" : "Draft ticket"}
+            {busy ? "Preparing…" : "Draft ticket"}
           </button>
           <button
             onClick={() => setDismissing(true)}
@@ -146,6 +211,93 @@ export default function FindingCard({
           >
             Dismiss
           </button>
+          {/* An unlinked finding keeps its old identifier, so say what
+              happened rather than showing a bare "open" and losing it. */}
+          {finding.linearIssueId && (
+            <span className="text-[11px] text-[var(--color-ink-soft)]">
+              Previously filed as {finding.linearIssueId} — no longer linked.
+            </span>
+          )}
+        </div>
+      )}
+
+      {/* THE REVIEW STATE. Nothing has been created yet, and it says so.
+          The only control that reaches Linear names Linear. */}
+      {finding.status === "open" && preview && (
+        <div
+          data-shoot="ticket-review"
+          className="rounded-lg border border-[var(--color-line)] bg-black/[0.02] p-4 flex flex-col gap-3"
+        >
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-[10px] uppercase tracking-wider font-semibold text-[var(--color-accent)]">
+              Review before filing
+            </span>
+            <span className="text-[11px] text-[var(--color-ink-soft)]">Nothing has been created yet.</span>
+          </div>
+
+          <div className="text-xs text-[var(--color-ink-soft)] flex flex-wrap gap-x-5 gap-y-1">
+            <span>Team <b className="text-[var(--color-ink)]">{preview.teamKey}</b></span>
+            <span>Scope <b className="text-[var(--color-ink)]">{preview.scopeName}</b></span>
+            <span>
+              {preview.projectNames.length > 0 ? (
+                <>Projects <b className="text-[var(--color-ink)]">{preview.projectNames.join(", ")}</b></>
+              ) : (
+                <b className="text-[var(--color-amber)]">No project filter — files against the team</b>
+              )}
+            </span>
+          </div>
+
+          <div>
+            <div className="text-[10px] uppercase tracking-wider text-[var(--color-ink-soft)] mb-1">Title</div>
+            <div className="text-sm font-medium" data-shoot="preview-title">{preview.title}</div>
+          </div>
+          <div>
+            <div className="text-[10px] uppercase tracking-wider text-[var(--color-ink-soft)] mb-1">Body</div>
+            <pre className="m-0 max-h-56 overflow-y-auto whitespace-pre-wrap font-mono text-[11px] leading-relaxed text-[var(--color-ink-soft)]">
+              {preview.description}
+            </pre>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              onClick={createInLinear}
+              disabled={busy}
+              data-shoot="create-in-linear"
+              className="i-btn-primary px-3.5 py-1.5 text-xs"
+            >
+              {busy ? "Creating…" : "Create issue in Linear"}
+            </button>
+            <button
+              onClick={() => setPreview(null)}
+              disabled={busy}
+              className="rounded-md border border-[var(--color-line)] px-3 py-1.5 text-xs hover:bg-black/5 disabled:opacity-50"
+            >
+              Cancel
+            </button>
+            <span className="text-[11px] text-[var(--color-ink-soft)]">
+              This writes to your Linear workspace.
+            </span>
+          </div>
+        </div>
+      )}
+
+      {/* THE WAY OUT OF A STRANDED FINDING. QA found one asserting
+          "Ticketed · SOF-807" after the issue was deleted, with nothing to
+          act on. Signal cannot verify what happened in Linear from here —
+          see the reconciliation proposal — but a person who knows can say. */}
+      {finding.status === "ticketed" && (
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            onClick={unlink}
+            disabled={busy}
+            data-shoot="unlink-ticket"
+            className="rounded-md border border-[var(--color-line)] px-3 py-1.5 text-xs hover:bg-black/5 disabled:opacity-50"
+          >
+            {busy ? "Unlinking…" : "Unlink — this ticket no longer exists"}
+          </button>
+          <span className="text-[11px] text-[var(--color-ink-soft)]">
+            Returns the finding to open. Does not touch Linear.
+          </span>
         </div>
       )}
 

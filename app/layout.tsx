@@ -1,5 +1,17 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import "./globals.css";
+
+// Without this, mobile browsers render into a ~980px virtual viewport and
+// scale the result down, which is why every control looked simultaneously
+// tiny and off-screen. Nothing here changes desktop rendering.
+//
+// `userScalable` is deliberately left alone: pinch-zoom is an accessibility
+// affordance, and disabling it is a common way to make a dense surface
+// unusable for anyone who needs to magnify it.
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+};
 
 export const metadata: Metadata = {
   title: "Signal",

@@ -1,53 +1,63 @@
+// THE ONLY PATH THAT WRITES TO LINEAR, AND IT NOW REFUSES TO DO SO BY
+// ACCIDENT.
+//
+// This route used to create a real issue in a real external workspace on a
+// bare POST with no body — one click of "Draft ticket", one issue filed,
+// nothing shown to the person first and nothing to undo it with. The bulk
+// button fanned that out across every selected finding at once.
+//
+// The write now requires an explicit `{ confirm: true }`. That ordering
+// matters more than it looks: an un-confirmed POST does not merely fail, it
+// returns the PREVIEW, so the old call shape is not just refused but
+// redirected into the safe flow. Any caller written against the previous
+// contract — including one we have forgotten about — now gets a payload to
+// show a human instead of creating an issue. It fails safe rather than
+// failing closed.
+//
+// The payload itself is composed in lib/findings/ticketPayload.ts, shared
+// with the preview route, so what a person approves and what is sent cannot
+// drift apart.
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { createLinearIssue } from "@/lib/linear";
+import { composeTicketPayload } from "@/lib/findings/ticketPayload";
 
-export async function POST(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
 
-  const finding = await prisma.finding.findUnique({
-    where: { id },
-    include: { source: { include: { scope: true } }, contextSnapshot: { include: { scope: true } } },
-  });
-  if (!finding) {
-    return NextResponse.json({ error: "Finding not found" }, { status: 404 });
+  const result = await composeTicketPayload(id);
+  if (!result.ok) {
+    return NextResponse.json({ error: result.error }, { status: result.status });
+  }
+  const payload = result.payload;
+
+  // A body is optional on the wire, so parse defensively: a POST with no
+  // body at all is precisely the legacy call shape, and it must land in the
+  // refusal branch rather than throwing.
+  let body: { confirm?: unknown } = {};
+  try {
+    body = (await req.json()) as { confirm?: unknown };
+  } catch {
+    /* no body — treated as unconfirmed */
   }
 
-  // A legacy/direct audit Finding resolves its Scope via its Source; a
-  // package-derived Finding (no Source, per Phase 1b) resolves it via its
-  // ContextSnapshot instead -- both are real, non-fabricated Scope
-  // references, just via different provenance.
-  const scope = finding.source?.scope ?? finding.contextSnapshot?.scope ?? null;
-  if (!scope) {
+  if (body.confirm !== true) {
     return NextResponse.json(
-      { error: "This finding has no Scope on its source or context snapshot, so there's no Linear team to file it against." },
+      {
+        error:
+          "Creating a Linear issue requires explicit confirmation. Review the preview and send { confirm: true } to file it.",
+        preview: payload,
+        created: false,
+      },
       { status: 400 }
     );
   }
 
-  const provenanceLine = finding.source
-    ? `Surfaced by KIT Gap Audit from source "${finding.source.title}".`
-    : `Surfaced by KIT Gap Audit from a tracked project context package (snapshot ${finding.contextSnapshotId}).`;
-
-  const description = [
-    finding.rationale,
-    "",
-    `> "${finding.quote}"`,
-    "",
-    finding.owner ? `Owner: ${finding.owner}` : null,
-    finding.blocks ? `Blocks: ${finding.blocks}` : null,
-    finding.estimateHint ? `Estimate hint: ${finding.estimateHint}` : null,
-    "",
-    provenanceLine,
-  ]
-    .filter((line) => line !== null)
-    .join("\n");
-
   try {
     const issue = await createLinearIssue({
-      title: finding.title,
-      description,
-      teamKey: scope.teamKey,
+      title: payload.title,
+      description: payload.description,
+      teamKey: payload.teamKey,
     });
 
     const updated = await prisma.finding.update({
@@ -55,7 +65,7 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
       data: { status: "ticketed", linearIssueId: issue.identifier },
     });
 
-    return NextResponse.json({ finding: updated, linearIssue: issue });
+    return NextResponse.json({ finding: updated, linearIssue: issue, created: true });
   } catch (error) {
     return NextResponse.json(
       { error: `Couldn't create Linear issue: ${error instanceof Error ? error.message : "unknown error"}` },

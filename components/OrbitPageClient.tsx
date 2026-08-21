@@ -26,6 +26,7 @@
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
+import { useProjectParam } from "@/lib/shell/useProjectParam";
 import InstrumentShell from "@/components/instrument/InstrumentShell";
 import ScenarioStrip from "@/components/instrument/ScenarioStrip";
 import { useProject, EMPTY_SCENARIO } from "@/lib/instrument/useProject";
@@ -81,7 +82,6 @@ export default function OrbitPageClient() {
   // ids are Orbit's own stable node ids, so nothing is translated on the
   // way in and an unknown one simply selects nothing.
   const params = useSearchParams();
-  const [focusScopeId, setFocusScopeId] = useState<string | null>(params.get("focus"));
   const [selected, setSelected] = useState<string | null>(params.get("select"));
 
   const scopes = useMemo(() => m.data?.scopes ?? [], [m.data]);
@@ -105,7 +105,24 @@ export default function OrbitPageClient() {
     return best ?? scopes[0].scopeId;
   }, [m.preview, scopes]);
 
-  const focus = focusScopeId ?? defaultFocus;
+  // FOCUS LIVES IN THE URL, on the same ?project= convention as every other
+  // instrument (lib/shell/useProjectParam). Orbit already accepted ?focus=
+  // on the way in from the Control Room but never wrote it back, so the
+  // focus a person chose here could not be refreshed into or shared.
+  //
+  // The clever default is preserved by expressing it as ORDER rather than
+  // as state: the hook falls back to the first available id, so putting the
+  // date-setting scope first reproduces exactly the previous behaviour.
+  const orderedScopeIds = useMemo(() => {
+    if (scopes.length === 0) return [];
+    const ids = scopes.map((s) => s.scopeId);
+    if (!defaultFocus) return ids;
+    return [defaultFocus, ...ids.filter((id) => id !== defaultFocus)];
+  }, [scopes, defaultFocus]);
+
+  const { projectId: focus, select: setFocusScopeId } = useProjectParam(
+    m.preview && scopes.length > 0 ? orderedScopeIds : null
+  );
 
   const graph: OrbitGraph | null = useMemo(() => {
     if (!m.data || !m.preview || !m.baseline || !focus) return null;

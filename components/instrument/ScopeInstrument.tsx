@@ -47,6 +47,7 @@ import {
   type DragMoveEvent,
   type DragStartEvent,
 } from "@dnd-kit/core";
+import { useProjectParam } from "@/lib/shell/useProjectParam";
 import { AnimatePresence, MotionConfig, motion, useMotionValue, useSpring, useTransform, type MotionValue } from "motion/react";
 import InstrumentShell from "@/components/instrument/InstrumentShell";
 import ScenarioStrip, { chipsFor } from "@/components/instrument/ScenarioStrip";
@@ -103,7 +104,11 @@ function loadDelta(removed: number): { value: string; note: string } {
 
 export default function ScopeInstrument() {
   const m = useProject();
-  const [scopeId, setScopeId] = useState<string | null>(null);
+  // The URL owns which project is selected (lib/shell/useProjectParam), so
+  // refresh, back/forward and a pasted link all reproduce it.
+  const { projectId: scopeId, select: setScopeId } = useProjectParam(
+    m.data ? m.data.scopes.map((s) => s.scopeId) : null
+  );
   const [openFeatureId, setOpenFeatureId] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
   const [dragging, setDragging] = useState<Feature | null>(null);
@@ -172,6 +177,7 @@ export default function ScopeInstrument() {
                 setScopeId(s.scopeId);
                 setOpenFeatureId(null);
               }}
+              aria-pressed={s.scopeId === scope?.scopeId}
               data-shoot={`scope-${s.scopeId}`}
               className="rounded px-2.5 py-1 text-[10.5px] transition-colors"
               style={{

@@ -257,7 +257,7 @@ export default function ControlRoomPageClient() {
           event is actually created — rather than a control that implies
           otherwise. */}
       <Link
-        href="/timeline"
+        href="/timeline?add=1"
         data-shoot="cr-add-event"
         title="Events are created on the Timeline"
         className="mr-2 flex items-center gap-1.5 rounded-[5px] px-2.5 py-1.5 text-[11px] transition-colors hover:bg-[var(--i-panel-raised)]"

@@ -23,6 +23,7 @@ import DecisionCircuit, { type CircuitNode } from "@/components/decisions/Decisi
 import { CandidateTray, DecidedBand, DismissedBar, OpenLane } from "@/components/decisions/DecisionLanes";
 import DecisionInspector, { type Selection } from "@/components/decisions/DecisionInspector";
 import { ConnectTool, ImportTool, NewDecisionTool } from "@/components/decisions/DecisionTools";
+import { useProjectParam } from "@/lib/shell/useProjectParam";
 import { useDecisions } from "@/lib/decisions/useDecisions";
 import { useFlip } from "@/lib/decisions/useFlip";
 import { EMPTY_SCENARIO, fmtDay, useProject } from "@/lib/instrument/useProject";
@@ -36,7 +37,7 @@ export default function DecisionsPageClient() {
 
   const [selection, setSelection] = useState<Selection>(null);
   const [filter, setFilter] = useState<Filter>("all");
-  const [scopeId, setScopeId] = useState<string | null>(null);
+
   const [showDismissed, setShowDismissed] = useState(false);
   const [busy, setBusy] = useState(false);
   const [tool, setTool] = useState<"new" | "import" | "connect" | null>(null);
@@ -49,18 +50,25 @@ export default function DecisionsPageClient() {
   // actually has gates -- opening on a clear path when another is blocked
   // would be showing the least interesting truth first.
   const gatingAll = useMemo(() => decisions.filter(forecastActive), [decisions]);
-  useEffect(() => {
-    if (scopeId || scopes.length === 0) return;
+
+  // That preference is expressed as ORDER rather than as a setState, so the
+  // URL can win while the fallback stays exactly as clever as it was: the
+  // shared hook falls back to the first available id, so putting the
+  // busiest-gating project first reproduces the old default precisely.
+  const orderedScopeIds = useMemo(() => {
+    if (scopes.length === 0) return [];
     const busiest = new Map<string, number>();
     for (const d of gatingAll) {
       const t = d.gate!.targetScopeId;
       busiest.set(t, (busiest.get(t) ?? 0) + 1);
     }
-    const top = [...busiest.entries()].sort((a, b) => b[1] - a[1])[0];
-    setScopeId(top?.[0] ?? scopes[0].id);
-  }, [scopeId, scopes, gatingAll]);
+    const ids = scopes.map((s) => s.id);
+    return [...ids].sort((a, b) => (busiest.get(b) ?? 0) - (busiest.get(a) ?? 0));
+  }, [scopes, gatingAll]);
 
-  const activeScopeId = scopeId ?? scopes[0]?.id ?? null;
+  const { projectId: activeScopeId, select: setScopeId } = useProjectParam(
+    loading ? null : orderedScopeIds
+  );
 
   // ── THE CIRCUIT'S NODES, from real structure only ─────────────────────
   const { origin, downstream } = useMemo(() => {

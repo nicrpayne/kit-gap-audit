@@ -18,6 +18,7 @@
 // input, and the composition is how that lesson is taught.
 
 import { useMemo, useState } from "react";
+import { useProjectParam } from "@/lib/shell/useProjectParam";
 import Link from "next/link";
 import InstrumentShell from "@/components/instrument/InstrumentShell";
 import ScenarioStrip, { chipsFor } from "@/components/instrument/ScenarioStrip";
@@ -38,13 +39,18 @@ type Tool =
 
 export default function ForecastInstrument() {
   const m = useProject();
-  const [selected, setSelected] = useState<string | null>(null);
   const [targetOverride, setTargetOverride] = useState<Map<string, number>>(new Map());
   const [tool, setTool] = useState<Tool>(null);
   const [macrosOpen, setMacrosOpen] = useState(false);
 
   const scopeNameById = useMemo(() => new Map((m.data?.scopes ?? []).map((s) => [s.scopeId, s.name])), [m.data]);
-  const scopeId = selected ?? m.data?.scopes[0]?.scopeId ?? null;
+  // The URL owns which project is selected (lib/shell/useProjectParam), so
+  // refresh, back/forward and a pasted link all reproduce it. This used to
+  // be component state, which is why QA found Forecast silently reverting
+  // to JSA on refresh.
+  const { projectId: scopeId, select: setSelected } = useProjectParam(
+    m.data ? m.data.scopes.map((s) => s.scopeId) : null
+  );
   const scope = m.data?.scopes.find((s) => s.scopeId === scopeId) ?? null;
 
   // Memoised so LivingForecast's gate diffing sees a stable identity — a
@@ -73,6 +79,10 @@ export default function ForecastInstrument() {
             <button
               key={s.scopeId}
               onClick={() => setSelected(s.scopeId)}
+              // QA found selection conveyed by inline colour alone, so it
+              // was invisible to a screen reader and to anyone who does not
+              // separate these hues. Announced now as well as painted.
+              aria-pressed={s.scopeId === scopeId}
               data-shoot={`scope-${s.scopeId}`}
               className="rounded px-2.5 py-1 text-[10.5px] transition-colors"
               style={{

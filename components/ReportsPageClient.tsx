@@ -6,6 +6,16 @@ import ReportView, { CopyMarkdownButton } from "./ReportView";
 import MomentumChip from "./MomentumChip";
 import { computeMomentum } from "@/lib/momentum/compute";
 import { reportAttributionSentence } from "@/lib/momentum/attribution";
+import { describeSnapshot, withSnapshotProvenance } from "@/lib/reports/snapshot";
+import { useProjectParam } from "@/lib/shell/useProjectParam";
+
+/** The live forecast is a comparison input, not report data. Three states,
+    because "we could not resolve it" must be distinguishable from "it
+    agrees" — collapsing them is how a stale report starts looking current. */
+type LiveForecast =
+  | { state: "loading" }
+  | { state: "ready"; likelyDate: string; confidenceAtTarget: number | null }
+  | { state: "error"; reason: string };
 
 interface ScopeOption {
   id: string;
@@ -31,11 +41,16 @@ function formatDate(iso: string): string {
 
 export default function ReportsPageClient() {
   const [scopes, setScopes] = useState<ScopeOption[] | null>(null);
-  const [scopeId, setScopeId] = useState<string | null>(null);
+  // The URL owns the selection (lib/shell/useProjectParam), so refresh,
+  // back/forward and a pasted link all reproduce it.
+  const { projectId: scopeId, select: setScopeId } = useProjectParam(
+    scopes ? scopes.map((s) => s.id) : null
+  );
   const [reports, setReports] = useState<ReportRow[] | null>(null);
   const [selected, setSelected] = useState<ReportRow | null>(null);
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [live, setLive] = useState<LiveForecast | null>(null);
 
   // Momentum for the selected report: comparison is against the report
   // immediately BEFORE it chronologically (`reports` is sorted newest
@@ -67,8 +82,11 @@ export default function ReportsPageClient() {
     fetch("/api/scopes")
       .then((res) => res.json())
       .then((body) => {
+        // Deliberately does NOT choose a project here. The URL decides,
+        // with a deterministic fallback to the first — otherwise whichever
+        // fetch resolved first would silently win, which is exactly the
+        // bug QA found.
         setScopes(body.scopes);
-        if (body.scopes[0]) setScopeId(body.scopes[0].id);
       });
   }, []);
 
@@ -82,6 +100,49 @@ export default function ReportsPageClient() {
   useEffect(() => {
     if (scopeId) loadReports(scopeId);
   }, [scopeId, loadReports]);
+
+  // THE LIVE FORECAST, FOR COMPARISON ONLY. A stored report cannot say
+  // whether it is still true; only the current forecast can. Fetched once
+  // per scope and never written back — reports are immutable snapshots and
+  // nothing here regenerates or mutates one.
+  useEffect(() => {
+    if (!scopeId) {
+      setLive(null);
+      return;
+    }
+    let cancelled = false;
+    setLive({ state: "loading" });
+    fetch(`/api/forecast?scopeId=${encodeURIComponent(scopeId)}`)
+      .then(async (res) => {
+        const body = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(body.error ?? `forecast unavailable (${res.status})`);
+        return body;
+      })
+      .then((body) => {
+        if (cancelled) return;
+        setLive({ state: "ready", likelyDate: body.likelyDate, confidenceAtTarget: body.confidenceAtTarget ?? null });
+      })
+      .catch((err: unknown) => {
+        if (cancelled) return;
+        setLive({ state: "error", reason: err instanceof Error ? err.message : "unknown error" });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [scopeId]);
+
+  // What the selected report is, relative to now. Null when nothing is
+  // selected; otherwise always present, because "we could not check" is
+  // itself a verdict a reader is entitled to (see lib/reports/snapshot).
+  const snapshot = useMemo(() => {
+    if (!selected) return null;
+    return describeSnapshot({
+      generatedAt: new Date(selected.generatedAt),
+      snapshotLikelyDate: new Date(selected.likelyDate),
+      liveLikelyDate: live?.state === "ready" ? new Date(live.likelyDate) : null,
+      liveUnavailableReason: live?.state === "error" ? live.reason : live?.state === "loading" ? "still loading" : null,
+    });
+  }, [selected, live]);
 
   async function generate() {
     if (!scopeId) return;
@@ -142,7 +203,13 @@ export default function ReportsPageClient() {
         >
           {generating ? "Generating…" : "Generate report"}
         </button>
-        {selected && <CopyMarkdownButton markdown={selected.summaryMarkdown} />}
+        {/* The copied text carries the snapshot's provenance with it. A
+            report leaves Signal through this button and is read somewhere
+            Signal cannot annotate, so the warning has to travel inside the
+            text rather than live beside it on screen. */}
+        {selected && snapshot && (
+          <CopyMarkdownButton markdown={withSnapshotProvenance(selected.summaryMarkdown, snapshot)} />
+        )}
       </div>
 
       {error && <div className="text-sm text-[var(--color-danger)] mb-4">{error}</div>}
@@ -151,6 +218,33 @@ export default function ReportsPageClient() {
         <div className="border border-[var(--color-line)] rounded-xl bg-[var(--color-card)] p-6">
           {selected ? (
             <>
+              {/* WHAT THIS IS, BEFORE WHAT IT SAYS. A stored report is a
+                  historical artifact; presenting it in a frame that reads
+                  as current is how a five-week-old date gets emailed to a
+                  leadership team. Amber when the live forecast has moved
+                  far enough to mislead. */}
+              {snapshot && (
+                <div
+                  data-shoot="report-snapshot-banner"
+                  className="mb-5 rounded-lg border px-4 py-3"
+                  style={{
+                    borderColor: snapshot.stale ? "var(--color-amber)" : "var(--color-line)",
+                    background: snapshot.stale ? "var(--color-amber-soft)" : "transparent",
+                  }}
+                >
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-[10px] font-semibold uppercase tracking-wider text-[var(--color-amber)]">
+                      Historical snapshot
+                    </span>
+                    {snapshot.stale && (
+                      <span className="text-[10px] font-semibold uppercase tracking-wider text-[var(--color-danger)]">
+                        Live forecast has moved
+                      </span>
+                    )}
+                  </div>
+                  <p className="mt-1.5 text-xs leading-relaxed text-[var(--color-ink)]">{snapshot.line}</p>
+                </div>
+              )}
               {momentum && <MomentumChip momentum={momentum} currentConfidence={selected.confidenceAtTarget} />}
               <ReportView markdown={selected.summaryMarkdown} />
             </>

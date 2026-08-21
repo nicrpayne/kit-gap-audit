@@ -25,7 +25,7 @@
 //      any attribution goes.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import type {
   TimelineProjection, TimelineEntry, TimelineCandidate, ForecastSnapshot,
 } from "@/lib/timeline/entries";
@@ -80,6 +80,28 @@ export default function TimelinePageClient({ embedded = false }: { embedded?: bo
   const [fieldH, setFieldH] = useState(600);
   const [tool, setTool] = useState<{ editing: TimelineEntry | null } | null>(null);
   const [intakeOpen, setIntakeOpen] = useState(false);
+
+  // ARRIVING WITH THE INTENT ALREADY FORMED. The Control Room's "+ Add
+  // event" used to land here with the form closed, so the action a person
+  // asked for took two clicks and the first one appeared to do nothing.
+  //
+  // The intent travels as ?add=1 rather than as cross-page state: it is
+  // visible, shareable, survives a refresh, and there is no hidden channel
+  // between two pages that could get out of step. Consumed once on arrival
+  // and stripped from the URL, because it describes an action taken, not a
+  // state the page is in — leaving it would re-open the form on every
+  // subsequent refresh.
+  const addParams = useSearchParams();
+  const addRouter = useRouter();
+  const addPathname = usePathname();
+  useEffect(() => {
+    if (addParams.get("add") !== "1") return;
+    setTool({ editing: null });
+    const next = new URLSearchParams(addParams.toString());
+    next.delete("add");
+    const q = next.toString();
+    addRouter.replace(q ? `${addPathname}?${q}` : addPathname, { scroll: false });
+  }, [addParams, addRouter, addPathname]);
   const [reducedMotion, setReducedMotion] = useState(false);
   // PRESENTATION ONLY. Which layers the score draws. The projection is
   // whole regardless, and playback crosses every occurred entry either way

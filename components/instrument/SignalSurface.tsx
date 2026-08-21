@@ -42,7 +42,11 @@ export default function SignalSurface({
   children: ReactNode;
 }) {
   return (
-    <InstrumentShell>
+    // minViewportWidth={0}: a reading surface has nothing to clip. Prose
+    // reflows, the forms are ordinary, and Audit/Reports/Settings are
+    // exactly what someone on a phone can still usefully do — so they must
+    // NOT inherit the instrument width requirement.
+    <InstrumentShell minViewportWidth={0}>
       <div className="i-legacy min-w-0 flex-1 overflow-y-auto" style={{ background: "var(--i-bg)" }}>
         <div className="mx-auto w-full max-w-[900px] px-8 pb-16 pt-9">
           {back && (
