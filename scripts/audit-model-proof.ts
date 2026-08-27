@@ -11,10 +11,11 @@
 //   C  an unsupplied lane says so rather than being hidden
 //   D  a lane's state is the worst of its checkpoints and live findings
 //   E  a handled finding stops driving its lane's state
-//   F  layout is deterministic — same model, same coordinates
-//   G  no two findings share an anchor
-//   H  no callout card leaves the field, and none overlaps another
 //   I  the audit sweep's trail follows the scan edge, never precedes it
+//
+//   (F/G/H, the retired Truth Map's layout proofs, moved to
+//   scripts/audit-graph-proof.ts when the renderer became graph-first — the
+//   subject moved, so the assertions moved with it.)
 //   J  provenance resolves to real passages, and never invents one
 //   K  opening a decision creates an OPEN, UNGATED Decision
 //   L  opening a decision is idempotent
@@ -27,7 +28,6 @@
 
 import { PrismaClient } from "@prisma/client";
 import { buildTruthMap, tierFor, worstState, type TruthMapModel } from "../lib/audit/truth";
-import { layoutLanes, layoutFindings, FIELD, CARD, TIER_RADIUS, HANDLED_RADIUS } from "../lib/audit/layout";
 
 const prisma = new PrismaClient();
 const BASE = process.env.BASE_URL ?? "http://localhost:3000";
@@ -135,10 +135,10 @@ async function main() {
     "C4 an unsupplied lane is listed for the overview to report",
     sparseModel.unsuppliedLaneIds.length === unsupplied.length
   );
-  check(
-    "C5 the sparse Scope still lays out without throwing",
-    layoutLanes(sparseModel.lanes).size === sparseModel.lanes.length
-  );
+  // C5 asserted the retired Truth Map layout survived a sparse Scope. The
+  // graph-first equivalent (every lane still seats, with no findings to seat
+  // around it) is proven in scripts/audit-graph-proof.ts against the same
+  // "design" Scope.
 
   // ── D. LANE STATE IS THE WORST OF ITS PARTS ────────────────────────
   check(
@@ -169,78 +169,6 @@ async function main() {
   check(
     "E4 totals.critical counts live findings only",
     model.totals.critical === model.findings.filter((f) => !f.handled && f.tier === "critical").length
-  );
-
-  // ── F. LAYOUT IS DETERMINISTIC ─────────────────────────────────────
-  const l1 = layoutLanes(model.lanes);
-  const l2 = layoutLanes(model.lanes);
-  check(
-    "F1 lane layout is deterministic",
-    [...l1.keys()].every((k) => l1.get(k)!.d === l2.get(k)!.d),
-    "a lane must not change seat between renders"
-  );
-  const f1 = layoutFindings(model, l1);
-  const f2 = layoutFindings(model, l2);
-  check(
-    "F2 finding seating is deterministic",
-    [...f1.keys()].every((k) => {
-      const a = f1.get(k)!;
-      const b = f2.get(k)!;
-      return a.anchor.x === b.anchor.x && a.anchor.y === b.anchor.y && a.card?.x === b.card?.x;
-    })
-  );
-
-  // ── G. NO TWO FINDINGS SHARE AN ANCHOR ─────────────────────────────
-  const anchors = [...f1.values()].map((p) => `${p.anchor.x.toFixed(1)},${p.anchor.y.toFixed(1)}`);
-  check(
-    "G1 every finding has its own anchor",
-    new Set(anchors).size === anchors.length,
-    `${anchors.length} findings, ${new Set(anchors).size} distinct anchors`
-  );
-
-  // ── H. CARDS STAY INSIDE THE FIELD AND OFF EACH OTHER ──────────────
-  const cards = [...f1.values()].filter((p) => p.card).map((p) => p.card!);
-  check(
-    "H1 no card leaves the field",
-    cards.every(
-      (c) =>
-        c.x - CARD.w / 2 >= 0 &&
-        c.x + CARD.w / 2 <= FIELD.width &&
-        c.y - CARD.h / 2 >= 0 &&
-        c.y + CARD.h / 2 <= FIELD.height
-    ),
-    cards.map((c) => `${c.x},${c.y}`).join(" ")
-  );
-  check(
-    "H2 no card overlaps another",
-    cards.every((a, i) =>
-      cards.every(
-        (b, j) =>
-          i === j || Math.abs(a.x - b.x) >= CARD.w || Math.abs(a.y - b.y) >= CARD.h
-      )
-    )
-  );
-  check(
-    "H3 no card intrudes on the label gutter",
-    cards.every((c) => c.x - CARD.w / 2 >= FIELD.trackX),
-    "the gutter is protected space — a track never starts under a label, and neither does a card"
-  );
-
-  // ── anchors sit in the band their tier names ───────────────────────
-  const radiusOf = (p: { x: number; y: number }) => Math.hypot(p.x - FIELD.cx, p.y - FIELD.cy);
-  check(
-    "H4 a handled finding collapses toward Reality",
-    model.findings
-      .filter((f) => f.handled && f1.has(f.id))
-      .every((f) => radiusOf(f1.get(f.id)!.anchor) <= HANDLED_RADIUS + 45),
-    "distance from Reality means live disagreement, and a handled finding is not one"
-  );
-  check(
-    "H5 a critical finding sits at or beyond the drift band",
-    model.findings
-      .filter((f) => !f.handled && f.tier === "critical" && f1.has(f.id))
-      .every((f) => radiusOf(f1.get(f.id)!.anchor) >= FIELD.driftR - 10),
-    "radius is disagreement; the worst findings sit furthest out"
   );
 
   // ── I. THE SWEEP TRAIL FOLLOWS THE SCAN ────────────────────────────
@@ -416,9 +344,9 @@ async function main() {
     };
     const a = buildTruthMap(args);
     const b = buildTruthMap(args);
-    check("F3 buildTruthMap is pure — same inputs, same model", JSON.stringify(a) === JSON.stringify(b));
+    check("Q1 buildTruthMap is pure — same inputs, same model", JSON.stringify(a) === JSON.stringify(b));
     check(
-      "F4 buildTruthMap needs no database of its own",
+      "Q2 buildTruthMap needs no database of its own",
       a.lanes.length === 8,
       `${a.lanes.length} lanes from arguments alone`
     );

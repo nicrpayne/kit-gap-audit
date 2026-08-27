@@ -1,0 +1,797 @@
+"use client";
+
+// THE SIGNAL GRAPH — the primary Audit surface.
+//
+// The graph IS the instrument. The inspector and the review console are
+// contextual detail beside it, not peers competing for the viewport.
+//
+// WHAT MAKES THIS NOT A HAIRBALL, in order of importance:
+//
+//   1. MEMBERSHIP IS POSITION, NOT A LINE. 74 of the graph's edges say "this
+//      belongs to that cluster". The layout already says that by seating the
+//      node in the cluster's sector, so those edges are never drawn. That one
+//      decision is the difference between ~40 readable relationships and 162
+//      crossing strokes.
+//
+//   2. PROGRESSIVE DETAIL. The camera decides which slice is mounted and which
+//      kinds carry labels. Far zoom is project shape; close zoom is tickets
+//      and passages. Nothing renders "just in case".
+//
+//   3. EVIDENCE OUTRANKS INFERENCE. Attested edges are solid at rest; inferred
+//      ones are dashed and faint until something is selected.
+//
+// SVG, with a viewBox camera. At 65 nodes on the largest Scope this is far
+// inside SVG's comfort zone, and it keeps every node a real focusable element
+// with an accessible name — which a WebGL canvas cannot.
+
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type Graph from "graphology";
+import type { AuditGraph, AuditNodeAttributes, NodeKind } from "@/lib/audit/graph";
+import {
+  FIELD,
+  BANDS,
+  layoutGraph,
+  edgePath,
+  clusterLabelPoint,
+  CLUSTER_ORDER,
+  type GraphLayout,
+} from "@/lib/audit/graphLayout";
+import {
+  NODE_SHAPE,
+  nodeColor,
+  TIER,
+  zoomLevel,
+  labelsFor,
+  MEMBERSHIP_RELS,
+  type ZoomLevel,
+} from "./graphTokens";
+
+// KEYBOARD ORDER, AS A CONSTANT. Declared here rather than inside the
+// component so it is not a fresh array identity on every render.
+const KIND_ORDER: NodeKind[] = [
+  "reality",
+  "scope",
+  "lane",
+  "finding",
+  "dependency",
+  "decision",
+  "decisionGate",
+  "feature",
+  "work",
+  "intelligence",
+  "passage",
+  "source",
+  "checkpoint",
+];
+
+export interface Camera {
+  x: number;
+  y: number;
+  k: number;
+}
+
+export const DEFAULT_CAMERA: Camera = { x: FIELD.cx, y: FIELD.cy, k: 0.72 };
+
+// Past roughly 4.5x every kind already carries a label and there is no
+// further detail to reveal — only a larger circle. Capping keeps "zoom in"
+// meaning "see more" rather than "see the same thing bigger".
+export const MAX_ZOOM = 4.5;
+export const MIN_ZOOM = 0.34;
+
+export interface SignalGraphProps {
+  graph: AuditGraph;
+  /** Node ids currently mounted — the slice, minus collapsed clusters. */
+  visible: Set<string>;
+  selectedId: string | null;
+  hoveredId: string | null;
+  /** Evidence Solo result, or null when off. */
+  soloNodes: Set<string> | null;
+  /** Search matches, or null when the search box is empty. */
+  matches: Set<string> | null;
+  camera: Camera;
+  onCamera: (c: Camera) => void;
+  onSelect: (id: string | null) => void;
+  onHover: (id: string | null) => void;
+  /** Cluster ids the user has expanded. */
+  expanded: Set<string>;
+  onToggleCluster: (cluster: string) => void;
+  /** Degrees, or null when no audit sweep is running. */
+  sweepAngle: number | null;
+  /** Clusters the sweep has already tested this pass. */
+  swept: Set<string>;
+}
+
+export default function SignalGraph({
+  graph,
+  visible,
+  selectedId,
+  hoveredId,
+  soloNodes,
+  matches,
+  camera,
+  onCamera,
+  onSelect,
+  onHover,
+  expanded,
+  onToggleCluster,
+  sweepAngle,
+  swept,
+}: SignalGraphProps) {
+  const svgRef = useRef<SVGSVGElement | null>(null);
+  const [size, setSize] = useState({ w: 1000, h: 800 });
+  const level: ZoomLevel = zoomLevel(camera.k);
+  const labelled = useMemo(() => labelsFor(level), [level]);
+
+  // Layout is computed from the WHOLE graph, not the visible subset, so a
+  // node does not move when its neighbours are collapsed. Expanding a cluster
+  // should reveal nodes, never rearrange the map.
+  const layout: GraphLayout = useMemo(() => layoutGraph(graph), [graph]);
+
+  useEffect(() => {
+    const el = svgRef.current;
+    if (!el) return;
+    const measure = () => {
+      const r = el.getBoundingClientRect();
+      setSize({ w: r.width || 1000, h: r.height || 800 });
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
+  // ── CAMERA ───────────────────────────────────────────────────────────
+  const vb = useMemo(() => {
+    const w = size.w / camera.k;
+    const h = size.h / camera.k;
+    return { x: camera.x - w / 2, y: camera.y - h / 2, w, h };
+  }, [camera, size]);
+
+  const toWorld = useCallback(
+    (clientX: number, clientY: number) => {
+      const el = svgRef.current;
+      if (!el) return { x: camera.x, y: camera.y };
+      const r = el.getBoundingClientRect();
+      return {
+        x: vb.x + ((clientX - r.left) / r.width) * vb.w,
+        y: vb.y + ((clientY - r.top) / r.height) * vb.h,
+      };
+    },
+    [vb, camera]
+  );
+
+  // Zoom about the pointer, so the thing under the cursor stays under it.
+  //
+  // Attached natively rather than through React's onWheel: React registers
+  // wheel handlers as PASSIVE, so preventDefault() is ignored and the page
+  // scrolls behind the graph while you zoom. The browser says so out loud
+  // ("Unable to preventDefault inside passive event listener invocation") and
+  // it is a real defect, not a warning to silence.
+  const onWheel = useCallback(
+    (e: WheelEvent) => {
+      e.preventDefault();
+      const before = toWorld(e.clientX, e.clientY);
+      const k = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, camera.k * Math.exp(-e.deltaY * 0.0016)));
+      const w = size.w / k;
+      const h = size.h / k;
+      const el = svgRef.current!.getBoundingClientRect();
+      const fx = (e.clientX - el.left) / el.width;
+      const fy = (e.clientY - el.top) / el.height;
+      onCamera({ x: before.x - (fx - 0.5) * w, y: before.y - (fy - 0.5) * h, k });
+    },
+    [camera, size, toWorld, onCamera]
+  );
+
+  useEffect(() => {
+    const el = svgRef.current;
+    if (!el) return;
+    el.addEventListener("wheel", onWheel, { passive: false });
+    return () => el.removeEventListener("wheel", onWheel);
+  }, [onWheel]);
+
+  const drag = useRef<{ sx: number; sy: number; cx: number; cy: number } | null>(null);
+  const moved = useRef(false);
+  const onPointerDown = (e: React.PointerEvent) => {
+    if (e.button !== 0) return;
+    drag.current = { sx: e.clientX, sy: e.clientY, cx: camera.x, cy: camera.y };
+    moved.current = false;
+    (e.target as Element).setPointerCapture?.(e.pointerId);
+  };
+  const onPointerMove = (e: React.PointerEvent) => {
+    const d = drag.current;
+    if (!d) return;
+    const dx = e.clientX - d.sx;
+    const dy = e.clientY - d.sy;
+    if (Math.abs(dx) + Math.abs(dy) > 3) moved.current = true;
+    onCamera({ x: d.cx - dx / camera.k, y: d.cy - dy / camera.k, k: camera.k });
+  };
+  const onPointerUp = () => {
+    drag.current = null;
+  };
+
+  // ── FOCUS SETS ───────────────────────────────────────────────────────
+  //
+  // Selection lights a node's own neighbourhood: the edges it actually has,
+  // membership excluded. Nothing is reached transitively — a neighbourhood is
+  // one hop, or it is the whole graph.
+  const focus = useMemo(() => {
+    const anchor = selectedId ?? hoveredId;
+    if (!anchor || !graph.hasNode(anchor)) return null;
+    const nodes = new Set<string>([anchor]);
+    const edges = new Set<string>();
+    for (const e of graph.edges(anchor)) {
+      if (MEMBERSHIP_RELS.has(graph.getEdgeAttribute(e, "rel"))) continue;
+      edges.add(e);
+      nodes.add(graph.source(e));
+      nodes.add(graph.target(e));
+    }
+    return { nodes, edges };
+  }, [selectedId, hoveredId, graph]);
+
+  /** How loudly a node speaks right now. */
+  const nodeOpacity = (id: string): number => {
+    if (soloNodes) return soloNodes.has(id) ? TIER.focus : TIER.soloDimmed;
+    if (matches) return matches.has(id) ? TIER.focus : TIER.dimmed;
+    if (focus) return focus.nodes.has(id) ? TIER.focus : TIER.dimmed;
+    return TIER.rest;
+  };
+
+  const edgeOpacity = (edge: string, basis: string): number => {
+    if (soloNodes) {
+      const lit = soloNodes.has(graph.source(edge)) && soloNodes.has(graph.target(edge));
+      return lit ? 0.95 : TIER.soloDimmed * 0.5;
+    }
+    if (focus) return focus.edges.has(edge) ? 0.95 : TIER.dimmed * 0.5;
+    if (matches) return TIER.dimmed * 0.6;
+    return basis === "attested" ? TIER.attestedRest : TIER.inferredRest;
+  };
+
+  // ── WHAT IS DRAWN ────────────────────────────────────────────────────
+  const drawnNodes = useMemo(
+    () => graph.nodes().filter((n) => visible.has(n) && layout.has(n)),
+    [graph, visible, layout]
+  );
+
+  const drawnEdges = useMemo(() => {
+    const out: { id: string; from: string; to: string; rel: string; basis: string }[] = [];
+    graph.forEachEdge((e, a, s, t) => {
+      // MEMBERSHIP IS NEVER AN EDGE. See the header.
+      if (MEMBERSHIP_RELS.has(a.rel)) return;
+      if (!visible.has(s) || !visible.has(t)) return;
+      if (!layout.has(s) || !layout.has(t)) return;
+      out.push({ id: e, from: s, to: t, rel: a.rel, basis: a.basis });
+    });
+    return out;
+  }, [graph, visible, layout]);
+
+  // KEYBOARD ORDER FOLLOWS MEANING, NOT GEOMETRY.
+  //
+  // SVG document order here is "whatever the layout passes emitted", which
+  // would make tabbing wander the field at random. Sorting by slice, then
+  // kind, then label gives a tab sequence that reads like the inspector's own
+  // hierarchy: Reality, clusters, findings, then detail.
+  const tabOrder = useMemo(
+    () =>
+      [...drawnNodes].sort((a, b) => {
+        const aa = graph.getNodeAttributes(a);
+        const ba = graph.getNodeAttributes(b);
+        const k = KIND_ORDER.indexOf(aa.kind) - KIND_ORDER.indexOf(ba.kind);
+        if (k !== 0) return k;
+        return String(aa.label).localeCompare(String(ba.label));
+      }),
+    [drawnNodes, graph]
+  );
+  const tabIndexOf = useMemo(() => {
+    const m = new Map<string, number>();
+    tabOrder.forEach((id, i) => m.set(id, i + 1));
+    return m;
+  }, [tabOrder]);
+
+  return (
+    <svg
+      ref={svgRef}
+      data-shoot="signal-graph"
+      data-zoom={level}
+      viewBox={`${vb.x} ${vb.y} ${vb.w} ${vb.h}`}
+      style={{ width: "100%", height: "100%", display: "block", cursor: drag.current ? "grabbing" : "grab", touchAction: "none" }}
+      role="application"
+      aria-label={`Signal Graph: ${drawnNodes.length} nodes, ${drawnEdges.length} relationships, ${level} zoom`}
+      onPointerDown={onPointerDown}
+      onPointerMove={onPointerMove}
+      onPointerUp={onPointerUp}
+      onPointerLeave={onPointerUp}
+      onClick={(e) => {
+        if (e.target === e.currentTarget && !moved.current) onSelect(null);
+      }}
+    >
+      <defs>
+        <radialGradient id="sg-core" cx="50%" cy="50%" r="50%">
+          <stop offset="0%" stopColor="var(--i-signal)" stopOpacity="0.26" />
+          <stop offset="60%" stopColor="var(--i-signal)" stopOpacity="0.07" />
+          <stop offset="100%" stopColor="var(--i-signal)" stopOpacity="0" />
+        </radialGradient>
+      </defs>
+
+      {/* ── STRUCTURE ─────────────────────────────────────────────────
+          The disagreement bands, and the sector gutters that make cluster
+          territory legible without drawing a box around anything. */}
+      <g opacity={TIER.structure} style={{ pointerEvents: "none" }} data-shoot="graph-structure">
+        {BANDS.map((b) => (
+          <circle
+            key={b.id}
+            cx={FIELD.cx}
+            cy={FIELD.cy}
+            r={b.r}
+            fill="none"
+            stroke="var(--i-text-soft)"
+            strokeWidth={1 / camera.k}
+            strokeDasharray={b.id === "aligned" ? undefined : `${3 / camera.k} ${7 / camera.k}`}
+          />
+        ))}
+        <circle
+          cx={FIELD.cx}
+          cy={FIELD.cy}
+          r={FIELD.clusterR}
+          fill="none"
+          stroke="var(--i-text-soft)"
+          strokeWidth={1 / camera.k}
+        />
+        {CLUSTER_ORDER.map((c, i) => {
+          const a = (-90 + (i + 0.5) * (360 / CLUSTER_ORDER.length)) * (Math.PI / 180);
+          return (
+            <line
+              key={c}
+              x1={FIELD.cx + Math.cos(a) * FIELD.alignedR}
+              y1={FIELD.cy + Math.sin(a) * FIELD.alignedR}
+              x2={FIELD.cx + Math.cos(a) * FIELD.edgeR}
+              y2={FIELD.cy + Math.sin(a) * FIELD.edgeR}
+              stroke="var(--i-text-soft)"
+              strokeWidth={1 / camera.k}
+              opacity={0.5}
+            />
+          );
+        })}
+      </g>
+
+      {/* Band names, on the one axis no cluster puck occupies. */}
+      {level !== "close" && (
+        <g opacity={TIER.structure * 1.6} style={{ pointerEvents: "none" }}>
+          {BANDS.map((b) => {
+            // On a sector GUTTER, not the horizontal axis: stacked on one
+            // radius line the three names ran into each other
+            // ("DRIFTCONFLICT"), and the diagonal separates them on both axes
+            // while staying clear of every cluster puck.
+            const a = -22.5 * (Math.PI / 180);
+            return (
+              <text
+                key={b.id}
+                x={FIELD.cx + Math.cos(a) * (b.r - 8)}
+                y={FIELD.cy + Math.sin(a) * (b.r - 8)}
+                textAnchor="end"
+                dominantBaseline="middle"
+                fontSize={11 / camera.k}
+                letterSpacing={`${0.16 / camera.k}em`}
+                fill="var(--i-text-soft)"
+                style={{ textTransform: "uppercase" }}
+              >
+                {b.label}
+              </text>
+            );
+          })}
+        </g>
+      )}
+
+      {/* ── THE AUDIT SWEEP ───────────────────────────────────────────
+          The bright edge IS the scan; the trail is drawn at angles the scan
+          has already passed, so the glow follows rather than precedes it. */}
+      {sweepAngle != null && (
+        <g
+          transform={`rotate(${sweepAngle} ${FIELD.cx} ${FIELD.cy})`}
+          style={{ pointerEvents: "none" }}
+          data-shoot="graph-sweep"
+        >
+          {[0, 1, 2, 3, 4, 5].map((i) => {
+            const from = -(i + 1) * 8;
+            const to = -i * 8;
+            const p0 = {
+              x: FIELD.cx + Math.cos(from * (Math.PI / 180)) * FIELD.edgeR,
+              y: FIELD.cy + Math.sin(from * (Math.PI / 180)) * FIELD.edgeR,
+            };
+            const p1 = {
+              x: FIELD.cx + Math.cos(to * (Math.PI / 180)) * FIELD.edgeR,
+              y: FIELD.cy + Math.sin(to * (Math.PI / 180)) * FIELD.edgeR,
+            };
+            return (
+              <path
+                key={i}
+                d={`M ${FIELD.cx} ${FIELD.cy} L ${p0.x.toFixed(1)} ${p0.y.toFixed(1)} A ${FIELD.edgeR} ${FIELD.edgeR} 0 0 1 ${p1.x.toFixed(1)} ${p1.y.toFixed(1)} Z`}
+                fill="var(--i-signal)"
+                opacity={0.09 * (1 - i / 6)}
+              />
+            );
+          })}
+          <line
+            x1={FIELD.cx}
+            y1={FIELD.cy}
+            x2={FIELD.cx + FIELD.edgeR}
+            y2={FIELD.cy}
+            stroke="var(--i-signal)"
+            strokeWidth={1.6 / camera.k}
+            opacity={0.8}
+          />
+        </g>
+      )}
+
+      {/* ── EDGES ─────────────────────────────────────────────────────
+          Relationships only. Attested solid, inferred dashed — the epistemic
+          basis is visible before anything is clicked. */}
+      <g data-shoot="graph-edges" style={{ pointerEvents: "none" }}>
+        {drawnEdges.map((e) => {
+          const a = layout.get(e.from)!;
+          const b = layout.get(e.to)!;
+          const op = edgeOpacity(e.id, e.basis);
+          if (op < 0.02) return null;
+          const lit = focus?.edges.has(e.id) || (soloNodes && op > 0.5);
+          return (
+            <path
+              key={e.id}
+              d={edgePath(a, b)}
+              fill="none"
+              stroke={lit ? "var(--i-signal)" : "var(--i-text-soft)"}
+              strokeWidth={(lit ? 1.8 : 1) / camera.k}
+              strokeDasharray={e.basis === "inferred" ? `${4 / camera.k} ${4 / camera.k}` : undefined}
+              opacity={op}
+              data-rel={e.rel}
+              data-basis={e.basis}
+              style={{ transition: "opacity 200ms ease" }}
+            />
+          );
+        })}
+      </g>
+
+      {/* ── CLUSTER NAMES ─────────────────────────────────────────────
+          Always legible, at every zoom — they are the map's legend, and the
+          reference keeps its department labels up at all times too. */}
+      <g data-shoot="graph-clusters">
+        {CLUSTER_ORDER.map((cluster) => {
+          const laneId = `lane:${cluster}`;
+          if (!graph.hasNode(laneId) || !visible.has(laneId)) return null;
+          const attrs = graph.getNodeAttributes(laneId);
+          const p = clusterLabelPoint(cluster);
+          const childCount = graph
+            .inEdges(laneId)
+            .filter((e) => graph.getEdgeAttribute(e, "rel") === "attests").length;
+          const isOpen = expanded.has(cluster);
+          const dim = soloNodes || matches || focus ? 0.34 : 1;
+          const flip = p.angle > 90 || p.angle < -90;
+          return (
+            <g
+              key={cluster}
+              opacity={dim}
+              style={{ transition: "opacity 200ms ease" }}
+              data-shoot={`cluster-${cluster}`}
+            >
+              <text
+                x={p.x}
+                y={p.y}
+                textAnchor={flip ? "end" : "start"}
+                dominantBaseline="middle"
+                fontSize={13 / camera.k}
+                letterSpacing={`${0.14 / camera.k}em`}
+                fill={attrs.supplied ? "var(--i-text)" : "var(--i-text-faint)"}
+                style={{ textTransform: "uppercase", pointerEvents: "none" }}
+              >
+                {attrs.label}
+              </text>
+              {childCount > 0 && (
+                <text
+                  x={p.x}
+                  y={p.y + 15 / camera.k}
+                  textAnchor={flip ? "end" : "start"}
+                  dominantBaseline="middle"
+                  fontSize={10.5 / camera.k}
+                  fill="var(--i-text-faint)"
+                  onClick={(ev) => {
+                    ev.stopPropagation();
+                    onToggleCluster(cluster);
+                  }}
+                  style={{ cursor: "pointer" }}
+                  data-shoot={`cluster-toggle-${cluster}`}
+                >
+                  {isOpen ? "− collapse" : `+ ${childCount}`}
+                </text>
+              )}
+            </g>
+          );
+        })}
+      </g>
+
+      {/* ── REALITY ───────────────────────────────────────────────────
+          The hero, and visibly a different KIND of object from everything
+          orbiting it. */}
+      <g data-shoot="graph-reality" style={{ pointerEvents: "none" }}>
+        <circle cx={FIELD.cx} cy={FIELD.cy} r={FIELD.coreR + 46} fill="url(#sg-core)" />
+        {[FIELD.coreR + 16, FIELD.coreR + 7].map((r, i) => (
+          <circle
+            key={r}
+            cx={FIELD.cx}
+            cy={FIELD.cy}
+            r={r}
+            fill="none"
+            stroke="var(--i-signal)"
+            strokeWidth={1 / camera.k}
+            opacity={0.18 + i * 0.12}
+          />
+        ))}
+        <circle
+          cx={FIELD.cx}
+          cy={FIELD.cy}
+          r={FIELD.coreR}
+          fill="var(--i-void)"
+          stroke="var(--i-signal)"
+          strokeWidth={1.7 / camera.k}
+          opacity={0.94}
+        />
+        <text
+          x={FIELD.cx}
+          y={FIELD.cy - 6}
+          textAnchor="middle"
+          fontSize={10 / camera.k}
+          letterSpacing={`${0.18 / camera.k}em`}
+          fill="var(--i-signal)"
+          style={{ textTransform: "uppercase" }}
+        >
+          Accepted
+        </text>
+        <text x={FIELD.cx} y={FIELD.cy + 12} textAnchor="middle" fontSize={17 / camera.k} fill="var(--i-text)">
+          Reality
+        </text>
+      </g>
+
+      {/* ── NODES ─────────────────────────────────────────────────────── */}
+      <g data-shoot="graph-nodes">
+        {drawnNodes.map((id) => {
+          const attrs = graph.getNodeAttributes(id);
+          if (attrs.kind === "reality") return null; // drawn above, as the hero
+          const p = layout.get(id)!;
+          return (
+            <GraphNode
+              key={id}
+              id={id}
+              attrs={attrs}
+              x={p.x}
+              y={p.y}
+              r={p.r}
+              k={camera.k}
+              opacity={nodeOpacity(id)}
+              selected={selectedId === id}
+              hovered={hoveredId === id}
+              matched={matches?.has(id) ?? false}
+              swept={swept.has((attrs.lane as string) ?? "")}
+              labelled={labelled.has(attrs.kind) || selectedId === id || hoveredId === id}
+              tabIndex={tabIndexOf.get(id) ?? 0}
+              onSelect={onSelect}
+              onHover={onHover}
+            />
+          );
+        })}
+      </g>
+    </svg>
+  );
+}
+
+// ── ONE NODE ───────────────────────────────────────────────────────────
+//
+// Shape by kind, colour by state, size by importance in the reading order.
+// Every node is a real focusable target with an accessible name that carries
+// kind AND state in words — colour is never the only channel.
+
+function GraphNode({
+  id,
+  attrs,
+  x,
+  y,
+  r,
+  k,
+  opacity,
+  selected,
+  hovered,
+  matched,
+  swept,
+  labelled,
+  tabIndex,
+  onSelect,
+  onHover,
+}: {
+  id: string;
+  attrs: AuditNodeAttributes;
+  x: number;
+  y: number;
+  r: number;
+  k: number;
+  opacity: number;
+  selected: boolean;
+  hovered: boolean;
+  matched: boolean;
+  swept: boolean;
+  labelled: boolean;
+  tabIndex: number;
+  onSelect: (id: string | null) => void;
+  onHover: (id: string | null) => void;
+}) {
+  const color = nodeColor(attrs);
+  const shape = NODE_SHAPE[attrs.kind];
+  const stroke = 1.4 / k;
+  const grown = selected ? r * 1.35 : hovered ? r * 1.15 : r;
+
+  const body = (() => {
+    switch (shape) {
+      case "diamond":
+        return (
+          <path
+            d={`M ${x} ${y - grown} L ${x + grown} ${y} L ${x} ${y + grown} L ${x - grown} ${y} Z`}
+            fill="var(--i-void)"
+            stroke={color}
+            strokeWidth={stroke}
+          />
+        );
+      case "hex": {
+        const pts = [0, 1, 2, 3, 4, 5]
+          .map((i) => {
+            const a = (Math.PI / 3) * i - Math.PI / 2;
+            return `${(x + Math.cos(a) * grown).toFixed(1)},${(y + Math.sin(a) * grown).toFixed(1)}`;
+          })
+          .join(" ");
+        return <polygon points={pts} fill="var(--i-void)" stroke={color} strokeWidth={stroke} />;
+      }
+      case "chip":
+        return (
+          <rect
+            x={x - grown}
+            y={y - grown * 0.78}
+            width={grown * 2}
+            height={grown * 1.56}
+            rx={grown * 0.42}
+            fill="var(--i-void)"
+            stroke={color}
+            strokeWidth={stroke}
+          />
+        );
+      case "pin":
+        // A finding points AT something — the one shape with a direction,
+        // because a finding is the only kind that is an accusation.
+        return (
+          <path
+            d={`M ${x} ${y + grown * 1.25} L ${x - grown} ${y - grown * 0.55} A ${grown} ${grown} 0 1 1 ${x + grown} ${y - grown * 0.55} Z`}
+            fill={`color-mix(in srgb, ${color} 18%, var(--i-void))`}
+            stroke={color}
+            strokeWidth={stroke}
+          />
+        );
+      case "doc":
+        return (
+          <path
+            d={`M ${x - grown * 0.72} ${y - grown} h ${grown * 1.1} l ${grown * 0.34} ${grown * 0.34} v ${grown * 1.66} h ${-grown * 1.44} Z`}
+            fill="var(--i-void)"
+            stroke={color}
+            strokeWidth={stroke}
+          />
+        );
+      case "disc":
+        return <circle cx={x} cy={y} r={grown} fill="var(--i-void)" stroke={color} strokeWidth={stroke * 1.2} />;
+      default:
+        return <circle cx={x} cy={y} r={grown} fill={color} stroke="none" />;
+    }
+  })();
+
+  const accessibleName = [
+    KIND_NAME[attrs.kind] ?? attrs.kind,
+    attrs.label,
+    attrs.tier ? `${attrs.tier} severity` : null,
+    attrs.state ? `state ${attrs.state}` : null,
+    attrs.needsHuman ? "needs human judgement" : null,
+    attrs.handled ? "handled" : null,
+  ]
+    .filter(Boolean)
+    .join(", ");
+
+  return (
+    <g
+      opacity={opacity}
+      style={{ transition: "opacity 200ms ease" }}
+      data-shoot={`node-${id}`}
+      data-kind={attrs.kind}
+      data-selected={selected ? "true" : undefined}
+      data-matched={matched ? "true" : undefined}
+    >
+      {/* Halo: selection, search match, or the sweep passing over. */}
+      {(selected || matched || swept) && (
+        <circle
+          cx={x}
+          cy={y}
+          r={grown + 7 / k}
+          fill="none"
+          stroke={color}
+          strokeWidth={(selected ? 1.5 : 1) / k}
+          opacity={selected ? 0.75 : 0.4}
+        />
+      )}
+      <g
+        role="button"
+        tabIndex={tabIndex}
+        aria-label={accessibleName}
+        aria-pressed={selected}
+        className="sg-node"
+        style={{ cursor: "pointer", outline: "none" }}
+        onClick={(e) => {
+          e.stopPropagation();
+          onSelect(selected ? null : id);
+        }}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            onSelect(selected ? null : id);
+          }
+        }}
+        onMouseEnter={() => onHover(id)}
+        onMouseLeave={() => onHover(null)}
+        onFocus={() => onHover(id)}
+        onBlur={() => onHover(null)}
+      >
+        {/* A generous invisible hit area: a 4px dot is not a click target. */}
+        <circle cx={x} cy={y} r={Math.max(grown + 5 / k, 11 / k)} fill="transparent" />
+        {body}
+      </g>
+      {/* A cluster puck's name is drawn once, in the cluster layer — labelling
+          the node as well printed every cluster's name twice. */}
+      {labelled && attrs.kind !== "lane" && (
+        <text
+          x={x + grown + 6 / k}
+          y={y + 3.5 / k}
+          fontSize={(attrs.kind === "work" || attrs.kind === "passage" ? 9.5 : 11) / k}
+          fill={selected || hovered ? "var(--i-text)" : "var(--i-text-soft)"}
+          style={{ pointerEvents: "none" }}
+        >
+          {truncate(String(attrs.label), attrs.kind === "finding" ? 34 : 28)}
+        </text>
+      )}
+    </g>
+  );
+}
+
+const KIND_NAME: Record<string, string> = {
+  reality: "Reality",
+  scope: "Project",
+  lane: "Cluster",
+  checkpoint: "Checkpoint",
+  finding: "Finding",
+  work: "Work item",
+  feature: "Feature",
+  decision: "Decision",
+  decisionGate: "Decision gate",
+  dependency: "Dependency",
+  intelligence: "Intelligence package",
+  passage: "Evidence passage",
+  source: "Source",
+};
+
+function truncate(s: string, n: number): string {
+  return s.length > n ? `${s.slice(0, n - 1)}…` : s;
+}
+
+/** Fit the whole field in view — the "reset" the reference offers as a
+    home button, and what the instrument opens at. */
+export function fitCamera(): Camera {
+  return { ...DEFAULT_CAMERA };
+}
+
+/** Centre on one node without changing zoom — the reference's "fly to". */
+export function focusCamera(layout: GraphLayout, id: string, camera: Camera, k?: number): Camera {
+  const p = layout.get(id);
+  if (!p) return camera;
+  return { x: p.x, y: p.y, k: k ?? Math.max(camera.k, 1.6) };
+}
+
+export type { GraphLayout };
+export { layoutGraph };
+export type AuditGraphType = Graph;

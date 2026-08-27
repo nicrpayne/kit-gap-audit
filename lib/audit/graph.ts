@@ -65,6 +65,7 @@ export type NodeKind =
   | "checkpoint"
   | "finding"
   | "work"
+  | "feature"
   | "decision"
   | "decisionGate"
   | "dependency"
@@ -285,6 +286,24 @@ export const EDGE_RULES: Record<string, EdgeRule> = {
     field: "LinearIssueSummary + Signal's lane taxonomy",
     why: "As above.",
   },
+  "work-implements-feature": {
+    id: "work-implements-feature",
+    rel: "implements",
+    basis: "attested",
+    from: "work",
+    to: "feature",
+    field: "LinearIssueSummary.parentIdentifier",
+    why: "Linear has no first-class Feature entity — a Feature IS the ancestor issue an implementation issue hangs from. The parent link is the only thing that says so.",
+  },
+  "feature-attests-lane": {
+    id: "feature-attests-lane",
+    rel: "attests",
+    basis: "inferred",
+    from: "feature",
+    to: "lane",
+    field: "LinearIssueSummary.parentIdentifier + Signal's lane taxonomy",
+    why: "The Feature is real; placing it on the execution lane is Signal's grouping.",
+  },
   "work-implements-work": {
     id: "work-implements-work",
     rel: "implements",
@@ -332,6 +351,7 @@ export interface GraphEntityInputs {
     estimate: number | null;
     assignee: string | null;
     parentIdentifier: string | null;
+    parentTitle: string | null;
   }[];
   /** Tracked-source registrations, for the supersedes relation. */
   registrations: { id: string; sourceType: string; sourceRef: string; status: string; supersededByRegistrationId: string | null }[];
@@ -361,6 +381,7 @@ export const nodeId = {
   checkpoint: (id: string) => `checkpoint:${id}`,
   finding: (id: string) => `finding:${id}`,
   work: (identifier: string) => `work:${identifier}`,
+  feature: (identifier: string) => `feature:${identifier}`,
   decision: (id: string) => `decision:${id}`,
   gate: (id: string) => `gate:${id}`,
   dependency: (scopeId: string) => `dependency:${scopeId}`,
@@ -499,6 +520,38 @@ export function buildAuditGraph({ model, provenance, entities }: BuildGraphInput
   }
 
   // ── EXECUTION ────────────────────────────────────────────────────────
+  //
+  // FEATURES FIRST. Linear has no first-class Feature entity: a Feature is
+  // the ancestor issue an implementation issue hangs from (see
+  // LinearIssueSummary's own note). So a Feature is any parentIdentifier
+  // that is NOT itself one of this Scope's work items — the parent is real,
+  // it is simply above the slice we fetched. A parent that IS in the list is
+  // an ordinary sub-issue relationship and stays `work-implements-work`.
+  //
+  // This grouping is why the execution cluster can expand at all. Without it
+  // the prior tranche measured 46 work nodes seating directly on one lane,
+  // which is the hairball this whole layout exists to avoid.
+  const workIds = new Set(entities.work.map((w) => w.identifier));
+  const features = new Map<string, string>(); // identifier -> title
+  for (const w of entities.work) {
+    if (!w.parentIdentifier || workIds.has(w.parentIdentifier)) continue;
+    if (!features.has(w.parentIdentifier)) {
+      features.set(w.parentIdentifier, w.parentTitle ?? w.parentIdentifier);
+    }
+  }
+  for (const [identifier, title] of features) {
+    g.addNode(nodeId.feature(identifier), {
+      kind: "feature",
+      label: title,
+      slice: "core",
+      ref: `LinearFeature:${identifier}`,
+      lane: "linear",
+      identifier,
+    });
+    if (g.hasNode(nodeId.lane("linear")))
+      link(nodeId.feature(identifier), nodeId.lane("linear"), "feature-attests-lane");
+  }
+
   for (const w of entities.work) {
     g.addNode(nodeId.work(w.identifier), {
       kind: "work",
@@ -515,9 +568,16 @@ export function buildAuditGraph({ model, provenance, entities }: BuildGraphInput
   }
   // A second pass, so a parent that appears later in the list still resolves.
   for (const w of entities.work) {
-    if (g.hasNode(nodeId.lane("linear"))) link(nodeId.work(w.identifier), nodeId.lane("linear"), "work-attests-lane");
-    if (w.parentIdentifier && g.hasNode(nodeId.work(w.parentIdentifier))) {
+    // Work seats under its Feature where it has one, and only falls back to
+    // the lane when it genuinely has no parent — otherwise every ticket
+    // would carry a redundant membership edge to the lane as well.
+    const featureNode = w.parentIdentifier ? nodeId.feature(w.parentIdentifier) : null;
+    if (featureNode && g.hasNode(featureNode)) {
+      link(nodeId.work(w.identifier), featureNode, "work-implements-feature");
+    } else if (w.parentIdentifier && g.hasNode(nodeId.work(w.parentIdentifier))) {
       link(nodeId.work(w.identifier), nodeId.work(w.parentIdentifier), "work-implements-work");
+    } else if (g.hasNode(nodeId.lane("linear"))) {
+      link(nodeId.work(w.identifier), nodeId.lane("linear"), "work-attests-lane");
     }
   }
 
@@ -584,7 +644,13 @@ export function buildAuditGraph({ model, provenance, entities }: BuildGraphInput
           label: psg.evidenceId,
           slice: "evidence",
           ref: `EvidenceItem:${p.snapshot.id}:${psg.evidenceId}`,
-          lane: "evidence",
+          // A passage belongs with the SOURCE it was extracted from, not with
+          // "evidence" generically: a row read out of a Notion page is Notion's
+          // evidence. Hardcoding "evidence" here put passages in one cluster
+          // while the layout seated them beside their source in another, so the
+          // node's own claim about where it belongs disagreed with where it was
+          // drawn. Caught by the sector proof.
+          lane: laneForSourceType(psg.sourceType),
           excerpt: psg.excerpt,
           externalRef: psg.externalRef,
         });

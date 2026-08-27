@@ -121,6 +121,7 @@ export async function loadAuditGraphInputs(scopeId: string): Promise<AuditGraphI
       estimate: i.estimate,
       assignee: i.assignee,
       parentIdentifier: i.parentIdentifier,
+      parentTitle: i.parentTitle,
     })),
     registrations: registrations.map((r) => ({
       id: r.id,

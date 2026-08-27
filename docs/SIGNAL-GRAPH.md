@@ -49,9 +49,9 @@ Progressive expansion:
 | JSA | 20n / 19e | 34n / 34e | 45n / 57e | 61n / 73e |
 | iTrack | 11n / 5e | 21n / 15e | 21n / 15e | 32n / 26e |
 
-- **Largest single Scope:** JSA — 61 nodes / 73 edges expanded, 20 / 19 at the default slice.
-- **All Scopes combined:** 158 nodes / 149 edges expanded, 52 / 29 at the default slice.
-- **Sigma revisit threshold** (from the prior research): 2,000 nodes in one view. Headroom: **33× on the largest Scope, 13× combined.**
+- **Largest single Scope:** JSA — 65 nodes / 77 edges expanded, 24 / 23 at the default slice (with Features).
+- **All Scopes combined:** 172 nodes / 162 edges expanded, 66 / 43 at the default slice (with Features).
+- **Sigma revisit threshold** (from the prior research): 2,000 nodes in one view. Headroom: **31× on the largest Scope, 12× combined.**
 
 The evidence does not overturn the earlier conclusion. **Stay on custom SVG.**
 
@@ -71,7 +71,10 @@ product already distinguishes these in `capacitySource: "…" | "inferred"`,
 fact about where a relationship came from, not a score. A proof rejects any
 edge carrying `confidence`, `score` or `weight`.
 
-Measured across all Scopes: **inferred 121 (81%) · attested 28 (19%)**.
+Measured across all Scopes **after Feature nodes landed**: **inferred 98
+(60%) · attested 64 (40%)**. Before Features, `implements` resolved just 1
+edge out of 46 work nodes and attested was 19% — closing that gap is what
+made execution expandable.
 
 ## Node schema
 
@@ -86,6 +89,7 @@ Measured across all Scopes: **inferred 121 (81%) · attested 28 (19%)**.
 | `decision` | `Decision` | core |
 | `decisionGate` | `DecisionGate` | core |
 | `dependency` | upstream `Scope` via `dependsOnScopeIds` | core |
+| `feature` | Linear ancestor issue via `parentIdentifier` | core |
 | `work` | `LinearIssueSummary` | execution |
 | `intelligence` | `ContextSnapshot` | evidence |
 | `passage` | `EvidenceItem` within a snapshot | evidence |
@@ -129,7 +133,9 @@ edge is explainable" a checkable claim rather than a promise.
 | `gate-blocks-scope` | blocks | **attested** | `DecisionGate.targetScopeId` |
 | `gate-gates-decision` | blocks | **attested** | `DecisionGate.decisionId` |
 | `decision-resolves-finding` | resolves | **attested** | `Decision.sourceFindingId` |
-| `work-implements-work` | implements | **attested** | `LinearIssueSummary.parentIdentifier` |
+| `work-implements-feature` | implements | **attested** | `LinearIssueSummary.parentIdentifier` |
+| `feature-attests-lane` | attests | inferred | `parentIdentifier` + taxonomy |
+| `work-implements-work` | implements | **attested** | `LinearIssueSummary.parentIdentifier` (sub-issue) |
 | `registration-supersedes-registration` | supersedes | **attested** | `SourceRegistration.supersededByRegistrationId` |
 
 **`contradicts` is deliberately absent.** A `contradiction` finding asserts two

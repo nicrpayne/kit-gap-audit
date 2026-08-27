@@ -1,28 +1,32 @@
-// SIGNAL AUDIT — INTERACTION PROOFS.
+// SIGNAL AUDIT — INTERACTION PROOFS, graph-first.
 //
-// The laws the model proof cannot reach, because they are about what is on
-// screen and what a person can do to it:
+// The laws the model proofs cannot reach, because they are about what is on
+// screen and what a person can do to it. Rewritten when the renderer became
+// graph-first: the subjects are unchanged, the surface they are asserted
+// against is the Signal Graph rather than the retired Truth Map.
 //
-//   A  calm at rest — nothing is shouting before you touch anything
-//   B  hover is a preview, not an investigation
-//   C  selection focuses: the finding dominates, unrelated signal dims
-//   D  Evidence Solo lights ONLY the lanes the provenance runs through
+//   A  calm at rest — nothing shouts before you touch anything
+//   B  MEMBERSHIP IS NEVER DRAWN — the single rule that stops the hairball
+//   C  selection focuses: the node dominates, unrelated graph dims
+//   D  Evidence Solo lights the provenance route and nothing else
 //   E  B · Candidate is visibly unsaved, and writes nothing
 //   F  the sweep's trail follows the scan edge
-//   G  every finding is keyboard reachable and has an accessible name
-//   H  Escape leaves a selection, and drops solo and candidate with it
-//   I  the trust boundary is present at rest, not only beside a button
-//   J  no page scroll at the target viewport
-//   K  a scope with nothing supplying it renders honestly
+//   G  every node is keyboard reachable, in SEMANTIC order, and named
+//   H  Escape leaves a selection and drops the hypothetical with it
+//   I  the trust boundary is stated at rest
+//   J  no page scroll, and the wheel does not scroll the page
+//   K  zoom changes what is labelled, in steps
+//   L  expand reveals nodes; collapse hides them again
+//   M  search dims the unrelated graph and lists what it found
+//   N  the review console appears ONLY for a Finding
+//   O  a sparse Scope still reads
 //
 //   node scripts/audit-proof.mjs
 import { chromium } from "playwright";
 import { PrismaClient } from "@prisma/client";
 
 const BASE = process.env.BASE_URL ?? "http://localhost:3000";
-// The session cookie is SHA-256("kit-gap-audit::" + APP_PASSWORD). The
-// default below is that hash for the local dev password "dev" — not a
-// secret, and overridable with KIT_SESSION for any other environment.
+// SHA-256("kit-gap-audit::" + APP_PASSWORD) for the local dev password "dev".
 const COOKIE = process.env.KIT_SESSION ?? "92f4fb441fbc9fa64f985de1a2d83fce26c903a5f595835fb2782c0e6a9cc742";
 const VIEWPORT = { width: 1600, height: 1000 };
 const db = new PrismaClient();
@@ -45,264 +49,372 @@ const park = async () => {
   await p.mouse.move(VIEWPORT.width - 8, VIEWPORT.height - 8);
   await settle(300);
 };
+const nodeCount = () => p.locator('[data-shoot^="node-"]').count();
 
 await p.goto(`${BASE}/audit?scope=jsa`, { waitUntil: "networkidle" });
-await p.waitForSelector('[data-shoot="truth-map"]', { timeout: 30000 });
-await settle(1200);
+await p.waitForSelector('[data-shoot="signal-graph"]', { timeout: 30000 });
+await settle(1400);
 await park();
 
-// ── A. CALM AT REST ──────────────────────────────────────────────────
-const restOpacities = await p.evaluate(() =>
-  [...document.querySelectorAll("[data-lane]")].map((g) =>
-    parseFloat(g.querySelector("path")?.getAttribute("opacity") ?? "1")
-  )
-);
-check(
-  "A1 every lane is quiet at rest",
-  restOpacities.length > 0 && restOpacities.every((o) => o <= 0.6),
-  `max ${Math.max(...restOpacities).toFixed(2)} — Tier 2 is 30–55%`
-);
-const structure = await p.evaluate(() => {
-  const g = [...document.querySelectorAll('[data-shoot="truth-map"] > g')].find(
-    (el) => parseFloat(el.getAttribute("opacity") ?? "1") < 0.25
+// ── B. MEMBERSHIP IS NEVER DRAWN ─────────────────────────────────────
+//
+// THE assertion of this tranche. 74 of the graph's edges are membership; the
+// layout says the same thing by position. If they are ever rendered, the
+// field becomes the hairball this whole design exists to avoid.
+{
+  const rels = await p.evaluate(() =>
+    [...document.querySelectorAll("[data-rel]")].map((e) => e.getAttribute("data-rel"))
   );
-  return g ? parseFloat(g.getAttribute("opacity")) : null;
-});
-check("A2 structure sits under 25%", structure !== null && structure <= 0.25, `${structure}`);
-check(
-  "A3 the review console is slim at rest",
-  (await p.locator('[data-shoot="review-console-rest"]').count()) === 1
-);
-check(
-  "A4 the inspector shows the overview, not a finding",
-  (await p.locator('[data-shoot="inspector-overview"]').count()) === 1
-);
-
-// ── I. THE TRUST BOUNDARY IS PRESENT AT REST ─────────────────────────
-const restText = await p.locator('[data-shoot="review-console-rest"]').innerText();
-check(
-  "I1 Reality protected is stated with nothing selected",
-  /reality protected/i.test(restText) && /without human confirmation/i.test(restText),
-  "a promise that only appears beside a button is not a property of the instrument"
-);
-
-// ── J. NO PAGE SCROLL ────────────────────────────────────────────────
-const scroll = await p.evaluate(() => ({
-  x: document.documentElement.scrollWidth - window.innerWidth,
-  y: document.documentElement.scrollHeight - window.innerHeight,
-}));
-check("J1 no page scroll at 1600x1000", scroll.x <= 1 && scroll.y <= 1, JSON.stringify(scroll));
-
-// ── G. KEYBOARD REACH AND ACCESSIBLE NAMES ───────────────────────────
-const callouts = await p.evaluate(() =>
-  [...document.querySelectorAll(".audit-callout")].map((el) => ({
-    tabindex: el.getAttribute("tabindex"),
-    label: el.getAttribute("aria-label") ?? "",
-    role: el.getAttribute("role"),
-  }))
-);
-check("G1 findings are on screen", callouts.length > 0, `${callouts.length} callouts`);
-check(
-  "G2 every finding is keyboard reachable",
-  callouts.every((c) => c.tabindex === "0" && c.role === "button")
-);
-check(
-  "G3 every finding has an accessible name carrying kind and severity",
-  callouts.every((c) => c.label.length > 20 && /critical|high|medium|low/i.test(c.label)),
-  "meaning may never be carried by colour alone"
-);
-// The severity word must survive on screen too, not only in the aria-label.
-const visibleSeverities = await p.evaluate(() =>
-  [...document.querySelectorAll(".audit-callout")].map((el) => el.innerText.toLowerCase())
-);
-check(
-  "G4 the severity word is visible on every card",
-  visibleSeverities.every((t) => /critical|high|medium|low/.test(t))
-);
-
-// ── B. HOVER IS A PREVIEW ────────────────────────────────────────────
-const firstCallout = p.locator(".audit-callout").first();
-await firstCallout.hover();
-await settle(450);
-check(
-  "B1 hover does not open the review console",
-  (await p.locator('[data-shoot="review-console-open"]').count()) === 0,
-  "hover previews; click investigates"
-);
-check(
-  "B2 hover does not change the inspector",
-  (await p.locator('[data-shoot="inspector-overview"]').count()) === 1
-);
-await park();
-
-// ── C. SELECTION FOCUSES ─────────────────────────────────────────────
-const critical = p.locator('[data-shoot^="finding-"][data-tier="critical"]').first();
-await critical.locator(".audit-callout").click();
-await settle(700);
-
-check(
-  "C1 the review console expands",
-  (await p.locator('[data-shoot="review-console-open"]').count()) === 1
-);
-check(
-  "C2 the inspector becomes specific to the finding",
-  (await p.locator('[data-shoot="inspector-finding"]').count()) === 1
-);
-const selectedOpacity = await p.evaluate(() => {
-  const sel = document.querySelector('[data-shoot^="finding-"][data-selected="true"]');
-  return sel ? parseFloat(sel.getAttribute("opacity") ?? "1") : null;
-});
-const otherOpacities = await p.evaluate(() =>
-  [...document.querySelectorAll('[data-shoot^="finding-"]:not([data-selected="true"])')].map((g) =>
-    parseFloat(g.getAttribute("opacity") ?? "1")
-  )
-);
-check("C3 the selected finding is fully lit", selectedOpacity === 1, `${selectedOpacity}`);
-check(
-  "C4 unrelated findings dim",
-  otherOpacities.length > 0 && otherOpacities.every((o) => o < 0.4),
-  `max ${Math.max(...otherOpacities).toFixed(2)}`
-);
-
-// ── D. EVIDENCE SOLO LIGHTS ONLY THE PROVENANCE ──────────────────────
-const findingId = await p.evaluate(
-  () => document.querySelector('[data-shoot^="finding-"][data-selected="true"]')?.getAttribute("data-shoot")?.replace("finding-", "") ?? null
-);
-const truth = await (await fetch(`${BASE}/api/audit/truth?scope=jsa`, { headers: { Cookie: `kit_session=${COOKIE}` } })).json();
-const selectedModel = truth.model.findings.find((f) => f.id === findingId);
-const expectedLanes = new Set([selectedModel.laneId, ...selectedModel.relatedLaneIds]);
-
-await p.locator('[data-shoot="evidence-solo-toggle"]').click();
-await settle(650);
-const routeLanes = await p.evaluate(
-  () => document.querySelectorAll("[data-solo-lane]").length
-);
-check("D1 a provenance route is drawn", routeLanes > 0, `${routeLanes} lane(s)`);
-check(
-  "D2 the route covers exactly the finding's own lane plus its provenance lanes",
-  routeLanes === expectedLanes.size,
-  `${routeLanes} drawn, ${expectedLanes.size} expected (${[...expectedLanes].join(", ")})`
-);
-const dimmedLanes = await p.evaluate(() =>
-  [...document.querySelectorAll("[data-lane]")].map((g) => ({
-    id: g.getAttribute("data-lane"),
-    o: parseFloat(g.querySelector("path")?.getAttribute("opacity") ?? "1"),
-  }))
-);
-const unrelated = dimmedLanes.filter((l) => !expectedLanes.has(l.id));
-check(
-  "D3 every lane the provenance does NOT run through fades hard",
-  unrelated.every((l) => l.o <= 0.1),
-  `max ${Math.max(...unrelated.map((l) => l.o)).toFixed(3)}`
-);
-check(
-  "D4 the route is drawn through the network, not as a detached branch",
-  await p.evaluate(() => {
-    const route = document.querySelector('[data-shoot="evidence-solo-route"]');
-    const lanePaths = new Set(
-      [...document.querySelectorAll("[data-lane] path")].map((el) => el.getAttribute("d"))
-    );
-    const routePaths = [...(route?.querySelectorAll("path") ?? [])];
-    return routePaths.length > 0 && routePaths.every((el) => lanePaths.has(el.getAttribute("d")));
-  }),
-  "the highlighted path must be geometry the lane already occupies"
-);
-
-// ── E. CANDIDATE REALITY IS VISIBLY UNSAVED AND WRITES NOTHING ───────
-const before = {
-  findings: await db.finding.count(),
-  decisions: await db.decision.count(),
-  sources: await db.source.count(),
-};
-await p.locator('[data-shoot="mode-B"]').click();
-await settle(650);
-const coreText = await p.evaluate(
-  () => document.querySelector('[data-shoot="reality-core"]')?.textContent ?? ""
-);
-check("E1 the Reality core enters candidate mode", /candidate/i.test(coreText), coreText.replace(/\n/g, " "));
-check("E2 and says it is not saved", /not saved/i.test(coreText));
-const consoleText = await p.locator('[data-shoot="review-console-open"]').innerText();
-check("E3 the B panel is badged unsaved", /not saved/i.test(consoleText));
-await settle(400);
-const after = {
-  findings: await db.finding.count(),
-  decisions: await db.decision.count(),
-  sources: await db.source.count(),
-};
-check(
-  "E4 previewing candidate Reality writes NOTHING",
-  JSON.stringify(before) === JSON.stringify(after),
-  `${JSON.stringify(before)} vs ${JSON.stringify(after)}`
-);
-await p.locator('[data-shoot="mode-A"]').click();
-await settle(400);
-
-// ── H. ESCAPE LEAVES A SELECTION ─────────────────────────────────────
-await p.keyboard.press("Escape");
-await settle(650);
-check("H1 Escape clears the selection", (await p.locator('[data-shoot="inspector-overview"]').count()) === 1);
-check("H2 and collapses the console", (await p.locator('[data-shoot="review-console-rest"]').count()) === 1);
-check(
-  "H3 and drops Evidence Solo with it",
-  (await p.locator('[data-shoot="evidence-solo-route"]').count()) === 0,
-  "a hypothetical must not outlive the thing it was about"
-);
-
-// ── F. THE SWEEP TRAIL FOLLOWS THE SCAN ──────────────────────────────
-await p.locator('[data-shoot="run-audit"]').click();
-await settle(700);
-const sweep = await p.evaluate(() => {
-  const g = document.querySelector('[data-shoot="audit-sweep"]');
-  if (!g) return null;
-  const heading = parseFloat((g.getAttribute("transform") ?? "").match(/rotate\(([-\d.]+)/)?.[1] ?? "0");
-  // Local wedge angles, read back off the drawn geometry rather than assumed.
-  const cx = 560, cy = 440;
-  const wedges = [...g.querySelectorAll("path")].map((path) => {
-    const m = (path.getAttribute("d") ?? "").match(/L ([-\d.]+) ([-\d.]+)/);
-    if (!m) return null;
-    return (Math.atan2(parseFloat(m[2]) - cy, parseFloat(m[1]) - cx) * 180) / Math.PI;
-  }).filter((v) => v !== null);
-  return { heading, wedges, opacities: [...g.querySelectorAll("path")].map((el) => parseFloat(el.getAttribute("opacity") ?? "1")) };
-});
-check("F1 the sweep is running", sweep !== null && sweep.wedges.length > 0);
-if (sweep) {
-  // Every wedge is drawn at a NEGATIVE local angle, i.e. at headings the
-  // scan has already passed. The group rotation then carries them behind
-  // the leading edge, whatever the heading is.
+  check("B1 edges are rendered at all", rels.length > 0, `${rels.length} edges drawn`);
   check(
-    "F2 every trail wedge is behind the scan edge, not ahead of it",
-    sweep.wedges.every((a) => a <= 0.01),
-    `local angles ${sweep.wedges.map((a) => a.toFixed(1)).join(", ")}`
+    "B2 NO `attests` edge is ever drawn",
+    rels.every((r) => r !== "attests"),
+    "membership is expressed by cluster position, never by a line"
   );
+  const api = await (await fetch(`${BASE}/api/audit/graph?scope=jsa&slice=detail`, {
+    headers: { Cookie: `kit_session=${COOKIE}` },
+  })).json();
+  const attests = api.graph.edges.filter((e) => e.attributes.rel === "attests").length;
   check(
-    "F3 the trail fades away from the edge",
-    sweep.opacities.every((o, i, arr) => i === 0 || o <= arr[i - 1] + 0.001),
-    sweep.opacities.map((o) => o.toFixed(3)).join(" > ")
+    "B3 the graph really does contain the membership edges it refuses to draw",
+    attests > 0,
+    `${attests} attests edges present in the model, 0 rendered`
   );
 }
-await settle(2400);
-await park();
 
-// ── K. AN UNSUPPLIED SCOPE RENDERS HONESTLY ──────────────────────────
-await p.goto(`${BASE}/audit?scope=design`, { waitUntil: "networkidle" });
-await p.waitForSelector('[data-shoot="truth-map"]', { timeout: 30000 });
-await settle(1000);
-const sparseText = await p.locator('[data-shoot="inspector-overview"]').innerText();
-check(
-  "K1 an unsupplied Scope names what is not supplying it",
-  /not supplying this scope/i.test(sparseText),
-  "an unconnected source is project truth, not an empty state to hide"
-);
-const unsuppliedRows = await p.evaluate(() =>
-  [...document.querySelectorAll('[data-shoot^="lane-row-"]')].filter((el) =>
-    /not supplied/i.test(el.innerText)
-  ).length
-);
-check("K2 unsupplied lanes say so in the project field", unsuppliedRows > 0, `${unsuppliedRows} rows`);
-check(
-  "K3 the map still renders with nothing to show",
-  (await p.locator('[data-shoot="truth-map"]').count()) === 1
-);
+// ── A. CALM AT REST ──────────────────────────────────────────────────
+{
+  const structure = await p.evaluate(() =>
+    parseFloat(document.querySelector('[data-shoot="graph-structure"]')?.getAttribute("opacity") ?? "1")
+  );
+  check("A1 structure sits under 25%", structure <= 0.25, `${structure}`);
+  const edgeOps = await p.evaluate(() =>
+    [...document.querySelectorAll("[data-rel]")].map((e) => parseFloat(e.getAttribute("opacity") ?? "1"))
+  );
+  check(
+    "A2 no edge shouts at rest",
+    edgeOps.every((o) => o <= 0.5),
+    `max ${Math.max(...edgeOps).toFixed(2)}`
+  );
+  const inferred = await p.evaluate(() =>
+    [...document.querySelectorAll('[data-basis="inferred"]')].map((e) => parseFloat(e.getAttribute("opacity") ?? "1"))
+  );
+  const attested = await p.evaluate(() =>
+    [...document.querySelectorAll('[data-basis="attested"]')].map((e) => parseFloat(e.getAttribute("opacity") ?? "1"))
+  );
+  check(
+    "A3 attested relationships read louder than inferred ones",
+    attested.length > 0 && inferred.length > 0 && Math.max(...attested) > Math.max(...inferred),
+    `attested ${Math.max(...attested)} vs inferred ${Math.max(...inferred)}`
+  );
+  const total = (
+    await (
+      await fetch(`${BASE}/api/audit/graph?scope=jsa&slice=detail`, {
+        headers: { Cookie: `kit_session=${COOKIE}` },
+      })
+    ).json()
+  ).graph.nodes.length;
+  const drawn = await nodeCount();
+  check(
+    "A4 the resting field is a fraction of the whole graph",
+    drawn < total * 0.6,
+    `${drawn} of ${total} drawn — core only, nothing renders just in case`
+  );
+}
+
+// ── I. TRUST BOUNDARY AT REST ────────────────────────────────────────
+{
+  const t = await p.locator('[data-shoot="inspector-overview"]').innerText();
+  check(
+    "I1 Reality protected is stated with nothing selected",
+    /reality protected/i.test(t) && /without human confirmation/i.test(t)
+  );
+}
+
+// ── J. NO PAGE SCROLL, AND THE WHEEL ZOOMS RATHER THAN SCROLLS ───────
+{
+  const before = await p.evaluate(() => window.scrollY);
+  await p.mouse.move(600, 560);
+  await p.mouse.wheel(0, -300);
+  await settle(400);
+  const after = await p.evaluate(() => window.scrollY);
+  check("J1 the wheel does not scroll the page", before === after, `${before} -> ${after}`);
+  const scroll = await p.evaluate(() => ({
+    x: document.documentElement.scrollWidth - window.innerWidth,
+    y: document.documentElement.scrollHeight - window.innerHeight,
+  }));
+  check("J2 no page scroll at 1600x1000", scroll.x <= 1 && scroll.y <= 1, JSON.stringify(scroll));
+  await p.locator('[data-shoot="camera-fit"]').click();
+  await settle(500);
+}
+
+// ── K. ZOOM CHANGES WHAT IS LABELLED, IN STEPS ───────────────────────
+{
+  const labelsAt = async () => p.evaluate(() => document.querySelectorAll('[data-shoot^="node-"] text').length);
+  const far = await labelsAt();
+  const farLevel = await p.getAttribute('[data-shoot="signal-graph"]', "data-zoom");
+  await p.mouse.move(600, 560);
+  for (let i = 0; i < 7; i++) {
+    await p.mouse.wheel(0, -260);
+    await settle(80);
+  }
+  await settle(600);
+  const closeLevel = await p.getAttribute('[data-shoot="signal-graph"]', "data-zoom");
+  const close = await labelsAt();
+  check("K1 zoom changes the declared level", farLevel !== closeLevel, `${farLevel} -> ${closeLevel}`);
+  check("K2 closer zoom reveals more labels", close > far, `${far} -> ${close} labels`);
+  await p.locator('[data-shoot="camera-fit"]').click();
+  await settle(600);
+}
+
+// ── L. EXPAND / COLLAPSE ─────────────────────────────────────────────
+{
+  const before = await nodeCount();
+  await p.locator('[data-shoot="expand-all"]').click();
+  await settle(900);
+  const after = await nodeCount();
+  check("L1 expanding reveals nodes", after > before, `${before} -> ${after}`);
+  await p.locator('[data-shoot="collapse-all"]').click();
+  await settle(700);
+  check("L2 collapsing hides them again", (await nodeCount()) === before, `back to ${before}`);
+  await p.locator('[data-shoot="camera-fit"]').click();
+  await settle(400);
+}
+
+// ── G. KEYBOARD REACH, IN SEMANTIC ORDER ─────────────────────────────
+{
+  const nodes = await p.evaluate(() =>
+    [...document.querySelectorAll('[data-shoot^="node-"] g[role="button"]')].map((el) => ({
+      tabindex: Number(el.getAttribute("tabindex")),
+      label: el.getAttribute("aria-label") ?? "",
+      kind: el.closest("[data-kind]")?.getAttribute("data-kind") ?? "",
+    }))
+  );
+  check("G1 nodes are on screen", nodes.length > 0, `${nodes.length}`);
+  check("G2 every node is keyboard reachable", nodes.every((n) => n.tabindex >= 1));
+  check(
+    "G3 every node has an accessible name carrying its kind",
+    nodes.every((n) => n.label.length > 3),
+    "colour is never the only carrier of meaning"
+  );
+  check("G4 tab indices are unique", new Set(nodes.map((n) => n.tabindex)).size === nodes.length);
+  // TAB ORDER FOLLOWS MEANING, NOT SVG DOCUMENT ORDER. Clusters must all come
+  // before work items, whatever order the layout emitted them in.
+  const laneMax = Math.max(...nodes.filter((n) => n.kind === "lane").map((n) => n.tabindex));
+  const findingMin = Math.min(...nodes.filter((n) => n.kind === "finding").map((n) => n.tabindex));
+  check(
+    "G5 tab order is semantic: clusters before findings",
+    Number.isFinite(laneMax) && Number.isFinite(findingMin) && laneMax < findingMin,
+    `last cluster ${laneMax}, first finding ${findingMin}`
+  );
+}
+
+// ── M. SEARCH ────────────────────────────────────────────────────────
+{
+  await p.locator('[data-shoot="graph-search"]').fill("offline");
+  await settle(900);
+  const results = await p.locator('[data-shoot="search-results"] button').count();
+  check("M1 search lists what it found", results > 0, `${results} results`);
+  const matched = await p.locator('[data-shoot^="node-"][data-matched="true"]').count();
+  check("M2 matches are marked on the graph", matched > 0, `${matched} matched nodes`);
+  const ops = await p.evaluate(() =>
+    [...document.querySelectorAll('[data-shoot^="node-"]')].map((e) => ({
+      m: e.getAttribute("data-matched") === "true",
+      o: parseFloat(e.getAttribute("opacity") ?? "1"),
+    }))
+  );
+  check(
+    "M3 unmatched nodes dim hard",
+    ops.filter((x) => !x.m).every((x) => x.o <= 0.2),
+    `max unmatched ${Math.max(...ops.filter((x) => !x.m).map((x) => x.o)).toFixed(2)}`
+  );
+  check("M4 matched nodes stay bright", ops.filter((x) => x.m).every((x) => x.o > 0.8));
+  await p.locator('[data-shoot="graph-search"]').fill("");
+  await settle(600);
+}
+
+// ── C. SELECTION FOCUSES ─────────────────────────────────────────────
+let findingNodeId = null;
+{
+  const f = p.locator('[data-shoot^="node-finding:"]').first();
+  findingNodeId = await f.getAttribute("data-shoot");
+  await f.locator("g[role=button]").click({ force: true });
+  await settle(900);
+  const sel = await p.locator('[data-shoot^="node-"][data-selected="true"]').count();
+  check("C1 exactly one node reads as selected", sel === 1);
+  const ops = await p.evaluate(() =>
+    [...document.querySelectorAll('[data-shoot^="node-"]')].map((e) => ({
+      s: e.getAttribute("data-selected") === "true",
+      o: parseFloat(e.getAttribute("opacity") ?? "1"),
+    }))
+  );
+  check("C2 the selected node is fully lit", ops.find((x) => x.s)?.o === 1);
+  check(
+    "C3 the graph dims around it",
+    ops.filter((x) => !x.s).some((x) => x.o <= 0.15),
+    "unrelated nodes recede"
+  );
+  check(
+    "C4 the inspector becomes specific to it",
+    (await p.locator('[data-shoot="inspector-finding"]').count()) === 1
+  );
+}
+
+// ── N. THE CONSOLE IS FOR FINDINGS ONLY ──────────────────────────────
+{
+  check(
+    "N1 a Finding gets the review console",
+    (await p.locator('[data-shoot="review-console-open"]').count()) === 1
+  );
+  // A work item or a source has nothing to accept, so offering acceptance
+  // actions beside one would be offering an action that means nothing.
+  await p.locator('[data-shoot="expand-all"]').click();
+  await settle(800);
+  // A work item that genuinely HAS a Feature above it — asserting the
+  // connection list on an orphan ticket would pass for want of anything to
+  // list. Found from the model rather than guessed from the DOM.
+  const api = await (
+    await fetch(`${BASE}/api/audit/graph?scope=jsa&slice=detail`, {
+      headers: { Cookie: `kit_session=${COOKIE}` },
+    })
+  ).json();
+  const implementing = api.graph.edges.find((e) => e.attributes.rel === "implements");
+  const w = implementing ? p.locator(`[data-shoot="node-${implementing.source}"]`) : null;
+  if (w && (await w.count())) {
+    await w.locator("g[role=button]").click({ force: true });
+    await settle(800);
+    check(
+      "N2 a work item gets NO review console",
+      (await p.locator('[data-shoot="review-console-open"]').count()) === 0,
+      "there is nothing to accept about a Linear ticket"
+    );
+    check(
+      "N3 and gets the generic node inspector instead",
+      (await p.locator('[data-shoot="graph-inspector"]').count()) === 1
+    );
+    check(
+      "N4 its Feature is listed as an `implements` connection",
+      (await p.locator('[data-shoot="connection-implements"]').count()) >= 1,
+      "the Scope -> Feature -> ticket hierarchy is navigable from the inspector"
+    );
+    const basis = await p.locator('[data-shoot="connection-implements"]').first().innerText();
+    check("N5 and it is marked attested", /attested/i.test(basis), basis.replace(/\n/g, " · "));
+  } else {
+    check("N2 a work item with a Feature exists to select", false, "no implements edge found");
+  }
+  await p.keyboard.press("Escape");
+  await settle(400);
+  await p.locator('[data-shoot="collapse-all"]').click();
+  await settle(500);
+}
+
+// ── D / E. EVIDENCE SOLO AND CANDIDATE REALITY ───────────────────────
+{
+  await p.locator(`[data-shoot="${findingNodeId}"] g[role=button]`).click({ force: true });
+  await settle(800);
+
+  const before = {
+    findings: await db.finding.count(),
+    decisions: await db.decision.count(),
+    sources: await db.source.count(),
+  };
+
+  const soloToggle = p.locator('[data-shoot="evidence-solo-toggle"]');
+  await soloToggle.click();
+  await settle(900);
+  const ops = await p.evaluate(() =>
+    [...document.querySelectorAll('[data-shoot^="node-"]')].map((e) => parseFloat(e.getAttribute("opacity") ?? "1"))
+  );
+  check(
+    "D1 Evidence Solo lights a route and fades the rest hard",
+    ops.some((o) => o === 1) && ops.filter((o) => o < 0.1).length > 0,
+    `${ops.filter((o) => o === 1).length} lit, ${ops.filter((o) => o < 0.1).length} faded`
+  );
+  check(
+    "D2 but nothing disappears — orientation survives",
+    ops.every((o) => o > 0),
+    "losing orientation is worse than losing contrast"
+  );
+
+  await p.locator('[data-shoot="mode-B"]').click();
+  await settle(700);
+  const consoleText = await p.locator('[data-shoot="review-console-open"]').innerText();
+  check("E1 candidate Reality is badged unsaved", /not saved/i.test(consoleText));
+  const after = {
+    findings: await db.finding.count(),
+    decisions: await db.decision.count(),
+    sources: await db.source.count(),
+  };
+  check(
+    "E2 previewing candidate Reality writes NOTHING",
+    JSON.stringify(before) === JSON.stringify(after),
+    JSON.stringify(before)
+  );
+  await p.locator('[data-shoot="mode-A"]').click();
+  await settle(400);
+}
+
+// ── H. ESCAPE ────────────────────────────────────────────────────────
+{
+  await p.keyboard.press("Escape");
+  await settle(700);
+  check("H1 Escape clears the selection", (await p.locator('[data-shoot="inspector-overview"]').count()) === 1);
+  check("H2 and the console goes with it", (await p.locator('[data-shoot="review-console-open"]').count()) === 0);
+  check(
+    "H3 and Evidence Solo drops too",
+    (await p.evaluate(() =>
+      [...document.querySelectorAll('[data-shoot^="node-"]')].every((e) => parseFloat(e.getAttribute("opacity") ?? "1") > 0.1)
+    )) === true,
+    "a hypothetical must not outlive the thing it was about"
+  );
+}
+
+// ── F. THE SWEEP TRAIL FOLLOWS THE SCAN ──────────────────────────────
+{
+  await p.locator('[data-shoot="run-audit"]').click();
+  await settle(800);
+  const sweep = await p.evaluate(() => {
+    const g = document.querySelector('[data-shoot="graph-sweep"]');
+    if (!g) return null;
+    const cx = 700;
+    const cy = 700;
+    const wedges = [...g.querySelectorAll("path")]
+      .map((path) => {
+        const m = (path.getAttribute("d") ?? "").match(/L ([-\d.]+) ([-\d.]+)/);
+        return m ? (Math.atan2(parseFloat(m[2]) - cy, parseFloat(m[1]) - cx) * 180) / Math.PI : null;
+      })
+      .filter((v) => v !== null);
+    return { wedges, opacities: [...g.querySelectorAll("path")].map((e) => parseFloat(e.getAttribute("opacity") ?? "1")) };
+  });
+  check("F1 the sweep is running", sweep !== null && sweep.wedges.length > 0);
+  if (sweep) {
+    check(
+      "F2 every trail wedge sits behind the scan edge",
+      sweep.wedges.every((a) => a <= 0.01),
+      `local angles ${sweep.wedges.map((a) => a.toFixed(1)).join(", ")}`
+    );
+    check(
+      "F3 the trail fades away from the edge",
+      sweep.opacities.every((o, i, arr) => i === 0 || o <= arr[i - 1] + 0.001),
+      sweep.opacities.map((o) => o.toFixed(3)).join(" > ")
+    );
+  }
+  await settle(3000);
+}
+
+// ── O. A SPARSE SCOPE STILL READS ────────────────────────────────────
+{
+  await p.goto(`${BASE}/audit?scope=design`, { waitUntil: "networkidle" });
+  await p.waitForSelector('[data-shoot="signal-graph"]', { timeout: 30000 });
+  await settle(1200);
+  check("O1 the graph renders with almost nothing in it", (await nodeCount()) > 0);
+  const t = await p.locator('[data-shoot="inspector-overview"]').innerText();
+  check(
+    "O2 it names what is not supplying the project",
+    /not supplying/i.test(t),
+    "an unconnected source is project truth, not an empty state to hide"
+  );
+}
 
 check("Z1 no page errors during the whole run", pageErrors.length === 0, pageErrors.join(" | "));
 

@@ -16,71 +16,101 @@ THE CENTRE IS ACCEPTED REALITY.
 AUDIT REVEALS WHERE THOSE SIGNALS DISAGREE.
 ```
 
-## Audit is an instrument now
+## Audit is graph-first
 
-`/audit` used to be a reading surface: a paginated list of past audit runs
-in `SignalSurface`'s centred measure, on the reasoning that "there is
-nothing here to play". The Project Truth Map is a control surface — you
-select on it, focus it, solo it, and preview candidate Reality against it —
-so `/audit` owns the viewport like Forecast and Timeline do.
+`/audit` began as a reading surface (a paginated list of audit runs), became
+an instrument (the Project Truth Map, a radial lane diagram), and is now
+**graph-first**: the Signal Graph owns the viewport, the inspector is a
+contextual panel beside it, and the review console exists only while a
+Finding is selected.
 
-The run list was not deleted. It moved to `/audit/history`, which is still
-genuinely a reading surface and still wears `SignalSurface`. `/audit/<sourceId>`
-is untouched.
+The Truth Map is retired. `components/audit/ProjectTruthMap.tsx` and
+`lib/audit/layout.ts` were deleted rather than left as dead code; their
+layout proofs moved to `scripts/audit-graph-proof.ts`, because the subject
+moved rather than disappearing.
 
-## The one visual idea
+The run list still lives at `/audit/history`, still as a reading surface.
+`/audit/<sourceId>` is untouched.
 
-**A signal that agrees with Reality reaches it.**
+## The composition
 
-A lane in good standing runs unbroken from its label in the gutter, through
-its checkpoints, into a port on the Reality bus. A lane carrying a
-disagreement is **interrupted** at the band its state names, and continues
-inward only as a faint dashed ghost.
+Two independent axes, each carrying a different real fact:
 
-That is what makes the map readable without a legend: solid lines reaching
-the middle are truth flowing, broken ones are truth blocked, and a worse
-disagreement breaks the lane further out.
-
-## What position means
-
-| Dimension | Meaning |
+| Axis | Means |
 |---|---|
-| **Radius** | Disagreement with Reality. Three named bands — ALIGNED, DRIFT, CONFLICT. |
-| **Angle** | Seating, not rank. Each lane owns a port; lane order maps monotonically onto a counter-clockwise sweep so lanes nest instead of tangling. |
-| **The right-facing arc** | Deliberately empty. No lane docks there — it is the reading side, where the eye leaves the core for the inspector. |
-| **A break in a lane** | Where that signal stops agreeing with Reality. |
-| **A junction** | A real compiled checkpoint, carrying the measurement it was decided from. |
+| **Angle** | **Category.** Each cluster owns a sector. Membership is expressed by *where a node sits*. |
+| **Radius** | **Disagreement.** Reality is the centre; a finding sits at the band its severity names. |
 
-**A crossing is not a relationship.** Lanes may pass over one another on
-their way to a port. Meaning is carried only by a rendered junction, never
-by incidental geometry.
+Combining them gives the one idea a general graph tool does not have:
 
-Radial placement is **categorical, not continuous**. There is no numeric
-"distance from truth" in the model and none is invented — a continuous
-radius would be exactly the fake precision `docs/CONTROL-ROOM-TRUTH-AUDIT.md`
-spent a pass removing.
+> **A finding is drawn in the gap between Reality and its own cluster.**
 
-## The lanes, and what supplies them
+The Notion sector's findings sit between the Notion puck and the core,
+literally occupying the space between what that source claims and what
+Reality accepts. Proven: `P8 findings sit between Reality and their
+cluster's puck`.
 
-| Lane | Family | Supplied by | Checkpoints |
-|---|---|---|---|
-| Decisions | model | `Decision` rows | decision recorded · owner known · gate declared |
-| Dependencies | model | `Scope.dependsOnScopeIds` | dependency accepted · upstream target known |
-| Capacity | model | `Allocation` / `Person` / `Scope.teamCapacity` | capacity attested |
-| Linear | evidence | `Scope.teamKey` + `projectNames` (structural) | execution present · estimates present · owner known |
-| Notion | evidence | `Scope.notionPageIds` | requirements supplied |
-| Figma | evidence | `Scope.figmaRefs` | design supplied |
-| Hermes / Wiki | evidence | `ContextSnapshot` | intelligence supplied · package fresh · provenance cited |
-| Evidence | evidence | `Source` + `ContextDoc` | evidence present · evidence fresh |
+Outward, the field reads: Reality · the three disagreement bands · the
+cluster pucks · the project structure hanging off them.
 
-**An unsupplied lane is rendered, not hidden.** "Nothing is supplying design
-for this Scope" is project truth and exactly the kind of gap Audit exists to
-surface. It draws dashed and grey, states its absence as a checkpoint, and is
-listed in the inspector's overview.
+## Membership is position, never a line
 
-**Gate declared is never a failure.** Having no `DecisionGate` is the correct
-and common case — a gate is the claim that delivery is physically waiting.
-The checkpoint reports the count and stays `verified` either way.
+**The single decision that stops the hairball.** 74 of the graph's edges say
+"this belongs to that cluster". The layout already says that by seating the
+node in the cluster's sector, so **`attests` edges are never rendered** —
+asserted by proof, against a graph that provably still contains them.
+
+At rest on JSA that is **17 drawn edges out of 77**, and 23 nodes of 65.
+
+## Progressive detail
+
+| Zoom | Reveals |
+|---|---|
+| **Far** (<1.05×) | Project shape: Reality, cluster pucks, findings, decisions, dependencies, features |
+| **Medium** (<2.1×) | Delivery structure: dependency, decision, feature and intelligence labels |
+| **Close** (≥2.1×) | Source detail: individual tickets, passages, sources, checkpoints |
+
+Thresholds are explicit steps, not continuous text scaling — scaling would
+produce unreadably small labels at far zoom rather than *no* labels, which is
+worse. Zoom is capped at 4.5×, past which there is no further detail to
+reveal, only a larger circle.
+
+Membership in the *mounted* set is controlled by **expand/collapse per
+cluster**, not by zoom. Expanding flies the camera to what it revealed.
+Search and Evidence Solo both auto-expand whatever they need to show — a
+result you cannot see reads as a bug.
+
+## Features close the execution gap
+
+The graph foundation measured 46 work nodes whose parents resolved to
+nothing: Linear has no first-class Feature entity, so `implements` produced
+exactly **1 edge**. Adding Feature nodes (any `parentIdentifier` that is not
+itself a fetched work item) took that to **37**, and raised attested edges
+from 19% to 40% of the graph.
+
+The hierarchy is now `Scope → Feature → work item`, which is what lets the
+execution cluster expand without becoming a cloud of tickets on one puck.
+
+## Node visual language
+
+**Shape says what kind. Colour says what state.** Keeping the two channels
+apart is what stops the field becoming a rainbow, and it is the accessibility
+floor: kind survives without colour, and every node's accessible name carries
+kind and state in words.
+
+| Shape | Kinds |
+|---|---|
+| Layered core | Reality |
+| Disc | cluster puck, intelligence package |
+| Pin | finding — the only kind with a direction, because it is the only kind that is an accusation |
+| Hexagon | dependency |
+| Diamond | decision, gate |
+| Chip | project, feature |
+| Document | source |
+| Dot | work item, passage, checkpoint |
+
+Edges: **attested solid, inferred dashed**, both faint at rest. The epistemic
+basis is visible before anything is clicked.
 
 ## Findings
 
@@ -177,56 +207,77 @@ No protected forecast module was modified. `lib/forecast/simulate.ts` and
 
 | File | Owns |
 |---|---|
-| `lib/audit/truth.ts` | The semantic model. The only place a truth state is decided. Pure. |
-| `lib/audit/layout.ts` | Geometry. Presentation only — nothing here is stored or read back. |
-| `lib/audit/provenance.ts` | Finding → snapshot → passage → origin. Resolves; never invents. |
+| `lib/audit/truth.ts` | The semantic read model. Pure. |
+| `lib/audit/graph.ts` | The Signal Graph projection. Pure, no geometry. |
+| `lib/audit/graphLayout.ts` | Where nodes sit. Presentation only. |
+| `lib/audit/provenance.ts` | Finding → snapshot → passage → origin. |
 | `lib/audit/actions.ts` | What a human may do, and what each action will not do. |
-| `app/api/audit/truth/route.ts` | One read per load. Everything else is client-pure. |
-| `components/audit/ProjectTruthMap.tsx` | The SVG field. |
-| `components/audit/FindingInspector.tsx` | Overview / selected finding, progressive disclosure. |
-| `components/audit/AuditReviewConsole.tsx` | Evidence Solo, A/B, human review. |
-| `components/audit/icons.tsx` | One icon system: 24×24 grid, 1.5 stroke, 16px glyph in a 26px holder. |
+| `app/api/audit/graph/route.ts` | The graph read. |
+| `app/api/audit/truth/route.ts` | The finding read the inspector and console use. |
+| `components/audit/SignalGraph.tsx` | The renderer: camera, nodes, edges, sweep. |
+| `components/audit/GraphInspector.tsx` | Any node: identity, state, connections. |
+| `components/audit/FindingInspector.tsx` | A finding: claim, evidence, provenance. |
+| `components/audit/AuditReviewConsole.tsx` | Human review — Findings only. |
+| `components/audit/graphTokens.ts` | Shape, colour, contrast tiers, zoom thresholds. |
 
-The `truth.ts` / `layout.ts` split mirrors `lib/orbit/graph.ts` /
-`lib/orbit/layout.ts`: an angle is a drawing decision, and persisting one
-would turn a picture into a fact.
+SVG with a viewBox camera. At 65 nodes on the largest Scope this is far
+inside SVG's comfort zone, and it keeps every node a real focusable element
+with an accessible name — which a WebGL canvas cannot. No Sigma.
 
-SVG rather than Canvas, because every finding has to be a real focusable,
-keyboard-reachable target with an accessible name.
+Wheel zoom is attached as a **native, non-passive** listener: React registers
+wheel handlers as passive, so `preventDefault()` is ignored and the page
+scrolls behind the graph.
+
+## Measured performance
+
+1600×1000 and 1440×900, JSA fully expanded (64 nodes / 52 edges drawn):
+
+| Interaction | Median | p95 | Worst |
+|---|---|---|---|
+| Zoom (12 wheel steps) | 16.7ms | 16.7ms | 16.8ms |
+| Pan (drag) | 16.7ms | 16.8ms | 16.8ms |
+| Expand all | 16.7ms | 16.8ms | 16.8ms |
+| Select node | 16.7ms | 16.8ms | 50–83ms |
+| Search keystrokes | 16.7ms | 33.4ms | ~100ms |
+
+Sustained 60fps on camera work. Selection and search each cost one longer
+frame on the React re-render; both are single hitches, not sustained drops.
 
 ## Proven
 
-`scripts/audit-model-proof.ts` — 52 assertions covering derived severity, the
-absence of any invented score, unsupplied-lane honesty, layout determinism,
-anchor separation, card containment, sweep-trail direction, provenance
-resolution, the decision-promotion law, ticket preview-first, and that
-reading the map mutates nothing.
+`scripts/audit-graph-proof.ts` (52) — model and layout: every node projects a real
+row, every edge cites a rule whose relation/basis/endpoints it matches, no
+dangling edges, no renderer state in the semantic layer, unsupplied lanes
+have no `supports` edge, provenance direction, uncited sources produce no
+node, Evidence Solo's allowlist and stopping behaviour, zero database writes,
+export round-trip, determinism, slice monotonicity, passage namespacing, and
+that every clustered node sits inside its own sector.
 
-`scripts/audit-proof.mjs` — 34 assertions in the browser: calm at rest,
-hover-is-preview, selection focus, Evidence Solo lighting exactly the
-provenance lanes and no others, candidate preview writing nothing, the sweep
-trail following its edge, keyboard reach, and an unsupplied Scope rendering
-honestly.
+`scripts/audit-proof.mjs` (45) — the graph-first interaction laws: membership is
+never drawn, calm at rest, attested reads louder than inferred, the wheel
+does not scroll the page, zoom changes labelling in steps, expand/collapse,
+semantic tab order, search dimming, selection focus, the console appearing
+only for a Finding, Evidence Solo, candidate preview writing nothing, the
+sweep trail following its edge, and a sparse Scope still reading.
 
-`scripts/audit-shoot.mjs` — the visual sweep at 1600×1000 and 1440×900.
+`scripts/audit-model-proof.ts` (43) — the finding semantics, unchanged.
 
-`scripts/seed-audit-demo.ts` — a dev fixture creating the finding shapes the
-map has to be able to draw. **Everything it creates is marked
-`[demo fixture]`** in its rationale so it can never be mistaken for a real
-audit result.
+**140 assertions, all passing.**
+
+`scripts/audit-graph-measure.ts` · `scripts/audit-graph-shoot.mjs` — the size
+baseline and the visual sweep.
 
 ## Known limitations
 
-- **Correct / edit** is not implemented. The button reports that rather than
-  pretending.
-- **Need more evidence** does not persist. `Finding.status` has no
-  awaiting-evidence value; adding one is a migration, and the console says
-  "not saved" rather than implying a durable state.
-- **Filing to Linear stops at the preview.** The confirmation step exists in
-  the API (`{ confirm: true }`) but Audit does not yet render the payload for
-  approval, so it reports the preview and stops.
-- **Current vs prior** shows both run timestamps; ghosting prior findings on
-  the map is not built.
-- **Perimeter seats are finite** (11). A finding beyond that keeps its anchor
-  and stays selectable, losing only its card.
-- **Desktop only**, per the brief. The shell's 1024px floor applies.
+- **Correct / edit** is not implemented; the button says so.
+- **Need more evidence** does not persist — `Finding.status` has no such
+  value, and the console labels it session-only.
+- **Filing to Linear stops at the preview.** The API's confirm step exists;
+  Audit does not yet render the payload for approval.
+- **Current vs prior** shows both run timestamps; ghosting prior positions is
+  not built.
+- **`contradicts` cannot be grounded** — a contradiction finding does not
+  store which two sources disagree.
+- **Capacity has no entity nodes.** People and allocations are counted in the
+  cluster's checkpoints but are not yet graph nodes.
+- **Desktop only**, per the brief; the shell's 1024px floor applies.

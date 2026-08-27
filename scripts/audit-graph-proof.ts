@@ -18,6 +18,8 @@
 //   L  slices are monotonic and never invent nodes
 //   M  passages are namespaced by snapshot
 //   N  epistemic basis matches the rule registry
+//   P  layout: deterministic, clustered by category, radial by disagreement
+//      (inherited from the retired Truth Map's own layout proofs)
 //
 //   npx tsx scripts/audit-graph-proof.ts
 
@@ -37,6 +39,7 @@ import {
   type AuditNodeAttributes,
   type AuditEdgeAttributes,
 } from "../lib/audit/graph";
+import { layoutGraph, FIELD, CLUSTER_ORDER, BANDS } from "../lib/audit/graphLayout";
 
 const prisma = new PrismaClient();
 
@@ -433,6 +436,96 @@ async function main() {
         .every((n) => n.startsWith("source:pkg:") || n.startsWith("source:row:"))
     )
   );
+
+  // ── P. LAYOUT ──────────────────────────────────────────────────────
+  //
+  // Geometry moved from the retired Truth Map to graphLayout.ts when the
+  // renderer became graph-first, so its proofs moved with it. Layout is still
+  // PRESENTATION — these assert it is deterministic and meaningful, not that
+  // the graph knows about it.
+  {
+    const { g } = graphs.find((x) => x.id === "jsa") ?? graphs[0];
+    const a = layoutGraph(g);
+    const b = layoutGraph(g);
+    check(
+      "P1 layout is deterministic — same graph, same coordinates",
+      [...a.keys()].every((k) => a.get(k)!.x === b.get(k)!.x && a.get(k)!.y === b.get(k)!.y),
+      "a node must not change seat between renders"
+    );
+    check("P2 every node gets a seat", a.size === g.order, `${a.size}/${g.order}`);
+    check(
+      "P3 layout does not mutate the graph",
+      !g.someNode((_n, at) => Boolean("x" in at || "y" in at)),
+      "coordinates live in the returned map, never on the semantic node"
+    );
+
+    // ANGLE = CATEGORY. Every node of a cluster sits inside that cluster's
+    // sector, which is what lets membership be shown by position instead of
+    // by 74 drawn edges.
+    const sectorHalf = 360 / CLUSTER_ORDER.length / 2;
+    let strays = 0;
+    let clustered = 0;
+    a.forEach((p, id) => {
+      const lane = g.getNodeAttribute(id, "lane") as string | undefined;
+      if (!lane || !CLUSTER_ORDER.includes(lane as (typeof CLUSTER_ORDER)[number])) return;
+      clustered++;
+      const base = -90 + CLUSTER_ORDER.indexOf(lane as (typeof CLUSTER_ORDER)[number]) * (360 / CLUSTER_ORDER.length);
+      // Shortest angular distance between the seat and its sector axis.
+      let diff = Math.abs(p.angle - base) % 360;
+      if (diff > 180) diff = 360 - diff;
+      if (diff > sectorHalf + 0.6) strays++;
+    });
+    check(
+      "P4 every clustered node sits inside its own sector",
+      strays === 0 && clustered > 0,
+      `${clustered} clustered nodes, ${strays} outside their sector`
+    );
+
+    // RADIUS = DISAGREEMENT. A critical finding must sit further from Reality
+    // than a medium one; a handled finding collapses inward.
+    const radiusOf = (id: string) => a.get(id)!.radius;
+    const live = g.filterNodes((_n, at) => at.kind === "finding" && !at.handled);
+    const criticals = live.filter((n) => g.getNodeAttribute(n, "tier") === "critical");
+    const mediums = live.filter((n) => g.getNodeAttribute(n, "tier") === "medium");
+    check(
+      "P5 a critical finding sits further out than a medium one",
+      criticals.length > 0 &&
+        mediums.length > 0 &&
+        Math.min(...criticals.map(radiusOf)) > Math.max(...mediums.map(radiusOf)),
+      `critical ${criticals.map(radiusOf).join()} vs medium ${mediums.map(radiusOf).join()}`
+    );
+    const handled = g.filterNodes((_n, at) => at.kind === "finding" && Boolean(at.handled));
+    check(
+      "P6 a handled finding collapses toward Reality",
+      handled.every((n) => radiusOf(n) < BANDS[0].r),
+      "distance means live disagreement, and a handled finding is not one"
+    );
+    check(
+      "P7 no finding is drawn outside the disagreement field",
+      live.every((n) => radiusOf(n) <= FIELD.conflictR + 1),
+      "the bands are the whole vocabulary — nothing sits past CONFLICT"
+    );
+    // The one that makes the composition worth having: a finding sits in the
+    // GAP between Reality and its own cluster's puck.
+    check(
+      "P8 findings sit between Reality and their cluster's puck",
+      live.every((n) => radiusOf(n) > FIELD.coreR && radiusOf(n) < FIELD.clusterR)
+    );
+  }
+
+  // A sparse Scope must still seat every lane — the graph-first replacement
+  // for the retired C5.
+  {
+    const design = graphs.find((x) => x.id === "design");
+    if (design) {
+      const l = layoutGraph(design.g);
+      check(
+        "P9 a Scope with almost nothing in it still lays out",
+        l.size === design.g.order && design.g.order > 0,
+        `${design.g.order} nodes on "design"`
+      );
+    }
+  }
 
   console.log(`\n${failures === 0 ? "ALL PASS" : `${failures} FAILURE(S)`}`);
   await prisma.$disconnect();
