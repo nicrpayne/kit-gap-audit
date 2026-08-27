@@ -102,7 +102,8 @@ that if you went and opened something, you can read it.
 
 Thresholds are explicit steps, not continuous text scaling — scaling would
 produce unreadably small labels at far zoom rather than *no* labels, which is
-worse. Zoom is capped at 4.5×.
+worse. Zoom is capped at 4.5×. Each threshold carries a 9% deadband so a
+camera resting on one does not flip between tiers; see **Motion** below.
 
 Expanding flies the camera to what it revealed. Search and Evidence Solo both
 auto-expand whatever they need to show — a result you cannot see reads as a
@@ -270,7 +271,8 @@ No protected forecast module was modified. `lib/forecast/simulate.ts` and
 | `components/audit/GraphInspector.tsx` | Any node: identity, state, connections. |
 | `components/audit/FindingInspector.tsx` | A finding: claim, evidence, provenance. |
 | `components/audit/AuditReviewConsole.tsx` | Human review — Findings only. |
-| `components/audit/graphTokens.ts` | Shape, colour, contrast tiers, zoom thresholds. |
+| `components/audit/graphTokens.ts` | Shape, colour, contrast tiers, zoom thresholds and their hysteresis. |
+| `components/audit/cameraMotion.ts` | The camera: shape, limits, easing, interpolation, scale quantisation. Pure. |
 
 SVG with a viewBox camera. At 65 nodes on the largest Scope this is far
 inside SVG's comfort zone, and it keeps every node a real focusable element
@@ -280,20 +282,113 @@ Wheel zoom is attached as a **native, non-passive** listener: React registers
 wheel handlers as passive, so `preventDefault()` is ignored and the page
 scrolls behind the graph.
 
+## Motion
+
+The instrument is used live on calls, so **how it feels is a product
+requirement**. Three rules carry that, and each is asserted rather than
+asserted-to.
+
+### Zoom tiers are sticky; the camera never is
+
+A tier is entered and left at different scales — 9% either side of each
+threshold (`ZOOM_GATES`). Below that band whichever tier you are already in
+wins.
+
+Why it was needed: parked at k≈2.14 and wobbling the trackpad, the tier
+flipped **23 times in 24 events**, and every close-only label strobed with
+it. A camera resting on a threshold is the normal case, because that is
+where the detail you were looking for appeared.
+
+The band is sized against the wheel's own step: one deliberate notch is a
+17% change and still crosses in one go, while trackpad noise (under 2.3%)
+cannot cross at all. **This is not a debounce** — nothing is delayed,
+dropped or smoothed. Only the discrete tier is sticky, and one owner
+(`AuditInstrument`) decides it so the graph and the header readout can never
+disagree.
+
+### The camera eases, and always loses to the hand
+
+`flyCamera` runs a cancellable rAF tween — **320ms, easeOutCubic, no
+overshoot, no spring, no inertia**. Scale interpolates geometrically:
+0.72 → 2.88 is two doublings, not "plus 2.16", and a linear ramp spends most
+of its time at the wide end and then rushes the rest.
+
+> **THE HAND OUTRANKS THE ANIMATION, ALWAYS.**
+
+Every direct camera write cancels whatever is in flight, and every new
+command retargets from wherever the camera actually reached. There is no
+queue and no lock. Proven interruptible by wheel, by drag, by selecting a
+node, and retargetable by a second command mid-flight.
+
+| Move | Behaviour | Why |
+|---|---|---|
+| Wheel, drag, `+` / `−` | **cut** | adjusts the view you are in — the same act as a wheel notch |
+| Fit, search result, expanding a cluster, explicit focus | **tween** | goes somewhere; continuity is the point |
+
+Selecting a node moves the camera **not at all** — asserted, because a graph
+that yanks the view when you touch something is a graph you stop touching.
+
+### The wheel computes from a live camera
+
+The defect underneath the chatter, and the one that mattered most: the wheel
+handler closed over the `camera` prop, so consecutive events — which a
+trackpad delivers far faster than React commits — each computed from the
+same stale value. Measured, alternating in/out notches that should have
+cancelled exactly instead **walked the zoom apart in both directions at
+once**, 1.05 becoming 1.24 and 0.90 over fourteen events that summed to
+zero. It also silently discarded input: 27 of 40 trackpad events produced a
+camera change; now all 40 do.
+
+There is exactly one live camera (`cameraRef` in `AuditInstrument`, written
+synchronously before React is told anything) and handlers read it through
+`getCamera()`. An earlier attempt kept a local ref synced by an effect and
+was worse than the bug: an effect from an older render lands after a newer
+event and clobbers the ref back.
+
+### Nodes are memoised, and told a stepped scale
+
+`GraphNode` is wrapped in `React.memo` with **React's own shallow
+comparison — deliberately no custom comparator**. A hand-written one is how
+memoisation silently eats a state change; every prop is a primitive, a
+stable callback, or graphology's attribute object (returned by reference),
+which is exactly what shallow comparison handles.
+
+Nodes compensate for zoom in screen space (`1.4 / k` world units so a stroke
+stays 1.4 pixels), which made the raw scale a prop on all 64 and re-rendered
+every one of them on every frame. They are now told `quantizeScale(k)` —
+32 geometric steps per e-fold, a 3.2% granularity that moves a 1.4px stroke
+by four hundredths of a pixel. A slow trackpad zoom usually lands inside the
+step it is already in and React skips the lot. **The camera itself is never
+quantised**; only what the nodes are told.
+
 ## Measured performance
 
-1600×1000 and 1440×900, JSA fully expanded (64 nodes / 52 edges drawn):
+Production build, 1600×1000, JSA, warm. Dev-server first compile is not an
+interaction latency and is excluded — every path is exercised and discarded
+before it is timed.
 
-| Interaction | Median | p95 | Worst |
+| | Before | After | Budget |
 |---|---|---|---|
-| Zoom (12 wheel steps) | 16.7ms | 16.7ms | 16.8ms |
-| Pan (drag) | 16.7ms | 16.8ms | 16.8ms |
-| Expand all | 16.7ms | 16.8ms | 16.8ms |
-| Select node | 16.7ms | 16.8ms | 50–83ms |
-| Search keystrokes | 16.7ms | 33.4ms | ~100ms |
+| Tier flips per 24 micro-scrolls, far boundary | **23** | **0** | 0 |
+| Tier flips per 24 micro-scrolls, medium boundary | **23** | **0** | 0 |
+| Fly-to camera positions | **1** (hard cut) | **14** | animated |
+| Fly-to settle | **0ms** | **395ms** | 300–400ms |
+| Camera commit interval — pan | 16.6ms | 16.7ms | ≤16.7ms |
+| Camera commit interval — trackpad | 25.2ms (27 of 40 events landed) | **19.2ms (40 of 40)** | — |
+| Camera commit interval — wheel notch | 32.5ms (14 of 20) | **24.7ms (20 of 20)** | — |
+| Frame time, pan + zoom + expand | 16.7ms median, p95 16.7 | 16.7ms median, p95 16.7 | ~60fps |
+| Frames over 50ms | 0 of 193 | **0 of 202** | 0 |
+| Hover → visible response | 1ms | **1ms** (worst 11) | <50ms |
+| Click → selected | 13ms | **13ms** (worst 25) | <100ms |
+| Search → match visible | 23ms | **19ms** (worst 34) | <100ms |
+| Expand → state visible | 52ms | **46ms** (worst 56) | <100ms |
 
-Sustained 60fps on camera work. Selection and search each cost one longer
-frame on the React re-render; both are single hitches, not sustained drops.
+The camera commit interval is the metric memoisation moves, and it is
+measured passively — the interval between successive writes of the SVG's own
+`viewBox`, one commit one write, with nothing sampled per frame. Counting
+DOM mutations does not work here: React re-renders an unmemoised node, diffs
+it, finds the output identical and writes nothing, so the mutation count is
+the same either way while the render cost is not.
 
 ## Proven
 
@@ -323,10 +418,26 @@ far zoom, and zooming resolves the dust into differently-sized objects.
 
 `scripts/audit-model-proof.ts` (43) — the finding semantics, unchanged.
 
-**181 assertions, all passing.**
+`scripts/audit-motion-proof.mjs` (26) — the motion contract: no tier chatter
+at either boundary, a full sweep still reaching every tier and returning, the
+tween animating and landing in budget and coming to rest, cancellation by
+wheel / drag / selection, retargeting by a second command, selection moving
+the camera not at all, a search result flying, the camera committing inside a
+frame budget while panning, and every state memoisation must not
+suppress — selection, dimming, release, search marking, promotion.
+
+`scripts/audit-manipulation-check.mjs` (18) — the direct-manipulation session:
+creeping across each boundary, a fast far → close → far sweep, panning while
+zooming, six clicks in half a second, choosing a search result, interrupting a
+fly-to with a pan and with a zoom, clicking mid-expansion, Fit during a tween,
+and the three stable tiers, each captured.
+
+**225 assertions, all passing.**
 
 `scripts/audit-density-measure.ts` — what is on screen at each zoom, per node,
 read from the renderer's own rule rather than a restatement of it.
+`scripts/audit-motion-proof.mjs --json out.json` — the motion measurements
+above, as data.
 `scripts/audit-graph-measure.ts` · `scripts/audit-graph-shoot.mjs` ·
 `scripts/audit-density-shoot.mjs` — the size baseline and the visual sweeps.
 

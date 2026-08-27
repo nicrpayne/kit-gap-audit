@@ -32,11 +32,22 @@ import {
 } from "@/lib/audit/graph";
 import { layoutGraph, CLUSTER_ORDER, FIELD } from "@/lib/audit/graphLayout";
 import { mutateReality } from "@/lib/instrument/reality";
-import SignalGraph, { DEFAULT_CAMERA, MAX_ZOOM, MIN_ZOOM, focusCamera, type Camera } from "./SignalGraph";
+import SignalGraph, { focusCamera } from "./SignalGraph";
+import {
+  DEFAULT_CAMERA,
+  MAX_ZOOM,
+  MIN_ZOOM,
+  FLY_MS,
+  easeOutCubic,
+  interpolateCamera,
+  cameraSettled,
+  prefersReducedMotion,
+  type Camera,
+} from "./cameraMotion";
 import GraphInspector from "./GraphInspector";
 import FindingInspector from "./FindingInspector";
 import AuditReviewConsole, { type ConsoleMode } from "./AuditReviewConsole";
-import { zoomLevel, nodeColor, KIND_LABEL } from "./graphTokens";
+import { zoomLevel, nextZoomLevel, nodeColor, KIND_LABEL, type ZoomLevel } from "./graphTokens";
 
 type Provenance = FindingProvenance & { grounding: ReturnType<typeof groundingLabel> };
 
@@ -65,7 +76,7 @@ export default function AuditInstrument({ initialScopeId }: { initialScopeId?: s
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [hoveredId, setHoveredId] = useState<string | null>(null);
-  const [camera, setCamera] = useState<Camera>(DEFAULT_CAMERA);
+  const [camera, setCameraState] = useState<Camera>(DEFAULT_CAMERA);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [query, setQuery] = useState("");
   const [solo, setSolo] = useState(false);
@@ -74,6 +85,90 @@ export default function AuditInstrument({ initialScopeId }: { initialScopeId?: s
 
   const [busy, setBusy] = useState<ActionId | null>(null);
   const [result, setResult] = useState<{ ok: boolean; message: string } | null>(null);
+
+  // ── THE CAMERA ───────────────────────────────────────────────────────
+  //
+  // Two ways to move it, and the difference is the whole contract:
+  //
+  //   setCamera   a direct write. The hand: wheel, drag, zoom buttons.
+  //               ALWAYS cancels whatever is in flight.
+  //   flyCamera   an eased move to a place. Search results, expanding a
+  //               distant cluster, Fit. Always interruptible, always
+  //               retargetable from wherever it has actually got to.
+  //
+  // The rule that makes it feel like an instrument rather than a slideshow:
+  // THE GRAPH NEVER MAKES YOU WAIT FOR AN ANIMATION. There is no queue, no
+  // lock, and no state that only becomes correct once a tween finishes —
+  // every frame writes a complete camera.
+  const tweenRef = useRef<number | null>(null);
+  const cameraRef = useRef<Camera>(DEFAULT_CAMERA);
+
+  const stopTween = useCallback(() => {
+    if (tweenRef.current !== null) {
+      cancelAnimationFrame(tweenRef.current);
+      tweenRef.current = null;
+    }
+  }, []);
+
+  // The ref is written SYNCHRONOUSLY, before React is told anything. A wheel
+  // gesture delivers events faster than React commits, and each one has to
+  // compute from the result of the last — not from whatever the last render
+  // happened to see. `cameraRef` is therefore the live camera and `camera`
+  // is merely the last one drawn.
+  const setCamera = useCallback(
+    (next: Camera | ((c: Camera) => Camera)) => {
+      stopTween();
+      const v = typeof next === "function" ? next(cameraRef.current) : next;
+      cameraRef.current = v;
+      setCameraState(v);
+    },
+    [stopTween]
+  );
+
+  /** The live camera, for handlers that must chain off their own last result
+      rather than off the last render. */
+  const getCamera = useCallback(() => cameraRef.current, []);
+
+  const flyCamera = useCallback(
+    (to: Camera) => {
+      stopTween();
+      const from = cameraRef.current;
+      // Nothing to show, or the viewer has asked their system for less
+      // motion: arrive rather than animate. Both still land exactly.
+      if (cameraSettled(from, to) || prefersReducedMotion()) {
+        cameraRef.current = to;
+        setCameraState(to);
+        return;
+      }
+      const t0 = performance.now();
+      const step = (now: number) => {
+        const t = Math.min(1, (now - t0) / FLY_MS);
+        // The last frame writes the destination itself, not an interpolation
+        // that rounds to it — a camera that stops NEAR where it said it was
+        // going is a camera you cannot write a proof about.
+        const v = t >= 1 ? to : interpolateCamera(from, to, easeOutCubic(t));
+        cameraRef.current = v;
+        setCameraState(v);
+        tweenRef.current = t < 1 ? requestAnimationFrame(step) : null;
+      };
+      tweenRef.current = requestAnimationFrame(step);
+    },
+    [stopTween]
+  );
+
+  // ── THE DETAIL TIER, WITH HYSTERESIS ─────────────────────────────────
+  //
+  // Owned here rather than in the renderer because the camera is owned here
+  // and the header readout names the same tier — two derivations of one
+  // sticky value would drift apart at exactly the boundary that made it
+  // sticky. Adjusted during render (React's documented pattern for state
+  // that follows a prop) so the tier is never a frame behind the camera.
+  const [level, setLevel] = useState<ZoomLevel>(() => zoomLevel(DEFAULT_CAMERA.k));
+  const [levelAtK, setLevelAtK] = useState<number>(DEFAULT_CAMERA.k);
+  if (camera.k !== levelAtK) {
+    setLevelAtK(camera.k);
+    setLevel((prev) => nextZoomLevel(camera.k, prev));
+  }
 
   const [sweepAngle, setSweepAngle] = useState<number | null>(null);
   const [swept, setSwept] = useState<Set<string>>(new Set());
@@ -103,6 +198,7 @@ export default function AuditInstrument({ initialScopeId }: { initialScopeId?: s
 
   useEffect(() => () => {
     if (rafRef.current) cancelAnimationFrame(rafRef.current);
+    if (tweenRef.current) cancelAnimationFrame(tweenRef.current);
   }, []);
 
   // ── THE CLIENT-SIDE GRAPH ────────────────────────────────────────────
@@ -188,13 +284,16 @@ export default function AuditInstrument({ initialScopeId }: { initialScopeId?: s
   }, [solo, graph, selectedId]);
 
   const select = useCallback((id: string | null) => {
+    // Taking hold of a node is taking control. A tween still running would
+    // carry the field out from under the thing just clicked.
+    stopTween();
     setSelectedId(id);
     setResult(null);
     if (id === null) {
       setSolo(false);
       setMode("A");
     }
-  }, []);
+  }, [stopTween]);
 
   // EVIDENCE SOLO MUST REVEAL WHAT IT LIGHTS.
   //
@@ -256,8 +355,10 @@ export default function AuditInstrument({ initialScopeId }: { initialScopeId?: s
         if (layout?.has(anchor)) {
           const p = layout.get(anchor)!;
           // Framed between the puck and the core, so the cluster's contents
-          // AND its relationship to Reality stay in view.
-          setCamera({
+          // AND its relationship to Reality stay in view. Eased, so the
+          // cluster reads as unfolding where you were already looking rather
+          // than as a new screen.
+          flyCamera({
             x: FIELD.cx + (p.x - FIELD.cx) * 1.02,
             y: FIELD.cy + (p.y - FIELD.cy) * 1.02,
             k: 1.35,
@@ -265,15 +366,15 @@ export default function AuditInstrument({ initialScopeId }: { initialScopeId?: s
         }
       }
     },
-    [expanded, layout]
+    [expanded, layout, flyCamera]
   );
 
   const flyTo = useCallback(
     (id: string) => {
       if (!layout) return;
-      setCamera((c) => focusCamera(layout, id, c, Math.max(c.k, 2.3)));
+      flyCamera(focusCamera(layout, id, cameraRef.current, Math.max(cameraRef.current.k, 2.3)));
     },
-    [layout]
+    [layout, flyCamera]
   );
 
   // ── RUN AUDIT ────────────────────────────────────────────────────────
@@ -385,7 +486,6 @@ export default function AuditInstrument({ initialScopeId }: { initialScopeId?: s
     );
   }
 
-  const level = zoomLevel(camera.k);
   const counts = countKinds(graph);
   const expandableClusters = CLUSTER_ORDER.filter((c) =>
     graph.someNode((_n, a) => a.lane === c && a.slice !== "core")
@@ -474,6 +574,8 @@ export default function AuditInstrument({ initialScopeId }: { initialScopeId?: s
             soloNodes={soloNodes}
             matches={matches}
             camera={camera}
+            level={level}
+            getCamera={getCamera}
             onCamera={setCamera}
             onSelect={select}
             onHover={setHoveredId}
@@ -536,9 +638,14 @@ export default function AuditInstrument({ initialScopeId }: { initialScopeId?: s
                   {level} · {Math.round(camera.k * 100)}%
                 </span>
                 <div className="flex gap-1">
+                  {/* THE ZOOM STEPS CUT; FIT FLIES. A step adjusts the view
+                      you are in — the same act as a wheel notch, and tweening
+                      it would make five quick clicks fight each other, since
+                      each would retarget the last. Fit GOES somewhere, so it
+                      moves like every other going-somewhere. */}
                   <MiniButton onClick={() => setCamera((c) => ({ ...c, k: Math.max(MIN_ZOOM, c.k / 1.35) }))} label="−" title="Zoom out" />
                   <MiniButton onClick={() => setCamera((c) => ({ ...c, k: Math.min(MAX_ZOOM, c.k * 1.35) }))} label="+" title="Zoom in" />
-                  <MiniButton onClick={() => setCamera(DEFAULT_CAMERA)} label="Fit" title="Fit the whole project" shoot="camera-fit" />
+                  <MiniButton onClick={() => flyCamera(DEFAULT_CAMERA)} label="Fit" title="Fit the whole project" shoot="camera-fit" />
                 </div>
               </div>
 

@@ -27,7 +27,7 @@
 // inside SVG's comfort zone, and it keeps every node a real focusable element
 // with an accessible name — which a WebGL canvas cannot.
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type Graph from "graphology";
 import type { AuditGraph, AuditNodeAttributes, NodeKind } from "@/lib/audit/graph";
 import {
@@ -43,7 +43,6 @@ import {
   NODE_SHAPE,
   nodeColor,
   TIER,
-  zoomLevel,
   MEMBERSHIP_RELS,
   LATENT,
   latentRadius,
@@ -51,6 +50,13 @@ import {
   type ZoomLevel,
   type Identity,
 } from "./graphTokens";
+import {
+  DEFAULT_CAMERA,
+  MAX_ZOOM,
+  MIN_ZOOM,
+  quantizeScale,
+  type Camera,
+} from "./cameraMotion";
 
 // KEYBOARD ORDER, AS A CONSTANT. Declared here rather than inside the
 // component so it is not a fresh array identity on every render.
@@ -70,19 +76,11 @@ const KIND_ORDER: NodeKind[] = [
   "checkpoint",
 ];
 
-export interface Camera {
-  x: number;
-  y: number;
-  k: number;
-}
-
-export const DEFAULT_CAMERA: Camera = { x: FIELD.cx, y: FIELD.cy, k: 0.72 };
-
-// Past roughly 4.5x every kind already carries a label and there is no
-// further detail to reveal — only a larger circle. Capping keeps "zoom in"
-// meaning "see more" rather than "see the same thing bigger".
-export const MAX_ZOOM = 4.5;
-export const MIN_ZOOM = 0.34;
+// Camera shape, limits and motion live in ./cameraMotion — pure, so the
+// motion contract is assertable by proof rather than only by eye. Re-exported
+// here because this module is where callers already look for them.
+export { DEFAULT_CAMERA, MAX_ZOOM, MIN_ZOOM };
+export type { Camera };
 
 export interface SignalGraphProps {
   graph: AuditGraph;
@@ -96,6 +94,14 @@ export interface SignalGraphProps {
   /** Search matches, or null when the search box is empty. */
   matches: Set<string> | null;
   camera: Camera;
+  /** The detail tier, decided upstream WITH HYSTERESIS. Not derived from
+      `camera.k` here: a bare threshold makes the tier a coin toss for any
+      camera resting on it, and one owner of that decision is the only way
+      this and the instrument's own readout can agree. */
+  level: ZoomLevel;
+  /** The LIVE camera, not the last rendered one. Wheel and drag events arrive
+      faster than React commits and each must chain off the previous result. */
+  getCamera: () => Camera;
   onCamera: (c: Camera) => void;
   onSelect: (id: string | null) => void;
   onHover: (id: string | null) => void;
@@ -116,6 +122,8 @@ export default function SignalGraph({
   soloNodes,
   matches,
   camera,
+  level,
+  getCamera,
   onCamera,
   onSelect,
   onHover,
@@ -126,10 +134,14 @@ export default function SignalGraph({
 }: SignalGraphProps) {
   const svgRef = useRef<SVGSVGElement | null>(null);
   const [size, setSize] = useState({ w: 1000, h: 800 });
-  // Labelling is now decided per node by identityOf(), which folds the zoom
-  // level and whether the node's cluster is open into one answer — a node can
-  // be at close zoom and still be a nameless mark.
-  const level: ZoomLevel = zoomLevel(camera.k);
+  // Labelling is decided per node by identityOf(), which folds the zoom level
+  // and whether the node's cluster is open into one answer — a node can be at
+  // close zoom and still be a nameless mark.
+  //
+  // THE SCALE THE NODES SEE IS STEPPED. The camera below is exact; this is
+  // the only value handed down to the 64 memoised nodes, so a slow trackpad
+  // zoom stops re-rendering all of them on every frame. See cameraMotion.
+  const nodeScale = useMemo(() => quantizeScale(camera.k), [camera.k]);
 
   // Layout is computed from the WHOLE graph, not the visible subset, so a
   // node does not move when its neighbours are collapsed. Expanding a cluster
@@ -156,18 +168,27 @@ export default function SignalGraph({
     return { x: camera.x - w / 2, y: camera.y - h / 2, w, h };
   }, [camera, size]);
 
-  const toWorld = useCallback(
-    (clientX: number, clientY: number) => {
-      const el = svgRef.current;
-      if (!el) return { x: camera.x, y: camera.y };
-      const r = el.getBoundingClientRect();
-      return {
-        x: vb.x + ((clientX - r.left) / r.width) * vb.w,
-        y: vb.y + ((clientY - r.top) / r.height) * vb.h,
-      };
-    },
-    [vb, camera]
-  );
+  // THE WHEEL COMPUTES FROM A LIVE CAMERA, NOT A RENDERED ONE.
+  //
+  // A trackpad delivers wheel events far faster than React re-renders. A
+  // handler that closes over the `camera` prop therefore computes SEVERAL
+  // consecutive events from the same stale value, and they do not compose:
+  // measured, alternating in/out notches that should have cancelled exactly
+  // instead walked the zoom apart in both directions at once — 1.05 became
+  // 1.24 and 0.90 over fourteen events that summed to zero. That is the
+  // defect underneath what looked like threshold chatter, and it made fast
+  // trackpad zoom subtly non-linear.
+  //
+  // So the handler asks the instrument for the LIVE camera. An earlier
+  // attempt kept a local ref synced from the prop by an effect, and that was
+  // worse than the bug it fixed: an effect from an older render lands AFTER a
+  // newer wheel event and clobbers the ref back to a stale value, so the two
+  // directions of a wobble each walked away from centre instead of
+  // cancelling. There is exactly one live camera, and the instrument owns it.
+  const sizeLive = useRef(size);
+  useEffect(() => {
+    sizeLive.current = size;
+  }, [size]);
 
   // Zoom about the pointer, so the thing under the cursor stays under it.
   //
@@ -179,18 +200,27 @@ export default function SignalGraph({
   const onWheel = useCallback(
     (e: WheelEvent) => {
       e.preventDefault();
-      const before = toWorld(e.clientX, e.clientY);
-      const k = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, camera.k * Math.exp(-e.deltaY * 0.0016)));
-      const w = size.w / k;
-      const h = size.h / k;
-      const el = svgRef.current!.getBoundingClientRect();
-      const fx = (e.clientX - el.left) / el.width;
-      const fy = (e.clientY - el.top) / el.height;
-      onCamera({ x: before.x - (fx - 0.5) * w, y: before.y - (fy - 0.5) * h, k });
+      const el = svgRef.current;
+      if (!el) return;
+      const c = getCamera();
+      const sz = sizeLive.current;
+      const r = el.getBoundingClientRect();
+      const w0 = sz.w / c.k;
+      const h0 = sz.h / c.k;
+      const before = {
+        x: c.x - w0 / 2 + ((e.clientX - r.left) / r.width) * w0,
+        y: c.y - h0 / 2 + ((e.clientY - r.top) / r.height) * h0,
+      };
+      const k = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, c.k * Math.exp(-e.deltaY * 0.0016)));
+      const fx = (e.clientX - r.left) / r.width;
+      const fy = (e.clientY - r.top) / r.height;
+      onCamera({ x: before.x - (fx - 0.5) * (sz.w / k), y: before.y - (fy - 0.5) * (sz.h / k), k });
     },
-    [camera, size, toWorld, onCamera]
+    [getCamera, onCamera]
   );
 
+  // Attached once: `onWheel` no longer changes identity every frame, so the
+  // listener is not torn down and rebuilt on every notch of every gesture.
   useEffect(() => {
     const el = svgRef.current;
     if (!el) return;
@@ -198,11 +228,12 @@ export default function SignalGraph({
     return () => el.removeEventListener("wheel", onWheel);
   }, [onWheel]);
 
-  const drag = useRef<{ sx: number; sy: number; cx: number; cy: number } | null>(null);
+  const drag = useRef<{ sx: number; sy: number; cx: number; cy: number; k: number } | null>(null);
   const moved = useRef(false);
   const onPointerDown = (e: React.PointerEvent) => {
     if (e.button !== 0) return;
-    drag.current = { sx: e.clientX, sy: e.clientY, cx: camera.x, cy: camera.y };
+    const c = getCamera();
+    drag.current = { sx: e.clientX, sy: e.clientY, cx: c.x, cy: c.y, k: c.k };
     moved.current = false;
     (e.target as Element).setPointerCapture?.(e.pointerId);
   };
@@ -212,7 +243,9 @@ export default function SignalGraph({
     const dx = e.clientX - d.sx;
     const dy = e.clientY - d.sy;
     if (Math.abs(dx) + Math.abs(dy) > 3) moved.current = true;
-    onCamera({ x: d.cx - dx / camera.k, y: d.cy - dy / camera.k, k: camera.k });
+    // Measured against the camera captured at pointer-down, so a burst of
+    // moves between commits still lands exactly under the cursor.
+    onCamera({ x: d.cx - dx / d.k, y: d.cy - dy / d.k, k: d.k });
   };
   const onPointerUp = () => {
     drag.current = null;
@@ -618,9 +651,9 @@ export default function SignalGraph({
               x={p.x}
               y={p.y}
               r={p.r}
-              k={camera.k}
+              k={nodeScale}
               identity={identity}
-              latentR={latentRadius(p.r, level, camera.k)}
+              latentR={latentRadius(p.r, level, nodeScale)}
               // A latent mark recedes further when something else is being
               // explained, for the same reason the cluster names do: it is
               // orientation, not the answer.
@@ -649,6 +682,20 @@ export default function SignalGraph({
 
 // ── ONE NODE, IN ITS THREE DEGREES OF PRESENCE ─────────────────────────
 //
+// MEMOISED WITH REACT'S OWN SHALLOW COMPARISON, deliberately — no custom
+// comparator. A hand-written comparator is how memoisation silently eats a
+// state change: forget one prop and selection, dimming, search marking or
+// identity quietly stops updating for some nodes and not others, which is
+// invisible until someone is on a call. Every prop below is a primitive, a
+// stable callback, or graphology's own attribute object (returned by
+// reference, so it changes identity exactly when the graph is rebuilt) —
+// which is precisely the shape shallow comparison handles correctly.
+//
+// What this buys: hovering, selecting, searching and expanding no longer
+// re-render the nodes they did not touch, and a slow zoom no longer
+// re-renders any of them (see `quantizeScale`). Proofs R1–R5 assert that
+// every one of those states still arrives.
+//
 // Shape by kind, colour by state, size by importance in the reading order.
 // Every node is a real focusable target with an accessible name that carries
 // kind AND state in words — colour is never the only channel.
@@ -662,7 +709,7 @@ export default function SignalGraph({
 // Rendering both costs one extra <circle> per node, which at 65 nodes is not
 // a cost. Mounting instead would cost the illusion.
 
-function GraphNode({
+const GraphNode = memo(function GraphNode({
   id,
   attrs,
   x,
@@ -868,7 +915,7 @@ function GraphNode({
       )}
     </g>
   );
-}
+});
 
 const KIND_NAME: Record<string, string> = {
   reality: "Reality",

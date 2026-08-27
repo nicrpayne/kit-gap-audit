@@ -144,10 +144,72 @@ export const ZOOM = {
 
 export type ZoomLevel = "far" | "medium" | "close";
 
+/**
+ * HYSTERESIS — THE DEADBAND EITHER SIDE OF EACH THRESHOLD.
+ *
+ * Measured before this existed: parked at k≈2.14 and wobbling the trackpad,
+ * the tier flipped 23 times in 24 events, and every close-only label —
+ * findings, gates, checkpoints — strobed with it. A bare threshold is a
+ * coin toss for any camera resting on it, and a camera resting on a
+ * threshold is the normal case, because that is where the detail you were
+ * looking for appeared.
+ *
+ * So a tier is entered and left at DIFFERENT scales. Going up you must
+ * clear the threshold by 9%; coming down you must fall 9% below it. Inside
+ * the band, whichever tier you are already in wins.
+ *
+ * 9% is chosen against the wheel's own step size: `exp(-deltaY * 0.0016)`
+ * makes one notch of a mouse wheel (deltaY ≈ 100) a 17% change, so a
+ * deliberate scroll still crosses in a single notch, while trackpad noise
+ * (deltaY ≈ 4–14, under 2.3%) cannot cross at all. The band is wide enough
+ * to be quiet and narrow enough to be invisible.
+ *
+ * THIS IS NOT A DEBOUNCE. The camera stays perfectly continuous — nothing
+ * is delayed, dropped or smoothed. Only the discrete tier is sticky.
+ */
+export const ZOOM_BAND = 0.09;
+
+export const ZOOM_GATES = {
+  /** far → medium */
+  enterMedium: ZOOM.far * (1 + ZOOM_BAND),
+  /** medium → far */
+  exitMedium: ZOOM.far * (1 - ZOOM_BAND),
+  /** medium → close */
+  enterClose: ZOOM.medium * (1 + ZOOM_BAND),
+  /** close → medium */
+  exitClose: ZOOM.medium * (1 - ZOOM_BAND),
+} as const;
+
+/** The tier a camera starting from nothing sits at. Bare thresholds, because
+    with no previous tier there is nothing to be sticky about. */
 export function zoomLevel(k: number): ZoomLevel {
   if (k < ZOOM.far) return "far";
   if (k < ZOOM.medium) return "medium";
   return "close";
+}
+
+/**
+ * The tier to show next, given the one currently showing.
+ *
+ * Idempotent: applying it twice with the same `k` gives the same answer, so
+ * it is safe to call during render and safe under React's double-invocation
+ * in development.
+ *
+ * A single large step still jumps tiers — far straight to close is reachable
+ * — so hysteresis never makes the zoom feel sticky, only stable.
+ */
+export function nextZoomLevel(k: number, from: ZoomLevel): ZoomLevel {
+  switch (from) {
+    case "far":
+      if (k >= ZOOM_GATES.enterClose) return "close";
+      return k >= ZOOM_GATES.enterMedium ? "medium" : "far";
+    case "medium":
+      if (k >= ZOOM_GATES.enterClose) return "close";
+      return k <= ZOOM_GATES.exitMedium ? "far" : "medium";
+    case "close":
+      if (k <= ZOOM_GATES.exitMedium) return "far";
+      return k <= ZOOM_GATES.exitClose ? "medium" : "close";
+  }
 }
 
 /** Which kinds carry a visible label at each level. Reality and cluster
