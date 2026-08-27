@@ -120,12 +120,15 @@ export default function AuditInstrument({ initialScopeId }: { initialScopeId?: s
 
   const layout = useMemo(() => (graph ? layoutGraph(graph) : null), [graph]);
 
-  // ── VISIBILITY: slice + explicit expansion ───────────────────────────
+  // ── WHAT IS OPEN, NOT WHAT EXISTS ────────────────────────────────────
   //
-  // Core is always mounted; anything deeper appears only when its cluster is
-  // expanded. That is the rule that keeps the resting field readable — the
-  // graph must never require every node to be on screen at once.
-  const visible = useMemo(() => {
+  // This set used to be called `visible`, and that name was the bug: a node
+  // outside it was not drawn at all, so 41 of the largest Scope's 65 things
+  // simply were not there and no amount of zooming brought them back. It now
+  // names something narrower and truer — which nodes are showing their
+  // IDENTITY. Everything else is still on screen, at its real seat, as a
+  // latent mark. The renderer owns that distinction; see graphTokens.
+  const opened = useMemo(() => {
     const out = new Set<string>();
     if (!graph) return out;
     graph.forEachNode((n, a) => {
@@ -383,7 +386,7 @@ export default function AuditInstrument({ initialScopeId }: { initialScopeId?: s
   }
 
   const level = zoomLevel(camera.k);
-  const counts = countKinds(graph, visible);
+  const counts = countKinds(graph);
   const expandableClusters = CLUSTER_ORDER.filter((c) =>
     graph.someNode((_n, a) => a.lane === c && a.slice !== "core")
   );
@@ -465,7 +468,7 @@ export default function AuditInstrument({ initialScopeId }: { initialScopeId?: s
         <div className="relative min-h-0" data-shoot="graph-viewport">
           <SignalGraph
             graph={graph}
-            visible={visible}
+            opened={opened}
             selectedId={selectedId}
             hoveredId={hoveredId}
             soloNodes={soloNodes}
@@ -540,8 +543,13 @@ export default function AuditInstrument({ initialScopeId }: { initialScopeId?: s
               </div>
 
               <div className="mt-2 flex items-center justify-between">
-                <span className="i-label" style={{ color: "var(--i-text-faint)" }}>
-                  {visible.size} of {graph.order} shown
+                <span
+                  className="i-label"
+                  style={{ color: "var(--i-text-faint)" }}
+                  data-shoot="opened-readout"
+                  title="Every node is drawn. This is how many are showing their identity rather than sitting as a mark."
+                >
+                  {opened.size} of {graph.order} opened
                 </span>
                 <div className="flex gap-1">
                   <MiniButton
@@ -669,7 +677,8 @@ function GraphOverview({
         <div className="mt-2.5 flex items-baseline gap-2">
           <span className="i-readout text-[30px] leading-none text-[var(--i-text)]">{graph.order}</span>
           <span className="text-[12px] text-[var(--i-text-soft)]">
-            things Audit can see, and {graph.size} relationships between them
+            things Audit can see, and {graph.size} relationships between them —
+            all of them on the field
           </span>
         </div>
       </div>
@@ -793,10 +802,16 @@ function ShieldMark() {
   );
 }
 
-function countKinds(graph: AuditGraph, visible: Set<string>): Record<string, number> {
+/**
+ * The whole graph, by kind.
+ *
+ * Deliberately not filtered by what is open: the panel is headed "What is out
+ * there", the field now draws every one of these, and a breakdown that summed
+ * to 24 under a headline reading 65 was just wrong.
+ */
+function countKinds(graph: AuditGraph): Record<string, number> {
   const out: Record<string, number> = {};
-  graph.forEachNode((n, a) => {
-    if (!visible.has(n)) return;
+  graph.forEachNode((_n, a) => {
     if (a.kind === "reality" || a.kind === "scope") return;
     out[a.kind] = (out[a.kind] ?? 0) + 1;
   });

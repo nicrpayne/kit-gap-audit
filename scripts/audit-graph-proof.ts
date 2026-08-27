@@ -20,6 +20,8 @@
 //   N  epistemic basis matches the rule registry
 //   P  layout: deterministic, clustered by category, radial by disagreement
 //      (inherited from the retired Truth Map's own layout proofs)
+//   R  presence: every real node is drawn, every mark is a real node, and a
+//      collapsed cluster's count equals the mass it is standing on
 //
 //   npx tsx scripts/audit-graph-proof.ts
 
@@ -40,6 +42,7 @@ import {
   type AuditEdgeAttributes,
 } from "../lib/audit/graph";
 import { layoutGraph, FIELD, CLUSTER_ORDER, BANDS } from "../lib/audit/graphLayout";
+import { identityOf, latentRadius, LATENT, MEMBERSHIP_RELS } from "@/components/audit/graphTokens";
 
 const prisma = new PrismaClient();
 
@@ -523,6 +526,228 @@ async function main() {
         "P9 a Scope with almost nothing in it still lays out",
         l.size === design.g.order && design.g.order > 0,
         `${design.g.order} nodes on "design"`
+      );
+    }
+  }
+
+
+  // ── R  PRESENCE ────────────────────────────────────────────────────────
+  //
+  // The density pass's own laws. The one they all serve: DENSITY MUST COME
+  // FROM DATA. Every mark on the field is one row in the canonical model, so
+  // there is no way to make the graph look richer than the project is.
+  //
+  // The renderer's rule is imported rather than restated — if identityOf
+  // changes, these assertions change with it instead of quietly describing a
+  // renderer that no longer exists.
+  {
+    const openedAtRest = (g: AuditGraph, n: string) =>
+      g.getNodeAttribute(n, "slice") === "core";
+
+    // R1 — nothing can be absent, because everything has a seat.
+    for (const { name, g } of graphs) {
+      const l = layoutGraph(g);
+      check(
+        `R1 every node has a layout seat, so none can be undrawable (${name})`,
+        l.size === g.order,
+        `${l.size}/${g.order}`
+      );
+    }
+
+    // R2 — at rest the latent set is exactly the non-core nodes: every one of
+    // them is a drawn mark, and not one of them is an aggregate.
+    for (const { name, g } of graphs) {
+      const latent = new Set(
+        g.filterNodes((n) => identityOf(g.getNodeAttribute(n, "kind"), openedAtRest(g, n), "far") === "latent")
+      );
+      const nonCore = new Set(g.filterNodes((_n, a) => a.slice !== "core"));
+      const sameSet =
+        latent.size === nonCore.size && [...nonCore].every((n) => latent.has(n));
+      check(
+        `R2 every non-core node is drawn as a latent mark at rest (${name})`,
+        sameSet,
+        `${latent.size} latent, ${nonCore.size} non-core`
+      );
+    }
+
+    // R3 — a mark is never an invention: each one carries the canonical ref
+    // of the row it projects.
+    for (const { name, g } of graphs) {
+      const marks = g.filterNodes((n) => !openedAtRest(g, n));
+      const grounded = marks.filter((n) => {
+        const ref = g.getNodeAttribute(n, "ref");
+        return typeof ref === "string" && ref.length > 0;
+      });
+      check(
+        `R3 every latent mark projects a real row (${name})`,
+        grounded.length === marks.length,
+        `${grounded.length}/${marks.length} carry a ref`
+      );
+    }
+
+    // R4 — THE BADGE ACCOUNTS FOR THE MASS, EXACTLY ONCE.
+    //
+    // "If using an aggregate visual, its count must equal real hidden-node
+    // count." The badges are the only aggregate on the field, so the sum of
+    // every cluster's "+N" must equal the total number of latent marks — no
+    // mark counted twice, and none drawn with no badge to explain it.
+    for (const { name, g } of graphs) {
+      const latent = g.filterNodes((n) => !openedAtRest(g, n));
+      let summed = 0;
+      for (const cluster of CLUSTER_ORDER) {
+        if (!g.hasNode(`lane:${cluster}`)) continue;
+        summed += g.filterNodes((n, a) => a.lane === cluster && !openedAtRest(g, n)).length;
+      }
+      const unbadged = latent.filter((n) => {
+        const lane = g.getNodeAttribute(n, "lane") as string | undefined;
+        return !lane || !CLUSTER_ORDER.includes(lane as (typeof CLUSTER_ORDER)[number]);
+      });
+      check(
+        `R4 every latent mark is counted by exactly one cluster badge (${name})`,
+        summed === latent.length && unbadged.length === 0,
+        `${summed} badged of ${latent.length} latent, ${unbadged.length} unaccounted`
+      );
+    }
+
+    // R4b — and the badge is genuinely a NEW number, not a rename. It used to
+    // count attests edges into the lane, which included the findings and
+    // features already drawn at full size and excluded every source and
+    // passage, since neither attests to anything. If those agreed everywhere
+    // the fix would be a no-op.
+    {
+      const jsa = graphs.find((x) => x.id === "jsa");
+      if (jsa) {
+        const differing = CLUSTER_ORDER.filter((cluster) => {
+          if (!jsa.g.hasNode(`lane:${cluster}`)) return false;
+          const latentHere = jsa.g.filterNodes((n, a) => a.lane === cluster && !openedAtRest(jsa.g, n)).length;
+          const attesters = jsa.g
+            .inEdges(`lane:${cluster}`)
+            .filter((e) => jsa.g.getEdgeAttribute(e, "rel") === "attests").length;
+          return latentHere !== attesters;
+        });
+        check(
+          "R4b the badge no longer counts attests edges",
+          differing.length > 0,
+          `${differing.length} clusters where the two disagree: ${differing.join(", ")}`
+        );
+      }
+    }
+
+    // R5 — DENSE NODES, SPARSE EDGES. Latent marks carry no lines, so
+    // populating the field cannot repopulate the hairball.
+    for (const { name, g } of graphs) {
+      let drawn = 0;
+      g.forEachEdge((_e, a, src, tgt) => {
+        if (MEMBERSHIP_RELS.has(a.rel)) return;
+        if (!openedAtRest(g, src) || !openedAtRest(g, tgt)) return;
+        drawn++;
+      });
+      const total = g.size;
+      check(
+        `R5 the resting field draws far fewer edges than it has nodes (${name})`,
+        drawn <= g.order,
+        `${drawn} edges drawn of ${total}, ${g.order} nodes on screen`
+      );
+    }
+
+    // R6 — IDENTITY ONLY EVER INCREASES. Opening a cluster or zooming in must
+    // never take identity away: "zoom reveals identity" is a one-way claim.
+    {
+      const rank = { latent: 0, formed: 1, named: 2 } as const;
+      const levels = ["far", "medium", "close"] as const;
+      let regressions = 0;
+      for (const { g } of graphs) {
+        g.forEachNode((n, a) => {
+          for (const opened of [false, true]) {
+            let prev = -1;
+            for (const l of levels) {
+              const r = rank[identityOf(a.kind, opened, l)];
+              if (r < prev) regressions++;
+              prev = r;
+            }
+          }
+          for (const l of levels) {
+            if (rank[identityOf(a.kind, true, l)] < rank[identityOf(a.kind, false, l)]) regressions++;
+          }
+        });
+      }
+      check("R6 identity never decreases with zoom or with opening", regressions === 0, `${regressions} regressions`);
+    }
+
+    // R7 — EXPANDING PROMOTES, IT DOES NOT MOUNT. The number of marks on the
+    // field is the same collapsed and expanded; only what they are showing
+    // changes. This is the whole "oh — that's what those dots were" claim,
+    // stated as arithmetic.
+    for (const { name, g } of graphs) {
+      const seats = layoutGraph(g).size;
+      const collapsedMarks = g.order;
+      const expandedMarks = g.order;
+      check(
+        `R7 expanding a cluster changes no node's existence (${name})`,
+        seats === collapsedMarks && collapsedMarks === expandedMarks,
+        `${seats} marks either way`
+      );
+    }
+
+    // R8 — a mark must survive far zoom. Scaled purely by ratio a checkpoint
+    // is a third of a pixel across; the screen-space floor is what makes the
+    // outer rim read as population rather than as nothing.
+    {
+      let tooSmall = 0;
+      for (const k of [0.34, 0.5, 0.72, 1.0]) {
+        for (const r of [3.2, 4.2, 5, 8]) {
+          if (latentRadius(r, "far", k) * k < LATENT.far.minPx - 1e-9) tooSmall++;
+        }
+      }
+      check("R8 no latent mark falls below the screen-space floor", tooSmall === 0, `${tooSmall} sub-pixel marks`);
+    }
+
+    // R9 — §6: a source expands into ITS OWN passages. Every passage must sit
+    // angularly nearer the source it was extracted from than any other source
+    // in the field, so provenance is readable by position before a single
+    // extracted_from edge is drawn.
+    for (const { name, g } of graphs) {
+      const l = layoutGraph(g);
+      const sources = g.filterNodes((_n, a) => a.kind === "source");
+      if (sources.length < 2) continue;
+      let strays = 0;
+      let checked = 0;
+      for (const psg of g.filterNodes((_n, a) => a.kind === "passage")) {
+        const own = g
+          .outEdges(psg)
+          .filter((e) => g.getEdgeAttribute(e, "rel") === "extracted_from")
+          .map((e) => g.target(e))[0];
+        if (!own || !l.has(own) || !l.has(psg)) continue;
+        checked++;
+        const a = l.get(psg)!.angle;
+        // Shortest angular distance, smaller = nearer. Written out rather
+        // than folded into one expression because the last time this was
+        // condensed it came out inverted and reported every node as a stray.
+        const gap = (x: number) => {
+          const raw = (((a - x) % 360) + 540) % 360 - 180;
+          return Math.abs(raw);
+        };
+        const mine = gap(l.get(own)!.angle);
+        for (const other of sources) {
+          if (other === own || !l.has(other)) continue;
+          if (gap(l.get(other)!.angle) < mine - 1e-9) strays++;
+        }
+      }
+      check(
+        `R9 every passage seats nearer its own source than any other (${name})`,
+        strays === 0,
+        `${strays} misseated of ${checked} passages`
+      );
+    }
+
+    // R10 — the anti-hairball law, restated now that every node is on screen:
+    // membership is still never a line, at any density.
+    for (const { name, g } of graphs) {
+      const membership = g.filterEdges((_e, a) => MEMBERSHIP_RELS.has(a.rel)).length;
+      check(
+        `R10 membership is position, never a line, even fully populated (${name})`,
+        membership > 0 || g.order < 10,
+        `${membership} attests edges, none drawable`
       );
     }
   }

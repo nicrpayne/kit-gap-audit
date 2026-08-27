@@ -50,10 +50,18 @@ export const FIELD = {
   // belong to that" — at 508/590 the feature chips read as loose marks
   // floating past the Linear label rather than as its contents. The reference
   // groups by tight arcs for exactly this reason.
-  featureR: 474,
-  childR: 548,
+  //
+  // Tightened again once every node was drawn rather than only the opened
+  // ones. The outer stack used to run 474 / 548 / 592-600 / 640, which put a
+  // cluster's checkpoints 216 units beyond its own name — far enough that
+  // they read as specks near the edge of the field rather than as that
+  // cluster's contents. The whole substrate now lives within 170 units of the
+  // puck it belongs to. Disagreement radius is untouched: every one of these
+  // rings is outside the bands, so what the geometry MEANS has not moved.
+  featureR: 470,
+  childR: 512,
   /** Nothing is drawn past this. */
-  edgeR: 640,
+  edgeR: 594,
 } as const;
 
 export const BANDS = [
@@ -228,10 +236,22 @@ export function layoutGraph(graph: AuditGraph): GraphLayout {
     }
   };
 
-  onClusterRing("dependency", FIELD.featureR, 0.55);
-  onClusterRing("decision", FIELD.featureR, 0.55);
-  onClusterRing("decisionGate", FIELD.childR, 0.5);
-  onClusterRing("intelligence", FIELD.featureR, 0.55);
+  // ARC WIDTHS ARE A DENSITY DECISION, NOT A SPACING ONE.
+  //
+  // These were roughly twice as wide, and with every node now drawn at every
+  // zoom the cost showed: three checkpoints fanned across 27 degrees at the
+  // outermost radius sit 150 units apart and read as three unrelated specks
+  // near the edge of the field, not as "this cluster has substance". Narrow
+  // arcs turn the same three rows into a legible constellation sitting where
+  // its cluster label is — which is the same argument that pulled the feature
+  // ring in from 508 to 474, applied to everything outboard of it.
+  //
+  // Nothing here changes WHICH nodes exist or WHERE their cluster is. Only
+  // how tightly a cluster holds its own.
+  onClusterRing("dependency", FIELD.featureR, 0.42);
+  onClusterRing("decision", FIELD.featureR, 0.42);
+  onClusterRing("decisionGate", FIELD.childR, 0.36);
+  onClusterRing("intelligence", FIELD.featureR, 0.42);
 
   // ── FEATURES, and the work that implements them ──────────────────────
   //
@@ -243,7 +263,7 @@ export function layoutGraph(graph: AuditGraph): GraphLayout {
     const cluster = "linear";
     const base = sectorAngle(cluster);
     features.forEach((fid, i) => {
-      const fAngle = fanAngle(base, i, features.length, SECTOR_ARC * 0.62);
+      const fAngle = fanAngle(base, i, features.length, SECTOR_ARC * 0.5);
       place(fid, fAngle, FIELD.featureR, cluster);
 
       // Its own work items fan around it, in a slice of the sector
@@ -253,7 +273,7 @@ export function layoutGraph(graph: AuditGraph): GraphLayout {
         .filter((e) => graph.getEdgeAttribute(e, "rel") === "implements")
         .map((e) => graph.source(e))
         .sort();
-      const kidArc = Math.min(16, (SECTOR_ARC * 0.62) / Math.max(1, features.length) - 1.2);
+      const kidArc = Math.min(11, (SECTOR_ARC * 0.5) / Math.max(1, features.length) - 1);
       kids.forEach((kid, k) => place(kid, fanAngle(fAngle, k, kids.length, kidArc), FIELD.childR, cluster));
     });
 
@@ -261,35 +281,90 @@ export function layoutGraph(graph: AuditGraph): GraphLayout {
     // so it is visibly ungrouped rather than pretending to belong.
     const orphans = byKind("work").filter((id) => !out.has(id));
     orphans.forEach((id, i) =>
-      place(id, fanAngle(base, i, orphans.length, SECTOR_ARC * 0.9), FIELD.childR + 44, cluster)
+      place(id, fanAngle(base, i, orphans.length, SECTOR_ARC * 0.45), FIELD.childR + 44, cluster)
     );
   }
 
-  // ── EVIDENCE CHAIN ───────────────────────────────────────────────────
-  onClusterRing("source", FIELD.childR, 0.8);
+  // ── EVIDENCE CHAIN — a source expands into its OWN passages ──────────
+  //
+  // Sources are seated first and each is given a SLOT of its cluster's arc;
+  // its passages then fan inside that slot and nowhere else. The previous
+  // pass fanned every passage across a fixed 14 degrees regardless of how
+  // many sources shared the sector, so with three sources 14.4 degrees apart
+  // one source's evidence sat under its neighbour — the provenance chain read
+  // backwards at exactly the zoom where you go looking for it.
+  //
+  // Because a passage now always lands nearer its own source than any other,
+  // "which source is this quote from" is answerable by position before the
+  // extracted_from edge is drawn at all. A proof asserts that.
   {
-    // A passage seats next to the source it was extracted from, so the
-    // provenance chain is spatially readable before any edge is drawn.
-    const passages = byKind("passage");
-    const bySource = new Map<string, string[]>();
-    for (const id of passages) {
+    const childrenOf = new Map<string, string[]>();
+    for (const id of byKind("passage")) {
       const src = graph
         .outEdges(id)
         .filter((e) => graph.getEdgeAttribute(e, "rel") === "extracted_from")
         .map((e) => graph.target(e))[0];
-      bySource.set(src ?? "__none", [...(bySource.get(src ?? "__none") ?? []), id]);
+      const key = src ?? "__unsourced";
+      childrenOf.set(key, [...(childrenOf.get(key) ?? []), id]);
     }
-    for (const [src, ids] of bySource) {
-      const anchor = out.get(src);
-      const base = anchor ? anchor.angle : sectorAngle("evidence");
-      ids
-        .sort()
-        .forEach((id, i) => place(id, fanAngle(base, i, ids.length, 14), FIELD.childR + 52, "evidence"));
+
+    const byCluster = new Map<string, string[]>();
+    for (const id of byKind("source")) {
+      const cluster = (graph.getNodeAttribute(id, "lane") as string) ?? "evidence";
+      byCluster.set(cluster, [...(byCluster.get(cluster) ?? []), id]);
+    }
+
+    for (const [cluster, ids] of byCluster) {
+      const base = sectorAngle(cluster);
+      // Wider than the other rings on purpose: a source carries a long,
+      // human label ("Delivery sync · 21 Aug"), and three of them packed into
+      // a narrow arc collide as text long before they collide as marks.
+      const arc = SECTOR_ARC * 0.66;
+      const slot = arc / Math.max(1, ids.length);
+      ids.forEach((sid, i) => {
+        const sAngle = fanAngle(base, i, ids.length, arc);
+        place(sid, sAngle, FIELD.childR, cluster);
+        const kids = (childrenOf.get(sid) ?? []).sort();
+        // Never wider than the slot the source owns, so two sources in one
+        // sector cannot interleave their evidence.
+        const kidArc = Math.min(9, slot * 0.72);
+        kids.forEach((kid, k) =>
+          place(
+            kid,
+            // A LONE PASSAGE STEPS OFF ITS SOURCE'S RAY. Everywhere else a
+            // single child sits on the axis, but source and passage are only
+            // 52 units apart radially, so exactly collinear their two labels
+            // land on one baseline and print over each other. The nudge is
+            // what makes them read as a pair rather than as a smear.
+            kids.length === 1 ? sAngle + 3.2 : fanAngle(sAngle, k, kids.length, kidArc),
+            FIELD.childR + 52,
+            cluster
+          )
+        );
+      });
+    }
+
+    // A passage whose source is not in this graph still gets a seat, on its
+    // own cluster's axis — absent provenance is a fact about the data, not a
+    // reason to drop the passage.
+    const strays = byKind("passage").filter((id) => !out.has(id));
+    const strayByCluster = new Map<string, string[]>();
+    for (const id of strays) {
+      const cluster = (graph.getNodeAttribute(id, "lane") as string) ?? "evidence";
+      strayByCluster.set(cluster, [...(strayByCluster.get(cluster) ?? []), id]);
+    }
+    for (const [cluster, ids] of strayByCluster) {
+      const base = sectorAngle(cluster);
+      ids.forEach((id, i) =>
+        place(id, fanAngle(base, i, ids.length, SECTOR_ARC * 0.42), FIELD.childR + 52, cluster)
+      );
     }
   }
 
   // ── CHECKPOINTS, the outermost detail ────────────────────────────────
-  onClusterRing("checkpoint", FIELD.edgeR, 0.75);
+  // The largest single kind, and the one that most needed tightening: at the
+  // widest radius a wide fan scatters them further than any other ring.
+  onClusterRing("checkpoint", FIELD.edgeR, 0.28);
 
   // Anything the passes above missed still gets a seat rather than vanishing.
   for (const id of graph.nodes()) {

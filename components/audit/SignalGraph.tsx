@@ -13,9 +13,12 @@
 //      decision is the difference between ~40 readable relationships and 162
 //      crossing strokes.
 //
-//   2. PROGRESSIVE DETAIL. The camera decides which slice is mounted and which
-//      kinds carry labels. Far zoom is project shape; close zoom is tickets
-//      and passages. Nothing renders "just in case".
+//   2. PROGRESSIVE IDENTITY — NOT PROGRESSIVE EXISTENCE. Every real node is
+//      drawn at every zoom, at its real seat. What changes is how much of
+//      itself it shows: a latent mark, then its shape, then its name. Zoom
+//      reveals identity; it does not create the world. Expanding a cluster
+//      promotes marks that were already on screen rather than conjuring
+//      fourteen new things, which is what it used to do.
 //
 //   3. EVIDENCE OUTRANKS INFERENCE. Attested edges are solid at rest; inferred
 //      ones are dashed and faint until something is selected.
@@ -41,9 +44,12 @@ import {
   nodeColor,
   TIER,
   zoomLevel,
-  labelsFor,
   MEMBERSHIP_RELS,
+  LATENT,
+  latentRadius,
+  identityOf,
   type ZoomLevel,
+  type Identity,
 } from "./graphTokens";
 
 // KEYBOARD ORDER, AS A CONSTANT. Declared here rather than inside the
@@ -80,8 +86,9 @@ export const MIN_ZOOM = 0.34;
 
 export interface SignalGraphProps {
   graph: AuditGraph;
-  /** Node ids currently mounted — the slice, minus collapsed clusters. */
-  visible: Set<string>;
+  /** Node ids whose cluster is open — the core slice, plus expanded clusters.
+      Everything else is still DRAWN, as a latent mark. */
+  opened: Set<string>;
   selectedId: string | null;
   hoveredId: string | null;
   /** Evidence Solo result, or null when off. */
@@ -103,7 +110,7 @@ export interface SignalGraphProps {
 
 export default function SignalGraph({
   graph,
-  visible,
+  opened,
   selectedId,
   hoveredId,
   soloNodes,
@@ -119,8 +126,10 @@ export default function SignalGraph({
 }: SignalGraphProps) {
   const svgRef = useRef<SVGSVGElement | null>(null);
   const [size, setSize] = useState({ w: 1000, h: 800 });
+  // Labelling is now decided per node by identityOf(), which folds the zoom
+  // level and whether the node's cluster is open into one answer — a node can
+  // be at close zoom and still be a nameless mark.
   const level: ZoomLevel = zoomLevel(camera.k);
-  const labelled = useMemo(() => labelsFor(level), [level]);
 
   // Layout is computed from the WHOLE graph, not the visible subset, so a
   // node does not move when its neighbours are collapsed. Expanding a cluster
@@ -247,22 +256,41 @@ export default function SignalGraph({
   };
 
   // ── WHAT IS DRAWN ────────────────────────────────────────────────────
-  const drawnNodes = useMemo(
-    () => graph.nodes().filter((n) => visible.has(n) && layout.has(n)),
-    [graph, visible, layout]
-  );
+  //
+  // EVERY SEATED NODE. A collapsed cluster no longer means "not here", it
+  // means "not yet itself" — the difference between a field that admits how
+  // big the project is and one that pretends 41 of its 65 things do not
+  // exist.
+  const drawnNodes = useMemo(() => graph.nodes().filter((n) => layout.has(n)), [graph, layout]);
 
+  // DENSE NODES DO NOT REQUIRE DENSE EDGES.
+  //
+  // Latent marks carry no lines. Drawing every relationship the moment every
+  // node is on screen is precisely the hairball this layout was built to
+  // avoid, and an edge to something with no name on it explains nothing
+  // anyway. An edge appears when BOTH its endpoints have been opened.
   const drawnEdges = useMemo(() => {
     const out: { id: string; from: string; to: string; rel: string; basis: string }[] = [];
     graph.forEachEdge((e, a, s, t) => {
       // MEMBERSHIP IS NEVER AN EDGE. See the header.
       if (MEMBERSHIP_RELS.has(a.rel)) return;
-      if (!visible.has(s) || !visible.has(t)) return;
+      if (!opened.has(s) || !opened.has(t)) return;
       if (!layout.has(s) || !layout.has(t)) return;
       out.push({ id: e, from: s, to: t, rel: a.rel, basis: a.basis });
     });
     return out;
-  }, [graph, visible, layout]);
+  }, [graph, opened, layout]);
+
+  /** Latent nodes per cluster — what "+N" is actually counting. */
+  const latentByCluster = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const n of drawnNodes) {
+      if (opened.has(n)) continue;
+      const lane = graph.getNodeAttribute(n, "lane") as string | undefined;
+      if (lane) m.set(lane, (m.get(lane) ?? 0) + 1);
+    }
+    return m;
+  }, [drawnNodes, opened, graph]);
 
   // KEYBOARD ORDER FOLLOWS MEANING, NOT GEOMETRY.
   //
@@ -270,16 +298,20 @@ export default function SignalGraph({
   // would make tabbing wander the field at random. Sorting by slice, then
   // kind, then label gives a tab sequence that reads like the inspector's own
   // hierarchy: Reality, clusters, findings, then detail.
+  //
+  // Latent marks are deliberately NOT in it: they have no name to announce
+  // and clicking one would do nothing. The keyboard route to a collapsed
+  // cluster's contents is its own toggle, which says how many there are.
   const tabOrder = useMemo(
     () =>
-      [...drawnNodes].sort((a, b) => {
+      drawnNodes.filter((n) => opened.has(n)).sort((a, b) => {
         const aa = graph.getNodeAttributes(a);
         const ba = graph.getNodeAttributes(b);
         const k = KIND_ORDER.indexOf(aa.kind) - KIND_ORDER.indexOf(ba.kind);
         if (k !== 0) return k;
         return String(aa.label).localeCompare(String(ba.label));
       }),
-    [drawnNodes, graph]
+    [drawnNodes, opened, graph]
   );
   const tabIndexOf = useMemo(() => {
     const m = new Map<string, number>();
@@ -295,7 +327,7 @@ export default function SignalGraph({
       viewBox={`${vb.x} ${vb.y} ${vb.w} ${vb.h}`}
       style={{ width: "100%", height: "100%", display: "block", cursor: drag.current ? "grabbing" : "grab", touchAction: "none" }}
       role="application"
-      aria-label={`Signal Graph: ${drawnNodes.length} nodes, ${drawnEdges.length} relationships, ${level} zoom`}
+      aria-label={`Signal Graph: ${drawnNodes.length} nodes, ${opened.size} opened and ${drawnNodes.length - opened.size} collapsed into marks, ${drawnEdges.length} relationships shown, ${level} zoom`}
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
@@ -335,6 +367,21 @@ export default function SignalGraph({
           fill="none"
           stroke="var(--i-text-soft)"
           strokeWidth={1 / camera.k}
+        />
+        {/* THE OUTER BOUND. With the substrate drawn at every zoom, the
+            cluster ring stopped being the edge of the map — 41 marks now sit
+            outside it, and with nothing enclosing them they read as specks
+            that escaped rather than as the project's outer band. This closes
+            the field. It is a structural guide at structure opacity: it
+            states no fact and stands for no row. */}
+        <circle
+          cx={FIELD.cx}
+          cy={FIELD.cy}
+          r={FIELD.edgeR}
+          fill="none"
+          stroke="var(--i-text-soft)"
+          strokeWidth={1 / camera.k}
+          opacity={0.6}
         />
         {CLUSTER_ORDER.map((c, i) => {
           const a = (-90 + (i + 0.5) * (360 / CLUSTER_ORDER.length)) * (Math.PI / 180);
@@ -455,12 +502,18 @@ export default function SignalGraph({
       <g data-shoot="graph-clusters">
         {CLUSTER_ORDER.map((cluster) => {
           const laneId = `lane:${cluster}`;
-          if (!graph.hasNode(laneId) || !visible.has(laneId)) return null;
+          // A lane is core, so it is always open — but guard anyway rather
+          // than assume the slice.
+          if (!graph.hasNode(laneId) || !opened.has(laneId)) return null;
           const attrs = graph.getNodeAttributes(laneId);
           const p = clusterLabelPoint(cluster);
-          const childCount = graph
-            .inEdges(laneId)
-            .filter((e) => graph.getEdgeAttribute(e, "rel") === "attests").length;
+          // THE COUNT IS THE MASS. It used to count every node attesting to
+          // the lane, including the findings and features already drawn at
+          // full size — so "+14" sat beside eighteen things and named none of
+          // them. It now counts exactly the latent marks in this sector: what
+          // you can see but cannot yet read, and precisely what expanding
+          // will name.
+          const childCount = latentByCluster.get(cluster) ?? 0;
           const isOpen = expanded.has(cluster);
           const dim = soloNodes || matches || focus ? 0.34 : 1;
           const flip = p.angle > 90 || p.angle < -90;
@@ -483,7 +536,7 @@ export default function SignalGraph({
               >
                 {attrs.label}
               </text>
-              {childCount > 0 && (
+              {(childCount > 0 || isOpen) && (
                 <text
                   x={p.x}
                   y={p.y + 15 / camera.k}
@@ -497,6 +550,7 @@ export default function SignalGraph({
                   }}
                   style={{ cursor: "pointer" }}
                   data-shoot={`cluster-toggle-${cluster}`}
+                  data-latent={childCount}
                 >
                   {isOpen ? "− collapse" : `+ ${childCount}`}
                 </text>
@@ -554,6 +608,8 @@ export default function SignalGraph({
           const attrs = graph.getNodeAttributes(id);
           if (attrs.kind === "reality") return null; // drawn above, as the hero
           const p = layout.get(id)!;
+          const identity = identityOf(attrs.kind, opened.has(id), level);
+          const latent = identity === "latent";
           return (
             <GraphNode
               key={id}
@@ -563,13 +619,24 @@ export default function SignalGraph({
               y={p.y}
               r={p.r}
               k={camera.k}
-              opacity={nodeOpacity(id)}
+              identity={identity}
+              latentR={latentRadius(p.r, level, camera.k)}
+              // A latent mark recedes further when something else is being
+              // explained, for the same reason the cluster names do: it is
+              // orientation, not the answer.
+              opacity={
+                latent
+                  ? soloNodes || matches || focus
+                    ? TIER.latentDimmed
+                    : LATENT[level].opacity
+                  : nodeOpacity(id)
+              }
               selected={selectedId === id}
               hovered={hoveredId === id}
               matched={matches?.has(id) ?? false}
               swept={swept.has((attrs.lane as string) ?? "")}
-              labelled={labelled.has(attrs.kind) || selectedId === id || hoveredId === id}
-              tabIndex={tabIndexOf.get(id) ?? 0}
+              labelled={identity === "named" || selectedId === id || hoveredId === id}
+              tabIndex={tabIndexOf.get(id) ?? -1}
               onSelect={onSelect}
               onHover={onHover}
             />
@@ -580,11 +647,20 @@ export default function SignalGraph({
   );
 }
 
-// ── ONE NODE ───────────────────────────────────────────────────────────
+// ── ONE NODE, IN ITS THREE DEGREES OF PRESENCE ─────────────────────────
 //
 // Shape by kind, colour by state, size by importance in the reading order.
 // Every node is a real focusable target with an accessible name that carries
 // kind AND state in words — colour is never the only channel.
+//
+// THE LATENT MARK AND THE FORMED NODE ARE THE SAME ELEMENT. Both are always
+// rendered, one of them at zero opacity, and expanding a cluster cross-fades
+// between them over 260ms at a fixed seat. That is the whole trick: nothing
+// mounts, nothing unmounts, nothing moves. The mark you were looking at
+// becomes the thing it always was.
+//
+// Rendering both costs one extra <circle> per node, which at 65 nodes is not
+// a cost. Mounting instead would cost the illusion.
 
 function GraphNode({
   id,
@@ -593,6 +669,8 @@ function GraphNode({
   y,
   r,
   k,
+  identity,
+  latentR,
   opacity,
   selected,
   hovered,
@@ -609,6 +687,8 @@ function GraphNode({
   y: number;
   r: number;
   k: number;
+  identity: Identity;
+  latentR: number;
   opacity: number;
   selected: boolean;
   hovered: boolean;
@@ -619,6 +699,8 @@ function GraphNode({
   onSelect: (id: string | null) => void;
   onHover: (id: string | null) => void;
 }) {
+  const latent = identity === "latent";
+  const leftHalf = x < FIELD.cx;
   const color = nodeColor(attrs);
   const shape = NODE_SHAPE[attrs.kind];
   const stroke = 1.4 / k;
@@ -698,14 +780,30 @@ function GraphNode({
   return (
     <g
       opacity={opacity}
-      style={{ transition: "opacity 200ms ease" }}
+      style={{ transition: "opacity 260ms ease" }}
       data-shoot={`node-${id}`}
       data-kind={attrs.kind}
+      data-identity={identity}
       data-selected={selected ? "true" : undefined}
       data-matched={matched ? "true" : undefined}
     >
+      {/* LATENT: this node, before it is anything but population. Kept in the
+          node's own colour rather than a uniform grey, so the Evidence rim
+          reads faint and an intelligence package reads violet even while
+          neither is readable — that is real information, from real rows. */}
+      <circle
+        cx={x}
+        cy={y}
+        r={latentR}
+        fill={color}
+        opacity={latent ? 1 : 0}
+        style={{ transition: "opacity 260ms ease" }}
+        aria-hidden="true"
+        data-shoot="latent-mark"
+      />
+
       {/* Halo: selection, search match, or the sweep passing over. */}
-      {(selected || matched || swept) && (
+      {!latent && (selected || matched || swept) && (
         <circle
           cx={x}
           cy={y}
@@ -717,12 +815,19 @@ function GraphNode({
         />
       )}
       <g
-        role="button"
-        tabIndex={tabIndex}
-        aria-label={accessibleName}
-        aria-pressed={selected}
+        role={latent ? undefined : "button"}
+        tabIndex={latent ? undefined : tabIndex}
+        aria-label={latent ? undefined : accessibleName}
+        aria-hidden={latent ? "true" : undefined}
+        aria-pressed={latent ? undefined : selected}
         className="sg-node"
-        style={{ cursor: "pointer", outline: "none" }}
+        opacity={latent ? 0 : 1}
+        style={{
+          cursor: "pointer",
+          outline: "none",
+          transition: "opacity 260ms ease",
+          pointerEvents: latent ? "none" : undefined,
+        }}
         onClick={(e) => {
           e.stopPropagation();
           onSelect(selected ? null : id);
@@ -744,10 +849,16 @@ function GraphNode({
       </g>
       {/* A cluster puck's name is drawn once, in the cluster layer — labelling
           the node as well printed every cluster's name twice. */}
-      {labelled && attrs.kind !== "lane" && (
+      {/* A LABEL RUNS OUTWARD, NOT ALWAYS RIGHTWARD.
+          Every label used to sit to the node's right, so on the left half of
+          the field it ran back across the map and collided with whatever it
+          passed. Anchoring by side sends it away from the centre instead,
+          which is also how the cluster names already behave. */}
+      {!latent && labelled && attrs.kind !== "lane" && (
         <text
-          x={x + grown + 6 / k}
+          x={x + (leftHalf ? -(grown + 6 / k) : grown + 6 / k)}
           y={y + 3.5 / k}
+          textAnchor={leftHalf ? "end" : "start"}
           fontSize={(attrs.kind === "work" || attrs.kind === "passage" ? 9.5 : 11) / k}
           fill={selected || hovered ? "var(--i-text)" : "var(--i-text-soft)"}
           style={{ pointerEvents: "none" }}

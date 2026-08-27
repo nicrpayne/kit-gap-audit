@@ -116,6 +116,15 @@ export const TIER = {
   /** Unrelated during Evidence Solo — harder, but never invisible: losing
       orientation is worse than losing contrast. */
   soloDimmed: 0.06,
+  /**
+   * A latent mark while something else is being explained.
+   *
+   * Quieter than `dimmed`, and that ordering is the point: a mark with no
+   * name on it must never be louder than a real node that has been pushed
+   * back. Fixed rather than a multiple of the latent opacity, which at close
+   * zoom put the dust ahead of the dimmed field.
+   */
+  latentDimmed: 0.08,
 } as const;
 
 /**
@@ -145,7 +154,24 @@ export function zoomLevel(k: number): ZoomLevel {
     pucks always label — they are the map's legend. */
 const LABELLED_AT: Record<ZoomLevel, NodeKind[]> = {
   far: ["reality", "lane"],
-  medium: ["reality", "lane", "dependency", "decision", "feature", "scope", "intelligence"],
+  // Work, passages and sources join at medium because expanding a cluster
+  // flies the camera to exactly this zoom. They are only ever FORMED when
+  // their cluster has been opened, so this cannot crowd the resting field —
+  // it means that if you went and opened something, you can read it. Before
+  // this, expanding Linear at its own fly-to produced fourteen unlabelled
+  // grey dots, which is the reveal failing at the moment it should land.
+  medium: [
+    "reality",
+    "lane",
+    "dependency",
+    "decision",
+    "feature",
+    "scope",
+    "intelligence",
+    "work",
+    "passage",
+    "source",
+  ],
   close: [
     "reality",
     "lane",
@@ -165,6 +191,69 @@ const LABELLED_AT: Record<ZoomLevel, NodeKind[]> = {
 
 export function labelsFor(level: ZoomLevel): Set<NodeKind> {
   return new Set(LABELLED_AT[level]);
+}
+
+/**
+ * PRESENCE — THE SECOND CHANNEL, AND THE ONE THAT WAS MISSING.
+ *
+ * Measured before this was written (`scripts/audit-density-measure.ts`): on
+ * the largest Scope, 41 of 65 real nodes were not drawn AT ALL in the resting
+ * field, and zooming in changed that number by zero. Expansion was the only
+ * thing that mounted a node, so "+14" did not reveal fourteen things — it
+ * conjured them.
+ *
+ * So a node now has THREE degrees of presence rather than two of labelling:
+ *
+ *   latent   A real node at its real seat, drawn as a mark. No name, no
+ *            edges, no hit target. This is what "all those dots" are.
+ *   formed   Its actual shape and size, focusable, wired into the edge graph.
+ *   named    Formed, and carrying its label.
+ *
+ * Expansion moves a node from latent to formed IN PLACE — it was already on
+ * screen, at that exact seat, the whole time. Nothing enters the world; it
+ * only becomes itself. Zoom does the same thing continuously to the latent
+ * marks: dust at far, differentiated dots at medium, distinct objects at
+ * close.
+ *
+ * THE RULE THAT KEEPS THIS HONEST: every mark is one real graph node. There
+ * are no aggregate blobs, no density particles, no decorative orbits. A
+ * cluster's "+N" is a label on visible mass, not a substitute for it, and a
+ * proof asserts N equals the number of latent nodes actually drawn there.
+ */
+export type Identity = "latent" | "formed" | "named";
+
+/**
+ * How much of itself a latent mark shows at each zoom.
+ *
+ * `minPx` is a floor in SCREEN pixels, not world units: a checkpoint scaled
+ * to 34% is a third of a pixel at far zoom, which is not "subtle", it is
+ * absent. The floor is what makes the outer rim read as mass at every
+ * distance, and it is why the marks converge to uniform dust when you pull
+ * back — at that range they genuinely are just population.
+ */
+export const LATENT: Record<ZoomLevel, { scale: number; opacity: number; minPx: number }> = {
+  far: { scale: 0.42, opacity: 0.52, minPx: 2.4 },
+  medium: { scale: 0.56, opacity: 0.62, minPx: 2.6 },
+  close: { scale: 0.7, opacity: 0.7, minPx: 2.8 },
+};
+
+/** Latent radius in world units, floored so the mark survives far zoom. */
+export function latentRadius(r: number, level: ZoomLevel, k: number): number {
+  const t = LATENT[level];
+  return Math.max(r * t.scale, t.minPx / k);
+}
+
+/**
+ * What a node is showing right now.
+ *
+ * `opened` is the renderer's own visibility rule — the core slice, plus any
+ * cluster the user has expanded. Zoom governs the step from formed to named
+ * and never the step from latent to formed: expanding a cluster you are
+ * looking at from a distance must still show you what is in it.
+ */
+export function identityOf(kind: NodeKind, opened: boolean, level: ZoomLevel): Identity {
+  if (!opened) return "latent";
+  return labelsFor(level).has(kind) ? "named" : "formed";
 }
 
 /**

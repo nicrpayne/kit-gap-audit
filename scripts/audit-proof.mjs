@@ -107,6 +107,11 @@ await park();
     attested.length > 0 && inferred.length > 0 && Math.max(...attested) > Math.max(...inferred),
     `attested ${Math.max(...attested)} vs inferred ${Math.max(...inferred)}`
   );
+  // A4 USED TO ASSERT THE OPPOSITE, and it was right about the renderer and
+  // wrong about the product: "the resting field is a fraction of the whole
+  // graph" passed because 41 of JSA's 65 nodes were not on screen at all.
+  // Presence and identity are now separate channels, so the law is the one
+  // below — everything is drawn, and only a fraction of it is legible.
   const total = (
     await (
       await fetch(`${BASE}/api/audit/graph?scope=jsa&slice=detail`, {
@@ -115,10 +120,20 @@ await park();
     ).json()
   ).graph.nodes.length;
   const drawn = await nodeCount();
+  const identified = await p.locator('[data-shoot^="node-"]:not([data-identity="latent"])').count();
+  // Reality is the one node NOT in the mark layer: it is the hero, drawn once
+  // with its own rings and gradient. So the field holds every node, in two
+  // elements rather than one.
+  const hero = await p.locator('[data-shoot="graph-reality"]').count();
   check(
-    "A4 the resting field is a fraction of the whole graph",
-    drawn < total * 0.6,
-    `${drawn} of ${total} drawn — core only, nothing renders just in case`
+    "A4 every node in the graph is on the field",
+    drawn + hero === total && hero === 1,
+    `${drawn} marks + Reality as the hero = ${total} nodes`
+  );
+  check(
+    "A5 but only a fraction of them is identified at rest",
+    identified < total * 0.6,
+    `${identified} of ${total} showing their identity — the rest are latent marks`
   );
 }
 
@@ -167,16 +182,51 @@ await park();
   await settle(600);
 }
 
-// ── L. EXPAND / COLLAPSE ─────────────────────────────────────────────
+// ── L. EXPAND / COLLAPSE — PROMOTION, NOT MOUNTING ───────────────────
+//
+// The old L1 read "expanding reveals nodes" and counted marks appearing from
+// nowhere. That is precisely the feeling this pass exists to remove: the user
+// should think "oh — that's what all those dots were", not "a bunch of new
+// data just appeared". So the count must NOT change, and the identified count
+// must.
 {
-  const before = await nodeCount();
+  const marks = await nodeCount();
+  const identifiedNow = () => p.locator('[data-shoot^="node-"]:not([data-identity="latent"])').count();
+  const before = await identifiedNow();
+
+  // Where a latent mark sits, so we can prove expanding does not move it.
+  const seatOf = (sel) =>
+    p.evaluate((s) => {
+      const c = document.querySelector(`${s} circle[data-shoot="latent-mark"]`);
+      return c ? { x: c.getAttribute("cx"), y: c.getAttribute("cy") } : null;
+    }, sel);
+  const sample = await p.evaluate(() => {
+    const el = document.querySelector('[data-shoot^="node-work:"][data-identity="latent"]');
+    return el?.getAttribute("data-shoot") ?? null;
+  });
+  const seatBefore = sample ? await seatOf(`[data-shoot="${sample}"]`) : null;
+
   await p.locator('[data-shoot="expand-all"]').click();
   await settle(900);
-  const after = await nodeCount();
-  check("L1 expanding reveals nodes", after > before, `${before} -> ${after}`);
+  check(
+    "L1 expanding identifies marks rather than mounting nodes",
+    (await nodeCount()) === marks && (await identifiedNow()) > before,
+    `${marks} marks throughout; ${before} -> ${await identifiedNow()} identified`
+  );
+  const seatAfter = sample ? await seatOf(`[data-shoot="${sample}"]`) : null;
+  check(
+    "L2 the mark does not move when it becomes itself",
+    !!seatBefore && !!seatAfter && seatBefore.x === seatAfter.x && seatBefore.y === seatAfter.y,
+    sample ? `${sample} stayed at ${seatBefore?.x},${seatBefore?.y}` : "no latent work node to sample"
+  );
+
   await p.locator('[data-shoot="collapse-all"]').click();
   await settle(700);
-  check("L2 collapsing hides them again", (await nodeCount()) === before, `back to ${before}`);
+  check(
+    "L3 collapsing returns them to marks, still on screen",
+    (await nodeCount()) === marks && (await identifiedNow()) === before,
+    `back to ${before} identified of ${marks}`
+  );
   await p.locator('[data-shoot="camera-fit"]').click();
   await settle(400);
 }
@@ -414,6 +464,147 @@ let findingNodeId = null;
     /not supplying/i.test(t),
     "an unconnected source is project truth, not an empty state to hide"
   );
+}
+
+
+// ── S. DENSITY IS REAL, AND STAYS ACCOUNTABLE ────────────────────────
+//
+// The density pass's on-screen laws. Every one of them is a way of asking the
+// same question: is this mark a thing that exists, or is it decoration?
+{
+  await p.goto(`${BASE}/audit?scope=jsa`, { waitUntil: "networkidle" });
+  await p.waitForSelector('[data-shoot="signal-graph"]', { timeout: 30000 });
+  await settle(1400);
+  await park();
+
+  const api = await (
+    await fetch(`${BASE}/api/audit/graph?scope=jsa&slice=detail`, {
+      headers: { Cookie: `kit_session=${COOKIE}` },
+    })
+  ).json();
+  const keys = new Set(api.graph.nodes.map((n) => n.key));
+
+  // S1 — NO MARK WITHOUT A ROW. Every drawn mark names a node the API
+  // returned; there is no way to add density that is not data.
+  const drawnKeys = await p.evaluate(() =>
+    [...document.querySelectorAll('[data-shoot^="node-"]')].map((e) =>
+      (e.getAttribute("data-shoot") ?? "").replace(/^node-/, "")
+    )
+  );
+  check(
+    "S1 every mark on the field is a real graph node",
+    drawnKeys.length > 0 && drawnKeys.every((k) => keys.has(k)),
+    `${drawnKeys.length} marks, all resolving to canonical rows`
+  );
+  const heroDrawn = await p.locator('[data-shoot="graph-reality"]').count();
+  const missing = [...keys].filter((k) => !drawnKeys.includes(k));
+  check(
+    "S2 and no node is missing from the field",
+    drawnKeys.length + heroDrawn === keys.size &&
+      missing.length === 1 &&
+      missing[0] === "reality",
+    `${drawnKeys.length} marks + the Reality hero = ${keys.size}`
+  );
+
+  // S3 — a latent mark is population, not a control. It has no name to
+  // announce and nothing to do, so it is out of the accessibility tree and
+  // out of the tab order rather than being a silent focus stop.
+  const latentA11y = await p.evaluate(() =>
+    [...document.querySelectorAll('[data-shoot^="node-"][data-identity="latent"]')].map((e) => ({
+      button: !!e.querySelector('g[role="button"]'),
+      hidden: e.querySelector("g.sg-node")?.getAttribute("aria-hidden") === "true",
+      circle: !!e.querySelector('circle[data-shoot="latent-mark"]'),
+    }))
+  );
+  check(
+    "S3 latent marks are drawn but not announced or focusable",
+    latentA11y.length > 0 &&
+      latentA11y.every((n) => !n.button && n.hidden && n.circle),
+    `${latentA11y.length} latent marks`
+  );
+
+  // S4 — THE BADGE COUNTS THE MASS. "+N" beside a collapsed cluster must
+  // equal the latent marks actually drawn in that sector, or it is the
+  // generic badge-only count this pass exists to replace.
+  const badges = await p.evaluate(() => {
+    const out = [];
+    for (const el of document.querySelectorAll("[data-latent]")) {
+      const cluster = (el.getAttribute("data-shoot") ?? "").replace("cluster-toggle-", "");
+      out.push({ cluster, claimed: Number(el.getAttribute("data-latent")) });
+    }
+    return out;
+  });
+  const realLatent = {};
+  for (const n of api.graph.nodes) {
+    if (n.attributes.slice === "core") continue;
+    const lane = n.attributes.lane;
+    if (lane) realLatent[lane] = (realLatent[lane] ?? 0) + 1;
+  }
+  const wrong = badges.filter((b) => b.claimed !== (realLatent[b.cluster] ?? 0));
+  check(
+    "S4 every cluster's count equals the hidden nodes it stands for",
+    badges.length > 0 && wrong.length === 0,
+    wrong.length
+      ? wrong.map((b) => `${b.cluster} claims ${b.claimed}, has ${realLatent[b.cluster] ?? 0}`).join("; ")
+      : `${badges.length} clusters, all counts exact`
+  );
+
+  // S5 — DENSE NODES, SPARSE EDGES. Populating the field must not repopulate
+  // the hairball: latent marks carry no lines at all.
+  const edgesAtRest = await p.locator("[data-rel]").count();
+  check(
+    "S5 a fully populated field still draws few edges",
+    edgesAtRest < drawnKeys.length,
+    `${edgesAtRest} edges for ${drawnKeys.length} nodes on screen`
+  );
+
+  // S6 — a mark has to survive far zoom, or "there is a rich project system
+  // here" is a claim about a blank ring. Measured in SCREEN pixels, at the
+  // camera the instrument opens at.
+  const smallest = await p.evaluate(() => {
+    const svg = document.querySelector('[data-shoot="signal-graph"]');
+    const vb = svg.viewBox.baseVal;
+    const k = svg.getBoundingClientRect().width / vb.width;
+    let min = Infinity;
+    for (const c of document.querySelectorAll(
+      '[data-shoot^="node-"][data-identity="latent"] circle[data-shoot="latent-mark"]'
+    )) {
+      min = Math.min(min, Number(c.getAttribute("r")) * k);
+    }
+    return min;
+  });
+  check(
+    "S6 the faintest latent mark is still a visible mark at far zoom",
+    smallest >= 1.5,
+    `${smallest.toFixed(2)} screen px across at the opening camera`
+  );
+
+  // S7 — ZOOM RESOLVES THE MARKS. Pulling the camera in must make the dust
+  // differentiate rather than just magnify uniformly.
+  const spread = async () =>
+    p.evaluate(() => {
+      const rs = [
+        ...document.querySelectorAll(
+          '[data-shoot^="node-"][data-identity="latent"] circle[data-shoot="latent-mark"]'
+        ),
+      ].map((c) => Number(c.getAttribute("r")));
+      return rs.length ? Math.max(...rs) / Math.min(...rs) : 1;
+    });
+  const farSpread = await spread();
+  await p.mouse.move(600, 560);
+  for (let i = 0; i < 7; i++) {
+    await p.mouse.wheel(0, -260);
+    await settle(80);
+  }
+  await settle(600);
+  const closeSpread = await spread();
+  check(
+    "S7 zooming in resolves the dust into differently-sized objects",
+    closeSpread > farSpread,
+    `size spread ${farSpread.toFixed(2)}x at far -> ${closeSpread.toFixed(2)}x at close`
+  );
+  await p.locator('[data-shoot="camera-fit"]').click();
+  await settle(500);
 }
 
 check("Z1 no page errors during the whole run", pageErrors.length === 0, pageErrors.join(" | "));

@@ -60,25 +60,77 @@ cluster pucks · the project structure hanging off them.
 node in the cluster's sector, so **`attests` edges are never rendered** —
 asserted by proof, against a graph that provably still contains them.
 
-At rest on JSA that is **17 drawn edges out of 77**, and 23 nodes of 65.
+At rest on JSA that is **17 drawn edges out of 77** — with all 65 nodes on
+screen. Density of nodes has never required density of edges.
 
-## Progressive detail
+## Progressive identity, not progressive existence
 
-| Zoom | Reveals |
-|---|---|
-| **Far** (<1.05×) | Project shape: Reality, cluster pucks, findings, decisions, dependencies, features |
-| **Medium** (<2.1×) | Delivery structure: dependency, decision, feature and intelligence labels |
-| **Close** (≥2.1×) | Source detail: individual tickets, passages, sources, checkpoints |
+> **Zoom reveals identity. It does not create the world.**
+
+The field used to draw only what was *open*. Measured
+(`scripts/audit-density-measure.ts`): **41 of JSA's 65 nodes were not on
+screen at all**, and zooming in changed that number by zero. Expanding a
+cluster mounted fourteen things that had never been there — which reads as
+"a bunch of new data just appeared", not as "oh, that's what all those dots
+were".
+
+Presence and identity are now separate channels. **Every real node is drawn,
+at its real seat, at every zoom.** What changes is how much of itself it
+shows:
+
+| Degree | What it is | Has |
+|---|---|---|
+| **Latent** | a real node whose cluster is collapsed | a mark, in its own colour, at its own seat |
+| **Formed** | its cluster is open | its real shape and size, a hit target, its edges |
+| **Named** | formed, and the zoom level labels its kind | its label |
+
+Expanding a cluster **promotes marks in place** — a 260ms cross-fade at a
+fixed seat, nothing mounted, nothing moved. Proven both as arithmetic (`R7`)
+and against the live DOM (`L1`, `L2`: the sampled mark's `cx`/`cy` are
+byte-identical before and after).
+
+| Zoom | Latent marks | Labels appear for |
+|---|---|---|
+| **Far** (<1.05×) | uniform dust, floored at 2.4 screen px | Reality, cluster pucks |
+| **Medium** (<2.1×) | differentiated by real size | + dependencies, decisions, features, project, intelligence, work, passages, sources |
+| **Close** (≥2.1×) | distinct objects | + findings, gates, checkpoints |
+
+Work, passages and sources label at **medium** because expanding a cluster
+flies the camera to exactly that zoom. They are only ever formed when their
+cluster has been opened, so this cannot crowd the resting field — it means
+that if you went and opened something, you can read it.
 
 Thresholds are explicit steps, not continuous text scaling — scaling would
 produce unreadably small labels at far zoom rather than *no* labels, which is
-worse. Zoom is capped at 4.5×, past which there is no further detail to
-reveal, only a larger circle.
+worse. Zoom is capped at 4.5×.
 
-Membership in the *mounted* set is controlled by **expand/collapse per
-cluster**, not by zoom. Expanding flies the camera to what it revealed.
-Search and Evidence Solo both auto-expand whatever they need to show — a
-result you cannot see reads as a bug.
+Expanding flies the camera to what it revealed. Search and Evidence Solo both
+auto-expand whatever they need to show — a result you cannot see reads as a
+bug.
+
+### Density has to come from data
+
+Every mark on the field is **one row in the canonical model**. There are no
+aggregate blobs, no density particles, no decorative orbits, and no duplicate
+marks added for texture. The only aggregate the instrument draws is a
+collapsed cluster's `+N`, and that count **equals the latent marks drawn in
+that sector** — proven in the graph (`R4`) and against the rendered DOM
+(`S4`).
+
+That count used to be the number of `attests` edges into the lane, which both
+over-counted (findings and features are drawn at full size already) and
+under-counted (no source or passage attests to anything). On JSA the two
+disagree in **7 of 8 clusters**, so the fix is a real correction rather than a
+rename — asserted by `R4b`.
+
+A latent mark is population, not a control: it is out of the accessibility
+tree and out of the tab order, because it has no name to announce and nothing
+to do. The keyboard route into a collapsed cluster is its own toggle, which
+says how many nodes are in there.
+
+The control that keeps this honest is the sparse Scope. Design has 28 nodes,
+and it still looks like 28 nodes: `+1` on almost every cluster, mass only in
+Linear. **The instrument does not make a thin project look rich.**
 
 ## Features close the execution gap
 
@@ -245,27 +297,38 @@ frame on the React re-render; both are single hitches, not sustained drops.
 
 ## Proven
 
-`scripts/audit-graph-proof.ts` (52) — model and layout: every node projects a real
-row, every edge cites a rule whose relation/basis/endpoints it matches, no
-dangling edges, no renderer state in the semantic layer, unsupplied lanes
-have no `supports` edge, provenance direction, uncited sources produce no
-node, Evidence Solo's allowlist and stopping behaviour, zero database writes,
-export round-trip, determinism, slice monotonicity, passage namespacing, and
-that every clustered node sits inside its own sector.
+`scripts/audit-graph-proof.ts` (84) — model, layout and presence: every node
+projects a real row, every edge cites a rule whose relation/basis/endpoints it
+matches, no dangling edges, no renderer state in the semantic layer,
+unsupplied lanes have no `supports` edge, provenance direction, uncited
+sources produce no node, Evidence Solo's allowlist and stopping behaviour,
+zero database writes, export round-trip, determinism, slice monotonicity,
+passage namespacing, every clustered node inside its own sector — and the
+`R` block: every node has a seat, every non-core node is a latent mark, every
+mark carries a canonical ref, every mark is counted by exactly one badge,
+identity never decreases with zoom or opening, expanding changes no node's
+existence, no mark falls below the screen-space floor, and every passage
+seats nearer its own source than any other.
 
-`scripts/audit-proof.mjs` (45) — the graph-first interaction laws: membership is
-never drawn, calm at rest, attested reads louder than inferred, the wheel
-does not scroll the page, zoom changes labelling in steps, expand/collapse,
+`scripts/audit-proof.mjs` (54) — the graph-first interaction laws against the
+live DOM: membership is never drawn, calm at rest, attested reads louder than
+inferred, the wheel does not scroll the page, zoom changes labelling in steps,
 semantic tab order, search dimming, selection focus, the console appearing
 only for a Finding, Evidence Solo, candidate preview writing nothing, the
-sweep trail following its edge, and a sparse Scope still reading.
+sweep trail following its edge, a sparse Scope still reading — plus the `S`
+block: every mark resolves to a node the API returned, no node is missing,
+latent marks are unannounced and unfocusable, each badge equals its real
+hidden count, a full field still draws few edges, the faintest mark survives
+far zoom, and zooming resolves the dust into differently-sized objects.
 
 `scripts/audit-model-proof.ts` (43) — the finding semantics, unchanged.
 
-**140 assertions, all passing.**
+**181 assertions, all passing.**
 
-`scripts/audit-graph-measure.ts` · `scripts/audit-graph-shoot.mjs` — the size
-baseline and the visual sweep.
+`scripts/audit-density-measure.ts` — what is on screen at each zoom, per node,
+read from the renderer's own rule rather than a restatement of it.
+`scripts/audit-graph-measure.ts` · `scripts/audit-graph-shoot.mjs` ·
+`scripts/audit-density-shoot.mjs` — the size baseline and the visual sweeps.
 
 ## Known limitations
 
@@ -279,5 +342,11 @@ baseline and the visual sweep.
 - **`contradicts` cannot be grounded** — a contradiction finding does not
   store which two sources disagree.
 - **Capacity has no entity nodes.** People and allocations are counted in the
-  cluster's checkpoints but are not yet graph nodes.
+  cluster's checkpoints but are not yet graph nodes — which is why Capacity's
+  sector is the thinnest on the field. That is a true report of what the graph
+  currently projects, not a rendering gap.
+- **Density is bounded by the project.** JSA is 65 nodes; the field now shows
+  all 65, but it will not read like a reference vault of several hundred. The
+  only way to change that is more real entities (transcripts, people,
+  requirements), not more marks.
 - **Desktop only**, per the brief; the shell's 1024px floor applies.

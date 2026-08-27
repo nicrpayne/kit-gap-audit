@@ -18,8 +18,8 @@ Three layers, kept apart:
 | Layer | Owns | File |
 |---|---|---|
 | Semantic graph | what is related to what, and why | `lib/audit/graph.ts` |
-| Layout | where things sit | `lib/audit/layout.ts` |
-| Rendering | what it looks like | `components/audit/*` |
+| Layout | where things sit | `lib/audit/graphLayout.ts` |
+| Rendering | what it looks like, and how much of itself it shows | `components/audit/*` |
 
 `graph.ts` imports no layout, holds no coordinates, and knows nothing about
 pixels. That is enforced by proof, not by convention — because **a graph that
@@ -33,21 +33,27 @@ Audit is deliberately composed.
 
 Real projection, all four Scopes, dev fixtures (`scripts/audit-graph-measure.ts`):
 
-| Scope | nodes | edges | lane | checkpoint | finding | work | decision | dependency | intelligence | passage | source |
-|---|---|---|---|---|---|---|---|---|---|---|---|
-| Platform | 39 | 32 | 8 | 11 | 1 | 16 | 0 | 0 | 0 | 0 | 1 |
-| Design | 26 | 18 | 8 | 10 | 0 | 6 | 0 | 0 | 0 | 0 | 0 |
-| **JSA** | **61** | **73** | 8 | 16 | 8 | 14 | 1 | 1 | 1 | 5 | 5 |
-| iTrack | 32 | 26 | 8 | 11 | 0 | 10 | 0 | 1 | 0 | 0 | 0 |
+| Scope | nodes | edges | lane | checkpoint | finding | work | feature | decision | dependency | intelligence | passage | source |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| Platform | 43 | 35 | 8 | 11 | 1 | 16 | 4 | 0 | 0 | 0 | 0 | 1 |
+| Design | 28 | 20 | 8 | 10 | 0 | 6 | 2 | 0 | 0 | 0 | 0 | 0 |
+| **JSA** | **65** | **77** | 8 | 16 | 8 | 14 | 4 | 1 | 1 | 1 | 5 | 5 |
+| iTrack | 36 | 30 | 8 | 11 | 0 | 10 | 4 | 0 | 1 | 0 | 0 | 0 |
 
 Progressive expansion:
 
 | Scope | core | + execution | + evidence | + detail |
 |---|---|---|---|---|
-| Platform | 11n / 3e | 27n / 20e | 28n / 21e | 39n / 32e |
-| Design | 10n / 2e | 16n / 8e | 16n / 8e | 26n / 18e |
-| JSA | 20n / 19e | 34n / 34e | 45n / 57e | 61n / 73e |
-| iTrack | 11n / 5e | 21n / 15e | 21n / 15e | 32n / 26e |
+| Platform | 15n / 7e | 31n / 23e | 32n / 24e | 43n / 35e |
+| Design | 12n / 4e | 18n / 10e | 18n / 10e | 28n / 20e |
+| JSA | 24n / 23e | 38n / 38e | 49n / 61e | 65n / 77e |
+| iTrack | 15n / 9e | 25n / 19e | 25n / 19e | 36n / 30e |
+
+**The slice is no longer what is on screen.** Since the density pass, every
+node is drawn at every zoom; the slice decides which nodes show their
+*identity*. On JSA the resting field is 65 marks, 24 of them identified. See
+"Progressive identity" in `docs/AUDIT-INSTRUMENT.md`, and
+`scripts/audit-density-measure.ts` for the per-node inventory.
 
 - **Largest single Scope:** JSA — 65 nodes / 77 edges expanded, 24 / 23 at the default slice (with Features).
 - **All Scopes combined:** 172 nodes / 162 edges expanded, 66 / 43 at the default slice (with Features).
@@ -177,7 +183,7 @@ graph in the way a screenshot is an observation of the screen.
 
 ## Proven
 
-`scripts/audit-graph-proof.ts` — 43 assertions across **all four Scopes**:
+`scripts/audit-graph-proof.ts` — 84 assertions across **all four Scopes**:
 every node projects a real row; every edge cites a rule whose relation, basis
 and endpoint kinds it matches; no dangling edges; no renderer state anywhere in
 the layer; an unsupplied lane has no `supports` edge; provenance direction;
@@ -187,6 +193,12 @@ round-trip; determinism; slice monotonicity; passage namespacing.
 
 `scripts/audit-graph-measure.ts` — the size baseline above.
 
-Renderer behaviour is unchanged this tranche: `scripts/audit-model-proof.ts`
-(52) and `scripts/audit-proof.mjs` (34) both still pass in full, and no file
-under `components/audit/` was modified.
+Presence is proven separately, in the same file's `R` block: every node has a
+layout seat, every non-core node is a drawn latent mark, every mark carries
+the canonical ref of the row it projects, every mark is counted by exactly one
+cluster badge, identity never decreases with zoom or with opening, expanding
+changes no node's existence, no mark falls below the screen-space floor, and
+every passage seats nearer its own source than any other.
+
+`scripts/audit-density-measure.ts` — the per-node visibility inventory, read
+from the renderer's own `identityOf()` rather than a restatement of it.
