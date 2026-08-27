@@ -1,113 +1,37 @@
-import Link from "next/link";
-import { prisma } from "@/lib/prisma";
-import SignalSurface, { SurfaceAction, SurfacePanel, SurfaceEmpty } from "@/components/instrument/SignalSurface";
+import InstrumentShell from "@/components/instrument/InstrumentShell";
+import AuditInstrument from "@/components/audit/AuditInstrument";
 
 export const dynamic = "force-dynamic";
 
-const PAGE_SIZE = 20;
-
-// MIGRATED INTO THE SIGNAL SHELL. Same query, same pagination, same links —
-// only the chrome changed. Audit is a reading surface rather than an
-// instrument (there is nothing here to play), so it wears SignalSurface's
-// centred measure inside the one rail rather than owning the viewport.
-export default async function AuditIndexPage({
+// AUDIT IS AN INSTRUMENT NOW.
+//
+// It used to render through SignalSurface as a reading surface — a list of
+// past runs in a centred measure — on the reasoning that "there is nothing
+// here to play". That stopped being true: the Project Truth Map is a control
+// surface you select on, focus, solo and preview against, which is exactly
+// what the design north star means by an instrument. It owns the viewport,
+// carries its own state bar, and its rail can be hidden with ⌘\ like every
+// other instrument's.
+//
+// The audit-run list it replaced is not gone — /audit/history keeps it, and
+// the header links to it. A per-source drill-down at /audit/<sourceId> is
+// untouched.
+export default async function AuditPage({
   searchParams,
 }: {
-  searchParams: Promise<{ page?: string }>;
+  searchParams: Promise<{ scope?: string }>;
 }) {
-  const { page: pageParam } = await searchParams;
-  const page = Math.max(1, parseInt(pageParam ?? "1", 10) || 1);
-
-  const [sources, total] = await Promise.all([
-    prisma.source.findMany({
-      orderBy: { createdAt: "desc" },
-      skip: (page - 1) * PAGE_SIZE,
-      take: PAGE_SIZE,
-      include: {
-        scope: { select: { name: true } },
-        _count: { select: { findings: true } },
-        findings: { select: { status: true } },
-      },
-    }),
-    prisma.source.count(),
-  ]);
-
-  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
-
+  const { scope } = await searchParams;
   return (
-    <SignalSurface
-      eyebrow="Audit"
-      title="Every audit you've run"
-      lede="Each one compared a source — a transcript, a note, a list of estimates — against the work already tracked, and kept what was missing."
-      actions={<SurfaceAction href="/audit/new">+ New audit</SurfaceAction>}
+    <InstrumentShell
+      stateBar={
+        // The instrument draws its own header (scope, current-vs-prior, Run
+        // audit), so the shell's default identity strip would be a second,
+        // quieter copy of the same thing.
+        <></>
+      }
     >
-      {sources.length === 0 ? (
-        <SurfaceEmpty>
-          No audits yet.{" "}
-          <Link href="/audit/new" className="text-[var(--i-signal)] hover:underline">
-            Run your first one
-          </Link>
-          .
-        </SurfaceEmpty>
-      ) : (
-        <SurfacePanel>
-          <div className="divide-y" style={{ borderColor: "var(--i-border)" }}>
-            {sources.map((source) => {
-              const openCount = source.findings.filter((f) => f.status === "open").length;
-              return (
-                <Link
-                  key={source.id}
-                  href={`/audit/${source.id}`}
-                  className="flex items-center justify-between gap-4 px-5 py-4 transition-colors hover:bg-white/[0.035]"
-                >
-                  <div className="min-w-0">
-                    <div className="truncate text-[13px] font-medium text-[var(--i-text)]">{source.title}</div>
-                    <div className="mt-0.5 text-[11px] text-[var(--i-text-faint)]">
-                      {source.scope?.name ?? "No scope"} · {source.kind} ·{" "}
-                      {source.createdAt.toISOString().slice(0, 10)}
-                    </div>
-                  </div>
-                  <div className="shrink-0 text-right text-[11px] text-[var(--i-text-faint)]">
-                    <div className="i-readout text-[13px] text-[var(--i-text-soft)]">
-                      {source._count.findings}
-                    </div>
-                    <div>finding{source._count.findings === 1 ? "" : "s"}</div>
-                    {openCount > 0 && (
-                      <div className="mt-1 font-medium text-[var(--i-amber)]">{openCount} open</div>
-                    )}
-                  </div>
-                </Link>
-              );
-            })}
-          </div>
-        </SurfacePanel>
-      )}
-
-      {totalPages > 1 && (
-        <div className="mt-6 flex items-center justify-between text-[12px]">
-          <Link
-            href={`/audit?page=${page - 1}`}
-            aria-disabled={page <= 1}
-            className={`i-control px-3 py-1.5 text-[var(--i-text-soft)] transition-colors hover:text-[var(--i-text)] ${
-              page <= 1 ? "pointer-events-none opacity-35" : ""
-            }`}
-          >
-            ← Newer
-          </Link>
-          <span className="text-[var(--i-text-faint)]">
-            Page {page} of {totalPages}
-          </span>
-          <Link
-            href={`/audit?page=${page + 1}`}
-            aria-disabled={page >= totalPages}
-            className={`i-control px-3 py-1.5 text-[var(--i-text-soft)] transition-colors hover:text-[var(--i-text)] ${
-              page >= totalPages ? "pointer-events-none opacity-35" : ""
-            }`}
-          >
-            Older →
-          </Link>
-        </div>
-      )}
-    </SignalSurface>
+      <AuditInstrument initialScopeId={scope} />
+    </InstrumentShell>
   );
 }

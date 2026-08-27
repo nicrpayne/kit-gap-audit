@@ -26,17 +26,24 @@ colour, which is the opposite of what a shell is for.
 What survives is the distinction the split was *actually* about:
 
 - **Instruments** — Control Room, Forecast, Scope, Portfolio, Timeline,
-  Decisions — are for *playing*: direct manipulation, rapid comparison,
+  Decisions, Audit — are for *playing*: direct manipulation, rapid comparison,
   live numbers. They own the whole viewport, render no eyebrow or intro
   paragraph, and their rail can be hidden outright (`⌘\`) so a simulation
   can take the entire screen when it is being presented.
-- **Reading surfaces** — Audit, Reports, Settings, the legacy dashboard —
-  are for *reading*: mostly text, mostly calm. They render through
-  `components/instrument/SignalSurface.tsx`, which gives them a centred
-  measure, generous leading, and a title that behaves like a title, inside
-  that same shell. Long prose in a full-bleed control surface is
-  unpleasant; an instrument owns the viewport, a reading surface owns a
+- **Reading surfaces** — Reports, Settings, the legacy dashboard, and
+  Audit's own run history — are for *reading*: mostly text, mostly calm.
+  They render through `components/instrument/SignalSurface.tsx`, which gives
+  them a centred measure, generous leading, and a title that behaves like a
+  title, inside that same shell. Long prose in a full-bleed control surface
+  is unpleasant; an instrument owns the viewport, a reading surface owns a
   column in the middle of it.
+
+*(Audit moved across that line. It was listed here as a reading surface on
+the reasoning that "there is nothing here to play" — true while `/audit` was
+a list of past runs. The Project Truth Map is a control surface you select
+on, focus, solo and preview against, so `/audit` is an instrument and owns
+the viewport; the run list it replaced is still a reading surface, at
+`/audit/history`. See `docs/AUDIT-INSTRUMENT.md`.)*
 
 The serif display face belongs to reading surfaces — a title, a heading.
 It has no place on an instrument, where numerals are the voice (see
@@ -90,6 +97,14 @@ controls, RGB or neon glow, cyberpunk chrome, and any control that does
 not control something. If a component's only reason for existing is "it
 looks like a mixing console," cut it. The Instrument earns its identity
 from precision and responsiveness, not from costume.
+
+The word doing the work in "RGB or neon glow" is *decorative*. Luminosity
+that **carries a state** is not costume and is allowed: Audit's Reality core
+is lit because being the accepted reference is what the whole map is
+oriented around, and a selected finding gains a halo because selection is a
+state. The test is the same one as for a control — remove it, and if nothing
+true becomes harder to read, it was decoration. Nothing in Audit glows
+because glowing looks good; a lane at rest is a 1px line at 38% opacity.
 
 ## Controls are real, or they are not controls
 
