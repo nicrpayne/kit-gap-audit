@@ -786,6 +786,14 @@ export function buildAuditGraph({ model, provenance, entities }: BuildGraphInput
       role: string | null;
       status?: string | null;
       externalRef: string | null;
+      /** WHERE IN THE SOURCE THIS QUOTE IS — the producer's own anchoring:
+          quote hash, character range, and the unit those offsets are counted
+          in. Carried so "show me this exact sentence" is answerable rather
+          than approximate. */
+      anchor?: Record<string, unknown>;
+      /** How independent the producer judged this passage. ABSENT MEANS
+          UNKNOWN and is stored as null, never as "independent". */
+      independence?: string | null;
     }
   ): string => {
     const pid = nodeId.passage(snapshotId, psg.evidenceId);
@@ -801,6 +809,12 @@ export function buildAuditGraph({ model, provenance, entities }: BuildGraphInput
         lane: laneForSourceType(psg.sourceType),
         excerpt: psg.excerpt,
         externalRef: psg.externalRef,
+        sourceRef: psg.sourceRef,
+        anchor: psg.anchor ?? {},
+        // Null is a real answer here and means the producer did not say.
+        // Sixty of the real JSA passages are in exactly that state, and
+        // reading them as independent would manufacture corroboration.
+        independence: psg.independence ?? null,
       });
     }
     const sid = nodeId.packageSource(psg.sourceRef);
@@ -1070,6 +1084,8 @@ export function buildAuditGraph({ model, provenance, entities }: BuildGraphInput
         role: psg.role,
         status: psg.status,
         externalRef: psg.externalRef,
+        anchor: psg.anchor,
+        independence: psg.independence,
       });
     }
 
@@ -1115,7 +1131,11 @@ export function buildAuditGraph({ model, provenance, entities }: BuildGraphInput
 
       for (const ref of o.evidenceRefs) {
         const pid = nodeId.passage(o.snapshotId, ref);
-        if (g.hasNode(pid) && !g.hasDirectedEdge(key, pid)) link(key, pid, "intel-cites-passage");
+        // CLASSED `provenance` like every other how-we-know-this edge, so
+        // the renderer has ONE rule for the mesh instead of a class check
+        // plus a relation special case.
+        if (g.hasNode(pid) && !g.hasDirectedEdge(key, pid))
+          link(key, pid, "intel-cites-passage", { relClass: "provenance" });
       }
     }
 

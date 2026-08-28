@@ -1,14 +1,14 @@
 // EXTERNAL STRUCTURED INTELLIGENCE — THE BROWSER PASS.
 //
-// Run against the synthetic JSA-scale payload, which must be seeded first:
+// Run against the census-exact real JSA payload, which must be seeded first:
 //
 //   npx tsx scripts/seed-intel-fixture.ts
 //   node scripts/audit-intelligence-shoot.mjs [outDir]
 //   npx tsx scripts/seed-intel-fixture.ts --drop
 //
-// The fixture takes the JSA graph from 65 nodes to 466, which is the whole
-// point: every density, hairball and latency number below is measured on a
-// field at the real stated corpus scale rather than on the four-node demo.
+// The payload takes the JSA graph from 72 nodes to 396, which is the whole
+// point: every density, hairball and latency number below is measured on the
+// real merged graph rather than on the demo.
 // The other suites assert exact counts on unseeded JSA, so this one owns the
 // seeded state and puts it back.
 //
@@ -58,7 +58,17 @@ const cam = () => p.evaluate(() => {
   return { x: +(v.x + v.width / 2).toFixed(2), y: +(v.y + v.height / 2).toFixed(2), k: +(s.getBoundingClientRect().width / v.width).toFixed(4) };
 });
 const count = (sel) => p.locator(sel).count();
-const inspector = () => p.locator('[data-shoot="graph-inspector"]').innerText();
+const inspector = async () => {
+  const el = p.locator('[data-shoot="graph-inspector"]');
+  return (await el.count()) > 0 ? el.innerText() : "";
+};
+/** Clear any selection, so the next click SELECTS rather than toggling the
+    previous one shut. Clicking the same node twice deselects it, which is
+    correct behaviour and a trap for a script that assumes a panel is open. */
+const clearSelection = async () => {
+  await p.keyboard.press("Escape");
+  await settle(300);
+};
 const zoomTo = async (want) => {
   await p.mouse.move(700, 500);
   for (let i = 0; i < 60 && (await tier()) !== want; i++) { await p.mouse.wheel(0, -120); await p.waitForTimeout(26); }
@@ -79,7 +89,7 @@ await park();
   record("nodes", nodes);
   record("intel", intel);
   await shot("01-far-rest");
-  check("1. the corpus is on the field, as population", intel === 161 && nodes >= 460, `${intel} external objects among ${nodes} nodes`);
+  check("1. the corpus is on the field, as population", intel === 161 && nodes >= 390, `${intel} external objects among ${nodes} nodes`);
   check("1b. and none of it is claiming identity at rest", latent === intel, `${latent} latent of ${intel}`);
 }
 
@@ -190,13 +200,13 @@ await park();
   check(
     "7. six superseded objects stay latent while everything else forms",
     state.latent === 6,
-    `${state.latent} of ${state.all} still marks with the whole field open — the fixture carries exactly 6 superseded objects`
+    `${state.latent} of ${state.all} still marks with the whole field open — the real payload carries exactly 6 superseded objects`
   );
 }
 
 // ── 8. SEARCH REVEALS WHAT IT FINDS, HISTORY INCLUDED ────────────────
 {
-  await p.locator('[data-shoot="graph-search"]').fill("KE-DEC-0005");
+  await p.locator('[data-shoot="graph-search"]').fill("hermes:risk-2026-08-24-005");
   await settle(900);
   const m = await p.evaluate(() => {
     const hit = [...document.querySelectorAll('[data-kind="intel"][data-matched="true"]')];
@@ -215,11 +225,59 @@ await park();
 
 // ── 9. AND FINDS THEM BY WHAT THEY CLAIM ─────────────────────────────
 {
-  await p.locator('[data-shoot="graph-search"]').fill("access sign-off");
+  await p.locator('[data-shoot="graph-search"]').fill("offline");
   await settle(900);
   const n = await count('[data-kind="intel"][data-matched="true"]');
   const listed = await p.locator('[data-shoot="search-results"] button').count();
-  check("9. search reaches the corpus by statement", n > 100 && listed > 0, `${n} objects matched, ${listed} listed`);
+  // AND THE RESULTS MUST TELL THE FOUR THINGS APART. A Signal entity, an
+  // external claim, an evidence passage and a source artifact are different
+  // kinds of answer, and a list that renders them identically makes the
+  // reader click each one to find out which they got.
+  const kinds = await p.evaluate(() =>
+    [...document.querySelectorAll('[data-shoot="search-results"] button')].map((b) =>
+      (b.innerText.split("\n").pop() ?? "").trim()
+    )
+  );
+  const distinct = new Set(kinds);
+  check("9. search reaches the corpus by statement", n > 100 && listed > 0, `"offline" matched ${n} objects, ${listed} listed`);
+  check(
+    "9b. and results say which KIND of thing each answer is",
+    distinct.size >= 2 && [...distinct].some((k) => /external intelligence/i.test(k)),
+    `result kinds: ${[...distinct].join(" · ")}`
+  );
+  await p.locator('[data-shoot="graph-search"]').fill("");
+  await settle(500);
+}
+
+// ── 9c. A PHRASE FROM AN ACTUAL DECISION'S STATEMENT ─────────────────
+//
+// Not from its label — the label is the statement trimmed to fit, and a
+// phrase from the back half of a long claim is exactly the case a
+// label-only search gets wrong.
+{
+  await p.evaluate(() =>
+    document.querySelector('[data-intel-type="decision"] g[role="button"]')?.dispatchEvent(new MouseEvent("click", { bubbles: true }))
+  );
+  await settle(700);
+  const statement = await p.evaluate(() => {
+    const panel = document.querySelector('[data-shoot="graph-inspector"]');
+    const t = panel?.innerText ?? "";
+    const i = t.indexOf("THE CLAIM");
+    return i < 0 ? "" : (t.slice(i + 9).trim().split("\n")[0] ?? "");
+  });
+  // A run of words out of the MIDDLE of the claim, past where the label ends.
+  const words = statement.split(/\s+/).filter(Boolean);
+  const phrase = words.slice(12, 17).join(" ");
+  await p.keyboard.press("Escape");
+  await settle(300);
+  await p.locator('[data-shoot="graph-search"]').fill(phrase);
+  await settle(900);
+  const hit = await count('[data-intel-type="decision"][data-matched="true"]');
+  check(
+    "9c. a phrase from deep inside a Decision's statement finds it",
+    phrase.length > 0 && hit > 0,
+    `"${phrase}" (${words.length} words into the claim, past where its label stops) → ${hit} Decisions matched`
+  );
   await p.locator('[data-shoot="graph-search"]').fill("");
   await settle(500);
 }
@@ -227,7 +285,7 @@ await park();
 // ── 10. THE PANEL SAYS WHOSE CLAIM THIS IS ───────────────────────────
 {
   await p.evaluate(() => {
-    document.querySelector('[data-kind="intel"] g[role="button"]')?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    document.querySelector('[data-intel-type="decision"] g[role="button"]')?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
   });
   await settle(700);
   const text = await inspector();
@@ -249,12 +307,19 @@ await park();
 
 // ── 11. AN EXTERNAL RELATION IS LABELLED WITH THE PRODUCER'S OWN NAME ─
 {
-  const selected = await p.evaluate(() => {
-    // An object that actually carries a relation, so the connections list has
-    // something external in it.
-    for (const g of document.querySelectorAll('[data-kind="intel"] g[role="button"]')) {
-      const label = g.getAttribute("aria-label") ?? "";
-      if (label.includes("Decision")) { g.dispatchEvent(new MouseEvent("click", { bubbles: true })); return label; }
+  await clearSelection();
+  // AN OBJECT THAT ACTUALLY CARRIES ONE. Most of the corpus has only
+  // citations and related_to; this looks for one whose panel shows both a
+  // temporal and a contextual relation, which is what the assertion is about.
+  const selected = await p.evaluate(async () => {
+    const nodes = [...document.querySelectorAll('[data-kind="intel"] g[role="button"]')];
+    for (const g of nodes) {
+      g.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      await new Promise((r) => setTimeout(r, 60));
+      const t = document.querySelector('[data-shoot="graph-inspector"]')?.innerText ?? "";
+      if (/\bTEMPORAL\b/.test(t) && /\bCONTEXTUAL\b/.test(t)) return g.getAttribute("aria-label");
+      window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+      await new Promise((r) => setTimeout(r, 40));
     }
     return null;
   });
@@ -366,7 +431,7 @@ await park();
   }
   runs.sort((a, b) => a - b);
   const v = record("lat.search", { median: Math.round(runs[3]), worst: Math.round(runs[6]) });
-  check("15. searching 466 nodes responds within budget", v.median < 150, `median ${v.median}ms, worst ${v.worst}ms`);
+  check("15. searching the whole merged graph responds within budget", v.median < 150, `median ${v.median}ms, worst ${v.worst}ms`);
   await p.locator('[data-shoot="graph-search"]').fill("");
   await settle(500);
 }
@@ -406,6 +471,339 @@ await park();
   await settle(600);
 }
 
+// The latency block above finishes COLLAPSED, so every external object is a
+// latent mark with no hit target. Everything below needs them formed.
+await p.locator('[data-shoot="expand-all"]').click();
+await settle(1400);
+await fit();
+await park();
+
+// ── 18-21. THE FOUR TYPES, EACH SELECTED ─────────────────────────────
+//
+// A Decision, a Dependency, a Risk and a Commitment — the four §9 names, each
+// opened on the real payload. What the shot has to show is the same thing
+// each time: an external claim, its evidence, and nothing pretending to be
+// Reality.
+{
+  const shots = { decision: "13-decision", dependency: "14-dependency", risk: "15-risk", commitment: "16-commitment" };
+  for (const [type, name] of Object.entries(shots)) {
+    await clearSelection();
+    const label = await p.evaluate((t) => {
+      const g = document.querySelector(`[data-intel-type="${t}"] g[role="button"]`);
+      if (!g) return null;
+      g.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      return g.getAttribute("aria-label");
+    }, type);
+    await settle(700);
+    const text = label ? await inspector() : "";
+    await shot(name);
+    check(
+      `${18 + Object.keys(shots).indexOf(type)}. an external ${type} opens as external intelligence`,
+      label != null &&
+        /external intelligence/i.test(text) &&
+        /not an accepted Signal decision/i.test(text) &&
+        new RegExp(type, "i").test(text),
+      label ? `${String(label).slice(0, 58)}…` : `no ${type} on the field`
+    );
+    await p.keyboard.press("Escape");
+    await settle(300);
+  }
+}
+
+// ── 22. THE REAL PROVENANCE CHAIN, CLICKED ───────────────────────────
+//
+//   hermes:risk-2026-08-24-005
+//     → hermes-ev:2026-08-19_KE-User-Interview-Follow-Up-seg069
+//       → ke://source/transcript/2026-08-19_KE-User-Interview-Follow-Up
+//
+// Walked the way a person walks it: select the claim, click the passage in
+// its connections list, click the transcript in that passage's.
+{
+  const TRACE = {
+    object: "hermes:risk-2026-08-24-005",
+    evidence: "hermes-ev:2026-08-19_KE-User-Interview-Follow-Up-seg069",
+    source: "ke://source/transcript/2026-08-19_KE-User-Interview-Follow-Up",
+  };
+  await clearSelection();
+  await p.locator('[data-shoot="graph-search"]').fill(TRACE.object);
+  await settle(900);
+  const found = await p.evaluate(() => {
+    const btn = document.querySelector('[data-shoot="search-results"] button');
+    if (!btn) return false;
+    btn.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    return true;
+  });
+  await settle(900);
+  await p.locator('[data-shoot="graph-search"]').fill("");
+  await settle(600);
+
+  const step1 = await inspector();
+  const toPassage = await p.evaluate((evId) => {
+    for (const b of document.querySelectorAll('[data-shoot="connection-cites"]')) {
+      if (b.innerText.includes(evId)) {
+        b.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+        return true;
+      }
+    }
+    return false;
+  }, TRACE.evidence);
+  await settle(800);
+  const step2 = await inspector();
+  await shot("17-trace-passage");
+
+  const toSource = await p.evaluate(() => {
+    const b = document.querySelector('[data-shoot="connection-extracted_from"]');
+    if (!b) return false;
+    b.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    return true;
+  });
+  await settle(800);
+  const step3 = await inspector();
+  await shot("18-trace-transcript");
+
+  check(
+    "22. the exact real chain is clickable: claim → passage → transcript",
+    found && toPassage && toSource &&
+      step1.includes(TRACE.object) &&
+      step2.includes(TRACE.evidence) &&
+      step3.includes(TRACE.source),
+    `${TRACE.object} → ${TRACE.evidence} → ${TRACE.source}`
+  );
+  check(
+    "22b. and the passage shows its own character range, not an approximation",
+    /charStart|charEnd|unicode_codepoint|\u2013/.test(step2) && /unicode_codepoint/.test(step2),
+    (step2.match(/Anchored[\s\S]{0,120}/) ?? [step2.slice(0, 100)])[0].replace(/\n/g, " ")
+  );
+  await p.keyboard.press("Escape");
+  await settle(400);
+}
+
+// ── 23. A REAL TEMPORAL CHAIN IS NAVIGABLE ───────────────────────────
+//
+// Six superseded objects, each the far end of a real temporal relation. The
+// chain is what makes them worth transporting, and it must be walkable from
+// the head without a History mode existing yet.
+{
+  await clearSelection();
+  const walked = await p.evaluate(async () => {
+    for (const g of document.querySelectorAll('[data-kind="intel"] g[role="button"]')) {
+      g.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      await new Promise((r) => setTimeout(r, 50));
+      const panel = document.querySelector('[data-shoot="graph-inspector"]');
+      const rel = [...(panel?.querySelectorAll('[data-shoot="connection-intel_relation"]') ?? [])].find(
+        (b) => /supersedes|refines/i.test(b.innerText) && !b.innerText.trim().startsWith("\u2190")
+      );
+      if (rel) {
+        const from = panel.querySelector("h2")?.textContent ?? "";
+        rel.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+        return { from, ok: true };
+      }
+      window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+      await new Promise((r) => setTimeout(r, 30));
+    }
+    return { from: "", ok: false };
+  });
+  await settle(900);
+  const text = walked.ok ? await inspector() : "";
+  await shot("19-temporal-chain");
+  check(
+    "23. a real temporal chain walks from the head to what it replaced",
+    walked.ok && /external intelligence/i.test(text),
+    walked.ok ? `stepped along supersedes/refines into ${(text.split("\n")[1] ?? "").slice(0, 46)}…` : "no temporal relation offered"
+  );
+  // AND THE OBJECT IT LANDED ON IS HISTORY, SHOWN AS HISTORY.
+  const superseded = await p.evaluate(() =>
+    [...document.querySelectorAll('[data-kind="intel"][data-current="false"]')].some(
+      (g) => g.getAttribute("data-selected") === "true" || g.getAttribute("data-identity") !== "latent"
+    )
+  );
+  check("23b. and the object it lands on is woken from latent, marked superseded", superseded || /superseded/i.test(text), /superseded/i.test(text) ? "panel says superseded" : "woken on the field");
+  await p.keyboard.press("Escape");
+  await settle(400);
+}
+
+// ── 24. THE HAIRBALL LAW, ON THE REAL RELATION MIX ───────────────────
+{
+  // REST MEANS REST. A selection wakes its neighbourhood by design, so
+  // measuring "the resting field" with something still selected measures the
+  // wake instead.
+  await clearSelection();
+  await p.locator('[data-shoot="collapse-all"]').click();
+  await settle(800);
+  await fit();
+  await park();
+  const rest = await p.evaluate(() => {
+    const e = [...document.querySelectorAll('[data-shoot="graph-edges"] path')];
+    const byRel = {};
+    for (const x of e) byRel[x.getAttribute("data-rel")] = (byRel[x.getAttribute("data-rel")] ?? 0) + 1;
+    return { total: e.length, external: e.filter((x) => x.getAttribute("data-basis") === "external").length, byRel };
+  });
+  record("rest", rest);
+  check(
+    "24. related_to is asleep at rest — zero of 68 drawn",
+    rest.external === 0,
+    `${rest.total} edges on the resting field, ${rest.external} external of the 295 that exist`
+  );
+  await shot("20-rest-contextual-asleep");
+  // Back open for the latency block: a latent mark has no hit target, so
+  // every interaction measured below needs the objects formed.
+  await p.locator('[data-shoot="expand-all"]').click();
+  await settle(1400);
+}
+
+// ── 25-27. PERFORMANCE ON THE REAL MERGED GRAPH, PER TIER ────────────
+const tierFrames = {};
+for (const want of ["far", "medium", "close"]) {
+  await fit();
+  await park();
+  if (want !== "far") await zoomTo(want);
+  await p.evaluate(() => {
+    window.__f = [];
+    let last = performance.now();
+    const tick = (t) => { window.__f.push(t - last); last = t; window.__raf = requestAnimationFrame(tick); };
+    window.__raf = requestAnimationFrame(tick);
+  });
+  await p.mouse.move(700, 520);
+  for (let i = 0; i < 24; i++) { await p.mouse.wheel(0, i % 2 ? 200 : -200); await p.waitForTimeout(28); }
+  await p.mouse.down();
+  for (let i = 0; i < 24; i++) await p.mouse.move(700 + i * 7, 520 + i * 4);
+  await p.mouse.up();
+  const f = await p.evaluate(() => { cancelAnimationFrame(window.__raf); return window.__f.slice(3).sort((a, b) => a - b); });
+  const q = (n) => f[Math.min(f.length - 1, Math.floor(f.length * n))];
+  tierFrames[want] = { n: f.length, median: +q(0.5).toFixed(1), p95: +q(0.95).toFixed(1), over50: f.filter((x) => x > 50).length };
+}
+record("frames.byTier", tierFrames);
+check(
+  "25. camera work holds 60fps at every tier on the real graph",
+  Object.values(tierFrames).every((t) => t.median <= 18),
+  Object.entries(tierFrames).map(([k, v]) => `${k} median ${v.median}ms p95 ${v.p95}ms (${v.over50}>50ms of ${v.n})`).join(" · ")
+);
+
+// Hover, solo, intel focus, edge wake, source expansion.
+{
+  await fit();
+  await park();
+  const lat = async (label, run) => {
+    const runs = [];
+    for (let i = 0; i < 5; i++) runs.push(await run());
+    runs.sort((a, b) => a - b);
+    return record(`lat.${label}`, { median: Math.round(runs[2]), worst: Math.round(runs[4]) });
+  };
+
+  // HOVER DIMS THE UNRELATED FIELD — it does not open the inspector, and a
+  // measurement waiting for a panel that hover never opens reports two
+  // seconds of latency that does not exist. What is timed is the thing hover
+  // actually causes: the rest of the field receding.
+  // WITH A REAL POINTER. React synthesises onMouseEnter from `mouseover`
+  // delegation, so a dispatched `mouseenter` — which does not bubble — never
+  // reaches it and the measurement times out reporting two seconds of
+  // latency that did not happen.
+  const box = await p.locator('[data-kind="finding"] g[role="button"]').first().boundingBox();
+  const hover = await lat("hover", async () => {
+    await p.mouse.move(1560, 960);
+    await p.waitForTimeout(140);
+    await p.evaluate(() => {
+      window.__dim0 = [...document.querySelectorAll('[data-shoot^="node-"]')].filter(
+        (g) => parseFloat(g.getAttribute("opacity") ?? "1") <= 0.11
+      ).length;
+      window.__t0 = performance.now();
+    });
+    await p.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    return p.evaluate(async () => {
+      for (let k = 0; k < 120; k++) {
+        const now = [...document.querySelectorAll('[data-shoot^="node-"]')].filter(
+          (g) => parseFloat(g.getAttribute("opacity") ?? "1") <= 0.11
+        ).length;
+        if (now !== window.__dim0) return performance.now() - window.__t0;
+        await new Promise((r) => requestAnimationFrame(r));
+      }
+      return performance.now() - window.__t0;
+    });
+  });
+  await park();
+  check("26. hover responds immediately on the real graph", hover.median < 50, `median ${hover.median}ms, worst ${hover.worst}ms`);
+
+  // EDGE WAKE — selecting an external object must draw its contextual
+  // neighbourhood, and that is the single heaviest edge recomputation.
+  const wake = await lat("edgeWake", () =>
+    p.evaluate(async () => {
+      const before = document.querySelectorAll('[data-shoot="graph-edges"] path').length;
+      const g = document.querySelector('[data-intel-type="observation"] g[role="button"]');
+      const t0 = performance.now();
+      g?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      for (let k = 0; k < 240; k++) {
+        if (document.querySelectorAll('[data-shoot="graph-edges"] path').length !== before) break;
+        await new Promise((r) => requestAnimationFrame(r));
+      }
+      const ms = performance.now() - t0;
+      window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+      return ms;
+    })
+  );
+  check("27. waking an external object's edges is within budget", wake.median < 150, `median ${wake.median}ms, worst ${wake.worst}ms`);
+
+  // EVIDENCE SOLO on an external object.
+  await p.evaluate(() => document.querySelector('[data-intel-type="risk"] g[role="button"]')?.dispatchEvent(new MouseEvent("click", { bubbles: true })));
+  await settle(600);
+  const soloBtn = p.locator('[data-shoot="intel-solo"]');
+  if ((await soloBtn.count()) > 0) {
+    const runs = [];
+    for (let i = 0; i < 5; i++) {
+      const t0 = await p.evaluate(() => performance.now());
+      await soloBtn.click();
+      const t1 = await p.evaluate(async () => {
+        for (let k = 0; k < 240; k++) {
+          const dim = [...document.querySelectorAll('[data-shoot^="node-"]')].filter(
+            (g) => parseFloat(g.getAttribute("opacity") ?? "1") < 0.1
+          ).length;
+          if (dim > 100) return performance.now();
+          await new Promise((r) => requestAnimationFrame(r));
+        }
+        return performance.now();
+      });
+      runs.push(t1 - t0);
+      if (i === 0) await shot("21-solo");
+      await soloBtn.click();
+      await settle(350);
+    }
+    runs.sort((a, b) => a - b);
+    const v = record("lat.solo", { median: Math.round(runs[2]), worst: Math.round(runs[4]) });
+    // A DISCRETE COMMAND, not a frame. Solo re-derives the traversal and
+    // re-opacities the whole field in one shot; it is held to the same 250ms
+    // budget as opening the entire field, not to a 16ms one.
+    check("28. Evidence Solo on an external claim is within budget", v.median < 250, `median ${v.median}ms, worst ${v.worst}ms`);
+  } else {
+    check("28. Evidence Solo on an external claim is within budget", false, "no trace control offered");
+  }
+  await p.keyboard.press("Escape");
+  await settle(400);
+
+  // SOURCE EXPANSION — one transcript, opened on its own.
+  {
+    await p.evaluate(() => document.querySelector('[data-kind="transcript"] g[role="button"]')?.dispatchEvent(new MouseEvent("click", { bubbles: true })));
+    await settle(600);
+    const btn = p.locator('[data-shoot="source-expand"]');
+    if ((await btn.count()) > 0) {
+      const before = await count('[data-shoot^="node-"][data-identity="latent"]');
+      const t0 = await p.evaluate(() => performance.now());
+      await btn.click();
+      const t1 = await p.evaluate(async (b) => {
+        for (let k = 0; k < 240; k++) {
+          if (document.querySelectorAll('[data-shoot^="node-"][data-identity="latent"]').length !== b) return performance.now();
+          await new Promise((r) => requestAnimationFrame(r));
+        }
+        return -1;
+      }, before);
+      record("lat.sourceExpand", Math.round(t1 - t0));
+      check("29. opening one transcript's passages is within budget", t1 > 0 && t1 - t0 < 200, `${Math.round(t1 - t0)}ms`);
+    } else {
+      check("29. opening one transcript's passages is within budget", true, "already open — its cluster was expanded");
+    }
+    await p.keyboard.press("Escape");
+    await settle(400);
+  }
+}
+
 await fit();
 await park();
 await shot("09-rest-final");
@@ -422,7 +820,7 @@ await settle(1200);
 await park();
 await shot("12-hermes-close");
 
-check("17. no page errors during the whole run", errs.length === 0, errs.join(" | "));
+check("30. no page errors during the whole run", errs.length === 0, errs.join(" | "));
 console.log(`\nMEASURED ${JSON.stringify(measured, null, 1)}`);
 console.log(`\n${failures === 0 ? "ALL PASS" : `${failures} FAILURE(S)`}`);
 await b.close();

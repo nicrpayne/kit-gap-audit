@@ -38,18 +38,48 @@ import type {
   PackageSourceManifestEntry,
   JsonValue,
 } from "@/lib/context/package";
+import { readRelationField } from "@/lib/context/package";
 
 /** How loud a relation may be. The corpus is overwhelmingly contextual, so
     this is the difference between an instrument and a hairball. */
-export type IntelRelationClass = "temporal" | "semantic" | "contextual";
+export type IntelRelationClass = "temporal" | "semantic" | "contextual" | "provenance";
 
 /** Relations that carry a real chain through time. Drawn at rest between
     two open objects, and the reason historical objects are transported at
     all. */
-export const TEMPORAL_RELS = new Set(["supersedes", "refines", "resolves", "reopens"]);
+export const TEMPORAL_RELS = new Set(["supersedes", "refines", "reopens"]);
 
-/** Meaningful but not temporal. Drawn at rest. */
-export const SEMANTIC_RELS = new Set(["depends_on", "caused_by", "contradicts", "supports", "derived_from"]);
+/**
+ * Meaningful but not temporal. Drawn at rest.
+ *
+ * `resolves` was originally filed as temporal here, on the strength of its
+ * name. The real corpus classes it SEMANTIC, and reconciling the published
+ * relation totals against the published class totals leaves exactly one
+ * consistent assignment, which agrees: 3 supersedes + 3 refines is the whole
+ * of temporal, and resolves joins depends_on, caused_by and supports.
+ *
+ * The producer is right about its own taxonomy. "A resolves B" is a claim
+ * about the project — this answered that — not a step along a chain the way
+ * a supersession is. The fallback was corrected to agree with it, so a
+ * relation arriving WITHOUT a declared class is classed the same way the
+ * producer would have classed it.
+ */
+export const SEMANTIC_RELS = new Set(["depends_on", "caused_by", "contradicts", "supports", "resolves"]);
+
+/**
+ * WHERE A CLAIM CAME FROM, between two objects.
+ *
+ * `derived_from` was originally filed under semantic here, on the strength of
+ * its name. The real corpus classes it `provenance` — a fourth class — and
+ * the producer is right: "B was derived from A" is a statement about how the
+ * knowledge was made, not about the project. It belongs with the citation
+ * mesh, subdued at rest, rather than with the dependency and contradiction
+ * edges that say something about delivery.
+ *
+ * The name-based fallback now agrees with the producer instead of quietly
+ * disagreeing with it.
+ */
+export const PROVENANCE_RELS = new Set(["derived_from", "cites", "sourced_from"]);
 
 export interface ProjectedIntelObject {
   /** `<snapshotId>::<producer object id>` — snapshot-scoped for the same
@@ -100,6 +130,14 @@ export interface ProjectedIntelPassage {
   role: string | null;
   status: string | null;
   externalRef: string | null;
+  /** The producer's own anchoring for this quote — hash, character range and
+      the unit the offsets are counted in. Signal models none of these fields,
+      which is exactly why they must survive: a citation that cannot name its
+      own character range is not a citation. */
+  anchor: Record<string, JsonValue>;
+  /** `independent` | `derivative` | NULL. Null means the producer did not
+      say, and is never read as independent. */
+  independence: string | null;
 }
 
 export interface ProjectedIntelRelation {
@@ -150,11 +188,12 @@ export interface ProjectedIntelligence {
  * at rest is how a hairball starts.
  */
 export function relClassOf(r: { rel: string; relClass?: string }): IntelRelationClass {
-  const c = (r.relClass ?? "").toLowerCase();
-  if (c === "temporal" || c === "semantic" || c === "contextual") return c;
+  const c = (readRelationField(r as unknown as Record<string, unknown>, "relClass") ?? "").toLowerCase();
+  if (c === "temporal" || c === "semantic" || c === "contextual" || c === "provenance") return c;
   const rel = r.rel.toLowerCase();
   if (TEMPORAL_RELS.has(rel)) return "temporal";
   if (SEMANTIC_RELS.has(rel)) return "semantic";
+  if (PROVENANCE_RELS.has(rel)) return "provenance";
   return "contextual";
 }
 
@@ -163,6 +202,16 @@ export const intelKey = (snapshotId: string, externalId: string) => `intel:${sna
 
 function rec(v: Record<string, JsonValue> | undefined): Record<string, JsonValue> {
   return v ?? {};
+}
+
+/** The anchoring fields, lifted out of everything else the producer sent. */
+const ANCHOR_FIELDS = ["quoteHash", "charStart", "charEnd", "offsetUnit"];
+
+function pickAnchor(extra: Record<string, JsonValue> | undefined): Record<string, JsonValue> {
+  if (!extra) return {};
+  const out: Record<string, JsonValue> = {};
+  for (const k of ANCHOR_FIELDS) if (extra[k] !== undefined) out[k] = extra[k];
+  return out;
 }
 
 /**
@@ -252,6 +301,11 @@ export function projectIntelligence(
           role: manifest?.role ?? null,
           status: manifest?.status ?? null,
           externalRef: item.externalRef ?? null,
+          // Read off the evidence row's preserved fields, so the anchoring
+          // the producer sent reaches the graph rather than stopping at the
+          // transport.
+          anchor: pickAnchor(item.extra),
+          independence: item.independence ?? null,
         });
       }
     }
@@ -264,15 +318,23 @@ export function projectIntelligence(
     // chain backwards, so `declared` is carried for the record and the
     // transported direction is taken as authoritative.
     for (const r of (pkg.intelligenceRelations ?? []) as IntelligenceRelationItem[]) {
-      const from = admitted.get(r.from);
+      // READ IN THE PRODUCER'S VOCABULARY OR SIGNAL'S, whichever arrived.
+      // A snapshot persisted through the validator carries Signal's; a raw
+      // package straight off the bridge carries the producer's; both must
+      // project to the same graph.
+      const fromId = readRelationField(r, "from");
+      const relName = readRelationField(r, "rel");
+      const toId = readRelationField(r, "to");
+      if (!fromId || !relName || !toId) continue;
+      const from = admitted.get(fromId);
       if (!from) continue; // out of scope, or not this Scope's chain
-      const to = admitted.get(r.to);
-      const cls = relClassOf(r);
+      const to = admitted.get(toId);
+      const cls = relClassOf({ rel: relName, relClass: readRelationField(r, "relClass") ?? undefined });
       relations.push({
         fromKey: from.key,
         toKey: to ? to.key : null,
-        toExternalId: r.to,
-        rel: r.rel,
+        toExternalId: toId,
+        rel: relName,
         relClass: cls,
         declared: rec(r.declared),
       });
@@ -326,14 +388,32 @@ export function projectIntelligence(
  * existing cluster and "Decisions is at the top" has to stay learnable.
  */
 export function laneForIntelligenceType(intelligenceType: string): string {
-  switch (intelligenceType) {
-    case "Decision":
+  switch (normalizeIntelligenceType(intelligenceType)) {
+    case "decision":
       return "decisions";
-    case "Dependency":
+    case "dependency":
       return "dependencies";
-    case "AvailabilityObservation":
+    case "availabilityobservation":
       return "capacity";
     default:
       return "hermes";
   }
+}
+
+/**
+ * A type string reduced to a comparison key. FOR ROUTING ONLY.
+ *
+ * The real corpus emits `availability_observation` and `climate_evidence`;
+ * this module was first written against `AvailabilityObservation` and
+ * `ClimateEvidence`. Matched exactly, every real object would have fallen
+ * through to the `hermes` sector and the "seated by what it means" law would
+ * have failed silently — a Hermes Decision sitting in the intelligence lane
+ * rather than on the Decisions axis, with nothing to show it had gone wrong.
+ *
+ * The producer's exact string is NEVER rewritten. It rides on the node, it
+ * is what the inspector prints, and it is what search matches. Only the
+ * comparison is normalised.
+ */
+export function normalizeIntelligenceType(intelligenceType: string): string {
+  return intelligenceType.toLowerCase().replace(/[\s_-]+/g, "");
 }

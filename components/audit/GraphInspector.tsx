@@ -548,6 +548,45 @@ export default function GraphInspector({
         </div>
       )}
 
+      {/* ── WHERE EXACTLY THIS QUOTE IS ────────────────────────────────
+          The producer anchors every structured passage to a character range
+          in its source, with a hash of the quote and the unit the offsets are
+          counted in. Signal was deleting all four at the boundary; showing
+          them is what makes "this exact sentence, in that transcript" a claim
+          a person can check rather than take on trust. */}
+      {attrs.kind === "passage" && Object.keys((attrs.anchor as Record<string, unknown>) ?? {}).length > 0 && (
+        <div className="mt-4 px-4">
+          <div className="i-label mb-1.5" style={{ color: "var(--i-text-faint)" }}>
+            Anchored in the source
+          </div>
+          {(() => {
+            const a = attrs.anchor as Record<string, unknown>;
+            return (
+              <>
+                {a.charStart != null && a.charEnd != null && (
+                  <Row
+                    label="Characters"
+                    value={`${a.charStart}–${a.charEnd}${a.offsetUnit ? ` (${a.offsetUnit})` : ""}`}
+                    mono
+                  />
+                )}
+                {a.quoteHash != null && <Row label="Quote hash" value={String(a.quoteHash)} mono />}
+                {attrs.sourceRef != null && <Row label="Source" value={String(attrs.sourceRef)} mono />}
+                {/* ABSENT MEANS UNKNOWN. Printed as unknown, never as
+                    independent — the producer left 56 of the real passages
+                    without a value and reading those as independent would
+                    manufacture corroboration out of silence. */}
+                <Row
+                  label="Independence"
+                  value={attrs.independence != null ? String(attrs.independence) : "Not stated"}
+                  tone={attrs.independence != null ? undefined : "var(--i-text-faint)"}
+                />
+              </>
+            );
+          })()}
+        </div>
+      )}
+
       {/* CONNECTIONS — the reference's own side-panel pattern, with the one
           thing it does not have: WHERE each relationship came from. */}
       <div className="mt-4 px-4 pb-6">

@@ -28,6 +28,7 @@ import {
   type IntelligenceObjectItem,
   type IntelligenceRelationItem,
   type IntelligenceMeta,
+  RELATION_FIELD_ALIASES,
   EXTERNAL_INTELLIGENCE_TRUST,
 } from "./package";
 
@@ -45,19 +46,62 @@ const VALID_SOURCE_STATUSES = new Set<SourceManifestStatus>([
 // budgets in lib/notion.ts/lib/figma.ts. A package exceeding one of these
 // is REJECTED, not truncated -- truncating would be exactly the kind of
 // silent information loss this validator exists to prevent.
-const MAX_SOURCES = 50;
-const MAX_EVIDENCE_ITEMS = 500;
-const MAX_DERIVED_CLAIMS = 200;
+// ── PACKAGE LIMITS ────────────────────────────────────────────────────
+//
+//   LIMITS PROTECT SIGNAL FROM PATHOLOGICAL INPUT.
+//   THEY DO NOT CONSTRAIN NORMAL PROJECT GROWTH.
+//
+// The originals were chosen before any real structured package existed, and
+// the real post-fix JSA package arrived at 47 of 50 sources — 94% of a
+// contract limit, on an ordinary project. Upstream source growth is about
+// +6.4 artifacts per ingestion batch, so the NEXT ordinary ingestion would
+// have been rejected by a number nobody had revisited.
+//
+// Measured (scripts/audit-package-limits-measure.ts), on the real 835 KB
+// package and on one scaled to saturate every new ceiling at once:
+//
+//   real JSA          835 KB   validate  9ms   hash  11ms   project  4ms
+//   every cap maxed  8515 KB   validate 106ms  hash 191ms   project 80ms
+//
+// So a package ten times the real one's weight still validates, hashes and
+// projects in under four hundred milliseconds — which is the evidence these
+// numbers are chosen on. A normal project now sits at 19% of the source cap
+// instead of 94%.
+export const PACKAGE_LIMITS = {
+  sources: 250,
+  evidence: 2000,
+  derivedClaims: 200,
+  intelligenceObjects: 2000,
+  intelligenceRelations: 20000,
+  /** Total serialised weight, whatever shape it arrives in. */
+  bytes: 12 * 1024 * 1024,
+} as const;
+
+const MAX_SOURCES = PACKAGE_LIMITS.sources;
+const MAX_EVIDENCE_ITEMS = PACKAGE_LIMITS.evidence;
+const MAX_DERIVED_CLAIMS = PACKAGE_LIMITS.derivedClaims;
 const MAX_WARNINGS = 50;
 // The real JSA payload is 161 objects / 87 relations. Room to grow several
 // times over without letting a runaway producer post an unbounded blob.
-const MAX_INTELLIGENCE_OBJECTS = 2000;
-const MAX_INTELLIGENCE_RELATIONS = 4000;
+const MAX_INTELLIGENCE_OBJECTS = PACKAGE_LIMITS.intelligenceObjects;
+const MAX_INTELLIGENCE_RELATIONS = PACKAGE_LIMITS.intelligenceRelations;
 const MAX_INTELLIGENCE_EVIDENCE_REFS = 200;
 const MAX_EXCERPT_CHARS = 4000;
 const MAX_DATA_JSON_CHARS = 8000;
 const MAX_WARNING_CHARS = 500;
 const MAX_STRING_FIELD_CHARS = 500; // ids, refs, kinds, statements, etc.
+
+// ONE GUARD THAT DOES NOT CARE HOW THE PAYLOAD IS SHAPED.
+//
+// The per-array caps bound the SHAPE of a package; this bounds its WEIGHT,
+// which is what actually costs memory, hash time and a jsonb row. A payload
+// can satisfy every count above and still be pathological — 2,000 evidence
+// items each carrying a 4,000-character excerpt, say.
+//
+// Set above the 8.5 MB a fully-saturated package weighs, so a caller who
+// trips a shape limit gets the specific error naming the field rather than
+// this one. It fires only for something no legitimate producer emits.
+const MAX_PACKAGE_BYTES = PACKAGE_LIMITS.bytes;
 
 export class PackageValidationError extends Error {
   constructor(message: string) {
@@ -121,87 +165,6 @@ function checkJsonBound(value: unknown, path: string, maxChars: number): void {
   }
 }
 
-function normalizeSourceEntry(raw: unknown, index: number): PackageSourceManifestEntry {
-  const path = `sources[${index}]`;
-  if (!isPlainObject(raw)) fail(`${path} must be an object`);
-
-  const sourceType = requireString(raw.sourceType, `${path}.sourceType`);
-  const sourceRef = requireString(raw.sourceRef, `${path}.sourceRef`);
-  const status = requireString(raw.status, `${path}.status`) as SourceManifestStatus;
-  if (!VALID_SOURCE_STATUSES.has(status)) {
-    fail(`${path}.status must be one of: ${[...VALID_SOURCE_STATUSES].join(", ")} -- got "${status}"`);
-  }
-  const observedAt = requireIsoDate(raw.observedAt, `${path}.observedAt`);
-  if (raw.succeeded !== true && raw.succeeded !== false) {
-    fail(`${path}.succeeded is required and must be a boolean`);
-  }
-
-  return {
-    sourceType,
-    sourceRef,
-    registrationId: optionalString(raw.registrationId, `${path}.registrationId`),
-    role: optionalString(raw.role, `${path}.role`),
-    status,
-    observedAt,
-    succeeded: raw.succeeded,
-    detail: optionalString(raw.detail, `${path}.detail`, MAX_WARNING_CHARS),
-  };
-}
-
-function normalizeEvidenceItem(raw: unknown, index: number): EvidenceItem {
-  const path = `evidence[${index}]`;
-  if (!isPlainObject(raw)) fail(`${path} must be an object`);
-
-  const id = requireString(raw.id, `${path}.id`);
-  const sourceRef = requireString(raw.sourceRef, `${path}.sourceRef`);
-  const kind = requireString(raw.kind, `${path}.kind`);
-  const excerpt = requireString(raw.excerpt, `${path}.excerpt`, MAX_EXCERPT_CHARS);
-
-  const item: EvidenceItem = { id, sourceRef, kind, excerpt };
-
-  const externalRef = optionalString(raw.externalRef, `${path}.externalRef`);
-  if (externalRef) item.externalRef = externalRef;
-
-  if (raw.data !== undefined) {
-    if (!isPlainObject(raw.data)) fail(`${path}.data must be a plain object when present`);
-    checkJsonBound(raw.data, `${path}.data`, MAX_DATA_JSON_CHARS);
-    item.data = raw.data as Record<string, JsonValue>;
-  }
-
-  return item;
-}
-
-function normalizeDerivedClaim(raw: unknown, index: number): DerivedClaim {
-  const path = `derivedClaims[${index}]`;
-  if (!isPlainObject(raw)) fail(`${path} must be an object`);
-
-  const id = requireString(raw.id, `${path}.id`);
-  const kind = requireString(raw.kind, `${path}.kind`);
-  const statement = requireString(raw.statement, `${path}.statement`, MAX_EXCERPT_CHARS);
-
-  const evidenceRefsRaw = requireArray(raw.evidenceRefs, `${path}.evidenceRefs`, 50);
-  const evidenceRefs = evidenceRefsRaw.map((r, i) => requireString(r, `${path}.evidenceRefs[${i}]`));
-
-  return { id, kind, statement, evidenceRefs };
-}
-
-// ── EXTERNAL INTELLIGENCE ─────────────────────────────────────────────
-//
-// PRESERVATION-FIRST, and that is the whole point of this block.
-//
-// The defect being fixed here is that `validateProjectContextPackage`
-// rebuilds the accepted package from named fields, so anything it does not
-// recognise is silently dropped — `intelligenceObjects` included. Guarding
-// only the top level and then whitelisting the INSIDE of an intelligence
-// object would reintroduce exactly that bug against a contract Signal does
-// not own: the producer adds a field, the field vanishes, and nothing
-// fails.
-//
-// So each helper below checks the fields Signal genuinely depends on and
-// carries everything else through on `extra`. Structural problems still
-// reject the whole package — a dangling evidence ref is not a field Signal
-// can shrug at — but an unfamiliar field is data, not an error.
-
 /** Split a raw object into the keys we model and the ones we do not,
     keeping the remainder rather than discarding it. */
 function partitionKnown(
@@ -221,6 +184,27 @@ function partitionKnown(
   return rest;
 }
 
+/**
+ * Everything the producer sent that this object does not model, merged with
+ * any `extra` it declared explicitly.
+ *
+ * The one helper every normaliser below ends with. Used everywhere rather
+ * than at the intelligence layer alone, because "the validator rebuilds an
+ * object from a whitelist and silently drops the rest" is a property of a
+ * FUNCTION, not of a field — and it was true of evidence items, source
+ * manifest entries and derived claims long before intelligence existed.
+ */
+function preserveRest(
+  raw: Record<string, unknown>,
+  known: string[],
+  path: string
+): Record<string, JsonValue> | undefined {
+  const unmodelled = partitionKnown(raw, known, path);
+  const declared = optionalRecord(raw.extra, `${path}.extra`);
+  const merged = { ...(declared ?? {}), ...(unmodelled ?? {}) };
+  return Object.keys(merged).length > 0 ? merged : undefined;
+}
+
 function optionalRecord(raw: unknown, path: string): Record<string, JsonValue> | undefined {
   if (raw === undefined || raw === null) return undefined;
   if (!isPlainObject(raw)) fail(`${path} must be an object when present`);
@@ -233,6 +217,116 @@ function optionalStringArray(raw: unknown, path: string, max: number): string[] 
   const arr = requireArray(raw, path, max);
   return arr.map((v, i) => requireString(v, `${path}[${i}]`));
 }
+
+const SOURCE_ENTRY_KEYS = [
+  "sourceType", "sourceRef", "registrationId", "role", "status", "observedAt",
+  "succeeded", "detail", "extra",
+];
+
+function normalizeSourceEntry(raw: unknown, index: number): PackageSourceManifestEntry {
+  const path = `sources[${index}]`;
+  if (!isPlainObject(raw)) fail(`${path} must be an object`);
+
+  const sourceType = requireString(raw.sourceType, `${path}.sourceType`);
+  const sourceRef = requireString(raw.sourceRef, `${path}.sourceRef`);
+  const status = requireString(raw.status, `${path}.status`) as SourceManifestStatus;
+  if (!VALID_SOURCE_STATUSES.has(status)) {
+    fail(`${path}.status must be one of: ${[...VALID_SOURCE_STATUSES].join(", ")} -- got "${status}"`);
+  }
+  const observedAt = requireIsoDate(raw.observedAt, `${path}.observedAt`);
+  if (raw.succeeded !== true && raw.succeeded !== false) {
+    fail(`${path}.succeeded is required and must be a boolean`);
+  }
+
+  const entry: PackageSourceManifestEntry = {
+    sourceType,
+    sourceRef,
+    registrationId: optionalString(raw.registrationId, `${path}.registrationId`),
+    role: optionalString(raw.role, `${path}.role`),
+    status,
+    observedAt,
+    succeeded: raw.succeeded,
+    detail: optionalString(raw.detail, `${path}.detail`, MAX_WARNING_CHARS),
+  };
+  const rest = preserveRest(raw, SOURCE_ENTRY_KEYS, path);
+  if (rest) entry.extra = rest;
+  return entry;
+}
+
+const EVIDENCE_ITEM_KEYS = ["id", "sourceRef", "kind", "excerpt", "externalRef", "independence", "data", "extra"];
+
+function normalizeEvidenceItem(raw: unknown, index: number): EvidenceItem {
+  const path = `evidence[${index}]`;
+  if (!isPlainObject(raw)) fail(`${path} must be an object`);
+
+  const id = requireString(raw.id, `${path}.id`);
+  const sourceRef = requireString(raw.sourceRef, `${path}.sourceRef`);
+  const kind = requireString(raw.kind, `${path}.kind`);
+  const excerpt = requireString(raw.excerpt, `${path}.excerpt`, MAX_EXCERPT_CHARS);
+
+  const item: EvidenceItem = { id, sourceRef, kind, excerpt };
+
+  const externalRef = optionalString(raw.externalRef, `${path}.externalRef`);
+  if (externalRef) item.externalRef = externalRef;
+
+  // ABSENT IS NOT A VALUE. `independence` is assigned only when the producer
+  // actually sent one, so "unknown" stays distinguishable from "independent"
+  // everywhere downstream. A default here would manufacture corroboration
+  // out of silence for the 56 real passages that carry no value.
+  const independence = optionalString(raw.independence, `${path}.independence`);
+  if (independence !== null) item.independence = independence;
+
+  if (raw.data !== undefined) {
+    if (!isPlainObject(raw.data)) fail(`${path}.data must be a plain object when present`);
+    checkJsonBound(raw.data, `${path}.data`, MAX_DATA_JSON_CHARS);
+    item.data = raw.data as Record<string, JsonValue>;
+  }
+
+  // THE SAME BUG, ONE LEVEL OVER. This function rebuilt an evidence item
+  // from six named fields, so a producer sending `quoteHash`, `charStart`,
+  // `charEnd` or `offsetUnit` had them silently deleted at the boundary --
+  // exactly the defect the intelligence fields were added to fix, sitting
+  // unnoticed in the path evidence had always taken. A citation that cannot
+  // name its own character range is not a citation.
+  const rest = preserveRest(raw, EVIDENCE_ITEM_KEYS, path);
+  if (rest) item.extra = rest;
+
+  return item;
+}
+
+function normalizeDerivedClaim(raw: unknown, index: number): DerivedClaim {
+  const path = `derivedClaims[${index}]`;
+  if (!isPlainObject(raw)) fail(`${path} must be an object`);
+
+  const id = requireString(raw.id, `${path}.id`);
+  const kind = requireString(raw.kind, `${path}.kind`);
+  const statement = requireString(raw.statement, `${path}.statement`, MAX_EXCERPT_CHARS);
+
+  const evidenceRefsRaw = requireArray(raw.evidenceRefs, `${path}.evidenceRefs`, 50);
+  const evidenceRefs = evidenceRefsRaw.map((r, i) => requireString(r, `${path}.evidenceRefs[${i}]`));
+
+  const claim: DerivedClaim = { id, kind, statement, evidenceRefs };
+  const rest = preserveRest(raw, ["id", "kind", "statement", "evidenceRefs", "extra"], path);
+  if (rest) claim.extra = rest;
+  return claim;
+}
+
+// ── EXTERNAL INTELLIGENCE ─────────────────────────────────────────────
+//
+// PRESERVATION-FIRST, and that is the whole point of this block.
+//
+// The defect being fixed here is that `validateProjectContextPackage`
+// rebuilds the accepted package from named fields, so anything it does not
+// recognise is silently dropped — `intelligenceObjects` included. Guarding
+// only the top level and then whitelisting the INSIDE of an intelligence
+// object would reintroduce exactly that bug against a contract Signal does
+// not own: the producer adds a field, the field vanishes, and nothing
+// fails.
+//
+// So each helper below checks the fields Signal genuinely depends on and
+// carries everything else through on `extra`. Structural problems still
+// reject the whole package — a dangling evidence ref is not a field Signal
+// can shrug at — but an unfamiliar field is data, not an error.
 
 const INTEL_OBJECT_KEYS = [
   "id", "intelligenceType", "trust", "statement", "statementBasis", "status",
@@ -287,34 +381,79 @@ function normalizeIntelligenceObject(raw: unknown, index: number): IntelligenceO
   if (fields) item.fields = fields;
   const provenance = optionalRecord(raw.provenance, `${path}.provenance`);
   if (provenance) item.provenance = provenance;
-  const unmodelled = partitionKnown(raw, INTEL_OBJECT_KEYS, path);
-  const declaredExtra = optionalRecord(raw.extra, `${path}.extra`);
-  const merged = { ...(declaredExtra ?? {}), ...(unmodelled ?? {}) };
-  if (Object.keys(merged).length > 0) item.extra = merged;
+  const rest = preserveRest(raw, INTEL_OBJECT_KEYS, path);
+  if (rest) item.extra = rest;
 
   return item;
 }
 
-const INTEL_RELATION_KEYS = ["from", "rel", "to", "relClass", "fromInPackage", "toInPackage", "declared", "extra"];
+const INTEL_RELATION_KEYS = [
+  "from", "rel", "to", "relClass", "fromInPackage", "toInPackage", "declared", "extra",
+  // The producer's own spellings for the same three concepts. Listed so the
+  // ones actually used are not ALSO copied into `extra` as unmodelled.
+  "sourceId", "relation", "targetId", "relationClass",
+];
+
+/**
+ * BE LIBERAL IN WHAT YOU ACCEPT, AND REWRITE NOTHING.
+ *
+ * The bridge names a relation's parts `sourceId` / `relation` / `targetId`;
+ * this transport was written with `from` / `rel` / `to`. They are the same
+ * three concepts, and picking a winner would mean either rejecting the real
+ * package outright or quietly renaming the producer's fields — the second
+ * being how a contract Signal does not own gets bent to Signal's taste.
+ *
+ * So either spelling is read, and whichever arrived is preserved verbatim
+ * on `extra`. Signal's own field names are an internal convenience; the
+ * producer's are the record.
+ */
+function firstString(raw: Record<string, unknown>, keys: string[], path: string, label: string): string {
+  for (const k of keys) {
+    if (typeof raw[k] === "string" && (raw[k] as string).length > 0) {
+      return requireString(raw[k], `${path}.${k}`);
+    }
+  }
+  fail(`${path}.${label} is required (accepted as any of: ${keys.join(", ")})`);
+}
 
 function normalizeIntelligenceRelation(raw: unknown, index: number): IntelligenceRelationItem {
   const path = `intelligenceRelations[${index}]`;
   if (!isPlainObject(raw)) fail(`${path} must be an object`);
 
   const item: IntelligenceRelationItem = {
-    from: requireString(raw.from, `${path}.from`),
-    rel: requireString(raw.rel, `${path}.rel`),
-    to: requireString(raw.to, `${path}.to`),
-    relClass: requireString(raw.relClass, `${path}.relClass`),
+    from: firstString(raw, [...RELATION_FIELD_ALIASES.from], path, "from"),
+    rel: firstString(raw, [...RELATION_FIELD_ALIASES.rel], path, "rel"),
+    to: firstString(raw, [...RELATION_FIELD_ALIASES.to], path, "to"),
+    relClass: firstString(raw, [...RELATION_FIELD_ALIASES.relClass], path, "relClass"),
   };
   if (typeof raw.fromInPackage === "boolean") item.fromInPackage = raw.fromInPackage;
   if (typeof raw.toInPackage === "boolean") item.toInPackage = raw.toInPackage;
   const declared = optionalRecord(raw.declared, `${path}.declared`);
   if (declared) item.declared = declared;
-  const unmodelled = partitionKnown(raw, INTEL_RELATION_KEYS, path);
-  const declaredExtra = optionalRecord(raw.extra, `${path}.extra`);
-  const merged = { ...(declaredExtra ?? {}), ...(unmodelled ?? {}) };
-  if (Object.keys(merged).length > 0) item.extra = merged;
+
+  // THE PRODUCER'S OWN SPELLING, RECORDED ONCE AND NEVER REWRITTEN.
+  //
+  // Which of the two vocabularies the bridge used is worth keeping — "what
+  // did it actually send" should be answerable from the snapshot. Recording
+  // it by copying the raw keys back was NOT idempotent: validating a package
+  // that had already been validated saw Signal's names in the input and
+  // overwrote the record with those, so re-validating a stored snapshot
+  // produced a different package and therefore a different contextHash. A
+  // proof caught it against the stored rows.
+  //
+  // So it is written only when absent. First acceptance decides; every later
+  // pass over the same package is a no-op, which is what an immutable
+  // snapshot requires.
+  if (declared?.emittedAs === undefined) {
+    const emittedAs: Record<string, JsonValue> = {};
+    for (const [field, aliases] of Object.entries(RELATION_FIELD_ALIASES)) {
+      const used = aliases.find((k) => typeof raw[k] === "string" && (raw[k] as string).length > 0);
+      if (used) emittedAs[field] = used;
+    }
+    item.declared = { ...(declared ?? {}), emittedAs };
+  }
+  const rest = preserveRest(raw, INTEL_RELATION_KEYS, path);
+  if (rest) item.extra = rest;
 
   return item;
 }
@@ -335,10 +474,8 @@ function normalizeIntelligenceMeta(raw: unknown): IntelligenceMeta {
     if (typeof v !== "number" || !Number.isFinite(v)) fail(`intelligenceMeta.${k} must be a number when present`);
     meta[k] = v;
   }
-  const unmodelled = partitionKnown(raw, INTEL_META_KEYS, "intelligenceMeta");
-  const declaredExtra = optionalRecord(raw.extra, "intelligenceMeta.extra");
-  const merged = { ...(declaredExtra ?? {}), ...(unmodelled ?? {}) };
-  if (Object.keys(merged).length > 0) meta.extra = merged;
+  const rest = preserveRest(raw, INTEL_META_KEYS, "intelligenceMeta");
+  if (rest) meta.extra = rest;
 
   return meta;
 }
@@ -373,6 +510,10 @@ function normalizeCompleteness(raw: unknown): PackageCompleteness {
 // Rejects on ANY structural problem -- there is no safe partial
 // acceptance of "which package, from whom, for which scope, citing what."
 export function validateProjectContextPackage(raw: unknown): ProjectContextPackage {
+  // WEIGHT FIRST, before anything walks the structure. Measuring the payload
+  // after parsing every item is measuring it too late to be a protection.
+  checkJsonBound(raw, "package", MAX_PACKAGE_BYTES);
+
   if (!isPlainObject(raw)) {
     fail("Expected a ProjectContextPackage object");
   }

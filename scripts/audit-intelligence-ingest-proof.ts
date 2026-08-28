@@ -16,7 +16,7 @@
 //   npx tsx scripts/audit-intelligence-ingest-proof.ts
 
 import { PrismaClient } from "@prisma/client";
-import { buildIntelligenceFixturePackage, JSA_SCALE } from "./lib/intel-fixture";
+import { buildIntelligenceFixturePackage, JSA_SCALE, REAL_JSA } from "./lib/intel-fixture";
 import { EXTERNAL_INTELLIGENCE_TRUST } from "../lib/context/package";
 import { loadAuditGraphInputs } from "../lib/audit/graphInputs";
 import { buildAuditGraph } from "../lib/audit/graph";
@@ -40,8 +40,24 @@ const post = (contextPackage: unknown) =>
 
 async function main() {
   const pkg = buildIntelligenceFixturePackage("jsa");
+  const bytes = Buffer.byteLength(JSON.stringify(pkg), "utf8");
   // Start from nothing, so "it landed" means this run landed it.
   await prisma.contextSnapshot.deleteMany({ where: { packageId: pkg.packageId, producer: pkg.producer } });
+  // The two registered sources need the registrations they name.
+  for (const src of pkg.sources.filter((x) => x.registrationId !== null)) {
+    await prisma.sourceRegistration.upsert({
+      where: { id: src.registrationId! },
+      update: { sourceType: src.sourceType, sourceRef: src.sourceRef, status: "active" },
+      create: {
+        id: src.registrationId!,
+        sourceType: src.sourceType,
+        sourceRef: src.sourceRef,
+        scopeIds: ["jsa"],
+        role: "raw_evidence",
+        status: "active",
+      },
+    });
+  }
 
   const modelsBefore = await prisma.$queryRawUnsafe<{ count: bigint }[]>(
     `select count(*)::bigint as count from information_schema.tables where table_schema = 'public'`
@@ -82,8 +98,28 @@ async function main() {
     "I2 the intelligence survived validation and persistence intact",
     (stored?.intelligenceObjects?.length ?? 0) === JSA_SCALE.objects &&
       (stored?.intelligenceRelations?.length ?? 0) === JSA_SCALE.relations,
-    `${stored?.intelligenceObjects?.length ?? 0} objects, ${stored?.intelligenceRelations?.length ?? 0} relations in ContextSnapshot.package`
+    `${stored?.intelligenceObjects?.length ?? 0} objects, ${stored?.intelligenceRelations?.length ?? 0} relations in ` +
+      `ContextSnapshot.package — an ${(bytes / 1024).toFixed(0)} KB body accepted over HTTP with no body-size configuration`
   );
+
+  // ── I2b. AND SO DID THE PASSAGE ANCHORING ──────────────────────────
+  //
+  // The fields Signal did not model and was deleting at the boundary.
+  {
+    const ev = (row?.package as { evidence: { id: string; extra?: Record<string, unknown>; independence?: string }[] }).evidence;
+    const traced = ev.find((e) => e.id === REAL_JSA.trace.evidence);
+    const anchor = (traced?.extra ?? {}) as Record<string, unknown>;
+    const absent = ev.slice(0, REAL_JSA.structuredPassages).filter((e) => e.independence === undefined).length;
+    check(
+      "I2b passage anchoring and independence survive the round trip",
+      typeof anchor.quoteHash === "string" &&
+        typeof anchor.charStart === "number" &&
+        anchor.offsetUnit === "unicode_codepoint" &&
+        absent === REAL_JSA.independence.absent,
+      `chars ${anchor.charStart}–${anchor.charEnd} ${anchor.offsetUnit}; ` +
+        `${absent} passages still carry NO independence value, exactly as sent`
+    );
+  }
 
   // ── I3. NO SCHEMA CHANGE WAS NEEDED ────────────────────────────────
   const modelsAfter = await prisma.$queryRawUnsafe<{ count: bigint }[]>(
@@ -106,7 +142,7 @@ async function main() {
   check(
     "I4 the graph read projects it with no further plumbing",
     intel === JSA_SCALE.objects,
-    `${intel} intel nodes in the JSA graph, from ${g.order} total`
+    `${intel} intel nodes in the JSA graph, from ${g.order} total (${g.size} edges)`
   );
 
   // ── I5. A RETRY IS IDEMPOTENT ──────────────────────────────────────
@@ -141,6 +177,9 @@ async function main() {
 
   // Put the database back where it was found.
   await prisma.contextSnapshot.deleteMany({ where: { packageId: pkg.packageId, producer: pkg.producer } });
+  await prisma.sourceRegistration.deleteMany({
+    where: { id: { in: pkg.sources.map((x) => x.registrationId).filter((x): x is string => x !== null) } },
+  });
   console.log(`\n${failures === 0 ? "ALL PASS" : `${failures} FAILURE(S)`}`);
 }
 

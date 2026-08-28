@@ -457,6 +457,49 @@ An accepted `ContextSnapshot` may carry three additive transport fields —
 `lib/context/package.ts`). `lib/audit/intelligence.ts` projects them; nothing
 about them is stored anywhere else.
 
+### The real JSA payload, reconciled
+
+The published census of the real post-fix package, and what it cost Signal to
+accept it:
+
+| | |
+|---|---|
+| sources | 47 — 30 transcript · 15 source · 1 spreadsheet · 1 contextDoc |
+| registration | **45 ad-hoc** (`candidate`, unregistered) · 2 registered and active |
+| evidence | 399 — **156 structured Hermes passages + 243 legacy bridge-reparsed** |
+| independence | 90 independent · 10 derivative · **56 absent** |
+| objects | 161 — observation 59, commitment 24, unknown 20, risk 17, decision 15, dependency 15, climate_evidence 6, availability_observation 5 |
+| head / history | 155 current · 6 superseded |
+| relations | 87 — related_to 68, derived_from 4, depends_on 3, resolves 3, refines 3, supersedes 3, caused_by 2, supports 1 |
+| classes | contextual 68 · semantic 9 · temporal 6 · **provenance 4** |
+| passive inverse names | **0** — the bridge has already normalised them |
+| derivedClaims | absent |
+| weight | ~851 KB |
+
+Four things in that table were genuine contract mismatches, and three of them
+would have rejected or silently corrupted the payload:
+
+| Emitted | Signal expected | Consequence before the fix |
+|---|---|---|
+| `sourceId` / `relation` / `targetId` | `from` / `rel` / `to` | **package rejected outright** |
+| `climate_evidence`, `availability_observation` | `ClimateEvidence`, `AvailabilityObservation` | **every object mis-seated into `hermes`, silently** |
+| `quoteHash` `charStart` `charEnd` `offsetUnit` on each passage | six named fields, rebuilt | **all four deleted at the boundary** |
+| relation class `provenance` | three classes | class lost, `derived_from` drawn as semantic |
+
+All four are fixed by accepting the producer's vocabulary rather than
+rewriting it. Either relation spelling is read; the one that arrived is
+recorded once under `declared.emittedAs` and never overwritten. Type strings
+are normalised **for sector routing only** — the producer's exact casing rides
+on the node, prints in the inspector, and is what search matches.
+
+> **Where `resolves` sits.** The census gives relation names and class totals
+> but not the mapping. Exactly one assignment reconciles both, and it puts
+> `resolves` in **semantic**, not temporal. Signal's name-based fallback
+> originally guessed temporal; the producer is the authority on its own
+> taxonomy and the fallback was corrected to agree. Derived by reconciliation,
+> not read from the file — and the producer's declared class wins at runtime
+> regardless, so nothing depends on the inference.
+
 ### The critical first fix
 
 `validateProjectContextPackage` rebuilt the accepted package from named
@@ -484,6 +527,21 @@ Structural problems still reject the whole package:
 
 The three fields are assigned **only when sent**, so every already-accepted
 snapshot serialises byte-identically and hashes the same.
+
+### The same bug, three levels over
+
+The whitelist-rebuild defect was never a property of the intelligence fields.
+It is a property of a FUNCTION, and `normalizeEvidenceItem`,
+`normalizeSourceEntry` and `normalizeDerivedClaim` all had it — written before
+any producer sent a field they had not been taught. Every normaliser now ends
+with the same `preserveRest` call. A citation that cannot name its own
+character range is not a citation.
+
+`independence` is first-class rather than preserved, because it carries a law:
+**absent means unknown**. It is assigned only when the producer sent one, so
+the 56 real passages with no value stay distinguishable from the 90 that say
+`independent`. Reading silence as independence would manufacture
+corroboration.
 
 ### Persistence: not necessary, and proven so
 
@@ -573,6 +631,37 @@ longitudinal chain backwards, and it would look plausible while doing it. The
 producer's own name rides on the edge as `intelRel`, and `declared` carries
 the raw form for the record.
 
+### Contract limits
+
+The originals were chosen before any real structured package existed. The real
+payload arrived at **47 of 50 sources — 94% of a contract limit, on an ordinary
+project** — and upstream growth is about +6.4 source artifacts per ingestion
+batch, so the next ordinary ingestion would have been rejected.
+
+> **Limits protect Signal from pathological input. They do not constrain
+> normal project growth.**
+
+| Limit | Old | New | Real JSA | Reason |
+|---|---:|---:|---|---|
+| `sources` | 50 | **250** | 47 (19%) | 0 batches of headroom → 32 |
+| `evidence` | 500 | **2000** | 399 (20%) | 243 legacy items ride alongside 156 structured ones |
+| `intelligenceObjects` | 2000 | 2000 | 161 (8%) | already ample; unchanged |
+| `intelligenceRelations` | 4000 | **20000** | 87 (0.4%) | `related_to` dominates and grows superlinearly with objects |
+| total bytes | — | **12 MB** | 851 KB (7%) | new: one guard that does not care how the payload is shaped |
+
+Measured (`scripts/audit-package-limits-measure.ts`):
+
+| | weight | validate | hash | project |
+|---|---:|---:|---:|---:|
+| real JSA | 835 KB | 9ms | 11ms | 4ms |
+| every new cap saturated at once | 8515 KB | 106ms | 191ms | 80ms |
+| 2× every cap | 17 MB | **rejected in 250ms, naming the field** | | |
+
+Ten times the real payload's weight still validates, hashes and projects in
+under four hundred milliseconds. The byte guard sits above the saturated
+ceiling so a caller who trips a shape limit gets the specific error rather than
+the generic one.
+
 ### Density: the chain, not the corpus
 
 Measured on the JSA-scale payload (`scripts/lib/intel-fixture.ts`): of 87
@@ -596,29 +685,50 @@ them has to land somewhere, and stay **latent until something reaches them**:
 selected, hovered, in the neighbourhood, lit by a trace, or matched by a
 search.
 
-Measured on the field, at 466 nodes and 618 relationships:
+### The real merged graph
 
-| | edges drawn |
-|---|---|
-| at rest | 72 — **none of them external** |
-| Hermes cluster open | 78, 2 external |
-| every cluster open | 310 of the 589 that exist; **15** external |
+| | nodes | edges |
+|---|---:|---:|
+| Signal's own record | 72 | 93 |
+| added by the real payload | **324** | 412 |
+| **merged** | **396** | **505** |
+| duplicated / collapsed | 0 | 0 |
 
-### Cost at 466 nodes
+The 324 are 161 external objects, 117 structured evidence passages and 46
+source artifacts. **Only cited evidence becomes a node**: the payload carries
+399 evidence items and 122 passages exist, because a passage is projected when
+something cites it. The 243 legacy reparsed items produce nothing on the graph
+today.
 
-Warm, production build, 1600×1000:
+Edges drawn:
 
-| | |
-|---|---|
-| pan / zoom frames | median **16.7ms**, p95 33.4ms, 0–3 frames over 50ms of ~135 |
-| select an external object | median **50ms**, worst 75ms |
-| search all 466 nodes | median **58ms**, worst 118ms |
-| open the entire field | median **155ms**, worst 210ms |
+| | drawn | held back |
+|---|---:|---:|
+| at rest | **25** — none external | 0 |
+| Hermes cluster open | 31, 2 external | |
+| every cluster open | 194 | 280 |
+| relationships that exist | 505 | |
 
-**Stay on custom SVG.** 466 nodes is 4.3× the previous largest Scope and still
-23× inside the Sigma revisit threshold, with 60fps camera work and every
-interaction inside its budget. Nothing here is evidence that the renderer is
-approaching a limit.
+### Cost on the real graph
+
+Warm, production build, 1600×1000, 396 nodes / 505 edges:
+
+| | far | medium | close |
+|---|---|---|---|
+| frame time | median **16.7ms**, p95 33.4ms | 16.7ms / 33.4ms | 16.7ms / 50ms |
+
+| | median | worst |
+|---|---:|---:|
+| hover | 16ms | 54ms |
+| select an external object | 42ms | 67ms |
+| search the whole graph | 49ms | 117ms |
+| wake an object's edges | 40ms | 52ms |
+| Evidence Solo | 128ms | 136ms |
+| open the entire field | 174ms | 223ms |
+
+**Stay on custom SVG.** 396 nodes is 5.5× the previous largest Scope, 60fps
+camera work at every tier, and every interaction inside its budget. Nothing
+here is evidence that the renderer is approaching a limit.
 
 ## Slicing
 
@@ -658,7 +768,7 @@ graph in the way a screenshot is an observation of the screen.
 
 ## Proven
 
-`scripts/audit-graph-proof.ts` — 158 assertions across **all four Scopes**:
+`scripts/audit-graph-proof.ts` — 177 assertions across **all four Scopes**:
 every node projects a real row; every edge cites a rule whose relation, basis
 and endpoint kinds it matches; no dangling edges; no renderer state anywhere in
 the layer; an unsupplied lane has no `supports` edge; provenance direction;
@@ -727,6 +837,26 @@ walking the corpus; seating by meaning outside the record's edge; Fit widening
 for the band and unchanged without one; superseded objects seated but latent;
 the resting field drawing the chain rather than the corpus; and zero writes.
 
+The real contract gets a `V` block, run against a package reproducing the real
+JSA census exactly and emitting it in the producer's own vocabulary: the census
+item by item; relations arriving as `sourceId`/`relation`/`targetId` read
+rather than refused; a raw package and a validated one projecting the same
+relations; the producer's spelling recorded once and never rewritten;
+snake_case types seating in their meaning's sector; `provenance` as a fourth
+class with the fallback agreeing with the producer; `quoteHash`, `charStart`,
+`charEnd` and `offsetUnit` surviving validation; absent independence staying
+absent; 45 ad-hoc and 2 registered sources with no kind inferred from prose;
+**the exact real chain walkable object → passage → transcript**; the passage
+carrying its own anchoring; a Decision, a Dependency, a Commitment and an
+Unknown each reaching real evidence; every historical object reachable along a
+real temporal chain; the merged graph with no duplicates; **no Reality
+mutation of any kind across nine tables**; every stored snapshot still hashing
+identically; and a normal project sitting well under every limit while the
+guard still bites.
+
+`scripts/audit-package-limits-measure.ts` — the cost evidence the limits were
+chosen on.
+
 `scripts/audit-intelligence-ingest-proof.ts` — the receiving end of the
 bridge, over HTTP: `POST /api/refresh` accepting a package carrying
 intelligence, it surviving validation and persistence intact, **no new table
@@ -734,8 +864,8 @@ and no new column**, the graph read projecting it with no further plumbing, a
 byte-identical retry creating no second snapshot, and a package lying about
 trust refused with a 400 and stored nowhere.
 
-`scripts/audit-intelligence-shoot.mjs` — the browser pass at 466 nodes, which
-owns the seeded fixture state and puts it back. Requires
+`scripts/audit-intelligence-shoot.mjs` — 35 browser assertions on the real
+merged graph, which owns the seeded state and puts it back. Requires
 `npx tsx scripts/seed-intel-fixture.ts` first.
 
 `scripts/audit-density-measure.ts` — the per-node visibility inventory, read

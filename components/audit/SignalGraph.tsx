@@ -337,9 +337,12 @@ export default function SignalGraph({
   //   CONTEXTUAL  related_to and anything unrecognised. Present in the
   //               graph, reachable, listed in the inspector — drawn only
   //               when one of its endpoints is the thing being explained.
-  //   CITES       object → passage provenance. Same rule: hundreds of
-  //               citation strokes are the answer to "why does it say
-  //               this", which is a question about ONE object.
+  //   PROVENANCE  derived_from between two objects, and `cites` from an
+  //               object to a passage. The mesh that says how the knowledge
+  //               was made rather than what it says about the project.
+  //               Same rule: hundreds of citation strokes are the answer to
+  //               "why does it say this", which is a question about ONE
+  //               object.
   //
   // Nothing is dropped and nothing is hidden from the reader — the edges
   // exist, the inspector lists them, and selecting either end draws them.
@@ -352,7 +355,7 @@ export default function SignalGraph({
       if (MEMBERSHIP_RELS.has(a.rel)) return;
       if (!opened.has(s) || !opened.has(t)) return;
       if (!layout.has(s) || !layout.has(t)) return;
-      if (a.basis === "external" && (a.rel === "cites" || a.relClass === "contextual")) {
+      if (a.basis === "external" && (a.relClass === "contextual" || a.relClass === "provenance" || a.rel === "cites")) {
         const reached =
           (soloNodes ? soloNodes.has(s) || soloNodes.has(t) : false) ||
           (anchorId != null && (s === anchorId || t === anchorId));
@@ -1049,6 +1052,11 @@ const GraphNode = memo(function GraphNode({
       style={{ transition: "opacity 260ms ease" }}
       data-shoot={`node-${id}`}
       data-kind={attrs.kind}
+      // The producer's own type string, for the same reason `data-kind` is
+      // here: a QA pass and a screenshot script must be able to find "the
+      // external Decision" without reading a label out of an accessible name.
+      data-intel-type={attrs.kind === "intel" ? String(attrs.intelligenceType) : undefined}
+      data-current={attrs.kind === "intel" ? String(attrs.isCurrent !== false) : undefined}
       data-identity={identity}
       data-selected={selected ? "true" : undefined}
       data-matched={matched ? "true" : undefined}
@@ -1158,8 +1166,25 @@ const KIND_NAME: Record<string, string> = {
   intel: "External intelligence",
 };
 
+/**
+ * Trim a label to fit, KEEPING THE END WHEN THE END IS WHAT DISTINGUISHES IT.
+ *
+ * A source artifact's label is its ref, and the producer's refs are URIs:
+ * `ke://source/transcript/2026-08-19_KE-User-Interview-Follow-Up`. Cut from
+ * the front at 28 characters and thirty transcripts all read
+ * `ke://source/transcript/2026…` — the same string, thirty times, in one
+ * sector. Everything that tells them apart is in the part that was thrown
+ * away.
+ *
+ * So a path-shaped label is trimmed from the LEFT instead, which is the
+ * convention every file browser and terminal already uses for the same
+ * reason. Ordinary prose labels — a finding's title, a claim's statement —
+ * still trim from the right, because there the beginning is what matters.
+ */
 function truncate(s: string, n: number): string {
-  return s.length > n ? `${s.slice(0, n - 1)}…` : s;
+  if (s.length <= n) return s;
+  const pathShaped = s.includes("://") || s.split("/").length > 2;
+  return pathShaped ? `…${s.slice(s.length - (n - 1))}` : `${s.slice(0, n - 1)}…`;
 }
 
 /** Fit the whole field in view — the "reset" the reference offers as a

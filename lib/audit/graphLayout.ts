@@ -446,7 +446,21 @@ export function layoutGraph(graph: AuditGraph): GraphLayout {
       // Wider than the other rings on purpose: a source carries a long,
       // human label ("Delivery sync · 21 Aug"), and three of them packed into
       // a narrow arc collide as text long before they collide as marks.
-      const arc = SECTOR_ARC * 0.66;
+      //
+      // AND THE FULL SECTOR ONCE ONE HOLDS A REAL CORPUS. The real JSA
+      // payload puts 30 transcripts and 19 generic sources in the Evidence
+      // sector alone; across the narrow arc that is half a degree each.
+      //
+      // A SECOND RADIAL ROW WAS TRIED HERE AND REVERTED, and the reason is
+      // worth keeping. Sources sit 52 units inside their own passages, so a
+      // second row 27 units away puts SOMEBODY ELSE'S source nearer a passage
+      // than its own — radial proximity beats angular, and "which source is
+      // this quote from" stops being answerable by position. The proof caught
+      // it: 22 of 122 passages misseated. The field has no radial room for a
+      // second source band while that law holds, so it gets angular room
+      // instead.
+      const crowded = ids.length > 12;
+      const arc = SECTOR_ARC * (crowded ? 1 : 0.66);
       const slot = arc / Math.max(1, ids.length);
       ids.forEach((sid, i) => {
         const sAngle = fanAngle(base, i, ids.length, arc);

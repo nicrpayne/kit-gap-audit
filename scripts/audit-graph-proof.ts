@@ -28,6 +28,9 @@
 //      never joined to execution by name
 //   X  source artifacts: typed from a persisted type field, never a title,
 //      and kept distinct from the semantics they grounded
+//   V  the REAL JSA contract: the producer's own field names, type casing and
+//      relation classes; passage anchoring; the exact provenance chain; and
+//      no Reality mutation of any kind
 //   Z  external structured intelligence: transported without loss, admitted
 //      by the producer's own scope, and unable to become Signal Reality by
 //      any construction path that exists
@@ -58,9 +61,11 @@ import { projectPeople } from "../lib/audit/capacity";
 import { resolveCapacity, switchFactorFor } from "../lib/capacity/resolve";
 import { sourceKindFor, declaredArtifacts, SOURCE_KINDS } from "../lib/audit/sources";
 import { projectIntelligence, relClassOf, laneForIntelligenceType } from "../lib/audit/intelligence";
-import { validateProjectContextPackage } from "../lib/context/validate";
+import { readRelationField, type IntelligenceRelationItem } from "../lib/context/package";
+import { validateProjectContextPackage, PACKAGE_LIMITS } from "../lib/context/validate";
+import { hashProjectContextPackage } from "../lib/context/hash";
 import { EXTERNAL_INTELLIGENCE_TRUST } from "../lib/context/package";
-import { buildIntelligenceFixturePackage, JSA_SCALE } from "./lib/intel-fixture";
+import { buildIntelligenceFixturePackage, JSA_SCALE, REAL_JSA, REAL_RELATION_CLASS } from "./lib/intel-fixture";
 import { DEFAULT_CAMERA } from "@/components/audit/cameraMotion";
 import { fitCamera } from "@/components/audit/SignalGraph";
 
@@ -1699,7 +1704,7 @@ async function main() {
         "Z1 the validator carries intelligence through instead of dropping it",
         (accepted.intelligenceObjects?.length ?? 0) === JSA_SCALE.objects &&
           (accepted.intelligenceRelations?.length ?? 0) === JSA_SCALE.relations &&
-          accepted.intelligenceMeta?.batchId === "synthetic-batch-001",
+          accepted.intelligenceMeta?.batchId === "jsa-postfix-001",
         `${accepted.intelligenceObjects?.length ?? 0} objects, ${accepted.intelligenceRelations?.length ?? 0} relations, batch ${accepted.intelligenceMeta?.batchId}`
       );
     }
@@ -1842,16 +1847,52 @@ async function main() {
     // passive forms; inverting again would point every longitudinal chain
     // backwards, and it would look plausible while doing it.
     {
-      const sent = pkg.intelligenceRelations!.filter((r) => r.rel === "supersedes");
+      const rawRel = (r: IntelligenceRelationItem, f: "from" | "rel" | "to") => readRelationField(r, f)!;
+      const sent = pkg.intelligenceRelations!.filter((r) => rawRel(r, "rel") === "supersedes");
       const got = projected.relations.filter((r) => r.rel === "supersedes");
       const inverted = got.filter((g) => {
-        const from = g.fromKey.split(":").slice(2).join(":");
-        return !sent.some((s) => s.from === from && s.to === g.toExternalId);
+        const from = g.fromKey.slice(`intel:${snap.id}:`.length);
+        return !sent.some((x) => rawRel(x, "from") === from && rawRel(x, "to") === g.toExternalId);
       });
       check(
         "Z9 a transported relation keeps the direction it arrived in",
-        sent.length > 0 && got.length === sent.length && inverted.length === 0,
+        sent.length === REAL_JSA.relationsByName.supersedes && got.length === sent.length && inverted.length === 0,
         `${got.length} supersedes edges, ${inverted.length} reversed`
+      );
+
+      // Z9b — THE REGRESSION GUARD AGAINST DOUBLE INVERSION.
+      //
+      // The bridge emits ZERO passive inverse names: it has already turned
+      // every `resolved_by` and `superseded_by` into its active form with the
+      // endpoints swapped. If Signal ever "helpfully" normalises again, every
+      // longitudinal chain silently points backwards and looks plausible
+      // doing it. This asserts the two things that would have to be true for
+      // that to happen, and that neither is.
+      const passiveNames = ["resolved_by", "superseded_by", "refined_by", "caused_by_inverse", "reopened_by"];
+      const emittedPassive = pkg.intelligenceRelations!.filter((r) =>
+        passiveNames.includes(rawRel(r, "rel"))
+      ).length;
+      const projectedPassive = projected.relations.filter((r) => passiveNames.includes(r.rel)).length;
+      // Feed one in ANYWAY and confirm Signal transports it untouched rather
+      // than swapping the ends — the only honest behaviour for a name whose
+      // direction Signal cannot know.
+      const withPassive = {
+        ...pkg,
+        intelligenceRelations: [
+          ...pkg.intelligenceRelations!,
+          { sourceId: pkg.intelligenceObjects![10].id, relation: "resolved_by", targetId: pkg.intelligenceObjects![11].id, relationClass: "temporal" },
+        ] as unknown as IntelligenceRelationItem[],
+      };
+      const p2 = projectIntelligence([{ ...snap, package: withPassive }], "jsa");
+      const passive = p2.relations.find((r) => r.rel === "resolved_by");
+      check(
+        "Z9b Signal never re-normalises a relation the bridge already normalised",
+        emittedPassive === REAL_JSA.passiveInverseNames &&
+          projectedPassive === 0 &&
+          passive != null &&
+          passive.fromKey.endsWith(pkg.intelligenceObjects![10].id) &&
+          passive.toExternalId === pkg.intelligenceObjects![11].id,
+        `${emittedPassive} passive names in the real payload; a forced one keeps its ends exactly as sent — no double inversion`
       );
     }
 
@@ -1887,7 +1928,7 @@ async function main() {
     // Z11 — A PACKAGE FULL OF EXTERNAL DECISIONS PRODUCES ZERO SIGNAL
     // DECISIONS. The single most important assertion in this block.
     {
-      const externalDecisions = projected.objects.filter((o) => o.intelligenceType === "Decision").length;
+      const externalDecisions = projected.objects.filter((o) => o.intelligenceType === "decision").length;
       const signalDecisionsBefore = buildAuditGraph(base).filterNodes((_n, a) => a.kind === "decision").length;
       const signalDecisionsAfter = withIntel.filterNodes((_n, a) => a.kind === "decision").length;
       const signalDeps = withIntel.filterNodes((_n, a) => a.kind === "dependency").length;
@@ -1949,10 +1990,10 @@ async function main() {
       const signalDecisionTitles = base.entities.decisions.map((d) => d.title);
       const upstreamNames = base.entities.dependsOn.map((d) => d.name);
       const bait = pkg.intelligenceObjects!.map((o, i) => {
-        if (o.intelligenceType === "Decision" && signalDecisionTitles.length > 0) {
+        if (o.intelligenceType === "decision" && signalDecisionTitles.length > 0) {
           return { ...o, statement: signalDecisionTitles[i % signalDecisionTitles.length] };
         }
-        if (o.intelligenceType === "Dependency" && upstreamNames.length > 0) {
+        if (o.intelligenceType === "dependency" && upstreamNames.length > 0) {
           return { ...o, statement: upstreamNames[i % upstreamNames.length] };
         }
         return o;
@@ -2080,7 +2121,7 @@ async function main() {
         if (p.radius <= FIELD.edgeR) inside++;
       }
       const decisionsSeated = intelNodes.filter(
-        (n) => withIntel.getNodeAttribute(n, "intelligenceType") === "Decision" && lay.get(n)?.cluster === "decisions"
+        (n) => withIntel.getNodeAttribute(n, "intelligenceType") === "decision" && lay.get(n)?.cluster === "decisions"
       ).length;
       check(
         "Z19 every external object seats in its meaning's sector, outside the record's edge",
@@ -2143,7 +2184,7 @@ async function main() {
       let loud = 0;
       withIntel.forEachEdge((_e, a) => {
         if (a.basis !== "external") return;
-        if (a.rel === "cites" || a.relClass === "contextual") quiet++;
+        if (a.relClass === "contextual" || a.relClass === "provenance" || a.rel === "cites") quiet++;
         else loud++;
       });
       check(
@@ -2174,6 +2215,402 @@ async function main() {
         before.every((v, i) => v === after[i]),
         `${before.join("/")} → ${after.join("/")}`
       );
+    }
+  }
+
+
+  // ── V  THE REAL JSA CONTRACT ───────────────────────────────────────────
+  //
+  // Reconciliation against the published census of the real post-fix JSA
+  // package. Every assertion below failed at least once while this block was
+  // being written, and three of them describe defects that would have
+  // rejected or silently corrupted the real payload:
+  //
+  //   the bridge names a relation sourceId/relation/targetId; Signal's
+  //     transport required from/rel/to and rejected the package outright
+  //   the bridge types objects `climate_evidence`; Signal matched
+  //     `ClimateEvidence` and would have mis-seated every single object
+  //   the bridge anchors passages with quoteHash/charStart/charEnd/
+  //     offsetUnit; Signal's evidence validator rebuilt each item from six
+  //     named fields and deleted all four
+  //
+  // THE PACKAGE FILE ITSELF WAS NOT SUPPLIED to this environment. What is
+  // asserted here is the census — counts, type mix, relation mix, class mix,
+  // registration mix, evidence split, independence split — reproduced exactly,
+  // in the producer's own vocabulary. What cannot be asserted is anything
+  // depending on the real bytes; that limit is reported rather than papered
+  // over. See scripts/lib/intel-fixture.ts.
+  {
+    const pkg = buildIntelligenceFixturePackage("jsa");
+    const raw = JSON.parse(JSON.stringify(pkg));
+    const accepted = validateProjectContextPackage(raw);
+    const snap = { id: "snap-real", scopeId: "jsa", package: accepted };
+    const projected = projectIntelligence([snap], "jsa");
+
+    // ── V1. THE CENSUS, ITEM BY ITEM ───────────────────────────────────
+    {
+      const st: Record<string, number> = {};
+      for (const x of accepted.sources) st[x.sourceType] = (st[x.sourceType] ?? 0) + 1;
+      const ot: Record<string, number> = {};
+      for (const o of accepted.intelligenceObjects!) ot[o.intelligenceType] = (ot[o.intelligenceType] ?? 0) + 1;
+      const rn: Record<string, number> = {};
+      for (const r of accepted.intelligenceRelations!) rn[r.rel] = (rn[r.rel] ?? 0) + 1;
+      const same = (a: Record<string, number>, b: Record<string, number>) =>
+        Object.keys(b).length === Object.keys(a).length && Object.entries(b).every(([k, v]) => a[k] === v);
+
+      check(
+        "V1 the package matches the real census exactly",
+        accepted.sources.length === REAL_JSA.sources &&
+          accepted.evidence.length === REAL_JSA.evidence &&
+          accepted.intelligenceObjects!.length === REAL_JSA.objects &&
+          accepted.intelligenceRelations!.length === REAL_JSA.relations &&
+          same(st, REAL_JSA.sourcesByType) &&
+          same(ot, REAL_JSA.objectsByType) &&
+          same(rn, REAL_JSA.relationsByName),
+        `${accepted.sources.length} sources ${JSON.stringify(st)}, ${accepted.evidence.length} evidence, ` +
+          `${accepted.intelligenceObjects!.length} objects, ${accepted.intelligenceRelations!.length} relations`
+      );
+      check(
+        "V1b and carries no derivedClaims, as the real package does not",
+        (accepted.derivedClaims ?? []).length === REAL_JSA.derivedClaims,
+        `${(accepted.derivedClaims ?? []).length} derived claims`
+      );
+    }
+
+    // ── V2. THE PRODUCER'S RELATION VOCABULARY IS READ, NOT REJECTED ───
+    //
+    // The mismatch that would have refused the real package at the door.
+    {
+      const emitted = pkg.intelligenceRelations![0] as unknown as Record<string, unknown>;
+      const usesProducerNames =
+        typeof emitted.sourceId === "string" &&
+        typeof emitted.relation === "string" &&
+        typeof emitted.targetId === "string" &&
+        emitted.from === undefined &&
+        emitted.rel === undefined &&
+        emitted.to === undefined;
+      check(
+        "V2 relations arriving as sourceId/relation/targetId are read, not refused",
+        usesProducerNames && accepted.intelligenceRelations!.length === REAL_JSA.relations,
+        `the payload uses the producer's spelling exclusively; all ${accepted.intelligenceRelations!.length} relations validated`
+      );
+      // AND BOTH PATHS AGREE. A raw package straight off the bridge and one
+      // read back out of a snapshot must project the same graph — they did
+      // not, and that gap projected zero relations from a raw read.
+      const fromRaw = projectIntelligence([{ id: "snap-real", scopeId: "jsa", package: raw }], "jsa");
+      check(
+        "V2b a raw package and a validated one project the same relations",
+        fromRaw.relations.length === projected.relations.length &&
+          fromRaw.relations.length === REAL_JSA.relations,
+        `raw ${fromRaw.relations.length}, validated ${projected.relations.length}`
+      );
+      // And the producer's own spelling survives onto the record.
+      const kept = (accepted.intelligenceRelations![0].declared ?? {}) as Record<string, Record<string, string>>;
+      const emittedAs = kept.emittedAs ?? {};
+      // AND RECORDING IT IS IDEMPOTENT. Re-validating the accepted package
+      // must not overwrite the record with Signal's own names — that is what
+      // moved the contextHash of a stored snapshot.
+      const twice = validateProjectContextPackage(JSON.parse(JSON.stringify(accepted)));
+      const again = ((twice.intelligenceRelations![0].declared ?? {}) as Record<string, Record<string, string>>).emittedAs ?? {};
+      check(
+        "V2c the producer's own field names are recorded, once, and never rewritten",
+        emittedAs.from === "sourceId" &&
+          emittedAs.rel === "relation" &&
+          emittedAs.to === "targetId" &&
+          JSON.stringify(again) === JSON.stringify(emittedAs),
+        `emittedAs ${JSON.stringify(emittedAs)} — unchanged after a second validation pass`
+      );
+    }
+
+    // ── V3. THE PRODUCER'S TYPE VOCABULARY SEATS CORRECTLY ─────────────
+    //
+    // The mismatch that would have been SILENT: every object in the hermes
+    // sector, the "seated by what it means" law quietly not applying, and
+    // nothing to show it had gone wrong.
+    {
+      const byLane: Record<string, number> = {};
+      for (const o of projected.objects) {
+        const lane = laneForIntelligenceType(o.intelligenceType);
+        byLane[lane] = (byLane[lane] ?? 0) + 1;
+      }
+      const preserved = projected.objects.every((o) =>
+        Object.keys(REAL_JSA.objectsByType).includes(o.intelligenceType)
+      );
+      check(
+        "V3 lowercase snake_case types seat in their meaning's sector",
+        byLane.decisions === REAL_JSA.objectsByType.decision &&
+          byLane.dependencies === REAL_JSA.objectsByType.dependency &&
+          byLane.capacity === REAL_JSA.objectsByType.availability_observation &&
+          preserved,
+        `${JSON.stringify(byLane)} — and every type string is preserved in the producer's own casing`
+      );
+    }
+
+    // ── V4. THE FOURTH RELATION CLASS ──────────────────────────────────
+    {
+      const byClass = projected.meta.byRelClass;
+      const fallbackAgrees = Object.entries(REAL_RELATION_CLASS).every(
+        ([rel, cls]) => relClassOf({ rel }) === cls
+      );
+      check(
+        "V4 provenance is a class of its own, and the fallback agrees with the producer",
+        byClass.contextual === REAL_JSA.contextual &&
+          byClass.semantic === REAL_JSA.semantic &&
+          byClass.temporal === REAL_JSA.temporal &&
+          byClass.provenance === REAL_JSA.provenance &&
+          fallbackAgrees,
+        `${JSON.stringify(byClass)} — and every relation name classes the same with or without a declared class`
+      );
+    }
+
+    // ── V5. PASSAGE ANCHORING SURVIVES THE BOUNDARY ────────────────────
+    //
+    // quoteHash, charStart, charEnd and offsetUnit were being deleted by a
+    // validator written six named fields at a time. A citation that cannot
+    // name its own character range is not a citation.
+    {
+      const traced = accepted.evidence.find((e) => e.id === REAL_JSA.trace.evidence)!;
+      const extra = (traced.extra ?? {}) as Record<string, unknown>;
+      check(
+        "V5 quoteHash, charStart, charEnd and offsetUnit survive validation",
+        typeof extra.quoteHash === "string" &&
+          typeof extra.charStart === "number" &&
+          typeof extra.charEnd === "number" &&
+          extra.offsetUnit === "unicode_codepoint",
+        `${REAL_JSA.trace.evidence} → chars ${extra.charStart}–${extra.charEnd} (${extra.offsetUnit}), ${String(extra.quoteHash).slice(0, 24)}…`
+      );
+    }
+
+    // ── V6. ABSENT INDEPENDENCE IS NEVER READ AS INDEPENDENT ───────────
+    {
+      const structured = accepted.evidence.slice(0, REAL_JSA.structuredPassages);
+      const counts = { independent: 0, derivative: 0, absent: 0 };
+      for (const e of structured) {
+        if (e.independence === "independent") counts.independent++;
+        else if (e.independence === "derivative") counts.derivative++;
+        else if (e.independence === undefined) counts.absent++;
+      }
+      const anyDefaulted = structured.some((e) => e.independence === "independent" && !("independence" in e));
+      check(
+        "V6 absent independence stays absent — never defaulted to independent",
+        counts.independent === REAL_JSA.independence.independent &&
+          counts.derivative === REAL_JSA.independence.derivative &&
+          counts.absent === REAL_JSA.independence.absent &&
+          !anyDefaulted,
+        `${counts.independent} independent, ${counts.derivative} derivative, ${counts.absent} with no value at all — silence stayed silence`
+      );
+    }
+
+    // ── V7. AD-HOC SOURCES STAY AD-HOC ─────────────────────────────────
+    {
+      const adhoc = accepted.sources.filter((x) => x.registrationId === null && x.status === "candidate");
+      const registered = accepted.sources.filter((x) => x.registrationId !== null && x.status === "active");
+      // And no artifact kind is inferred from a name. `ke://source/spreadsheet/…`
+      // is a generic source because its TYPE says spreadsheet, and Signal has
+      // no more specific truthful kind for one.
+      const inferredFromProse = accepted.sources.filter(
+        (x) => sourceKindFor(x.sourceType) !== "source" && !["transcript", "notion", "figma"].some((t) => x.sourceType.includes(t))
+      );
+      check(
+        "V7 45 ad-hoc and 2 registered sources, with no kind inferred from prose",
+        adhoc.length === REAL_JSA.sourcesAdHoc &&
+          registered.length === REAL_JSA.sourcesRegistered &&
+          inferredFromProse.length === 0,
+        `${adhoc.length} ad-hoc (candidate, unregistered), ${registered.length} registered and active; ` +
+          `spreadsheet and contextDoc classify as generic sources, which is the honest answer`
+      );
+    }
+
+    // ── V8. THE EXACT REAL PROVENANCE CHAIN ────────────────────────────
+    //
+    //   hermes:risk-2026-08-24-005
+    //     → hermes-ev:2026-08-19_KE-User-Interview-Follow-Up-seg069
+    //       → ke://source/transcript/2026-08-19_KE-User-Interview-Follow-Up
+    {
+      const base = await loadAuditGraphInputs("jsa");
+      if (!base) throw new Error("JSA did not load");
+      const g = buildAuditGraph({ ...base, entities: { ...base.entities, intelligence: projected } });
+
+      const objNode = nodeId.intel("snap-real", REAL_JSA.trace.object);
+      const psgNode = nodeId.passage("snap-real", REAL_JSA.trace.evidence);
+      const srcNode = nodeId.packageSource(REAL_JSA.trace.source);
+
+      const hop1 = g.hasNode(objNode) && g.hasNode(psgNode) &&
+        g.outEdges(objNode).some((e) => g.target(e) === psgNode && g.getEdgeAttribute(e, "rel") === "cites");
+      const hop2 = g.hasNode(srcNode) &&
+        g.outEdges(psgNode).some((e) => g.target(e) === srcNode && g.getEdgeAttribute(e, "rel") === "extracted_from");
+
+      check(
+        "V8 the exact real chain is walkable in graphology, object → passage → transcript",
+        hop1 && hop2,
+        `${REAL_JSA.trace.object} → ${REAL_JSA.trace.evidence} → ${REAL_JSA.trace.source}`
+      );
+
+      // The anchoring rides the passage node, so the inspector can show it.
+      {
+        const a = g.getNodeAttributes(psgNode);
+        const anchor = (a.anchor ?? {}) as Record<string, unknown>;
+        check(
+          "V8b the passage node carries its own anchoring and independence",
+          typeof anchor.quoteHash === "string" &&
+            typeof anchor.charStart === "number" &&
+            typeof anchor.charEnd === "number" &&
+            anchor.offsetUnit === "unicode_codepoint" &&
+            "independence" in a,
+          `chars ${anchor.charStart}–${anchor.charEnd} ${anchor.offsetUnit}, independence ${String(a.independence ?? "absent (unknown)")}`
+        );
+      }
+
+      // Every one of the four named types traces to real evidence.
+      {
+        const missing: string[] = [];
+        for (const t of ["decision", "dependency", "commitment", "unknown"]) {
+          const nodes = g.filterNodes((_n, a) => a.kind === "intel" && a.intelligenceType === t);
+          const withEvidence = nodes.filter((n) =>
+            g.outEdges(n).some((e) => g.getEdgeAttribute(e, "rel") === "cites")
+          );
+          if (withEvidence.length === 0) missing.push(t);
+        }
+        check(
+          "V8c a Decision, a Dependency, a Commitment and an Unknown each reach real evidence",
+          missing.length === 0,
+          missing.length === 0 ? "all four types trace to passages" : `no evidence path from: ${missing.join(", ")}`
+        );
+      }
+
+      // ── V9. A REAL TEMPORAL CHAIN STAYS NAVIGABLE ────────────────────
+      //
+      // Six historical objects, and every one of them is the far end of a
+      // temporal relation. That is the whole reason they were transported —
+      // and it is what makes "superseded by" answerable rather than just
+      // asserted.
+      {
+        const historical = g.filterNodes((_n, a) => a.kind === "intel" && a.isCurrent === false);
+        const reachedByTemporal = historical.filter((h) =>
+          g.inEdges(h).some((e) => {
+            const a = g.getEdgeAttributes(e);
+            return a.rel === "intel_relation" && a.relClass === "temporal";
+          })
+        );
+        const chain = reachedByTemporal[0];
+        const back = chain
+          ? g.inEdges(chain).map((e) => ({ from: g.source(e), rel: g.getEdgeAttribute(e, "intelRel") }))[0]
+          : null;
+        check(
+          "V9 every historical object is reachable along a real temporal chain",
+          historical.length === REAL_JSA.historicalObjects &&
+            reachedByTemporal.length === REAL_JSA.historicalObjects &&
+            back != null,
+          `${reachedByTemporal.length} of ${historical.length} superseded objects reached; ` +
+            `e.g. ${String(g.getNodeAttribute(back!.from, "externalId"))} —${back!.rel}→ ${String(g.getNodeAttribute(chain, "externalId"))}`
+        );
+      }
+
+      // ── V10. THE MERGED GRAPH, COUNTED ───────────────────────────────
+      {
+        // The baseline is Signal's own record with the external material
+        // REMOVED — not whatever the database happens to hold, which once
+        // the payload is seeded is the payload too.
+        const before = buildAuditGraph({
+          ...base,
+          entities: {
+            ...base.entities,
+            intelligence: { objects: [], relations: [], citedPassages: [], meta: projected.meta },
+          },
+        });
+        const kinds: Record<string, number> = {};
+        g.forEachNode((_n, a) => (kinds[a.kind] = (kinds[a.kind] ?? 0) + 1));
+        check(
+          "V10 the real payload merges into one graph with no duplicate nodes",
+          g.order > before.order && new Set(g.nodes()).size === g.order,
+          `${before.order} Signal nodes → ${g.order} merged (${g.size} edges); by kind ${JSON.stringify(kinds)}`
+        );
+      }
+    }
+
+    // ── V11. NOTHING IT CARRIES CAN REACH REALITY ──────────────────────
+    //
+    // The audit the whole integration exists to pass, run against the real
+    // payload rather than a synthetic one, over every table a package could
+    // plausibly touch.
+    {
+      const counts = () =>
+        prisma.$transaction([
+          prisma.decision.count(),
+          prisma.decisionGate.count(),
+          prisma.scope.count(),
+          prisma.person.count(),
+          prisma.allocation.count(),
+          prisma.finding.count(),
+          prisma.contextSnapshot.count(),
+          prisma.sourceRegistration.count(),
+          prisma.auditRun.count(),
+        ]);
+      const before = await counts();
+      const base2 = await loadAuditGraphInputs("jsa");
+      buildAuditGraph({ ...base2!, entities: { ...base2!.entities, intelligence: projected } });
+      projectIntelligence([snap], "jsa");
+      validateProjectContextPackage(JSON.parse(JSON.stringify(pkg)));
+      const after = await counts();
+      check(
+        "V11 projecting the real payload mutates no Reality of any kind",
+        before.every((v, i) => v === after[i]),
+        `decision/gate/scope/person/allocation/finding/snapshot/registration/run: ${before.join("/")} → ${after.join("/")}`
+      );
+    }
+
+    // ── V11b. AND EVERY SNAPSHOT ALREADY ACCEPTED STILL HASHES THE SAME ─
+    //
+    // BACKWARD COMPATIBILITY, CHECKED AGAINST THE STORED ROWS RATHER THAN
+    // ASSERTED. Preservation-first validation changes what comes out of the
+    // validator for any package that carried fields Signal did not model —
+    // which is the point — so the only honest test is to re-validate what is
+    // actually in the database and compare against the hash recorded at
+    // acceptance time. A drift here would mean every existing snapshot's
+    // identity had silently moved.
+    {
+      const rows = await prisma.contextSnapshot.findMany();
+      const drifted = rows.filter((r) => {
+        try {
+          return hashProjectContextPackage(validateProjectContextPackage(r.package)) !== r.contextHash;
+        } catch {
+          return true;
+        }
+      });
+      check(
+        "V11b every snapshot accepted before this change still hashes identically",
+        rows.length > 0 && drifted.length === 0,
+        `${rows.length} stored snapshot(s) re-validated and re-hashed, ${drifted.length} drifted`
+      );
+    }
+
+    // ── V12. THE LIMITS FIT THE PRODUCT ────────────────────────────────
+    {
+      const headroom = (now: number, cap: number) => `${now}/${cap} (${Math.round((now / cap) * 100)}%)`;
+      const fits =
+        accepted.sources.length / PACKAGE_LIMITS.sources < 0.25 &&
+        accepted.evidence.length / PACKAGE_LIMITS.evidence < 0.25 &&
+        accepted.intelligenceObjects!.length / PACKAGE_LIMITS.intelligenceObjects < 0.25 &&
+        accepted.intelligenceRelations!.length / PACKAGE_LIMITS.intelligenceRelations < 0.25;
+      check(
+        "V12 a normal project sits well under every contract limit",
+        fits,
+        `sources ${headroom(accepted.sources.length, PACKAGE_LIMITS.sources)}, ` +
+          `evidence ${headroom(accepted.evidence.length, PACKAGE_LIMITS.evidence)}, ` +
+          `objects ${headroom(accepted.intelligenceObjects!.length, PACKAGE_LIMITS.intelligenceObjects)}, ` +
+          `relations ${headroom(accepted.intelligenceRelations!.length, PACKAGE_LIMITS.intelligenceRelations)} ` +
+          `— was 47/50 (94%) before this tranche`
+      );
+      // AND THE GUARD STILL BITES. Raising a limit is only safe if the limit
+      // still exists.
+      const over = { ...pkg, sources: [...accepted.sources, ...accepted.sources, ...accepted.sources, ...accepted.sources, ...accepted.sources, ...accepted.sources] };
+      let rejected = false;
+      try {
+        validateProjectContextPackage(JSON.parse(JSON.stringify(over)));
+      } catch {
+        rejected = true;
+      }
+      check("V12b and a package past the new cap is still rejected, not truncated", rejected, `${over.sources.length} sources`);
     }
   }
 

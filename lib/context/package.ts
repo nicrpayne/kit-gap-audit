@@ -44,6 +44,9 @@ export interface PackageSourceManifestEntry {
   observedAt: string; // ISO 8601
   succeeded: boolean;
   detail: string | null;
+  /** As on EvidenceItem: unmodelled producer fields, preserved rather than
+      dropped. */
+  extra?: Record<string, JsonValue>;
 }
 
 export interface EvidenceItem {
@@ -67,6 +70,22 @@ export interface EvidenceItem {
   // source-specific typed fields on purpose -- callers put whatever their
   // source naturally has here.
   data?: Record<string, JsonValue>;
+  // HOW INDEPENDENT THIS PASSAGE IS OF THE OTHERS, as the producer
+  // determined it. Three values in the real corpus: "independent",
+  // "derivative", and ABSENT.
+  //
+  //   ABSENT MEANS UNKNOWN. It does not mean independent, it is never
+  //   defaulted to independent, and nothing in Signal may treat a missing
+  //   value as a claim. Sixty of the real JSA passages carry no value at
+  //   all; reading those as independent would manufacture corroboration
+  //   out of silence.
+  independence?: string;
+  // ANYTHING THE PRODUCER SENT THAT SIGNAL DOES NOT MODEL -- the passage's
+  // quote hash, its character offsets, its offset unit. Preserved rather
+  // than dropped, for the same reason the intelligence objects are: the
+  // producer owns this contract and a validator that rebuilds an item from
+  // a whitelist silently loses whatever it has not been taught.
+  extra?: Record<string, JsonValue>;
 }
 
 // Hermes-derived UNDERSTANDING about the evidence -- never itself evidence,
@@ -78,6 +97,8 @@ export interface DerivedClaim {
   id: string;
   kind: string;
   statement: string;
+  /** As above: unmodelled producer fields, preserved rather than dropped. */
+  extra?: Record<string, JsonValue>;
   // Should reference evidence[].id values when evidence exists for the
   // claim -- not enforced as a hard constraint here (a claim citing a
   // meeting note that isn't itself modeled as an EvidenceItem is legal),
@@ -193,6 +214,39 @@ export interface IntelligenceRelationItem {
       chain backwards. */
   declared?: Record<string, JsonValue>;
   extra?: Record<string, JsonValue>;
+}
+
+/**
+ * THE PRODUCER'S OWN SPELLING FOR A RELATION'S PARTS.
+ *
+ * The bridge emits `sourceId` / `relation` / `targetId`; this transport was
+ * written with `from` / `rel` / `to`. Rather than pick a winner and rewrite
+ * the producer's fields, every reader accepts both — and this is the one
+ * place that knows it, so the validator and the graph projection can never
+ * drift into disagreeing about what a relation is.
+ *
+ * That drift is not hypothetical: the projection was reading `from`/`rel`/
+ * `to` directly while the validator mapped them, so a real package projected
+ * ZERO object-to-object relations from a raw read and all 87 from a
+ * persisted one. Same package, two answers.
+ */
+export const RELATION_FIELD_ALIASES = {
+  from: ["from", "sourceId"],
+  rel: ["rel", "relation"],
+  to: ["to", "targetId"],
+  relClass: ["relClass", "relationClass"],
+} as const;
+
+export function readRelationField(
+  raw: Record<string, unknown> | IntelligenceRelationItem,
+  field: keyof typeof RELATION_FIELD_ALIASES
+): string | null {
+  const r = raw as Record<string, unknown>;
+  for (const key of RELATION_FIELD_ALIASES[field]) {
+    const v = r[key];
+    if (typeof v === "string" && v.length > 0) return v;
+  }
+  return null;
 }
 
 export interface IntelligenceMeta {
