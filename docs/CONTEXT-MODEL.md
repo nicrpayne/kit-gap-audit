@@ -183,6 +183,25 @@ start failing (or silently change what was recorded as true) just because
 `SourceRegistration` state moved on in between. Only a genuinely *new*
 package is checked against current policy.
 
+## Ingest-only refresh
+
+`ingestOnly: true` — or `generateReport: false`, which is what a caller
+sending it means — accepts the context and stops. No audit, no estimation, no
+forecast, no report. Nothing on that path calls a model or reads Linear, so an
+ingestion succeeds on a deployment with no `ANTHROPIC_API_KEY` and with Linear
+unreachable. The response carries `mode: "ingest"` and names what it skipped.
+
+**Omitting `generateReport` is unchanged**: a request that never mentions it
+still audits, estimates and forecasts exactly as before.
+
+This was a real defect, not a nicety. `runAudit` fired on the mere presence of
+an accepted package, and estimation and forecast ran unconditionally after it;
+`generateReport` gated only the last of four stages. Pushing context and
+drawing conclusions from it were fused, so the first production handshake —
+sent with `generateReport: false` — returned 502 from the first model call
+**after the snapshot had already been written**. The package was accepted and
+the caller was told it had failed.
+
 ## `POST /api/refresh` contract (additive, extended in 1c)
 
 ```ts
@@ -313,6 +332,59 @@ before Phase 1b started, and again against the Phase 1b commit before
 Phase 1c started). `lib/forecast/compute.ts` gained exactly one additive
 field (`breakdown.capacityBasis`) via an already-existing internal helper
 — no simulation math, no capacity-resolution semantics, touched.
+
+## Contract revisions, and package identity
+
+`SUPPORTED_PACKAGE_VERSIONS = ["1.0", "1.1"]`. The version a producer sends is
+**preserved**, not normalised to Signal's own constant — so it takes part in
+`contextHash`, which is what makes a revision a real identity change rather
+than a cosmetic one.
+
+| | |
+|---|---|
+| `1.0` | sources, evidence, derivedClaims, completeness, warnings |
+| `1.1` | adds `intelligenceObjects`, `intelligenceRelations`, `intelligenceMeta` and the producer field vocabulary they arrive in |
+
+A 1.1 package carrying no intelligence is a 1.0 package with a different
+version string, and is accepted as one. An unrecognised revision is still
+refused.
+
+### Why this exists
+
+A producer that derives `packageId` from the content it sends mints the **same
+id for the same corpus forever** — correctly, because that is what
+content-addressing means. But an id is only as good as the contract it was
+consumed under.
+
+The first production handshake proved the point. The package was accepted and
+a snapshot was written, by a build whose validator had **no knowledge of the
+intelligence fields** and rebuilt the package from the fields it did know.
+Replaying that exact file through that exact validator:
+
+```
+intelligenceObjects  : DROPPED
+intelligenceRelations: DROPPED
+intelligenceMeta     : DROPPED
+contextHash          : 05881cbe5db1c70b   (this build: 479f99e42a351198)
+```
+
+Resending those bytes after deployment would not be a retry. Signal's identity
+rule — `@@unique([producer, packageId])` plus a `contextHash` comparison —
+would see the same id resolve to different content and raise
+`PackageIdentityConflictError`. **That is the rule working**, and the id is
+correctly spent: it belongs to the ingestion that consumed it.
+
+### What the producer must change
+
+One thing, and it is semantic rather than cosmetic:
+
+1. emit `version: "1.1"`
+2. **include that version string in the content hash `packageId` is derived
+   from**
+
+Then `same corpus + same contract → same packageId` still holds, and
+`same corpus + new contract → new packageId` follows from what actually
+changed. No salts, no clock, no padding — none of which say anything true.
 
 ## Next phases (not started)
 
