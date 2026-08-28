@@ -107,7 +107,13 @@ export async function loadAuditGraphInputs(scopeId: string): Promise<AuditGraphI
   }
 
   const entities: GraphEntityInputs = {
-    scope: { id: scope.id, name: scope.name, dependsOnScopeIds: scope.dependsOnScopeIds },
+    scope: {
+      id: scope.id,
+      name: scope.name,
+      dependsOnScopeIds: scope.dependsOnScopeIds,
+      notionPageIds: scope.notionPageIds,
+      figmaRefs: scope.figmaRefs,
+    },
     decisions: decisions.map((d) => ({
       id: d.id,
       title: d.title,

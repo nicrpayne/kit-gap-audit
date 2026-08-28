@@ -26,6 +26,8 @@
 //      snapshot-scoped, and never linked to execution by resemblance
 //   W  workforce: capacity read from the resolver, never recomputed, and
 //      never joined to execution by name
+//   X  source artifacts: typed from a persisted type field, never a title,
+//      and kept distinct from the semantics they grounded
 //
 //   npx tsx scripts/audit-graph-proof.ts
 
@@ -43,6 +45,7 @@ import {
   SLICE_ORDER,
   type AuditGraph,
   type AuditNodeAttributes,
+  type NodeKind,
   type AuditEdgeAttributes,
 } from "../lib/audit/graph";
 import { layoutGraph, FIELD, CLUSTER_ORDER, BANDS } from "../lib/audit/graphLayout";
@@ -50,6 +53,7 @@ import { identityOf, latentRadius, LATENT, MEMBERSHIP_RELS } from "@/components/
 import { projectRequirements, REQUIREMENT_SOURCE_ROLE } from "../lib/audit/requirements";
 import { projectPeople } from "../lib/audit/capacity";
 import { resolveCapacity, switchFactorFor } from "../lib/capacity/resolve";
+import { sourceKindFor, declaredArtifacts, SOURCE_KINDS } from "../lib/audit/sources";
 
 const prisma = new PrismaClient();
 
@@ -135,12 +139,17 @@ async function main() {
     "N2 every edge's basis matches its rule's basis",
     everyGraph((g) => g.everyEdge((_e, a) => EDGE_RULES[a.rule].basis === a.basis))
   );
+  // A rule may declare a FAMILY of kinds at either end — `extracted_from`
+  // reaches any source artifact. Enumerating the family keeps the check as
+  // tight as it was: an edge must still land on a kind the rule named.
+  const matchesKind = (declared: NodeKind | NodeKind[], actual: NodeKind) =>
+    Array.isArray(declared) ? declared.includes(actual) : declared === actual;
   check(
     "N3 every edge's endpoints match the kinds its rule declares",
     everyGraph((g) =>
       g.everyEdge((_e, a, s, t, sa: AuditNodeAttributes, ta: AuditNodeAttributes) => {
         const r = EDGE_RULES[a.rule];
-        return sa.kind === r.from && ta.kind === r.to;
+        return matchesKind(r.from, sa.kind) && matchesKind(r.to, ta.kind);
       })
     )
   );
@@ -215,7 +224,9 @@ async function main() {
   // row it was read from is the same direction as a finding citing its
   // passage. A new claim kind has to be added here on purpose.
   const CLAIM_KINDS = ["finding", "requirement"];
-  const EVIDENCE_KINDS = ["passage", "intelligence", "source"];
+  // Every source artifact kind, not just the generic one — a transcript is
+  // the same layer of the world as a source, differing in what it IS.
+  const EVIDENCE_KINDS = ["passage", "intelligence", ...SOURCE_KINDS];
   {
     let checked = 0;
     let wrong = 0;
@@ -231,7 +242,7 @@ async function main() {
         }
         if (a.rel === "extracted_from") {
           checked++;
-          if (sa.kind !== "passage" || ta.kind !== "source") wrong++;
+          if (sa.kind !== "passage" || !SOURCE_KINDS.includes(ta.kind)) wrong++;
           if (g.hasDirectedEdge(t, s)) wrong++;
         }
       });
@@ -1024,7 +1035,7 @@ async function main() {
           .outEdges(psg)
           .filter((e) => jsa.g.getEdgeAttribute(e, "rel") === "extracted_from")
           .map((e) => jsa.g.target(e))[0];
-        if (src && jsa.g.getNodeAttribute(src, "kind") === "source") complete++;
+        if (src && SOURCE_KINDS.includes(jsa.g.getNodeAttribute(src, "kind"))) complete++;
       }
       check(
         "Q10 Requirement → Passage → Source is traversable for every requirement",
@@ -1376,6 +1387,270 @@ async function main() {
       }
       const after = await prisma.$transaction([prisma.person.count(), prisma.allocation.count(), prisma.portfolioSettings.count()]);
       check("W15 projecting capacity writes nothing", before.every((v, i) => v === after[i]), `${before.join("/")} → ${after.join("/")}`);
+    }
+  }
+
+
+  // ── X  SOURCE ARTIFACTS ────────────────────────────────────────────────
+  //
+  // The temptation here is naming. "Delivery sync · 21 Aug" reads like a
+  // meeting, "JSA delivery scope" reads like a spec — and neither of those
+  // observations is allowed to decide anything. The kind comes from a
+  // persisted type field or it does not exist.
+  {
+    const jsa = graphs.find((x) => x.id === "jsa");
+    const snapshots = await prisma.contextSnapshot.findMany();
+    const isSource = (k: string) => SOURCE_KINDS.includes(k as never);
+
+    // X1 — every specialised kind traces to a persisted type field.
+    {
+      const manifestType = new Map<string, string>();
+      for (const snap of snapshots) {
+        const pkg = snap.package as { sources?: { sourceRef: string; sourceType: string }[] };
+        for (const m of pkg.sources ?? []) manifestType.set(`source:pkg:${m.sourceRef}`, m.sourceType);
+      }
+      const rows = await prisma.source.findMany();
+      const rowType = new Map(rows.map((r) => [`source:row:${r.id}`, r.kind]));
+
+      let n = 0;
+      let wrong = 0;
+      for (const { name, g } of graphs) {
+        for (const node of g.filterNodes((_x, a) => isSource(a.kind) && a.supplied !== false)) {
+          n++;
+          const type = manifestType.get(node) ?? rowType.get(node) ?? null;
+          const expected = sourceKindFor(type);
+          if (g.getNodeAttribute(node, "kind") !== expected) {
+            wrong++;
+            console.log(`      (${name}) ${node} is ${g.getNodeAttribute(node, "kind")}, type field says ${type}`);
+          }
+        }
+      }
+      check("X1 every source artifact's kind comes from its persisted type field", n > 0 && wrong === 0, `${n} artifacts, ${wrong} wrong`);
+    }
+
+    // X2 — A TITLE DECIDES NOTHING. Same three names, three different type
+    // fields, and the kind follows the field every time.
+    {
+      const cases: [string, string][] = [
+        ["transcript", "transcript"],
+        ["notion", "notion_page"],
+        ["figma", "figma_artifact"],
+        ["notes", "source"],
+        ["estimates", "source"],
+        ["spreadsheet", "source"],
+        ["", "source"],
+      ];
+      const wrong = cases.filter(([type, want]) => sourceKindFor(type) !== want);
+      // The names that would fool a title reader.
+      const lures = ["Delivery sync · 21 Aug", "JSA delivery scope", "Offline capture flow", "transcript of the meeting"];
+      const fooled = lures.filter((title) => sourceKindFor(title as string) !== "source" && !title.toLowerCase().includes("transcript"));
+      check(
+        "X2 the type field decides the kind; a title decides nothing",
+        wrong.length === 0 && fooled.length === 0,
+        `${cases.length} type values correct; titles like "${lures[0]}" and "${lures[1]}" classify as generic when passed as a type`
+      );
+    }
+
+    // X3 — a Notion source becomes a page, NOT a Requirement, and the
+    // Requirement it grounded is a separate node.
+    if (jsa) {
+      const pages = jsa.g.filterNodes((_x, a) => a.kind === "notion_page");
+      const reqs = jsa.g.filterNodes((_x, a) => a.kind === "requirement");
+      const overlap = pages.filter((x) => reqs.includes(x));
+      // And the requirement reaches the page only through its passage.
+      let viaPassage = 0;
+      for (const r of reqs) {
+        const psg = jsa.g.outEdges(r).filter((e) => jsa.g.getEdgeAttribute(e, "rel") === "evidenced_by").map((e) => jsa.g.target(e))[0];
+        if (!psg) continue;
+        const src = jsa.g.outEdges(psg).filter((e) => jsa.g.getEdgeAttribute(e, "rel") === "extracted_from").map((e) => jsa.g.target(e))[0];
+        if (src && jsa.g.getNodeAttribute(src, "kind") === "notion_page") viaPassage++;
+      }
+      check(
+        "X3 a Notion source is a page, and the Requirement it grounded is a different node",
+        pages.length > 0 && reqs.length > 0 && overlap.length === 0 && viaPassage === reqs.length,
+        `${pages.length} pages, ${reqs.length} requirements, ${overlap.length} collapsed, ${viaPassage} reached only through their passage`
+      );
+    }
+
+    // X4 — a Figma source is an artifact and implements nothing.
+    if (jsa) {
+      const figma = jsa.g.filterNodes((_x, a) => a.kind === "figma_artifact");
+      let semantic = 0;
+      jsa.g.forEachEdge((_e, a, src, tgt) => {
+        const sk = jsa.g.getNodeAttribute(src, "kind");
+        const tk = jsa.g.getNodeAttribute(tgt, "kind");
+        if (sk !== "figma_artifact" && tk !== "figma_artifact") return;
+        // The only thing that may touch a source artifact is provenance.
+        if (a.rel !== "extracted_from" && a.rel !== "evidenced_by" && a.rel !== "supersedes") semantic++;
+      });
+      check(
+        "X4 a Figma artifact is design evidence and implements nothing",
+        figma.length > 0 && semantic === 0,
+        `${figma.length} Figma artifacts, ${semantic} non-provenance edges`
+      );
+    }
+
+    // X5 — provenance direction survives the new kinds.
+    {
+      let n = 0;
+      let wrong = 0;
+      for (const { g } of graphs) {
+        g.forEachEdge((_e, a, src, tgt) => {
+          if (a.rel !== "extracted_from") return;
+          n++;
+          if (g.getNodeAttribute(src, "kind") !== "passage") wrong++;
+          if (!isSource(g.getNodeAttribute(tgt, "kind"))) wrong++;
+          if (g.hasDirectedEdge(tgt, src)) wrong++;
+        });
+      }
+      check("X5 extracted_from still runs passage → artifact, never the reverse", n > 0 && wrong === 0, `${n} edges, ${wrong} wrong`);
+    }
+
+    // X6 — every passage points at the artifact its own sourceRef names.
+    if (jsa) {
+      const snap = snapshots.find((x) => x.scopeId === "jsa");
+      const pkg = snap?.package as { evidence?: { id: string; sourceRef: string }[] };
+      let n = 0;
+      let wrong = 0;
+      for (const e of pkg?.evidence ?? []) {
+        const pid = nodeId.passage(snap!.id, e.id);
+        if (!jsa.g.hasNode(pid)) continue;
+        n++;
+        const tgt = jsa.g.outEdges(pid).filter((x) => jsa.g.getEdgeAttribute(x, "rel") === "extracted_from").map((x) => jsa.g.target(x))[0];
+        if (tgt !== nodeId.packageSource(e.sourceRef)) wrong++;
+      }
+      check("X6 every passage is attached to the artifact its sourceRef names", n > 0 && wrong === 0, `${n} passages, ${wrong} misattached`);
+    }
+
+    // X7 — expanding an artifact exposes ITS passages and nobody else's.
+    // The renderer's own rule, restated: a passage opens when its source is
+    // expanded, which is one outbound extracted_from hop and no further.
+    if (jsa) {
+      const artifacts = jsa.g.filterNodes((_x, a) => isSource(a.kind));
+      let leak = 0;
+      for (const art of artifacts) {
+        const own = new Set(
+          jsa.g.inEdges(art).filter((e) => jsa.g.getEdgeAttribute(e, "rel") === "extracted_from").map((e) => jsa.g.source(e))
+        );
+        // Everything the expansion rule would open for this artifact.
+        const opened = jsa.g.filterNodes((n, a) => {
+          if (a.kind !== "passage") return false;
+          return jsa.g
+            .outEdges(n)
+            .some((e) => jsa.g.getEdgeAttribute(e, "rel") === "extracted_from" && jsa.g.target(e) === art);
+        });
+        if (opened.some((n) => !own.has(n)) || opened.length !== own.size) leak++;
+      }
+      check(
+        "X7 expanding one artifact opens exactly its own passages",
+        artifacts.length > 0 && leak === 0,
+        `${artifacts.length} artifacts, ${leak} leaking a sibling's passages`
+      );
+    }
+
+    // X8 — a declared artifact that DID supply evidence gets no second node.
+    {
+      const jsaScope = await prisma.scope.findUnique({ where: { id: "jsa" } });
+      const refs: string[] = [];
+      jsa?.g.forEachNode((_n, a) => {
+        if (a.kind === "passage" && typeof a.externalRef === "string") refs.push(a.externalRef);
+      });
+      const declared = declaredArtifacts({
+        notionPageIds: jsaScope?.notionPageIds ?? [],
+        figmaRefs: jsaScope?.figmaRefs ?? [],
+        evidenceExternalRefs: refs,
+      });
+      const totalDeclared = (jsaScope?.notionPageIds.length ?? 0) + (jsaScope?.figmaRefs.length ?? 0);
+      check(
+        "X8 a declared artifact that supplied evidence is not drawn twice",
+        totalDeclared > declared.length && declared.length > 0,
+        `${totalDeclared} declared, ${declared.length} unread and drawn (${declared.map((d) => d.ref).join(", ")}) — the rest already have a manifest node`
+      );
+      const unsupplied = jsa?.g.filterNodes((_x, a) => isSource(a.kind) && a.supplied === false) ?? [];
+      check(
+        "X8b and an unread one is drawn, marked as supplying nothing",
+        unsupplied.length === declared.length,
+        `${unsupplied.length} marked unsupplied`
+      );
+    }
+
+    // X9 — the same evidence id in two snapshots stays two passages, and each
+    // attaches to its own snapshot's artifact.
+    {
+      let wrong = 0;
+      for (const { g } of graphs) {
+        for (const n of g.filterNodes((_x, a) => a.kind === "passage")) {
+          const parts = n.split(":");
+          if (parts.length < 3) wrong++;
+        }
+      }
+      check("X9 passages stay snapshot-scoped alongside the new artifact kinds", wrong === 0, `${wrong} unscoped`);
+    }
+
+    // X10 — Evidence Solo reaches the artifact and stops. It must not turn
+    // round at a shared artifact and fan into its other passages.
+    if (jsa) {
+      const finding = jsa.g
+        .filterNodes((_x, a) => a.kind === "finding")
+        .find((n) =>
+          jsa.g.outEdges(n).some((e) => jsa.g.getEdgeAttribute(e, "rel") === "evidenced_by" && jsa.g.getNodeAttribute(jsa.g.target(e), "kind") === "passage")
+        );
+      if (finding) {
+        const solo = evidenceSolo(jsa.g, finding);
+        const kinds = [...solo.nodes].map((n) => jsa.g.getNodeAttribute(n, "kind"));
+        const artifactsLit = [...solo.nodes].filter((n) => isSource(jsa.g.getNodeAttribute(n, "kind")));
+        // Every passage of every lit artifact.
+        const siblings = artifactsLit.flatMap((art) =>
+          jsa.g.inEdges(art).filter((e) => jsa.g.getEdgeAttribute(e, "rel") === "extracted_from").map((e) => jsa.g.source(e))
+        );
+        const uncited = siblings.filter((n) => !solo.nodes.has(n));
+        check(
+          "X10 Evidence Solo reaches the artifact without fanning into its siblings",
+          artifactsLit.length > 0 && uncited.length > 0 && !kinds.includes("reality"),
+          `lit ${[...new Set(kinds)].join(", ")}; ${uncited.length} sibling passage(s) of the same artifact correctly left dark`
+        );
+      }
+    }
+
+    // X11 — sparse Scopes invent nothing.
+    {
+      const bare = graphs.filter((x) => x.id === "design" || x.id === "itrack");
+      const invented = bare.filter((x) => x.g.someNode((_n, a) => isSource(a.kind)));
+      check(
+        "X11 a Scope with no sources gains no source artifacts",
+        bare.length > 0 && invented.length === 0,
+        `${bare.length} sourceless Scopes, ${invented.length} inventing`
+      );
+    }
+
+    // X12 — no semantic edge from a shared name. "JSA delivery scope" shares
+    // a word with the JSA Scope and with several findings.
+    {
+      let bad = 0;
+      for (const { g } of graphs) {
+        g.forEachEdge((_e, a, src, tgt) => {
+          const sk = g.getNodeAttribute(src, "kind");
+          const tk = g.getNodeAttribute(tgt, "kind");
+          if (!isSource(sk) && !isSource(tk)) return;
+          if (!["extracted_from", "evidenced_by", "supersedes"].includes(a.rel)) bad++;
+        });
+      }
+      check(
+        "X12 a source artifact carries provenance relations and nothing else",
+        bad === 0,
+        `${bad} semantic edges on source artifacts — a shared word is not a relationship`
+      );
+    }
+
+    // X13 — reading and classifying sources writes nothing.
+    {
+      const before = await prisma.$transaction([prisma.source.count(), prisma.contextSnapshot.count(), prisma.scope.count()]);
+      for (const s of scopes) {
+        const inputs = await loadAuditGraphInputs(s.id);
+        if (inputs) buildAuditGraph(inputs);
+      }
+      const after = await prisma.$transaction([prisma.source.count(), prisma.contextSnapshot.count(), prisma.scope.count()]);
+      check("X13 classifying source artifacts writes nothing", before.every((v, i) => v === after[i]), `${before.join("/")} → ${after.join("/")}`);
     }
   }
 

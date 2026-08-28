@@ -231,6 +231,26 @@ export default function AuditInstrument({ initialScopeId }: { initialScopeId?: s
       if (a.slice === "core") out.add(n);
       else if (a.lane && expanded.has(a.lane)) out.add(n);
     });
+    // ONE SOURCE, OPENED ON ITS OWN.
+    //
+    // `expanded` holds cluster ids; it now also holds source-artifact node
+    // ids, which is the same mechanism rather than a second one — same set,
+    // same toggle, same latent-to-formed promotion at the same seat. It buys
+    // the thing a cluster toggle cannot: open THIS transcript's two passages
+    // without opening every passage in the evidence sector.
+    //
+    // Additive, so nothing regresses: a passage still opens when its cluster
+    // does, whether or not its source has been expanded.
+    graph.forEachNode((n, a) => {
+      if (a.kind !== "passage" || out.has(n)) return;
+      for (const e of graph.outEdges(n)) {
+        if (graph.getEdgeAttribute(e, "rel") !== "extracted_from") continue;
+        if (expanded.has(graph.target(e))) {
+          out.add(n);
+          return;
+        }
+      }
+    });
     return out;
   }, [graph, expanded]);
 
@@ -388,6 +408,18 @@ export default function AuditInstrument({ initialScopeId }: { initialScopeId?: s
     },
     [expanded, layout, flyCamera]
   );
+
+  // Expanding ONE node — a source artifact — rather than a whole cluster.
+  // No camera move: you are already looking at the thing you clicked, and
+  // §21's rule is that ordinary selection does not move the world.
+  const toggleNode = useCallback((id: string) => {
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }, []);
 
   const flyTo = useCallback(
     (id: string) => {
@@ -730,7 +762,14 @@ export default function AuditInstrument({ initialScopeId }: { initialScopeId?: s
               onEvidenceSolo={() => setSolo(true)}
             />
           ) : selectedId && graph.hasNode(selectedId) ? (
-            <GraphInspector graph={graph} nodeId={selectedId} onSelect={select} onFocusNode={flyTo} />
+            <GraphInspector
+              graph={graph}
+              nodeId={selectedId}
+              onSelect={select}
+              onFocusNode={flyTo}
+              expandedNodes={expanded}
+              onToggleNode={toggleNode}
+            />
           ) : (
             <GraphOverview
               graph={graph}

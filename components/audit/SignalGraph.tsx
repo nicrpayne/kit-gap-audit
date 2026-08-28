@@ -77,6 +77,9 @@ const KIND_ORDER: NodeKind[] = [
   "work",
   "intelligence",
   "passage",
+  "transcript",
+  "notion_page",
+  "figma_artifact",
   "source",
   "checkpoint",
 ];
@@ -848,6 +851,68 @@ const GraphNode = memo(function GraphNode({
             />
           </g>
         );
+      case "speech":
+        // Something someone SAID: a rounded bubble with a tail.
+        return (
+          <path
+            d={`M ${x - grown * 0.9} ${y - grown * 0.72} h ${grown * 1.8} a ${grown * 0.3} ${grown * 0.3} 0 0 1 ${grown * 0.3} ${grown * 0.3} v ${grown * 0.84} a ${grown * 0.3} ${grown * 0.3} 0 0 1 ${-grown * 0.3} ${grown * 0.3} h ${-grown * 1.1} l ${-grown * 0.5} ${grown * 0.5} v ${-grown * 0.5} h ${-grown * 0.2} a ${grown * 0.3} ${grown * 0.3} 0 0 1 ${-grown * 0.3} ${-grown * 0.3} v ${-grown * 0.84} a ${grown * 0.3} ${grown * 0.3} 0 0 1 ${grown * 0.3} ${-grown * 0.3} Z`}
+            fill="var(--i-void)"
+            stroke={color}
+            strokeWidth={stroke}
+          />
+        );
+      case "page":
+        // Something WRITTEN DOWN: an upright page, ruled.
+        return (
+          <g>
+            <rect
+              x={x - grown * 0.7}
+              y={y - grown}
+              width={grown * 1.4}
+              height={grown * 2}
+              rx={grown * 0.12}
+              fill="var(--i-void)"
+              stroke={color}
+              strokeWidth={stroke}
+            />
+            {[-0.34, 0.06, 0.46].map((dy) => (
+              <line
+                key={dy}
+                x1={x - grown * 0.38}
+                y1={y + grown * dy}
+                x2={x + grown * 0.38}
+                y2={y + grown * dy}
+                stroke={color}
+                strokeWidth={stroke * 0.8}
+                opacity={0.65}
+              />
+            ))}
+          </g>
+        );
+      case "frame":
+        // Something DRAWN: a frame with a corner handle.
+        return (
+          <g>
+            <rect
+              x={x - grown * 0.92}
+              y={y - grown * 0.78}
+              width={grown * 1.84}
+              height={grown * 1.56}
+              rx={grown * 0.1}
+              fill="var(--i-void)"
+              stroke={color}
+              strokeWidth={stroke}
+            />
+            <rect
+              x={x + grown * 0.42}
+              y={y + grown * 0.28}
+              width={grown * 0.5}
+              height={grown * 0.5}
+              fill={color}
+              opacity={0.55}
+            />
+          </g>
+        );
       case "doc":
         return (
           <path
@@ -984,6 +1049,9 @@ const KIND_NAME: Record<string, string> = {
   source: "Source",
   requirement: "Requirement",
   person: "Person",
+  transcript: "Transcript",
+  notion_page: "Notion page",
+  figma_artifact: "Figma artifact",
 };
 
 function truncate(s: string, n: number): string {

@@ -37,6 +37,7 @@ import type { TruthMapModel } from "./truth";
 import type { FindingProvenance } from "./provenance";
 import { requirementLabel, type ProjectedRequirement } from "./requirements";
 import type { ProjectedPerson } from "./capacity";
+import { sourceKindFor, declaredArtifacts, SOURCE_KINDS } from "./sources";
 
 // ── EPISTEMIC BASIS ────────────────────────────────────────────────────
 //
@@ -75,7 +76,13 @@ export type NodeKind =
   | "passage"
   | "source"
   | "requirement"
-  | "person";
+  | "person"
+  // SOURCE ARTIFACTS. `source` stays the honest fallback for a source whose
+  // type the data does not pin down; the three below are used only where a
+  // persisted type field says so. See lib/audit/sources.ts.
+  | "transcript"
+  | "notion_page"
+  | "figma_artifact";
 
 export type EdgeRel =
   | "supports"
@@ -146,8 +153,11 @@ export interface EdgeRule {
   id: string;
   rel: EdgeRel;
   basis: EdgeBasis;
-  from: NodeKind;
-  to: NodeKind;
+  from: NodeKind | NodeKind[];
+  /** One kind, or a family. `extracted_from` reaches any source artifact —
+      a transcript, a Notion page, a Figma frame or a generic source — and
+      enumerating the family is more honest than widening the check. */
+  to: NodeKind | NodeKind[];
   /** The canonical field this relationship is read from. */
   field: string;
   why: string;
@@ -213,7 +223,7 @@ export const EDGE_RULES: Record<string, EdgeRule> = {
     rel: "evidenced_by",
     basis: "attested",
     from: "finding",
-    to: "source",
+    to: SOURCE_KINDS,
     field: "Finding.sourceId",
     why: "A foreign key naming the pasted Source row.",
   },
@@ -277,7 +287,7 @@ export const EDGE_RULES: Record<string, EdgeRule> = {
     rel: "extracted_from",
     basis: "attested",
     from: "passage",
-    to: "source",
+    to: SOURCE_KINDS,
     field: "EvidenceItem.sourceRef",
     why: "The manifest entry the passage was read out of.",
   },
@@ -384,8 +394,8 @@ export const EDGE_RULES: Record<string, EdgeRule> = {
     id: "registration-supersedes-registration",
     rel: "supersedes",
     basis: "attested",
-    from: "source",
-    to: "source",
+    from: SOURCE_KINDS,
+    to: SOURCE_KINDS,
     field: "SourceRegistration.supersededByRegistrationId",
     why: "An unambiguous replacement pointer between tracked sources.",
   },
@@ -399,7 +409,15 @@ export const EDGE_RULES: Record<string, EdgeRule> = {
 // for a graph of entities — see docs/AUDIT-INSTRUMENT.md.
 
 export interface GraphEntityInputs {
-  scope: { id: string; name: string; dependsOnScopeIds: string[] };
+  scope: {
+    id: string;
+    name: string;
+    dependsOnScopeIds: string[];
+    /** Source artifacts this Scope declares as context. Canonical columns —
+        the Truth Map reads the same two for its Notion and Figma lanes. */
+    notionPageIds: string[];
+    figmaRefs: string[];
+  };
   decisions: {
     id: string;
     title: string;
@@ -686,6 +704,7 @@ export function buildAuditGraph({ model, provenance, entities }: BuildGraphInput
       sourceType: string | null;
       observedAt: string | null;
       role: string | null;
+      status?: string | null;
       externalRef: string | null;
     }
   ): string => {
@@ -707,7 +726,10 @@ export function buildAuditGraph({ model, provenance, entities }: BuildGraphInput
     const sid = nodeId.packageSource(psg.sourceRef);
     if (!g.hasNode(sid)) {
       g.addNode(sid, {
-        kind: "source",
+        // The manifest's own `sourceType`, never the title. A source called
+        // "Delivery sync · 21 Aug" is a transcript because the manifest says
+        // `sourceType: "transcript"`, not because it sounds like a meeting.
+        kind: sourceKindFor(psg.sourceType),
         label: psg.sourceRef,
         slice: "evidence",
         ref: `PackageSource:${psg.sourceRef}`,
@@ -715,6 +737,9 @@ export function buildAuditGraph({ model, provenance, entities }: BuildGraphInput
         sourceType: psg.sourceType,
         observedAt: psg.observedAt,
         role: psg.role,
+        status: psg.status ?? null,
+        externalRef: psg.externalRef,
+        supplied: true,
       });
     }
     if (!g.hasDirectedEdge(pid, sid)) link(pid, sid, "passage-extracted-from-source");
@@ -893,13 +918,17 @@ export function buildAuditGraph({ model, provenance, entities }: BuildGraphInput
       const sid = nodeId.rowSource(p.source.id);
       if (!g.hasNode(sid)) {
         g.addNode(sid, {
-          kind: "source",
+          // `Source.kind` is a documented enum — "transcript" | "notes" |
+          // "estimates" — so a row that says transcript IS one. "notes" has
+          // no more specific truthful kind and stays a generic source.
+          kind: sourceKindFor(p.source.kind),
           label: p.source.title,
           slice: "evidence",
           ref: `Source:${p.source.id}`,
           lane: "evidence",
           sourceType: p.source.kind,
           observedAt: p.source.createdAt,
+          supplied: true,
         });
       }
       link(nodeId.finding(f.id), sid, "finding-evidenced-by-source");
@@ -921,6 +950,45 @@ export function buildAuditGraph({ model, provenance, entities }: BuildGraphInput
       if (g.hasNode(rid) && !g.hasDirectedEdge(fid, rid)) {
         link(fid, rid, "finding-concerns-requirement");
       }
+    }
+  }
+
+  // ── DECLARED SOURCES THAT SUPPLIED NOTHING ───────────────────────────
+  //
+  // `Scope.notionPageIds` and `Scope.figmaRefs` name artifacts Signal is
+  // CONFIGURED to read — the Truth Map already reads them for its Notion and
+  // Figma checkpoints. When one of them appears nowhere in the accepted
+  // package's evidence, that gap is worth a mark: the project points at a
+  // page and the audit is working from nothing out of it.
+  //
+  // Only the UNCOVERED ones. A declared page that did supply evidence already
+  // has a node from the manifest, and a second would be the same artifact
+  // drawn twice — the one thing the density law forbids.
+  //
+  // Run last so every manifest and row source exists to be matched against.
+  {
+    const externalRefs: string[] = [];
+    g.forEachNode((_n, a) => {
+      if (a.kind === "passage" && typeof a.externalRef === "string") externalRefs.push(a.externalRef);
+    });
+    for (const d of declaredArtifacts({
+      notionPageIds: entities.scope.notionPageIds,
+      figmaRefs: entities.scope.figmaRefs,
+      evidenceExternalRefs: externalRefs,
+    })) {
+      if (g.hasNode(d.key)) continue;
+      g.addNode(d.key, {
+        kind: d.kind,
+        label: d.ref,
+        slice: "evidence",
+        ref: `${d.field}:${d.ref}`,
+        lane: d.lane,
+        // THE FACT THIS NODE EXISTS TO CARRY. Everything else about it is
+        // unknown precisely because nothing was read from it.
+        supplied: false,
+        declaredIn: d.field,
+        externalRef: d.ref,
+      });
     }
   }
 

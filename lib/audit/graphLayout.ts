@@ -31,6 +31,7 @@
 // coordinates out — a node never changes seat because another appeared.
 
 import type { AuditGraph, NodeKind } from "./graph";
+import { SOURCE_KINDS } from "./sources";
 
 export const FIELD = {
   size: 1400,
@@ -110,7 +111,13 @@ export const NODE_SIZE: Record<NodeKind, number> = {
   finding: 9,
   feature: 8,
   intelligence: 8,
+  // Source artifacts share one size whatever their kind: a transcript is not
+  // more important than a Notion page, it is a different KIND of thing, and
+  // shape is the channel that says so.
   source: 5,
+  transcript: 5,
+  notion_page: 5,
+  figma_artifact: 5,
   work: 4.2,
   passage: 4.2,
   checkpoint: 3.2,
@@ -332,6 +339,10 @@ export function layoutGraph(graph: AuditGraph): GraphLayout {
 
   // ── EVIDENCE CHAIN — a source expands into its OWN passages ──────────
   //
+  // Every source-artifact kind seats together on one ring: they are the same
+  // layer of the world (where we learned things), differing by what they ARE
+  // rather than by where they sit.
+  //
   // Sources are seated first and each is given a SLOT of its cluster's arc;
   // its passages then fan inside that slot and nowhere else. The previous
   // pass fanned every passage across a fixed 14 degrees regardless of how
@@ -354,7 +365,7 @@ export function layoutGraph(graph: AuditGraph): GraphLayout {
     }
 
     const byCluster = new Map<string, string[]>();
-    for (const id of byKind("source")) {
+    for (const id of SOURCE_KINDS.flatMap((k) => byKind(k))) {
       const cluster = (graph.getNodeAttribute(id, "lane") as string) ?? "evidence";
       byCluster.set(cluster, [...(byCluster.get(cluster) ?? []), id]);
     }

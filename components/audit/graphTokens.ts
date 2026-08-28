@@ -17,7 +17,7 @@
 
 import type { NodeKind } from "@/lib/audit/graph";
 
-export type NodeShape = "core" | "disc" | "diamond" | "hex" | "chip" | "pin" | "dot" | "doc" | "tablet" | "figure";
+export type NodeShape = "core" | "disc" | "diamond" | "hex" | "chip" | "pin" | "dot" | "doc" | "tablet" | "figure" | "speech" | "page" | "frame";
 
 /** Shape per kind. Never varies with state. */
 export const NODE_SHAPE: Record<NodeKind, NodeShape> = {
@@ -45,7 +45,19 @@ export const NODE_SHAPE: Record<NodeKind, NodeShape> = {
   work: "dot",
   intelligence: "disc",
   passage: "dot",
+  // SOURCE ARTIFACTS: one layer of the world, four shapes.
+  //
+  // "Source" is a role, not a thing. A meeting, a written page and a design
+  // frame answer completely different questions — what was said, what was
+  // written down, what was drawn — and drawing all three as the same document
+  // icon makes the reader open each one to find out which it is.
   source: "doc",
+  /** A speech bubble: something someone said. */
+  transcript: "speech",
+  /** A page with ruled lines: something written down. */
+  notion_page: "page",
+  /** A frame with a corner handle: something drawn. */
+  figma_artifact: "frame",
   checkpoint: "dot",
 };
 
@@ -80,6 +92,12 @@ export const KIND_COLOR: Record<NodeKind, string> = {
   intelligence: "var(--i-violet)",
   passage: "var(--i-text-faint)",
   source: "var(--i-text-faint)",
+  // Provenance stays muted whatever its kind. These are the substrate the
+  // project is made of, not the thing Audit is pointing at — the eye should
+  // still find a critical finding before it finds a Notion page.
+  transcript: "var(--i-text-faint)",
+  notion_page: "var(--i-text-faint)",
+  figma_artifact: "var(--i-text-faint)",
   checkpoint: "var(--i-text-faint)",
 };
 
@@ -102,6 +120,12 @@ export function nodeColor(attrs: Record<string, unknown>): string {
     if (attrs.handled) return CONFIRMED_COLOR;
     if (attrs.needsHuman) return HUMAN_COLOR;
     return STATE_COLOR[attrs.state as string] ?? "var(--i-amber)";
+  }
+  // A source artifact the Scope DECLARES but which supplied no evidence takes
+  // the grey the field already uses for an unsupplied lane. Same fact, same
+  // colour: Signal is pointed at this and is working from nothing out of it.
+  if (kind === "source" || kind === "transcript" || kind === "notion_page" || kind === "figma_artifact") {
+    return attrs.supplied === false ? "var(--i-reality)" : KIND_COLOR[kind];
   }
   if (kind === "lane" || kind === "dependency") {
     if (attrs.supplied === false) return "var(--i-reality)";
@@ -262,6 +286,9 @@ const LABELLED_AT: Record<ZoomLevel, NodeKind[]> = {
     "work",
     "passage",
     "source",
+    "transcript",
+    "notion_page",
+    "figma_artifact",
     "person",
     // A requirement is project structure, so its identity belongs with the
     // delivery structure tier rather than with source detail. At far zoom it
@@ -285,6 +312,9 @@ const LABELLED_AT: Record<ZoomLevel, NodeKind[]> = {
     "checkpoint",
     "requirement",
     "person",
+    "transcript",
+    "notion_page",
+    "figma_artifact",
   ],
 };
 
@@ -397,4 +427,7 @@ export const KIND_LABEL: Record<NodeKind, string> = {
   source: "Source",
   requirement: "Requirement",
   person: "Person",
+  transcript: "Transcript",
+  notion_page: "Notion page",
+  figma_artifact: "Figma artifact",
 };

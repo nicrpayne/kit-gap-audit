@@ -33,12 +33,16 @@ Audit is deliberately composed.
 
 Real projection, all four Scopes, dev fixtures (`scripts/audit-graph-measure.ts`):
 
-| Scope | nodes | edges | lane | checkpoint | finding | work | feature | requirement | person | decision | dependency | intelligence | passage | source |
+| Scope | nodes | edges | lane | checkpoint | finding | work | feature | requirement | person | decision | dependency | intelligence | passage | source artifacts |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
 | Platform | 43 | 35 | 8 | 11 | 1 | 16 | 4 | 0 | 0 | 0 | 0 | 0 | 0 | 1 |
-| Design | 29 | 22 | 8 | 10 | 0 | 6 | 2 | 0 | **1** | 0 | 0 | 0 | 0 | 0 |
-| **JSA** | **71** | **93** | 8 | 16 | 8 | 14 | 4 | **2** | **4** | 1 | 1 | 1 | 5 | 5 |
+| Design | 29 | 22 | 8 | 10 | 0 | 6 | 2 | 0 | 1 | 0 | 0 | 0 | 0 | 0 |
+| **JSA** | **72** | **93** | 8 | 16 | 8 | 14 | 4 | 2 | 4 | 1 | 1 | 1 | 5 | **6** |
 | iTrack | 36 | 30 | 8 | 11 | 0 | 10 | 4 | 0 | 0 | 0 | 1 | 0 | 0 | 0 |
+
+JSA's six source artifacts: **1 transcript · 2 Notion pages · 1 Figma
+artifact · 2 generic sources**. One of the Notion pages supplied nothing —
+see below.
 
 Progressive expansion:
 
@@ -46,7 +50,7 @@ Progressive expansion:
 |---|---|---|---|---|
 | Platform | 15n / 7e | 31n / 23e | 32n / 24e | 43n / 35e |
 | Design | 13n / 6e | 19n / 12e | 19n / 12e | 29n / 22e |
-| JSA | 30n / 37e | 44n / 52e | 55n / 77e | 71n / 93e |
+| JSA | 30n / 37e | 44n / 52e | 56n / 77e | 72n / 93e |
 | iTrack | 15n / 9e | 25n / 19e | 25n / 19e | 36n / 30e |
 
 **Most Scopes have no requirements and no people, and that is the correct
@@ -60,8 +64,8 @@ node is drawn at every zoom; the slice decides which nodes show their
 "Progressive identity" in `docs/AUDIT-INSTRUMENT.md`, and
 `scripts/audit-density-measure.ts` for the per-node inventory.
 
-- **Largest single Scope:** JSA — 71 nodes / 93 edges expanded, 30 / 37 at the default slice.
-- **All Scopes combined:** 179 nodes / 180 edges expanded.
+- **Largest single Scope:** JSA — 72 nodes / 93 edges expanded, 30 / 37 at the default slice.
+- **All Scopes combined:** 180 nodes / 180 edges expanded.
 - **Sigma revisit threshold** (from the prior research): 2,000 nodes in one view. Headroom: **28× on the largest Scope, 11× combined.**
 
 The evidence does not overturn the earlier conclusion. **Stay on custom SVG.**
@@ -97,6 +101,9 @@ made execution expandable.
 | `scope` | `Scope` | core |
 | `requirement` | an `EvidenceItem` from a `requirements_of_record` source | core |
 | `person` | `Person`, via an `Allocation` to this Scope | core |
+| `transcript` | a source whose persisted type says transcript | evidence |
+| `notion_page` | a source whose persisted type says notion | evidence |
+| `figma_artifact` | a source whose persisted type says figma | evidence |
 | `lane` | `TruthLane` | core |
 | `finding` | `Finding` | core |
 | `decision` | `Decision` | core |
@@ -117,8 +124,8 @@ it. Hence `passage:<snapshotId>:<evidenceId>`, asserted by proof. Package
 manifest entries (`source:pkg:<sourceRef>`) and `Source` rows
 (`source:row:<id>`) are likewise separate namespaces.
 
-Deferred until the data supports them cleanly: `transcript`, `NotionPage`,
-`FigmaArtifact`, `commitment`, `risk`, `opportunity`.
+Deferred until the data supports them cleanly: `commitment`, `risk`,
+`opportunity`, and the rest of the Hermes intelligence objects.
 A transcript currently stays represented as `Finding → passage → source`; the
 `source` node is the seam a first-class transcript node expands from later.
 
@@ -352,6 +359,82 @@ sizing people by FTE made the sector read as importance rather than as a
 team. A synthetic unit takes the grey the field already uses for "nothing is
 supplying this", because a synthetic person is not a verified human.
 
+## Source artifacts
+
+> **A SOURCE ARTIFACT IS NOT A SEMANTIC ENTITY**, and "source" is a role
+> rather than a thing.
+
+A meeting, a written page and a design frame answer completely different
+questions — what was said, what was written down, what was drawn. Drawing all
+three as one document icon makes the reader open each to find out which it is.
+
+```
+Requirement   "Offline capture must work before field pilot"
+      │ evidenced_by
+Passage       notion-scope-row-14
+      │ extracted_from
+Notion page   "JSA delivery scope"
+```
+
+### The kind comes from a type field, never a title
+
+`sourceKindFor()` reads the manifest's `sourceType` or `Source.kind` — a
+documented enum, `"transcript" | "notes" | "estimates"`. A source called
+*"Delivery sync · 21 Aug"* is a transcript because its manifest says
+`sourceType: "transcript"`, **not because it sounds like a meeting**. Where
+the data supports only "a source", it stays `source`; JSA's two `notes` rows
+do.
+
+Proven: seven type values classify correctly, and the titles that would fool
+a name-reader classify as generic when passed as a type.
+
+| Shape | Kind | Says |
+|---|---|---|
+| Speech bubble | `transcript` | something someone said |
+| Ruled page | `notion_page` | something written down |
+| Frame with a handle | `figma_artifact` | something drawn |
+| Document | `source` | a source whose type we cannot pin down |
+
+### Declared, but unread
+
+`Scope.notionPageIds` and `Scope.figmaRefs` name artifacts Signal is
+**configured** to read — the Truth Map already reads them for its Notion and
+Figma checkpoints. When one appears nowhere in the accepted package's
+evidence, that gap is worth a mark: *the project points at a page and the
+audit is working from nothing out of it.* It takes the grey the field already
+uses for an unsupplied lane.
+
+Only the **uncovered** ones. A declared page that did supply evidence already
+has a manifest node, and a second would be the same artifact drawn twice.
+Coverage is matched on the identifier — a Notion page id appears in evidence
+as `<pageId>#<blockId>` — never on the title.
+
+On JSA that is 3 declared, 1 unread: `demo-notion-offline-spec`.
+
+### One artifact, opened on its own
+
+`expanded` holds cluster ids; it now also holds **source-artifact node ids**.
+Same set, same toggle, same latent-to-formed promotion at the same seat — it
+buys what a cluster toggle cannot: open *this transcript's* two passages
+without opening every passage in the evidence sector.
+
+Additive, so nothing regresses: a passage still opens when its cluster does.
+When the cluster is already open the control is **not offered** — a button
+that would change nothing is worse than no button, and the panel says why
+instead.
+
+Proven: expanding one artifact opens exactly its own passages, and Evidence
+Solo reaches an artifact **without fanning into its siblings** — outbound-only
+traversal means you cannot turn round at a shared source and walk down into
+someone else's evidence.
+
+### What a source artifact may carry
+
+Provenance relations and nothing else: `extracted_from`, `evidenced_by`,
+`supersedes`. A proof asserts it. A Figma frame is design evidence and
+**implements nothing**; a Notion page grounded a Requirement without being
+one.
+
 ## Slicing
 
 Progressive detail is a property of the graph, not bookkeeping the renderer
@@ -382,7 +465,7 @@ graph in the way a screenshot is an observation of the screen.
 
 ## Proven
 
-`scripts/audit-graph-proof.ts` — 118 assertions across **all four Scopes**:
+`scripts/audit-graph-proof.ts` — 132 assertions across **all four Scopes**:
 every node projects a real row; every edge cites a rule whose relation, basis
 and endpoint kinds it matches; no dangling edges; no renderer state anywhere in
 the layer; an unsupplied lane has no `supports` edge; provenance direction;
@@ -420,6 +503,17 @@ ticket is assigned to a named Person still joining nothing; no relation beyond
 `allocated_to` and membership; no invented availability, role or ownership;
 unstaffed Scopes showing nobody; global context never becoming topology; and
 zero writes.
+
+Source artifacts get an `X` block: every kind tracing to a persisted type
+field; a title deciding nothing; a Notion source becoming a page while the
+Requirement it grounded stays a separate node reached only through its
+passage; a Figma artifact implementing nothing; `extracted_from` still running
+passage → artifact and never the reverse; every passage attached to the
+artifact its own `sourceRef` names; expansion exposing exactly one artifact's
+passages; a declared artifact that supplied evidence not being drawn twice;
+snapshot-scoped passages; Evidence Solo reaching the artifact without fanning
+into siblings; sourceless Scopes inventing nothing; provenance-only relations;
+and zero writes.
 
 `scripts/audit-density-measure.ts` — the per-node visibility inventory, read
 from the renderer's own `identityOf()` rather than a restatement of it.

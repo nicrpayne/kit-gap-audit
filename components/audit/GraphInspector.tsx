@@ -18,6 +18,7 @@
 
 import type { AuditGraph, AuditNodeAttributes, EdgeBasis } from "@/lib/audit/graph";
 import { EDGE_RULES } from "@/lib/audit/graph";
+import { SOURCE_KINDS } from "@/lib/audit/sources";
 import { nodeColor, KIND_LABEL, REL_LABEL, MEMBERSHIP_RELS } from "./graphTokens";
 
 export interface Connection {
@@ -69,17 +70,36 @@ export default function GraphInspector({
   nodeId,
   onSelect,
   onFocusNode,
+  expandedNodes,
+  onToggleNode,
 }: {
   graph: AuditGraph;
   nodeId: string;
   onSelect: (id: string) => void;
   onFocusNode: (id: string) => void;
+  /** Cluster ids AND source-artifact node ids the user has opened. */
+  expandedNodes: Set<string>;
+  onToggleNode: (id: string) => void;
 }) {
   const attrs = graph.getNodeAttributes(nodeId) as AuditNodeAttributes;
   const color = nodeColor(attrs);
   const connections = connectionsOf(graph, nodeId);
   const isRequirement = attrs.kind === "requirement";
   const isPerson = attrs.kind === "person";
+  const isSource = SOURCE_KINDS.includes(attrs.kind);
+  // The passages actually extracted from THIS artifact — read off the graph,
+  // so the count and the field can never disagree.
+  const passages = isSource
+    ? graph
+        .inEdges(nodeId)
+        .filter((e) => graph.getEdgeAttribute(e, "rel") === "extracted_from")
+        .map((e) => graph.source(e))
+    : [];
+  const sourceOpen = expandedNodes.has(nodeId);
+  // Its passages may already be on screen because the whole CLUSTER is open,
+  // in which case expanding this one artifact would change nothing. A control
+  // that does nothing is worse than no control.
+  const clusterOpen = typeof attrs.lane === "string" && expandedNodes.has(attrs.lane);
   const pct = (f: number) => `${Math.round(f * 100)}%`;
   const allocations = (attrs.allocations as { scopeName: string; fraction: number; current: boolean }[] | undefined) ?? [];
   // Findings that explicitly cite this requirement's own evidence id. Read
@@ -112,13 +132,19 @@ export default function GraphInspector({
           {isRequirement && attrs.section != null && (
             <Chip color="var(--i-text-soft)">{String(attrs.section)}</Chip>
           )}
+          {isSource && attrs.supplied === false && <Chip color="var(--i-reality)">Supplied nothing</Chip>}
+          {isSource && attrs.role != null && <Chip color="var(--i-text-soft)">{String(attrs.role)}</Chip>}
           {isPerson && attrs.active === false && <Chip color="var(--i-reality)">Inactive</Chip>}
           {isPerson && attrs.synthetic === true && <Chip color="var(--i-reality)">Synthetic</Chip>}
           {isPerson && Number(attrs.scopeCount) > 1 && (
             <Chip color="var(--i-violet)">Split across {String(attrs.scopeCount)} projects</Chip>
           )}
           {attrs.state != null && <Chip color={color}>{String(attrs.state)}</Chip>}
-          {attrs.status != null && <Chip color="var(--i-text-soft)">{String(attrs.status)}</Chip>}
+          {attrs.status != null && (
+            <Chip color={isSource && attrs.status !== "active" ? "var(--i-amber)" : "var(--i-text-soft)"}>
+              {String(attrs.status)}
+            </Chip>
+          )}
           {attrs.stateType != null && <Chip color="var(--i-text-soft)">{String(attrs.state ?? attrs.stateType)}</Chip>}
           {attrs.supplied === false && <Chip color="var(--i-reality)">Not supplied</Chip>}
           {attrs.gated === true && <Chip color="var(--i-violet)">Gated</Chip>}
@@ -149,6 +175,58 @@ export default function GraphInspector({
         {attrs.sourceType != null && <Row label="Source type" value={String(attrs.sourceType)} />}
         {attrs.detail != null && <Row label="Measured" value={String(attrs.detail)} />}
       </div>
+
+      {/* ── SOURCE ARTIFACT: WHERE WE LEARNED IT ──────────────────────
+          Enough to know what this is and whether to trust it, plus the one
+          action the graph is for: open its passages in place. The artifact's
+          contents are NOT dumped here — a passage is a navigable anchor, and
+          reading one is a click away rather than a scroll. */}
+      {isSource && (
+        <div className="mt-4 px-4">
+          <div className="i-label mb-2" style={{ color: "var(--i-text-faint)" }}>
+            {attrs.supplied === false ? "Declared, but unread" : "This artifact"}
+          </div>
+          {attrs.sourceType != null && <Row label="Type" value={String(attrs.sourceType)} />}
+          {attrs.externalRef != null && <Row label="Reference" value={String(attrs.externalRef)} mono />}
+          {attrs.observedAt != null && <Row label="Last read" value={String(attrs.observedAt).slice(0, 10)} />}
+
+          {attrs.supplied === false ? (
+            <p className="mt-2 text-[10.5px] leading-[1.55]" style={{ color: "var(--i-amber)" }}>
+              This project declares this artifact as context ({String(attrs.declaredIn)}), and the
+              current package contains nothing read from it. Signal is pointed at it and is
+              working from none of it.
+            </p>
+          ) : (
+            <>
+              <Row label="Passages" value={String(passages.length)} />
+              {passages.length > 0 && clusterOpen && (
+                <p className="mt-2 text-[10.5px] leading-[1.55]" style={{ color: "var(--i-text-faint)" }}>
+                  Its passages are already on the graph — the {String(attrs.lane)} cluster is open.
+                </p>
+              )}
+              {passages.length > 0 && !clusterOpen && (
+                <button
+                  type="button"
+                  onClick={() => onToggleNode(nodeId)}
+                  data-shoot="source-expand"
+                  className="mt-2 w-full rounded-md border px-2.5 py-2 text-left text-[11px] transition-colors hover:bg-white/[0.04]"
+                  style={{ borderColor: "var(--i-border-strong)", color: "var(--i-text-soft)" }}
+                >
+                  {sourceOpen
+                    ? `− Collapse ${passages.length} passage${passages.length === 1 ? "" : "s"} on the graph`
+                    : `+ Open ${passages.length} passage${passages.length === 1 ? "" : "s"} on the graph`}
+                </button>
+              )}
+              {passages.length === 0 && (
+                <p className="mt-2 text-[10.5px] leading-[1.55]" style={{ color: "var(--i-text-faint)" }}>
+                  Nothing in the current package was extracted from this artifact as a
+                  quotable passage. Findings citing it quote it directly.
+                </p>
+              )}
+            </>
+          )}
+        </div>
+      )}
 
       {/* ── PERSON: CAPACITY, AS THE RESOLVER COMPUTED IT ─────────────
           Every figure here comes out of lib/capacity/resolve.ts unchanged, so

@@ -150,6 +150,18 @@ no requirements source.
 The inspector says **"No grounded implementation link"**, never "not
 implemented", and explains the difference on the card.
 
+## Source artifacts
+
+**Where we learned it**, typed from a persisted type field and never from a
+title. A transcript, a Notion page and a Figma frame are three shapes rather
+than one document icon, because they answer three different questions. Full
+law, the declared-but-unread signal and the per-artifact expansion:
+**docs/SIGNAL-GRAPH.md → Source artifacts**.
+
+JSA holds six: 1 transcript, 2 Notion pages (one of which supplied nothing),
+1 Figma artifact, 2 generic notes. Selecting one offers to **open its own
+passages on the graph** — the transcript's two, not the sector's five.
+
 ## Capacity
 
 **Who is carrying this project**, read from `lib/capacity/resolve.ts` rather
@@ -188,6 +200,9 @@ kind and state in words.
 | Shape | Kinds |
 |---|---|
 | Layered core | Reality |
+| Speech bubble | transcript — something someone said |
+| Ruled page | notion_page — something written down |
+| Frame with a handle | figma_artifact — something drawn |
 | Figure | person — a head over a shoulder arc, the one literal glyph on the field |
 | Tablet | requirement — upright and ruled across, a *statement*; tellable at a glance from the source it came from |
 | Disc | cluster puck, intelligence package |
@@ -428,7 +443,7 @@ the same either way while the render cost is not.
 
 ## Proven
 
-`scripts/audit-graph-proof.ts` (118) — model, layout, presence, requirements and capacity: every node
+`scripts/audit-graph-proof.ts` (132) — model, layout, presence, requirements, capacity and source artifacts: every node
 projects a real row, every edge cites a rule whose relation/basis/endpoints it
 matches, no dangling edges, no renderer state in the semantic layer,
 unsupplied lanes have no `supports` edge, provenance direction, uncited
@@ -485,7 +500,16 @@ connection carrying its share, **no person→ticket edge drawn despite every
 name matching an assignee**, Design showing the other side of the split, and
 Platform and iTrack honestly empty.
 
-**306 assertions, all passing.**
+`scripts/audit-sources-shoot.mjs` (22) — Source artifacts in the browser: six
+latent at far, each kind formed and distinguishable at medium, titles resolved
+at close, found by search and labelled by kind, a transcript selected without
+moving the camera and showing a passage COUNT rather than its text, expanding
+it opening exactly its own two passages and collapsing returning them to
+marks, a passage opened as one, a Notion page and a Figma artifact opened as
+themselves, Evidence Solo running to the artifact, an expansion fly-to
+interrupted by a zoom, and a sourceless Scope showing nothing.
+
+**328 assertions, all passing.**
 
 `scripts/audit-density-measure.ts` — what is on screen at each zoom, per node,
 read from the renderer's own rule rather than a restatement of it.
