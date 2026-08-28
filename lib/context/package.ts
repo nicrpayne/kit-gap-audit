@@ -20,6 +20,42 @@ export type PackageProducer = "hermes" | "manual" | "gap_app";
 
 export const PROJECT_CONTEXT_PACKAGE_VERSION = "1.0" as const;
 
+/**
+ * ── CONTRACT REVISIONS ────────────────────────────────────────────────
+ *
+ * Every revision Signal can accept, oldest first. The version a producer
+ * sends is PRESERVED, not normalised away, so it takes part in the content
+ * hash — which is what makes a contract revision a real identity change
+ * rather than a cosmetic one.
+ *
+ *   1.0  the original transport: sources, evidence, derivedClaims,
+ *        completeness, warnings.
+ *   1.1  adds the external structured intelligence channel —
+ *        `intelligenceObjects`, `intelligenceRelations`, `intelligenceMeta`
+ *        — and the producer field vocabulary they arrive in. A 1.1 package
+ *        that carries none of them is a 1.0 package with a different
+ *        version string, and is accepted as such.
+ *
+ * WHY THIS EXISTS. A producer that derives its packageId from the content
+ * it sends will mint the SAME id for the same corpus forever — correctly,
+ * because that is what content-addressing means. But an id is only as good
+ * as the contract it was consumed under: a package accepted by a build that
+ * silently dropped a third of it is not the same delivery as the same bytes
+ * accepted by a build that keeps all of it, and Signal's own identity rule
+ * (`@@unique([producer, packageId])` plus a contextHash comparison) will
+ * refuse the second as a conflict with the first.
+ *
+ * Putting the revision in the content identity is the honest fix: same
+ * corpus and same contract means the same package, and a new contract means
+ * a new one. No salts, no clock, no padding — none of which say anything
+ * true about what changed.
+ */
+export const SUPPORTED_PACKAGE_VERSIONS = ["1.0", "1.1"] as const;
+export type ProjectContextPackageVersion = (typeof SUPPORTED_PACKAGE_VERSIONS)[number];
+
+/** The revision that first carries structured intelligence. */
+export const INTELLIGENCE_PACKAGE_VERSION = "1.1" as const;
+
 export type SourceManifestStatus =
   | "structural" // e.g. Linear -- always expected via Scope fields, no SourceRegistration row (see docs)
   | "candidate"
@@ -290,7 +326,9 @@ export interface PackageCompleteness {
 }
 
 export interface ProjectContextPackage {
-  version: typeof PROJECT_CONTEXT_PACKAGE_VERSION;
+  // The revision the PRODUCER sent, preserved verbatim. See
+  // SUPPORTED_PACKAGE_VERSIONS.
+  version: ProjectContextPackageVersion;
 
   // TRANSPORT identity -- independent from ContextSnapshot.id (the Gap
   // App's own local, immutable historical identifier, assigned only once

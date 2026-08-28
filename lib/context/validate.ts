@@ -17,6 +17,8 @@
 
 import {
   PROJECT_CONTEXT_PACKAGE_VERSION,
+  SUPPORTED_PACKAGE_VERSIONS,
+  type ProjectContextPackageVersion,
   type ProjectContextPackage,
   type PackageProducer,
   type PackageSourceManifestEntry,
@@ -522,9 +524,16 @@ export function validateProjectContextPackage(raw: unknown): ProjectContextPacka
     fail("Expected a ProjectContextPackage object");
   }
 
-  if (raw.version !== PROJECT_CONTEXT_PACKAGE_VERSION) {
-    fail(`Unsupported ProjectContextPackage version: ${JSON.stringify(raw.version)} (expected "${PROJECT_CONTEXT_PACKAGE_VERSION}")`);
+  // EVERY REVISION SIGNAL CAN ACCEPT — not one. A producer that bumps its
+  // contract revision to mint a new package identity must not be refused by
+  // the consumer it is bumping FOR.
+  if (!(SUPPORTED_PACKAGE_VERSIONS as readonly string[]).includes(raw.version as string)) {
+    fail(
+      `Unsupported ProjectContextPackage version: ${JSON.stringify(raw.version)} ` +
+        `(supported: ${SUPPORTED_PACKAGE_VERSIONS.map((v) => `"${v}"`).join(", ")})`
+    );
   }
+  const version = raw.version as ProjectContextPackageVersion;
 
   const packageId = requireString(raw.packageId, "packageId");
 
@@ -635,7 +644,11 @@ export function validateProjectContextPackage(raw: unknown): ProjectContextPacka
   }
 
   const pkg: ProjectContextPackage = {
-    version: PROJECT_CONTEXT_PACKAGE_VERSION,
+    // PRESERVED, NOT NORMALISED. Overwriting it with Signal's own constant
+    // would erase the one field that makes a contract revision visible in
+    // the content hash — and a revision that does not change the hash
+    // changes no identity, which defeats the purpose of having one.
+    version,
     packageId,
     producer,
     generatedAt,

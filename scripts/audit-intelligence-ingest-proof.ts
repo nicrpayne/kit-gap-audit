@@ -12,6 +12,7 @@
 //   the graph read picks it up and projects it
 //   a byte-identical retry is idempotent, as the transport contract requires
 //   a package that lies about trust is refused with a 400
+//   generateReport:false is INGEST-ONLY: no model call, no report, 2xx
 //
 //   npx tsx scripts/audit-intelligence-ingest-proof.ts
 
@@ -33,11 +34,11 @@ const check = (name: string, ok: boolean, detail = "") => {
 };
 
 let SCOPE_ID = "";
-const post = (contextPackage: unknown) =>
+const post = (contextPackage: unknown, extra: Record<string, unknown> = {}) =>
   fetch(`${BASE}/api/refresh`, {
     method: "POST",
     headers: { "content-type": "application/json", cookie: `kit_session=${COOKIE}` },
-    body: JSON.stringify({ scopeId: SCOPE_ID, contextPackage }),
+    body: JSON.stringify({ scopeId: SCOPE_ID, contextPackage, ...extra }),
   });
 
 async function main() {
@@ -56,6 +57,14 @@ async function main() {
   // same helper the seed script uses, so this proof cannot pass against a
   // setup nobody else reproduces.
   await ensurePrerequisites(prisma);
+
+  const realityBefore = await prisma.$transaction([
+    prisma.decision.count(),
+    prisma.decisionGate.count(),
+    prisma.person.count(),
+    prisma.allocation.count(),
+    prisma.timelineEvent.count(),
+  ]);
 
   const modelsBefore = await prisma.$queryRawUnsafe<{ count: bigint }[]>(
     `select count(*)::bigint as count from information_schema.tables where table_schema = 'public'`
@@ -173,6 +182,85 @@ async function main() {
     (await prisma.contextSnapshot.count({ where: { packageId: lying.packageId } })) === 0,
     `trust must equal ${EXTERNAL_INTELLIGENCE_TRUST}`
   );
+
+  // ── I7. generateReport:false IS INGEST-ONLY ────────────────────────
+  //
+  // The production handshake was sent with `generateReport: false` and still
+  // came back 502 from downstream audit work, AFTER the snapshot had been
+  // written. The package was accepted and the caller was told it had failed.
+  //
+  // This environment has no ANTHROPIC_API_KEY, which makes it the exact
+  // condition that produced that 502: if any model call is still reached,
+  // this cannot return 2xx.
+  {
+    await prisma.contextSnapshot.deleteMany({ where: { packageId: pkg.packageId } });
+    const runsBefore = await prisma.auditRun.count();
+    const findingsBefore = await prisma.finding.count();
+    const reportsBefore = await prisma.report.count();
+    const sourcesBefore = await prisma.source.count();
+
+    const res2 = await post(pkg, { generateReport: false });
+    const body2 = (await res2.json()) as {
+      ok?: boolean;
+      mode?: string;
+      contextSnapshotId?: string | null;
+      skipped?: string[];
+      error?: string;
+    };
+
+    check(
+      "I7 contextPackage + generateReport:false returns 2xx with no model key set",
+      res2.ok && body2.ok === true && body2.mode === "ingest",
+      `HTTP ${res2.status} mode=${body2.mode ?? "—"}${body2.error ? ` — ${body2.error}` : ""}; skipped ${JSON.stringify(body2.skipped ?? [])}`
+    );
+    check(
+      "I7b the snapshot was still accepted",
+      typeof body2.contextSnapshotId === "string" &&
+        (await prisma.contextSnapshot.count({ where: { packageId: pkg.packageId } })) === 1,
+      `snapshot ${body2.contextSnapshotId}`
+    );
+    const after = await prisma.$transaction([
+      prisma.auditRun.count(),
+      prisma.finding.count(),
+      prisma.report.count(),
+      prisma.source.count(),
+    ]);
+    check(
+      "I7c no audit run, no finding, no report, no Source row was created",
+      after[0] === runsBefore && after[1] === findingsBefore && after[2] === reportsBefore && after[3] === sourcesBefore,
+      `auditRun/finding/report/source: ${runsBefore}/${findingsBefore}/${reportsBefore}/${sourcesBefore} → ${after.join("/")}`
+    );
+
+    // AND THE PACKAGE IS VISIBLE IN CONTEXT afterwards — an ingestion that
+    // lands nowhere readable is not an ingestion.
+    const env = await fetch(`${BASE}/api/context/envelope?scopeId=${SCOPE_ID}`, {
+      headers: { cookie: `kit_session=${COOKIE}` },
+    });
+    const envelope = (await env.json()) as { context?: { latestSnapshotId?: string | null; producer?: string | null } };
+    const g = buildAuditGraph((await loadAuditGraphInputs(SCOPE_ID))!);
+    check(
+      "I7d the ingested package is visible in the envelope and on the graph",
+      env.ok &&
+        envelope.context?.latestSnapshotId === body2.contextSnapshotId &&
+        g.filterNodes((_n, a) => a.kind === "intel").length === counts.objects,
+      `envelope names snapshot ${envelope.context?.latestSnapshotId} (producer ${envelope.context?.producer}); ` +
+        `${g.filterNodes((_n, a) => a.kind === "intel").length} intel nodes on the graph`
+    );
+
+    // ZERO REALITY MUTATION, over the same nine tables the model proof uses.
+    const reality = await prisma.$transaction([
+      prisma.decision.count(),
+      prisma.decisionGate.count(),
+      prisma.person.count(),
+      prisma.allocation.count(),
+      prisma.timelineEvent.count(),
+    ]);
+    check(
+      "I7e and an ingest-only refresh mutates no Reality",
+      reality.every((v, i) => v === realityBefore[i]),
+      `decision/gate/person/allocation/timelineEvent: ${realityBefore.join("/")} → ${reality.join("/")}`
+    );
+  }
 
   // Put the database back where it was found.
   await dropPrerequisites(prisma);

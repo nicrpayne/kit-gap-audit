@@ -30,6 +30,27 @@ interface RefreshBody {
   transcript?: RefreshTranscript;
   contextDocs?: RefreshContextDoc[];
   generateReport?: boolean;
+  // ── INGEST-ONLY ─────────────────────────────────────────────────────
+  //
+  // Accept the context and stop: no audit, no estimation, no forecast, no
+  // report. Nothing on this path calls a model or reads Linear, so an
+  // ingestion succeeds on a deployment with no ANTHROPIC_API_KEY and with
+  // Linear unreachable.
+  //
+  // Pushing context and DRAWING CONCLUSIONS FROM IT are two different
+  // requests, and this route had them fused: `runAudit` fired on the mere
+  // presence of an accepted package, and estimation and forecast ran
+  // unconditionally after it. A caller that only wanted to deliver a
+  // package still paid for three downstream stages, and on a deployment
+  // without a model key the whole request answered 502 -- after the
+  // snapshot had already been written. The package was accepted and the
+  // caller was told it had failed.
+  //
+  // `generateReport: false` selects this mode too, because that is what a
+  // caller sending it means. OMITTING the field is unchanged: a request
+  // that never mentions `generateReport` still audits, estimates and
+  // forecasts exactly as it always has.
+  ingestOnly?: boolean;
   // Optional ProjectContextPackage v1 (see lib/context/package.ts). ADDITIVE:
   // a caller that omits this field gets exactly today's behavior. When
   // present, it's validated strictly, persisted as ONE ContextSnapshot at
@@ -154,6 +175,27 @@ export async function POST(req: NextRequest) {
   if (contextSnapshotId) {
     decisionCandidates = await harvestCandidates({ id: contextSnapshotId });
     timelineCandidates = await harvestTimelineCandidates({ id: contextSnapshotId });
+  }
+
+  // INGEST-ONLY STOPS HERE. Everything above is context arriving: the
+  // snapshot, and the candidate trays harvested from it -- all of it plain
+  // database work with no model call and no Linear read. Everything below
+  // is Signal drawing conclusions, which is a different request.
+  const ingestOnly = body.ingestOnly === true || body.generateReport === false;
+  if (ingestOnly) {
+    return NextResponse.json({
+      ok: true,
+      mode: "ingest",
+      scopeId: scope.id,
+      scopeName: scope.name,
+      contextDocsUpdated,
+      contextSnapshotId,
+      decisionCandidates,
+      timelineCandidates,
+      // Named so a caller cannot mistake a deliberately narrow response for
+      // a full one that lost its forecast.
+      skipped: ["audit", "estimate", "forecast", "report"],
+    });
   }
 
   let audit:

@@ -2111,6 +2111,43 @@ async function main() {
       check("V12b and the guard still bites past the new cap", rejected, "300 sources rejected, not truncated");
     }
 
+    // ── V13. CONTRACT REVISION IS A REAL IDENTITY CHANGE ───────────────
+    //
+    // The bridge derives packageId from content, so the same corpus mints the
+    // same id forever — correct, and exactly the problem once the same bytes
+    // have been consumed under a contract that silently dropped a third of
+    // them. Signal's identity rule then refuses the resend as a conflict.
+    //
+    // The revision is the honest discriminator: it says what actually
+    // changed. For that to work Signal has to ACCEPT the new revision and
+    // PRESERVE it, and preserving it is what makes the hash move.
+    {
+      const asElevenRaw = { ...JSON.parse(JSON.stringify(raw)), version: "1.1" };
+      const asEleven = validateProjectContextPackage(asElevenRaw);
+      const hashTen = hashProjectContextPackage(accepted);
+      const hashEleven = hashProjectContextPackage(asEleven);
+      let rejectedUnknown = false;
+      try {
+        validateProjectContextPackage({ ...JSON.parse(JSON.stringify(raw)), version: "9.9" });
+      } catch {
+        rejectedUnknown = true;
+      }
+      check(
+        "V13 a contract revision is accepted, preserved, and changes the content hash",
+        asEleven.version === "1.1" &&
+          accepted.version === "1.0" &&
+          hashTen !== hashEleven &&
+          rejectedUnknown,
+        `1.0 → ${hashTen} · 1.1 → ${hashEleven} (same corpus, different identity); an unknown revision is still refused`
+      );
+      check(
+        "V13b and the same corpus at the same revision is byte-identical",
+        hashProjectContextPackage(validateProjectContextPackage(JSON.parse(JSON.stringify(asElevenRaw)))) === hashEleven &&
+          hashProjectContextPackage(validateProjectContextPackage(JSON.parse(JSON.stringify(raw)))) === hashTen,
+        `deterministic in both revisions — same corpus + same contract = same package`
+      );
+    }
+
     // ── Z. THE TRUST BOUNDARY, ON THE REAL PAYLOAD ─────────────────────
     {
       const intelNodes = g.filterNodes((_n, a) => a.kind === "intel");
