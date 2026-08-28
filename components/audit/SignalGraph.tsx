@@ -726,9 +726,15 @@ export default function SignalGraph({
           // is what makes "supersedes" legible as an ARROW OUT OF THE PAST
           // rather than as two live objects that happen to be joined.
           const historical = attrs.kind === "intel" && attrs.isCurrent === false;
+          // A SEARCH MATCH COUNTS AS REACHING IT. The same law the collapsed
+          // clusters already run on: search reveals what it finds, and a
+          // superseded object that matched and then stayed a nameless mark
+          // reads as the search being broken rather than as the object being
+          // history.
           const reached =
             selectedId === id ||
             hoveredId === id ||
+            (matches?.has(id) ?? false) ||
             (soloNodes?.has(id) ?? false) ||
             (focus?.nodes.has(id) ?? false);
           const identity = identityOf(attrs.kind, opened.has(id) && (!historical || reached), level);

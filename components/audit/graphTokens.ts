@@ -439,8 +439,17 @@ export function identityOf(kind: NodeKind, opened: boolean, level: ZoomLevel): I
  * The prior tranche measured 74 of these. They say "this belongs to that
  * cluster", which the layout already says by POSITION — drawing them too is
  * how a graph becomes a hairball. Never rendered.
+ *
+ * `belongs_to` joined them once the count was measurable. A requirement
+ * belongs to the Scope, and the model ring it sits in contains nothing but
+ * requirements and the Scope chip — so position states it exactly as it
+ * states cluster membership. With two requirements the edges were cheap;
+ * measured at 47 they are a starburst converging on Reality's doorstep,
+ * saying something the geometry already said. Same relation class, same
+ * rule, and the edge still exists in the graph, in the export, and in the
+ * inspector — it is simply not a stroke.
  */
-export const MEMBERSHIP_RELS = new Set(["attests"]);
+export const MEMBERSHIP_RELS = new Set(["attests", "belongs_to"]);
 
 /** Human-readable relation names for the inspector's connection list. */
 export const REL_LABEL: Record<string, string> = {

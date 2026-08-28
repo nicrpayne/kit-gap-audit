@@ -81,10 +81,19 @@ product already distinguishes these in `capacitySource: "…" | "inferred"`,
 |---|---|---|
 | `attested` | A stored field **directly names** the other endpoint | Delete Signal and the relationship still exists in the data |
 | `inferred` | Signal derived it while interpreting Audit state | True and useful, but ours — not the world's |
+| `external` | **A third party asserted it and Signal has not checked it** | Delete Signal and the claim still exists — and so does the fact that nothing in Signal's own record corroborates it |
 
-**No numeric confidence**, because nothing computes one. This is a two-valued
-fact about where a relationship came from, not a score. A proof rejects any
-edge carrying `confidence`, `score` or `weight`.
+`external` exists because the alternative was worse in exactly the way the
+Hermes integration is about. `attested` renders solid and full-strength, the
+same as `Finding.evidenceRefs`; filing an external inference under it would
+make a knowledge compiler's guess look every bit as grounded as a Signal
+citation — the disclaimer-instead-of-structure failure the whole integration
+exists to avoid. So it is a third value in the semantic layer, where a proof
+can check it, and its own stroke on the field.
+
+**No numeric confidence**, because nothing computes one. This is a
+three-valued categorical fact about where a relationship came from, not a
+score. A proof rejects any edge carrying `confidence`, `score` or `weight`.
 
 Measured across all Scopes **after Feature nodes landed**: **inferred 98
 (60%) · attested 64 (40%)**. Before Features, `implements` resolved just 1
@@ -435,6 +444,182 @@ Provenance relations and nothing else: `extracted_from`, `evidenced_by`,
 **implements nothing**; a Notion page grounded a Requirement without being
 one.
 
+## External structured intelligence
+
+> **Hermes intelligence is not Signal Reality.** A Hermes `Decision` means
+> *the knowledge compiler believes the evidence supports that a decision
+> occurred*. A Signal `Decision` is accepted delivery Reality with forecast
+> consequences. Different claims about different things. They never share a
+> node, a shape, or an id space.
+
+An accepted `ContextSnapshot` may carry three additive transport fields —
+`intelligenceObjects`, `intelligenceRelations`, `intelligenceMeta` (see
+`lib/context/package.ts`). `lib/audit/intelligence.ts` projects them; nothing
+about them is stored anywhere else.
+
+### The critical first fix
+
+`validateProjectContextPackage` rebuilt the accepted package from named
+fields, so anything it did not recognise was **silently dropped**. That is why
+intelligence could not arrive at all, and it is the first thing this work
+fixed.
+
+The fix is **preservation-first**, not a wider whitelist. Each new validator
+checks the fields Signal genuinely depends on and carries everything else
+through on `extra`. Re-imposing a whitelist one level down — inside an
+intelligence object — would have reintroduced the identical bug against a
+contract Signal does not own: the producer adds a field, the field vanishes,
+and nothing fails.
+
+Structural problems still reject the whole package:
+
+| Rule | Why |
+|---|---|
+| `trust` must equal `external_intelligence` | The boundary, checked at the boundary. A payload claiming its objects are accepted Reality is refused, not downgraded |
+| `isCurrent` must be a boolean | Currentness is a transported fact; defaulting a missing flag would silently promote history to head |
+| object ids unique within a package | Same law the evidence rows already hold to |
+| every `evidenceRefs` entry resolves | No dangling pointer survives into an immutable snapshot |
+| an endpoint claiming `fromInPackage`/`toInPackage` must be there | A relation may legitimately reach outside the package; lying about it is a producer bug |
+| relations without objects | Describe nothing |
+
+The three fields are assigned **only when sent**, so every already-accepted
+snapshot serialises byte-identically and hashes the same.
+
+### Persistence: not necessary, and proven so
+
+**No new Prisma model, no new column, no new index.** The intelligence rides
+inside `ContextSnapshot.package` — the Json column that already holds the
+producer's package verbatim — and the graph read already loads those snapshots
+for Requirements. `scripts/audit-intelligence-ingest-proof.ts` counts
+`information_schema` tables and columns either side of a real HTTP ingest and
+asserts both are unchanged.
+
+### The trust boundary, held in five places
+
+Not in a caption:
+
+| | |
+|---|---|
+| **its own node kind** | `intel`, carrying an `intelligenceType` attribute — so an external Decision can never collide with a Signal one |
+| **its own edge basis** | `external`, drawn with its own stroke, so an unchecked claim never renders with the weight of a Signal citation |
+| **its own relations** | `intel_relation` and `cites`, keeping external `supersedes` and `supports` out of the machinery built for Signal's own vocabulary |
+| **its own band** | seated outside `edgeR`, the ring that bounds Signal's own record |
+| **no crossing rule** | there is **no construction path** from an `intel` node to any Signal entity |
+
+That last row is the one that matters. `EDGE_RULES` contains exactly two rules
+touching `intel` — `intel-cites-passage` and `intel-relates-intel` — so a
+package full of external Decisions produces **zero** Signal `Decision` nodes
+and zero `Decision` rows. A proof enumerates the registry and asserts no rule
+can join the two worlds; a second builds a fixture where external statements
+are **character-identical** to Signal Decision titles and upstream Scope names
+and asserts zero joining edges.
+
+### One kind, not nine
+
+Nine intelligence types, one node kind. The alternative would have meant nine
+entries in five exhaustive `Record<NodeKind, …>` tables, nine glyphs on a
+field that already carries thirteen, and widening every proof that enumerates
+kinds — which had already been paid for three times in earlier tranches. The
+type is legible from the **sector** the object sits in, from its label, and
+from the inspector. Shape says what kind of thing this is *on Signal's field*,
+and every one of them is the same kind of thing: an external claim.
+
+### Where an object sits
+
+By **what it means**, not where it came from — the same law Requirements
+established against Notion. A Hermes Decision is about decisions even though
+its evidence came from a transcript; its provenance runs outward to the
+passage and the artifact, which do live in their source sector.
+
+| Type | Sector |
+|---|---|
+| `Decision` | `decisions` |
+| `Dependency` | `dependencies` |
+| `AvailabilityObservation` | `capacity` |
+| everything else | `hermes` |
+
+**No ninth sector.** Adding one rotates every existing cluster, and "Decisions
+is at the top" has to stay learnable.
+
+Radially it sits **outside `edgeR`**, in a band of at most three rows. That
+extends the gradient the field already runs on — outward is further from
+accepted Reality — rather than adding a new meaning to radius. The band is
+bounded on purpose: the corpus is several times the size of Signal's own
+record for the same project, and a band that grew without limit would make the
+field say *this project is mostly external intelligence*, which is false about
+Signal's record.
+
+Because the field can now be larger than Signal's own record, **Fit derives
+from the layout's actual extent** rather than a constant (`layoutExtent()` +
+`fitCamera(extent)`). A Scope with no external intelligence fits at exactly
+the zoom it always has.
+
+### Scope, and currentness
+
+**Scope is the producer's claim, not Signal's guess.** An object is admitted
+only when its own `scope[]` names the Scope being audited. An object the
+producer could not attribute confidently stays out rather than being matched
+in by text.
+
+**`isCurrent` is transported and never derived from `status`.** The real
+corpus contains the counterexample and the fixture reproduces it: objects that
+are `open` **and** superseded. Anything reading status to decide currentness
+draws those as live. A proof pins that exact pair.
+
+**Relations are never re-normalised.** The bridge has already reversed the
+passive forms — `resolved_by` and `superseded_by` arrive with their endpoints
+swapped into the active relation. Inverting again would silently point every
+longitudinal chain backwards, and it would look plausible while doing it. The
+producer's own name rides on the edge as `intelRel`, and `declared` carries
+the raw form for the record.
+
+### Density: the chain, not the corpus
+
+Measured on the JSA-scale payload (`scripts/lib/intel-fixture.ts`): of 87
+object-to-object relations, **6 are temporal, 9 semantic and 72 contextual**.
+Drawing the contextual ones at rest would put 72 meaningless strokes across
+the outer band and bury the 15 that carry a chain.
+
+| Class | Relations | Drawn |
+|---|---|---|
+| temporal | `supersedes` `refines` `resolves` `reopens` | at rest, once both endpoints are open |
+| semantic | `depends_on` `caused_by` `contradicts` `supports` `derived_from` | at rest, once both endpoints are open |
+| contextual | `related_to`, and anything unrecognised | only when an endpoint is being explained |
+| `cites` | object → passage provenance | only when an endpoint is being explained |
+
+An unrecognised relation name falls back to `contextual` — the quietest
+bucket. A new relation appearing at full volume at rest is how a hairball
+starts.
+
+Superseded objects keep a real seat, because the temporal chain that reaches
+them has to land somewhere, and stay **latent until something reaches them**:
+selected, hovered, in the neighbourhood, lit by a trace, or matched by a
+search.
+
+Measured on the field, at 466 nodes and 618 relationships:
+
+| | edges drawn |
+|---|---|
+| at rest | 72 — **none of them external** |
+| Hermes cluster open | 78, 2 external |
+| every cluster open | 310 of the 589 that exist; **15** external |
+
+### Cost at 466 nodes
+
+Warm, production build, 1600×1000:
+
+| | |
+|---|---|
+| pan / zoom frames | median **16.7ms**, p95 33.4ms, 0–3 frames over 50ms of ~135 |
+| select an external object | median **50ms**, worst 75ms |
+| search all 466 nodes | median **58ms**, worst 118ms |
+| open the entire field | median **155ms**, worst 210ms |
+
+**Stay on custom SVG.** 466 nodes is 4.3× the previous largest Scope and still
+23× inside the Sigma revisit threshold, with 60fps camera work and every
+interaction inside its budget. Nothing here is evidence that the renderer is
+approaching a limit.
+
 ## Slicing
 
 Progressive detail is a property of the graph, not bookkeeping the renderer
@@ -451,10 +636,18 @@ the entire graph — "explaining" a finding with material that has nothing to do
 with it. A proof asserts solo does **not** reach Reality.
 
 Allowlist: `evidenced_by` · `extracted_from` · `concerns` · `missing_from` ·
-`linked_to`. **Outbound only** — a finding cites a passage, never the reverse,
+`linked_to` · `cites`. **Outbound only** — a finding cites a passage, never the reverse,
 so the walk cannot turn round at shared evidence and come back down into an
 unrelated finding. A proof asserts that too, against a fixture that genuinely
 contains evidence shared by several findings.
+
+The same traversal answers the same question one boundary over for an external
+object — *why does the **producer** say this* — reaching the passages it
+claims ground it and the artifacts those were read from. `intel_relation` is
+**deliberately absent** from the allowlist: the corpus is mostly `related_to`,
+and admitting it would let a walk hop object to object across a hundred
+contextual links and light most of the outer band — the unrestricted BFS this
+traversal exists to refuse, rebuilt out of somebody else's material.
 
 ## Export
 
@@ -465,7 +658,7 @@ graph in the way a screenshot is an observation of the screen.
 
 ## Proven
 
-`scripts/audit-graph-proof.ts` — 132 assertions across **all four Scopes**:
+`scripts/audit-graph-proof.ts` — 158 assertions across **all four Scopes**:
 every node projects a real row; every edge cites a rule whose relation, basis
 and endpoint kinds it matches; no dangling edges; no renderer state anywhere in
 the layer; an unsupplied lane has no `supports` edge; provenance direction;
@@ -514,6 +707,36 @@ passages; a declared artifact that supplied evidence not being drawn twice;
 snapshot-scoped passages; Evidence Solo reaching the artifact without fanning
 into siblings; sourceless Scopes inventing nothing; provenance-only relations;
 and zero writes.
+
+External structured intelligence gets a `Z` block, run against the JSA-scale
+payload: the validator carrying intelligence through instead of dropping it; a
+package without it gaining no intelligence keys; an unmodelled producer field
+surviving on `extra`; a package claiming its intelligence is Signal Reality
+being rejected; a missing `isCurrent` rejected rather than defaulted; a
+dangling citation rejected; admission by the producer's own `scope[]` and
+nothing else; currentness transported and never derived from status, pinned
+against objects that are open **and** superseded; relations keeping the
+direction they arrived in; an unknown relation falling back to contextual;
+**external Decisions creating zero Signal entities**; external basis and
+external material being the same set in both directions; **no edge rule able
+to join the two worlds**; statements character-identical to Signal Decision
+titles joining nothing; a cited passage's text coming from Signal's evidence
+rather than the claim; a stale citation producing no phantom node; the same
+object id in two snapshots being two nodes; tracing reaching evidence without
+walking the corpus; seating by meaning outside the record's edge; Fit widening
+for the band and unchanged without one; superseded objects seated but latent;
+the resting field drawing the chain rather than the corpus; and zero writes.
+
+`scripts/audit-intelligence-ingest-proof.ts` — the receiving end of the
+bridge, over HTTP: `POST /api/refresh` accepting a package carrying
+intelligence, it surviving validation and persistence intact, **no new table
+and no new column**, the graph read projecting it with no further plumbing, a
+byte-identical retry creating no second snapshot, and a package lying about
+trust refused with a 400 and stored nowhere.
+
+`scripts/audit-intelligence-shoot.mjs` — the browser pass at 466 nodes, which
+owns the seeded fixture state and puts it back. Requires
+`npx tsx scripts/seed-intel-fixture.ts` first.
 
 `scripts/audit-density-measure.ts` — the per-node visibility inventory, read
 from the renderer's own `identityOf()` rather than a restatement of it.

@@ -162,9 +162,15 @@ async function main() {
       })
     )
   );
+  // WIDENED BY NAMING THE FAMILY, NOT BY RELAXING THE CHECK. `external` is a
+  // third KIND of provenance — a claim Signal did not make and has not
+  // checked — and it is still a categorical fact about where a relationship
+  // came from. The claim this proof actually defends is unchanged: three
+  // named values, and no score anywhere.
+  const BASES = ["attested", "inferred", "external"];
   check(
-    "N4 basis is only ever attested or inferred — no numeric confidence",
-    everyGraph((g) => g.everyEdge((_e, a) => a.basis === "attested" || a.basis === "inferred")) &&
+    "N4 basis is only ever attested, inferred or external — no numeric confidence",
+    everyGraph((g) => g.everyEdge((_e, a) => BASES.includes(a.basis))) &&
       everyGraph((g) => g.everyEdge((_e, a) => !("confidence" in a) && !("score" in a) && !("weight" in a)))
   );
 
@@ -2087,7 +2093,17 @@ async function main() {
     // band off screen at the one moment the user asked to see everything.
     {
       const withExtent = layoutExtent(layoutGraph(withIntel));
-      const withoutExtent = layoutExtent(layoutGraph(buildAuditGraph(base)));
+      // The baseline is the field with the external material REMOVED, not
+      // `base` — which carries whatever the database happens to hold, and
+      // once the fixture is seeded that is intelligence too.
+      const noIntel = buildAuditGraph({
+        ...base,
+        entities: {
+          ...base.entities,
+          intelligence: { objects: [], relations: [], citedPassages: [], meta: projected.meta },
+        },
+      });
+      const withoutExtent = layoutExtent(layoutGraph(noIntel));
       const home = fitCamera(withExtent);
       const plain = fitCamera(withoutExtent);
       check(

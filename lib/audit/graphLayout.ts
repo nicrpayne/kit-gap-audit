@@ -279,13 +279,37 @@ export function layoutGraph(graph: AuditGraph): GraphLayout {
   // This is INSIDE alignedR, so it is not a position on the disagreement
   // axis. A requirement is not "aligned"; it simply is not on that axis at
   // all — the same reason Reality itself has no band.
+  //
+  // THE RING GROWS WITH ITS POPULATION, IN THAT ORDER: arc first, then a
+  // second row. A previous pass fanned every requirement across a fixed 150
+  // degrees and noted in passing that it was "comfortable to about a dozen";
+  // measured at 47, that ring is a solid fence of overlapping tablets sitting
+  // on Reality's doorstep — 47 statements rendered as one green wall. Widening
+  // the arc before adding a row keeps the ring reading as a ring, and both
+  // rows stay inside `alignedR`, so nothing here becomes a position on the
+  // disagreement axis.
+  //
+  // Small counts are untouched: two requirements still fan across 52 degrees
+  // on the Scope's own axis, exactly as before.
   {
     const reqs = byKind("requirement");
-    // Fanned across the top of the model ring, centred on the Scope's own
-    // axis so the chip and its requirements read as one group. Comfortable to
-    // about a dozen; past that this ring needs its own radius.
-    const arc = Math.min(150, 26 * Math.max(1, reqs.length));
-    reqs.forEach((id, i) => place(id, fanAngle(-90, i, reqs.length, arc), FIELD.modelR, null));
+    const n = Math.max(1, reqs.length);
+    // Body plus a gap, in world units. What "fits" means on this ring.
+    const pitch = NODE_SIZE.requirement * 2.2;
+    // How many fit on one row at a given arc and radius.
+    const capacity = (arcDeg: number, radius: number) => Math.max(1, Math.floor((arcDeg * RAD * radius) / pitch));
+    // Grow the arc only as far as the count needs, and never past 300 — the
+    // remaining gap is where the Scope chip's own edges leave the project.
+    let arc = Math.min(150, 26 * n);
+    if (n > capacity(arc, FIELD.modelR)) arc = Math.min(300, (n * pitch) / (FIELD.modelR * RAD));
+    const rows = Math.min(2, Math.ceil(n / capacity(arc, FIELD.modelR)));
+    const perRow = Math.ceil(n / rows);
+    reqs.forEach((id, i) => {
+      const row = Math.floor(i / perRow);
+      const inRow = i % perRow;
+      const rowCount = Math.min(perRow, reqs.length - row * perRow);
+      place(id, fanAngle(-90, inRow, rowCount, arc), FIELD.modelR + row * 28, null);
+    });
   }
 
   // ── CLUSTER PUCKS ────────────────────────────────────────────────────
@@ -439,7 +463,15 @@ export function layoutGraph(graph: AuditGraph): GraphLayout {
             // 52 units apart radially, so exactly collinear their two labels
             // land on one baseline and print over each other. The nudge is
             // what makes them read as a pair rather than as a smear.
-            kids.length === 1 ? sAngle + 3.2 : fanAngle(sAngle, k, kids.length, kidArc),
+            //
+            // BOUNDED BY THE SLOT, because a fixed 3.2 degrees was only safe
+            // while a sector held three sources. Measured at thirteen, whose
+            // slots are 1.8 degrees wide, that nudge walked a lone passage
+            // clean past its neighbour and provenance read backwards by
+            // position — the exact thing this seating exists to guarantee.
+            kids.length === 1
+              ? sAngle + Math.min(3.2, slot * 0.45)
+              : fanAngle(sAngle, k, kids.length, kidArc),
             FIELD.childR + 52,
             cluster
           )
