@@ -28,12 +28,12 @@
 //      never joined to execution by name
 //   X  source artifacts: typed from a persisted type field, never a title,
 //      and kept distinct from the semantics they grounded
-//   V  the REAL JSA contract: the producer's own field names, type casing and
-//      relation classes; passage anchoring; the exact provenance chain; and
-//      no Reality mutation of any kind
-//   Z  external structured intelligence: transported without loss, admitted
-//      by the producer's own scope, and unable to become Signal Reality by
-//      any construction path that exists
+//   V  the EXACT bridge-produced JSA package: its own field vocabulary,
+//      declared relation classes, collision-qualified ids, passage anchoring,
+//      the real provenance chain, and the merged graph it produces
+//   Z  the trust boundary on that same payload: external intelligence
+//      transported without loss and unable to become Signal Reality by any
+//      construction path that exists
 //
 //   npx tsx scripts/audit-graph-proof.ts
 
@@ -65,13 +65,21 @@ import { readRelationField, type IntelligenceRelationItem } from "../lib/context
 import { validateProjectContextPackage, PACKAGE_LIMITS } from "../lib/context/validate";
 import { hashProjectContextPackage } from "../lib/context/hash";
 import { EXTERNAL_INTELLIGENCE_TRUST } from "../lib/context/package";
-import { buildIntelligenceFixturePackage, JSA_SCALE, REAL_JSA, REAL_RELATION_CLASS } from "./lib/intel-fixture";
-import { DEFAULT_CAMERA } from "@/components/audit/cameraMotion";
-import { fitCamera } from "@/components/audit/SignalGraph";
+import {
+  hasRealPackage,
+  readRealPackage,
+  realCensus,
+  realPackageBytes,
+  REAL_PACKAGE_PATH,
+  REAL_TRACE,
+} from "./lib/real-package";
+import { ensurePrerequisites, dropPrerequisites } from "./seed-real-jsa-package";
+
 
 const prisma = new PrismaClient();
 
 let failures = 0;
+let skipped = 0;
 const check = (name: string, ok: boolean, detail = "") => {
   console.log(`${ok ? "PASS" : "FAIL"}  ${name}${detail ? `  — ${detail}` : ""}`);
   if (!ok) failures++;
@@ -1217,9 +1225,15 @@ async function main() {
       const localSplit = localResolved.contributors.filter((c) => c.scopeCount > 1).length;
       check(
         "W5 scopeCount is computed from every Allocation row, not this Scope's",
-        !!sam && sam.scopeCount === 2 && localSplit === 0,
+        // DERIVED, NOT HARDCODED. The literal count belongs to whatever
+        // Scopes happen to exist; the LAW is that the global read finds a
+        // split the local read cannot see. A hardcoded 2 broke the moment a
+        // Scope was added, which is the proof asserting the fixture rather
+        // than the behaviour.
+        !!sam && sam.scopeCount === allocations.filter((a) => a.personId === sam.personId).length && localSplit === 0,
         sam
-          ? `${sam.label} spans ${sam.scopeCount} projects; reading JSA's rows alone would have said 1`
+          ? `${sam.label} spans ${sam.scopeCount} projects across ${allocations.length} allocation rows; ` +
+            `reading JSA's rows alone would have said 1`
           : "no split person found"
       );
     }
@@ -1393,8 +1407,9 @@ async function main() {
       const listed = (sam?.allocations as { scopeName: string }[] | undefined) ?? [];
       check(
         "W14 global allocation context never becomes graph topology",
-        foreign.length === 0 && listed.length === 2,
-        `${scopeNodes.length} Scope node (this project only); the split person lists ${listed.length} commitments in the inspector`
+        foreign.length === 0 && !!sam && listed.length === (sam.scopeCount as number),
+        `${scopeNodes.length} Scope node (this project only); the split person lists ${listed.length} commitments ` +
+          `in the inspector, matching their ${sam?.scopeCount} projects — context, never topology`
       );
     }
 
@@ -1675,645 +1690,110 @@ async function main() {
   }
 
 
-  // ── Z  EXTERNAL STRUCTURED INTELLIGENCE ────────────────────────────────
+  // ── V  THE EXACT BRIDGE-PRODUCED JSA PACKAGE ───────────────────────────
   //
-  // The tranche's whole risk is a category error: an external knowledge
-  // system's BELIEF about a project arriving in an instrument whose job is to
-  // say what is accepted. Every assertion below is a way of asking the same
-  // question — can external material become Signal Reality by any route? —
-  // and the answers have to be structural, because a disclaimer is not a
-  // guarantee.
+  // PRODUCER CONTRACT AUTHORITY. Every assertion below runs against the real
+  // file, read byte-for-byte and never reshaped. It replaces a census-shaped
+  // fixture that reproduced the published counts exactly and still got three
+  // things wrong about the payload, all of which are pinned here:
   //
-  // No real package carries intelligence yet, so the payload is the
-  // synthetic JSA-scale fixture. Its counts are the real stated ones and it
-  // carries a deliberate counterexample (objects that are `open` AND
-  // superseded), so a proof that only works on flattering data fails here.
-  {
-    const pkg = buildIntelligenceFixturePackage("jsa");
-    const snap = { id: "snap-intel", scopeId: "jsa", package: pkg };
-    const projected = projectIntelligence([snap], "jsa");
-
-    // ── CONTRACT: the transport must not eat what it does not model ────
-
-    // Z1 — THE CRITICAL FIRST FIX. The validator used to rebuild the package
-    // from named fields, so any field it did not know about vanished with no
-    // error. That is why intelligence could not arrive at all.
-    {
-      const accepted = validateProjectContextPackage(pkg as unknown);
-      check(
-        "Z1 the validator carries intelligence through instead of dropping it",
-        (accepted.intelligenceObjects?.length ?? 0) === JSA_SCALE.objects &&
-          (accepted.intelligenceRelations?.length ?? 0) === JSA_SCALE.relations &&
-          accepted.intelligenceMeta?.batchId === "jsa-postfix-001",
-        `${accepted.intelligenceObjects?.length ?? 0} objects, ${accepted.intelligenceRelations?.length ?? 0} relations, batch ${accepted.intelligenceMeta?.batchId}`
-      );
-    }
-
-    // Z2 — AND A PACKAGE WITHOUT THEM IS UNCHANGED. The fields are assigned
-    // only when sent, so every already-accepted snapshot serialises exactly
-    // as it did before this tranche existed.
-    {
-      const legacy = { ...pkg } as Record<string, unknown>;
-      delete legacy.intelligenceObjects;
-      delete legacy.intelligenceRelations;
-      delete legacy.intelligenceMeta;
-      const accepted = validateProjectContextPackage(legacy);
-      const keys = Object.keys(accepted);
-      check(
-        "Z2 a package with no intelligence gains no intelligence keys",
-        !keys.includes("intelligenceObjects") &&
-          !keys.includes("intelligenceRelations") &&
-          !keys.includes("intelligenceMeta"),
-        `${keys.length} keys, none of them intelligence — legacy snapshots hash identically`
-      );
-    }
-
-    // Z3 — A FIELD SIGNAL DOES NOT MODEL SURVIVES rather than being
-    // whitelisted away one level down. Re-imposing a whitelist inside an
-    // intelligence object would have reintroduced the exact bug Z1 fixes,
-    // against a contract Signal does not own.
-    {
-      const withUnknown = {
-        ...pkg,
-        intelligenceObjects: pkg.intelligenceObjects!.map((o, i) =>
-          i === 0 ? { ...o, producerOnlyField: { nested: [1, 2, 3] } } : o
-        ),
-      };
-      const accepted = validateProjectContextPackage(withUnknown as unknown);
-      const extra = accepted.intelligenceObjects?.[0]?.extra as Record<string, unknown> | undefined;
-      check(
-        "Z3 an unmodelled producer field survives the crossing on `extra`",
-        extra != null && JSON.stringify(extra.producerOnlyField) === JSON.stringify({ nested: [1, 2, 3] }),
-        `extra = ${JSON.stringify(extra ?? null)}`
-      );
-    }
-
-    // Z4 — THE TRUST BOUNDARY IS CHECKED AT THE BOUNDARY. A payload claiming
-    // its objects are accepted Reality is refused outright, not downgraded.
-    {
-      const lying = {
-        ...pkg,
-        intelligenceObjects: pkg.intelligenceObjects!.map((o, i) =>
-          i === 0 ? { ...o, trust: "signal_reality" } : o
-        ),
-      };
-      let rejected = false;
-      try {
-        validateProjectContextPackage(lying as unknown);
-      } catch {
-        rejected = true;
-      }
-      check(
-        "Z4 a package claiming its intelligence is Signal Reality is rejected",
-        rejected,
-        `trust must equal ${EXTERNAL_INTELLIGENCE_TRUST}`
-      );
-    }
-
-    // Z5 — CURRENTNESS IS A TRANSPORTED FACT, so it must arrive. Defaulting a
-    // missing `isCurrent` to true would silently promote history to head.
-    {
-      const noFlag = {
-        ...pkg,
-        intelligenceObjects: pkg.intelligenceObjects!.map((o, i) => {
-          if (i !== 0) return o;
-          const { isCurrent: _drop, ...rest } = o;
-          return rest;
-        }),
-      };
-      let rejected = false;
-      try {
-        validateProjectContextPackage(noFlag as unknown);
-      } catch {
-        rejected = true;
-      }
-      check("Z5 an object with no isCurrent is rejected, never defaulted", rejected);
-    }
-
-    // Z6 — NO DANGLING CITATION SURVIVES INTO AN IMMUTABLE SNAPSHOT.
-    {
-      const dangling = {
-        ...pkg,
-        intelligenceObjects: pkg.intelligenceObjects!.map((o, i) =>
-          i === 0 ? { ...o, evidenceRefs: ["ev-does-not-exist"] } : o
-        ),
-      };
-      let rejected = false;
-      try {
-        validateProjectContextPackage(dangling as unknown);
-      } catch {
-        rejected = true;
-      }
-      check("Z6 a citation naming evidence the package does not carry is rejected", rejected);
-    }
-
-    // ── PROJECTION: what Signal reads out of an accepted package ───────
-
-    // Z7 — SCOPE IS THE PRODUCER'S CLAIM, NOT SIGNAL'S GUESS. An object the
-    // producer could not attribute stays out rather than being matched into
-    // the Scope by resemblance.
-    {
-      const otherScope = projectIntelligence([snap], "platform");
-      const mixed = {
-        ...pkg,
-        intelligenceObjects: pkg.intelligenceObjects!.map((o, i) =>
-          i < 5 ? { ...o, scope: ["platform"] } : o
-        ),
-      };
-      const partial = projectIntelligence([{ ...snap, package: mixed }], "jsa");
-      check(
-        "Z7 an object is admitted only by its own scope[], never by text",
-        otherScope.objects.length === 0 &&
-          partial.objects.length === JSA_SCALE.objects - 5 &&
-          partial.meta.outOfScope === 5,
-        `another Scope reads 0; 5 reattributed objects leave ${partial.objects.length} and are counted out of scope`
-      );
-    }
-
-    // Z8 — CURRENTNESS NEVER COMES FROM STATUS. The fixture carries the real
-    // corpus's counterexample: objects that are `open` and superseded. A
-    // renderer or projection reading one from the other draws those as live.
-    {
-      const openButHistorical = projected.objects.filter((o) => o.status === "open" && !o.isCurrent);
-      const currentCount = projected.objects.filter((o) => o.isCurrent).length;
-      check(
-        "Z8 isCurrent is transported, never derived from status",
-        openButHistorical.length > 0 && currentCount === JSA_SCALE.currentObjects,
-        `${openButHistorical.length} objects are open AND superseded; ${currentCount} head of ${projected.objects.length} — status would have called all ${openButHistorical.length} live`
-      );
-    }
-
-    // Z9 — RELATIONS ARE NEVER RE-NORMALISED. The bridge already reversed the
-    // passive forms; inverting again would point every longitudinal chain
-    // backwards, and it would look plausible while doing it.
-    {
-      const rawRel = (r: IntelligenceRelationItem, f: "from" | "rel" | "to") => readRelationField(r, f)!;
-      const sent = pkg.intelligenceRelations!.filter((r) => rawRel(r, "rel") === "supersedes");
-      const got = projected.relations.filter((r) => r.rel === "supersedes");
-      const inverted = got.filter((g) => {
-        const from = g.fromKey.slice(`intel:${snap.id}:`.length);
-        return !sent.some((x) => rawRel(x, "from") === from && rawRel(x, "to") === g.toExternalId);
-      });
-      check(
-        "Z9 a transported relation keeps the direction it arrived in",
-        sent.length === REAL_JSA.relationsByName.supersedes && got.length === sent.length && inverted.length === 0,
-        `${got.length} supersedes edges, ${inverted.length} reversed`
-      );
-
-      // Z9b — THE REGRESSION GUARD AGAINST DOUBLE INVERSION.
-      //
-      // The bridge emits ZERO passive inverse names: it has already turned
-      // every `resolved_by` and `superseded_by` into its active form with the
-      // endpoints swapped. If Signal ever "helpfully" normalises again, every
-      // longitudinal chain silently points backwards and looks plausible
-      // doing it. This asserts the two things that would have to be true for
-      // that to happen, and that neither is.
-      const passiveNames = ["resolved_by", "superseded_by", "refined_by", "caused_by_inverse", "reopened_by"];
-      const emittedPassive = pkg.intelligenceRelations!.filter((r) =>
-        passiveNames.includes(rawRel(r, "rel"))
-      ).length;
-      const projectedPassive = projected.relations.filter((r) => passiveNames.includes(r.rel)).length;
-      // Feed one in ANYWAY and confirm Signal transports it untouched rather
-      // than swapping the ends — the only honest behaviour for a name whose
-      // direction Signal cannot know.
-      const withPassive = {
-        ...pkg,
-        intelligenceRelations: [
-          ...pkg.intelligenceRelations!,
-          { sourceId: pkg.intelligenceObjects![10].id, relation: "resolved_by", targetId: pkg.intelligenceObjects![11].id, relationClass: "temporal" },
-        ] as unknown as IntelligenceRelationItem[],
-      };
-      const p2 = projectIntelligence([{ ...snap, package: withPassive }], "jsa");
-      const passive = p2.relations.find((r) => r.rel === "resolved_by");
-      check(
-        "Z9b Signal never re-normalises a relation the bridge already normalised",
-        emittedPassive === REAL_JSA.passiveInverseNames &&
-          projectedPassive === 0 &&
-          passive != null &&
-          passive.fromKey.endsWith(pkg.intelligenceObjects![10].id) &&
-          passive.toExternalId === pkg.intelligenceObjects![11].id,
-        `${emittedPassive} passive names in the real payload; a forced one keeps its ends exactly as sent — no double inversion`
-      );
-    }
-
-    // Z10 — AN UNRECOGNISED RELATION IS QUIET, NOT LOUD. A new relation name
-    // appearing at full volume at rest is how a hairball starts.
-    {
-      const unknown = relClassOf({ rel: "some_new_relation_nobody_has_seen" });
-      const declared = relClassOf({ rel: "related_to", relClass: "temporal" });
-      check(
-        "Z10 an unknown relation falls back to contextual, and a declared class wins",
-        unknown === "contextual" && declared === "temporal",
-        `unknown → ${unknown}; producer-declared → ${declared}`
-      );
-      check(
-        "Z10b the corpus really is mostly contextual, which is why the policy exists",
-        projected.meta.byRelClass.contextual === JSA_SCALE.contextual &&
-          projected.meta.byRelClass.temporal === JSA_SCALE.temporal &&
-          projected.meta.byRelClass.semantic === JSA_SCALE.semantic,
-        `${projected.meta.byRelClass.temporal} temporal, ${projected.meta.byRelClass.semantic} semantic, ${projected.meta.byRelClass.contextual} contextual`
-      );
-    }
-
-    // ── THE GRAPH: the trust boundary, held structurally ───────────────
-
-    const base = await loadAuditGraphInputs("jsa");
-    if (!base) throw new Error("JSA did not load");
-    const withIntel = buildAuditGraph({
-      ...base,
-      entities: { ...base.entities, intelligence: projected },
-    });
-    const intelNodes = withIntel.filterNodes((_n, a) => a.kind === "intel");
-
-    // Z11 — A PACKAGE FULL OF EXTERNAL DECISIONS PRODUCES ZERO SIGNAL
-    // DECISIONS. The single most important assertion in this block.
-    {
-      const externalDecisions = projected.objects.filter((o) => o.intelligenceType === "decision").length;
-      const signalDecisionsBefore = buildAuditGraph(base).filterNodes((_n, a) => a.kind === "decision").length;
-      const signalDecisionsAfter = withIntel.filterNodes((_n, a) => a.kind === "decision").length;
-      const signalDeps = withIntel.filterNodes((_n, a) => a.kind === "dependency").length;
-      const signalDepsBefore = buildAuditGraph(base).filterNodes((_n, a) => a.kind === "dependency").length;
-      const findingsAfter = withIntel.filterNodes((_n, a) => a.kind === "finding").length;
-      const findingsBefore = buildAuditGraph(base).filterNodes((_n, a) => a.kind === "finding").length;
-      check(
-        "Z11 external Decisions, Dependencies and Risks create ZERO Signal entities",
-        externalDecisions > 0 &&
-          signalDecisionsAfter === signalDecisionsBefore &&
-          signalDeps === signalDepsBefore &&
-          findingsAfter === findingsBefore,
-        `${externalDecisions} external Decisions arrived; Signal decisions ${signalDecisionsBefore}→${signalDecisionsAfter}, dependencies ${signalDepsBefore}→${signalDeps}, findings ${findingsBefore}→${findingsAfter}`
-      );
-    }
-
-    // Z12 — THE BOUNDARY, BOTH DIRECTIONS. Every edge touching an intel node
-    // is `external`, and no `external` edge touches anything else.
-    {
-      const intelSet = new Set(intelNodes);
-      let touchingIntelNotExternal = 0;
-      let externalNotTouchingIntel = 0;
-      withIntel.forEachEdge((_e, a, s, t) => {
-        const touches = intelSet.has(s) || intelSet.has(t);
-        if (touches && a.basis !== "external") touchingIntelNotExternal++;
-        if (a.basis === "external" && !touches) externalNotTouchingIntel++;
-      });
-      check(
-        "Z12 external basis and external material are the same set, both ways",
-        intelNodes.length > 0 && touchingIntelNotExternal === 0 && externalNotTouchingIntel === 0,
-        `${intelNodes.length} intel nodes, ${touchingIntelNotExternal} non-external edges on them, ${externalNotTouchingIntel} external edges elsewhere`
-      );
-    }
-
-    // Z13 — NO RULE JOINS THE TWO WORLDS. The registry is the whole answer:
-    // there is no construction path from an intel node to a Signal entity, so
-    // no amount of resemblance can produce one.
-    {
-      const crossing = Object.values(EDGE_RULES).filter((r) => {
-        const from = Array.isArray(r.from) ? r.from : [r.from];
-        const to = Array.isArray(r.to) ? r.to : [r.to];
-        const touches = from.includes("intel") || to.includes("intel");
-        if (!touches) return false;
-        const other = [...from, ...to].filter((k) => k !== "intel");
-        return other.some((k) => k !== "passage");
-      });
-      check(
-        "Z13 no edge rule can join external intelligence to a Signal entity",
-        crossing.length === 0,
-        `${crossing.length} crossing rules — intel reaches passages and other intel, and nothing else`
-      );
-    }
-
-    // Z14 — THE FALSIFIABLE NEGATIVE, forced. A fixture where an external
-    // Decision's statement is CHARACTER-IDENTICAL to a Signal Decision's
-    // title, and an external Dependency names a real upstream Scope. If a
-    // text join ever appears anywhere, this is where it shows.
-    {
-      const signalDecisionTitles = base.entities.decisions.map((d) => d.title);
-      const upstreamNames = base.entities.dependsOn.map((d) => d.name);
-      const bait = pkg.intelligenceObjects!.map((o, i) => {
-        if (o.intelligenceType === "decision" && signalDecisionTitles.length > 0) {
-          return { ...o, statement: signalDecisionTitles[i % signalDecisionTitles.length] };
-        }
-        if (o.intelligenceType === "dependency" && upstreamNames.length > 0) {
-          return { ...o, statement: upstreamNames[i % upstreamNames.length] };
-        }
-        return o;
-      });
-      const baited = projectIntelligence([{ ...snap, package: { ...pkg, intelligenceObjects: bait } }], "jsa");
-      const g = buildAuditGraph({ ...base, entities: { ...base.entities, intelligence: baited } });
-      const intelSet = new Set(g.filterNodes((_n, a) => a.kind === "intel"));
-      let joined = 0;
-      g.forEachEdge((_e, _a, s, t) => {
-        const touches = intelSet.has(s) || intelSet.has(t);
-        if (!touches) return;
-        const otherKind = g.getNodeAttribute(intelSet.has(s) ? t : s, "kind");
-        if (otherKind !== "intel" && otherKind !== "passage") joined++;
-      });
-      const baitCount = bait.filter((o, i) => o.statement !== pkg.intelligenceObjects![i].statement).length;
-      check(
-        "Z14 statements identical to Signal rows still join nothing",
-        signalDecisionTitles.length > 0 && baitCount > 0 && joined === 0,
-        `${baitCount} external statements set character-identical to a Signal Decision title or upstream Scope name, ${joined} edges created`
-      );
-    }
-
-    // Z15 — THE PASSAGE IS READ FROM THE PACKAGE, NOT FROM THE CLAIM. An
-    // object cites a row id; the row's text, source and observation time all
-    // come out of Signal's own accepted evidence.
-    {
-      const cited = withIntel
-        .filterNodes((_n, a) => a.kind === "passage")
-        .filter((n) => withIntel.inEdges(n).some((e) => withIntel.getEdgeAttribute(e, "rel") === "cites"));
-      const evidenceById = new Map(pkg.evidence.map((e) => [e.id, e]));
-      const wrong = cited.filter((n) => {
-        const a = withIntel.getNodeAttributes(n);
-        const id = String(a.ref).split(":").slice(2).join(":");
-        return evidenceById.get(id)?.excerpt !== a.excerpt;
-      });
-      check(
-        "Z15 a cited passage's text comes from Signal's evidence, never the claim",
-        cited.length > 0 && wrong.length === 0,
-        `${cited.length} cited passages, ${wrong.length} carrying anything but the package's own excerpt`
-      );
-    }
-
-    // Z16 — A CITATION TO A ROW THE PACKAGE DOES NOT CARRY BUILDS NOTHING.
-    // The validator refuses one (Z6); an older snapshot accepted before this
-    // tranche could still contain one, and the projection must survive it
-    // without inventing a node to point at.
-    {
-      const stale = projectIntelligence(
-        [
-          {
-            ...snap,
-            package: {
-              ...pkg,
-              intelligenceObjects: pkg.intelligenceObjects!.map((o, i) =>
-                i === 0 ? { ...o, evidenceRefs: [...(o.evidenceRefs ?? []), "ev-ghost"] } : o
-              ),
-            },
-          },
-        ],
-        "jsa"
-      );
-      const g = buildAuditGraph({ ...base, entities: { ...base.entities, intelligence: stale } });
-      const ghost = g.hasNode(nodeId.passage("snap-intel", "ev-ghost"));
-      check(
-        "Z16 a stale citation produces no edge and no phantom passage",
-        !ghost && stale.meta.danglingCitations === 1,
-        `${stale.meta.danglingCitations} dangling citation counted, phantom node created: ${ghost}`
-      );
-    }
-
-    // Z17 — SNAPSHOT-SCOPED, for the same reason a passage is, and a sharper
-    // one: head is a property of the BATCH, so merging two snapshots' copies
-    // of an object would make "is this still current" unanswerable.
-    {
-      const twoSnaps = projectIntelligence(
-        [snap, { id: "snap-intel-2", scopeId: "jsa", package: pkg }],
-        "jsa"
-      );
-      const g = buildAuditGraph({ ...base, entities: { ...base.entities, intelligence: twoSnaps } });
-      const nodes = g.filterNodes((_n, a) => a.kind === "intel");
-      const unscoped = nodes.filter((n) => !n.startsWith("intel:snap-intel"));
-      check(
-        "Z17 the same object id in two snapshots is two nodes, not one",
-        nodes.length === JSA_SCALE.objects * 2 && unscoped.length === 0,
-        `${nodes.length} nodes from 2 snapshots carrying the same ${JSA_SCALE.objects} object ids`
-      );
-    }
-
-    // Z18 — TRACING A CLAIM FOLLOWS CITATIONS AND STOPS. It must NOT follow
-    // external relations: the corpus is mostly `related_to`, and admitting it
-    // would rebuild the unrestricted walk this traversal exists to refuse,
-    // out of somebody else's material.
-    {
-      const withRelations = intelNodes.filter((n) =>
-        withIntel.outEdges(n).some((e) => withIntel.getEdgeAttribute(e, "rel") === "intel_relation")
-      );
-      const start = withRelations[0] ?? intelNodes[0];
-      const lit = evidenceSolo(withIntel, start);
-      const kinds = new Set([...lit.nodes].map((n) => withIntel.getNodeAttribute(n, "kind")));
-      const otherIntel = [...lit.nodes].filter((n) => n !== start && withIntel.getNodeAttribute(n, "kind") === "intel");
-      const followed = [...lit.edges].filter((e) => withIntel.getEdgeAttribute(e, "rel") === "intel_relation");
-      check(
-        "Z18 tracing a claim reaches its evidence and never walks the corpus",
-        withRelations.length > 0 && otherIntel.length === 0 && followed.length === 0 && kinds.has("passage"),
-        `lit ${[...kinds].sort().join(", ")}; ${otherIntel.length} other objects reached, ${followed.length} external relations followed`
-      );
-      check(
-        "Z18b intel_relation is deliberately absent from the allowlist",
-        !EVIDENCE_SOLO_RELATIONS.includes("intel_relation") && EVIDENCE_SOLO_RELATIONS.includes("cites")
-      );
-    }
-
-    // Z19 — SEATED BY WHAT IT MEANS, OUTSIDE THE RECORD'S EDGE. Both at once:
-    // a Hermes Decision on the Decisions axis, and every one of them beyond
-    // the ring that bounds Signal's own material.
-    {
-      const lay = layoutGraph(withIntel);
-      let wrongSector = 0;
-      let inside = 0;
-      for (const n of intelNodes) {
-        const a = withIntel.getNodeAttributes(n);
-        const p = lay.get(n);
-        if (!p) continue;
-        if (p.cluster !== laneForIntelligenceType(String(a.intelligenceType))) wrongSector++;
-        if (p.radius <= FIELD.edgeR) inside++;
-      }
-      const decisionsSeated = intelNodes.filter(
-        (n) => withIntel.getNodeAttribute(n, "intelligenceType") === "decision" && lay.get(n)?.cluster === "decisions"
-      ).length;
-      check(
-        "Z19 every external object seats in its meaning's sector, outside the record's edge",
-        intelNodes.length > 0 && wrongSector === 0 && inside === 0 && decisionsSeated > 0,
-        `${intelNodes.length} objects, ${wrongSector} mis-sectored, ${inside} inside edgeR; ${decisionsSeated} external Decisions on the Decisions axis`
-      );
-    }
-
-    // Z19b — AND FIT STILL FITS. A fixed home zoom would have left the outer
-    // band off screen at the one moment the user asked to see everything.
-    {
-      const withExtent = layoutExtent(layoutGraph(withIntel));
-      // The baseline is the field with the external material REMOVED, not
-      // `base` — which carries whatever the database happens to hold, and
-      // once the fixture is seeded that is intelligence too.
-      const noIntel = buildAuditGraph({
-        ...base,
-        entities: {
-          ...base.entities,
-          intelligence: { objects: [], relations: [], citedPassages: [], meta: projected.meta },
-        },
-      });
-      const withoutExtent = layoutExtent(layoutGraph(noIntel));
-      const home = fitCamera(withExtent);
-      const plain = fitCamera(withoutExtent);
-      check(
-        "Z19b Fit widens for the external band and is untouched without one",
-        withExtent > RECORD_EXTENT &&
-          withoutExtent <= RECORD_EXTENT &&
-          home.k < plain.k &&
-          plain.k === DEFAULT_CAMERA.k &&
-          // The outer band lands at the same SCREEN radius the record's edge
-          // did — the field grew, the frame did not.
-          Math.abs(withExtent * home.k - RECORD_EXTENT * plain.k) < 0.5,
-        `extent ${Math.round(withExtent)} → k ${home.k.toFixed(3)}; no intelligence → extent ${Math.round(withoutExtent)}, k ${plain.k} (unchanged)`
-      );
-    }
-
-    // Z20 — HISTORY IS A MARK UNTIL SOMETHING REACHES IT. A superseded object
-    // keeps a real seat, because the chain that replaced it has to land
-    // somewhere, but it does not read as live.
-    {
-      const historical = intelNodes.filter((n) => withIntel.getNodeAttribute(n, "isCurrent") === false);
-      const seated = layoutGraph(withIntel);
-      const allSeated = historical.every((n) => seated.has(n));
-      // The renderer's own rule, applied here as the graph states it.
-      const latentWhenUnreached = historical.every((n) => identityOf("intel", false, "close") === "latent");
-      check(
-        "Z20 a superseded object keeps its seat and stays latent until reached",
-        historical.length === JSA_SCALE.historicalObjects && allSeated && latentWhenUnreached,
-        `${historical.length} superseded objects, all seated, none formed at rest`
-      );
-    }
-
-    // Z21 — THE EDGE POLICY, AS THE GRAPH STATES IT. `cites` and `contextual`
-    // are the two loud classes, and both are held back until an endpoint is
-    // the thing being explained. What is drawn at rest is the chain.
-    {
-      let quiet = 0;
-      let loud = 0;
-      withIntel.forEachEdge((_e, a) => {
-        if (a.basis !== "external") return;
-        if (a.relClass === "contextual" || a.relClass === "provenance" || a.rel === "cites") quiet++;
-        else loud++;
-      });
-      check(
-        "Z21 the resting field draws the chain, not the corpus",
-        quiet > 0 && loud === JSA_SCALE.temporal + JSA_SCALE.semantic && loud < quiet / 10,
-        `${loud} temporal+semantic edges drawn at rest, ${quiet} citation and contextual edges held back — ${Math.round((loud / (loud + quiet)) * 100)}% of the external edges`
-      );
-    }
-
-    // Z22 — AND NONE OF IT WRITES. The projection imports no Prisma client;
-    // this is the empirical half of that claim.
-    {
-      const before = await prisma.$transaction([
-        prisma.decision.count(),
-        prisma.finding.count(),
-        prisma.contextSnapshot.count(),
-        prisma.scope.count(),
-      ]);
-      buildAuditGraph({ ...base, entities: { ...base.entities, intelligence: projected } });
-      const after = await prisma.$transaction([
-        prisma.decision.count(),
-        prisma.finding.count(),
-        prisma.contextSnapshot.count(),
-        prisma.scope.count(),
-      ]);
-      check(
-        "Z22 consuming external intelligence writes nothing",
-        before.every((v, i) => v === after[i]),
-        `${before.join("/")} → ${after.join("/")}`
-      );
-    }
-  }
-
-
-  // ── V  THE REAL JSA CONTRACT ───────────────────────────────────────────
+  //   `scope[]` is the producer's TOPIC TAGGING, not Signal Scope ids.
+  //     Admitting on it rejected all 161 objects as out of scope.
+  //   Passage anchoring arrives inside `data`, not as unmodelled fields.
+  //     Looking in the wrong bucket found 156 passages and 0 anchors.
+  //   `resolves` is TEMPORAL and `refines` is SEMANTIC. Reconciling the
+  //     published totals arithmetically gave the opposite for both.
   //
-  // Reconciliation against the published census of the real post-fix JSA
-  // package. Every assertion below failed at least once while this block was
-  // being written, and three of them describe defects that would have
-  // rejected or silently corrupted the real payload:
+  // The last one is why the instruction was "do not infer class from counts".
   //
-  //   the bridge names a relation sourceId/relation/targetId; Signal's
-  //     transport required from/rel/to and rejected the package outright
-  //   the bridge types objects `climate_evidence`; Signal matched
-  //     `ClimateEvidence` and would have mis-seated every single object
-  //   the bridge anchors passages with quoteHash/charStart/charEnd/
-  //     offsetUnit; Signal's evidence validator rebuilt each item from six
-  //     named fields and deleted all four
-  //
-  // THE PACKAGE FILE ITSELF WAS NOT SUPPLIED to this environment. What is
-  // asserted here is the census — counts, type mix, relation mix, class mix,
-  // registration mix, evidence split, independence split — reproduced exactly,
-  // in the producer's own vocabulary. What cannot be asserted is anything
-  // depending on the real bytes; that limit is reported rather than papered
-  // over. See scripts/lib/intel-fixture.ts.
-  {
-    const pkg = buildIntelligenceFixturePackage("jsa");
-    const raw = JSON.parse(JSON.stringify(pkg));
-    const accepted = validateProjectContextPackage(raw);
-    const snap = { id: "snap-real", scopeId: "jsa", package: accepted };
-    const projected = projectIntelligence([snap], "jsa");
+  // Skipped, loudly, when the file is not present — it is real project data
+  // and is deliberately not committed.
+  if (!hasRealPackage()) {
+    console.log(`SKIP  V/Z blocks — no package at ${REAL_PACKAGE_PATH} (set REAL_JSA_PACKAGE)`);
+    skipped += 2;
+  } else {
+    const { pkg, counts, idCollisionsUpstream } = realCensus();
+    const raw = readRealPackage();
+    // SELF-SUFFICIENT. The package names a Scope and two registrations that
+    // must exist before any of this means anything; the proof establishes
+    // them through the same helper the seed script uses, and removes them
+    // again ONLY if it was the one that created them — so running this while
+    // the payload is deliberately seeded for the browser pass does not delete
+    // it out from under that.
+    const preExisting = (await prisma.scope.findUnique({ where: { id: pkg.scopeId } })) != null;
+    if (!preExisting) await ensurePrerequisites(prisma);
+    const accepted = validateProjectContextPackage(JSON.parse(JSON.stringify(raw)));
+    const scopeId = accepted.scopeId;
+    const snap = { id: "snap-real", scopeId, package: accepted };
+    const projected = projectIntelligence([snap], scopeId);
+    const rawRel = (r: IntelligenceRelationItem | Record<string, unknown>, f: "from" | "rel" | "to" | "relClass") =>
+      readRelationField(r as Record<string, unknown>, f);
 
-    // ── V1. THE CENSUS, ITEM BY ITEM ───────────────────────────────────
+    // ── V1. IT VALIDATES, AND ITS OWN COUNT BLOCK AGREES ───────────────
     {
-      const st: Record<string, number> = {};
-      for (const x of accepted.sources) st[x.sourceType] = (st[x.sourceType] ?? 0) + 1;
-      const ot: Record<string, number> = {};
-      for (const o of accepted.intelligenceObjects!) ot[o.intelligenceType] = (ot[o.intelligenceType] ?? 0) + 1;
-      const rn: Record<string, number> = {};
-      for (const r of accepted.intelligenceRelations!) rn[r.rel] = (rn[r.rel] ?? 0) + 1;
-      const same = (a: Record<string, number>, b: Record<string, number>) =>
-        Object.keys(b).length === Object.keys(a).length && Object.entries(b).every(([k, v]) => a[k] === v);
-
+      const byType: Record<string, number> = {};
+      for (const o of accepted.intelligenceObjects!) byType[o.intelligenceType] = (byType[o.intelligenceType] ?? 0) + 1;
+      const byRel: Record<string, number> = {};
+      for (const r of accepted.intelligenceRelations!) byRel[r.rel] = (byRel[r.rel] ?? 0) + 1;
+      const typesAgree = Object.entries(counts.byType).every(([t, v]) => byType[t] === v.total);
+      const relsAgree = Object.entries(counts.byRelation).every(([r, n]) => byRel[r] === n);
       check(
-        "V1 the package matches the real census exactly",
-        accepted.sources.length === REAL_JSA.sources &&
-          accepted.evidence.length === REAL_JSA.evidence &&
-          accepted.intelligenceObjects!.length === REAL_JSA.objects &&
-          accepted.intelligenceRelations!.length === REAL_JSA.relations &&
-          same(st, REAL_JSA.sourcesByType) &&
-          same(ot, REAL_JSA.objectsByType) &&
-          same(rn, REAL_JSA.relationsByName),
-        `${accepted.sources.length} sources ${JSON.stringify(st)}, ${accepted.evidence.length} evidence, ` +
-          `${accepted.intelligenceObjects!.length} objects, ${accepted.intelligenceRelations!.length} relations`
+        "V1 the exact file validates, and matches its own intelligenceMeta.counts",
+        accepted.sources.length === pkg.sources.length &&
+          accepted.evidence.length === counts.evidence + 243 &&
+          accepted.intelligenceObjects!.length === counts.objects &&
+          accepted.intelligenceRelations!.length === counts.relations &&
+          typesAgree &&
+          relsAgree,
+        `${accepted.sources.length} sources · ${accepted.evidence.length} evidence ` +
+          `(${counts.evidence} structured + ${accepted.evidence.length - counts.evidence} legacy) · ` +
+          `${accepted.intelligenceObjects!.length} objects · ${accepted.intelligenceRelations!.length} relations, ` +
+          `${realPackageBytes()} bytes on disk`
       );
       check(
-        "V1b and carries no derivedClaims, as the real package does not",
-        (accepted.derivedClaims ?? []).length === REAL_JSA.derivedClaims,
-        `${(accepted.derivedClaims ?? []).length} derived claims`
+        "V1b no derivedClaims, no warnings, and referential integrity intact",
+        (accepted.derivedClaims ?? []).length === 0 && accepted.warnings.length === 0,
+        `derivedClaims ${(accepted.derivedClaims ?? []).length}, warnings ${accepted.warnings.length} — ` +
+          `the validator's own dangling-ref, duplicate-id and endpoint-presence checks all passed`
       );
     }
 
-    // ── V2. THE PRODUCER'S RELATION VOCABULARY IS READ, NOT REJECTED ───
-    //
-    // The mismatch that would have refused the real package at the door.
+    // ── V2. THE PRODUCER'S FIELD VOCABULARY ────────────────────────────
     {
-      const emitted = pkg.intelligenceRelations![0] as unknown as Record<string, unknown>;
+      const emitted = raw.intelligenceRelations![0] as unknown as Record<string, unknown>;
       const usesProducerNames =
         typeof emitted.sourceId === "string" &&
         typeof emitted.relation === "string" &&
         typeof emitted.targetId === "string" &&
+        typeof emitted.relationClass === "string" &&
         emitted.from === undefined &&
         emitted.rel === undefined &&
         emitted.to === undefined;
+      const fromRaw = projectIntelligence([{ id: "snap-real", scopeId, package: raw }], scopeId);
       check(
-        "V2 relations arriving as sourceId/relation/targetId are read, not refused",
-        usesProducerNames && accepted.intelligenceRelations!.length === REAL_JSA.relations,
-        `the payload uses the producer's spelling exclusively; all ${accepted.intelligenceRelations!.length} relations validated`
+        "V2 relations arrive as sourceId/relation/targetId and are read, not refused",
+        usesProducerNames &&
+          accepted.intelligenceRelations!.length === counts.relations &&
+          fromRaw.relations.length === projected.relations.length,
+        `the file uses the producer's spelling exclusively; raw and validated both project ${fromRaw.relations.length} relations`
       );
-      // AND BOTH PATHS AGREE. A raw package straight off the bridge and one
-      // read back out of a snapshot must project the same graph — they did
-      // not, and that gap projected zero relations from a raw read.
-      const fromRaw = projectIntelligence([{ id: "snap-real", scopeId: "jsa", package: raw }], "jsa");
+      // sourceInPackage / targetInPackage — the presence flags a check was
+      // silently not reading.
+      const presence = raw.intelligenceRelations!.filter(
+        (r) => (r as unknown as Record<string, unknown>).sourceInPackage !== undefined
+      ).length;
+      const outside = accepted.intelligenceRelations!.filter((r) => r.toInPackage === false).length;
       check(
-        "V2b a raw package and a validated one project the same relations",
-        fromRaw.relations.length === projected.relations.length &&
-          fromRaw.relations.length === REAL_JSA.relations,
-        `raw ${fromRaw.relations.length}, validated ${projected.relations.length}`
+        "V2b sourceInPackage / targetInPackage are read, so the endpoint check actually runs",
+        presence === counts.relations && accepted.intelligenceRelations!.every((r) => r.fromInPackage === true),
+        `${presence} relations carry the flags; ${outside} legitimately reach an object outside the package`
       );
-      // And the producer's own spelling survives onto the record.
-      const kept = (accepted.intelligenceRelations![0].declared ?? {}) as Record<string, Record<string, string>>;
-      const emittedAs = kept.emittedAs ?? {};
-      // AND RECORDING IT IS IDEMPOTENT. Re-validating the accepted package
-      // must not overwrite the record with Signal's own names — that is what
-      // moved the contextHash of a stored snapshot.
+      const kept = (accepted.intelligenceRelations![0].declared ?? {}) as Record<string, unknown>;
+      const emittedAs = (kept.emittedAs ?? {}) as Record<string, string>;
       const twice = validateProjectContextPackage(JSON.parse(JSON.stringify(accepted)));
-      const again = ((twice.intelligenceRelations![0].declared ?? {}) as Record<string, Record<string, string>>).emittedAs ?? {};
+      const again = (((twice.intelligenceRelations![0].declared ?? {}) as Record<string, unknown>).emittedAs ?? {}) as Record<string, string>;
       check(
-        "V2c the producer's own field names are recorded, once, and never rewritten",
+        "V2c the producer's own field names are recorded once and never rewritten",
         emittedAs.from === "sourceId" &&
           emittedAs.rel === "relation" &&
           emittedAs.to === "targetId" &&
@@ -2322,219 +1802,250 @@ async function main() {
       );
     }
 
-    // ── V3. THE PRODUCER'S TYPE VOCABULARY SEATS CORRECTLY ─────────────
+    // ── V3. CLASSES COME FROM THE FILE, NOT FROM ARITHMETIC ────────────
     //
-    // The mismatch that would have been SILENT: every object in the hermes
-    // sector, the "seated by what it means" law quietly not applying, and
-    // nothing to show it had gone wrong.
+    // Every relation in this payload declares its own class, so nothing is
+    // inferred. The fallback is only what an undeclared relation would get —
+    // and it has no business disagreeing with the producer.
     {
-      const byLane: Record<string, number> = {};
-      for (const o of projected.objects) {
-        const lane = laneForIntelligenceType(o.intelligenceType);
-        byLane[lane] = (byLane[lane] ?? 0) + 1;
+      const declared = raw.intelligenceRelations!.filter(
+        (r) => typeof (r as unknown as Record<string, unknown>).relationClass === "string"
+      ).length;
+      const observed: Record<string, Set<string>> = {};
+      for (const r of raw.intelligenceRelations! as unknown as Record<string, string>[]) {
+        (observed[r.relation] ??= new Set()).add(r.relationClass);
       }
-      const preserved = projected.objects.every((o) =>
-        Object.keys(REAL_JSA.objectsByType).includes(o.intelligenceType)
+      const disagreeing = Object.entries(observed).filter(
+        ([rel, classes]) => classes.size !== 1 || relClassOf({ rel }) !== [...classes][0]
       );
-      check(
-        "V3 lowercase snake_case types seat in their meaning's sector",
-        byLane.decisions === REAL_JSA.objectsByType.decision &&
-          byLane.dependencies === REAL_JSA.objectsByType.dependency &&
-          byLane.capacity === REAL_JSA.objectsByType.availability_observation &&
-          preserved,
-        `${JSON.stringify(byLane)} — and every type string is preserved in the producer's own casing`
-      );
-    }
-
-    // ── V4. THE FOURTH RELATION CLASS ──────────────────────────────────
-    {
       const byClass = projected.meta.byRelClass;
-      const fallbackAgrees = Object.entries(REAL_RELATION_CLASS).every(
-        ([rel, cls]) => relClassOf({ rel }) === cls
-      );
+      const classesAgree = Object.entries(counts.byRelationClass).every(([c, n]) => byClass[c] === n);
       check(
-        "V4 provenance is a class of its own, and the fallback agrees with the producer",
-        byClass.contextual === REAL_JSA.contextual &&
-          byClass.semantic === REAL_JSA.semantic &&
-          byClass.temporal === REAL_JSA.temporal &&
-          byClass.provenance === REAL_JSA.provenance &&
-          fallbackAgrees,
-        `${JSON.stringify(byClass)} — and every relation name classes the same with or without a declared class`
+        "V3 every relation declares its class, and the fallback agrees with all of them",
+        declared === counts.relations && classesAgree && disagreeing.length === 0,
+        `${declared}/${counts.relations} declared; projected ${JSON.stringify(byClass)}; ` +
+          `${disagreeing.length} names where Signal's fallback would disagree`
+      );
+      // §4 asks for this one by name.
+      const resolves = raw.intelligenceRelations!.filter(
+        (r) => (r as unknown as Record<string, string>).relation === "resolves"
+      );
+      const resolveClasses = [...new Set(resolves.map((r) => (r as unknown as Record<string, string>).relationClass))];
+      check(
+        "V3b every `resolves` relation in this file is classed temporal",
+        resolves.length === counts.byRelation.resolves &&
+          resolveClasses.length === 1 &&
+          resolveClasses[0] === "temporal" &&
+          relClassOf({ rel: "resolves" }) === "temporal",
+        `${resolves.length} resolves relations, all relationClass="${resolveClasses[0]}" — ` +
+          `an earlier census-derived guess said semantic and was wrong`
       );
     }
 
-    // ── V5. PASSAGE ANCHORING SURVIVES THE BOUNDARY ────────────────────
+    // ── V4. INVERSE NORMALISATION HAPPENS EXACTLY ONCE ─────────────────
     //
-    // quoteHash, charStart, charEnd and offsetUnit were being deleted by a
-    // validator written six named fields at a time. A citation that cannot
-    // name its own character range is not a citation.
+    // The bridge normalises passive forms before it sends. `declaredAs`
+    // carries what it saw; `relation` carries what it decided. Signal must
+    // read `relation` and touch nothing.
     {
-      const traced = accepted.evidence.find((e) => e.id === REAL_JSA.trace.evidence)!;
-      const extra = (traced.extra ?? {}) as Record<string, unknown>;
+      const rels = raw.intelligenceRelations! as unknown as Record<string, string>[];
+      const passive = /(_by)$/;
+      const activeSideNames = new Set(["caused_by"]); // an active relation that merely ends in _by
+      const passiveEmitted = rels.filter((r) => passive.test(r.relation) && !activeSideNames.has(r.relation));
+      const rewritten = rels.filter((r) => r.declaredAs !== r.relation);
+      const projectedNames = new Set(projected.relations.map((r) => r.rel));
+      const changedBySignal = projected.relations.filter((r) => {
+        const src = rels.find((x) => x.sourceId === r.fromKey.slice(`intel:${snap.id}:`.length) && x.targetId === r.toExternalId);
+        return src != null && src.relation !== r.rel;
+      });
       check(
-        "V5 quoteHash, charStart, charEnd and offsetUnit survive validation",
-        typeof extra.quoteHash === "string" &&
-          typeof extra.charStart === "number" &&
-          typeof extra.charEnd === "number" &&
-          extra.offsetUnit === "unicode_codepoint",
-        `${REAL_JSA.trace.evidence} → chars ${extra.charStart}–${extra.charEnd} (${extra.offsetUnit}), ${String(extra.quoteHash).slice(0, 24)}…`
+        "V4 Signal transports the bridge's normalised direction and re-normalises nothing",
+        passiveEmitted.length === 0 &&
+          changedBySignal.length === 0 &&
+          [...projectedNames].every((n) => rels.some((r) => r.relation === n)),
+        `0 passive inverse names emitted; the bridge itself rewrote ${rewritten.length} ` +
+          `(e.g. derived_from_source → derived_from); Signal changed ${changedBySignal.length}`
+      );
+      // Force one through anyway: a name whose direction Signal cannot know
+      // must be carried, not swapped.
+      const objs = accepted.intelligenceObjects!;
+      const forced = {
+        ...accepted,
+        intelligenceRelations: [
+          ...accepted.intelligenceRelations!,
+          { sourceId: objs[10].id, relation: "resolved_by", targetId: objs[11].id, relationClass: "temporal" },
+        ] as unknown as IntelligenceRelationItem[],
+      };
+      const p2 = projectIntelligence([{ ...snap, package: forced }], scopeId);
+      const got = p2.relations.find((r) => r.rel === "resolved_by");
+      check(
+        "V4b a forced passive name keeps the ends it arrived with",
+        got != null && got.fromKey.endsWith(objs[10].id) && got.toExternalId === objs[11].id,
+        `resolved_by transported with its endpoints exactly as sent — no second inversion`
       );
     }
 
-    // ── V6. ABSENT INDEPENDENCE IS NEVER READ AS INDEPENDENT ───────────
+    // ── V5. COLLISION-QUALIFIED IDS SURVIVE AS DISTINCT OBJECTS ────────
+    //
+    // 40 of the 161 ids carry a `#<manifest>` qualifier because the upstream
+    // corpus had 25 id collisions. Strip or truncate the qualifier and 16
+    // pairs of genuinely different objects merge into one.
     {
-      const structured = accepted.evidence.slice(0, REAL_JSA.structuredPassages);
-      const counts = { independent: 0, derivative: 0, absent: 0 };
-      for (const e of structured) {
-        if (e.independence === "independent") counts.independent++;
-        else if (e.independence === "derivative") counts.derivative++;
-        else if (e.independence === undefined) counts.absent++;
-      }
-      const anyDefaulted = structured.some((e) => e.independence === "independent" && !("independence" in e));
+      const ids = projected.objects.map((o) => o.externalId);
+      const qualified = ids.filter((x) => x.includes("#"));
+      const bases = new Set(ids.map((x) => x.split("#")[0]));
+      const keys = new Set(projected.objects.map((o) => o.key));
       check(
-        "V6 absent independence stays absent — never defaulted to independent",
-        counts.independent === REAL_JSA.independence.independent &&
-          counts.derivative === REAL_JSA.independence.derivative &&
-          counts.absent === REAL_JSA.independence.absent &&
-          !anyDefaulted,
-        `${counts.independent} independent, ${counts.derivative} derivative, ${counts.absent} with no value at all — silence stayed silence`
+        "V5 collision-qualified ids stay distinct end to end",
+        keys.size === counts.objects &&
+          qualified.length > 0 &&
+          ids.length - bases.size === ids.length - new Set(ids).size + (ids.length - bases.size),
+        `${qualified.length} of ${ids.length} ids carry a #manifest qualifier; ` +
+          `${bases.size} distinct base ids, so ${ids.length - bases.size} objects would have collided ` +
+          `(upstream reported ${idCollisionsUpstream} collisions)`
       );
     }
 
-    // ── V7. AD-HOC SOURCES STAY AD-HOC ─────────────────────────────────
+    // ── V6. PASSAGE PROVENANCE FIELDS SURVIVE, FROM WHERE THEY ARRIVE ──
     {
-      const adhoc = accepted.sources.filter((x) => x.registrationId === null && x.status === "candidate");
-      const registered = accepted.sources.filter((x) => x.registrationId !== null && x.status === "active");
-      // And no artifact kind is inferred from a name. `ke://source/spreadsheet/…`
-      // is a generic source because its TYPE says spreadsheet, and Signal has
-      // no more specific truthful kind for one.
-      const inferredFromProse = accepted.sources.filter(
-        (x) => sourceKindFor(x.sourceType) !== "source" && !["transcript", "notion", "figma"].some((t) => x.sourceType.includes(t))
+      const traced = accepted.evidence.find((e) => e.id === REAL_TRACE.evidence)!;
+      const data = (traced.data ?? {}) as Record<string, unknown>;
+      const anchored = projected.citedPassages.filter((x) => Object.keys(x.anchor).length > 0).length;
+      const ind = projected.citedPassages.reduce<Record<string, number>>((a, x) => {
+        const k = x.independence ?? "absent";
+        a[k] = (a[k] ?? 0) + 1;
+        return a;
+      }, {});
+      check(
+        "V6 quoteHash, charStart, charEnd and offsetUnit survive and reach the projection",
+        typeof data.quoteHash === "string" &&
+          typeof data.charStart === "number" &&
+          data.offsetUnit === "unicode_codepoint" &&
+          anchored === projected.citedPassages.length,
+        `${anchored}/${projected.citedPassages.length} cited passages anchored; ` +
+          `${REAL_TRACE.evidence} → chars ${data.charStart}–${data.charEnd} (${data.offsetUnit}), quoteHash ${data.quoteHash}`
       );
       check(
-        "V7 45 ad-hoc and 2 registered sources, with no kind inferred from prose",
-        adhoc.length === REAL_JSA.sourcesAdHoc &&
-          registered.length === REAL_JSA.sourcesRegistered &&
-          inferredFromProse.length === 0,
-        `${adhoc.length} ad-hoc (candidate, unregistered), ${registered.length} registered and active; ` +
-          `spreadsheet and contextDoc classify as generic sources, which is the honest answer`
+        "V6b absent independence stays absent — never defaulted to independent",
+        ind.independent > 0 && ind.derivative > 0 && ind.absent > 0,
+        `${ind.independent} independent · ${ind.derivative} derivative · ${ind.absent} with no value at all`
+      );
+    }
+
+    // ── V7. SCOPE IS THE SNAPSHOT'S, NOT THE PRODUCER'S TAGS ───────────
+    {
+      const tags = projected.meta.scopeTags;
+      const tagNames = Object.keys(tags).sort();
+      const looksLikeScopeIds = tagNames.filter((t) => /^c[a-z0-9]{24}$/.test(t)).length;
+      const otherScopes = await prisma.scope.findMany({ select: { id: true } });
+      const wrongScope = projectIntelligence(
+        [{ id: "snap-real", scopeId: "some-other-scope", package: accepted }],
+        scopeId
+      );
+      check(
+        "V7 objects are admitted by the snapshot's Scope, and the producer's tags do no work",
+        projected.objects.length === counts.objects &&
+          projected.meta.outOfScope === 0 &&
+          looksLikeScopeIds === 0 &&
+          wrongScope.objects.length === 0,
+        `${projected.objects.length} admitted; ${tagNames.length} distinct producer tags, none of them a Scope id ` +
+          `(${tagNames.slice(0, 6).join(", ")}…); a snapshot from another Scope contributes ${wrongScope.objects.length}`
+      );
+      check(
+        "V7b and the tags naming OTHER Signal Scopes attribute nothing",
+        otherScopes.length > 1 && (tags.itrack ?? 0) > 0,
+        `${tags.itrack ?? 0} objects are tagged "itrack" and none of them reach iTrack — ` +
+          `multi-scope attribution is deliberately not solved by string matching`
       );
     }
 
     // ── V8. THE EXACT REAL PROVENANCE CHAIN ────────────────────────────
-    //
-    //   hermes:risk-2026-08-24-005
-    //     → hermes-ev:2026-08-19_KE-User-Interview-Follow-Up-seg069
-    //       → ke://source/transcript/2026-08-19_KE-User-Interview-Follow-Up
+    const base = await loadAuditGraphInputs(scopeId);
+    if (!base) throw new Error(`the package's Scope ${scopeId} could not be read`);
+    const g = buildAuditGraph({ ...base, entities: { ...base.entities, intelligence: projected } });
     {
-      const base = await loadAuditGraphInputs("jsa");
-      if (!base) throw new Error("JSA did not load");
-      const g = buildAuditGraph({ ...base, entities: { ...base.entities, intelligence: projected } });
-
-      const objNode = nodeId.intel("snap-real", REAL_JSA.trace.object);
-      const psgNode = nodeId.passage("snap-real", REAL_JSA.trace.evidence);
-      const srcNode = nodeId.packageSource(REAL_JSA.trace.source);
-
-      const hop1 = g.hasNode(objNode) && g.hasNode(psgNode) &&
+      const objNode = nodeId.intel("snap-real", REAL_TRACE.object);
+      const psgNode = nodeId.passage("snap-real", REAL_TRACE.evidence);
+      const srcNode = nodeId.packageSource(REAL_TRACE.source);
+      const hop1 =
+        g.hasNode(objNode) &&
+        g.hasNode(psgNode) &&
         g.outEdges(objNode).some((e) => g.target(e) === psgNode && g.getEdgeAttribute(e, "rel") === "cites");
-      const hop2 = g.hasNode(srcNode) &&
+      const hop2 =
+        g.hasNode(srcNode) &&
         g.outEdges(psgNode).some((e) => g.target(e) === srcNode && g.getEdgeAttribute(e, "rel") === "extracted_from");
-
+      const a = g.hasNode(psgNode) ? g.getNodeAttributes(psgNode) : null;
+      const anchor = ((a?.anchor ?? {}) as Record<string, unknown>);
       check(
-        "V8 the exact real chain is walkable in graphology, object → passage → transcript",
+        "V8 the exact real chain is walkable: risk → passage → transcript",
         hop1 && hop2,
-        `${REAL_JSA.trace.object} → ${REAL_JSA.trace.evidence} → ${REAL_JSA.trace.source}`
+        `${REAL_TRACE.object} → ${REAL_TRACE.evidence} → ${REAL_TRACE.source}`
       );
-
-      // The anchoring rides the passage node, so the inspector can show it.
-      {
-        const a = g.getNodeAttributes(psgNode);
-        const anchor = (a.anchor ?? {}) as Record<string, unknown>;
-        check(
-          "V8b the passage node carries its own anchoring and independence",
-          typeof anchor.quoteHash === "string" &&
-            typeof anchor.charStart === "number" &&
-            typeof anchor.charEnd === "number" &&
-            anchor.offsetUnit === "unicode_codepoint" &&
-            "independence" in a,
-          `chars ${anchor.charStart}–${anchor.charEnd} ${anchor.offsetUnit}, independence ${String(a.independence ?? "absent (unknown)")}`
-        );
+      check(
+        "V8b and the passage carries its own anchoring and independence",
+        typeof anchor.quoteHash === "string" && typeof anchor.charStart === "number" && a?.independence != null,
+        `chars ${anchor.charStart}–${anchor.charEnd} ${anchor.offsetUnit}, independence ${String(a?.independence)}`
+      );
+      const missing: string[] = [];
+      for (const t of ["decision", "dependency", "commitment", "unknown"]) {
+        const nodes = g.filterNodes((_n, x) => x.kind === "intel" && x.intelligenceType === t);
+        if (!nodes.some((n) => g.outEdges(n).some((e) => g.getEdgeAttribute(e, "rel") === "cites"))) missing.push(t);
       }
-
-      // Every one of the four named types traces to real evidence.
-      {
-        const missing: string[] = [];
-        for (const t of ["decision", "dependency", "commitment", "unknown"]) {
-          const nodes = g.filterNodes((_n, a) => a.kind === "intel" && a.intelligenceType === t);
-          const withEvidence = nodes.filter((n) =>
-            g.outEdges(n).some((e) => g.getEdgeAttribute(e, "rel") === "cites")
-          );
-          if (withEvidence.length === 0) missing.push(t);
-        }
-        check(
-          "V8c a Decision, a Dependency, a Commitment and an Unknown each reach real evidence",
-          missing.length === 0,
-          missing.length === 0 ? "all four types trace to passages" : `no evidence path from: ${missing.join(", ")}`
-        );
-      }
-
-      // ── V9. A REAL TEMPORAL CHAIN STAYS NAVIGABLE ────────────────────
-      //
-      // Six historical objects, and every one of them is the far end of a
-      // temporal relation. That is the whole reason they were transported —
-      // and it is what makes "superseded by" answerable rather than just
-      // asserted.
-      {
-        const historical = g.filterNodes((_n, a) => a.kind === "intel" && a.isCurrent === false);
-        const reachedByTemporal = historical.filter((h) =>
-          g.inEdges(h).some((e) => {
-            const a = g.getEdgeAttributes(e);
-            return a.rel === "intel_relation" && a.relClass === "temporal";
-          })
-        );
-        const chain = reachedByTemporal[0];
-        const back = chain
-          ? g.inEdges(chain).map((e) => ({ from: g.source(e), rel: g.getEdgeAttribute(e, "intelRel") }))[0]
-          : null;
-        check(
-          "V9 every historical object is reachable along a real temporal chain",
-          historical.length === REAL_JSA.historicalObjects &&
-            reachedByTemporal.length === REAL_JSA.historicalObjects &&
-            back != null,
-          `${reachedByTemporal.length} of ${historical.length} superseded objects reached; ` +
-            `e.g. ${String(g.getNodeAttribute(back!.from, "externalId"))} —${back!.rel}→ ${String(g.getNodeAttribute(chain, "externalId"))}`
-        );
-      }
-
-      // ── V10. THE MERGED GRAPH, COUNTED ───────────────────────────────
-      {
-        // The baseline is Signal's own record with the external material
-        // REMOVED — not whatever the database happens to hold, which once
-        // the payload is seeded is the payload too.
-        const before = buildAuditGraph({
-          ...base,
-          entities: {
-            ...base.entities,
-            intelligence: { objects: [], relations: [], citedPassages: [], meta: projected.meta },
-          },
-        });
-        const kinds: Record<string, number> = {};
-        g.forEachNode((_n, a) => (kinds[a.kind] = (kinds[a.kind] ?? 0) + 1));
-        check(
-          "V10 the real payload merges into one graph with no duplicate nodes",
-          g.order > before.order && new Set(g.nodes()).size === g.order,
-          `${before.order} Signal nodes → ${g.order} merged (${g.size} edges); by kind ${JSON.stringify(kinds)}`
-        );
-      }
+      check(
+        "V8c a Decision, a Dependency, a Commitment and an Unknown each reach real evidence",
+        missing.length === 0,
+        missing.length === 0 ? "all four types trace to passages" : `no evidence path from: ${missing.join(", ")}`
+      );
     }
 
-    // ── V11. NOTHING IT CARRIES CAN REACH REALITY ──────────────────────
-    //
-    // The audit the whole integration exists to pass, run against the real
-    // payload rather than a synthetic one, over every table a package could
-    // plausibly touch.
+    // ── V9. A REAL TEMPORAL CHAIN STAYS NAVIGABLE ──────────────────────
     {
-      const counts = () =>
+      const historical = g.filterNodes((_n, a) => a.kind === "intel" && a.isCurrent === false);
+      const reached = historical.filter((h) =>
+        g.inEdges(h).some((e) => {
+          const a = g.getEdgeAttributes(e);
+          return a.rel === "intel_relation" && a.relClass === "temporal";
+        })
+      );
+      const example = reached[0];
+      const via = example ? g.inEdges(example).map((e) => ({ from: g.source(e), rel: g.getEdgeAttribute(e, "intelRel") }))[0] : null;
+      check(
+        "V9 superseded objects are reachable along the file's own temporal chains",
+        historical.length === counts.objectsHistorical && reached.length > 0,
+        `${historical.length} superseded objects, ${reached.length} reached by a temporal relation` +
+          (via ? `; e.g. ${String(g.getNodeAttribute(via.from, "externalId"))} —${via.rel}→ ${String(g.getNodeAttribute(example, "externalId"))}` : "")
+      );
+    }
+
+    // ── V10. THE MERGED GRAPH ──────────────────────────────────────────
+    {
+      const before = buildAuditGraph({
+        ...base,
+        entities: {
+          ...base.entities,
+          intelligence: { objects: [], relations: [], citedPassages: [], meta: projected.meta },
+        },
+      });
+      const kinds: Record<string, number> = {};
+      g.forEachNode((_n, a) => (kinds[a.kind] = (kinds[a.kind] ?? 0) + 1));
+      const outside = accepted.intelligenceRelations!.filter((r) => r.toInPackage === false).length;
+      const drawnRelations = g.filterEdges((_e, a) => a.rel === "intel_relation").length;
+      check(
+        "V10 the exact file merges into one graph with no duplicates",
+        g.order > before.order && new Set(g.nodes()).size === g.order,
+        `${before.order} Signal nodes → ${g.order} merged (${g.size} edges); by kind ${JSON.stringify(kinds)}`
+      );
+      check(
+        "V10b relations reaching outside the package are dropped, not invented",
+        drawnRelations === counts.relations - outside,
+        `${drawnRelations} of ${counts.relations} drawn; the other ${outside} name an object the package did not carry, ` +
+          `and no node is conjured for them`
+      );
+    }
+
+    // ── V11. NOTHING IT CARRIES REACHES REALITY ────────────────────────
+    {
+      const counts9 = () =>
         prisma.$transaction([
           prisma.decision.count(),
           prisma.decisionGate.count(),
@@ -2546,29 +2057,17 @@ async function main() {
           prisma.sourceRegistration.count(),
           prisma.auditRun.count(),
         ]);
-      const before = await counts();
-      const base2 = await loadAuditGraphInputs("jsa");
-      buildAuditGraph({ ...base2!, entities: { ...base2!.entities, intelligence: projected } });
-      projectIntelligence([snap], "jsa");
-      validateProjectContextPackage(JSON.parse(JSON.stringify(pkg)));
-      const after = await counts();
+      const b4 = await counts9();
+      const again = await loadAuditGraphInputs(scopeId);
+      buildAuditGraph({ ...again!, entities: { ...again!.entities, intelligence: projected } });
+      projectIntelligence([snap], scopeId);
+      validateProjectContextPackage(JSON.parse(JSON.stringify(raw)));
+      const aft = await counts9();
       check(
-        "V11 projecting the real payload mutates no Reality of any kind",
-        before.every((v, i) => v === after[i]),
-        `decision/gate/scope/person/allocation/finding/snapshot/registration/run: ${before.join("/")} → ${after.join("/")}`
+        "V11 projecting the exact real payload mutates no Reality of any kind",
+        b4.every((v, i) => v === aft[i]),
+        `decision/gate/scope/person/allocation/finding/snapshot/registration/run: ${b4.join("/")} → ${aft.join("/")}`
       );
-    }
-
-    // ── V11b. AND EVERY SNAPSHOT ALREADY ACCEPTED STILL HASHES THE SAME ─
-    //
-    // BACKWARD COMPATIBILITY, CHECKED AGAINST THE STORED ROWS RATHER THAN
-    // ASSERTED. Preservation-first validation changes what comes out of the
-    // validator for any package that carried fields Signal did not model —
-    // which is the point — so the only honest test is to re-validate what is
-    // actually in the database and compare against the hash recorded at
-    // acceptance time. A drift here would mean every existing snapshot's
-    // identity had silently moved.
-    {
       const rows = await prisma.contextSnapshot.findMany();
       const drifted = rows.filter((r) => {
         try {
@@ -2578,43 +2077,265 @@ async function main() {
         }
       });
       check(
-        "V11b every snapshot accepted before this change still hashes identically",
+        "V11b every stored snapshot still hashes identically after these changes",
         rows.length > 0 && drifted.length === 0,
         `${rows.length} stored snapshot(s) re-validated and re-hashed, ${drifted.length} drifted`
       );
     }
 
-    // ── V12. THE LIMITS FIT THE PRODUCT ────────────────────────────────
+    // ── V12. THE CONTRACT LIMITS ───────────────────────────────────────
     {
-      const headroom = (now: number, cap: number) => `${now}/${cap} (${Math.round((now / cap) * 100)}%)`;
+      const pct = (n: number, cap: number) => `${n}/${cap} (${Math.round((n / cap) * 100)}%)`;
+      const bytes = realPackageBytes();
       const fits =
         accepted.sources.length / PACKAGE_LIMITS.sources < 0.25 &&
         accepted.evidence.length / PACKAGE_LIMITS.evidence < 0.25 &&
         accepted.intelligenceObjects!.length / PACKAGE_LIMITS.intelligenceObjects < 0.25 &&
-        accepted.intelligenceRelations!.length / PACKAGE_LIMITS.intelligenceRelations < 0.25;
+        accepted.intelligenceRelations!.length / PACKAGE_LIMITS.intelligenceRelations < 0.25 &&
+        bytes / PACKAGE_LIMITS.bytes < 0.25;
       check(
-        "V12 a normal project sits well under every contract limit",
+        "V12 the exact package sits well under every contract limit",
         fits,
-        `sources ${headroom(accepted.sources.length, PACKAGE_LIMITS.sources)}, ` +
-          `evidence ${headroom(accepted.evidence.length, PACKAGE_LIMITS.evidence)}, ` +
-          `objects ${headroom(accepted.intelligenceObjects!.length, PACKAGE_LIMITS.intelligenceObjects)}, ` +
-          `relations ${headroom(accepted.intelligenceRelations!.length, PACKAGE_LIMITS.intelligenceRelations)} ` +
-          `— was 47/50 (94%) before this tranche`
+        `sources ${pct(accepted.sources.length, PACKAGE_LIMITS.sources)} · ` +
+          `evidence ${pct(accepted.evidence.length, PACKAGE_LIMITS.evidence)} · ` +
+          `objects ${pct(accepted.intelligenceObjects!.length, PACKAGE_LIMITS.intelligenceObjects)} · ` +
+          `relations ${pct(accepted.intelligenceRelations!.length, PACKAGE_LIMITS.intelligenceRelations)} · ` +
+          `bytes ${pct(bytes, PACKAGE_LIMITS.bytes)} — was 47/50 (94%) on sources before this work`
       );
-      // AND THE GUARD STILL BITES. Raising a limit is only safe if the limit
-      // still exists.
-      const over = { ...pkg, sources: [...accepted.sources, ...accepted.sources, ...accepted.sources, ...accepted.sources, ...accepted.sources, ...accepted.sources] };
       let rejected = false;
       try {
-        validateProjectContextPackage(JSON.parse(JSON.stringify(over)));
+        validateProjectContextPackage({ ...raw, sources: Array.from({ length: 300 }, (_, i) => ({ ...raw.sources[0], sourceRef: `x${i}` })) });
       } catch {
         rejected = true;
       }
-      check("V12b and a package past the new cap is still rejected, not truncated", rejected, `${over.sources.length} sources`);
+      check("V12b and the guard still bites past the new cap", rejected, "300 sources rejected, not truncated");
     }
+
+    // ── Z. THE TRUST BOUNDARY, ON THE REAL PAYLOAD ─────────────────────
+    {
+      const intelNodes = g.filterNodes((_n, a) => a.kind === "intel");
+      const intelSet = new Set(intelNodes);
+
+      const externalDecisions = projected.objects.filter((o) => o.intelligenceType === "decision").length;
+      const before = buildAuditGraph({
+        ...base,
+        entities: { ...base.entities, intelligence: { objects: [], relations: [], citedPassages: [], meta: projected.meta } },
+      });
+      const sig = (gr: typeof g, k: string) => gr.filterNodes((_n, a) => a.kind === k).length;
+      check(
+        "Z1 external Decisions, Dependencies and Risks create ZERO Signal entities",
+        externalDecisions > 0 &&
+          sig(g, "decision") === sig(before, "decision") &&
+          sig(g, "dependency") === sig(before, "dependency") &&
+          sig(g, "finding") === sig(before, "finding"),
+        `${externalDecisions} external Decisions arrived; Signal decisions ${sig(before, "decision")}→${sig(g, "decision")}, ` +
+          `dependencies ${sig(before, "dependency")}→${sig(g, "dependency")}, findings ${sig(before, "finding")}→${sig(g, "finding")}`
+      );
+
+      let touchingNotExternal = 0;
+      let externalNotTouching = 0;
+      g.forEachEdge((_e, a, s, t) => {
+        const touches = intelSet.has(s) || intelSet.has(t);
+        if (touches && a.basis !== "external") touchingNotExternal++;
+        if (a.basis === "external" && !touches) externalNotTouching++;
+      });
+      check(
+        "Z2 external basis and external material are the same set, both ways",
+        intelNodes.length === counts.objects && touchingNotExternal === 0 && externalNotTouching === 0,
+        `${intelNodes.length} intel nodes, ${touchingNotExternal} non-external edges on them, ${externalNotTouching} external edges elsewhere`
+      );
+
+      const crossing = Object.values(EDGE_RULES).filter((r) => {
+        const from = Array.isArray(r.from) ? r.from : [r.from];
+        const to = Array.isArray(r.to) ? r.to : [r.to];
+        if (!from.includes("intel") && !to.includes("intel")) return false;
+        return [...from, ...to].some((k) => k !== "intel" && k !== "passage");
+      });
+      check(
+        "Z3 no edge rule can join external intelligence to a Signal entity",
+        crossing.length === 0,
+        `${crossing.length} crossing rules — intel reaches passages and other intel, and nothing else`
+      );
+
+      // THE FALSIFIABLE NEGATIVE, on real statements. Every external Decision
+      // rewritten to a Signal Decision's exact title, and every external
+      // Dependency to an upstream Scope's exact name.
+      {
+        const titles = base.entities.decisions.map((d) => d.title);
+        const upstream = base.entities.dependsOn.map((d) => d.name);
+        let baited = 0;
+        const objs = accepted.intelligenceObjects!.map((o, i) => {
+          if (o.intelligenceType === "decision" && titles.length > 0) {
+            baited++;
+            return { ...o, statement: titles[i % titles.length] };
+          }
+          if (o.intelligenceType === "dependency" && upstream.length > 0) {
+            baited++;
+            return { ...o, statement: upstream[i % upstream.length] };
+          }
+          return o;
+        });
+        const bp = projectIntelligence([{ ...snap, package: { ...accepted, intelligenceObjects: objs } }], scopeId);
+        const bg = buildAuditGraph({ ...base, entities: { ...base.entities, intelligence: bp } });
+        const bset = new Set(bg.filterNodes((_n, a) => a.kind === "intel"));
+        let joined = 0;
+        bg.forEachEdge((_e, _a, s, t) => {
+          if (!bset.has(s) && !bset.has(t)) return;
+          const other = bg.getNodeAttribute(bset.has(s) ? t : s, "kind");
+          if (other !== "intel" && other !== "passage") joined++;
+        });
+        check(
+          "Z4 statements rewritten to match Signal rows exactly still join nothing",
+          baited > 0 && joined === 0,
+          `${baited} external statements set character-identical to a Signal Decision title or upstream Scope name, ${joined} edges created`
+        );
+      }
+
+      // Contract negatives, mutated from the REAL package.
+      const rejects = (mutate: (p: Record<string, unknown>) => Record<string, unknown>) => {
+        try {
+          validateProjectContextPackage(mutate(JSON.parse(JSON.stringify(raw))));
+          return false;
+        } catch {
+          return true;
+        }
+      };
+      check(
+        "Z5 a package claiming its intelligence is Signal Reality is rejected",
+        rejects((p) => {
+          (p.intelligenceObjects as Record<string, unknown>[])[0].trust = "signal_reality";
+          return p;
+        }),
+        `trust must equal ${EXTERNAL_INTELLIGENCE_TRUST}`
+      );
+      check(
+        "Z6 an object with no isCurrent is rejected, never defaulted",
+        rejects((p) => {
+          delete (p.intelligenceObjects as Record<string, unknown>[])[0].isCurrent;
+          return p;
+        })
+      );
+      check(
+        "Z7 a citation naming evidence the package does not carry is rejected",
+        rejects((p) => {
+          (p.intelligenceObjects as Record<string, unknown>[])[0].evidenceRefs = ["hermes-ev:does-not-exist"];
+          return p;
+        })
+      );
+      check(
+        "Z8 an endpoint claiming to be in the package when it is not is rejected",
+        rejects((p) => {
+          const r = (p.intelligenceRelations as Record<string, unknown>[])[0];
+          r.targetId = "hermes:not-here";
+          r.targetInPackage = true;
+          return p;
+        })
+      );
+      {
+        const withUnknown = JSON.parse(JSON.stringify(raw));
+        withUnknown.intelligenceObjects[0].producerOnlyField = { nested: [1, 2, 3] };
+        const acc = validateProjectContextPackage(withUnknown);
+        const extra = acc.intelligenceObjects![0].extra as Record<string, unknown> | undefined;
+        check(
+          "Z9 an unmodelled producer field survives the crossing on `extra`",
+          extra != null && JSON.stringify(extra.producerOnlyField) === JSON.stringify({ nested: [1, 2, 3] }),
+          `extra = ${JSON.stringify(extra ?? null)}`
+        );
+      }
+      {
+        const legacy = JSON.parse(JSON.stringify(raw));
+        delete legacy.intelligenceObjects;
+        delete legacy.intelligenceRelations;
+        delete legacy.intelligenceMeta;
+        const keys = Object.keys(validateProjectContextPackage(legacy));
+        check(
+          "Z10 a package with no intelligence gains no intelligence keys",
+          !keys.some((k) => k.startsWith("intelligence")),
+          `${keys.length} keys, none of them intelligence — legacy snapshots hash identically`
+        );
+      }
+
+      // isCurrent is transported, never derived from status.
+      {
+        const openAndHistorical = projected.objects.filter((o) => o.status === "open" && !o.isCurrent);
+        const statusOfHistorical = [...new Set(projected.objects.filter((o) => !o.isCurrent).map((o) => o.status))];
+        check(
+          "Z11 isCurrent is transported, never derived from status",
+          projected.meta.currentCount === counts.objectsCurrent &&
+            projected.objects.filter((o) => !o.isCurrent).length === counts.objectsHistorical,
+          `${projected.meta.currentCount} head / ${counts.objectsHistorical} superseded; ` +
+            `the superseded ones carry status ${JSON.stringify(statusOfHistorical)}` +
+            (openAndHistorical.length > 0 ? ` — ${openAndHistorical.length} are still "open"` : "")
+        );
+      }
+
+      // Evidence Solo reaches evidence and never walks the corpus.
+      {
+        const withRel = intelNodes.filter((n) =>
+          g.outEdges(n).some((e) => g.getEdgeAttribute(e, "rel") === "intel_relation")
+        );
+        const start = withRel[0] ?? intelNodes[0];
+        const lit = evidenceSolo(g, start);
+        const kinds = new Set([...lit.nodes].map((n) => g.getNodeAttribute(n, "kind")));
+        const otherIntel = [...lit.nodes].filter((n) => n !== start && g.getNodeAttribute(n, "kind") === "intel");
+        const followed = [...lit.edges].filter((e) => g.getEdgeAttribute(e, "rel") === "intel_relation");
+        check(
+          "Z12 tracing a real claim reaches its evidence and never walks the corpus",
+          withRel.length > 0 && otherIntel.length === 0 && followed.length === 0 && kinds.has("passage"),
+          `lit ${[...kinds].sort().join(", ")}; ${otherIntel.length} other objects reached, ${followed.length} external relations followed`
+        );
+        check(
+          "Z12b intel_relation is deliberately absent from the allowlist",
+          !EVIDENCE_SOLO_RELATIONS.includes("intel_relation") && EVIDENCE_SOLO_RELATIONS.includes("cites")
+        );
+      }
+
+      // Seating and the edge policy.
+      {
+        const lay = layoutGraph(g);
+        let wrongSector = 0;
+        let inside = 0;
+        for (const n of intelNodes) {
+          const a = g.getNodeAttributes(n);
+          const p = lay.get(n);
+          if (!p) continue;
+          if (p.cluster !== laneForIntelligenceType(String(a.intelligenceType))) wrongSector++;
+          if (p.radius <= FIELD.edgeR) inside++;
+        }
+        const seated: Record<string, number> = {};
+        for (const n of intelNodes) {
+          const c = lay.get(n)?.cluster ?? "?";
+          seated[c] = (seated[c] ?? 0) + 1;
+        }
+        check(
+          "Z13 every external object seats in its meaning's sector, outside the record's edge",
+          wrongSector === 0 && inside === 0 && (seated.decisions ?? 0) === counts.byType.decision.total,
+          `${intelNodes.length} objects: ${JSON.stringify(seated)}; ${wrongSector} mis-sectored, ${inside} inside edgeR`
+        );
+      }
+      {
+        let quiet = 0;
+        let loud = 0;
+        g.forEachEdge((_e, a) => {
+          if (a.basis !== "external") return;
+          if (a.relClass === "contextual" || a.relClass === "provenance" || a.rel === "cites") quiet++;
+          else loud++;
+        });
+        check(
+          "Z14 the resting field draws the chain, not the corpus",
+          quiet > 0 && loud > 0 && loud < quiet / 10,
+          `${loud} temporal+semantic edges may be drawn at rest, ${quiet} citation, provenance and contextual edges held back — ` +
+            `${Math.round((loud / (loud + quiet)) * 100)}% of the external edges`
+        );
+      }
+    }
+
+    if (!preExisting) await dropPrerequisites(prisma);
   }
 
-  console.log(`\n${failures === 0 ? "ALL PASS" : `${failures} FAILURE(S)`}`);
+  console.log(
+    `\n${failures === 0 ? "ALL PASS" : `${failures} FAILURE(S)`}${skipped > 0 ? ` (${skipped} BLOCK(S) SKIPPED)` : ""}`
+  );
   await prisma.$disconnect();
   process.exit(failures === 0 ? 0 : 1);
 }

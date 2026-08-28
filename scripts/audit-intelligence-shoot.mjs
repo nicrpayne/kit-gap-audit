@@ -1,14 +1,15 @@
 // EXTERNAL STRUCTURED INTELLIGENCE — THE BROWSER PASS.
 //
-// Run against the census-exact real JSA payload, which must be seeded first:
+// Run against the EXACT bridge-produced JSA package, which must be seeded
+// first:
 //
-//   npx tsx scripts/seed-intel-fixture.ts
+//   npx tsx scripts/seed-real-jsa-package.ts
 //   node scripts/audit-intelligence-shoot.mjs [outDir]
-//   npx tsx scripts/seed-intel-fixture.ts --drop
+//   npx tsx scripts/seed-real-jsa-package.ts --drop
 //
-// The payload takes the JSA graph from 72 nodes to 396, which is the whole
-// point: every density, hairball and latency number below is measured on the
-// real merged graph rather than on the demo.
+// The payload takes the graph from 49 nodes to 411, which is the whole point:
+// every density, hairball and latency number below is measured on the real
+// merged graph, from the real file, rather than on a demo or a fixture.
 // The other suites assert exact counts on unseeded JSA, so this one owns the
 // seeded state and puts it back.
 //
@@ -22,12 +23,28 @@
 //   13-16 latency and frame budget at 466 nodes
 
 import { chromium } from "playwright";
-import { mkdirSync } from "fs";
+import { mkdirSync, readFileSync } from "fs";
 
 const BASE = process.env.BASE_URL ?? "http://localhost:3000";
 const COOKIE = process.env.KIT_SESSION ?? "92f4fb441fbc9fa64f985de1a2d83fce26c903a5f595835fb2782c0e6a9cc742";
 const out = process.argv[2] ?? "/tmp/intel-shots";
 mkdirSync(out, { recursive: true });
+
+// The package names Signal's own cuid for JSA; the graph is read for that
+// Scope, not for the local "jsa" demo row.
+const PKG = JSON.parse(
+  readFileSync(
+    process.env.REAL_JSA_PACKAGE ??
+      "/root/.claude/uploads/9fcdcf7a-3546-5894-a0bc-374b41c74833/d43fbbc5-jsastructuredintelligencepackage.postfixrun1.json",
+    "utf8"
+  )
+);
+const SCOPE = PKG.scopeId;
+const TRACE = {
+  object: "hermes:risk-2026-08-24-005",
+  evidence: "hermes-ev:2026-08-19_KE-User-Interview-Follow-Up-seg069",
+  source: "ke://source/transcript/2026-08-19_KE-User-Interview-Follow-Up",
+};
 
 let failures = 0;
 const check = (n, ok, d = "") => {
@@ -76,7 +93,7 @@ const zoomTo = async (want) => {
 };
 const INTEL = '[data-kind="intel"]';
 
-await p.goto(`${BASE}/audit?scope=jsa`, { waitUntil: "networkidle" });
+await p.goto(`${BASE}/audit?scope=${SCOPE}`, { waitUntil: "networkidle" });
 await p.waitForSelector('[data-shoot="signal-graph"]', { timeout: 30000 });
 await settle(2200);
 await park();
@@ -89,7 +106,7 @@ await park();
   record("nodes", nodes);
   record("intel", intel);
   await shot("01-far-rest");
-  check("1. the corpus is on the field, as population", intel === 161 && nodes >= 390, `${intel} external objects among ${nodes} nodes`);
+  check("1. the corpus is on the field, as population", intel === 161 && nodes >= 400, `${intel} external objects among ${nodes} nodes`);
   check("1b. and none of it is claiming identity at rest", latent === intel, `${latent} latent of ${intel}`);
 }
 
@@ -239,7 +256,10 @@ await park();
     )
   );
   const distinct = new Set(kinds);
-  check("9. search reaches the corpus by statement", n > 100 && listed > 0, `"offline" matched ${n} objects, ${listed} listed`);
+  // SIX, ON THE REAL CORPUS. An earlier pass asserted >100 because every
+  // statement in the synthetic payload contained the word; the real one does
+  // not, and six is the honest answer to "offline".
+  check("9. search reaches the corpus by statement", n > 0 && listed > 0, `"offline" matched ${n} external objects, ${listed} results listed`);
   check(
     "9b. and results say which KIND of thing each answer is",
     distinct.size >= 2 && [...distinct].some((k) => /external intelligence/i.test(k)),
@@ -308,40 +328,46 @@ await park();
 // ── 11. AN EXTERNAL RELATION IS LABELLED WITH THE PRODUCER'S OWN NAME ─
 {
   await clearSelection();
-  // AN OBJECT THAT ACTUALLY CARRIES ONE. Most of the corpus has only
-  // citations and related_to; this looks for one whose panel shows both a
-  // temporal and a contextual relation, which is what the assertion is about.
-  const selected = await p.evaluate(async () => {
-    const nodes = [...document.querySelectorAll('[data-kind="intel"] g[role="button"]')];
-    for (const g of nodes) {
+  // ONE PANEL SHOWS ONE OBJECT'S RELATIONS, and in the real corpus only ten
+  // objects carry more than one class — so the assertion is made across the
+  // corpus rather than demanded of a single node: every class the file
+  // declares must be printable, with the producer's own relation name and the
+  // external basis beside it.
+  const seen = await p.evaluate(async () => {
+    const found = { classes: new Set(), names: new Set(), external: false, label: null };
+    for (const g of document.querySelectorAll('[data-kind="intel"] g[role="button"]')) {
       g.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-      await new Promise((r) => setTimeout(r, 60));
-      const t = document.querySelector('[data-shoot="graph-inspector"]')?.innerText ?? "";
-      if (/\bTEMPORAL\b/.test(t) && /\bCONTEXTUAL\b/.test(t)) return g.getAttribute("aria-label");
+      await new Promise((r) => setTimeout(r, 25));
+      const panel = document.querySelector('[data-shoot="graph-inspector"]');
+      for (const b of panel?.querySelectorAll('[data-shoot="connection-intel_relation"]') ?? []) {
+        const t = b.innerText;
+        if (/\bEXTERNAL\b/.test(t)) found.external = true;
+        for (const c of ["TEMPORAL", "SEMANTIC", "CONTEXTUAL", "PROVENANCE"]) if (t.includes(c)) found.classes.add(c.toLowerCase());
+        const m = t.match(/supersedes|resolves|refines|related_to|depends_on|caused_by|supports|derived_from/i);
+        if (m) { found.names.add(m[0].toLowerCase()); found.label ??= g.getAttribute("aria-label"); }
+      }
       window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
-      await new Promise((r) => setTimeout(r, 40));
+      await new Promise((r) => setTimeout(r, 15));
+      if (found.classes.size >= 4) break;
     }
-    return null;
+    return { classes: [...found.classes].sort(), names: [...found.names].sort(), external: found.external, label: found.label };
   });
-  await settle(700);
-  const text = await inspector();
-  // The panel renders these uppercase; innerText returns the transformed
-  // text, so the match must not care.
-  const hasExternalChip = /\bEXTERNAL\b/i.test(text);
+  await settle(400);
   await shot("07-inspector-relations");
   check(
-    "11. connections carry the producer's vocabulary and the external basis",
-    selected != null &&
-      hasExternalChip &&
-      /supersedes|refines|resolves|reopens|related_to|depends_on|caused_by|contradicts/i.test(text) &&
-      /\btemporal\b/i.test(text) &&
-      /\bcontextual\b/i.test(text),
-    `${(selected ?? "").slice(0, 52)} — producer relation names, external basis and relation class all printed`
+    "11. connections carry the producer's vocabulary, class and external basis",
+    seen.external && seen.classes.length === 4 && seen.names.length >= 4,
+    `classes ${seen.classes.join(", ")}; producer relation names ${seen.names.join(", ")}`
   );
 }
 
 // ── 12. TRACING A CLAIM REACHES EVIDENCE AND STOPS ───────────────────
 {
+  await clearSelection();
+  await p.evaluate(() =>
+    document.querySelector('[data-intel-type="risk"] g[role="button"]')?.dispatchEvent(new MouseEvent("click", { bubbles: true }))
+  );
+  await settle(700);
   const btn = p.locator('[data-shoot="intel-solo"]');
   const present = (await btn.count()) > 0;
   if (present) {
@@ -418,14 +444,17 @@ await park();
   const runs = [];
   for (let i = 0; i < 7; i++) {
     const t0 = await p.evaluate(() => performance.now());
-    await p.locator('[data-shoot="graph-search"]').fill(i % 2 ? "offline" : "sign-off");
+    // TERMS THAT ACTUALLY MATCH. Waiting for a match that a term cannot
+    // produce measures the poll's own timeout, not the search.
+    await p.locator('[data-shoot="graph-search"]').fill(i % 2 ? "JSA" : "Beta");
     const t1 = await p.evaluate(async () => {
       for (let k = 0; k < 240; k++) {
         if (document.querySelector('[data-shoot^="node-"][data-matched="true"]')) return performance.now();
         await new Promise((r) => requestAnimationFrame(r));
       }
-      return performance.now();
+      return -1;
     });
+    if (t1 < 0) { check("15. searching the whole merged graph responds within budget", false, "the search matched nothing — measurement is not measuring anything"); break; }
     runs.push(t1 - t0);
     await settle(260);
   }
@@ -519,11 +548,6 @@ await park();
 // Walked the way a person walks it: select the claim, click the passage in
 // its connections list, click the transcript in that passage's.
 {
-  const TRACE = {
-    object: "hermes:risk-2026-08-24-005",
-    evidence: "hermes-ev:2026-08-19_KE-User-Interview-Follow-Up-seg069",
-    source: "ke://source/transcript/2026-08-19_KE-User-Interview-Follow-Up",
-  };
   await clearSelection();
   await p.locator('[data-shoot="graph-search"]').fill(TRACE.object);
   await settle(900);
@@ -590,8 +614,10 @@ await park();
       g.dispatchEvent(new MouseEvent("click", { bubbles: true }));
       await new Promise((r) => setTimeout(r, 50));
       const panel = document.querySelector('[data-shoot="graph-inspector"]');
+      // The file's own temporal relations are `supersedes` and `resolves`;
+      // `refines` is classed semantic here, which is the producer's call.
       const rel = [...(panel?.querySelectorAll('[data-shoot="connection-intel_relation"]') ?? [])].find(
-        (b) => /supersedes|refines/i.test(b.innerText) && !b.innerText.trim().startsWith("\u2190")
+        (b) => /\bTEMPORAL\b/.test(b.innerText) && !b.innerText.trim().startsWith("\u2190")
       );
       if (rel) {
         const from = panel.querySelector("h2")?.textContent ?? "";
@@ -611,13 +637,18 @@ await park();
     walked.ok && /external intelligence/i.test(text),
     walked.ok ? `stepped along supersedes/refines into ${(text.split("\n")[1] ?? "").slice(0, 46)}…` : "no temporal relation offered"
   );
-  // AND THE OBJECT IT LANDED ON IS HISTORY, SHOWN AS HISTORY.
-  const superseded = await p.evaluate(() =>
-    [...document.querySelectorAll('[data-kind="intel"][data-current="false"]')].some(
-      (g) => g.getAttribute("data-selected") === "true" || g.getAttribute("data-identity") !== "latent"
-    )
+  // AND HISTORY IS SHOWN AS HISTORY. In this file every temporal relation
+  // whose target travelled with the package points at a superseded object,
+  // so the walk lands on one and the panel must say so.
+  const landed = await p.evaluate(() => {
+    const sel = document.querySelector('[data-kind="intel"][data-selected="true"]');
+    return sel ? { current: sel.getAttribute("data-current"), identity: sel.getAttribute("data-identity") } : null;
+  });
+  check(
+    "23b. and the object it lands on is woken from latent, marked superseded",
+    landed != null && landed.current === "false" && landed.identity !== "latent" && /superseded/i.test(text),
+    landed ? `landed on a superseded object, identity=${landed.identity}, panel says superseded` : "nothing selected"
   );
-  check("23b. and the object it lands on is woken from latent, marked superseded", superseded || /superseded/i.test(text), /superseded/i.test(text) ? "panel says superseded" : "woken on the field");
   await p.keyboard.press("Escape");
   await settle(400);
 }
@@ -698,7 +729,10 @@ check(
   // delegation, so a dispatched `mouseenter` — which does not bubble — never
   // reaches it and the measurement times out reporting two seconds of
   // latency that did not happen.
-  const box = await p.locator('[data-kind="finding"] g[role="button"]').first().boundingBox();
+  // A node that is always present and always formed. Findings are audit
+  // OUTPUT and the mirror Scope carries none, so hovering one would measure
+  // nothing at all.
+  const box = await p.locator('[data-kind="dependency"] g[role="button"]').first().boundingBox();
   const hover = await lat("hover", async () => {
     await p.mouse.move(1560, 960);
     await p.waitForTimeout(140);

@@ -16,7 +16,7 @@
 
 import { validateProjectContextPackage } from "../lib/context/validate";
 import { hashProjectContextPackage } from "../lib/context/hash";
-import { buildIntelligenceFixturePackage, REAL_JSA } from "./lib/intel-fixture";
+import { readRealPackage, realPackageBytes, hasRealPackage, REAL_PACKAGE_PATH } from "./lib/real-package";
 import { projectIntelligence } from "../lib/audit/intelligence";
 import type { ProjectContextPackage, EvidenceItem, IntelligenceObjectItem, IntelligenceRelationItem, PackageSourceManifestEntry } from "../lib/context/package";
 
@@ -72,7 +72,7 @@ function measure(label: string, pkg: ProjectContextPackage) {
   const [accepted, validateMs] = time(() => validateProjectContextPackage(JSON.parse(json)));
   const [hash, hashMs] = time(() => hashProjectContextPackage(accepted));
   const [projected, projectMs] = time(() =>
-    projectIntelligence([{ id: "snap", scopeId: "jsa", package: accepted }], "jsa")
+    projectIntelligence([{ id: "snap", scopeId: accepted.scopeId, package: accepted }], accepted.scopeId)
   );
   console.log(
     `${label.padEnd(34)} ${kb(bytes).padStart(9)}  validate ${ms(validateMs).padStart(8)}  ` +
@@ -82,11 +82,16 @@ function measure(label: string, pkg: ProjectContextPackage) {
   return { bytes, validateMs, hashMs, projectMs };
 }
 
-const real = buildIntelligenceFixturePackage("jsa");
+if (!hasRealPackage()) {
+  console.error(`No package at ${REAL_PACKAGE_PATH} — set REAL_JSA_PACKAGE.`);
+  process.exit(1);
+}
+const real = readRealPackage();
 
-console.log("\n── THE REAL PACKAGE ─────────────────────────────────────────");
+console.log("\n── THE EXACT BRIDGE-PRODUCED PACKAGE ────────────────────────");
 console.log(
-  `sources ${real.sources.length} · evidence ${real.evidence.length} · ` +
+  `${REAL_PACKAGE_PATH.split("/").pop()} — ${kb(realPackageBytes())} on disk\n` +
+    `sources ${real.sources.length} · evidence ${real.evidence.length} · ` +
     `objects ${real.intelligenceObjects!.length} · relations ${real.intelligenceRelations!.length}`
 );
 const realCost = measure("real JSA (post-fix)", real);

@@ -237,6 +237,26 @@ export const RELATION_FIELD_ALIASES = {
   relClass: ["relClass", "relationClass"],
 } as const;
 
+/** The same, for the two booleans that say whether an endpoint travelled with
+    the package. The bridge spells them `sourceInPackage` / `targetInPackage`;
+    a referential check reading only `fromInPackage` never fired on a real
+    payload — it silently checked nothing. */
+export const RELATION_PRESENCE_ALIASES = {
+  fromInPackage: ["fromInPackage", "sourceInPackage"],
+  toInPackage: ["toInPackage", "targetInPackage"],
+} as const;
+
+export function readRelationPresence(
+  raw: Record<string, unknown> | IntelligenceRelationItem,
+  field: keyof typeof RELATION_PRESENCE_ALIASES
+): boolean | undefined {
+  const r = raw as Record<string, unknown>;
+  for (const key of RELATION_PRESENCE_ALIASES[field]) {
+    if (typeof r[key] === "boolean") return r[key] as boolean;
+  }
+  return undefined;
+}
+
 export function readRelationField(
   raw: Record<string, unknown> | IntelligenceRelationItem,
   field: keyof typeof RELATION_FIELD_ALIASES

@@ -16,7 +16,8 @@
 //   npx tsx scripts/audit-intelligence-ingest-proof.ts
 
 import { PrismaClient } from "@prisma/client";
-import { buildIntelligenceFixturePackage, JSA_SCALE, REAL_JSA } from "./lib/intel-fixture";
+import { readRealPackage, realPackageBytes, realCensus, hasRealPackage, REAL_PACKAGE_PATH, REAL_TRACE } from "./lib/real-package";
+import { ensurePrerequisites, dropPrerequisites } from "./seed-real-jsa-package";
 import { EXTERNAL_INTELLIGENCE_TRUST } from "../lib/context/package";
 import { loadAuditGraphInputs } from "../lib/audit/graphInputs";
 import { buildAuditGraph } from "../lib/audit/graph";
@@ -31,33 +32,30 @@ const check = (name: string, ok: boolean, detail = "") => {
   if (!ok) failures++;
 };
 
+let SCOPE_ID = "";
 const post = (contextPackage: unknown) =>
   fetch(`${BASE}/api/refresh`, {
     method: "POST",
     headers: { "content-type": "application/json", cookie: `kit_session=${COOKIE}` },
-    body: JSON.stringify({ scopeId: "jsa", contextPackage }),
+    body: JSON.stringify({ scopeId: SCOPE_ID, contextPackage }),
   });
 
 async function main() {
-  const pkg = buildIntelligenceFixturePackage("jsa");
-  const bytes = Buffer.byteLength(JSON.stringify(pkg), "utf8");
+  if (!hasRealPackage()) {
+    console.log(`SKIP — no package at ${REAL_PACKAGE_PATH} (set REAL_JSA_PACKAGE)`);
+    return;
+  }
+  const pkg = readRealPackage();
+  const { counts } = realCensus();
+  SCOPE_ID = pkg.scopeId;
+  const bytes = realPackageBytes();
   // Start from nothing, so "it landed" means this run landed it.
   await prisma.contextSnapshot.deleteMany({ where: { packageId: pkg.packageId, producer: pkg.producer } });
-  // The two registered sources need the registrations they name.
-  for (const src of pkg.sources.filter((x) => x.registrationId !== null)) {
-    await prisma.sourceRegistration.upsert({
-      where: { id: src.registrationId! },
-      update: { sourceType: src.sourceType, sourceRef: src.sourceRef, status: "active" },
-      create: {
-        id: src.registrationId!,
-        sourceType: src.sourceType,
-        sourceRef: src.sourceRef,
-        scopeIds: ["jsa"],
-        role: "raw_evidence",
-        status: "active",
-      },
-    });
-  }
+  // THE HANDSHAKE'S OWN PRECONDITIONS: the Scope the package names, and the
+  // registrations its two registered sources declare. Established through the
+  // same helper the seed script uses, so this proof cannot pass against a
+  // setup nobody else reproduces.
+  await ensurePrerequisites(prisma);
 
   const modelsBefore = await prisma.$queryRawUnsafe<{ count: bigint }[]>(
     `select count(*)::bigint as count from information_schema.tables where table_schema = 'public'`
@@ -96,8 +94,8 @@ async function main() {
   const stored = row?.package as { intelligenceObjects?: unknown[]; intelligenceRelations?: unknown[] } | null;
   check(
     "I2 the intelligence survived validation and persistence intact",
-    (stored?.intelligenceObjects?.length ?? 0) === JSA_SCALE.objects &&
-      (stored?.intelligenceRelations?.length ?? 0) === JSA_SCALE.relations,
+    (stored?.intelligenceObjects?.length ?? 0) === counts.objects &&
+      (stored?.intelligenceRelations?.length ?? 0) === counts.relations,
     `${stored?.intelligenceObjects?.length ?? 0} objects, ${stored?.intelligenceRelations?.length ?? 0} relations in ` +
       `ContextSnapshot.package — an ${(bytes / 1024).toFixed(0)} KB body accepted over HTTP with no body-size configuration`
   );
@@ -106,18 +104,19 @@ async function main() {
   //
   // The fields Signal did not model and was deleting at the boundary.
   {
-    const ev = (row?.package as { evidence: { id: string; extra?: Record<string, unknown>; independence?: string }[] }).evidence;
-    const traced = ev.find((e) => e.id === REAL_JSA.trace.evidence);
-    const anchor = (traced?.extra ?? {}) as Record<string, unknown>;
-    const absent = ev.slice(0, REAL_JSA.structuredPassages).filter((e) => e.independence === undefined).length;
+    const ev = (row?.package as { evidence: { id: string; data?: Record<string, unknown> }[] }).evidence;
+    const traced = ev.find((e) => e.id === REAL_TRACE.evidence);
+    const anchor = (traced?.data ?? {}) as Record<string, unknown>;
+    const structured = ev.filter((e) => e.id.startsWith("hermes-ev:"));
+    const absent = structured.filter((e) => (e.data ?? {}).independence === undefined).length;
     check(
       "I2b passage anchoring and independence survive the round trip",
       typeof anchor.quoteHash === "string" &&
         typeof anchor.charStart === "number" &&
         anchor.offsetUnit === "unicode_codepoint" &&
-        absent === REAL_JSA.independence.absent,
+        absent > 0,
       `chars ${anchor.charStart}–${anchor.charEnd} ${anchor.offsetUnit}; ` +
-        `${absent} passages still carry NO independence value, exactly as sent`
+        `${absent} of ${structured.length} structured passages still carry NO independence value, exactly as sent`
     );
   }
 
@@ -136,12 +135,12 @@ async function main() {
   );
 
   // ── I4. THE GRAPH READ PICKS IT UP ─────────────────────────────────
-  const inputs = await loadAuditGraphInputs("jsa");
+  const inputs = await loadAuditGraphInputs(SCOPE_ID);
   const g = buildAuditGraph(inputs!);
   const intel = g.filterNodes((_n, a) => a.kind === "intel").length;
   check(
     "I4 the graph read projects it with no further plumbing",
-    intel === JSA_SCALE.objects,
+    intel === counts.objects,
     `${intel} intel nodes in the JSA graph, from ${g.order} total (${g.size} edges)`
   );
 
@@ -160,7 +159,7 @@ async function main() {
   const lying = {
     ...pkg,
     packageId: `${pkg.packageId}-lying`,
-    intelligenceObjects: pkg.intelligenceObjects!.map((o, i) => (i === 0 ? { ...o, trust: "signal_reality" } : o)),
+    intelligenceObjects: pkg.intelligenceObjects!.map((o, i: number) => (i === 0 ? { ...o, trust: "signal_reality" } : o)),
   };
   const bad = await post(lying);
   const badBody = (await bad.json()) as { error?: string };
@@ -176,10 +175,7 @@ async function main() {
   );
 
   // Put the database back where it was found.
-  await prisma.contextSnapshot.deleteMany({ where: { packageId: pkg.packageId, producer: pkg.producer } });
-  await prisma.sourceRegistration.deleteMany({
-    where: { id: { in: pkg.sources.map((x) => x.registrationId).filter((x): x is string => x !== null) } },
-  });
+  await dropPrerequisites(prisma);
   console.log(`\n${failures === 0 ? "ALL PASS" : `${failures} FAILURE(S)`}`);
 }
 

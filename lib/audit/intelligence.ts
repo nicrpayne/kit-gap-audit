@@ -18,11 +18,30 @@
 //
 // ── SCOPE ─────────────────────────────────────────────────────────────
 //
-// An object is admitted only when its own `scope[]` names the Scope being
-// audited. Signal does not attribute by text, by title, or by the package
-// it happened to arrive in — an object the producer could not attribute
-// confidently stays out of the scoped graph rather than being guessed into
-// it.
+// AN OBJECT BELONGS TO THE SCOPE ITS SNAPSHOT BELONGS TO, and to nothing
+// else. That link is attested: `persistContextSnapshot` checks the package's
+// own `scopeId` against the Scope the request named and refuses a mismatch,
+// so by the time a snapshot exists Signal has already verified who the
+// package is for.
+//
+// This was originally written to admit an object only when its own `scope[]`
+// named the Scope, on the assumption that `scope[]` held Signal Scope ids.
+// The real payload shows it does not. It holds the PRODUCER'S TOPIC TAGS —
+// `["jsa", "design"]`, `["linear", "jsa", "itrack"]`, `["jsa", "offline"]` —
+// while the package's `scopeId` is Signal's own cuid. Matched against that
+// cuid, every one of the 161 real objects was rejected as out of scope and
+// the graph showed nothing.
+//
+// Reading the tags as Scope attribution instead would be worse than useless:
+// they name other Signal Scopes (`itrack`, `platform`) alongside topic words
+// (`offline`, `resourcing`, `governance`) with nothing to tell the two apart
+// except how the strings look. That is the text-similarity attribution this
+// codebase has refused at every previous tranche, and it is exactly the
+// multi-scope ambiguity that is explicitly out of scope here.
+//
+// So the tags are carried verbatim onto the node, shown in the inspector,
+// and counted in the meta — real producer information, doing no work it
+// cannot ground.
 //
 // ── CURRENTNESS ───────────────────────────────────────────────────────
 //
@@ -44,27 +63,29 @@ import { readRelationField } from "@/lib/context/package";
     this is the difference between an instrument and a hairball. */
 export type IntelRelationClass = "temporal" | "semantic" | "contextual" | "provenance";
 
-/** Relations that carry a real chain through time. Drawn at rest between
-    two open objects, and the reason historical objects are transported at
-    all. */
-export const TEMPORAL_RELS = new Set(["supersedes", "refines", "reopens"]);
-
 /**
- * Meaningful but not temporal. Drawn at rest.
+ * Relations that carry a real chain through time. Drawn at rest between two
+ * open objects, and the reason historical objects are transported at all.
  *
- * `resolves` was originally filed as temporal here, on the strength of its
- * name. The real corpus classes it SEMANTIC, and reconciling the published
- * relation totals against the published class totals leaves exactly one
- * consistent assignment, which agrees: 3 supersedes + 3 refines is the whole
- * of temporal, and resolves joins depends_on, caused_by and supports.
+ * READ OFF THE REAL PACKAGE, not inferred. An earlier pass had only the
+ * published census — relation totals and class totals, with no mapping
+ * between them — and reconciled the two arithmetically. That reconciliation
+ * was self-consistent and WRONG: it put `resolves` in semantic and `refines`
+ * in temporal. The bridge's own file says the opposite for both:
  *
- * The producer is right about its own taxonomy. "A resolves B" is a claim
- * about the project — this answered that — not a step along a chain the way
- * a supersession is. The fallback was corrected to agree with it, so a
- * relation arriving WITHOUT a declared class is classed the same way the
- * producer would have classed it.
+ *   temporal 6  = supersedes 3 + resolves 3
+ *   semantic 9  = refines 3 + depends_on 3 + caused_by 2 + supports 1
+ *
+ * Nothing behavioural depended on the guess — a declared `relationClass`
+ * always wins, and every relation in the real payload carries one — but the
+ * fallback is what a relation arriving without a class gets, and it has no
+ * business disagreeing with the producer. Counts are not a taxonomy.
  */
-export const SEMANTIC_RELS = new Set(["depends_on", "caused_by", "contradicts", "supports", "resolves"]);
+export const TEMPORAL_RELS = new Set(["supersedes", "resolves", "reopens"]);
+
+/** Meaningful but not temporal. Drawn at rest. See TEMPORAL_RELS for why
+    `refines` sits here and `resolves` does not. */
+export const SEMANTIC_RELS = new Set(["depends_on", "caused_by", "contradicts", "supports", "refines"]);
 
 /**
  * WHERE A CLAIM CAME FROM, between two objects.
@@ -170,8 +191,11 @@ export interface ProjectedIntelligence {
     relationCount: number;
     byType: Record<string, number>;
     byRelClass: Record<string, number>;
-    /** Objects the package carried that this Scope does not claim. */
+    /** Objects carried by a snapshot belonging to a different Scope. */
     outOfScope: number;
+    /** The producer's own topic tags and how often each appears. Observability
+        only — nothing routes, admits or attributes on these. */
+    scopeTags: Record<string, number>;
     /** Citations naming an evidence id the package does not contain. Zero on
         anything the validator accepted; nonzero is a real integrity fact
         about an older snapshot, so it is counted rather than hidden. */
@@ -204,14 +228,36 @@ function rec(v: Record<string, JsonValue> | undefined): Record<string, JsonValue
   return v ?? {};
 }
 
-/** The anchoring fields, lifted out of everything else the producer sent. */
-const ANCHOR_FIELDS = ["quoteHash", "charStart", "charEnd", "offsetUnit"];
+/**
+ * The anchoring fields, lifted out of everything else the producer sent.
+ *
+ * IT ARRIVES INSIDE `data`. The transport has a modelled, generic `data`
+ * escape hatch and an unmodelled-field bucket, and the bridge puts passage
+ * anchoring in the former — `data.quoteHash`, `data.charStart`,
+ * `data.charEnd`, `data.offsetUnit`, `data.independence`, alongside its own
+ * `passageId`, `segmentId`, `speakerConfidence` and the rest. Looking only in
+ * the unmodelled bucket found nothing: 156 real passages, 0 anchored.
+ *
+ * Both are read, `data` first, because either is a legitimate place for a
+ * producer to put them and neither is Signal's to dictate.
+ */
+const ANCHOR_FIELDS = ["quoteHash", "charStart", "charEnd", "offsetUnit", "primaryAnchor"];
 
-function pickAnchor(extra: Record<string, JsonValue> | undefined): Record<string, JsonValue> {
-  if (!extra) return {};
+function pickAnchor(...sources: (Record<string, JsonValue> | undefined)[]): Record<string, JsonValue> {
   const out: Record<string, JsonValue> = {};
-  for (const k of ANCHOR_FIELDS) if (extra[k] !== undefined) out[k] = extra[k];
+  for (const src of sources) {
+    if (!src) continue;
+    for (const k of ANCHOR_FIELDS) if (out[k] === undefined && src[k] !== undefined) out[k] = src[k];
+  }
   return out;
+}
+
+/** `independent` | `derivative` | null. NULL MEANS THE PRODUCER DID NOT SAY,
+    and is never read as independent. */
+function pickIndependence(item: { independence?: string; data?: Record<string, JsonValue> }): string | null {
+  if (typeof item.independence === "string") return item.independence;
+  const v = item.data?.independence;
+  return typeof v === "string" ? v : null;
 }
 
 /**
@@ -233,6 +279,7 @@ export function projectIntelligence(
   const citedPassages = new Map<string, ProjectedIntelPassage>();
   const byType: Record<string, number> = {};
   const byRelClass: Record<string, number> = {};
+  const scopeTags: Record<string, number> = {};
   let outOfScope = 0;
   let danglingCitations = 0;
   let batchId: string | null = null;
@@ -250,14 +297,16 @@ export function projectIntelligence(
       (pkg.sources ?? []).map((s) => [s.sourceRef, s])
     );
 
-    // SCOPE IS THE PRODUCER'S CLAIM, NOT SIGNAL'S GUESS.
+    // THE SNAPSHOT'S SCOPE IS THE ATTESTATION. A snapshot that belongs to a
+    // different Scope contributes nothing — the caller asked for this one.
     const admitted = new Map<string, ProjectedIntelObject>();
+    if (snap.scopeId !== scopeId) {
+      outOfScope += pkg.intelligenceObjects.length;
+      continue;
+    }
     for (const o of pkg.intelligenceObjects as IntelligenceObjectItem[]) {
       const scope = o.scope ?? [];
-      if (!scope.includes(scopeId)) {
-        outOfScope++;
-        continue;
-      }
+      for (const tag of scope) scopeTags[tag] = (scopeTags[tag] ?? 0) + 1;
       const projected: ProjectedIntelObject = {
         key: intelKey(snap.id, o.id),
         externalId: o.id,
@@ -304,8 +353,8 @@ export function projectIntelligence(
           // Read off the evidence row's preserved fields, so the anchoring
           // the producer sent reaches the graph rather than stopping at the
           // transport.
-          anchor: pickAnchor(item.extra),
-          independence: item.independence ?? null,
+          anchor: pickAnchor(item.data, item.extra),
+          independence: pickIndependence(item),
         });
       }
     }
@@ -367,6 +416,7 @@ export function projectIntelligence(
       byType,
       byRelClass,
       outOfScope,
+      scopeTags,
       danglingCitations,
     },
   };

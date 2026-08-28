@@ -457,50 +457,79 @@ An accepted `ContextSnapshot` may carry three additive transport fields —
 `lib/context/package.ts`). `lib/audit/intelligence.ts` projects them; nothing
 about them is stored anywhere else.
 
-### The real JSA payload, reconciled
+### The exact bridge-produced JSA package
 
-The published census of the real post-fix package, and what it cost Signal to
-accept it:
+Reconciled against the real file — `hermes-si-72c512c…`, 831 KB, producer
+`hermes` — not against a description of it. What it contains:
 
 | | |
 |---|---|
 | sources | 47 — 30 transcript · 15 source · 1 spreadsheet · 1 contextDoc |
-| registration | **45 ad-hoc** (`candidate`, unregistered) · 2 registered and active |
-| evidence | 399 — **156 structured Hermes passages + 243 legacy bridge-reparsed** |
+| registration | 45 ad-hoc (`candidate`, role `hermes_intelligence_evidence`) · 2 registered and active |
+| evidence | 399 — 156 structured Hermes passages + 243 legacy bridge-reparsed |
 | independence | 90 independent · 10 derivative · **56 absent** |
 | objects | 161 — observation 59, commitment 24, unknown 20, risk 17, decision 15, dependency 15, climate_evidence 6, availability_observation 5 |
-| head / history | 155 current · 6 superseded |
+| head / history | 155 current · 6 superseded (2 of them still `open`) |
 | relations | 87 — related_to 68, derived_from 4, depends_on 3, resolves 3, refines 3, supersedes 3, caused_by 2, supports 1 |
-| classes | contextual 68 · semantic 9 · temporal 6 · **provenance 4** |
-| passive inverse names | **0** — the bridge has already normalised them |
+| classes | contextual 68 · semantic 9 · temporal 6 · provenance 4 |
+| id collisions upstream | 25 — **40 ids carry a `#<manifest>` qualifier** |
 | derivedClaims | absent |
-| weight | ~851 KB |
 
-Four things in that table were genuine contract mismatches, and three of them
-would have rejected or silently corrupted the payload:
+**The validator accepted it unchanged.** Three things in the projection did
+not, and each would have gutted the payload silently:
 
-| Emitted | Signal expected | Consequence before the fix |
+| The file does this | Signal assumed | Consequence |
 |---|---|---|
-| `sourceId` / `relation` / `targetId` | `from` / `rel` / `to` | **package rejected outright** |
-| `climate_evidence`, `availability_observation` | `ClimateEvidence`, `AvailabilityObservation` | **every object mis-seated into `hermes`, silently** |
-| `quoteHash` `charStart` `charEnd` `offsetUnit` on each passage | six named fields, rebuilt | **all four deleted at the boundary** |
-| relation class `provenance` | three classes | class lost, `derived_from` drawn as semantic |
+| `scope[]` holds the producer's TOPIC TAGS (`["jsa","design"]`, `["linear","jsa","itrack"]`) while `scopeId` is Signal's cuid | `scope[]` holds Signal Scope ids | **all 161 objects rejected as out of scope — an empty graph** |
+| passage anchoring arrives inside `data` | it would arrive as unmodelled top-level fields | **156 passages, 0 anchored** |
+| `resolves` is **temporal**, `refines` is **semantic** | the reverse | the class fallback disagreed with the producer |
 
-All four are fixed by accepting the producer's vocabulary rather than
-rewriting it. Either relation spelling is read; the one that arrived is
-recorded once under `declared.emittedAs` and never overwritten. Type strings
-are normalised **for sector routing only** — the producer's exact casing rides
-on the node, prints in the inspector, and is what search matches.
+That third one is why the instruction was *do not infer class from counts*. An
+earlier pass had only the published census — relation totals and class totals,
+with no mapping — and reconciled them arithmetically. The reconciliation was
+self-consistent and wrong for both relations. Nothing behavioural depended on
+it, because every relation in the file declares its own class and a declared
+class always wins; but a fallback has no business disagreeing with the
+producer, and counts are not a taxonomy.
 
-> **Where `resolves` sits.** The census gives relation names and class totals
-> but not the mapping. Exactly one assignment reconciles both, and it puts
-> `resolves` in **semantic**, not temporal. Signal's name-based fallback
-> originally guessed temporal; the producer is the authority on its own
-> taxonomy and the fallback was corrected to agree. Derived by reconciliation,
-> not read from the file — and the producer's declared class wins at runtime
-> regardless, so nothing depends on the inference.
+#### Scope is the snapshot's, not the tags'
 
-### The critical first fix
+An object belongs to the Scope its snapshot belongs to, and to nothing else.
+That link is attested: `persistContextSnapshot` checks the package's own
+`scopeId` against the Scope the request named and refuses a mismatch.
+
+Reading the producer's `scope[]` as Scope attribution would be worse than
+useless — the tags name other Signal Scopes (`itrack`, `platform`) alongside
+topic words (`offline`, `resourcing`, `governance`) with nothing to tell them
+apart but how the strings look. 24 objects are tagged `itrack` and none of
+them reach iTrack. The tags ride on the node as producer information and do no
+work they cannot ground.
+
+#### The producer's vocabulary is read, not rewritten
+
+`sourceId` / `relation` / `targetId` / `relationClass`, and
+`sourceInPackage` / `targetInPackage` — the last pair being a referential
+check that had been reading a field name the bridge never sends, so it was
+silently checking nothing. Which spelling arrived is recorded once under
+`declared.emittedAs` and never overwritten; rewriting it on a second pass
+moved a stored snapshot's `contextHash`.
+
+#### Inverse normalisation happens exactly once
+
+The file emits **zero** passive inverse names. `declaredAs` carries what the
+bridge saw, `relation` what it decided — it rewrote 6 itself (e.g.
+`derived_from_source` → `derived_from`). Signal reads `relation` and changes
+nothing; a forced `resolved_by` is transported with the endpoints it arrived
+with. `caused_by` is an active relation here, not an inverse.
+
+#### Collision-qualified ids
+
+40 of 161 ids carry a `#<manifest>` qualifier against 25 upstream collisions.
+145 distinct base ids: strip or truncate the qualifier and **16 pairs of
+genuinely different objects merge into one**. Ids are carried verbatim end to
+end and nothing parses them.
+
+### The critical first fix### The critical first fix
 
 `validateProjectContextPackage` rebuilt the accepted package from named
 fields, so anything it did not recognise was **silently dropped**. That is why
@@ -647,18 +676,18 @@ batch, so the next ordinary ingestion would have been rejected.
 | `evidence` | 500 | **2000** | 399 (20%) | 243 legacy items ride alongside 156 structured ones |
 | `intelligenceObjects` | 2000 | 2000 | 161 (8%) | already ample; unchanged |
 | `intelligenceRelations` | 4000 | **20000** | 87 (0.4%) | `related_to` dominates and grows superlinearly with objects |
-| total bytes | — | **12 MB** | 851 KB (7%) | new: one guard that does not care how the payload is shaped |
+| total bytes | — | **12 MB** | 831 KB (7%) | new: one guard that does not care how the payload is shaped |
 
 Measured (`scripts/audit-package-limits-measure.ts`):
 
 | | weight | validate | hash | project |
 |---|---:|---:|---:|---:|
-| real JSA | 835 KB | 9ms | 11ms | 4ms |
-| every new cap saturated at once | 8515 KB | 106ms | 191ms | 80ms |
-| 2× every cap | 17 MB | **rejected in 250ms, naming the field** | | |
+| the exact file | 831 KB | 13ms | 13ms | 11ms |
+| every new cap saturated at once | 10855 KB | 164ms | 152ms | 44ms |
+| 2× every cap | 21 MB | **rejected in 319ms, naming the field** | | |
 
-Ten times the real payload's weight still validates, hashes and projects in
-under four hundred milliseconds. The byte guard sits above the saturated
+Thirteen times the real payload's weight still validates, hashes and projects
+in under four hundred milliseconds. The byte guard sits above the saturated
 ceiling so a caller who trips a shape limit gets the specific error rather than
 the generic one.
 
@@ -687,46 +716,56 @@ search.
 
 ### The real merged graph
 
+Measured on the exact file, against a local mirror of the Scope it names:
+
 | | nodes | edges |
 |---|---:|---:|
-| Signal's own record | 72 | 93 |
-| added by the real payload | **324** | 412 |
-| **merged** | **396** | **505** |
+| Signal's own record (mirror) | 45 | 38 |
+| **added by the exact package** | **362** | **442** |
+| **merged** | **407** | **480** |
 | duplicated / collapsed | 0 | 0 |
 
-The 324 are 161 external objects, 117 structured evidence passages and 46
-source artifacts. **Only cited evidence becomes a node**: the payload carries
-399 evidence items and 122 passages exist, because a passage is projected when
-something cites it. The 243 legacy reparsed items produce nothing on the graph
-today.
+The 362 are 161 external objects, 156 structured evidence passages and 45
+source artifacts. **Only cited evidence becomes a node**: the file carries 399
+evidence items, and the 243 legacy bridge-reparsed ones produce nothing on the
+graph because nothing cites them.
+
+79 of the 87 relations are drawn — the other 8 name an object the package did
+not carry, and no node is conjured for them.
+
+> The mirror Scope is a stand-in, and it holds no findings, decisions or
+> Source rows: those are audit OUTPUT and live on the local `jsa` row. In
+> production it is the same Scope, so its findings, decisions and their
+> evidence are additive on top of these counts. The 362-node delta is the
+> file's own contribution and is scope-independent.
 
 Edges drawn:
 
 | | drawn | held back |
 |---|---:|---:|
-| at rest | **25** — none external | 0 |
-| Hermes cluster open | 31, 2 external | |
-| every cluster open | 194 | 280 |
-| relationships that exist | 505 | |
+| at rest | **11** — none external | 0 |
+| Hermes cluster open | 16, 5 external | |
+| every cluster open | 192 | 272 |
+| relationships that exist | 480 | |
 
-### Cost on the real graph
+### Cost on the exact data
 
-Warm, production build, 1600×1000, 396 nodes / 505 edges:
+Warm, production build, 1600×1000, 407 nodes / 480 edges:
 
 | | far | medium | close |
 |---|---|---|---|
-| frame time | median **16.7ms**, p95 33.4ms | 16.7ms / 33.4ms | 16.7ms / 50ms |
+| frame time | median **16.7ms**, p95 33.4ms | 16.7ms / 33.4ms | 16.7ms / 33.4ms |
 
 | | median | worst |
 |---|---:|---:|
-| hover | 16ms | 54ms |
-| select an external object | 42ms | 67ms |
-| search the whole graph | 49ms | 117ms |
-| wake an object's edges | 40ms | 52ms |
-| Evidence Solo | 128ms | 136ms |
-| open the entire field | 174ms | 223ms |
+| hover | 13ms | 34ms |
+| select an external object | 52ms | 74ms |
+| search the whole graph | 79ms | 142ms |
+| wake an object's edges | 41ms | 48ms |
+| Evidence Solo | 104ms | 125ms |
+| open the entire field | 184ms | 266ms |
 
-**Stay on custom SVG.** 396 nodes is 5.5× the previous largest Scope, 60fps
+**Stay on custom SVG.** 407 nodes is 5.7× the previous largest Scope, 60fps
 camera work at every tier, and every interaction inside its budget. Nothing
 here is evidence that the renderer is approaching a limit.
 
@@ -768,7 +807,7 @@ graph in the way a screenshot is an observation of the screen.
 
 ## Proven
 
-`scripts/audit-graph-proof.ts` — 177 assertions across **all four Scopes**:
+`scripts/audit-graph-proof.ts` — 171 assertions across **all four Scopes**:
 every node projects a real row; every edge cites a rule whose relation, basis
 and endpoint kinds it matches; no dangling edges; no renderer state anywhere in
 the layer; an unsupplied lane has no `supports` edge; provenance direction;
@@ -837,22 +876,34 @@ walking the corpus; seating by meaning outside the record's edge; Fit widening
 for the band and unchanged without one; superseded objects seated but latent;
 the resting field drawing the chain rather than the corpus; and zero writes.
 
-The real contract gets a `V` block, run against a package reproducing the real
-JSA census exactly and emitting it in the producer's own vocabulary: the census
-item by item; relations arriving as `sourceId`/`relation`/`targetId` read
-rather than refused; a raw package and a validated one projecting the same
-relations; the producer's spelling recorded once and never rewritten;
-snake_case types seating in their meaning's sector; `provenance` as a fourth
-class with the fallback agreeing with the producer; `quoteHash`, `charStart`,
-`charEnd` and `offsetUnit` surviving validation; absent independence staying
-absent; 45 ad-hoc and 2 registered sources with no kind inferred from prose;
-**the exact real chain walkable object → passage → transcript**; the passage
-carrying its own anchoring; a Decision, a Dependency, a Commitment and an
-Unknown each reaching real evidence; every historical object reachable along a
-real temporal chain; the merged graph with no duplicates; **no Reality
-mutation of any kind across nine tables**; every stored snapshot still hashing
-identically; and a normal project sitting well under every limit while the
-guard still bites.
+The `V` and `Z` blocks run against **the exact bridge-produced file**, read
+byte-for-byte. They skip loudly when it is absent — it is real project data
+and is deliberately not committed; point `REAL_JSA_PACKAGE` at it.
+
+`V` — it validates and matches its own `intelligenceMeta.counts`; relations
+arriving as `sourceId`/`relation`/`targetId` are read rather than refused and
+raw and validated project identically; `sourceInPackage`/`targetInPackage` are
+read so the endpoint check actually runs; the producer's spelling is recorded
+once and never rewritten; every relation declares its class and the fallback
+agrees with all of them; **every `resolves` is temporal**; zero passive inverse
+names and Signal changes none; a forced `resolved_by` keeps its ends;
+collision-qualified ids stay distinct (16 would otherwise collide); anchoring
+survives from `data` and reaches the projection; absent independence stays
+absent; objects are admitted by the snapshot's Scope while 24 `itrack`-tagged
+objects reach iTrack not at all; **the exact chain risk → passage → transcript
+is walkable**; four object types each reach real evidence; superseded objects
+are reachable along the file's own temporal chains; the merged graph has no
+duplicates and out-of-package relations are dropped rather than invented; **no
+Reality mutation across nine tables**; every stored snapshot still hashes
+identically; and the file sits well under every limit while the guard bites.
+
+`Z` — the trust boundary on that same payload: 15 external Decisions creating
+zero Signal entities; external basis and external material being the same set
+both ways; no edge rule able to join the two worlds; statements rewritten to
+match Signal rows exactly joining nothing; the five contract negatives; an
+unmodelled field surviving on `extra`; `isCurrent` transported never derived;
+Evidence Solo reaching evidence without walking the corpus; seating by meaning
+outside the record's edge; and the resting field drawing the chain.
 
 `scripts/audit-package-limits-measure.ts` — the cost evidence the limits were
 chosen on.
@@ -864,9 +915,9 @@ and no new column**, the graph read projecting it with no further plumbing, a
 byte-identical retry creating no second snapshot, and a package lying about
 trust refused with a 400 and stored nowhere.
 
-`scripts/audit-intelligence-shoot.mjs` — 35 browser assertions on the real
-merged graph, which owns the seeded state and puts it back. Requires
-`npx tsx scripts/seed-intel-fixture.ts` first.
+`scripts/audit-intelligence-shoot.mjs` — 35 browser assertions on the exact
+data. Requires `npx tsx scripts/seed-real-jsa-package.ts` first, and
+`--drop` after.
 
 `scripts/audit-density-measure.ts` — the per-node visibility inventory, read
 from the renderer's own `identityOf()` rather than a restatement of it.

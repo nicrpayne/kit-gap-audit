@@ -29,6 +29,7 @@ import {
   type IntelligenceRelationItem,
   type IntelligenceMeta,
   RELATION_FIELD_ALIASES,
+  readRelationPresence,
   EXTERNAL_INTELLIGENCE_TRUST,
 } from "./package";
 
@@ -392,6 +393,7 @@ const INTEL_RELATION_KEYS = [
   // The producer's own spellings for the same three concepts. Listed so the
   // ones actually used are not ALSO copied into `extra` as unmodelled.
   "sourceId", "relation", "targetId", "relationClass",
+  "sourceInPackage", "targetInPackage",
 ];
 
 /**
@@ -426,8 +428,10 @@ function normalizeIntelligenceRelation(raw: unknown, index: number): Intelligenc
     to: firstString(raw, [...RELATION_FIELD_ALIASES.to], path, "to"),
     relClass: firstString(raw, [...RELATION_FIELD_ALIASES.relClass], path, "relClass"),
   };
-  if (typeof raw.fromInPackage === "boolean") item.fromInPackage = raw.fromInPackage;
-  if (typeof raw.toInPackage === "boolean") item.toInPackage = raw.toInPackage;
+  const fromPresent = readRelationPresence(raw, "fromInPackage");
+  const toPresent = readRelationPresence(raw, "toInPackage");
+  if (fromPresent !== undefined) item.fromInPackage = fromPresent;
+  if (toPresent !== undefined) item.toInPackage = toPresent;
   const declared = optionalRecord(raw.declared, `${path}.declared`);
   if (declared) item.declared = declared;
 
