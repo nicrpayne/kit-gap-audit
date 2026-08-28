@@ -17,7 +17,7 @@
 
 import type { NodeKind } from "@/lib/audit/graph";
 
-export type NodeShape = "core" | "disc" | "diamond" | "hex" | "chip" | "pin" | "dot" | "doc" | "tablet";
+export type NodeShape = "core" | "disc" | "diamond" | "hex" | "chip" | "pin" | "dot" | "doc" | "tablet" | "figure";
 
 /** Shape per kind. Never varies with state. */
 export const NODE_SHAPE: Record<NodeKind, NodeShape> = {
@@ -30,6 +30,12 @@ export const NODE_SHAPE: Record<NodeKind, NodeShape> = {
   // is that it is NOT the source it came from. The rule across it reads as
   // "a statement", which is what this is.
   requirement: "tablet",
+  // A FIGURE: a head over a shoulder arc. The one glyph on this field that is
+  // literal, because a person is the one thing here that is not an
+  // abstraction — and it has to be tellable at a glance from the disc, dot
+  // and chip it shares a sector with. No portraits: Signal plans capacity, it
+  // is not a directory.
+  person: "figure",
   lane: "disc",
   decision: "diamond",
   decisionGate: "diamond",
@@ -58,6 +64,10 @@ export const KIND_COLOR: Record<NodeKind, string> = {
   // amber and red that carry disagreement. A requirement is structure, not an
   // alarm.
   requirement: "var(--i-mint)",
+  // Violet already means "a human is involved" on this field — it is what a
+  // finding turns when only a person can settle it. A person node is the
+  // literal case of that.
+  person: "var(--i-violet)",
   lane: "var(--i-text-soft)",
   decision: "var(--i-violet)",
   decisionGate: "var(--i-violet)",
@@ -96,6 +106,13 @@ export function nodeColor(attrs: Record<string, unknown>): string {
   if (kind === "lane" || kind === "dependency") {
     if (attrs.supplied === false) return "var(--i-reality)";
     return STATE_COLOR[attrs.state as string] ?? KIND_COLOR[kind];
+  }
+  // A SYNTHETIC PERSON IS NOT A VERIFIED HUMAN. `Person.synthetic` marks a
+  // unit generated to stand in for a legacy flat team-capacity number nobody
+  // attested, so it takes the same grey the field already uses for "nothing
+  // is supplying this" rather than the violet that means a named human.
+  if (kind === "person") {
+    return attrs.synthetic ? "var(--i-reality)" : "var(--i-violet)";
   }
   if (kind === "work") {
     // Completed work recedes: it is no longer part of what remains.
@@ -245,6 +262,7 @@ const LABELLED_AT: Record<ZoomLevel, NodeKind[]> = {
     "work",
     "passage",
     "source",
+    "person",
     // A requirement is project structure, so its identity belongs with the
     // delivery structure tier rather than with source detail. At far zoom it
     // is mass; here it is nameable; at close the inspector carries the full
@@ -266,6 +284,7 @@ const LABELLED_AT: Record<ZoomLevel, NodeKind[]> = {
     "finding",
     "checkpoint",
     "requirement",
+    "person",
   ],
 };
 
@@ -359,6 +378,7 @@ export const REL_LABEL: Record<string, string> = {
   implements: "implements",
   supersedes: "supersedes",
   attests: "belongs to",
+  allocated_to: "allocated to",
 };
 
 export const KIND_LABEL: Record<NodeKind, string> = {
@@ -376,4 +396,5 @@ export const KIND_LABEL: Record<NodeKind, string> = {
   passage: "Evidence passage",
   source: "Source",
   requirement: "Requirement",
+  person: "Person",
 };

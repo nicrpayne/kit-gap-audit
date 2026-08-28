@@ -150,6 +150,23 @@ no requirements source.
 The inspector says **"No grounded implementation link"**, never "not
 implemented", and explains the difference on the card.
 
+## Capacity
+
+**Who is carrying this project**, read from `lib/capacity/resolve.ts` rather
+than recomputed — every figure on a Person node is the resolver's own output.
+Full law, the global-allocation reasoning, the forbidden `person → work` join
+and the identity seam: **docs/SIGNAL-GRAPH.md → Capacity**.
+
+Four figures populate the Capacity sector on JSA, one on Design, none on
+Platform or iTrack — which have no `Allocation` rows. Equal-sized on purpose;
+allocation is a number and is shown as one. The inspector gives base FTE,
+share of this project, project count, the context-switch factor with the
+setting it came from, effective FTE, and the person's other commitments as
+**context, never as graph topology**.
+
+It also says, on every person: *"Signal has no grounded link from a person to
+a Feature or a ticket, so it cannot say what this person is working on."*
+
 ## Features close the execution gap
 
 The graph foundation measured 46 work nodes whose parents resolved to
@@ -171,6 +188,7 @@ kind and state in words.
 | Shape | Kinds |
 |---|---|
 | Layered core | Reality |
+| Figure | person — a head over a shoulder arc, the one literal glyph on the field |
 | Tablet | requirement — upright and ruled across, a *statement*; tellable at a glance from the source it came from |
 | Disc | cluster puck, intelligence package |
 | Pin | finding — the only kind with a direction, because it is the only kind that is an accusation |
@@ -410,7 +428,7 @@ the same either way while the render cost is not.
 
 ## Proven
 
-`scripts/audit-graph-proof.ts` (104) — model, layout, presence and requirements: every node
+`scripts/audit-graph-proof.ts` (118) — model, layout, presence, requirements and capacity: every node
 projects a real row, every edge cites a rule whose relation/basis/endpoints it
 matches, no dangling edges, no renderer state in the semantic layer,
 unsupplied lanes have no `supports` edge, provenance direction, uncited
@@ -459,7 +477,15 @@ chain walked Requirement → Passage → Source, the findings that concern it,
 Evidence Solo lighting the requirement's provenance without reaching Reality,
 and a Scope with no requirements source showing none.
 
-**269 assertions, all passing.**
+`scripts/audit-capacity-shoot.mjs` (23) — Capacity in the browser: four
+people as formed mass at far, named at medium, readable at close, found by
+search and labelled Person, the inspector giving 60% here and Design 40% as
+context with the ×0.88 factor and 0.53 effective FTE, the allocation
+connection carrying its share, **no person→ticket edge drawn despite every
+name matching an assignee**, Design showing the other side of the split, and
+Platform and iTrack honestly empty.
+
+**306 assertions, all passing.**
 
 `scripts/audit-density-measure.ts` — what is on screen at each zoom, per node,
 read from the renderer's own rule rather than a restatement of it.

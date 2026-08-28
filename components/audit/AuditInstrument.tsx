@@ -258,6 +258,10 @@ export default function AuditInstrument({ initialScopeId }: { initialScopeId?: s
         a.section ?? "",
         a.sourceRef ?? "",
         a.dataStatus ?? "",
+        // A person's name IS their label, so nothing extra is needed to find
+        // them — but the cluster makes "who is on capacity" answerable by
+        // typing the sector's own name.
+        a.kind === "person" ? "capacity" : "",
       ]
         .join(" ")
         .toLowerCase();

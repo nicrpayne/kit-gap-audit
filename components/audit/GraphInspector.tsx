@@ -30,6 +30,9 @@ export interface Connection {
   otherId: string;
   otherLabel: string;
   otherKind: string;
+  /** A quantity the edge itself carries, formatted — an allocation's share.
+      Null for the relations that are not measured. */
+  detail: string | null;
 }
 
 /** Every relationship a node actually has, membership excluded — the same
@@ -53,6 +56,9 @@ export function connectionsOf(graph: AuditGraph, id: string): Connection[] {
         otherId,
         otherLabel: String(other.label),
         otherKind: String(other.kind),
+        // The quantity the edge itself was grounded in, when it carries one.
+        // An allocation without its share is half a fact.
+        detail: typeof a.fraction === "number" ? `${Math.round(a.fraction * 100)}%` : null,
       };
     })
     .sort((a, b) => (a.basis === b.basis ? a.rel.localeCompare(b.rel) : a.basis === "attested" ? -1 : 1));
@@ -73,6 +79,9 @@ export default function GraphInspector({
   const color = nodeColor(attrs);
   const connections = connectionsOf(graph, nodeId);
   const isRequirement = attrs.kind === "requirement";
+  const isPerson = attrs.kind === "person";
+  const pct = (f: number) => `${Math.round(f * 100)}%`;
+  const allocations = (attrs.allocations as { scopeName: string; fraction: number; current: boolean }[] | undefined) ?? [];
   // Findings that explicitly cite this requirement's own evidence id. Read
   // off the graph rather than recomputed, so the panel and the field agree.
   const concerningFindings = isRequirement
@@ -102,6 +111,11 @@ export default function GraphInspector({
           )}
           {isRequirement && attrs.section != null && (
             <Chip color="var(--i-text-soft)">{String(attrs.section)}</Chip>
+          )}
+          {isPerson && attrs.active === false && <Chip color="var(--i-reality)">Inactive</Chip>}
+          {isPerson && attrs.synthetic === true && <Chip color="var(--i-reality)">Synthetic</Chip>}
+          {isPerson && Number(attrs.scopeCount) > 1 && (
+            <Chip color="var(--i-violet)">Split across {String(attrs.scopeCount)} projects</Chip>
           )}
           {attrs.state != null && <Chip color={color}>{String(attrs.state)}</Chip>}
           {attrs.status != null && <Chip color="var(--i-text-soft)">{String(attrs.status)}</Chip>}
@@ -135,6 +149,76 @@ export default function GraphInspector({
         {attrs.sourceType != null && <Row label="Source type" value={String(attrs.sourceType)} />}
         {attrs.detail != null && <Row label="Measured" value={String(attrs.detail)} />}
       </div>
+
+      {/* ── PERSON: CAPACITY, AS THE RESOLVER COMPUTED IT ─────────────
+          Every figure here comes out of lib/capacity/resolve.ts unchanged, so
+          the number beside a face and the number the forecast receives are
+          one calculation. The switch factor names the setting it came from,
+          because 0.88 is a consequence of a knob someone set, not a law. */}
+      {isPerson && (
+        <div className="mt-4 px-4">
+          <div className="i-label mb-2" style={{ color: "var(--i-text-faint)" }}>
+            Capacity
+          </div>
+          <Row label="Base capacity" value={`${attrs.fte} FTE`} />
+          <Row label="Allocated here" value={`${pct(Number(attrs.fraction))} of their time`} />
+          <Row label="Projects" value={String(attrs.scopeCount)} />
+          <Row
+            label="Context switch"
+            value={
+              Number(attrs.switchFactor) === 1
+                ? "None — single project"
+                : `×${Number(attrs.switchFactor).toFixed(2)} at ${attrs.contextSwitchCostPct}% per extra project`
+            }
+            tone={Number(attrs.switchFactor) === 1 ? undefined : "var(--i-violet)"}
+          />
+          <Row label="Effective here" value={`${Number(attrs.effectiveFte).toFixed(2)} FTE`} />
+
+          {allocations.length > 1 && (
+            <div className="mt-3">
+              <div className="i-label mb-1.5" style={{ color: "var(--i-text-faint)" }}>
+                Also committed to
+              </div>
+              <div className="space-y-1">
+                {allocations.map((a) => (
+                  <div key={a.scopeName} className="flex items-baseline justify-between gap-2 text-[11px]">
+                    <span style={{ color: a.current ? "var(--i-text)" : "var(--i-text-soft)" }}>
+                      {a.scopeName}
+                      {a.current ? " · this project" : ""}
+                    </span>
+                    <span className="i-readout text-[11px] text-[var(--i-text)]">{pct(a.fraction)}</span>
+                  </div>
+                ))}
+              </div>
+              {/* THE GRAPH SHOWS THIS SCOPE; THE INSPECTOR EXPLAINS THE REST.
+                  The other commitment is what makes the switch factor what it
+                  is, so hiding it would leave an uncheckable number — but
+                  drawing that project here would turn a project instrument
+                  into a portfolio one. */}
+              <p className="mt-1.5 text-[10.5px] leading-[1.5]" style={{ color: "var(--i-text-faint)" }}>
+                Listed for context. The graph stays this project — the other work is
+                why the context-switch factor is what it is.
+              </p>
+            </div>
+          )}
+
+          {attrs.synthetic === true && (
+            <p className="mt-3 text-[10.5px] leading-[1.55]" style={{ color: "var(--i-amber)" }}>
+              Modelled capacity, not a verified person. This unit stands in for a stated
+              team size nobody attributed to anyone.
+            </p>
+          )}
+
+          {/* THE GAP, STATED WHERE IT MATTERS. Someone looking at a person on
+              this field will reasonably ask what they are working on, and the
+              honest answer is that Signal cannot say. */}
+          <p className="mt-3 text-[10.5px] leading-[1.55]" style={{ color: "var(--i-text-faint)" }}>
+            Capacity allocation is project-level. Signal has no grounded link from a
+            person to a Feature or a ticket, so it cannot say what this person is
+            working on.
+          </p>
+        </div>
+      )}
 
       {/* ── REQUIREMENT: ITS GROUNDING, AND ITS LIMITS ─────────────────
           The role says where requirements are RECORDED. It does not say the
@@ -290,6 +374,9 @@ export default function GraphInspector({
                       }}
                     >
                       {c.basis}
+                    </span>
+                    <span className="i-readout text-[10px]" style={{ color: "var(--i-text-soft)" }}>
+                      {c.detail ?? ""}
                     </span>
                   </span>
                   <span className="mt-1 block truncate text-[11.5px] text-[var(--i-text)]">{c.otherLabel}</span>

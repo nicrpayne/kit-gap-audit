@@ -13,6 +13,7 @@ import { getScopedIssues } from "@/lib/linear";
 import { buildTruthMap, type TruthMapModel } from "./truth";
 import { resolveProvenance, type FindingProvenance } from "./provenance";
 import { projectRequirements } from "./requirements";
+import { projectPeople } from "./capacity";
 import type { GraphEntityInputs } from "./graph";
 
 export interface AuditGraphInputs {
@@ -44,6 +45,7 @@ export async function loadAuditGraphInputs(scopeId: string): Promise<AuditGraphI
       prisma.source.findMany({ where: { scopeId }, orderBy: { createdAt: "desc" } }),
       prisma.contextDoc.findMany({ where: { scopeId }, orderBy: { createdAt: "desc" } }),
       prisma.contextSnapshot.findMany({ where: { scopeId }, orderBy: { createdAt: "desc" } }),
+      // THIS SCOPE'S ROWS, for the Truth Map's capacity checkpoint.
       prisma.allocation.findMany({ where: { scopeId }, include: { person: true } }),
       prisma.scope.findMany({ where: { id: { in: scope.dependsOnScopeIds } }, orderBy: { createdAt: "asc" } }),
       prisma.auditRun.findMany({ orderBy: { createdAt: "desc" }, take: 2 }),
@@ -52,6 +54,20 @@ export async function loadAuditGraphInputs(scopeId: string): Promise<AuditGraphI
         orderBy: { createdAt: "asc" },
       }),
     ]);
+
+  // EVERY ALLOCATION, EVERYWHERE — a second read, and a deliberate one.
+  //
+  // The context-switch penalty is keyed on how many Scopes a person works
+  // across ANYWHERE, so a resolver handed only this Scope's rows would report
+  // Sam Ortiz as undivided and overstate what JSA actually gets. The scope
+  // list comes with it so the inspector can name the other commitments
+  // without the graph having to contain them.
+  const [allPeople, allAllocations, allScopes, settings] = await Promise.all([
+    prisma.person.findMany({ orderBy: { createdAt: "asc" } }),
+    prisma.allocation.findMany({ orderBy: { personId: "asc" } }),
+    prisma.scope.findMany({ select: { id: true, name: true } }),
+    prisma.portfolioSettings.findUnique({ where: { id: "singleton" } }),
+  ]);
 
   // Linear can fail independently. The graph must survive that by having no
   // work nodes, not by refusing to build — same posture the Truth Map read
@@ -131,6 +147,28 @@ export async function loadAuditGraphInputs(scopeId: string): Promise<AuditGraphI
       status: r.status,
       supersededByRegistrationId: r.supersededByRegistrationId,
     })),
+    // Both projections below apply their own law in their own file. This one
+    // stays the single place that touches Prisma.
+    people: projectPeople({
+      scopeId,
+      people: allPeople.map((p) => ({
+        id: p.id,
+        name: p.name,
+        fte: p.fte,
+        active: p.active,
+        synthetic: p.synthetic,
+      })),
+      allocations: allAllocations.map((a) => ({
+        personId: a.personId,
+        scopeId: a.scopeId,
+        fraction: a.fraction,
+      })),
+      scopeNames: new Map(allScopes.map((s) => [s.id, s.name])),
+      // Never defaulted to a nonzero guess: 0 is the schema's own default and
+      // means "no penalty stated", which is a different claim from a number
+      // someone chose.
+      contextSwitchCostPct: settings?.contextSwitchCostPct ?? 0,
+    }),
     // The projection law lives in ./requirements. This file only supplies the
     // snapshots and stays the single place that touches Prisma.
     requirements: projectRequirements(

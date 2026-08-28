@@ -33,25 +33,26 @@ Audit is deliberately composed.
 
 Real projection, all four Scopes, dev fixtures (`scripts/audit-graph-measure.ts`):
 
-| Scope | nodes | edges | lane | checkpoint | finding | work | feature | requirement | decision | dependency | intelligence | passage | source |
-|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| Platform | 43 | 35 | 8 | 11 | 1 | 16 | 4 | 0 | 0 | 0 | 0 | 0 | 1 |
-| Design | 28 | 20 | 8 | 10 | 0 | 6 | 2 | 0 | 0 | 0 | 0 | 0 | 0 |
-| **JSA** | **67** | **85** | 8 | 16 | 8 | 14 | 4 | **2** | 1 | 1 | 1 | 5 | 5 |
-| iTrack | 36 | 30 | 8 | 11 | 0 | 10 | 4 | 0 | 0 | 1 | 0 | 0 | 0 |
+| Scope | nodes | edges | lane | checkpoint | finding | work | feature | requirement | person | decision | dependency | intelligence | passage | source |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| Platform | 43 | 35 | 8 | 11 | 1 | 16 | 4 | 0 | 0 | 0 | 0 | 0 | 0 | 1 |
+| Design | 29 | 22 | 8 | 10 | 0 | 6 | 2 | 0 | **1** | 0 | 0 | 0 | 0 | 0 |
+| **JSA** | **71** | **93** | 8 | 16 | 8 | 14 | 4 | **2** | **4** | 1 | 1 | 1 | 5 | 5 |
+| iTrack | 36 | 30 | 8 | 11 | 0 | 10 | 4 | 0 | 0 | 0 | 1 | 0 | 0 | 0 |
 
 Progressive expansion:
 
 | Scope | core | + execution | + evidence | + detail |
 |---|---|---|---|---|
 | Platform | 15n / 7e | 31n / 23e | 32n / 24e | 43n / 35e |
-| Design | 12n / 4e | 18n / 10e | 18n / 10e | 28n / 20e |
-| JSA | 26n / 29e | 40n / 44e | 51n / 69e | 67n / 85e |
+| Design | 13n / 6e | 19n / 12e | 19n / 12e | 29n / 22e |
+| JSA | 30n / 37e | 44n / 52e | 55n / 77e | 71n / 93e |
 | iTrack | 15n / 9e | 25n / 19e | 25n / 19e | 36n / 30e |
 
-**Three of the four Scopes have no requirements, and that is the correct
-answer** — only JSA's package carries a `requirements_of_record` source. An
-adapter that found requirements everywhere would be guessing.
+**Most Scopes have no requirements and no people, and that is the correct
+answer.** Only JSA's package carries a `requirements_of_record` source; only
+JSA and Design have `Allocation` rows. An adapter that found either
+everywhere would be guessing.
 
 **The slice is no longer what is on screen.** Since the density pass, every
 node is drawn at every zoom; the slice decides which nodes show their
@@ -59,9 +60,9 @@ node is drawn at every zoom; the slice decides which nodes show their
 "Progressive identity" in `docs/AUDIT-INSTRUMENT.md`, and
 `scripts/audit-density-measure.ts` for the per-node inventory.
 
-- **Largest single Scope:** JSA — 67 nodes / 85 edges expanded, 26 / 29 at the default slice.
-- **All Scopes combined:** 174 nodes / 170 edges expanded.
-- **Sigma revisit threshold** (from the prior research): 2,000 nodes in one view. Headroom: **30× on the largest Scope, 11× combined.**
+- **Largest single Scope:** JSA — 71 nodes / 93 edges expanded, 30 / 37 at the default slice.
+- **All Scopes combined:** 179 nodes / 180 edges expanded.
+- **Sigma revisit threshold** (from the prior research): 2,000 nodes in one view. Headroom: **28× on the largest Scope, 11× combined.**
 
 The evidence does not overturn the earlier conclusion. **Stay on custom SVG.**
 
@@ -95,6 +96,7 @@ made execution expandable.
 | `reality` | the Scope's accepted Reality | core |
 | `scope` | `Scope` | core |
 | `requirement` | an `EvidenceItem` from a `requirements_of_record` source | core |
+| `person` | `Person`, via an `Allocation` to this Scope | core |
 | `lane` | `TruthLane` | core |
 | `finding` | `Finding` | core |
 | `decision` | `Decision` | core |
@@ -116,7 +118,7 @@ manifest entries (`source:pkg:<sourceRef>`) and `Source` rows
 (`source:row:<id>`) are likewise separate namespaces.
 
 Deferred until the data supports them cleanly: `transcript`, `NotionPage`,
-`FigmaArtifact`, `person`, `commitment`, `risk`, `opportunity`.
+`FigmaArtifact`, `commitment`, `risk`, `opportunity`.
 A transcript currently stays represented as `Finding → passage → source`; the
 `source` node is the seam a first-class transcript node expands from later.
 
@@ -151,6 +153,8 @@ edge is explainable" a checkable claim rather than a promise.
 | `requirement-belongs-to-scope` | belongs_to | **attested** | `ContextSnapshot.scopeId` |
 | `requirement-evidenced-by-passage` | evidenced_by | **attested** | `EvidenceItem.id` |
 | `finding-concerns-requirement` | concerns | **attested** | `Finding.evidenceRefs` |
+| `person-allocated-to-scope` | allocated_to | **attested** | `Allocation.personId` + `.scopeId` |
+| `person-attests-lane` | attests | inferred | `Allocation.scopeId` + taxonomy |
 
 **`implemented_by` and `constrained_by` are deliberately absent.** See
 "Requirements" below — the absence is the product feature, and a proof
@@ -261,6 +265,93 @@ reason Reality itself has no band.
 The alternative was a ninth cluster sector, which would rotate every existing
 cluster — and "Decisions is at the top" has to stay learnable.
 
+## Capacity
+
+> **CAPACITY IS EMBODIED.** A Scope's capacity is the people allocated to it
+> and nothing else — `lib/capacity/workforce.ts` states that as the product
+> law, and the graph now shows it.
+
+### Audit reads capacity, it does not compute it
+
+Every figure on a Person node — `fraction`, `scopeCount`, `switchFactor`,
+`effectiveFte` — comes out of `resolveCapacity` in `lib/capacity/resolve.ts`
+unchanged. **There is no capacity arithmetic in Audit.** A proof compares
+every attribute against the resolver's own output, so the number beside a
+face and the number the forecast receives cannot diverge.
+
+Which people appear is the resolver's rule too, not one invented here: its
+contributor set is active people with a positive `Allocation` to this Scope.
+Someone inactive, unallocated, or allocated at zero contributes no capacity,
+and a node for them would be a mark standing for nothing.
+
+### The switch factor needs the whole portfolio
+
+The context-switch penalty is keyed on how many Scopes a person works across
+**anywhere**, so the resolver is handed every `Allocation` row. Sam Ortiz is
+JSA 0.6 and Design 0.4; reading only JSA's rows would report Sam as undivided
+and overstate what JSA gets. Proven: the same resolver, given JSA's rows
+alone, says `scopeCount: 1`.
+
+At the live 12% setting that is `×0.88`, so JSA's take is
+`0.6 × 1.0 × 0.88 = 0.528 FTE`. **A capacity fact, not an evaluation** —
+nothing here says overloaded, at risk, or underperforming.
+
+### The graph shows this Scope; the inspector explains the rest
+
+Sam's Design allocation is *why* the switch factor is 0.88, so hiding it
+would leave an uncheckable number. But drawing a Design node inside a JSA
+audit would quietly turn a project instrument into a portfolio one. The other
+commitments therefore ride on the Person node as an attribute the inspector
+prints, and **never as graph topology**. A proof asserts JSA's graph contains
+exactly one Scope node while the split person still lists two commitments.
+
+### Person → work is forbidden, and proven forbidden
+
+`LinearIssueSummary.assignee` is a display-name string from another system.
+`Person.name` is documented in the schema as a label — *"'Person 07' and
+'Alice' are the same unit of capacity; renaming one must not move a forecast
+by a single day."*
+
+**In the JSA fixture all four names match a Linear assignee exactly.** That
+is a coincidence of the fixture, not a join key: a name-join would look
+perfect here and mis-attribute the moment a unit is called "Person 07". Two
+proofs guard it — one against the real graph, one against a forced fixture
+where *every* ticket is assigned to a named Person. Both assert zero edges.
+
+`person → allocated_to → Feature` is absent for a plainer reason:
+`Allocation` has no Feature column, and splitting a Scope allocation across
+Features heuristically would be invention.
+
+### The identity seam
+
+Connecting a person to their work needs **an explicit, durable mapping that
+does not exist**. Plausible futures: a persisted Linear user id on `Person`,
+an external-identity mapping table, or an authoritative HRIS identity. None
+is implemented, and none should be inferred. Until one exists, Signal can say
+who is carrying a project and how much — never what they are carrying.
+
+### Availability is not modelled
+
+There is no Signal availability model, so no availability node or edge
+exists, and a proof rejects any `availability`, `role` or `owner` attribute
+appearing on a Person. Hermes may one day supply availability *evidence*;
+**an AvailabilityObservation is not accepted capacity Reality** and must not
+silently become it.
+
+### Where they sit
+
+People populate the existing **Capacity sector** — the thinnest region on the
+field before this, one puck and one checkpoint. They are `core`, like
+decisions and dependencies, because there are four of them rather than forty
+and a cluster that shows nothing until you open it is a cluster you never
+open.
+
+**Size is not an encoding.** Every person is drawn the same. Allocation is a
+number, so it is shown as one, in the inspector where it can carry its units;
+sizing people by FTE made the sector read as importance rather than as a
+team. A synthetic unit takes the grey the field already uses for "nothing is
+supplying this", because a synthetic person is not a verified human.
+
 ## Slicing
 
 Progressive detail is a property of the graph, not bookkeeping the renderer
@@ -291,7 +382,7 @@ graph in the way a screenshot is an observation of the screen.
 
 ## Proven
 
-`scripts/audit-graph-proof.ts` — 104 assertions across **all four Scopes**:
+`scripts/audit-graph-proof.ts` — 118 assertions across **all four Scopes**:
 every node projects a real row; every edge cites a rule whose relation, basis
 and endpoint kinds it matches; no dangling edges; no renderer state anywhere in
 the layer; an unsupplied lane has no `supports` edge; provenance direction;
@@ -318,6 +409,17 @@ checked in both directions; no relation beyond those three; a shared word
 joining nothing; the provenance chain traversable end to end; Scopes without a
 requirements source getting none; no requirement seated in a cluster; and zero
 writes.
+
+Capacity gets a `W` block: every Person node projecting a real row keyed on
+its id; a rename changing the label and nothing else; the people on the field
+being exactly the resolver's contributors; every `allocated_to` edge being one
+`Allocation` row with its fraction; `scopeCount` computed globally; every
+capacity figure equalling `lib/capacity`'s own output; synthetic preserved;
+**four exact name matches joining nothing**; a forced fixture where every
+ticket is assigned to a named Person still joining nothing; no relation beyond
+`allocated_to` and membership; no invented availability, role or ownership;
+unstaffed Scopes showing nobody; global context never becoming topology; and
+zero writes.
 
 `scripts/audit-density-measure.ts` — the per-node visibility inventory, read
 from the renderer's own `identityOf()` rather than a restatement of it.

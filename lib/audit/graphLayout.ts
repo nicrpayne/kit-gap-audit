@@ -96,6 +96,13 @@ export const NODE_SIZE: Record<NodeKind, number> = {
   // Between the Scope chip and a finding: a requirement is structural, and
   // structure should not shout louder than a disagreement.
   requirement: 11,
+  // EQUAL-SIZED ON PURPOSE. Size could encode allocation fraction, and the
+  // first version tried it: a 0.4 and a 1.0 person differ by a factor the eye
+  // reads as importance rather than as commitment, and the sector stopped
+  // looking like a team. Allocation is a number, so it is shown as one — in
+  // the inspector, where it can carry its units. Size stays what it is
+  // everywhere else on this field: position in the reading order.
+  person: 10,
   lane: 13,
   dependency: 12,
   decision: 10,
@@ -282,6 +289,10 @@ export function layoutGraph(graph: AuditGraph): GraphLayout {
   //
   // Nothing here changes WHICH nodes exist or WHERE their cluster is. Only
   // how tightly a cluster holds its own.
+  // People sit on the feature ring inside their own sector — close enough to
+  // the Capacity puck to read as its contents, in a tight arc so four of them
+  // read as a group rather than as four unrelated marks.
+  onClusterRing("person", FIELD.featureR, 0.5);
   onClusterRing("dependency", FIELD.featureR, 0.42);
   onClusterRing("decision", FIELD.featureR, 0.42);
   onClusterRing("decisionGate", FIELD.childR, 0.36);

@@ -36,6 +36,7 @@ import Graph from "graphology";
 import type { TruthMapModel } from "./truth";
 import type { FindingProvenance } from "./provenance";
 import { requirementLabel, type ProjectedRequirement } from "./requirements";
+import type { ProjectedPerson } from "./capacity";
 
 // ── EPISTEMIC BASIS ────────────────────────────────────────────────────
 //
@@ -73,7 +74,8 @@ export type NodeKind =
   | "intelligence"
   | "passage"
   | "source"
-  | "requirement";
+  | "requirement"
+  | "person";
 
 export type EdgeRel =
   | "supports"
@@ -88,7 +90,8 @@ export type EdgeRel =
   | "implements"
   | "missing_from"
   | "supersedes"
-  | "belongs_to";
+  | "belongs_to"
+  | "allocated_to";
 
 // ── SLICES ─────────────────────────────────────────────────────────────
 //
@@ -247,6 +250,28 @@ export const EDGE_RULES: Record<string, EdgeRule> = {
     field: "Finding.evidenceRefs",
     why: "The finding explicitly cites this evidence id, inside the same snapshot.",
   },
+  // ── CAPACITY ─────────────────────────────────────────────────────────
+  //
+  // Two rules and one deliberate hole. See docs/SIGNAL-GRAPH.md → Capacity
+  // for why `person → assigned_to → work` does not and must not exist.
+  "person-allocated-to-scope": {
+    id: "person-allocated-to-scope",
+    rel: "allocated_to",
+    basis: "attested",
+    from: "person",
+    to: "scope",
+    field: "Allocation.personId + Allocation.scopeId",
+    why: "A row naming both endpoints and the share of time between them.",
+  },
+  "person-attests-lane": {
+    id: "person-attests-lane",
+    rel: "attests",
+    basis: "inferred",
+    from: "person",
+    to: "lane",
+    field: "Allocation.scopeId + taxonomy",
+    why: "Capacity is the lane people supply. Membership, so never drawn.",
+  },
   "passage-extracted-from-source": {
     id: "passage-extracted-from-source",
     rel: "extracted_from",
@@ -397,6 +422,9 @@ export interface GraphEntityInputs {
   }[];
   /** Tracked-source registrations, for the supersedes relation. */
   registrations: { id: string; sourceType: string; sourceRef: string; status: string; supersededByRegistrationId: string | null }[];
+  /** Who is carrying this Scope, already resolved by lib/capacity — this
+      layer applies no capacity rule and does no capacity arithmetic. */
+  people: ProjectedPerson[];
   /** What the project says must be true, projected from snapshots whose
       manifest declares a `requirements_of_record` source. Already filtered by
       lib/audit/requirements.ts — this layer applies no rule of its own. */
@@ -443,6 +471,12 @@ export const nodeId = {
   // id would merge two different requirements into one node and misroute
   // every finding that cites either.
   requirement: (snapshotId: string, evidenceId: string) => `requirement:${snapshotId}:${evidenceId}`,
+  // KEYED ON Person.id, NEVER ON THE NAME. `Person.name` is documented as a
+  // label — "Person 07" and "Alice" are the same unit of capacity — so a
+  // name-keyed node would merge two people the moment two units shared a
+  // label, and would silently re-point every allocation when someone is
+  // renamed.
+  person: (personId: string) => `person:${personId}`,
   passage: (snapshotId: string, evidenceId: string) => `passage:${snapshotId}:${evidenceId}`,
   /** Package manifest entries and Source rows are different namespaces and
       must not be able to collide on a shared string. */
@@ -686,6 +720,50 @@ export function buildAuditGraph({ model, provenance, entities }: BuildGraphInput
     if (!g.hasDirectedEdge(pid, sid)) link(pid, sid, "passage-extracted-from-source");
     return pid;
   };
+
+  // ── CAPACITY — WHO IS CARRYING THIS ──────────────────────────────────
+  //
+  // Every figure here was computed by lib/capacity/resolve.ts and is carried
+  // through unchanged; see lib/audit/capacity.ts. Audit reads capacity, it
+  // does not decide it.
+  //
+  // People are `core` rather than `execution` for the same reason decisions
+  // and dependencies are: there are four of them, not forty, and the sector
+  // being empty at rest was the problem this solves. A cluster that says
+  // "Capacity" and shows nothing until you open it is a cluster you never
+  // open.
+  for (const person of entities.people) {
+    const pid = nodeId.person(person.personId);
+    g.addNode(pid, {
+      kind: "person",
+      label: person.name,
+      slice: "core",
+      ref: `Person:${person.personId}`,
+      lane: "capacity",
+      personId: person.personId,
+      fte: person.fte,
+      active: person.active,
+      synthetic: person.synthetic,
+      fraction: person.fraction,
+      scopeCount: person.scopeCount,
+      switchFactor: person.switchFactor,
+      effectiveFte: person.effectiveFte,
+      contextSwitchCostPct: person.contextSwitchCostPct,
+      // INSPECTOR CONTEXT, NOT TOPOLOGY. Sam's Design allocation is what
+      // makes Sam's switch factor 0.88, so the number is uncheckable without
+      // it — but drawing a Design node inside a JSA audit would turn a
+      // project instrument into a portfolio one. It rides on the node and
+      // never becomes an edge.
+      allocations: person.allocations,
+    });
+
+    if (g.hasNode(nodeId.scope(entities.scope.id))) {
+      link(pid, nodeId.scope(entities.scope.id), "person-allocated-to-scope", {
+        fraction: person.fraction,
+      });
+    }
+    if (g.hasNode(nodeId.lane("capacity"))) link(pid, nodeId.lane("capacity"), "person-attests-lane");
+  }
 
   // ── REQUIREMENTS — WHAT THE PROJECT SAYS MUST BE TRUE ────────────────
   //

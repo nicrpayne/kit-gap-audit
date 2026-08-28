@@ -206,7 +206,10 @@ await park();
   const c = await cam();
   const n = await p.locator('[data-shoot^="node-"]').count();
   check("10. clearing returns the graph to its resting world", sel === 0 && matched === 0 && Math.abs(c.k - 0.72) < 0.005 && Math.abs(c.x - 700) < 2, `${sel} selected, ${matched} matched, k=${c.k}`);
-  check("10b. with every node still on the field", n === 66, `${n} marks + the Reality hero = 67`);
+  // Derived, not hardcoded: this number grows with every enrichment tranche,
+  // and a literal here would go stale silently the next time it does.
+  const total = (await (await fetch(`${BASE}/api/audit/graph?scope=jsa&slice=detail`, { headers: { Cookie: `kit_session=${COOKIE}` } })).json()).graph.nodes.length;
+  check("10b. with every node still on the field", n + 1 === total, `${n} marks + the Reality hero = ${total}`);
   await shot("09-back-to-rest");
 }
 

@@ -24,6 +24,8 @@
 //      collapsed cluster's count equals the mass it is standing on
 //   Q  requirements: projected only from a requirements_of_record source,
 //      snapshot-scoped, and never linked to execution by resemblance
+//   W  workforce: capacity read from the resolver, never recomputed, and
+//      never joined to execution by name
 //
 //   npx tsx scripts/audit-graph-proof.ts
 
@@ -46,6 +48,8 @@ import {
 import { layoutGraph, FIELD, CLUSTER_ORDER, BANDS } from "../lib/audit/graphLayout";
 import { identityOf, latentRadius, LATENT, MEMBERSHIP_RELS } from "@/components/audit/graphTokens";
 import { projectRequirements, REQUIREMENT_SOURCE_ROLE } from "../lib/audit/requirements";
+import { projectPeople } from "../lib/audit/capacity";
+import { resolveCapacity, switchFactorFor } from "../lib/capacity/resolve";
 
 const prisma = new PrismaClient();
 
@@ -1081,6 +1085,297 @@ async function main() {
         before.every((v, i) => v === after[i]),
         `${before.join("/")} → ${after.join("/")}`
       );
+    }
+  }
+
+
+  // ── W  WORKFORCE ───────────────────────────────────────────────────────
+  //
+  // Capacity is the one area where the wrong edge would be BELIEVED. Every
+  // name in the JSA fixture matches a Linear assignee exactly, so a
+  // name-join would look perfect here and mis-attribute the moment someone
+  // is called "Person 07". Half of this block exists to make that
+  // impossible to add by accident.
+  {
+    const people = await prisma.person.findMany();
+    const allocations = await prisma.allocation.findMany();
+    const settings = await prisma.portfolioSettings.findUnique({ where: { id: "singleton" } });
+    const switchPct = settings?.contextSwitchCostPct ?? 0;
+    const jsa = graphs.find((x) => x.id === "jsa");
+
+    // W1 — every Person node projects a real row, keyed on the id.
+    {
+      const byId = new Map(people.map((p) => [p.id, p]));
+      let n = 0;
+      let wrong = 0;
+      for (const { g } of graphs) {
+        for (const node of g.filterNodes((_x, a) => a.kind === "person")) {
+          n++;
+          const a = g.getNodeAttributes(node);
+          const row = byId.get(a.personId as string);
+          if (!row) wrong++;
+          else if (row.name !== a.label || row.fte !== a.fte || row.synthetic !== a.synthetic) wrong++;
+          if (node !== `person:${a.personId}`) wrong++;
+        }
+      }
+      check("W1 every Person node projects a real Person row, keyed on its id", n > 0 && wrong === 0, `${n} people, ${wrong} wrong`);
+    }
+
+    // W2 — a name is not an id. Renaming a person must not move their node.
+    {
+      const sample = people[0];
+      const renamed = people.map((p) => (p.id === sample.id ? { ...p, name: "Person 07" } : p));
+      const before = projectPeople({
+        scopeId: "jsa", people, allocations,
+        scopeNames: new Map(), contextSwitchCostPct: switchPct,
+      });
+      const after = projectPeople({
+        scopeId: "jsa", people: renamed, allocations,
+        scopeNames: new Map(), contextSwitchCostPct: switchPct,
+      });
+      const idsSame = before.map((x) => x.personId).join() === after.map((x) => x.personId).join();
+      const figuresSame = before.every((b, i) => b.effectiveFte === after[i].effectiveFte);
+      check(
+        "W2 renaming a person changes their label and nothing else",
+        idsSame && figuresSame && after.some((x) => x.name === "Person 07"),
+        `${before.length} people, ids and figures unchanged under rename`
+      );
+    }
+
+    // W3 — WHICH PEOPLE APPEAR is the resolver's own contributor set, not a
+    // rule invented here.
+    {
+      let wrong = 0;
+      for (const { id, g } of graphs) {
+        const resolved = resolveCapacity(id, people, allocations, switchPct);
+        const expected = new Set(resolved.contributors.map((c) => `person:${c.personId}`));
+        const actual = new Set(g.filterNodes((_x, a) => a.kind === "person"));
+        if (expected.size !== actual.size || [...expected].some((x) => !actual.has(x))) wrong++;
+      }
+      check("W3 the people on the field are exactly the resolver's contributors", wrong === 0, `${wrong} Scopes disagreeing`);
+    }
+
+    // W4 — the allocation edge maps to a real row, and carries its fraction.
+    {
+      let n = 0;
+      let wrong = 0;
+      for (const { id, g } of graphs) {
+        g.forEachEdge((_e, a, src, tgt) => {
+          if (a.rel !== "allocated_to") return;
+          n++;
+          if (a.basis !== "attested") wrong++;
+          if (tgt !== nodeId.scope(id)) wrong++;
+          const personId = g.getNodeAttribute(src, "personId") as string;
+          const row = allocations.find((x) => x.personId === personId && x.scopeId === id);
+          if (!row) wrong++;
+          else if (Math.abs((a.fraction as number) - row.fraction) > 1e-9) wrong++;
+        });
+      }
+      check("W4 every allocated_to edge is one Allocation row, fraction included", n > 0 && wrong === 0, `${n} edges, ${wrong} wrong`);
+    }
+
+    // W5 — the split is counted GLOBALLY. Reading only this Scope's rows
+    // would report Sam Ortiz as undivided and overstate what JSA gets.
+    if (jsa) {
+      const sam = jsa.g
+        .filterNodes((_x, a) => a.kind === "person")
+        .map((n) => jsa.g.getNodeAttributes(n))
+        .find((a) => (a.scopeCount as number) > 1);
+      const localOnly = allocations.filter((a) => a.scopeId === "jsa");
+      const localResolved = resolveCapacity("jsa", people, localOnly, switchPct);
+      const localSplit = localResolved.contributors.filter((c) => c.scopeCount > 1).length;
+      check(
+        "W5 scopeCount is computed from every Allocation row, not this Scope's",
+        !!sam && sam.scopeCount === 2 && localSplit === 0,
+        sam
+          ? `${sam.label} spans ${sam.scopeCount} projects; reading JSA's rows alone would have said 1`
+          : "no split person found"
+      );
+    }
+
+    // W6/W7 — switchFactor and effectiveFte are the resolver's, to the digit.
+    {
+      let wrong = 0;
+      let n = 0;
+      for (const { id, g } of graphs) {
+        const resolved = resolveCapacity(id, people, allocations, switchPct);
+        for (const c of resolved.contributors) {
+          const a = g.getNodeAttributes(`person:${c.personId}`);
+          n++;
+          if (a.switchFactor !== c.switchFactor) wrong++;
+          if (a.effectiveFte !== c.effectiveFte) wrong++;
+          if (a.fraction !== c.fraction) wrong++;
+          if (a.scopeCount !== c.scopeCount) wrong++;
+          // And the factor is the shared formula, not a second copy of it.
+          if (a.switchFactor !== switchFactorFor(switchPct, c.scopeCount)) wrong++;
+        }
+      }
+      check(
+        "W6 every capacity figure equals lib/capacity's own output",
+        n > 0 && wrong === 0,
+        `${n} contributors, ${wrong} disagreements — Audit reads capacity, it does not compute it`
+      );
+    }
+
+    // W8 — synthetic survives the projection.
+    {
+      const withSynthetic = people.map((p, i) => ({ ...p, synthetic: i === 0 }));
+      const out = projectPeople({
+        scopeId: "jsa", people: withSynthetic, allocations,
+        scopeNames: new Map(), contextSwitchCostPct: switchPct,
+      });
+      const flagged = out.filter((x) => x.synthetic);
+      check(
+        "W8 synthetic capacity stays marked as synthetic",
+        out.length > 0 && flagged.length === (out.some((x) => x.personId === withSynthetic[0].id) ? 1 : 0),
+        `${flagged.length} of ${out.length} flagged`
+      );
+    }
+
+    // ── W9. THE ONE THAT MATTERS ──────────────────────────────────────
+    //
+    // Person.name is documented as a label — "Person 07" and "Alice" are the
+    // same unit of capacity, and renaming one must not move a forecast by a
+    // day. LinearIssueSummary.assignee is a display-name string from another
+    // system. The JSA fixture has them matching EXACTLY, which is a
+    // coincidence of the fixture and not a join key.
+    if (jsa) {
+      const workAssignees = new Set(
+        jsa.g
+          .filterNodes((_x, a) => a.kind === "work")
+          .map((n) => jsa.g.getNodeAttribute(n, "assignee"))
+          .filter(Boolean) as string[]
+      );
+      const personNames = new Set(
+        jsa.g.filterNodes((_x, a) => a.kind === "person").map((n) => String(jsa.g.getNodeAttribute(n, "label")))
+      );
+      const overlap = [...personNames].filter((x) => workAssignees.has(x));
+
+      let joined = 0;
+      jsa.g.forEachEdge((_e, _a, src, tgt) => {
+        const sk = jsa.g.getNodeAttribute(src, "kind");
+        const tk = jsa.g.getNodeAttribute(tgt, "kind");
+        if ((sk === "person" && (tk === "work" || tk === "feature")) ||
+            (tk === "person" && (sk === "work" || sk === "feature"))) joined++;
+      });
+
+      check(
+        "W9 four Person names match a Linear assignee EXACTLY and still join nothing",
+        overlap.length > 0 && joined === 0,
+        `${overlap.length} exact name matches (${overlap.join(", ")}), ${joined} edges — Person.name is a label, not an identity, ` +
+          `and joining on it would look perfect here and mis-attribute the moment a unit is called "Person 07"`
+      );
+    }
+
+    // W10 — the same, forced: a fixture built so that EVERY person's name is
+    // an assignee. If a name-join ever appears, this is where it shows.
+    {
+      const inputs = await loadAuditGraphInputs("jsa");
+      if (inputs) {
+        const forced = {
+          ...inputs,
+          entities: {
+            ...inputs.entities,
+            work: inputs.entities.work.map((w, i) => ({
+              ...w,
+              assignee: inputs.entities.people[i % Math.max(1, inputs.entities.people.length)]?.name ?? w.assignee,
+            })),
+          },
+        };
+        const g = buildAuditGraph(forced);
+        let joined = 0;
+        g.forEachEdge((_e, _a, src, tgt) => {
+          const sk = g.getNodeAttribute(src, "kind");
+          const tk = g.getNodeAttribute(tgt, "kind");
+          if (sk === "person" || tk === "person") {
+            const other = sk === "person" ? tk : sk;
+            if (other === "work" || other === "feature") joined++;
+          }
+        });
+        const everyWorkNamed = forced.entities.work.every((w) => w.assignee);
+        check(
+          "W10 even when EVERY ticket is assigned to a named Person, no edge appears",
+          everyWorkNamed && joined === 0,
+          `${forced.entities.work.length} tickets all assigned to Person names, ${joined} edges created`
+        );
+      }
+    }
+
+    // W11 — a person carries no relation beyond the two that are grounded.
+    {
+      let bad = 0;
+      for (const { g } of graphs) {
+        g.forEachEdge((_e, a, src, tgt) => {
+          const sk = g.getNodeAttribute(src, "kind");
+          const tk = g.getNodeAttribute(tgt, "kind");
+          if (sk !== "person" && tk !== "person") return;
+          const ok = sk === "person" && (a.rel === "allocated_to" || a.rel === "attests");
+          if (!ok) bad++;
+        });
+      }
+      check(
+        "W11 a Person carries only allocated_to and cluster membership",
+        bad === 0,
+        `${bad} unexpected person edges — Allocation has no Feature column, so person → Feature is ungrounded too`
+      );
+    }
+
+    // W12 — no availability was invented. Nothing in the model supplies one.
+    {
+      let bad = 0;
+      for (const { g } of graphs) {
+        g.forEachNode((_n, a) => {
+          if (a.kind !== "person") return;
+          for (const k of ["availability", "available", "capacityState", "utilisation", "utilization", "role", "owner"]) {
+            if (a[k] !== undefined) bad++;
+          }
+        });
+      }
+      check(
+        "W12 no availability, role or ownership is invented on a Person",
+        bad === 0,
+        `${bad} invented attributes — Hermes availability evidence is not accepted capacity Reality`
+      );
+    }
+
+    // W13 — a Scope nobody has staffed gets nobody.
+    {
+      const staffed = new Set(allocations.filter((a) => a.fraction > 0).map((a) => a.scopeId));
+      const unstaffed = graphs.filter((x) => !staffed.has(x.id));
+      const invented = unstaffed.filter((x) => x.g.someNode((_n, a) => a.kind === "person"));
+      check(
+        "W13 a Scope with no Allocation rows shows no people",
+        unstaffed.length > 0 && invented.length === 0,
+        `${unstaffed.length} unstaffed Scopes (${unstaffed.map((x) => x.name).join(", ")}), ${invented.length} inventing`
+      );
+    }
+
+    // W14 — THE GRAPH STAYS SCOPE-SHAPED. Sam's Design allocation is on the
+    // node as context; it must not have dragged a Design node into JSA.
+    if (jsa) {
+      const scopeNodes = jsa.g.filterNodes((_x, a) => a.kind === "scope");
+      const foreign = scopeNodes.filter((n) => n !== nodeId.scope("jsa"));
+      const sam = jsa.g
+        .filterNodes((_x, a) => a.kind === "person")
+        .map((n) => jsa.g.getNodeAttributes(n))
+        .find((a) => (a.scopeCount as number) > 1);
+      const listed = (sam?.allocations as { scopeName: string }[] | undefined) ?? [];
+      check(
+        "W14 global allocation context never becomes graph topology",
+        foreign.length === 0 && listed.length === 2,
+        `${scopeNodes.length} Scope node (this project only); the split person lists ${listed.length} commitments in the inspector`
+      );
+    }
+
+    // W15 — projecting capacity writes nothing.
+    {
+      const before = await prisma.$transaction([prisma.person.count(), prisma.allocation.count(), prisma.portfolioSettings.count()]);
+      for (const s of scopes) {
+        const inputs = await loadAuditGraphInputs(s.id);
+        if (inputs) buildAuditGraph(inputs);
+      }
+      const after = await prisma.$transaction([prisma.person.count(), prisma.allocation.count(), prisma.portfolioSettings.count()]);
+      check("W15 projecting capacity writes nothing", before.every((v, i) => v === after[i]), `${before.join("/")} → ${after.join("/")}`);
     }
   }
 

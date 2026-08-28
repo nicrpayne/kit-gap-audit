@@ -68,6 +68,7 @@ const KIND_ORDER: NodeKind[] = [
   // disagrees".
   "requirement",
   "lane",
+  "person",
   "finding",
   "dependency",
   "decision",
@@ -801,6 +802,26 @@ const GraphNode = memo(function GraphNode({
             strokeWidth={stroke}
           />
         );
+      case "figure":
+        // Head and shoulders. Two strokes, no face, no photograph.
+        return (
+          <g>
+            <circle
+              cx={x}
+              cy={y - grown * 0.46}
+              r={grown * 0.42}
+              fill={`color-mix(in srgb, ${color} 16%, var(--i-void))`}
+              stroke={color}
+              strokeWidth={stroke}
+            />
+            <path
+              d={`M ${x - grown * 0.78} ${y + grown * 0.86} a ${grown * 0.78} ${grown * 0.86} 0 0 1 ${grown * 1.56} 0`}
+              fill={`color-mix(in srgb, ${color} 16%, var(--i-void))`}
+              stroke={color}
+              strokeWidth={stroke}
+            />
+          </g>
+        );
       case "tablet":
         // Upright, square-shouldered, with a rule across it. A statement, not
         // a document and not an accusation.
@@ -962,6 +983,7 @@ const KIND_NAME: Record<string, string> = {
   passage: "Evidence passage",
   source: "Source",
   requirement: "Requirement",
+  person: "Person",
 };
 
 function truncate(s: string, n: number): string {
