@@ -17,12 +17,19 @@
 
 import type { NodeKind } from "@/lib/audit/graph";
 
-export type NodeShape = "core" | "disc" | "diamond" | "hex" | "chip" | "pin" | "dot" | "doc";
+export type NodeShape = "core" | "disc" | "diamond" | "hex" | "chip" | "pin" | "dot" | "doc" | "tablet";
 
 /** Shape per kind. Never varies with state. */
 export const NODE_SHAPE: Record<NodeKind, NodeShape> = {
   reality: "core",
   scope: "chip",
+  // A TABLET: square-shouldered, upright, ruled across. Deliberately not the
+  // chip a Scope or Feature uses, not the pin a finding uses, not the page a
+  // source uses and not the dot a passage uses — a requirement must be
+  // tellable from all four at a glance, because the whole point of the node
+  // is that it is NOT the source it came from. The rule across it reads as
+  // "a statement", which is what this is.
+  requirement: "tablet",
   lane: "disc",
   decision: "diamond",
   decisionGate: "diamond",
@@ -46,6 +53,11 @@ export const NODE_SHAPE: Record<NodeKind, NodeShape> = {
 export const KIND_COLOR: Record<NodeKind, string> = {
   reality: "var(--i-signal)",
   scope: "var(--i-signal)",
+  // Mint: already the token for "seated and accepted" elsewhere in Signal,
+  // and cool enough to sit quietly beside Reality without competing with the
+  // amber and red that carry disagreement. A requirement is structure, not an
+  // alarm.
+  requirement: "var(--i-mint)",
   lane: "var(--i-text-soft)",
   decision: "var(--i-violet)",
   decisionGate: "var(--i-violet)",
@@ -233,6 +245,11 @@ const LABELLED_AT: Record<ZoomLevel, NodeKind[]> = {
     "work",
     "passage",
     "source",
+    // A requirement is project structure, so its identity belongs with the
+    // delivery structure tier rather than with source detail. At far zoom it
+    // is mass; here it is nameable; at close the inspector carries the full
+    // statement.
+    "requirement",
   ],
   close: [
     "reality",
@@ -248,6 +265,7 @@ const LABELLED_AT: Record<ZoomLevel, NodeKind[]> = {
     "source",
     "finding",
     "checkpoint",
+    "requirement",
   ],
 };
 
@@ -357,4 +375,5 @@ export const KIND_LABEL: Record<NodeKind, string> = {
   intelligence: "Intelligence package",
   passage: "Evidence passage",
   source: "Source",
+  requirement: "Requirement",
 };

@@ -133,6 +133,23 @@ The control that keeps this honest is the sparse Scope. Design has 28 nodes,
 and it still looks like 28 nodes: `+1` on almost every cluster, mass only in
 Linear. **The instrument does not make a thin project look rich.**
 
+## Requirements
+
+**What the project says must be true**, distinct from where we learned it. An
+`EvidenceItem` becomes a Requirement if and only if its source's manifest role
+is `requirements_of_record` — structural, never textual. Full law, the
+role-vs-approval caveat, the deliberately absent `implemented_by`, and the
+`externalRef` seam: **docs/SIGNAL-GRAPH.md → Requirements**.
+
+On the field they are mint tablets in the structural layer beside the Scope
+chip — inside the disagreement bands, because a requirement is not a position
+on that axis — with provenance running outward to Notion. JSA has two; the
+other three Scopes have none, which is the correct answer for a package with
+no requirements source.
+
+The inspector says **"No grounded implementation link"**, never "not
+implemented", and explains the difference on the card.
+
 ## Features close the execution gap
 
 The graph foundation measured 46 work nodes whose parents resolved to
@@ -154,6 +171,7 @@ kind and state in words.
 | Shape | Kinds |
 |---|---|
 | Layered core | Reality |
+| Tablet | requirement — upright and ruled across, a *statement*; tellable at a glance from the source it came from |
 | Disc | cluster puck, intelligence package |
 | Pin | finding — the only kind with a direction, because it is the only kind that is an accusation |
 | Hexagon | dependency |
@@ -392,7 +410,7 @@ the same either way while the render cost is not.
 
 ## Proven
 
-`scripts/audit-graph-proof.ts` (84) — model, layout and presence: every node
+`scripts/audit-graph-proof.ts` (104) — model, layout, presence and requirements: every node
 projects a real row, every edge cites a rule whose relation/basis/endpoints it
 matches, no dangling edges, no renderer state in the semantic layer,
 unsupplied lanes have no `supports` edge, provenance direction, uncited
@@ -432,7 +450,16 @@ zooming, six clicks in half a second, choosing a search result, interrupting a
 fly-to with a pan and with a zoom, clicking mid-expansion, Fit during a tween,
 and the three stable tiers, each captured.
 
-**225 assertions, all passing.**
+`scripts/audit-requirements-shoot.mjs` (24) — Requirements in the browser:
+structural mass at far, identity at medium, named at close, found by search
+and labelled as a Requirement, matched on text past the end of the trimmed
+label, selection not moving the camera, the inspector naming role and status
+and saying "no grounded implementation link" in those words, the provenance
+chain walked Requirement → Passage → Source, the findings that concern it,
+Evidence Solo lighting the requirement's provenance without reaching Reality,
+and a Scope with no requirements source showing none.
+
+**269 assertions, all passing.**
 
 `scripts/audit-density-measure.ts` — what is on screen at each zoom, per node,
 read from the renderer's own rule rather than a restatement of it.

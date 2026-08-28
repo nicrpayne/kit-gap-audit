@@ -12,6 +12,7 @@ import { prisma } from "@/lib/prisma";
 import { getScopedIssues } from "@/lib/linear";
 import { buildTruthMap, type TruthMapModel } from "./truth";
 import { resolveProvenance, type FindingProvenance } from "./provenance";
+import { projectRequirements } from "./requirements";
 import type { GraphEntityInputs } from "./graph";
 
 export interface AuditGraphInputs {
@@ -130,6 +131,20 @@ export async function loadAuditGraphInputs(scopeId: string): Promise<AuditGraphI
       status: r.status,
       supersededByRegistrationId: r.supersededByRegistrationId,
     })),
+    // The projection law lives in ./requirements. This file only supplies the
+    // snapshots and stays the single place that touches Prisma.
+    requirements: projectRequirements(
+      snapshots.map((s) => ({ id: s.id, scopeId: s.scopeId, package: s.package }))
+    ),
+    // Paired with the snapshot they were cited in, because an evidence id
+    // means nothing outside its own package.
+    findingCitations: findings
+      .filter((f) => f.contextSnapshotId && f.evidenceRefs.length > 0)
+      .map((f) => ({
+        findingId: f.id,
+        snapshotId: f.contextSnapshotId!,
+        evidenceIds: f.evidenceRefs,
+      })),
   };
 
   return { model, provenance, entities, linearError };

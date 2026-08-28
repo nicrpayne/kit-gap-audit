@@ -63,6 +63,10 @@ import {
 const KIND_ORDER: NodeKind[] = [
   "reality",
   "scope",
+  // With the project, before the disagreements: tabbing should read "here is
+  // the project, here is what it says must be true, here is where Reality
+  // disagrees".
+  "requirement",
   "lane",
   "finding",
   "dependency",
@@ -797,6 +801,32 @@ const GraphNode = memo(function GraphNode({
             strokeWidth={stroke}
           />
         );
+      case "tablet":
+        // Upright, square-shouldered, with a rule across it. A statement, not
+        // a document and not an accusation.
+        return (
+          <g>
+            <rect
+              x={x - grown * 0.66}
+              y={y - grown}
+              width={grown * 1.32}
+              height={grown * 2}
+              rx={grown * 0.16}
+              fill={`color-mix(in srgb, ${color} 12%, var(--i-void))`}
+              stroke={color}
+              strokeWidth={stroke}
+            />
+            <line
+              x1={x - grown * 0.34}
+              y1={y}
+              x2={x + grown * 0.34}
+              y2={y}
+              stroke={color}
+              strokeWidth={stroke}
+              opacity={0.8}
+            />
+          </g>
+        );
       case "doc":
         return (
           <path
@@ -931,6 +961,7 @@ const KIND_NAME: Record<string, string> = {
   intelligence: "Intelligence package",
   passage: "Evidence passage",
   source: "Source",
+  requirement: "Requirement",
 };
 
 function truncate(s: string, n: number): string {

@@ -35,6 +35,7 @@
 import Graph from "graphology";
 import type { TruthMapModel } from "./truth";
 import type { FindingProvenance } from "./provenance";
+import { requirementLabel, type ProjectedRequirement } from "./requirements";
 
 // ── EPISTEMIC BASIS ────────────────────────────────────────────────────
 //
@@ -71,7 +72,8 @@ export type NodeKind =
   | "dependency"
   | "intelligence"
   | "passage"
-  | "source";
+  | "source"
+  | "requirement";
 
 export type EdgeRel =
   | "supports"
@@ -85,7 +87,8 @@ export type EdgeRel =
   | "resolves"
   | "implements"
   | "missing_from"
-  | "supersedes";
+  | "supersedes"
+  | "belongs_to";
 
 // ── SLICES ─────────────────────────────────────────────────────────────
 //
@@ -109,7 +112,13 @@ export interface AuditNodeAttributes {
       behind it has no business existing. */
   ref: string;
   /** Which lane's sector this node belongs to, when it belongs to one. Used
-      by layout for clustering; carries no geometry itself. */
+      by layout for clustering; carries no geometry itself.
+  
+      ABSENT IS MEANINGFUL. Reality, the Scope and Requirements have no lane
+      because they are not part of any source system — they are the project's
+      own model. The layout seats them in the structural layer rather than in
+      a sector, and the density pass's cluster badges skip them for the same
+      reason. */
   lane?: string;
   [key: string]: unknown;
 }
@@ -204,6 +213,39 @@ export const EDGE_RULES: Record<string, EdgeRule> = {
     to: "source",
     field: "Finding.sourceId",
     why: "A foreign key naming the pasted Source row.",
+  },
+  // ── REQUIREMENTS ─────────────────────────────────────────────────────
+  //
+  // Three rules, and the two that are ABSENT matter as much. See
+  // lib/audit/requirements.ts for the projection law and
+  // docs/SIGNAL-GRAPH.md for why `implemented_by` and `constrained_by` do
+  // not appear here.
+  "requirement-belongs-to-scope": {
+    id: "requirement-belongs-to-scope",
+    rel: "belongs_to",
+    basis: "attested",
+    from: "requirement",
+    to: "scope",
+    field: "ContextSnapshot.scopeId",
+    why: "The snapshot the requirement was read from names the Scope it was assembled for.",
+  },
+  "requirement-evidenced-by-passage": {
+    id: "requirement-evidenced-by-passage",
+    rel: "evidenced_by",
+    basis: "attested",
+    from: "requirement",
+    to: "passage",
+    field: "EvidenceItem.id",
+    why: "The requirement IS this evidence row, read as a statement. Same row, two levels.",
+  },
+  "finding-concerns-requirement": {
+    id: "finding-concerns-requirement",
+    rel: "concerns",
+    basis: "attested",
+    from: "finding",
+    to: "requirement",
+    field: "Finding.evidenceRefs",
+    why: "The finding explicitly cites this evidence id, inside the same snapshot.",
   },
   "passage-extracted-from-source": {
     id: "passage-extracted-from-source",
@@ -355,6 +397,15 @@ export interface GraphEntityInputs {
   }[];
   /** Tracked-source registrations, for the supersedes relation. */
   registrations: { id: string; sourceType: string; sourceRef: string; status: string; supersededByRegistrationId: string | null }[];
+  /** What the project says must be true, projected from snapshots whose
+      manifest declares a `requirements_of_record` source. Already filtered by
+      lib/audit/requirements.ts — this layer applies no rule of its own. */
+  requirements: ProjectedRequirement[];
+  /** Which evidence ids each finding cites, and in which snapshot. The
+      `concerns` edge needs both: an evidence id is only meaningful inside its
+      own package, so matching on the bare id across snapshots would attach a
+      finding to a requirement it never cited. */
+  findingCitations: { findingId: string; snapshotId: string; evidenceIds: string[] }[];
 }
 
 export interface BuildGraphInput {
@@ -386,6 +437,12 @@ export const nodeId = {
   gate: (id: string) => `gate:${id}`,
   dependency: (scopeId: string) => `dependency:${scopeId}`,
   intelligence: (snapshotId: string) => `intelligence:${snapshotId}`,
+  // Snapshot-scoped for the same reason a passage is: the requirement IS an
+  // EvidenceItem, and EvidenceItem.id is documented as stable only within its
+  // own package. Two snapshots may each carry a "row-14"; keying on the bare
+  // id would merge two different requirements into one node and misroute
+  // every finding that cites either.
+  requirement: (snapshotId: string, evidenceId: string) => `requirement:${snapshotId}:${evidenceId}`,
   passage: (snapshotId: string, evidenceId: string) => `passage:${snapshotId}:${evidenceId}`,
   /** Package manifest entries and Source rows are different namespaces and
       must not be able to collide on a shared string. */
@@ -581,6 +638,119 @@ export function buildAuditGraph({ model, provenance, entities }: BuildGraphInput
     }
   }
 
+  // ONE PLACE A PASSAGE AND ITS SOURCE ARE BUILT.
+  //
+  // Two callers need them — a finding citing evidence, and a requirement
+  // projecting its own row — and two constructors would drift into two
+  // slightly different nodes for the same EvidenceItem.
+  const ensurePassage = (
+    snapshotId: string,
+    psg: {
+      evidenceId: string;
+      excerpt: string;
+      sourceRef: string;
+      sourceType: string | null;
+      observedAt: string | null;
+      role: string | null;
+      externalRef: string | null;
+    }
+  ): string => {
+    const pid = nodeId.passage(snapshotId, psg.evidenceId);
+    if (!g.hasNode(pid)) {
+      g.addNode(pid, {
+        kind: "passage",
+        label: psg.evidenceId,
+        slice: "evidence",
+        ref: `EvidenceItem:${snapshotId}:${psg.evidenceId}`,
+        // A passage belongs with the SOURCE it was extracted from, not with
+        // "evidence" generically: a row read out of a Notion page is Notion's
+        // evidence.
+        lane: laneForSourceType(psg.sourceType),
+        excerpt: psg.excerpt,
+        externalRef: psg.externalRef,
+      });
+    }
+    const sid = nodeId.packageSource(psg.sourceRef);
+    if (!g.hasNode(sid)) {
+      g.addNode(sid, {
+        kind: "source",
+        label: psg.sourceRef,
+        slice: "evidence",
+        ref: `PackageSource:${psg.sourceRef}`,
+        lane: laneForSourceType(psg.sourceType),
+        sourceType: psg.sourceType,
+        observedAt: psg.observedAt,
+        role: psg.role,
+      });
+    }
+    if (!g.hasDirectedEdge(pid, sid)) link(pid, sid, "passage-extracted-from-source");
+    return pid;
+  };
+
+  // ── REQUIREMENTS — WHAT THE PROJECT SAYS MUST BE TRUE ────────────────
+  //
+  // Seeded BEFORE findings so `finding → concerns → requirement` has
+  // something to point at, and deliberately NOT hung off a lane: a
+  // requirement is a project-model entity, not a thing that belongs to
+  // Notion. Its `lane` is null and the layout seats it in the structural
+  // project layer beside the Scope. Provenance runs outward from there to the
+  // passage and the source, which DO live in their source cluster.
+  //
+  // No filtering happens here. The projection law lives in one place
+  // (lib/audit/requirements.ts) so there is exactly one answer to "why is
+  // this a requirement".
+  for (const r of entities.requirements) {
+    g.addNode(nodeId.requirement(r.snapshotId, r.evidenceId), {
+      kind: "requirement",
+      label: requirementLabel(r),
+      slice: "core",
+      ref: `EvidenceItem:${r.snapshotId}:${r.evidenceId}`,
+      // Omitted on purpose. A cluster is a SOURCE SYSTEM; this is not one.
+      statement: r.statement,
+      snapshotId: r.snapshotId,
+      evidenceId: r.evidenceId,
+      sourceRef: r.sourceRef,
+      sourceType: r.sourceType,
+      // Carried so the node can show its own grounding AND its own limits:
+      // `requirements_of_record` says where requirements are recorded, not
+      // that the source is approved policy. `sourceStatus` is the honest
+      // qualifier and the inspector prints it.
+      sourceRole: r.sourceRole,
+      sourceStatus: r.sourceStatus,
+      registrationId: r.registrationId,
+      observedAt: r.observedAt,
+      // The producer's own words, reported verbatim, never mapped onto a
+      // Signal state. "Committed" is Notion's vocabulary, not ours.
+      dataStatus: r.dataStatus,
+      section: r.section,
+      externalRef: r.externalRef,
+    });
+    if (g.hasNode(nodeId.scope(entities.scope.id))) {
+      link(
+        nodeId.requirement(r.snapshotId, r.evidenceId),
+        nodeId.scope(entities.scope.id),
+        "requirement-belongs-to-scope"
+      );
+    }
+
+    // A REQUIREMENT CARRIES ITS OWN PROVENANCE, whether or not anyone has
+    // raised a finding about it. Passages were previously built only from
+    // finding citations, which would have left an uncited requirement with no
+    // route back to the row it was read from — and an uncited requirement is
+    // exactly the one you most want to trace. Same row, two levels, and the
+    // edge between them is the only thing that says so.
+    const pid = ensurePassage(r.snapshotId, {
+      evidenceId: r.evidenceId,
+      excerpt: r.statement,
+      sourceRef: r.sourceRef,
+      sourceType: r.sourceType,
+      observedAt: r.observedAt,
+      role: r.sourceRole,
+      externalRef: r.externalRef,
+    });
+    link(nodeId.requirement(r.snapshotId, r.evidenceId), pid, "requirement-evidenced-by-passage");
+  }
+
   // ── FINDINGS AND THEIR PROVENANCE ────────────────────────────────────
   for (const f of model.findings) {
     g.addNode(nodeId.finding(f.id), {
@@ -637,40 +807,8 @@ export function buildAuditGraph({ model, provenance, entities }: BuildGraphInput
     for (const psg of p.passages) {
       // A passage only exists inside a snapshot — see the nodeId note.
       if (!p.snapshot) continue;
-      const pid = nodeId.passage(p.snapshot.id, psg.evidenceId);
-      if (!g.hasNode(pid)) {
-        g.addNode(pid, {
-          kind: "passage",
-          label: psg.evidenceId,
-          slice: "evidence",
-          ref: `EvidenceItem:${p.snapshot.id}:${psg.evidenceId}`,
-          // A passage belongs with the SOURCE it was extracted from, not with
-          // "evidence" generically: a row read out of a Notion page is Notion's
-          // evidence. Hardcoding "evidence" here put passages in one cluster
-          // while the layout seated them beside their source in another, so the
-          // node's own claim about where it belongs disagreed with where it was
-          // drawn. Caught by the sector proof.
-          lane: laneForSourceType(psg.sourceType),
-          excerpt: psg.excerpt,
-          externalRef: psg.externalRef,
-        });
-      }
+      const pid = ensurePassage(p.snapshot.id, psg);
       link(nodeId.finding(f.id), pid, "finding-evidenced-by-passage");
-
-      const sid = nodeId.packageSource(psg.sourceRef);
-      if (!g.hasNode(sid)) {
-        g.addNode(sid, {
-          kind: "source",
-          label: psg.sourceRef,
-          slice: "evidence",
-          ref: `PackageSource:${psg.sourceRef}`,
-          lane: laneForSourceType(psg.sourceType),
-          sourceType: psg.sourceType,
-          observedAt: psg.observedAt,
-          role: psg.role,
-        });
-      }
-      if (!g.hasDirectedEdge(pid, sid)) link(pid, sid, "passage-extracted-from-source");
     }
 
     if (p.source) {
@@ -687,6 +825,24 @@ export function buildAuditGraph({ model, provenance, entities }: BuildGraphInput
         });
       }
       link(nodeId.finding(f.id), sid, "finding-evidenced-by-source");
+    }
+  }
+
+  // ── FINDING → REQUIREMENT ────────────────────────────────────────────
+  //
+  // Grounded in Finding.evidenceRefs, and matched WITHIN THE FINDING'S OWN
+  // SNAPSHOT. Matching on the bare evidence id would let a finding in one
+  // package attach itself to a requirement in another that happens to share a
+  // row label — which is exactly the collision the snapshot-scoped node id
+  // exists to prevent, reintroduced at the edge layer.
+  for (const c of entities.findingCitations) {
+    const fid = nodeId.finding(c.findingId);
+    if (!g.hasNode(fid)) continue;
+    for (const evidenceId of c.evidenceIds) {
+      const rid = nodeId.requirement(c.snapshotId, evidenceId);
+      if (g.hasNode(rid) && !g.hasDirectedEdge(fid, rid)) {
+        link(fid, rid, "finding-concerns-requirement");
+      }
     }
   }
 

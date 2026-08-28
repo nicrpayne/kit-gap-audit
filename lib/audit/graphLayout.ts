@@ -38,6 +38,10 @@ export const FIELD = {
   cy: 700,
   /** Reality's body. */
   coreR: 54,
+  /** Where the project's own model sits — requirements, and the Scope chip's
+      own ring. Inside the first disagreement band, because nothing here is a
+      position on the disagreement axis. */
+  modelR: 122,
   /** The three disagreement bands. */
   alignedR: 178,
   driftR: 262,
@@ -89,6 +93,9 @@ const HANDLED_RADIUS = FIELD.alignedR - 22;
 export const NODE_SIZE: Record<NodeKind, number> = {
   reality: FIELD.coreR,
   scope: 15,
+  // Between the Scope chip and a finding: a requirement is structural, and
+  // structure should not shout louder than a disagreement.
+  requirement: 11,
   lane: 13,
   dependency: 12,
   decision: 10,
@@ -186,12 +193,39 @@ export function layoutGraph(graph: AuditGraph): GraphLayout {
   const byKind = (kind: NodeKind) =>
     graph.filterNodes((_n, a) => a.kind === kind).sort();
 
-  // ── THE CENTRE ───────────────────────────────────────────────────────
+  // ── THE CENTRE, AND THE PROJECT'S OWN MODEL ──────────────────────────
   for (const id of byKind("reality")) place(id, 0, 0, null);
   // The Scope sits inside the aligned band rather than against the core: at
   // coreR + 30 its chip overlapped Reality's own rings and read as a stray
   // mark on the hero. Here its depends_on edges visibly leave the project.
   for (const id of byKind("scope")) place(id, -90, FIELD.alignedR - 34, null);
+
+  // REQUIREMENTS ARE NOT IN A SECTOR, AND THAT IS THE POINT.
+  //
+  // A sector means "this came from that source system". A requirement did
+  // come from somewhere — its provenance edges run outward to the passage and
+  // the source, which DO sit in Notion's sector — but the requirement itself
+  // is what the project says must be true, and seating it inside Notion would
+  // make it look like Notion's property. Adding a ninth sector was the other
+  // option and is worse: every existing cluster would rotate, and "Decisions
+  // is at the top" has to stay learnable.
+  //
+  // So they take the structural layer the Scope chip already occupies — the
+  // band between the core and the first disagreement ring, which holds
+  // nothing else. Read outward, the field now says: Reality · what the
+  // project says must be true · where it disagrees · the sources.
+  //
+  // This is INSIDE alignedR, so it is not a position on the disagreement
+  // axis. A requirement is not "aligned"; it simply is not on that axis at
+  // all — the same reason Reality itself has no band.
+  {
+    const reqs = byKind("requirement");
+    // Fanned across the top of the model ring, centred on the Scope's own
+    // axis so the chip and its requirements read as one group. Comfortable to
+    // about a dozen; past that this ring needs its own radius.
+    const arc = Math.min(150, 26 * Math.max(1, reqs.length));
+    reqs.forEach((id, i) => place(id, fanAngle(-90, i, reqs.length, arc), FIELD.modelR, null));
+  }
 
   // ── CLUSTER PUCKS ────────────────────────────────────────────────────
   for (const id of byKind("lane")) {

@@ -22,6 +22,8 @@
 //      (inherited from the retired Truth Map's own layout proofs)
 //   R  presence: every real node is drawn, every mark is a real node, and a
 //      collapsed cluster's count equals the mass it is standing on
+//   Q  requirements: projected only from a requirements_of_record source,
+//      snapshot-scoped, and never linked to execution by resemblance
 //
 //   npx tsx scripts/audit-graph-proof.ts
 
@@ -43,6 +45,7 @@ import {
 } from "../lib/audit/graph";
 import { layoutGraph, FIELD, CLUSTER_ORDER, BANDS } from "../lib/audit/graphLayout";
 import { identityOf, latentRadius, LATENT, MEMBERSHIP_RELS } from "@/components/audit/graphTokens";
+import { projectRequirements, REQUIREMENT_SOURCE_ROLE } from "../lib/audit/requirements";
 
 const prisma = new PrismaClient();
 
@@ -197,24 +200,40 @@ async function main() {
   }
 
   // ── F. PROVENANCE DIRECTION ────────────────────────────────────────
+  //
+  // The law: PROVENANCE POINTS FROM A CLAIM TOWARD THE EVIDENCE FOR IT, and
+  // never the other way. Evidence does not cite the claims made about it, or
+  // Evidence Solo could turn round at a shared passage and walk down into an
+  // unrelated finding.
+  //
+  // Widened when Requirements landed, and deliberately widened by naming the
+  // CLAIM KINDS rather than by relaxing the check: a requirement citing the
+  // row it was read from is the same direction as a finding citing its
+  // passage. A new claim kind has to be added here on purpose.
+  const CLAIM_KINDS = ["finding", "requirement"];
+  const EVIDENCE_KINDS = ["passage", "intelligence", "source"];
   {
     let checked = 0;
     let wrong = 0;
     for (const { g } of graphs) {
-      g.forEachEdge((_e, a, s, t, sa, ta) => {
+      g.forEachEdge((e, a, s, t, sa, ta) => {
         if (a.rel === "evidenced_by") {
           checked++;
-          if (sa.kind !== "finding") wrong++;
-          if (!["passage", "intelligence", "source"].includes(ta.kind)) wrong++;
+          if (!CLAIM_KINDS.includes(sa.kind)) wrong++;
+          if (!EVIDENCE_KINDS.includes(ta.kind)) wrong++;
+          // The direction itself, not just the endpoint kinds.
+          if (g.hasDirectedEdge(t, s)) wrong++;
+          void e;
         }
         if (a.rel === "extracted_from") {
           checked++;
           if (sa.kind !== "passage" || ta.kind !== "source") wrong++;
+          if (g.hasDirectedEdge(t, s)) wrong++;
         }
       });
     }
     check(
-      "F1 evidence flows finding -> passage/intelligence -> source, never the reverse",
+      "F1 evidence flows claim -> passage/intelligence -> source, never the reverse",
       checked > 0 && wrong === 0,
       `${checked} provenance edges checked`
     );
@@ -748,6 +767,319 @@ async function main() {
         `R10 membership is position, never a line, even fully populated (${name})`,
         membership > 0 || g.order < 10,
         `${membership} attests edges, none drawable`
+      );
+    }
+  }
+
+
+  // ── Q  REQUIREMENTS ────────────────────────────────────────────────────
+  //
+  // A requirement is the first node whose whole value depends on an ABSENCE
+  // being trustworthy: "this requirement has no grounded execution link" is
+  // only worth reading if the graph could not have invented one. Half the
+  // assertions here are therefore negative, and each names the specific
+  // resemblance it refuses.
+  {
+    const jsa = graphs.find((x) => x.id === "jsa");
+    const snapshots = await prisma.contextSnapshot.findMany({ orderBy: { createdAt: "desc" } });
+
+    // Q1 — the projection law, checked against the RAW package rather than
+    // against the projection's own output.
+    {
+      let wrongRole = 0;
+      let checked = 0;
+      for (const { name, g } of graphs) {
+        for (const n of g.filterNodes((_x, a) => a.kind === "requirement")) {
+          checked++;
+          const a = g.getNodeAttributes(n);
+          const snap = snapshots.find((s) => s.id === a.snapshotId);
+          const pkg = snap?.package as { sources?: { sourceRef: string; role: string | null }[] } | undefined;
+          const manifest = pkg?.sources?.find((x) => x.sourceRef === a.sourceRef);
+          if (manifest?.role !== REQUIREMENT_SOURCE_ROLE) {
+            wrongRole++;
+            console.log(`      (${name}) ${n} came from role ${manifest?.role ?? "none"}`);
+          }
+        }
+      }
+      check(
+        "Q1 every Requirement comes from a requirements_of_record source",
+        checked > 0 && wrongRole === 0,
+        `${checked} requirements, ${wrongRole} from another role`
+      );
+    }
+
+    // Q2 — AND EVIDENCE FROM OTHER ROLES DOES NOT. Non-vacuous: the JSA
+    // package genuinely carries a design_reference source and a raw_evidence
+    // source, each with evidence items of its own.
+    {
+      const snap = snapshots.find((s) => s.scopeId === "jsa");
+      const pkg = snap?.package as {
+        sources?: { sourceRef: string; role: string | null }[];
+        evidence?: { id: string; sourceRef: string }[];
+      };
+      const otherRoles = (pkg?.sources ?? []).filter((x) => x.role !== REQUIREMENT_SOURCE_ROLE);
+      const otherEvidence = (pkg?.evidence ?? []).filter((e) =>
+        otherRoles.some((r) => r.sourceRef === e.sourceRef)
+      );
+      const leaked = otherEvidence.filter((e) =>
+        jsa?.g.hasNode(nodeId.requirement(snap!.id, e.id))
+      );
+      check(
+        "Q2 evidence from any other source role becomes no Requirement",
+        otherRoles.length > 0 && otherEvidence.length > 0 && leaked.length === 0,
+        `${otherEvidence.length} items across ${otherRoles.length} other roles (${otherRoles.map((r) => r.role).join(", ")}), ${leaked.length} leaked`
+      );
+    }
+
+    // Q3 — the adapter itself, against a synthetic package. Proves the rule
+    // rather than the fixture: same evidence ids, three roles, one of which
+    // is the requirements source.
+    {
+      const pkg = {
+        sources: [
+          { sourceRef: "spec", role: REQUIREMENT_SOURCE_ROLE, status: "active", registrationId: "reg-1", observedAt: "2026-08-01T00:00:00Z", sourceType: "notion" },
+          { sourceRef: "designs", role: "design_reference", status: "active", registrationId: null, observedAt: null, sourceType: "figma" },
+          { sourceRef: "call", role: "raw_evidence", status: "candidate", registrationId: null, observedAt: null, sourceType: "transcript" },
+        ],
+        evidence: [
+          { id: "row-1", sourceRef: "spec", kind: "row", excerpt: "Must support offline capture", data: { status: "Committed", section: "Offline" } },
+          { id: "row-2", sourceRef: "designs", kind: "frame", excerpt: "Must support offline capture" },
+          { id: "row-3", sourceRef: "call", kind: "note", excerpt: "Must support offline capture" },
+        ],
+      };
+      const out = projectRequirements([{ id: "snap-x", scopeId: "sx", package: pkg }]);
+      check(
+        "Q3 identical text under three roles yields exactly one Requirement",
+        out.length === 1 && out[0].evidenceId === "row-1",
+        `${out.length} projected: ${out.map((r) => r.evidenceId).join(", ") || "none"}`
+      );
+      check(
+        "Q3b and it carries its source's role, status and registration",
+        out[0]?.sourceRole === REQUIREMENT_SOURCE_ROLE &&
+          out[0]?.sourceStatus === "active" &&
+          out[0]?.registrationId === "reg-1" &&
+          out[0]?.dataStatus === "Committed" &&
+          out[0]?.section === "Offline",
+        `${out[0]?.sourceStatus} / ${out[0]?.registrationId} / ${out[0]?.dataStatus} / ${out[0]?.section}`
+      );
+      const none = projectRequirements([
+        { id: "snap-y", scopeId: "sy", package: { sources: [{ sourceRef: "designs", role: "design_reference", status: "active" }], evidence: [{ id: "row-1", sourceRef: "designs", kind: "frame", excerpt: "x" }] } },
+      ]);
+      check("Q3c a package with no requirements source yields none", none.length === 0, `${none.length}`);
+      check("Q3d a malformed package yields none rather than throwing", projectRequirements([{ id: "z", scopeId: "z", package: null }]).length === 0);
+    }
+
+    // Q4 — snapshot-scoped identity. Two snapshots carrying the same evidence
+    // id must produce two requirements, not one.
+    {
+      const pkg = (ref: string) => ({
+        sources: [{ sourceRef: ref, role: REQUIREMENT_SOURCE_ROLE, status: "active" }],
+        evidence: [{ id: "row-14", sourceRef: ref, kind: "row", excerpt: "same id, different package" }],
+      });
+      const out = projectRequirements([
+        { id: "snap-a", scopeId: "s", package: pkg("spec-a") },
+        { id: "snap-b", scopeId: "s", package: pkg("spec-b") },
+      ]);
+      const ids = out.map((r) => nodeId.requirement(r.snapshotId, r.evidenceId));
+      check(
+        "Q4 the same evidence id in two snapshots is two Requirements",
+        out.length === 2 && new Set(ids).size === 2,
+        ids.join(" ≠ ")
+      );
+      for (const { name, g } of graphs) {
+        const bad = g.filterNodes((n, a) => a.kind === "requirement" && !n.includes(`:${a.snapshotId}:`));
+        check(`Q4b every Requirement id carries its snapshot (${name})`, bad.length === 0, `${bad.length} unscoped`);
+      }
+    }
+
+    // Q5 — belongs_to points at the Scope the SNAPSHOT was assembled for.
+    {
+      let wrong = 0;
+      let n = 0;
+      for (const { g, id } of graphs) {
+        for (const r of g.filterNodes((_x, a) => a.kind === "requirement")) {
+          const targets = g
+            .outEdges(r)
+            .filter((e) => g.getEdgeAttribute(e, "rel") === "belongs_to");
+          n += targets.length;
+          for (const e of targets) {
+            const snap = snapshots.find((s) => s.id === g.getNodeAttribute(r, "snapshotId"));
+            if (g.target(e) !== nodeId.scope(id) || snap?.scopeId !== id) wrong++;
+            if (g.getEdgeAttribute(e, "basis") !== "attested") wrong++;
+          }
+        }
+      }
+      check("Q5 belongs_to is attested and names the snapshot's own Scope", n > 0 && wrong === 0, `${n} edges, ${wrong} wrong`);
+    }
+
+    // Q6 — evidenced_by reaches the passage projecting THE SAME row.
+    {
+      let wrong = 0;
+      let n = 0;
+      for (const { g } of graphs) {
+        for (const r of g.filterNodes((_x, a) => a.kind === "requirement")) {
+          const a = g.getNodeAttributes(r);
+          const es = g.outEdges(r).filter((e) => g.getEdgeAttribute(e, "rel") === "evidenced_by");
+          n += es.length;
+          if (es.length !== 1) wrong++;
+          for (const e of es) {
+            if (g.target(e) !== nodeId.passage(a.snapshotId as string, a.evidenceId as string)) wrong++;
+            if (g.getEdgeAttribute(e, "basis") !== "attested") wrong++;
+          }
+        }
+      }
+      check("Q6 evidenced_by is attested and reaches the same row's passage", n > 0 && wrong === 0, `${n} edges, ${wrong} wrong`);
+    }
+
+    // Q7 — concerns exists ONLY where the finding cites that evidence id in
+    // that snapshot. Checked in both directions: no drawn edge without a
+    // citation, and no citation without a drawn edge.
+    if (jsa) {
+      const findings = await prisma.finding.findMany({
+        where: { OR: [{ source: { scopeId: "jsa" } }, { contextSnapshot: { scopeId: "jsa" } }] },
+      });
+      const cited = new Set<string>();
+      for (const f of findings) {
+        if (!f.contextSnapshotId) continue;
+        for (const ref of f.evidenceRefs) cited.add(`${f.id}|${nodeId.requirement(f.contextSnapshotId, ref)}`);
+      }
+      const drawn = new Set<string>();
+      jsa.g.forEachEdge((_e, a, src, tgt) => {
+        if (a.rel !== "concerns") return;
+        if (jsa.g.getNodeAttribute(tgt, "kind") !== "requirement") return;
+        drawn.add(`${src.replace("finding:", "")}|${tgt}`);
+        if (a.basis !== "attested") drawn.add("BASIS-WRONG");
+      });
+      const uncited = [...drawn].filter((k) => !cited.has(k));
+      const undrawn = [...cited].filter((k) => jsa.g.hasNode(k.split("|")[1]) && !drawn.has(k));
+      check(
+        "Q7 finding → concerns → requirement exists exactly where it is cited",
+        drawn.size > 0 && uncited.length === 0 && undrawn.length === 0,
+        `${drawn.size} edges, ${uncited.length} uncited, ${undrawn.length} missed`
+      );
+    }
+
+    // Q8 — NO IMPLEMENTATION EDGE, AT ALL. The absence is the product
+    // feature, so it gets the strongest assertion in the block.
+    {
+      let bad = 0;
+      for (const { g } of graphs) {
+        g.forEachEdge((_e, a, src, tgt) => {
+          const sk = g.getNodeAttribute(src, "kind");
+          const tk = g.getNodeAttribute(tgt, "kind");
+          if (sk !== "requirement" && tk !== "requirement") return;
+          // The only relations a requirement may carry.
+          const allowed =
+            (sk === "requirement" && (a.rel === "belongs_to" || a.rel === "evidenced_by")) ||
+            (tk === "requirement" && a.rel === "concerns");
+          if (!allowed) bad++;
+        });
+      }
+      check(
+        "Q8 a Requirement carries no relation beyond belongs_to, evidenced_by and concerns",
+        bad === 0,
+        `${bad} unexpected requirement edges — implemented_by and constrained_by are ungrounded and must not exist`
+      );
+    }
+
+    // Q9 — RESEMBLANCE IS NOT A RELATIONSHIP. The JSA fixture is built to
+    // tempt exactly this: a requirement whose section is "Offline" sits in
+    // the same graph as a Feature called "Offline Capture" and work items
+    // whose titles say "offline". None of that may connect them.
+    if (jsa) {
+      const reqs = jsa.g.filterNodes((_x, a) => a.kind === "requirement");
+      const lures = jsa.g.filterNodes((_x, a) => {
+        if (a.kind !== "feature" && a.kind !== "work") return false;
+        return String(a.label).toLowerCase().includes("offline");
+      });
+      let touching = 0;
+      for (const r of reqs) {
+        for (const l of lures) {
+          if (jsa.g.hasEdge(r, l) || jsa.g.hasEdge(l, r)) touching++;
+        }
+      }
+      const sections = reqs.map((r) => String(jsa.g.getNodeAttribute(r, "section") ?? ""));
+      check(
+        "Q9 a shared word joins nothing",
+        lures.length > 0 && sections.some((x) => x.toLowerCase() === "offline") && touching === 0,
+        `${reqs.length} requirements (sections: ${sections.join(", ")}) vs ${lures.length} "offline" execution nodes — ${touching} edges`
+      );
+    }
+
+    // Q10 — the provenance chain is walkable end to end.
+    if (jsa) {
+      let complete = 0;
+      const reqs = jsa.g.filterNodes((_x, a) => a.kind === "requirement");
+      for (const r of reqs) {
+        const psg = jsa.g
+          .outEdges(r)
+          .filter((e) => jsa.g.getEdgeAttribute(e, "rel") === "evidenced_by")
+          .map((e) => jsa.g.target(e))[0];
+        if (!psg) continue;
+        const src = jsa.g
+          .outEdges(psg)
+          .filter((e) => jsa.g.getEdgeAttribute(e, "rel") === "extracted_from")
+          .map((e) => jsa.g.target(e))[0];
+        if (src && jsa.g.getNodeAttribute(src, "kind") === "source") complete++;
+      }
+      check(
+        "Q10 Requirement → Passage → Source is traversable for every requirement",
+        reqs.length > 0 && complete === reqs.length,
+        `${complete}/${reqs.length} complete chains`
+      );
+    }
+
+    // Q11 — a Scope with no requirements-of-record source gets none. The
+    // honest empty case, and the one an over-eager adapter would break.
+    {
+      const bare = graphs.filter((x) => x.id !== "jsa");
+      const invented = bare.filter((x) => x.g.someNode((_n, a) => a.kind === "requirement"));
+      check(
+        "Q11 Scopes with no requirements source get no Requirements",
+        bare.length > 0 && invented.length === 0,
+        `${bare.length} Scopes without one, ${invented.length} inventing`
+      );
+    }
+
+    // Q12 — a requirement is not seated in a source cluster. The whole
+    // semantic/source split is spatial as well as structural.
+    {
+      let inSector = 0;
+      for (const { g } of graphs) {
+        for (const r of g.filterNodes((_x, a) => a.kind === "requirement")) {
+          if (g.getNodeAttribute(r, "lane") != null) inSector++;
+        }
+      }
+      check(
+        "Q12 no Requirement belongs to a source cluster",
+        inSector === 0,
+        `${inSector} seated in a sector — a requirement comes FROM Notion without belonging TO it`
+      );
+    }
+
+    // Q13 — building requirements still writes nothing.
+    {
+      const before = await prisma.$transaction([
+        prisma.contextSnapshot.count(),
+        prisma.finding.count(),
+        prisma.source.count(),
+        prisma.sourceRegistration.count(),
+      ]);
+      for (const { g } of graphs) void g.order;
+      for (const s of scopes) {
+        const inputs = await loadAuditGraphInputs(s.id);
+        if (inputs) buildAuditGraph(inputs);
+      }
+      const after = await prisma.$transaction([
+        prisma.contextSnapshot.count(),
+        prisma.finding.count(),
+        prisma.source.count(),
+        prisma.sourceRegistration.count(),
+      ]);
+      check(
+        "Q13 projecting requirements writes nothing",
+        before.every((v, i) => v === after[i]),
+        `${before.join("/")} → ${after.join("/")}`
       );
     }
   }

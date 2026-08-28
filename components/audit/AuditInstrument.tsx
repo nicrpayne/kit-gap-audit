@@ -244,7 +244,23 @@ export default function AuditInstrument({ initialScopeId }: { initialScopeId?: s
     if (!q || !graph) return null;
     const out = new Set<string>();
     graph.forEachNode((n, a) => {
-      const hay = `${a.label} ${a.ref} ${a.identifier ?? ""} ${a.kind}`.toLowerCase();
+      // Grounded fields only. A requirement's LABEL is its statement trimmed
+      // to fit, so the full statement is searched separately — otherwise
+      // typing a phrase from the back half of a long requirement would find
+      // nothing, which reads as the search being broken rather than as the
+      // label being short.
+      const hay = [
+        a.label,
+        a.ref,
+        a.identifier ?? "",
+        a.kind,
+        a.statement ?? "",
+        a.section ?? "",
+        a.sourceRef ?? "",
+        a.dataStatus ?? "",
+      ]
+        .join(" ")
+        .toLowerCase();
       if (hay.includes(q)) out.add(n);
     });
     return out;

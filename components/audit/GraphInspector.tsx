@@ -72,6 +72,16 @@ export default function GraphInspector({
   const attrs = graph.getNodeAttributes(nodeId) as AuditNodeAttributes;
   const color = nodeColor(attrs);
   const connections = connectionsOf(graph, nodeId);
+  const isRequirement = attrs.kind === "requirement";
+  // Findings that explicitly cite this requirement's own evidence id. Read
+  // off the graph rather than recomputed, so the panel and the field agree.
+  const concerningFindings = isRequirement
+    ? graph
+        .inEdges(nodeId)
+        .filter((e) => graph.getEdgeAttribute(e, "rel") === "concerns")
+        .map((e) => graph.source(e))
+        .filter((n) => graph.getNodeAttribute(n, "kind") === "finding")
+    : [];
 
   return (
     <div className="flex h-full flex-col overflow-y-auto i-noscrollbar" data-shoot="graph-inspector">
@@ -79,9 +89,20 @@ export default function GraphInspector({
         <div className="i-label" style={{ color: "var(--i-text-faint)" }}>
           {KIND_LABEL[attrs.kind] ?? attrs.kind}
         </div>
-        <h2 className="mt-2 text-[15px] font-medium leading-snug text-[var(--i-text)]">{String(attrs.label)}</h2>
+        <h2 className="mt-2 text-[15px] font-medium leading-snug text-[var(--i-text)]">
+          {isRequirement ? String(attrs.statement ?? attrs.label) : String(attrs.label)}
+        </h2>
 
         <div className="mt-2 flex flex-wrap items-center gap-1.5">
+          {/* THE PRODUCER'S OWN WORD, MARKED AS THEIRS. "Committed" is
+              Notion's vocabulary read out of the generic `data` escape hatch;
+              it is not a Signal state and is never mapped onto one. */}
+          {isRequirement && attrs.dataStatus != null && (
+            <Chip color="var(--i-mint)">{String(attrs.dataStatus)}</Chip>
+          )}
+          {isRequirement && attrs.section != null && (
+            <Chip color="var(--i-text-soft)">{String(attrs.section)}</Chip>
+          )}
           {attrs.state != null && <Chip color={color}>{String(attrs.state)}</Chip>}
           {attrs.status != null && <Chip color="var(--i-text-soft)">{String(attrs.status)}</Chip>}
           {attrs.stateType != null && <Chip color="var(--i-text-soft)">{String(attrs.state ?? attrs.stateType)}</Chip>}
@@ -115,9 +136,100 @@ export default function GraphInspector({
         {attrs.detail != null && <Row label="Measured" value={String(attrs.detail)} />}
       </div>
 
+      {/* ── REQUIREMENT: ITS GROUNDING, AND ITS LIMITS ─────────────────
+          The role says where requirements are RECORDED. It does not say the
+          source is approved policy — and on the current JSA package it is a
+          `candidate` source with no registration behind it. Printing the
+          status beside the role is what stops "requirement of record" being
+          read as "company-approved". */}
+      {isRequirement && (
+        <div className="mt-4 px-4">
+          <div className="i-label mb-2" style={{ color: "var(--i-text-faint)" }}>
+            Where this comes from
+          </div>
+          <Row label="Source" value={String(attrs.sourceRef ?? "—")} />
+          <Row label="Source role" value={String(attrs.sourceRole ?? "—")} mono />
+          <Row
+            label="Source status"
+            value={String(attrs.sourceStatus ?? "—")}
+            tone={attrs.sourceStatus === "active" ? undefined : "var(--i-amber)"}
+          />
+          <Row
+            label="Registered"
+            value={attrs.registrationId != null ? String(attrs.registrationId) : "Not registered"}
+            tone={attrs.registrationId != null ? undefined : "var(--i-amber)"}
+          />
+          <p className="mt-2 text-[10.5px] leading-[1.55]" style={{ color: "var(--i-text-faint)" }}>
+            {attrs.sourceStatus === "active"
+              ? "This source is an active requirements-of-record source for the project."
+              : "This source records requirements but is not yet an accepted, registered source. Treat it as what the project says, not as approved policy."}
+          </p>
+        </div>
+      )}
+
+      {/* ── IMPLEMENTATION COVERAGE, STATED EXACTLY ────────────────────
+          The distinction this panel exists to hold: Signal knows what it has
+          been told, and being told nothing is not the same as nothing being
+          true. Nothing in the current model links a requirement to work, so
+          the honest sentence is about SIGNAL'S KNOWLEDGE, not about the
+          project. Saying "not implemented" here would be inventing an
+          observation out of an absence. */}
+      {isRequirement && (
+        <div className="mt-4 px-4">
+          <div className="i-label mb-2" style={{ color: "var(--i-text-faint)" }}>
+            Implementation
+          </div>
+          <div
+            className="rounded-md border px-3 py-2.5"
+            style={{ borderColor: "var(--i-border-strong)", background: "var(--i-panel)" }}
+          >
+            <div className="text-[11.5px] text-[var(--i-text)]">No grounded implementation link</div>
+            <p className="mt-1 text-[10.5px] leading-[1.55]" style={{ color: "var(--i-text-faint)" }}>
+              Signal has no stored field connecting this requirement to a Feature or a
+              Linear issue, so it cannot say which work delivers it.{" "}
+              <span style={{ color: "var(--i-text-soft)" }}>
+                That is a gap in what Signal has been told — not evidence that nobody
+                built it.
+              </span>
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* Findings that name this requirement's own evidence id. */}
+      {isRequirement && concerningFindings.length > 0 && (
+        <div className="mt-4 px-4">
+          <div className="i-label mb-2" style={{ color: "var(--i-text-faint)" }}>
+            Findings concerning this
+          </div>
+          <div className="space-y-1.5">
+            {concerningFindings.map((f) => {
+              const fa = graph.getNodeAttributes(f);
+              return (
+                <button
+                  key={f}
+                  type="button"
+                  onClick={() => onSelect(f)}
+                  data-shoot="requirement-finding"
+                  className="w-full rounded-md border px-2.5 py-2 text-left transition-colors hover:bg-white/[0.03]"
+                  style={{ borderColor: "var(--i-border)" }}
+                >
+                  <span className="block text-[9px] uppercase tracking-[0.14em]" style={{ color: nodeColor(fa) }}>
+                    {String(fa.kindLabel ?? "Finding")} · {String(fa.tier)}
+                  </span>
+                  <span className="mt-0.5 block text-[11px] leading-[1.45] text-[var(--i-text)]">
+                    {String(fa.label)}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       {/* CONTENT — enough of a source or passage to understand it without
           leaving Audit, which is the whole point of a graph you explore. */}
-      {attrs.excerpt != null && (
+      {attrs.excerpt != null && !isRequirement && (
         <div className="mt-4 px-4">
           <div className="i-label mb-1.5" style={{ color: "var(--i-text-faint)" }}>
             Passage
