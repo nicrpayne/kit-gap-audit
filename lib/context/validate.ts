@@ -25,6 +25,10 @@ import {
   type PackageCompleteness,
   type JsonValue,
   type SourceManifestStatus,
+  type IntelligenceObjectItem,
+  type IntelligenceRelationItem,
+  type IntelligenceMeta,
+  EXTERNAL_INTELLIGENCE_TRUST,
 } from "./package";
 
 const VALID_PRODUCERS = new Set<PackageProducer>(["hermes", "manual", "gap_app"]);
@@ -45,6 +49,11 @@ const MAX_SOURCES = 50;
 const MAX_EVIDENCE_ITEMS = 500;
 const MAX_DERIVED_CLAIMS = 200;
 const MAX_WARNINGS = 50;
+// The real JSA payload is 161 objects / 87 relations. Room to grow several
+// times over without letting a runaway producer post an unbounded blob.
+const MAX_INTELLIGENCE_OBJECTS = 2000;
+const MAX_INTELLIGENCE_RELATIONS = 4000;
+const MAX_INTELLIGENCE_EVIDENCE_REFS = 200;
 const MAX_EXCERPT_CHARS = 4000;
 const MAX_DATA_JSON_CHARS = 8000;
 const MAX_WARNING_CHARS = 500;
@@ -176,6 +185,164 @@ function normalizeDerivedClaim(raw: unknown, index: number): DerivedClaim {
   return { id, kind, statement, evidenceRefs };
 }
 
+// ── EXTERNAL INTELLIGENCE ─────────────────────────────────────────────
+//
+// PRESERVATION-FIRST, and that is the whole point of this block.
+//
+// The defect being fixed here is that `validateProjectContextPackage`
+// rebuilds the accepted package from named fields, so anything it does not
+// recognise is silently dropped — `intelligenceObjects` included. Guarding
+// only the top level and then whitelisting the INSIDE of an intelligence
+// object would reintroduce exactly that bug against a contract Signal does
+// not own: the producer adds a field, the field vanishes, and nothing
+// fails.
+//
+// So each helper below checks the fields Signal genuinely depends on and
+// carries everything else through on `extra`. Structural problems still
+// reject the whole package — a dangling evidence ref is not a field Signal
+// can shrug at — but an unfamiliar field is data, not an error.
+
+/** Split a raw object into the keys we model and the ones we do not,
+    keeping the remainder rather than discarding it. */
+function partitionKnown(
+  raw: Record<string, unknown>,
+  known: string[],
+  path: string
+): Record<string, JsonValue> | undefined {
+  const rest: Record<string, JsonValue> = {};
+  let any = false;
+  for (const key of Object.keys(raw)) {
+    if (known.includes(key)) continue;
+    rest[key] = raw[key] as JsonValue;
+    any = true;
+  }
+  if (!any) return undefined;
+  checkJsonBound(rest, `${path} (unmodelled fields)`, MAX_DATA_JSON_CHARS);
+  return rest;
+}
+
+function optionalRecord(raw: unknown, path: string): Record<string, JsonValue> | undefined {
+  if (raw === undefined || raw === null) return undefined;
+  if (!isPlainObject(raw)) fail(`${path} must be an object when present`);
+  checkJsonBound(raw, path, MAX_DATA_JSON_CHARS);
+  return raw as Record<string, JsonValue>;
+}
+
+function optionalStringArray(raw: unknown, path: string, max: number): string[] | undefined {
+  if (raw === undefined) return undefined;
+  const arr = requireArray(raw, path, max);
+  return arr.map((v, i) => requireString(v, `${path}[${i}]`));
+}
+
+const INTEL_OBJECT_KEYS = [
+  "id", "intelligenceType", "trust", "statement", "statementBasis", "status",
+  "isCurrent", "observedDate", "dates", "scope", "evidenceRefs", "fields",
+  "provenance", "extra",
+];
+
+function normalizeIntelligenceObject(raw: unknown, index: number): IntelligenceObjectItem {
+  const path = `intelligenceObjects[${index}]`;
+  if (!isPlainObject(raw)) fail(`${path} must be an object`);
+
+  const id = requireString(raw.id, `${path}.id`);
+  const intelligenceType = requireString(raw.intelligenceType, `${path}.intelligenceType`);
+  const trust = requireString(raw.trust, `${path}.trust`);
+  // THE BOUNDARY, CHECKED AT THE BOUNDARY. Anything arriving through this
+  // field is external intelligence by definition; a payload claiming some
+  // other trust level is a contract error, not something to interpret.
+  if (trust !== EXTERNAL_INTELLIGENCE_TRUST) {
+    fail(
+      `${path}.trust must be "${EXTERNAL_INTELLIGENCE_TRUST}" -- got "${trust}". ` +
+        `Structured intelligence is external by construction and never arrives as accepted Reality.`
+    );
+  }
+  const statement = requireString(raw.statement, `${path}.statement`, MAX_EXCERPT_CHARS);
+  if (typeof raw.isCurrent !== "boolean") {
+    fail(
+      `${path}.isCurrent must be a boolean -- head state comes from the producer's own current-state ` +
+        `determination, never inferred from status`
+    );
+  }
+
+  const item: IntelligenceObjectItem = {
+    id,
+    intelligenceType,
+    trust,
+    statement,
+    isCurrent: raw.isCurrent,
+  };
+  const basis = optionalString(raw.statementBasis, `${path}.statementBasis`, MAX_EXCERPT_CHARS);
+  if (basis !== null) item.statementBasis = basis;
+  const status = optionalString(raw.status, `${path}.status`);
+  if (status !== null) item.status = status;
+  const observedDate = optionalString(raw.observedDate, `${path}.observedDate`);
+  if (observedDate !== null) item.observedDate = observedDate;
+  const dates = optionalRecord(raw.dates, `${path}.dates`);
+  if (dates) item.dates = dates;
+  const scope = optionalStringArray(raw.scope, `${path}.scope`, 50);
+  if (scope) item.scope = scope;
+  const refs = optionalStringArray(raw.evidenceRefs, `${path}.evidenceRefs`, MAX_INTELLIGENCE_EVIDENCE_REFS);
+  if (refs) item.evidenceRefs = refs;
+  const fields = optionalRecord(raw.fields, `${path}.fields`);
+  if (fields) item.fields = fields;
+  const provenance = optionalRecord(raw.provenance, `${path}.provenance`);
+  if (provenance) item.provenance = provenance;
+  const unmodelled = partitionKnown(raw, INTEL_OBJECT_KEYS, path);
+  const declaredExtra = optionalRecord(raw.extra, `${path}.extra`);
+  const merged = { ...(declaredExtra ?? {}), ...(unmodelled ?? {}) };
+  if (Object.keys(merged).length > 0) item.extra = merged;
+
+  return item;
+}
+
+const INTEL_RELATION_KEYS = ["from", "rel", "to", "relClass", "fromInPackage", "toInPackage", "declared", "extra"];
+
+function normalizeIntelligenceRelation(raw: unknown, index: number): IntelligenceRelationItem {
+  const path = `intelligenceRelations[${index}]`;
+  if (!isPlainObject(raw)) fail(`${path} must be an object`);
+
+  const item: IntelligenceRelationItem = {
+    from: requireString(raw.from, `${path}.from`),
+    rel: requireString(raw.rel, `${path}.rel`),
+    to: requireString(raw.to, `${path}.to`),
+    relClass: requireString(raw.relClass, `${path}.relClass`),
+  };
+  if (typeof raw.fromInPackage === "boolean") item.fromInPackage = raw.fromInPackage;
+  if (typeof raw.toInPackage === "boolean") item.toInPackage = raw.toInPackage;
+  const declared = optionalRecord(raw.declared, `${path}.declared`);
+  if (declared) item.declared = declared;
+  const unmodelled = partitionKnown(raw, INTEL_RELATION_KEYS, path);
+  const declaredExtra = optionalRecord(raw.extra, `${path}.extra`);
+  const merged = { ...(declaredExtra ?? {}), ...(unmodelled ?? {}) };
+  if (Object.keys(merged).length > 0) item.extra = merged;
+
+  return item;
+}
+
+const INTEL_META_KEYS = ["batchId", "generatedAt", "objectCount", "currentCount", "relationCount", "extra"];
+
+function normalizeIntelligenceMeta(raw: unknown): IntelligenceMeta {
+  if (!isPlainObject(raw)) fail("intelligenceMeta must be an object when present");
+
+  const meta: IntelligenceMeta = {};
+  const batchId = optionalString(raw.batchId, "intelligenceMeta.batchId");
+  if (batchId !== null) meta.batchId = batchId;
+  const generatedAt = optionalString(raw.generatedAt, "intelligenceMeta.generatedAt");
+  if (generatedAt !== null) meta.generatedAt = generatedAt;
+  for (const k of ["objectCount", "currentCount", "relationCount"] as const) {
+    const v = raw[k];
+    if (v === undefined || v === null) continue;
+    if (typeof v !== "number" || !Number.isFinite(v)) fail(`intelligenceMeta.${k} must be a number when present`);
+    meta[k] = v;
+  }
+  const unmodelled = partitionKnown(raw, INTEL_META_KEYS, "intelligenceMeta");
+  const declaredExtra = optionalRecord(raw.extra, "intelligenceMeta.extra");
+  const merged = { ...(declaredExtra ?? {}), ...(unmodelled ?? {}) };
+  if (Object.keys(merged).length > 0) meta.extra = merged;
+
+  return meta;
+}
+
 function normalizeCompleteness(raw: unknown): PackageCompleteness {
   if (raw === undefined) {
     fail("completeness is required");
@@ -234,6 +401,24 @@ export function validateProjectContextPackage(raw: unknown): ProjectContextPacka
 
   const completeness = normalizeCompleteness(raw.completeness);
 
+  // ADDITIVE AND OPTIONAL. A package that carries none of these is
+  // validated, hashed and persisted exactly as it was before they existed —
+  // a regression proof asserts that.
+  const intelligenceObjects =
+    raw.intelligenceObjects === undefined
+      ? undefined
+      : requireArray(raw.intelligenceObjects, "intelligenceObjects", MAX_INTELLIGENCE_OBJECTS).map((o, i) =>
+          normalizeIntelligenceObject(o, i)
+        );
+  const intelligenceRelations =
+    raw.intelligenceRelations === undefined
+      ? undefined
+      : requireArray(raw.intelligenceRelations, "intelligenceRelations", MAX_INTELLIGENCE_RELATIONS).map((r, i) =>
+          normalizeIntelligenceRelation(r, i)
+        );
+  const intelligenceMeta =
+    raw.intelligenceMeta === undefined ? undefined : normalizeIntelligenceMeta(raw.intelligenceMeta);
+
   // -- Referential integrity: no dangling pointers survive into an
   // immutable snapshot. --
 
@@ -268,6 +453,42 @@ export function validateProjectContextPackage(raw: unknown): ProjectContextPacka
     });
   });
 
+  if (intelligenceObjects) {
+    const objectIds = new Set<string>();
+    intelligenceObjects.forEach((o, i) => {
+      if (objectIds.has(o.id)) {
+        fail(`intelligenceObjects[${i}].id "${o.id}" is a duplicate -- object ids must be unique within a package`);
+      }
+      objectIds.add(o.id);
+      // Same law the derived claims already hold to: no dangling pointer
+      // survives into an immutable snapshot.
+      (o.evidenceRefs ?? []).forEach((ref, j) => {
+        if (!evidenceIds.has(ref)) {
+          fail(
+            `intelligenceObjects[${i}].evidenceRefs[${j}] "${ref}" does not match any evidence[].id in this ` +
+              `package -- an intelligence object must cite evidence that actually arrived with it`
+          );
+        }
+      });
+    });
+
+    // A RELATION MAY REACH OUTSIDE THE PACKAGE, and that is not an error:
+    // objects are transported purely to hold the far end of a longitudinal
+    // chain, and a chain whose other end was not sent is still a true chain.
+    // What is NOT allowed is an endpoint that CLAIMS to be in the package
+    // and is not -- that is a producer bug worth failing on.
+    (intelligenceRelations ?? []).forEach((r, i) => {
+      if (r.fromInPackage === true && !objectIds.has(r.from)) {
+        fail(`intelligenceRelations[${i}].from "${r.from}" claims fromInPackage but no such object was sent`);
+      }
+      if (r.toInPackage === true && !objectIds.has(r.to)) {
+        fail(`intelligenceRelations[${i}].to "${r.to}" claims toInPackage but no such object was sent`);
+      }
+    });
+  } else if (intelligenceRelations && intelligenceRelations.length > 0) {
+    fail("intelligenceRelations were sent without intelligenceObjects -- relations with no objects describe nothing");
+  }
+
   const pkg: ProjectContextPackage = {
     version: PROJECT_CONTEXT_PACKAGE_VERSION,
     packageId,
@@ -280,6 +501,11 @@ export function validateProjectContextPackage(raw: unknown): ProjectContextPacka
     warnings,
   };
   if (derivedClaimsRaw.length > 0) pkg.derivedClaims = derivedClaimsRaw;
+  // Assigned only when the producer sent them, so a legacy package hashes
+  // identically to the way it always did.
+  if (intelligenceObjects) pkg.intelligenceObjects = intelligenceObjects;
+  if (intelligenceRelations) pkg.intelligenceRelations = intelligenceRelations;
+  if (intelligenceMeta) pkg.intelligenceMeta = intelligenceMeta;
 
   return pkg;
 }

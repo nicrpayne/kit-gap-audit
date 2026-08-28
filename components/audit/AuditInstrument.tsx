@@ -30,9 +30,9 @@ import {
   type AuditNodeAttributes,
   type AuditEdgeAttributes,
 } from "@/lib/audit/graph";
-import { layoutGraph, CLUSTER_ORDER, FIELD } from "@/lib/audit/graphLayout";
+import { layoutGraph, layoutExtent, CLUSTER_ORDER, FIELD } from "@/lib/audit/graphLayout";
 import { mutateReality } from "@/lib/instrument/reality";
-import SignalGraph, { focusCamera } from "./SignalGraph";
+import SignalGraph, { focusCamera, fitCamera } from "./SignalGraph";
 import {
   DEFAULT_CAMERA,
   MAX_ZOOM,
@@ -216,6 +216,19 @@ export default function AuditInstrument({ initialScopeId }: { initialScopeId?: s
 
   const layout = useMemo(() => (graph ? layoutGraph(graph) : null), [graph]);
 
+  // WHERE "FIT" GOES, DERIVED FROM WHAT IS ACTUALLY SEATED.
+  //
+  // The home camera used to be a constant, which was right only while the
+  // field's extent was one. External intelligence seats outside the record's
+  // edge, so a fixed zoom would leave the outermost band off screen at the
+  // one moment the user asked to see everything. `layoutExtent` floors at
+  // `edgeR`, so a Scope with no external intelligence still fits at exactly
+  // the zoom it always has.
+  const homeCamera = useMemo(
+    () => (layout ? fitCamera(layoutExtent(layout)) : DEFAULT_CAMERA),
+    [layout]
+  );
+
   // ── WHAT IS OPEN, NOT WHAT EXISTS ────────────────────────────────────
   //
   // This set used to be called `visible`, and that name was the bug: a node
@@ -282,6 +295,11 @@ export default function AuditInstrument({ initialScopeId }: { initialScopeId?: s
         // them — but the cluster makes "who is on capacity" answerable by
         // typing the sector's own name.
         a.kind === "person" ? "capacity" : "",
+        // An external object is found by what it CLAIMS (already covered by
+        // `statement`), by its producer type, and by the producer's own id —
+        // which is what a Hermes operator will paste in.
+        a.intelligenceType ?? "",
+        a.externalId ?? "",
       ]
         .join(" ")
         .toLowerCase();
@@ -353,13 +371,18 @@ export default function AuditInstrument({ initialScopeId }: { initialScopeId?: s
     if (needed.size > 0) setExpanded((prev) => new Set([...prev, ...needed]));
   }, [soloNodes, graph]);
 
-  // Leaving a finding must drop the hypothetical with it.
+  // WHICH NODES CAN BE TRACED. A finding — "why does Signal believe this" —
+  // and an external object — "why does the producer say this". Both questions
+  // are answered by the same guarded traversal over the same allowlist; only
+  // the starting node differs.
+  const soloable = selectedAttrs?.kind === "finding" || selectedAttrs?.kind === "intel";
+
+  // Leaving a traceable node must drop the trace with it, and the hypothetical
+  // mode with it — that one belongs to findings alone.
   useEffect(() => {
-    if (!selectedFinding) {
-      setSolo(false);
-      setMode("A");
-    }
-  }, [selectedFinding]);
+    if (!soloable) setSolo(false);
+    if (!selectedFinding) setMode("A");
+  }, [soloable, selectedFinding]);
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
@@ -558,7 +581,7 @@ export default function AuditInstrument({ initialScopeId }: { initialScopeId?: s
             setScopeId(e.target.value);
             select(null);
             setExpanded(new Set());
-            setCamera(DEFAULT_CAMERA);
+            setCamera(homeCamera);
           }}
           aria-label="Project"
           data-shoot="audit-scope"
@@ -697,7 +720,7 @@ export default function AuditInstrument({ initialScopeId }: { initialScopeId?: s
                       moves like every other going-somewhere. */}
                   <MiniButton onClick={() => setCamera((c) => ({ ...c, k: Math.max(MIN_ZOOM, c.k / 1.35) }))} label="−" title="Zoom out" />
                   <MiniButton onClick={() => setCamera((c) => ({ ...c, k: Math.min(MAX_ZOOM, c.k * 1.35) }))} label="+" title="Zoom in" />
-                  <MiniButton onClick={() => flyCamera(DEFAULT_CAMERA)} label="Fit" title="Fit the whole project" shoot="camera-fit" />
+                  <MiniButton onClick={() => flyCamera(homeCamera)} label="Fit" title="Fit the whole project" shoot="camera-fit" />
                 </div>
               </div>
 
@@ -769,6 +792,8 @@ export default function AuditInstrument({ initialScopeId }: { initialScopeId?: s
               onFocusNode={flyTo}
               expandedNodes={expanded}
               onToggleNode={toggleNode}
+              evidenceSolo={solo}
+              onEvidenceSolo={soloable ? setSolo : null}
             />
           ) : (
             <GraphOverview

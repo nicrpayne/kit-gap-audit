@@ -17,7 +17,7 @@
 
 import type { NodeKind } from "@/lib/audit/graph";
 
-export type NodeShape = "core" | "disc" | "diamond" | "hex" | "chip" | "pin" | "dot" | "doc" | "tablet" | "figure" | "speech" | "page" | "frame";
+export type NodeShape = "core" | "disc" | "diamond" | "hex" | "chip" | "pin" | "dot" | "doc" | "tablet" | "figure" | "speech" | "page" | "frame" | "shard";
 
 /** Shape per kind. Never varies with state. */
 export const NODE_SHAPE: Record<NodeKind, NodeShape> = {
@@ -58,6 +58,21 @@ export const NODE_SHAPE: Record<NodeKind, NodeShape> = {
   notion_page: "page",
   /** A frame with a corner handle: something drawn. */
   figma_artifact: "frame",
+  // A SHARD: an upward triangle drawn with a BROKEN stroke.
+  //
+  // The broken stroke is the point, and it is the same grammar the external
+  // edges use — everything on this field that Signal has not corroborated is
+  // drawn with a stroke that does not close. Learn it once on an edge and it
+  // reads on a node. Solid means Signal holds this; broken means somebody
+  // else says so.
+  //
+  // ONE SHAPE FOR ALL NINE INTELLIGENCE TYPES, deliberately. Nine glyphs on a
+  // field that already carries thirteen would exhaust the shape channel to
+  // encode a producer's taxonomy — and the type is already legible from the
+  // SECTOR the object sits in, from its label, and from the inspector. Shape
+  // says what kind of thing this is on Signal's field, and every one of them
+  // is the same kind of thing: an external claim.
+  intel: "shard",
   checkpoint: "dot",
 };
 
@@ -98,6 +113,13 @@ export const KIND_COLOR: Record<NodeKind, string> = {
   transcript: "var(--i-text-faint)",
   notion_page: "var(--i-text-faint)",
   figma_artifact: "var(--i-text-faint)",
+  // EXTERNAL INTELLIGENCE IS QUIET, AND THAT IS THE POINT. It gets no hue of
+  // its own: a hundred coloured marks in the outer band would out-shout the
+  // findings, and the field's first rule is that the eye finds a critical
+  // finding before it finds anything else. Externality is carried by shape,
+  // by the broken stroke, and by sitting outside the record's edge — three
+  // channels, none of them colour, because colour here means STATE.
+  intel: "var(--i-text-soft)",
   checkpoint: "var(--i-text-faint)",
 };
 
@@ -138,6 +160,14 @@ export function nodeColor(attrs: Record<string, unknown>): string {
   if (kind === "person") {
     return attrs.synthetic ? "var(--i-reality)" : "var(--i-violet)";
   }
+  // THE ONE STATE AN EXTERNAL OBJECT HAS IS WHETHER IT IS STILL THE HEAD.
+  //
+  // Read from the producer's own `isCurrent` and NEVER derived from `status`
+  // — the corpus contains objects that are `open` and superseded, and a
+  // renderer inferring currentness from status would draw those as live.
+  if (kind === "intel") {
+    return attrs.isCurrent === false ? "var(--i-text-faint)" : "var(--i-text-soft)";
+  }
   if (kind === "work") {
     // Completed work recedes: it is no longer part of what remains.
     return attrs.stateType === "completed" || attrs.stateType === "canceled"
@@ -162,6 +192,14 @@ export const TIER = {
   inferredRest: 0.26,
   /** Attested edges at rest. */
   attestedRest: 0.42,
+  /**
+   * External edges at rest — quieter than inferred, and deliberately so.
+   *
+   * `inferred` is Signal's own reading of Signal's own data; `external` is a
+   * third party's claim that Signal has not checked. The weaker of the two is
+   * the one Signal did not make.
+   */
+  externalRest: 0.2,
   /** Selected node, its neighbourhood, its edges. */
   focus: 1,
   /** Everything unrelated once something is selected. */
@@ -315,6 +353,16 @@ const LABELLED_AT: Record<ZoomLevel, NodeKind[]> = {
     "transcript",
     "notion_page",
     "figma_artifact",
+    // CLOSE ONLY, and this one is a density decision rather than an
+    // importance one. Work and passages join at MEDIUM because expanding
+    // their cluster flies the camera to exactly that zoom and fourteen
+    // unlabelled dots is a reveal that failed. External intelligence is an
+    // order of magnitude denser — the real JSA corpus puts around a hundred
+    // objects in one sector — and a hundred labels at medium is not a reveal,
+    // it is a wall of text over the band it is trying to describe. At medium
+    // the band forms and you can see its shape and its size; at close you
+    // read it; and search reaches any single object at any zoom.
+    "intel",
   ],
 };
 
@@ -409,6 +457,11 @@ export const REL_LABEL: Record<string, string> = {
   supersedes: "supersedes",
   attests: "belongs to",
   allocated_to: "allocated to",
+  // The producer's OWN relation name is printed where there is one — this is
+  // the fallback for an edge that somehow lost it, and it is deliberately
+  // vague rather than guessing.
+  intel_relation: "external relation",
+  cites: "cites",
 };
 
 export const KIND_LABEL: Record<NodeKind, string> = {
@@ -430,4 +483,5 @@ export const KIND_LABEL: Record<NodeKind, string> = {
   transcript: "Transcript",
   notion_page: "Notion page",
   figma_artifact: "Figma artifact",
+  intel: "External intelligence",
 };

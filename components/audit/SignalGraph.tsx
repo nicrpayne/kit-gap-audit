@@ -37,6 +37,7 @@ import {
   edgePath,
   clusterLabelPoint,
   CLUSTER_ORDER,
+  RECORD_EXTENT,
   type GraphLayout,
 } from "@/lib/audit/graphLayout";
 import {
@@ -82,6 +83,9 @@ const KIND_ORDER: NodeKind[] = [
   "figma_artifact",
   "source",
   "checkpoint",
+  // LAST IN THE TAB ORDER, on purpose. Tabbing should walk Signal's own
+  // record before it walks anybody else's claims about it.
+  "intel",
 ];
 
 // Camera shape, limits and motion live in ./cameraMotion — pure, so the
@@ -293,7 +297,8 @@ export default function SignalGraph({
     }
     if (focus) return focus.edges.has(edge) ? 0.95 : TIER.dimmed * 0.5;
     if (matches) return TIER.dimmed * 0.6;
-    return basis === "attested" ? TIER.attestedRest : TIER.inferredRest;
+    if (basis === "attested") return TIER.attestedRest;
+    return basis === "external" ? TIER.externalRest : TIER.inferredRest;
   };
 
   // ── WHAT IS DRAWN ────────────────────────────────────────────────────
@@ -304,12 +309,42 @@ export default function SignalGraph({
   // exist.
   const drawnNodes = useMemo(() => graph.nodes().filter((n) => layout.has(n)), [graph, layout]);
 
+  /** Whether this Scope has any external intelligence at all. Governs the
+      outer boundary ring, and nothing else — an absent band draws no ring
+      rather than an empty one. */
+  const hasIntel = useMemo(() => graph.someNode((_n, a) => a.kind === "intel"), [graph]);
+
   // DENSE NODES DO NOT REQUIRE DENSE EDGES.
   //
   // Latent marks carry no lines. Drawing every relationship the moment every
   // node is on screen is precisely the hairball this layout was built to
   // avoid, and an edge to something with no name on it explains nothing
   // anyway. An edge appears when BOTH its endpoints have been opened.
+  //
+  // AND EXTERNAL INTELLIGENCE IS DRAWN BY CLASS, NOT ALL AT ONCE.
+  //
+  // The real corpus is overwhelmingly contextual: of 87 object-to-object
+  // relations in the JSA payload, 6 are temporal and 9 are semantic — the
+  // remaining 72 are `related_to`. Drawing those at rest would put 72
+  // meaningless strokes across the outer band and bury the 15 that carry a
+  // chain, which is the exact failure mode this whole layout exists to
+  // prevent. So:
+  //
+  //   TEMPORAL    supersedes / refines / resolves / reopens — the chain
+  //   SEMANTIC    depends_on / caused_by / contradicts / supports / …
+  //               Both drawn at rest, once both endpoints are open.
+  //
+  //   CONTEXTUAL  related_to and anything unrecognised. Present in the
+  //               graph, reachable, listed in the inspector — drawn only
+  //               when one of its endpoints is the thing being explained.
+  //   CITES       object → passage provenance. Same rule: hundreds of
+  //               citation strokes are the answer to "why does it say
+  //               this", which is a question about ONE object.
+  //
+  // Nothing is dropped and nothing is hidden from the reader — the edges
+  // exist, the inspector lists them, and selecting either end draws them.
+  // This is a rule about REST, not about existence.
+  const anchorId = selectedId ?? hoveredId;
   const drawnEdges = useMemo(() => {
     const out: { id: string; from: string; to: string; rel: string; basis: string }[] = [];
     graph.forEachEdge((e, a, s, t) => {
@@ -317,10 +352,16 @@ export default function SignalGraph({
       if (MEMBERSHIP_RELS.has(a.rel)) return;
       if (!opened.has(s) || !opened.has(t)) return;
       if (!layout.has(s) || !layout.has(t)) return;
+      if (a.basis === "external" && (a.rel === "cites" || a.relClass === "contextual")) {
+        const reached =
+          (soloNodes ? soloNodes.has(s) || soloNodes.has(t) : false) ||
+          (anchorId != null && (s === anchorId || t === anchorId));
+        if (!reached) return;
+      }
       out.push({ id: e, from: s, to: t, rel: a.rel, basis: a.basis });
     });
     return out;
-  }, [graph, opened, layout]);
+  }, [graph, opened, layout, anchorId, soloNodes]);
 
   /** Latent nodes per cluster — what "+N" is actually counting. */
   const latentByCluster = useMemo(() => {
@@ -424,6 +465,24 @@ export default function SignalGraph({
           strokeWidth={1 / camera.k}
           opacity={0.6}
         />
+        {/* WHEN EXTERNAL INTELLIGENCE IS PRESENT, the ring above stops being
+            the edge of the map and becomes the EDGE OF SIGNAL'S OWN RECORD,
+            with somebody else's material outside it. This closes the wider
+            field, drawn with the same broken stroke the external nodes and
+            edges use so the boundary reads as belonging to that material
+            rather than to Signal's. */}
+        {hasIntel && (
+          <circle
+            cx={FIELD.cx}
+            cy={FIELD.cy}
+            r={FIELD.outerR}
+            fill="none"
+            stroke="var(--i-text-soft)"
+            strokeWidth={1 / camera.k}
+            strokeDasharray={`${2.2 / camera.k} ${2.6 / camera.k}`}
+            opacity={0.5}
+          />
+        )}
         {CLUSTER_ORDER.map((c, i) => {
           const a = (-90 + (i + 0.5) * (360 / CLUSTER_ORDER.length)) * (Math.PI / 180);
           return (
@@ -527,7 +586,17 @@ export default function SignalGraph({
               fill="none"
               stroke={lit ? "var(--i-signal)" : "var(--i-text-soft)"}
               strokeWidth={(lit ? 1.8 : 1) / camera.k}
-              strokeDasharray={e.basis === "inferred" ? `${4 / camera.k} ${4 / camera.k}` : undefined}
+              // THREE BASES, THREE STROKES. Solid is Signal's own attested
+              // record; a wide dash is Signal's own inference; a fine broken
+              // stitch is somebody else's claim. The fine stitch matches the
+              // shard glyph, so the external world reads as one material.
+              strokeDasharray={
+                e.basis === "external"
+                  ? `${2.2 / camera.k} ${2.6 / camera.k}`
+                  : e.basis === "inferred"
+                    ? `${4 / camera.k} ${4 / camera.k}`
+                    : undefined
+              }
               opacity={op}
               data-rel={e.rel}
               data-basis={e.basis}
@@ -649,7 +718,20 @@ export default function SignalGraph({
           const attrs = graph.getNodeAttributes(id);
           if (attrs.kind === "reality") return null; // drawn above, as the hero
           const p = layout.get(id)!;
-          const identity = identityOf(attrs.kind, opened.has(id), level);
+          // A SUPERSEDED EXTERNAL OBJECT IS HISTORY, NOT NEWS.
+          //
+          // It keeps a real seat — the temporal chain that reaches it has to
+          // land somewhere — but it stays a mark until something reaches it:
+          // selected, hovered, in its neighbourhood, or lit by a solo. That
+          // is what makes "supersedes" legible as an ARROW OUT OF THE PAST
+          // rather than as two live objects that happen to be joined.
+          const historical = attrs.kind === "intel" && attrs.isCurrent === false;
+          const reached =
+            selectedId === id ||
+            hoveredId === id ||
+            (soloNodes?.has(id) ?? false) ||
+            (focus?.nodes.has(id) ?? false);
+          const identity = identityOf(attrs.kind, opened.has(id) && (!historical || reached), level);
           const latent = identity === "latent";
           return (
             <GraphNode
@@ -913,6 +995,21 @@ const GraphNode = memo(function GraphNode({
             />
           </g>
         );
+      case "shard":
+        // AN EXTERNAL CLAIM: an upward triangle whose stroke does not close.
+        // Same grammar as the external edges — broken means somebody outside
+        // Signal says so. The dash is sized in screen units so it survives at
+        // a 4.6-unit node.
+        return (
+          <path
+            d={`M ${x} ${y - grown * 1.15} L ${x + grown} ${y + grown * 0.72} L ${x - grown} ${y + grown * 0.72} Z`}
+            fill="var(--i-void)"
+            stroke={color}
+            strokeWidth={stroke}
+            strokeDasharray={`${2.4 / k} ${1.8 / k}`}
+            strokeLinejoin="round"
+          />
+        );
       case "doc":
         return (
           <path
@@ -1052,6 +1149,7 @@ const KIND_NAME: Record<string, string> = {
   transcript: "Transcript",
   notion_page: "Notion page",
   figma_artifact: "Figma artifact",
+  intel: "External intelligence",
 };
 
 function truncate(s: string, n: number): string {
@@ -1060,8 +1158,18 @@ function truncate(s: string, n: number): string {
 
 /** Fit the whole field in view — the "reset" the reference offers as a
     home button, and what the instrument opens at. */
-export function fitCamera(): Camera {
-  return { ...DEFAULT_CAMERA };
+export function fitCamera(extent: number = RECORD_EXTENT): Camera {
+  // FIT MUST ACTUALLY FIT. External intelligence seats outside the record's
+  // edge, so a fixed zoom would push the outermost band off screen at the one
+  // moment the user asked to see everything.
+  //
+  // The comparison is against RECORD_EXTENT — how far Signal's own material
+  // reaches, which is what the default zoom was chosen for — so a Scope with
+  // no external intelligence comes back at exactly the zoom it always did.
+  // This is not a change to the existing field; it is the same field, plus a
+  // rule for when the field is larger.
+  const k = DEFAULT_CAMERA.k * (RECORD_EXTENT / Math.max(RECORD_EXTENT, extent));
+  return { x: FIELD.cx, y: FIELD.cy, k: Math.max(MIN_ZOOM, k) };
 }
 
 /** Centre on one node without changing zoom — the reference's "fly to". */

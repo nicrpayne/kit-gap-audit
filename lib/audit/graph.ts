@@ -38,6 +38,11 @@ import type { FindingProvenance } from "./provenance";
 import { requirementLabel, type ProjectedRequirement } from "./requirements";
 import type { ProjectedPerson } from "./capacity";
 import { sourceKindFor, declaredArtifacts, SOURCE_KINDS } from "./sources";
+import {
+  laneForIntelligenceType,
+  intelKey,
+  type ProjectedIntelligence,
+} from "./intelligence";
 
 // ── EPISTEMIC BASIS ────────────────────────────────────────────────────
 //
@@ -57,9 +62,24 @@ import { sourceKindFor, declaredArtifacts, SOURCE_KINDS } from "./sources";
 //             "A missing_work finding concerns execution" is Signal's reading
 //             of `type`. True and useful, but ours, not the world's.
 //
+//   EXTERNAL  A THIRD PARTY ASSERTED IT AND SIGNAL HAS NOT CHECKED IT.
+//             Hermes says this Decision supersedes that one; Hermes says this
+//             statement is grounded in that passage. The claim is transported
+//             faithfully and attributed to its producer. Delete Signal and the
+//             claim still exists — but so does the fact that nothing in
+//             Signal's own record corroborates it.
+//
+// The third value exists because the alternative was worse in exactly the way
+// this tranche is about. `attested` renders SOLID and full-strength, the same
+// as `Finding.evidenceRefs`; filing an external inference under it would make
+// a knowledge compiler's guess look every bit as grounded as a Signal
+// citation, which is the disclaimer-instead-of-structure failure the whole
+// integration exists to avoid. The distinction lives here, in the semantic
+// layer, where a proof can check it — not in a caption.
+//
 // There is NO numeric confidence, because nothing computes one. This is a
-// two-valued fact about where a relationship came from, not a score.
-export type EdgeBasis = "attested" | "inferred";
+// three-valued fact about where a relationship came from, not a score.
+export type EdgeBasis = "attested" | "inferred" | "external";
 
 export type NodeKind =
   | "reality"
@@ -82,7 +102,14 @@ export type NodeKind =
   // persisted type field says so. See lib/audit/sources.ts.
   | "transcript"
   | "notion_page"
-  | "figma_artifact";
+  | "figma_artifact"
+  // EXTERNAL STRUCTURED INTELLIGENCE. One kind carrying an
+  // `intelligenceType` attribute, NOT nine kinds. A Hermes Decision and a
+  // Signal Decision are different claims about different things, and giving
+  // the external one the `decision` kind would merge them in five lookup
+  // tables, on the glyph field, and in every proof that enumerates kinds.
+  // See lib/audit/intelligence.ts.
+  | "intel";
 
 export type EdgeRel =
   | "supports"
@@ -98,7 +125,21 @@ export type EdgeRel =
   | "missing_from"
   | "supersedes"
   | "belongs_to"
-  | "allocated_to";
+  | "allocated_to"
+  // ── EXTERNAL RELATIONS, DELIBERATELY OUTSIDE SIGNAL'S VOCABULARY ─────
+  //
+  // The producer's relation names overlap Signal's — it also says
+  // `supersedes`, `depends_on`, `supports` — and reusing those values would
+  // silently enrol external claims in machinery built for Signal's own:
+  // `EVIDENCE_SOLO_RELATIONS` would traverse them, `measureGraph` would
+  // count them together, and "3 supersedes edges" would stop meaning one
+  // thing. So every external relation is carried under ONE Signal relation
+  // with the producer's own name preserved on the edge as `intelRel`.
+  | "intel_relation"
+  /** An external object's claim that a passage grounds its statement. Named
+      apart from `evidenced_by` for the same reason: Signal's citation
+      relation is Signal's. */
+  | "cites";
 
 // ── SLICES ─────────────────────────────────────────────────────────────
 //
@@ -390,6 +431,36 @@ export const EDGE_RULES: Record<string, EdgeRule> = {
     field: "LinearIssueSummary.parentIdentifier",
     why: "Linear's own issue nesting: an implementation issue hangs from its Feature.",
   },
+  // ── EXTERNAL STRUCTURED INTELLIGENCE ─────────────────────────────────
+  //
+  // Two rules, both `external`, and that is the whole trust boundary: every
+  // edge touching an `intel` node has basis `external`, and no `external`
+  // edge touches anything else. Proofs assert both directions.
+  //
+  // ABSENT ON PURPOSE, and the absence carries the same weight it does for
+  // Requirements: there is no rule joining an external Decision to a Signal
+  // Decision, an external Commitment to a Person, or an external Dependency
+  // to a Scope — however alike their text. Signal has no grounded identity
+  // link between the two worlds, and drawing one on similarity would be the
+  // text-matching this codebase has refused at every previous tranche.
+  "intel-cites-passage": {
+    id: "intel-cites-passage",
+    rel: "cites",
+    basis: "external",
+    from: "intel",
+    to: "passage",
+    field: "IntelligenceObject.evidenceRefs",
+    why: "The producer names an evidence id. The PASSAGE is then read from Signal's own accepted package, never from the claim — so a ref naming a row the package does not contain produces no edge.",
+  },
+  "intel-relates-intel": {
+    id: "intel-relates-intel",
+    rel: "intel_relation",
+    basis: "external",
+    from: "intel",
+    to: "intel",
+    field: "IntelligenceRelation.from + .rel + .to",
+    why: "A relation the producer transported between two of its own objects. Carried in the direction sent — the bridge has already reversed the passive forms, and inverting again would point every longitudinal chain backwards.",
+  },
   "registration-supersedes-registration": {
     id: "registration-supersedes-registration",
     rel: "supersedes",
@@ -452,6 +523,10 @@ export interface GraphEntityInputs {
       own package, so matching on the bare id across snapshots would attach a
       finding to a requirement it never cited. */
   findingCitations: { findingId: string; snapshotId: string; evidenceIds: string[] }[];
+  /** EXTERNAL STRUCTURED INTELLIGENCE, already projected and already scoped
+      by the producer's own `scope[]`. This layer applies no admission rule of
+      its own and does no text matching — see lib/audit/intelligence.ts. */
+  intelligence: ProjectedIntelligence;
 }
 
 export interface BuildGraphInput {
@@ -496,6 +571,11 @@ export const nodeId = {
   // renamed.
   person: (personId: string) => `person:${personId}`,
   passage: (snapshotId: string, evidenceId: string) => `passage:${snapshotId}:${evidenceId}`,
+  // Snapshot-scoped like a passage, and for a sharper reason: the producer's
+  // head determination is a property of the BATCH. Two snapshots can carry
+  // the same object id with different `isCurrent`, and merging them would
+  // make "is this still the head?" unanswerable.
+  intel: (snapshotId: string, externalId: string) => `intel:${snapshotId}:${externalId}`,
   /** Package manifest entries and Source rows are different namespaces and
       must not be able to collide on a shared string. */
   packageSource: (sourceRef: string) => `source:pkg:${sourceRef}`,
@@ -953,6 +1033,113 @@ export function buildAuditGraph({ model, provenance, entities }: BuildGraphInput
     }
   }
 
+  // ── EXTERNAL STRUCTURED INTELLIGENCE ─────────────────────────────────
+  //
+  //   THIS IS NOT SIGNAL REALITY, AND THE GRAPH SAYS SO STRUCTURALLY.
+  //
+  // Held in four places at once rather than in a caption:
+  //
+  //   ITS OWN KIND      `intel` never collides with `decision`, `dependency`
+  //                     or `finding`, whatever the producer called it.
+  //   ITS OWN BASIS     every edge is `external`, so nothing it asserts is
+  //                     drawn with the weight of a Signal citation.
+  //   ITS OWN RELATION  `intel_relation` keeps external `supersedes` out of
+  //                     the machinery built for Signal's own.
+  //   NO CROSSING       there is no rule from `intel` to any Signal entity.
+  //                     A package full of external Decisions produces zero
+  //                     Decision nodes and zero Decision rows.
+  //
+  // Run AFTER findings and requirements so a passage an object cites is the
+  // same node those already built, and BEFORE the declared-artifact pass so a
+  // Notion page that supplied only intelligence-cited evidence is correctly
+  // counted as having supplied something.
+  {
+    const intel = entities.intelligence;
+
+    // Passages first, so every citation has a real target. A citation whose
+    // evidence id did not resolve against the package produced no entry here
+    // and therefore produces no edge — the projection counts those as
+    // `danglingCitations` rather than inventing a row to point at.
+    for (const psg of intel.citedPassages) {
+      ensurePassage(psg.snapshotId, {
+        evidenceId: psg.evidenceId,
+        excerpt: psg.excerpt,
+        sourceRef: psg.sourceRef,
+        sourceType: psg.sourceType,
+        observedAt: psg.observedAt,
+        role: psg.role,
+        status: psg.status,
+        externalRef: psg.externalRef,
+      });
+    }
+
+    for (const o of intel.objects) {
+      const key = intelKey(o.snapshotId, o.externalId);
+      g.addNode(key, {
+        kind: "intel",
+        // The statement, trimmed to fit. Never rewritten, never summarised,
+        // and never replaced by the producer's id — a reader must be able to
+        // see WHAT WAS CLAIMED without opening anything.
+        label: intelLabel(o.statement, o.externalId),
+        slice: "evidence",
+        ref: `IntelligenceObject:${o.snapshotId}:${o.externalId}`,
+        // WHERE IT SITS IS WHAT IT MEANS. A Hermes Decision is about
+        // decisions even though its evidence came from a transcript; its
+        // provenance edges run outward to the passage and the source, which
+        // DO live in their source sector.
+        lane: laneForIntelligenceType(o.intelligenceType),
+        intelligenceType: o.intelligenceType,
+        // Carried verbatim and asserted by proof. If a package ever arrives
+        // claiming a different trust value the validator rejects it, and a
+        // node that reached here without this string is a bug, not a nuance.
+        trust: o.trust,
+        statement: o.statement,
+        statementBasis: o.statementBasis,
+        // THE PRODUCER'S OWN VOCABULARY, REPORTED NEVER MAPPED. "accepted" is
+        // Hermes's word; it is not Signal's `Decision.status`.
+        dataStatus: o.status,
+        // THE PRODUCER'S HEAD DETERMINATION, NEVER DERIVED FROM `status`. The
+        // corpus contains open non-head objects; a proof pins that pair.
+        isCurrent: o.isCurrent,
+        observedDate: o.observedDate,
+        dates: o.dates,
+        externalId: o.externalId,
+        snapshotId: o.snapshotId,
+        scope: o.scope,
+        fields: o.fields,
+        provenance: o.provenance,
+        // Everything the producer sent that Signal does not model, kept so
+        // the inspector can show it and nothing is lost at the boundary.
+        extra: o.extra,
+      });
+
+      for (const ref of o.evidenceRefs) {
+        const pid = nodeId.passage(o.snapshotId, ref);
+        if (g.hasNode(pid) && !g.hasDirectedEdge(key, pid)) link(key, pid, "intel-cites-passage");
+      }
+    }
+
+    for (const r of intel.relations) {
+      // A chain reaching outside the transported set is a TRUE chain, and it
+      // is drawn as reaching outside rather than dropped — but it needs a far
+      // end to attach to, and inventing a node for one would turn "the
+      // producer mentioned an id" into "Signal holds that object". The far
+      // end rides on the near node's inspector instead.
+      if (!r.toKey || !g.hasNode(r.fromKey) || !g.hasNode(r.toKey)) continue;
+      link(r.fromKey, r.toKey, "intel-relates-intel", {
+        // THE PRODUCER'S OWN RELATION NAME, preserved. This is what the
+        // inspector prints and what makes `intel_relation` explainable
+        // rather than a shrug.
+        intelRel: r.rel,
+        // HOW LOUD THIS MAY BE. The corpus is overwhelmingly contextual;
+        // drawing all of it at rest is the difference between an instrument
+        // and a hairball. The renderer reads this, the graph only carries it.
+        relClass: r.relClass,
+        declared: r.declared,
+      });
+    }
+  }
+
   // ── DECLARED SOURCES THAT SUPPLIED NOTHING ───────────────────────────
   //
   // `Scope.notionPageIds` and `Scope.figmaRefs` name artifacts Signal is
@@ -1017,6 +1204,19 @@ export function buildAuditGraph({ model, provenance, entities }: BuildGraphInput
   return g;
 }
 
+/**
+ * A short label for an external object — its statement, trimmed.
+ *
+ * NEVER the producer's id alone: a field of `KE-OBS-0042` marks is a field
+ * nobody can read without clicking every one of them. Falls back to the id
+ * only when the statement is empty, which is a data fact worth seeing.
+ */
+function intelLabel(statement: string, externalId: string, max = 56): string {
+  const s = statement.trim();
+  if (s.length === 0) return externalId;
+  return s.length > max ? `${s.slice(0, max - 1)}\u2026` : s;
+}
+
 /** A package manifest sourceType onto a lane id. Null-safe and conservative:
     an unrecognised type lands on `evidence` rather than being forced onto a
     system it may not belong to. */
@@ -1068,6 +1268,21 @@ export function sliceGraph(graph: AuditGraph, slice: GraphSlice): AuditGraph {
  * Direction is enforced: a finding cites a passage, never the reverse, so the
  * walk never turns round at a shared source and comes back down into an
  * unrelated finding.
+ *
+ * ── AND WHAT IT DOES FOR AN EXTERNAL OBJECT ───────────────────────────
+ *
+ * The same question, one boundary over: "why does the PRODUCER say this".
+ * `cites` joins the allowlist so an external object traces out to the
+ * passages it claims ground it and on to the artifacts those were read from —
+ * a route that is entirely inside Signal's own record, because the passage is
+ * read from the accepted package rather than from the claim.
+ *
+ * `intel_relation` IS DELIBERATELY ABSENT, and that is the load-bearing part.
+ * The corpus is mostly `related_to`; admitting it would let a walk hop object
+ * to object across a hundred contextual links and light most of the outer
+ * band, which is the unrestricted BFS this traversal exists to refuse,
+ * rebuilt out of external material. An external relation is followed by
+ * clicking it, one hop at a time, in the panel that names it.
  */
 export const EVIDENCE_SOLO_RELATIONS: EdgeRel[] = [
   "evidenced_by",
@@ -1075,6 +1290,7 @@ export const EVIDENCE_SOLO_RELATIONS: EdgeRel[] = [
   "concerns",
   "missing_from",
   "linked_to",
+  "cites",
 ];
 
 export interface SoloResult {

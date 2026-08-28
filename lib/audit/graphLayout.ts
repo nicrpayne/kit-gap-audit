@@ -65,9 +65,51 @@ export const FIELD = {
   // rings is outside the bands, so what the geometry MEANS has not moved.
   featureR: 470,
   childR: 512,
-  /** Nothing is drawn past this. */
+  /** THE EDGE OF SIGNAL'S OWN RECORD. Everything inside this ring is
+      something Signal holds: its lanes, its findings, its work, the passages
+      it read and the artifacts it read them from. */
   edgeR: 594,
+  /**
+   * EXTERNAL INTELLIGENCE, BEYOND THE RECORD'S EDGE — the first band on this
+   * field that is not Signal's.
+   *
+   * Radius on this field already reads outward as distance from accepted
+   * Reality: the core, the project's own model, the disagreement bands, the
+   * sources. External structured intelligence extends that same gradient one
+   * step further rather than adding a new meaning to it. A reader who has
+   * learned "further out is further from what Reality has accepted" reads
+   * this band correctly without being told.
+   *
+   * ANGLE STILL MEANS CATEGORY. A Hermes Decision sits on the Decisions
+   * axis, outside the boundary — semantically where it belongs, epistemically
+   * where it belongs, both at once.
+   *
+   * The band is BOUNDED, and that is a density decision. The corpus is
+   * several times the size of Signal's own record for the same project; a
+   * band that grew without limit would make the field say "this project is
+   * mostly external intelligence", which is false about Signal's record. It
+   * packs into at most three rows and reads as a dense rim, which is what a
+   * large external corpus honestly looks like.
+   */
+  intelR: 622,
+  intelRowStep: 36,
+  /** Closes the field when external intelligence is present. */
+  outerR: 706,
 } as const;
+
+/** At most this many rows in the external band. See FIELD.intelR. */
+export const INTEL_ROWS = 3;
+
+/**
+ * HOW FAR SIGNAL'S OWN RECORD REACHES — the radius the default zoom was
+ * chosen against.
+ *
+ * `edgeR` is where the outermost ring's CENTRES sit; a checkpoint seated on
+ * it has a body that extends past it. This is that ring plus a node, and it
+ * is the number `fitCamera` compares an actual extent to, so a field that has
+ * not grown fits at exactly the zoom it always has.
+ */
+export const RECORD_EXTENT = FIELD.edgeR + 8;
 
 export const BANDS = [
   { id: "aligned", label: "Aligned", r: FIELD.alignedR },
@@ -111,6 +153,11 @@ export const NODE_SIZE: Record<NodeKind, number> = {
   finding: 9,
   feature: 8,
   intelligence: 8,
+  // Smaller than a source and larger than a passage: an external object is a
+  // statement, not an artifact, and there are hundreds of them. Size is
+  // position in the reading order, and external intelligence does not
+  // outrank the project's own record.
+  intel: 4.6,
   // Source artifacts share one size whatever their kind: a transcript is not
   // more important than a Notion page, it is a different KIND of thing, and
   // shape is the channel that says so.
@@ -422,6 +469,50 @@ export function layoutGraph(graph: AuditGraph): GraphLayout {
   // widest radius a wide fan scatters them further than any other ring.
   onClusterRing("checkpoint", FIELD.edgeR, 0.28);
 
+  // ── EXTERNAL INTELLIGENCE, OUTSIDE THE RECORD'S EDGE ─────────────────
+  //
+  // Seated by SECTOR (what the object means) and by ROW (how many there are),
+  // outside `edgeR` (whose intelligence it is). Three facts, three channels,
+  // no channel doing two jobs.
+  //
+  // CURRENT MATERIAL FILLS THE INNER ROWS FIRST. Superseded and resolved
+  // objects are the producer's own history, and pushing them outward puts
+  // them literally further from accepted Reality than the head they were
+  // replaced by — the same gradient the rest of the field already runs on.
+  // Nothing is dropped: a historical object keeps a real seat because the
+  // temporal chain that reaches it has to land somewhere.
+  {
+    const byCluster = new Map<string, string[]>();
+    for (const id of byKind("intel")) {
+      const cluster = (graph.getNodeAttribute(id, "lane") as string) ?? "hermes";
+      byCluster.set(cluster, [...(byCluster.get(cluster) ?? []), id]);
+    }
+    for (const [cluster, unsorted] of byCluster) {
+      const base = sectorAngle(cluster);
+      // Head first, then by key — deterministic, and the ordering IS the
+      // radial meaning.
+      const ids = [...unsorted].sort((a, b) => {
+        const ac = graph.getNodeAttribute(a, "isCurrent") === false ? 1 : 0;
+        const bc = graph.getNodeAttribute(b, "isCurrent") === false ? 1 : 0;
+        return ac === bc ? a.localeCompare(b) : ac - bc;
+      });
+      // As many rows as the count needs, never more than the band holds.
+      const rows = Math.min(INTEL_ROWS, Math.max(1, Math.ceil(ids.length / 34)));
+      const perRow = Math.ceil(ids.length / rows);
+      for (let row = 0; row < rows; row++) {
+        const slice = ids.slice(row * perRow, (row + 1) * perRow);
+        if (slice.length === 0) continue;
+        const radius = FIELD.intelR + row * FIELD.intelRowStep;
+        // The full sector arc. Every other ring on this field is deliberately
+        // narrowed so a cluster holds its own tightly; this one is not,
+        // because a hundred marks in a narrow arc is a smear rather than a
+        // band, and the boundary ring already says which side of the record
+        // they are on.
+        slice.forEach((id, i) => place(id, fanAngle(base, i, slice.length, SECTOR_ARC), radius, cluster));
+      }
+    }
+  }
+
   // Anything the passes above missed still gets a seat rather than vanishing.
   for (const id of graph.nodes()) {
     if (out.has(id)) continue;
@@ -453,6 +544,25 @@ export function edgePath(a: Placement, b: Placement): string {
   const cx = FIELD.cx + (dx / midR) * (midR - pull);
   const cy = FIELD.cy + (dy / midR) * (midR - pull);
   return `M ${a.x.toFixed(1)} ${a.y.toFixed(1)} Q ${cx.toFixed(1)} ${cy.toFixed(1)}, ${b.x.toFixed(1)} ${b.y.toFixed(1)}`;
+}
+
+/**
+ * HOW FAR THE FIELD ACTUALLY REACHES.
+ *
+ * `Fit` used to be a constant, which was correct only while the field's
+ * extent was one. External intelligence seats outside `edgeR`, so a fixed
+ * zoom would push the outermost band off screen at the one moment the user
+ * asked to see everything — and "Fit" that does not fit is worse than no Fit.
+ *
+ * Derived from the seats themselves rather than from a flag, so it stays
+ * right for whatever the next tranche adds. Compared against `RECORD_EXTENT`
+ * rather than floored at it: a field that has not grown past Signal's own
+ * record fits at exactly the zoom it always has.
+ */
+export function layoutExtent(layout: GraphLayout): number {
+  let max = 0;
+  for (const p of layout.values()) max = Math.max(max, p.radius + p.r);
+  return max;
 }
 
 /** Where a cluster's name sits — outside its puck, on the sector axis. */

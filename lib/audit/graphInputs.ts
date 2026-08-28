@@ -14,6 +14,7 @@ import { buildTruthMap, type TruthMapModel } from "./truth";
 import { resolveProvenance, type FindingProvenance } from "./provenance";
 import { projectRequirements } from "./requirements";
 import { projectPeople } from "./capacity";
+import { projectIntelligence } from "./intelligence";
 import type { GraphEntityInputs } from "./graph";
 
 export interface AuditGraphInputs {
@@ -179,6 +180,14 @@ export async function loadAuditGraphInputs(scopeId: string): Promise<AuditGraphI
     // snapshots and stays the single place that touches Prisma.
     requirements: projectRequirements(
       snapshots.map((s) => ({ id: s.id, scopeId: s.scopeId, package: s.package }))
+    ),
+    // EXTERNAL STRUCTURED INTELLIGENCE, admitted by the PRODUCER'S OWN
+    // `scope[]` and by nothing else. The same snapshots the requirements
+    // projection reads — Signal never calls the Hermes workspace directly,
+    // and the only thing that crosses the bridge is an accepted package.
+    intelligence: projectIntelligence(
+      snapshots.map((s) => ({ id: s.id, scopeId: s.scopeId, package: s.package })),
+      scopeId
     ),
     // Paired with the snapshot they were cited in, because an evidence id
     // means nothing outside its own package.

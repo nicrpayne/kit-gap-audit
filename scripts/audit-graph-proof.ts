@@ -28,6 +28,9 @@
 //      never joined to execution by name
 //   X  source artifacts: typed from a persisted type field, never a title,
 //      and kept distinct from the semantics they grounded
+//   Z  external structured intelligence: transported without loss, admitted
+//      by the producer's own scope, and unable to become Signal Reality by
+//      any construction path that exists
 //
 //   npx tsx scripts/audit-graph-proof.ts
 
@@ -48,12 +51,18 @@ import {
   type NodeKind,
   type AuditEdgeAttributes,
 } from "../lib/audit/graph";
-import { layoutGraph, FIELD, CLUSTER_ORDER, BANDS } from "../lib/audit/graphLayout";
+import { layoutGraph, layoutExtent, FIELD, RECORD_EXTENT, CLUSTER_ORDER, BANDS } from "../lib/audit/graphLayout";
 import { identityOf, latentRadius, LATENT, MEMBERSHIP_RELS } from "@/components/audit/graphTokens";
 import { projectRequirements, REQUIREMENT_SOURCE_ROLE } from "../lib/audit/requirements";
 import { projectPeople } from "../lib/audit/capacity";
 import { resolveCapacity, switchFactorFor } from "../lib/capacity/resolve";
 import { sourceKindFor, declaredArtifacts, SOURCE_KINDS } from "../lib/audit/sources";
+import { projectIntelligence, relClassOf, laneForIntelligenceType } from "../lib/audit/intelligence";
+import { validateProjectContextPackage } from "../lib/context/validate";
+import { EXTERNAL_INTELLIGENCE_TRUST } from "../lib/context/package";
+import { buildIntelligenceFixturePackage, JSA_SCALE } from "./lib/intel-fixture";
+import { DEFAULT_CAMERA } from "@/components/audit/cameraMotion";
+import { fitCamera } from "@/components/audit/SignalGraph";
 
 const prisma = new PrismaClient();
 
@@ -1651,6 +1660,504 @@ async function main() {
       }
       const after = await prisma.$transaction([prisma.source.count(), prisma.contextSnapshot.count(), prisma.scope.count()]);
       check("X13 classifying source artifacts writes nothing", before.every((v, i) => v === after[i]), `${before.join("/")} → ${after.join("/")}`);
+    }
+  }
+
+
+  // ── Z  EXTERNAL STRUCTURED INTELLIGENCE ────────────────────────────────
+  //
+  // The tranche's whole risk is a category error: an external knowledge
+  // system's BELIEF about a project arriving in an instrument whose job is to
+  // say what is accepted. Every assertion below is a way of asking the same
+  // question — can external material become Signal Reality by any route? —
+  // and the answers have to be structural, because a disclaimer is not a
+  // guarantee.
+  //
+  // No real package carries intelligence yet, so the payload is the
+  // synthetic JSA-scale fixture. Its counts are the real stated ones and it
+  // carries a deliberate counterexample (objects that are `open` AND
+  // superseded), so a proof that only works on flattering data fails here.
+  {
+    const pkg = buildIntelligenceFixturePackage("jsa");
+    const snap = { id: "snap-intel", scopeId: "jsa", package: pkg };
+    const projected = projectIntelligence([snap], "jsa");
+
+    // ── CONTRACT: the transport must not eat what it does not model ────
+
+    // Z1 — THE CRITICAL FIRST FIX. The validator used to rebuild the package
+    // from named fields, so any field it did not know about vanished with no
+    // error. That is why intelligence could not arrive at all.
+    {
+      const accepted = validateProjectContextPackage(pkg as unknown);
+      check(
+        "Z1 the validator carries intelligence through instead of dropping it",
+        (accepted.intelligenceObjects?.length ?? 0) === JSA_SCALE.objects &&
+          (accepted.intelligenceRelations?.length ?? 0) === JSA_SCALE.relations &&
+          accepted.intelligenceMeta?.batchId === "synthetic-batch-001",
+        `${accepted.intelligenceObjects?.length ?? 0} objects, ${accepted.intelligenceRelations?.length ?? 0} relations, batch ${accepted.intelligenceMeta?.batchId}`
+      );
+    }
+
+    // Z2 — AND A PACKAGE WITHOUT THEM IS UNCHANGED. The fields are assigned
+    // only when sent, so every already-accepted snapshot serialises exactly
+    // as it did before this tranche existed.
+    {
+      const legacy = { ...pkg } as Record<string, unknown>;
+      delete legacy.intelligenceObjects;
+      delete legacy.intelligenceRelations;
+      delete legacy.intelligenceMeta;
+      const accepted = validateProjectContextPackage(legacy);
+      const keys = Object.keys(accepted);
+      check(
+        "Z2 a package with no intelligence gains no intelligence keys",
+        !keys.includes("intelligenceObjects") &&
+          !keys.includes("intelligenceRelations") &&
+          !keys.includes("intelligenceMeta"),
+        `${keys.length} keys, none of them intelligence — legacy snapshots hash identically`
+      );
+    }
+
+    // Z3 — A FIELD SIGNAL DOES NOT MODEL SURVIVES rather than being
+    // whitelisted away one level down. Re-imposing a whitelist inside an
+    // intelligence object would have reintroduced the exact bug Z1 fixes,
+    // against a contract Signal does not own.
+    {
+      const withUnknown = {
+        ...pkg,
+        intelligenceObjects: pkg.intelligenceObjects!.map((o, i) =>
+          i === 0 ? { ...o, producerOnlyField: { nested: [1, 2, 3] } } : o
+        ),
+      };
+      const accepted = validateProjectContextPackage(withUnknown as unknown);
+      const extra = accepted.intelligenceObjects?.[0]?.extra as Record<string, unknown> | undefined;
+      check(
+        "Z3 an unmodelled producer field survives the crossing on `extra`",
+        extra != null && JSON.stringify(extra.producerOnlyField) === JSON.stringify({ nested: [1, 2, 3] }),
+        `extra = ${JSON.stringify(extra ?? null)}`
+      );
+    }
+
+    // Z4 — THE TRUST BOUNDARY IS CHECKED AT THE BOUNDARY. A payload claiming
+    // its objects are accepted Reality is refused outright, not downgraded.
+    {
+      const lying = {
+        ...pkg,
+        intelligenceObjects: pkg.intelligenceObjects!.map((o, i) =>
+          i === 0 ? { ...o, trust: "signal_reality" } : o
+        ),
+      };
+      let rejected = false;
+      try {
+        validateProjectContextPackage(lying as unknown);
+      } catch {
+        rejected = true;
+      }
+      check(
+        "Z4 a package claiming its intelligence is Signal Reality is rejected",
+        rejected,
+        `trust must equal ${EXTERNAL_INTELLIGENCE_TRUST}`
+      );
+    }
+
+    // Z5 — CURRENTNESS IS A TRANSPORTED FACT, so it must arrive. Defaulting a
+    // missing `isCurrent` to true would silently promote history to head.
+    {
+      const noFlag = {
+        ...pkg,
+        intelligenceObjects: pkg.intelligenceObjects!.map((o, i) => {
+          if (i !== 0) return o;
+          const { isCurrent: _drop, ...rest } = o;
+          return rest;
+        }),
+      };
+      let rejected = false;
+      try {
+        validateProjectContextPackage(noFlag as unknown);
+      } catch {
+        rejected = true;
+      }
+      check("Z5 an object with no isCurrent is rejected, never defaulted", rejected);
+    }
+
+    // Z6 — NO DANGLING CITATION SURVIVES INTO AN IMMUTABLE SNAPSHOT.
+    {
+      const dangling = {
+        ...pkg,
+        intelligenceObjects: pkg.intelligenceObjects!.map((o, i) =>
+          i === 0 ? { ...o, evidenceRefs: ["ev-does-not-exist"] } : o
+        ),
+      };
+      let rejected = false;
+      try {
+        validateProjectContextPackage(dangling as unknown);
+      } catch {
+        rejected = true;
+      }
+      check("Z6 a citation naming evidence the package does not carry is rejected", rejected);
+    }
+
+    // ── PROJECTION: what Signal reads out of an accepted package ───────
+
+    // Z7 — SCOPE IS THE PRODUCER'S CLAIM, NOT SIGNAL'S GUESS. An object the
+    // producer could not attribute stays out rather than being matched into
+    // the Scope by resemblance.
+    {
+      const otherScope = projectIntelligence([snap], "platform");
+      const mixed = {
+        ...pkg,
+        intelligenceObjects: pkg.intelligenceObjects!.map((o, i) =>
+          i < 5 ? { ...o, scope: ["platform"] } : o
+        ),
+      };
+      const partial = projectIntelligence([{ ...snap, package: mixed }], "jsa");
+      check(
+        "Z7 an object is admitted only by its own scope[], never by text",
+        otherScope.objects.length === 0 &&
+          partial.objects.length === JSA_SCALE.objects - 5 &&
+          partial.meta.outOfScope === 5,
+        `another Scope reads 0; 5 reattributed objects leave ${partial.objects.length} and are counted out of scope`
+      );
+    }
+
+    // Z8 — CURRENTNESS NEVER COMES FROM STATUS. The fixture carries the real
+    // corpus's counterexample: objects that are `open` and superseded. A
+    // renderer or projection reading one from the other draws those as live.
+    {
+      const openButHistorical = projected.objects.filter((o) => o.status === "open" && !o.isCurrent);
+      const currentCount = projected.objects.filter((o) => o.isCurrent).length;
+      check(
+        "Z8 isCurrent is transported, never derived from status",
+        openButHistorical.length > 0 && currentCount === JSA_SCALE.currentObjects,
+        `${openButHistorical.length} objects are open AND superseded; ${currentCount} head of ${projected.objects.length} — status would have called all ${openButHistorical.length} live`
+      );
+    }
+
+    // Z9 — RELATIONS ARE NEVER RE-NORMALISED. The bridge already reversed the
+    // passive forms; inverting again would point every longitudinal chain
+    // backwards, and it would look plausible while doing it.
+    {
+      const sent = pkg.intelligenceRelations!.filter((r) => r.rel === "supersedes");
+      const got = projected.relations.filter((r) => r.rel === "supersedes");
+      const inverted = got.filter((g) => {
+        const from = g.fromKey.split(":").slice(2).join(":");
+        return !sent.some((s) => s.from === from && s.to === g.toExternalId);
+      });
+      check(
+        "Z9 a transported relation keeps the direction it arrived in",
+        sent.length > 0 && got.length === sent.length && inverted.length === 0,
+        `${got.length} supersedes edges, ${inverted.length} reversed`
+      );
+    }
+
+    // Z10 — AN UNRECOGNISED RELATION IS QUIET, NOT LOUD. A new relation name
+    // appearing at full volume at rest is how a hairball starts.
+    {
+      const unknown = relClassOf({ rel: "some_new_relation_nobody_has_seen" });
+      const declared = relClassOf({ rel: "related_to", relClass: "temporal" });
+      check(
+        "Z10 an unknown relation falls back to contextual, and a declared class wins",
+        unknown === "contextual" && declared === "temporal",
+        `unknown → ${unknown}; producer-declared → ${declared}`
+      );
+      check(
+        "Z10b the corpus really is mostly contextual, which is why the policy exists",
+        projected.meta.byRelClass.contextual === JSA_SCALE.contextual &&
+          projected.meta.byRelClass.temporal === JSA_SCALE.temporal &&
+          projected.meta.byRelClass.semantic === JSA_SCALE.semantic,
+        `${projected.meta.byRelClass.temporal} temporal, ${projected.meta.byRelClass.semantic} semantic, ${projected.meta.byRelClass.contextual} contextual`
+      );
+    }
+
+    // ── THE GRAPH: the trust boundary, held structurally ───────────────
+
+    const base = await loadAuditGraphInputs("jsa");
+    if (!base) throw new Error("JSA did not load");
+    const withIntel = buildAuditGraph({
+      ...base,
+      entities: { ...base.entities, intelligence: projected },
+    });
+    const intelNodes = withIntel.filterNodes((_n, a) => a.kind === "intel");
+
+    // Z11 — A PACKAGE FULL OF EXTERNAL DECISIONS PRODUCES ZERO SIGNAL
+    // DECISIONS. The single most important assertion in this block.
+    {
+      const externalDecisions = projected.objects.filter((o) => o.intelligenceType === "Decision").length;
+      const signalDecisionsBefore = buildAuditGraph(base).filterNodes((_n, a) => a.kind === "decision").length;
+      const signalDecisionsAfter = withIntel.filterNodes((_n, a) => a.kind === "decision").length;
+      const signalDeps = withIntel.filterNodes((_n, a) => a.kind === "dependency").length;
+      const signalDepsBefore = buildAuditGraph(base).filterNodes((_n, a) => a.kind === "dependency").length;
+      const findingsAfter = withIntel.filterNodes((_n, a) => a.kind === "finding").length;
+      const findingsBefore = buildAuditGraph(base).filterNodes((_n, a) => a.kind === "finding").length;
+      check(
+        "Z11 external Decisions, Dependencies and Risks create ZERO Signal entities",
+        externalDecisions > 0 &&
+          signalDecisionsAfter === signalDecisionsBefore &&
+          signalDeps === signalDepsBefore &&
+          findingsAfter === findingsBefore,
+        `${externalDecisions} external Decisions arrived; Signal decisions ${signalDecisionsBefore}→${signalDecisionsAfter}, dependencies ${signalDepsBefore}→${signalDeps}, findings ${findingsBefore}→${findingsAfter}`
+      );
+    }
+
+    // Z12 — THE BOUNDARY, BOTH DIRECTIONS. Every edge touching an intel node
+    // is `external`, and no `external` edge touches anything else.
+    {
+      const intelSet = new Set(intelNodes);
+      let touchingIntelNotExternal = 0;
+      let externalNotTouchingIntel = 0;
+      withIntel.forEachEdge((_e, a, s, t) => {
+        const touches = intelSet.has(s) || intelSet.has(t);
+        if (touches && a.basis !== "external") touchingIntelNotExternal++;
+        if (a.basis === "external" && !touches) externalNotTouchingIntel++;
+      });
+      check(
+        "Z12 external basis and external material are the same set, both ways",
+        intelNodes.length > 0 && touchingIntelNotExternal === 0 && externalNotTouchingIntel === 0,
+        `${intelNodes.length} intel nodes, ${touchingIntelNotExternal} non-external edges on them, ${externalNotTouchingIntel} external edges elsewhere`
+      );
+    }
+
+    // Z13 — NO RULE JOINS THE TWO WORLDS. The registry is the whole answer:
+    // there is no construction path from an intel node to a Signal entity, so
+    // no amount of resemblance can produce one.
+    {
+      const crossing = Object.values(EDGE_RULES).filter((r) => {
+        const from = Array.isArray(r.from) ? r.from : [r.from];
+        const to = Array.isArray(r.to) ? r.to : [r.to];
+        const touches = from.includes("intel") || to.includes("intel");
+        if (!touches) return false;
+        const other = [...from, ...to].filter((k) => k !== "intel");
+        return other.some((k) => k !== "passage");
+      });
+      check(
+        "Z13 no edge rule can join external intelligence to a Signal entity",
+        crossing.length === 0,
+        `${crossing.length} crossing rules — intel reaches passages and other intel, and nothing else`
+      );
+    }
+
+    // Z14 — THE FALSIFIABLE NEGATIVE, forced. A fixture where an external
+    // Decision's statement is CHARACTER-IDENTICAL to a Signal Decision's
+    // title, and an external Dependency names a real upstream Scope. If a
+    // text join ever appears anywhere, this is where it shows.
+    {
+      const signalDecisionTitles = base.entities.decisions.map((d) => d.title);
+      const upstreamNames = base.entities.dependsOn.map((d) => d.name);
+      const bait = pkg.intelligenceObjects!.map((o, i) => {
+        if (o.intelligenceType === "Decision" && signalDecisionTitles.length > 0) {
+          return { ...o, statement: signalDecisionTitles[i % signalDecisionTitles.length] };
+        }
+        if (o.intelligenceType === "Dependency" && upstreamNames.length > 0) {
+          return { ...o, statement: upstreamNames[i % upstreamNames.length] };
+        }
+        return o;
+      });
+      const baited = projectIntelligence([{ ...snap, package: { ...pkg, intelligenceObjects: bait } }], "jsa");
+      const g = buildAuditGraph({ ...base, entities: { ...base.entities, intelligence: baited } });
+      const intelSet = new Set(g.filterNodes((_n, a) => a.kind === "intel"));
+      let joined = 0;
+      g.forEachEdge((_e, _a, s, t) => {
+        const touches = intelSet.has(s) || intelSet.has(t);
+        if (!touches) return;
+        const otherKind = g.getNodeAttribute(intelSet.has(s) ? t : s, "kind");
+        if (otherKind !== "intel" && otherKind !== "passage") joined++;
+      });
+      const baitCount = bait.filter((o, i) => o.statement !== pkg.intelligenceObjects![i].statement).length;
+      check(
+        "Z14 statements identical to Signal rows still join nothing",
+        signalDecisionTitles.length > 0 && baitCount > 0 && joined === 0,
+        `${baitCount} external statements set character-identical to a Signal Decision title or upstream Scope name, ${joined} edges created`
+      );
+    }
+
+    // Z15 — THE PASSAGE IS READ FROM THE PACKAGE, NOT FROM THE CLAIM. An
+    // object cites a row id; the row's text, source and observation time all
+    // come out of Signal's own accepted evidence.
+    {
+      const cited = withIntel
+        .filterNodes((_n, a) => a.kind === "passage")
+        .filter((n) => withIntel.inEdges(n).some((e) => withIntel.getEdgeAttribute(e, "rel") === "cites"));
+      const evidenceById = new Map(pkg.evidence.map((e) => [e.id, e]));
+      const wrong = cited.filter((n) => {
+        const a = withIntel.getNodeAttributes(n);
+        const id = String(a.ref).split(":").slice(2).join(":");
+        return evidenceById.get(id)?.excerpt !== a.excerpt;
+      });
+      check(
+        "Z15 a cited passage's text comes from Signal's evidence, never the claim",
+        cited.length > 0 && wrong.length === 0,
+        `${cited.length} cited passages, ${wrong.length} carrying anything but the package's own excerpt`
+      );
+    }
+
+    // Z16 — A CITATION TO A ROW THE PACKAGE DOES NOT CARRY BUILDS NOTHING.
+    // The validator refuses one (Z6); an older snapshot accepted before this
+    // tranche could still contain one, and the projection must survive it
+    // without inventing a node to point at.
+    {
+      const stale = projectIntelligence(
+        [
+          {
+            ...snap,
+            package: {
+              ...pkg,
+              intelligenceObjects: pkg.intelligenceObjects!.map((o, i) =>
+                i === 0 ? { ...o, evidenceRefs: [...(o.evidenceRefs ?? []), "ev-ghost"] } : o
+              ),
+            },
+          },
+        ],
+        "jsa"
+      );
+      const g = buildAuditGraph({ ...base, entities: { ...base.entities, intelligence: stale } });
+      const ghost = g.hasNode(nodeId.passage("snap-intel", "ev-ghost"));
+      check(
+        "Z16 a stale citation produces no edge and no phantom passage",
+        !ghost && stale.meta.danglingCitations === 1,
+        `${stale.meta.danglingCitations} dangling citation counted, phantom node created: ${ghost}`
+      );
+    }
+
+    // Z17 — SNAPSHOT-SCOPED, for the same reason a passage is, and a sharper
+    // one: head is a property of the BATCH, so merging two snapshots' copies
+    // of an object would make "is this still current" unanswerable.
+    {
+      const twoSnaps = projectIntelligence(
+        [snap, { id: "snap-intel-2", scopeId: "jsa", package: pkg }],
+        "jsa"
+      );
+      const g = buildAuditGraph({ ...base, entities: { ...base.entities, intelligence: twoSnaps } });
+      const nodes = g.filterNodes((_n, a) => a.kind === "intel");
+      const unscoped = nodes.filter((n) => !n.startsWith("intel:snap-intel"));
+      check(
+        "Z17 the same object id in two snapshots is two nodes, not one",
+        nodes.length === JSA_SCALE.objects * 2 && unscoped.length === 0,
+        `${nodes.length} nodes from 2 snapshots carrying the same ${JSA_SCALE.objects} object ids`
+      );
+    }
+
+    // Z18 — TRACING A CLAIM FOLLOWS CITATIONS AND STOPS. It must NOT follow
+    // external relations: the corpus is mostly `related_to`, and admitting it
+    // would rebuild the unrestricted walk this traversal exists to refuse,
+    // out of somebody else's material.
+    {
+      const withRelations = intelNodes.filter((n) =>
+        withIntel.outEdges(n).some((e) => withIntel.getEdgeAttribute(e, "rel") === "intel_relation")
+      );
+      const start = withRelations[0] ?? intelNodes[0];
+      const lit = evidenceSolo(withIntel, start);
+      const kinds = new Set([...lit.nodes].map((n) => withIntel.getNodeAttribute(n, "kind")));
+      const otherIntel = [...lit.nodes].filter((n) => n !== start && withIntel.getNodeAttribute(n, "kind") === "intel");
+      const followed = [...lit.edges].filter((e) => withIntel.getEdgeAttribute(e, "rel") === "intel_relation");
+      check(
+        "Z18 tracing a claim reaches its evidence and never walks the corpus",
+        withRelations.length > 0 && otherIntel.length === 0 && followed.length === 0 && kinds.has("passage"),
+        `lit ${[...kinds].sort().join(", ")}; ${otherIntel.length} other objects reached, ${followed.length} external relations followed`
+      );
+      check(
+        "Z18b intel_relation is deliberately absent from the allowlist",
+        !EVIDENCE_SOLO_RELATIONS.includes("intel_relation") && EVIDENCE_SOLO_RELATIONS.includes("cites")
+      );
+    }
+
+    // Z19 — SEATED BY WHAT IT MEANS, OUTSIDE THE RECORD'S EDGE. Both at once:
+    // a Hermes Decision on the Decisions axis, and every one of them beyond
+    // the ring that bounds Signal's own material.
+    {
+      const lay = layoutGraph(withIntel);
+      let wrongSector = 0;
+      let inside = 0;
+      for (const n of intelNodes) {
+        const a = withIntel.getNodeAttributes(n);
+        const p = lay.get(n);
+        if (!p) continue;
+        if (p.cluster !== laneForIntelligenceType(String(a.intelligenceType))) wrongSector++;
+        if (p.radius <= FIELD.edgeR) inside++;
+      }
+      const decisionsSeated = intelNodes.filter(
+        (n) => withIntel.getNodeAttribute(n, "intelligenceType") === "Decision" && lay.get(n)?.cluster === "decisions"
+      ).length;
+      check(
+        "Z19 every external object seats in its meaning's sector, outside the record's edge",
+        intelNodes.length > 0 && wrongSector === 0 && inside === 0 && decisionsSeated > 0,
+        `${intelNodes.length} objects, ${wrongSector} mis-sectored, ${inside} inside edgeR; ${decisionsSeated} external Decisions on the Decisions axis`
+      );
+    }
+
+    // Z19b — AND FIT STILL FITS. A fixed home zoom would have left the outer
+    // band off screen at the one moment the user asked to see everything.
+    {
+      const withExtent = layoutExtent(layoutGraph(withIntel));
+      const withoutExtent = layoutExtent(layoutGraph(buildAuditGraph(base)));
+      const home = fitCamera(withExtent);
+      const plain = fitCamera(withoutExtent);
+      check(
+        "Z19b Fit widens for the external band and is untouched without one",
+        withExtent > RECORD_EXTENT &&
+          withoutExtent <= RECORD_EXTENT &&
+          home.k < plain.k &&
+          plain.k === DEFAULT_CAMERA.k &&
+          // The outer band lands at the same SCREEN radius the record's edge
+          // did — the field grew, the frame did not.
+          Math.abs(withExtent * home.k - RECORD_EXTENT * plain.k) < 0.5,
+        `extent ${Math.round(withExtent)} → k ${home.k.toFixed(3)}; no intelligence → extent ${Math.round(withoutExtent)}, k ${plain.k} (unchanged)`
+      );
+    }
+
+    // Z20 — HISTORY IS A MARK UNTIL SOMETHING REACHES IT. A superseded object
+    // keeps a real seat, because the chain that replaced it has to land
+    // somewhere, but it does not read as live.
+    {
+      const historical = intelNodes.filter((n) => withIntel.getNodeAttribute(n, "isCurrent") === false);
+      const seated = layoutGraph(withIntel);
+      const allSeated = historical.every((n) => seated.has(n));
+      // The renderer's own rule, applied here as the graph states it.
+      const latentWhenUnreached = historical.every((n) => identityOf("intel", false, "close") === "latent");
+      check(
+        "Z20 a superseded object keeps its seat and stays latent until reached",
+        historical.length === JSA_SCALE.historicalObjects && allSeated && latentWhenUnreached,
+        `${historical.length} superseded objects, all seated, none formed at rest`
+      );
+    }
+
+    // Z21 — THE EDGE POLICY, AS THE GRAPH STATES IT. `cites` and `contextual`
+    // are the two loud classes, and both are held back until an endpoint is
+    // the thing being explained. What is drawn at rest is the chain.
+    {
+      let quiet = 0;
+      let loud = 0;
+      withIntel.forEachEdge((_e, a) => {
+        if (a.basis !== "external") return;
+        if (a.rel === "cites" || a.relClass === "contextual") quiet++;
+        else loud++;
+      });
+      check(
+        "Z21 the resting field draws the chain, not the corpus",
+        quiet > 0 && loud === JSA_SCALE.temporal + JSA_SCALE.semantic && loud < quiet / 10,
+        `${loud} temporal+semantic edges drawn at rest, ${quiet} citation and contextual edges held back — ${Math.round((loud / (loud + quiet)) * 100)}% of the external edges`
+      );
+    }
+
+    // Z22 — AND NONE OF IT WRITES. The projection imports no Prisma client;
+    // this is the empirical half of that claim.
+    {
+      const before = await prisma.$transaction([
+        prisma.decision.count(),
+        prisma.finding.count(),
+        prisma.contextSnapshot.count(),
+        prisma.scope.count(),
+      ]);
+      buildAuditGraph({ ...base, entities: { ...base.entities, intelligence: projected } });
+      const after = await prisma.$transaction([
+        prisma.decision.count(),
+        prisma.finding.count(),
+        prisma.contextSnapshot.count(),
+        prisma.scope.count(),
+      ]);
+      check(
+        "Z22 consuming external intelligence writes nothing",
+        before.every((v, i) => v === after[i]),
+        `${before.join("/")} → ${after.join("/")}`
+      );
     }
   }
 

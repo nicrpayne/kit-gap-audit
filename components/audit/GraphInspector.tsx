@@ -34,6 +34,14 @@ export interface Connection {
   /** A quantity the edge itself carries, formatted — an allocation's share.
       Null for the relations that are not measured. */
   detail: string | null;
+  /** The PRODUCER'S OWN relation name on an external edge — `supersedes`,
+      `related_to`, `caused_by`. Signal carries every external relation under
+      one of its own so the two vocabularies cannot be confused, and this is
+      where the original is preserved and printed. */
+  intelRel: string | null;
+  /** `temporal` | `semantic` | `contextual` on an external edge. Governs how
+      loud the edge is on the field, so the panel says it too. */
+  relClass: string | null;
 }
 
 /** Every relationship a node actually has, membership excluded — the same
@@ -60,6 +68,8 @@ export function connectionsOf(graph: AuditGraph, id: string): Connection[] {
         // The quantity the edge itself was grounded in, when it carries one.
         // An allocation without its share is half a fact.
         detail: typeof a.fraction === "number" ? `${Math.round(a.fraction * 100)}%` : null,
+        intelRel: typeof a.intelRel === "string" ? a.intelRel : null,
+        relClass: typeof a.relClass === "string" ? a.relClass : null,
       };
     })
     .sort((a, b) => (a.basis === b.basis ? a.rel.localeCompare(b.rel) : a.basis === "attested" ? -1 : 1));
@@ -72,6 +82,8 @@ export default function GraphInspector({
   onFocusNode,
   expandedNodes,
   onToggleNode,
+  evidenceSolo,
+  onEvidenceSolo,
 }: {
   graph: AuditGraph;
   nodeId: string;
@@ -80,6 +92,11 @@ export default function GraphInspector({
   /** Cluster ids AND source-artifact node ids the user has opened. */
   expandedNodes: Set<string>;
   onToggleNode: (id: string) => void;
+  evidenceSolo: boolean;
+  /** Null when this node cannot be traced. The control is then not offered
+      at all rather than offered and inert — a dead button is worse than no
+      button, which this panel learned once already on the source expander. */
+  onEvidenceSolo: ((on: boolean) => void) | null;
 }) {
   const attrs = graph.getNodeAttributes(nodeId) as AuditNodeAttributes;
   const color = nodeColor(attrs);
@@ -87,6 +104,15 @@ export default function GraphInspector({
   const isRequirement = attrs.kind === "requirement";
   const isPerson = attrs.kind === "person";
   const isSource = SOURCE_KINDS.includes(attrs.kind);
+  const isIntel = attrs.kind === "intel";
+  // Everything the producer sent that Signal does not model, plus the fields
+  // its own type carries. Shown rather than dropped: the boundary must not be
+  // where information goes to die, and a reader who can see an unmodelled
+  // field can tell Signal it matters.
+  const intelFields = (attrs.fields as Record<string, unknown> | undefined) ?? {};
+  const intelProvenance = (attrs.provenance as Record<string, unknown> | undefined) ?? {};
+  const intelExtra = (attrs.extra as Record<string, unknown> | undefined) ?? {};
+  const intelDates = (attrs.dates as Record<string, unknown> | undefined) ?? {};
   // The passages actually extracted from THIS artifact — read off the graph,
   // so the count and the field can never disagree.
   const passages = isSource
@@ -138,6 +164,14 @@ export default function GraphInspector({
           {isPerson && attrs.synthetic === true && <Chip color="var(--i-reality)">Synthetic</Chip>}
           {isPerson && Number(attrs.scopeCount) > 1 && (
             <Chip color="var(--i-violet)">Split across {String(attrs.scopeCount)} projects</Chip>
+          )}
+          {/* THE FIRST THING SAID ABOUT AN EXTERNAL OBJECT IS THAT IT IS
+              EXTERNAL, and the second is whether it is still the head. */}
+          {isIntel && <Chip color="var(--i-amber)">External · not Signal Reality</Chip>}
+          {isIntel && <Chip color="var(--i-text-soft)">{String(attrs.intelligenceType)}</Chip>}
+          {isIntel && attrs.isCurrent === false && <Chip color="var(--i-reality)">Superseded</Chip>}
+          {isIntel && attrs.dataStatus != null && (
+            <Chip color="var(--i-text-faint)">{String(attrs.dataStatus)}</Chip>
           )}
           {attrs.state != null && <Chip color={color}>{String(attrs.state)}</Chip>}
           {attrs.status != null && (
@@ -389,6 +423,112 @@ export default function GraphInspector({
         </div>
       )}
 
+      {/* ── EXTERNAL STRUCTURED INTELLIGENCE ──────────────────────────
+          The trust boundary is already held structurally — its own node kind,
+          its own edge basis, its own relation, its own band outside the
+          record's edge, and no rule joining it to any Signal entity. This
+          panel is not the boundary; it EXPLAINS the one already there, which
+          is the difference between a guarantee and a disclaimer. */}
+      {isIntel && (
+        <div className="mt-4 px-4">
+          <div
+            className="rounded-md border px-3 py-2.5"
+            style={{ borderColor: "color-mix(in srgb, var(--i-amber) 40%, transparent)", background: "var(--i-panel)" }}
+          >
+            <div className="text-[11.5px]" style={{ color: "var(--i-amber)" }}>
+              A claim from outside Signal
+            </div>
+            <p className="mt-1 text-[10.5px] leading-[1.55]" style={{ color: "var(--i-text-faint)" }}>
+              This was produced by an external knowledge system reading the same evidence.
+              It is what that system BELIEVES the evidence supports.{" "}
+              <span style={{ color: "var(--i-text-soft)" }}>
+                It is not an accepted Signal decision, dependency, or finding, it changes no
+                forecast, and nothing in Signal has checked it.
+              </span>
+            </p>
+          </div>
+
+          <div className="mt-3">
+            <Row label="Type" value={String(attrs.intelligenceType)} />
+            <Row label="Trust" value={String(attrs.trust)} mono />
+            {/* THE PRODUCER'S OWN HEAD DETERMINATION, never derived from
+                status — the corpus contains objects that are open AND
+                superseded, and reading one from the other gets those wrong. */}
+            <Row
+              label="Still current"
+              value={attrs.isCurrent === false ? "No — superseded" : "Yes — head of its chain"}
+              tone={attrs.isCurrent === false ? "var(--i-text-faint)" : undefined}
+            />
+            {attrs.dataStatus != null && <Row label="Producer status" value={String(attrs.dataStatus)} />}
+            {attrs.statementBasis != null && <Row label="Statement basis" value={String(attrs.statementBasis)} mono />}
+            {attrs.observedDate != null && <Row label="Observed" value={String(attrs.observedDate).slice(0, 10)} />}
+            <Row label="Producer id" value={String(attrs.externalId)} mono />
+          </div>
+
+          {attrs.isCurrent === false && (
+            <p className="mt-2 text-[10.5px] leading-[1.55]" style={{ color: "var(--i-text-faint)" }}>
+              The producer no longer holds this as current. It is kept so the chain that
+              replaced it can be followed, and it stays a mark on the field until something
+              reaches it.
+            </p>
+          )}
+
+          {Object.keys(intelDates).length > 0 && (
+            <KeyValues title="Dates" values={intelDates} />
+          )}
+          {Object.keys(intelFields).length > 0 && (
+            <KeyValues title={`${String(attrs.intelligenceType)} fields`} values={intelFields} />
+          )}
+          {Object.keys(intelProvenance).length > 0 && (
+            <KeyValues title="Producer provenance" values={intelProvenance} />
+          )}
+          {/* NOTHING IS DROPPED AT THE BOUNDARY. The transport preserves any
+              field Signal does not model; showing it here is what makes that
+              preservation checkable by a person rather than only by a proof. */}
+          {Object.keys(intelExtra).length > 0 && (
+            <KeyValues title="Not modelled by Signal" values={intelExtra} />
+          )}
+
+          {/* WHY DOES THE PRODUCER SAY THIS — the same guarded traversal a
+              finding gets, one boundary over. It follows citations out to the
+              passages and the artifacts they were read from, and it does NOT
+              follow external relations: the corpus is mostly `related_to`,
+              and a walk that admitted it would light most of the outer band. */}
+          {onEvidenceSolo && (
+            <button
+              type="button"
+              onClick={() => onEvidenceSolo(!evidenceSolo)}
+              data-shoot="intel-solo"
+              aria-pressed={evidenceSolo}
+              className="mt-3 w-full rounded-md border px-2.5 py-2 text-left text-[11px] transition-colors hover:bg-white/[0.04]"
+              style={{
+                borderColor: evidenceSolo ? "var(--i-signal)" : "var(--i-border-strong)",
+                color: evidenceSolo ? "var(--i-signal)" : "var(--i-text-soft)",
+              }}
+            >
+              {evidenceSolo ? "− Stop tracing this claim" : "Trace what the producer read"}
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* THE STATEMENT, VERBATIM. Never summarised and never rewritten — the
+          label above it is the same text trimmed to fit, and this is the one
+          place the whole claim is readable. */}
+      {isIntel && (
+        <div className="mt-4 px-4">
+          <div className="i-label mb-1.5" style={{ color: "var(--i-text-faint)" }}>
+            The claim
+          </div>
+          <div
+            className="rounded-md border p-2.5 text-[11px] leading-[1.6] text-[var(--i-text)]"
+            style={{ borderColor: "var(--i-border)", background: "var(--i-recess)" }}
+          >
+            {String(attrs.statement)}
+          </div>
+        </div>
+      )}
+
       {/* CONTENT — enough of a source or passage to understand it without
           leaving Audit, which is the whole point of a graph you explore. */}
       {attrs.excerpt != null && !isRequirement && (
@@ -437,22 +577,23 @@ export default function GraphInspector({
                   <span className="flex items-baseline gap-1.5">
                     <span className="text-[9px] uppercase tracking-[0.13em]" style={{ color: "var(--i-text-faint)" }}>
                       {c.outbound ? "" : "← "}
-                      {REL_LABEL[c.rel] ?? c.rel}
+                      {c.intelRel ?? REL_LABEL[c.rel] ?? c.rel}
                     </span>
-                    {/* ATTESTED vs INFERRED, in words. The distinction is the
-                        difference between a relationship the data states and
-                        one Signal read into it. */}
+                    {/* ATTESTED · INFERRED · EXTERNAL, in words. The
+                        difference between a relationship Signal's data
+                        states, one Signal read into it, and one somebody
+                        outside Signal asserted and Signal has not checked. */}
                     <span
                       className="rounded px-1 text-[8px] uppercase tracking-[0.12em]"
-                      style={{
-                        color: c.basis === "attested" ? "var(--i-signal)" : "var(--i-text-faint)",
-                        border: `1px solid color-mix(in srgb, ${
-                          c.basis === "attested" ? "var(--i-signal)" : "var(--i-text-faint)"
-                        } 40%, transparent)`,
-                      }}
+                      style={{ color: BASIS_COLOR[c.basis], border: `1px solid color-mix(in srgb, ${BASIS_COLOR[c.basis]} 40%, transparent)` }}
                     >
                       {c.basis}
                     </span>
+                    {c.relClass != null && (
+                      <span className="text-[8px] uppercase tracking-[0.12em]" style={{ color: "var(--i-text-faint)" }}>
+                        {c.relClass}
+                      </span>
+                    )}
                     <span className="i-readout text-[10px]" style={{ color: "var(--i-text-soft)" }}>
                       {c.detail ?? ""}
                     </span>
@@ -468,6 +609,30 @@ export default function GraphInspector({
         )}
       </div>
       <div className="flex-1" />
+    </div>
+  );
+}
+
+/** One colour per epistemic basis. External is amber rather than faint: it is
+    not weak evidence, it is UNCHECKED evidence, and those read differently. */
+const BASIS_COLOR: Record<EdgeBasis, string> = {
+  attested: "var(--i-signal)",
+  inferred: "var(--i-text-faint)",
+  external: "var(--i-amber)",
+};
+
+/** A producer's own record, printed as it arrived. Values are stringified
+    rather than interpreted — Signal does not model these, so rendering them
+    as anything but text would be Signal claiming to understand them. */
+function KeyValues({ title, values }: { title: string; values: Record<string, unknown> }) {
+  return (
+    <div className="mt-3">
+      <div className="i-label mb-1" style={{ color: "var(--i-text-faint)" }}>
+        {title}
+      </div>
+      {Object.entries(values).map(([k, v]) => (
+        <Row key={k} label={k} value={typeof v === "string" ? v : JSON.stringify(v)} mono={typeof v !== "string"} />
+      ))}
     </div>
   );
 }
