@@ -30,7 +30,13 @@ import {
   type AuditNodeAttributes,
   type AuditEdgeAttributes,
 } from "@/lib/audit/graph";
-import { layoutGraph, layoutExtent, CLUSTER_ORDER, FIELD } from "@/lib/audit/graphLayout";
+import {
+  layoutGraph,
+  layoutExtent,
+  layoutAggregates,
+  CLUSTER_ORDER,
+  FIELD,
+} from "@/lib/audit/graphLayout";
 import { mutateReality } from "@/lib/instrument/reality";
 import SignalGraph, { fitCamera, type GraphLayout } from "./SignalGraph";
 import {
@@ -48,6 +54,7 @@ import {
   type Viewport,
 } from "./cameraMotion";
 import GraphInspector from "./GraphInspector";
+import AggregateInspector from "./AggregateInspector";
 import FindingInspector from "./FindingInspector";
 import AuditReviewConsole, { type ConsoleMode } from "./AuditReviewConsole";
 import { zoomLevel, nextZoomLevel, nodeColor, fieldLabel, KIND_LABEL, type ZoomLevel } from "./graphTokens";
@@ -272,6 +279,16 @@ export default function AuditInstrument({ initialScopeId }: { initialScopeId?: s
 
   const layout = useMemo(() => (graph ? layoutGraph(graph) : null), [graph]);
 
+  // ── AGGREGATES ARE SELECTABLE, AND THEY ARE NOT NODES ────────────────
+  //
+  // §4: an aggregate bubble is a PROJECTION OF REAL MEMBERS, not a fake node.
+  // Signal stores no row for it, `graph.hasNode("agg:…")` is false, and every
+  // guard downstream that asks that question stays correct without being
+  // touched: no Trace, no review console, no truth status, no accession
+  // number. What it does have is a count, a composition and a list of real
+  // ids — which is exactly what its panel shows.
+  const aggregates = useMemo(() => (layout ? layoutAggregates(layout) : []), [layout]);
+
   // WHERE "FIT" GOES, DERIVED FROM WHAT IS ACTUALLY SEATED.
   //
   // The home camera used to be a constant, which was right only while the
@@ -338,8 +355,23 @@ export default function AuditInstrument({ initialScopeId }: { initialScopeId?: s
         }
       }
     });
+    // ONE GROUP, OPENED ON ITS OWN — the same mechanism a third time.
+    //
+    // Without this, "open this region" for a type group had to mean "open the
+    // whole sector", because identity was decided by lane and a lane is the
+    // only handle a group of external objects had. Resolving 24 commitments
+    // meant resolving all 126 Hermes objects and flying to the sector, which
+    // is not what the button says and not what the reader asked for.
+    //
+    // Additive, like the source case: a member still opens when its cluster
+    // does, and closing the group leaves the cluster exactly as it was.
+    for (const agg of aggregates) {
+      if (!expanded.has(agg.id)) continue;
+      for (const m of agg.members) if (graph.hasNode(m)) out.add(m);
+      if (agg.hub && graph.hasNode(agg.hub)) out.add(agg.hub);
+    }
     return out;
-  }, [graph, expanded]);
+  }, [graph, expanded, aggregates]);
 
   // ── SEARCH ───────────────────────────────────────────────────────────
   //
@@ -402,6 +434,11 @@ export default function AuditInstrument({ initialScopeId }: { initialScopeId?: s
     if (needed.size > 0) setExpanded((prev) => new Set([...prev, ...needed]));
   }, [matches, graph]);
 
+  const selectedAggregate = useMemo(
+    () => (selectedId ? aggregates.find((a) => a.id === selectedId) ?? null : null),
+    [aggregates, selectedId]
+  );
+
   const selectedAttrs = selectedId && graph?.hasNode(selectedId) ? graph.getNodeAttributes(selectedId) : null;
   const selectedFinding: TruthFinding | null = useMemo(() => {
     if (!selectedAttrs || selectedAttrs.kind !== "finding" || !truth) return null;
@@ -436,7 +473,29 @@ export default function AuditInstrument({ initialScopeId }: { initialScopeId?: s
   // to look at a Finding is the four things around it.
   const frameFor = useCallback(
     (id: string | null): Camera | null => {
-      if (!id || !graph || !layout || !graph.hasNode(id)) return null;
+      if (!id || !graph || !layout) return null;
+
+      // AN AGGREGATE IS FRAMED FROM ITS MEMBERS, because it has no seat of
+      // its own that means anything — its centre is where its members were
+      // packed, and the thing worth seeing is the disc they fill. Coverage
+      // only (spread 0), the same rule expanding a cluster uses: this is a
+      // move to a REGION, and the label plan decides what gets named once
+      // you are in it.
+      if (!graph.hasNode(id)) {
+        const agg = aggregates.find((a) => a.id === id);
+        if (!agg) return null;
+        const pts: { x: number; y: number }[] = [];
+        for (const n of agg.hub ? [...agg.members, agg.hub] : agg.members) {
+          const p = layout.get(n);
+          if (!p) continue;
+          pts.push({ x: p.x - p.r, y: p.y - p.r });
+          pts.push({ x: p.x + p.r, y: p.y + p.r });
+        }
+        const ab = boundsOf(pts);
+        if (!ab) return null;
+        return frameFocus(ab, { x: agg.x, y: agg.y }, cameraRef.current, viewportRef.current, 0);
+      }
+
       const anchor = layout.get(id);
       if (!anchor) return null;
       const f = semanticFocus(graph, id);
@@ -457,7 +516,7 @@ export default function AuditInstrument({ initialScopeId }: { initialScopeId?: s
       if (!b) return null;
       return frameFocus(b, { x: anchor.x, y: anchor.y }, cameraRef.current, viewportRef.current, spreadOf(layout, ids));
     },
-    [graph, layout]
+    [graph, layout, aggregates]
   );
 
   // ── SELECTION HISTORY ────────────────────────────────────────────────
@@ -1275,6 +1334,20 @@ export default function AuditInstrument({ initialScopeId }: { initialScopeId?: s
               provenance={truth.provenance[selectedFinding.id] ?? null}
               onSelect={(id) => select(gid.finding(id))}
               onEvidenceSolo={soloable ? () => setTrace(true) : null}
+            />
+          ) : selectedAggregate ? (
+            <AggregateInspector
+              graph={graph}
+              aggregate={selectedAggregate}
+              expandedNodes={expanded}
+              onSelect={select}
+              // ONE HANDLE PER GROUP, AND THE SOURCE GROUPS SHARE THEIRS
+              // WITH THE NODE INSPECTOR. Opening a transcript from its own
+              // panel and opening it from its shell are the same act on the
+              // same key, so the two panels can never disagree about whether
+              // it is open. A type group has no such node, so it keys on
+              // itself.
+              onExpand={() => toggleNode(selectedAggregate.hub ?? selectedAggregate.id)}
             />
           ) : selectedId && graph.hasNode(selectedId) ? (
             <GraphInspector

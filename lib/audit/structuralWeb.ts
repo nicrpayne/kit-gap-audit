@@ -80,6 +80,28 @@ export interface WebSheaf {
   kind: "extraction" | "citation";
 }
 
+/**
+ * Many relationships between two GROUPS, drawn as one strand that says how
+ * many it stands for.
+ *
+ * When a constellation's members are a mass rather than individuals, their
+ * relationships have to be a mass too — 23 separate lines from inside one
+ * blob to inside another says nothing 23 cannot say better, and it says it
+ * as a hairball. What it must NOT do is imply a single relationship exists
+ * between two things: the count is on the strand, the weight is derived from
+ * it, and expanding either end fans it back into the real members.
+ */
+export interface WebBundle {
+  id: string;
+  d: string;
+  from: string;
+  to: string;
+  count: number;
+  cls: FocusClass;
+  /** The real edge ids this one stroke stands for. Nothing is invented. */
+  edges: string[];
+}
+
 export interface StructuralWeb {
   strands: WebStrand[];
   sheaves: WebSheaf[];
@@ -283,4 +305,101 @@ export function structuralWeb(graph: AuditGraph, layout: GraphLayout): Structura
   });
 
   return { strands, sheaves, represented, suppressed, suppressedByClass };
+}
+
+// -- AGGREGATE BUNDLES ------------------------------------------------
+//
+// The relationships a constellation has WHILE ITS MEMBERS ARE A MASS.
+//
+// At the outer tiers a group is one shape with a count. Its members' real
+// relationships still exist and still matter — "these 23 observations are
+// grounded in those 3 meetings" is exactly the kind of thing the reader is
+// at this tier to learn — but drawing 23 lines from inside one blob to
+// inside another says nothing the count cannot say, and says it as a
+// hairball.
+//
+// So the members' edges are grouped by the pair of ENDPOINT GROUPS they
+// connect, and each pair becomes one strand carrying its own count.
+//
+//   IT MUST NEVER IMPLY ONE RELATIONSHIP WHERE THERE ARE MANY.
+//
+// The count is drawn on the strand, the weight is derived from it, and the
+// edge ids are carried so that expanding either end can fan the bundle back
+// into exactly the relationships it stood for. Nothing is invented and
+// nothing is lost: a bundle is an accounting of real edges, and the proof
+// checks that its members sum to them.
+
+/** Fewer than this and the individual strands are both truer and no
+    busier. See the guard in `aggregateBundles`. */
+export const BUNDLE_MIN = 2;
+
+export interface BundleInput {
+  /** Group id for a node, or null when the node is not in any group. */
+  groupOf: (id: string) => string | null;
+  /** Where a group's shell sits. */
+  seatOf: (groupId: string) => { x: number; y: number } | null;
+}
+
+export function aggregateBundles(
+  graph: AuditGraph,
+  layout: GraphLayout,
+  input: BundleInput
+): WebBundle[] {
+  const buckets = new Map<string, { from: string; to: string; cls: FocusClass; edges: string[] }>();
+
+  graph.forEachEdge((e, a, s, t) => {
+    const cls = edgeFocusClass(a as { rel: string; relClass?: string | null });
+    if (!cls) return;
+    // CONTEXTUAL BELONGS HERE AND NOWHERE ELSE.
+    //
+    // 61 `related_to` claims are the producer's bulk. Woken individually they
+    // are the hairball this whole layout refuses. But "23 of these
+    // observations relate to those risks" is a true and useful fact about two
+    // MASSES, and it is one stroke carrying one number. The rule is unchanged
+    // — no contextual edge is ever drawn as itself at rest — and this is not
+    // that: it is an accounting of them.
+    // PROVENANCE IS ALREADY BUNDLED, AND BETTER. The sheaves carry the whole
+    // citation and extraction mesh with every filament ending at its real
+    // endpoint. A second, coarser bundle over the same edges would draw the
+    // same relationships twice and disagree with itself about how many there
+    // are.
+    if (cls === "provenance") return;
+    const gs = input.groupOf(s);
+    const gt = input.groupOf(t);
+    // At least one end has to be inside a group, or there is nothing to
+    // bundle — two loose nodes already draw their own line.
+    if (!gs && !gt) return;
+    // Both ends in the SAME group is internal structure. It is drawn when the
+    // group opens, and at the tier where the group is one shape it would be a
+    // line from a thing to itself.
+    if (gs && gs === gt) return;
+    const from = gs ?? s;
+    const to = gt ?? t;
+    const key = `${from}|${to}|${cls}`;
+    const held = buckets.get(key);
+    if (held) held.edges.push(e);
+    else buckets.set(key, { from, to, cls, edges: [e] });
+  });
+
+  const seat = (id: string) => input.seatOf(id) ?? layout.get(id) ?? null;
+  const out: WebBundle[] = [];
+  for (const [key, b] of buckets) {
+    // A BUNDLE OF ONE IS NOT A BUNDLE. Drawn from a group's centre rather
+    // than from the member that actually has the relationship, it is strictly
+    // less accurate than the strand it would replace, and no less dense.
+    if (b.edges.length < BUNDLE_MIN) continue;
+    const a = seat(b.from);
+    const z = seat(b.to);
+    if (!a || !z) continue;
+    out.push({
+      id: `bundle:${key}`,
+      d: strandPath(a, z),
+      from: b.from,
+      to: b.to,
+      count: b.edges.length,
+      cls: b.cls,
+      edges: b.edges.sort(),
+    });
+  }
+  return out.sort((x, y) => x.id.localeCompare(y.id));
 }

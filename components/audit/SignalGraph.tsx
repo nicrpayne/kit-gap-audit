@@ -62,7 +62,7 @@ import {
   type ZoomLevel,
   type Identity,
 } from "./graphTokens";
-import { structuralWeb } from "@/lib/audit/structuralWeb";
+import { structuralWeb, aggregateBundles } from "@/lib/audit/structuralWeb";
 import {
   semanticFocus,
   edgeFocusClass,
@@ -459,6 +459,30 @@ export default function SignalGraph({
   // them would be a second, redundant claim about the same region.
   const aggregates = useMemo(() => layoutAggregates(layout), [layout]);
 
+  // ── WHAT A CONSTELLATION IS CONNECTED TO, WHILE IT IS STILL A MASS ────
+  //
+  // At the outer tiers a group is one shape with a count, so its members'
+  // relationships have to be one strand with a count too. Computed once per
+  // layout — it is a property of the corpus, not of the camera or the
+  // selection — and drawn only where the shells are drawn.
+  const bundles = useMemo(() => {
+    if (aggregates.length === 0) return [];
+    const groupOf = new Map<string, string>();
+    const seat = new Map<string, { x: number; y: number }>();
+    for (const agg of aggregates) {
+      seat.set(agg.id, { x: agg.x, y: agg.y });
+      for (const m of agg.members) groupOf.set(m, agg.id);
+      // A source constellation's HUB belongs to it too. Its passages are the
+      // members; the artifact itself is the thing they hang off, and an edge
+      // reaching the artifact is reaching the constellation.
+      if (agg.hub) groupOf.set(agg.hub, agg.id);
+    }
+    return aggregateBundles(graph, layout, {
+      groupOf: (id) => groupOf.get(id) ?? null,
+      seatOf: (id) => seat.get(id) ?? null,
+    });
+  }, [graph, layout, aggregates]);
+
   /**
    * HOW LOUD A SHELL IS, BY TIER.
    *
@@ -755,6 +779,14 @@ export default function SignalGraph({
       so the web must stop drawing its faint understudy underneath. */
   const drawnEdgeIds = useMemo(() => new Set(drawnEdges.map((e) => e.id)), [drawnEdges]);
 
+  /** Edges currently standing inside a bundle rather than as themselves. */
+  const bundledEdgeIds = useMemo(() => {
+    const out = new Set<string>();
+    if (aggShellOpacity <= 0.01) return out;
+    for (const bn of bundles) for (const e of bn.edges) out.add(e);
+    return out;
+  }, [bundles, aggShellOpacity]);
+
   /** Latent nodes per cluster — what "+N" is actually counting. */
   const latentByCluster = useMemo(() => {
     const m = new Map<string, number>();
@@ -1023,6 +1055,45 @@ export default function SignalGraph({
           disclosure ladder in one opacity. */}
       {aggShellOpacity > 0.01 && (
         <g data-shoot="graph-aggregates" style={{ pointerEvents: "none", transition: "opacity 220ms ease" }}>
+          {/* THE BUNDLES, UNDER THE SHELLS. One strand per pair of groups,
+              carrying how many real relationships it stands for. Weight goes
+              as the square root of the count, so twenty-three reads as
+              heavier than four without four reading as invisible — and the
+              number itself is printed, because a thickness is an impression
+              and a count is a fact. */}
+          {bundles.map((bn) => {
+            const mid = bundleMidpoint(bn.d);
+            return (
+              <g key={bn.id} opacity={aggShellOpacity * 0.75} data-shoot="aggregate-bundle" data-bundle-count={bn.count}>
+                <path
+                  d={bn.d}
+                  fill="none"
+                  stroke={WEB_STRAND_COLOR[bn.cls]}
+                  strokeWidth={Math.min(4, 0.7 + Math.sqrt(bn.count) * 0.5)}
+                  vectorEffect="non-scaling-stroke"
+                  strokeLinecap="round"
+                  opacity={0.3}
+                />
+                {bn.count > 2 && mid && (
+                  <text
+                    x={mid.x}
+                    y={mid.y}
+                    textAnchor="middle"
+                    dominantBaseline="middle"
+                    fontSize={9 / camera.k}
+                    fill={WEB_STRAND_COLOR[bn.cls]}
+                    paintOrder="stroke"
+                    stroke="var(--i-bg)"
+                    strokeWidth={3 / camera.k}
+                    strokeLinejoin="round"
+                    opacity={0.85}
+                  >
+                    {bn.count}
+                  </text>
+                )}
+              </g>
+            );
+          })}
           {aggregates.map((agg) => {
             // A homogeneous group may wear its type's colour, because every
             // mark inside really is that type. A mixed one may not: one hue
@@ -1036,14 +1107,29 @@ export default function SignalGraph({
             const off = agg.discR + 7 / camera.k;
             return (
               <g key={agg.id} opacity={aggShellOpacity} data-shoot={`aggregate-${agg.id}`} data-agg-count={agg.count}>
+                {/* THE SHELL IS THE CLICK TARGET FOR ITS GROUP.
+                    At the tiers where a constellation is one shape, the one
+                    shape is what a reader points at — and what they get is a
+                    panel about the group, not about whichever member happened
+                    to be under the cursor. `pointer-events` is re-enabled
+                    only on this ring, so the layer stays inert everywhere
+                    else and never steals a click from a node. */}
                 <circle
                   cx={agg.x}
                   cy={agg.y}
                   r={agg.discR}
-                  fill={`color-mix(in srgb, ${tint} 9%, transparent)`}
+                  fill={`color-mix(in srgb, ${tint} ${selectedId === agg.id ? 17 : 9}%, transparent)`}
                   stroke={tint}
-                  strokeWidth={1 / camera.k}
-                  strokeOpacity={0.34}
+                  strokeWidth={(selectedId === agg.id ? 2 : 1) / camera.k}
+                  strokeOpacity={selectedId === agg.id ? 0.85 : 0.34}
+                  role="button"
+                  aria-label={`${agg.label}, ${agg.count} members`}
+                  style={{ pointerEvents: "auto", cursor: "pointer" }}
+                  onClick={(ev) => {
+                    ev.stopPropagation();
+                    onSelect(selectedId === agg.id ? null : agg.id);
+                  }}
+                  data-shoot="aggregate-hit"
                 />
                 {/* A TYPE GROUP IS A REGION AND CARRIES ITS NAME. A SOURCE
                     GROUP IS A HUB AND DOES NOT — its artifact is a real node
@@ -1095,6 +1181,42 @@ export default function SignalGraph({
           })}
         </g>
       )}
+
+      {/* ── A SELECTED REGION KEEPS ITS OUTLINE PAST THE TIER THAT DREW IT ──
+
+          The shell layer switches off from NEAR inward, which is the whole
+          point: the group has dissolved into the things it was standing for.
+          But a reader who selected a region and then zoomed into it still has
+          it selected — the panel is still describing it — and with the layer
+          gone there was nothing on the field saying WHERE it was. You ended
+          up reading about 59 observations while looking at an anonymous
+          patch of marks.
+
+          So one ring survives, and only one: the selected group's. No fill,
+          no count, no name, no hit target — the members underneath are the
+          things to click now. It is a boundary, which is exactly what the
+          selection still means at this tier. */}
+      {aggShellOpacity <= 0.01 &&
+        (() => {
+          const agg = aggregates.find((a) => a.id === selectedId);
+          if (!agg) return null;
+          const tint = agg.homogeneous ? intelColor(agg.homogeneous) : "var(--i-text-soft)";
+          return (
+            <circle
+              cx={agg.x}
+              cy={agg.y}
+              r={agg.discR}
+              fill="none"
+              stroke={tint}
+              strokeWidth={1.4}
+              vectorEffect="non-scaling-stroke"
+              strokeOpacity={0.5}
+              strokeDasharray="5 5"
+              style={{ pointerEvents: "none" }}
+              data-shoot="aggregate-outline"
+            />
+          );
+        })()}
 
       {/* ── THE CALM-STATE WEB ────────────────────────────────────────
 
@@ -1154,7 +1276,15 @@ export default function SignalGraph({
             because each of these is a fact somebody could act on. */}
         <g opacity={focus || soloNodes ? WEB.strandFocused : WEB.strand} style={{ transition: "opacity 200ms ease" }}>
           {web.strands.map((st) =>
-            drawnEdgeIds.has(st.id) ? null : (
+            // A STRAND THAT IS CURRENTLY BUNDLED IS NOT ALSO DRAWN.
+            //
+            // This is the fan-out, and it is the whole point of bundling:
+            // while a constellation is one shape, its members' semantic and
+            // temporal relationships are one strand with a count; as the
+            // members resolve into individuals, that strand resolves into the
+            // relationships it stood for. The same edges, at two grains,
+            // never at once.
+            drawnEdgeIds.has(st.id) || bundledEdgeIds.has(st.id) ? null : (
               <path
                 key={`web-${st.id}`}
                 d={st.d}
@@ -2226,6 +2356,16 @@ const LABEL_PRIORITY: NodeKind[] = [
 
 /** The largest Reality is allowed to be drawn, in device pixels. */
 const CORE_MAX_PX = 190;
+
+/** The middle of a bundle's own curve, where its count is printed. Parsed
+    back out of the path rather than recomputed, so the number can never end
+    up somewhere the line is not. */
+function bundleMidpoint(d: string): { x: number; y: number } | null {
+  const m = d.match(/^M ([-\d.]+) ([-\d.]+) Q ([-\d.]+) ([-\d.]+), ([-\d.]+) ([-\d.]+)$/);
+  if (!m) return null;
+  const [ax, ay, cx, cy, bx, by] = m.slice(1).map(Number);
+  return { x: (ax + 2 * cx + bx) / 4, y: (ay + 2 * cy + by) / 4 };
+}
 
 export type { GraphLayout };
 export { layoutGraph };
