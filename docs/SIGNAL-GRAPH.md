@@ -1037,3 +1037,145 @@ and one external claim's provenance ended with **394 nodes and 253
 relationships** on screen. The route now promotes exactly its own nodes at
 their own seats — measured, **3 nodes: object → passage → source** — and it is
 offered only where the traversal actually lands on an artifact.
+
+## Semantic zoom — constellations, groups, and the one law
+
+> **ZOOM REVEALS IDENTITY, NOT TRUTH.**
+
+Going closer may only make a thing say more about *what it is*. It may never
+change what Signal believes, invent an object or a relationship, promote
+external intelligence into Reality, or renumber anything. Every proof in
+`scripts/audit-zoom-proof.ts` is that question asked of a different surface.
+
+### Constellations, and why there is no physics
+
+Two populations dominate the real corpus and both used to resolve into rails:
+126 external objects fanned across one sector in three rows, and 45 source
+artifacts on a ring with 156 passages in slots outside them. In both cases the
+arrangement carried no information beyond membership — which position already
+said — so zoom enlarged the geometry and revealed nothing.
+
+They are now **deterministic local constellations**, built from two pure
+functions in `lib/audit/constellations.ts`:
+
+- **The phyllotaxis disc.** Members of one group are packed in a golden-angle
+  spiral — a sunflower head. Even at every count, no preferred axis, and
+  completely determined by `(index, count)`.
+- **The wedge shelf-packer.** Discs are shelved into their sector from the
+  inside out, largest first. If they do not fit, *everything* shrinks together:
+  a population that outgrows its band should read as denser, never as a few
+  groups pushed outside the sector that defines their membership.
+
+**No force layout, ever, and no state between frames.** The proof is the
+observable difference: run the layout twice and the seats are identical
+(`P1`), and shuffling the packer's input changes nothing (`P2`). A relaxation
+simulation cannot pass either.
+
+Measured on the real corpus: **19 groups over 261 members** — 8 by producer
+type, 11 by source artifact — with 156/156 passages nearest their own hub and
+405/405 seats inside their own sector.
+
+### An aggregate is not a node
+
+A group has no row, no ref, no truth status, and Signal never stores one. It is
+a **projection of real members**: its count is `members.length`, its label is
+their shared type or their shared source, and every mark inside it is a real
+node at a real seat. `graph.hasNode("agg:…")` is false, which is what keeps
+every downstream guard correct without being touched.
+
+`AggregateInspector` says what a group actually has. The part that earns its
+space is the reach table, which never claims a relationship between two
+groups — nobody in the corpus asserts that. It says what the **members**
+assert, one row per verb, with two deliberately different numbers: how many
+relationships carry the verb, and how many distinct things are at the other
+end. The 59 external observations read:
+
+```
+cites          75 → 74 things
+related_to     25 → 14 things
+derived_from    3 →  2 things
+resolves        2 →  2 things   … 110 in total
+```
+
+Bundles on the field are exactly that, drawn: one stroke between two groups,
+thickness by count, the number printed when it is above two. **11 bundles
+carrying 30 relationships**, and the web's strand layer skips any edge
+currently inside one — the same relationship is never drawn at two grains at
+once.
+
+### The ladder
+
+| tier | zoom | what it is about |
+| --- | --- | --- |
+| `far` | < 95% | the project: regions, named and counted |
+| `medium` | 95–160% | aggregates: which groups, how big, what connects |
+| `near` | 160–260% | named entities |
+| `close` | > 260% | evidence: quoted passages, source artifacts |
+
+Hysteresis is ±0.09 so a tier does not flicker on the boundary.
+
+**Two ways to stop being a mark, and they mean different things.** *Opening* is
+the reader's own act — a cluster, a source, a group — and it is reversible and
+holds at every zoom. *Resolution* is distance: from `near` inward, a mark
+actually on screen becomes itself. That second one is this tranche's primary
+law, and the rule it replaced was its exact opposite. Measured against the old
+rule, the real corpus at 300% was **392 nameless dots with two labels on the
+whole field** — you could go as close as you liked and never learn what
+anything was.
+
+Resolution is **not** opening: a resolved node does not join `openedNow`, so it
+wakes no edges. Going closer must not turn the field into the hairball the
+layout refuses. Naming stays gated by the tier's vocabulary and then by the
+collision-and-budget pass, which is what keeps 156 passages from stacking.
+
+Measured across the four tiers on 407 nodes:
+
+```
+far      55%   407 nodes ·  0 named · 19 shells (7 named) · 11 bundles
+medium  112%   407 nodes ·  2 named · 19 shells (7 named) · 11 bundles
+near    190%   407 nodes · 24 named ·  0 shells
+close   295%   407 nodes · 44 named ·  0 shells
+```
+
+Every tier draws every node. Only resolution changes.
+
+### The gray-dot test
+
+At project scale, with nothing clicked, the field names **7 regions** and
+prints **19 counts summing to 261**, across **13 distinct fills over 19
+populations**. That is what a reader gets before touching anything.
+
+### What the web costs, and where it leaves
+
+The calm-state web is the layer that answers "is this a connected knowledge
+system". That is a question you ask from across the field. At 300% you are
+inside one constellation reading a quoted sentence, and a hairline that enters
+the frame at one edge and leaves at the other answers nothing.
+
+It is also, measured, the single most expensive thing the field draws at that
+range. Isolated by hiding one layer at a time during a drag at 450%:
+
+| | median | p95 |
+| --- | --- | --- |
+| everything | 50.1ms | 83.4ms |
+| **without the web** | **16.7ms** | **16.8ms** |
+| without the structure rings | 33.3ms | 50.0ms |
+| without labels | 16.7ms | 33.4ms |
+
+119 paths that fit the viewport at Fit are, at that scale, 119 curves several
+viewport-widths long, each clipped and stroked on every frame. So the web is
+full at `far` and `medium`, halved at `near`, and **not rendered** at `close` —
+a hidden element still costs its clip.
+
+With that in place, every tier holds 60fps on the real corpus:
+
+```
+pan at Fit        median 16.7ms · p95 16.7ms
+pan at close      median 16.7ms · p95 33.3ms
+wheel up the ladder  median 16.7ms · p95 33.4ms
+select a group    median 16.7ms · p95 16.8ms
+DOM: 2320 elements at far → 2152 at close
+```
+
+A CPU profile of the close-zoom drag: **75ms of JavaScript in a 2341ms
+window** — 3%. The cost was never our code.

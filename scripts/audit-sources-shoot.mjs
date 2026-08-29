@@ -305,11 +305,49 @@ await park();
     await settle(500);
     await p.keyboard.press("Escape");
     await settle(700);
+    // READ IT FROM ACROSS THE FIELD.
+    //
+    // There are now TWO ways a mark stops being a mark, and this step is
+    // about one of them. Expansion is the reader's own act and is reversible;
+    // DISTANCE also resolves, from the NEAR tier inward, and is not something
+    // Collapse can or should undo — you are still standing there. Selecting a
+    // transcript flies the camera in, so without this the step would be
+    // measuring the zoom rather than the toggle.
+    await fit();
     const openState = await count('[data-kind="passage"]:not([data-identity="latent"])');
     await p.locator('[data-shoot="collapse-all"]').click();
     await settle(700);
     const closedState = await count('[data-kind="passage"]:not([data-identity="latent"])');
     check("11. collapsing the source returns its passages to marks", openState - closedState === 2, `${openState} → ${closedState} formed passages`);
+
+    // AND THE OTHER MECHANISM, STATED. Go close and the passages resolve
+    // whether or not anything is expanded — that is the tranche's primary
+    // law, and Collapse must not fight it.
+    // AIMED AT THE PASSAGES, not at the middle of the field — the middle is
+    // Reality and the ground around it, and going closer to empty ground
+    // measures nothing.
+    const at = await p.evaluate(() => {
+      // ONE passage, not the centroid of all of them: five marks spread
+      // around a sector have a centroid in the empty middle, and going closer
+      // to that puts every one of them off screen.
+      const g = document.querySelector('g[data-kind="passage"]');
+      if (!g) return null;
+      const b = g.getBoundingClientRect();
+      return { x: Math.round(b.x + b.width / 2), y: Math.round(b.y + b.height / 2) };
+    });
+    if (at) {
+      await p.mouse.move(at.x, at.y);
+      for (let i = 0; i < 16; i++) { await p.mouse.wheel(0, -110); await settle(30); await p.mouse.move(at.x, at.y); }
+    }
+    await settle(600);
+    await park();
+    const closeState = await count('[data-kind="passage"]:not([data-identity="latent"])');
+    check(
+      "11b. distance resolves what collapse put away, and that is the law not a leak",
+      closeState > closedState,
+      `${closedState} formed at Fit with everything collapsed → ${closeState} once you are standing in it`
+    );
+    await fit();
   } else {
     check("11. the expand control is present on a selected transcript", false);
   }

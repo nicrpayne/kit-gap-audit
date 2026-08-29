@@ -55,6 +55,8 @@ import {
   LATENT,
   latentRadius,
   identityOf,
+  atLeast,
+  RESOLVE_AT,
   intelIsHollow,
   fieldLabel,
   labelsFor,
@@ -414,6 +416,21 @@ export default function SignalGraph({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [drawnNodes, layout, planKey, size.w, size.h]);
 
+  /**
+   * WHICH MARKS DISTANCE HAS RESOLVED.
+   *
+   * The primary law of this tranche, applied: from the NEAR tier inward, a
+   * mark you are actually looking at becomes itself. Gated on `onScreen`
+   * rather than on the whole field, because resolution costs a real shape
+   * and a hit target per node, and 250 of them behind the viewport edge are
+   * a bill with no perceptual return — the same argument the depth filter
+   * already makes.
+   *
+   * It does NOT feed `openedNow`. Going closer resolves identity and wakes
+   * no relationships; edges still belong to expansion and selection.
+   */
+  const resolvedByZoom = atLeast(level, RESOLVE_AT);
+
   const nodeDepth = (id: string, latent: boolean): Depth => {
     if (!onScreen.has(id)) return 0;
     if (soloNodes) return soloNodes.has(id) ? 0 : latent ? 1 : 1;
@@ -491,6 +508,16 @@ export default function SignalGraph({
    * are all named is not subtle, it is a smudge nobody can account for.
    */
   const aggShellOpacity = level === "far" ? 1 : level === "medium" ? 0.5 : 0;
+
+  /**
+   * HOW MUCH OF THE WEB THIS TIER WANTS.
+   *
+   * Full while the field is the subject; halved at NEAR, where you are
+   * arriving somewhere and the surrounding structure is still orientation;
+   * gone at CLOSE, where you are reading one thing and the web is neither
+   * readable nor free. See the layer itself for the measurement.
+   */
+  const webOpacity = level === "close" ? 0 : level === "near" ? 0.5 : 1;
 
   /**
    * REALITY STOPS GROWING AT 190 DEVICE PIXELS.
@@ -791,12 +818,17 @@ export default function SignalGraph({
   const latentByCluster = useMemo(() => {
     const m = new Map<string, number>();
     for (const n of drawnNodes) {
+      // STILL A MARK MEANS STILL A MARK. A node the reader has opened is not
+      // counted, and neither is one that distance has resolved — "+202" over
+      // a region where forty of them are wearing names would be counting
+      // things the reader can already see.
       if (openedNow.has(n)) continue;
+      if (resolvedByZoom && onScreen.has(n)) continue;
       const lane = graph.getNodeAttribute(n, "lane") as string | undefined;
       if (lane) m.set(lane, (m.get(lane) ?? 0) + 1);
     }
     return m;
-  }, [drawnNodes, openedNow, graph]);
+  }, [drawnNodes, openedNow, graph, resolvedByZoom, onScreen]);
 
   // KEYBOARD ORDER FOLLOWS MEANING, NOT GEOMETRY.
   //
@@ -1227,10 +1259,30 @@ export default function SignalGraph({
 
           It recedes rather than disappears when something is selected: the
           local world is what the reader is being asked to read, and the web
-          becomes the ground it stands on. */}
+          becomes the ground it stands on.
+
+          AND IT LEAVES AT THE EVIDENCE TIER, for the same reason the shells
+          do. "Is this a connected knowledge system" is the question you ask
+          from across the field; at 300% you are inside one constellation
+          reading a quoted sentence, and a hairline that enters the frame at
+          one edge and leaves at the other answers nothing you can act on.
+
+          It is also, measured, the single most expensive thing the field
+          draws at that range. Isolated by hiding one layer at a time during
+          a drag at 450%: everything 50.1ms median / 83.4ms p95 — the web
+          alone accounts for all of it, 16.7ms / 16.8ms without it, against
+          33.3ms without the structure rings and 16.7ms without labels. 119
+          paths that fit the viewport at Fit are, at that scale, 119 curves
+          several viewport-widths long, and each one is clipped and stroked
+          on every frame of every pan.
+
+          So the layer is not merely faded — it is not rendered. A hidden
+          element still costs its clip. */}
+      {webOpacity > 0.01 && (
       <g
         data-shoot="graph-web"
-        style={{ pointerEvents: "none" }}
+        opacity={webOpacity}
+        style={{ pointerEvents: "none", transition: "opacity 220ms ease" }}
         className={focus || soloNodes ? DEPTH_CLASS[1] : undefined}
       >
         {/* THE BUNDLED PROVENANCE MESH. Each path is one source artifact's
@@ -1311,6 +1363,7 @@ export default function SignalGraph({
           )}
         </g>
       </g>
+      )}
 
       <g data-shoot="graph-edges" style={{ pointerEvents: "none" }}>
         {drawnEdges.map((e) => {
@@ -1494,6 +1547,7 @@ export default function SignalGraph({
                 letterSpacing={`${0.14 / camera.k}em`}
                 fill={attrs.supplied ? "var(--i-text)" : "var(--i-text-faint)"}
                 style={{ textTransform: "uppercase", pointerEvents: "none" }}
+                data-shoot="cluster-label"
               >
                 {attrs.label}
               </text>
@@ -1603,7 +1657,14 @@ export default function SignalGraph({
             (matches?.has(id) ?? false) ||
             (soloNodes?.has(id) ?? false) ||
             rank != null;
-          const identity = identityOf(attrs.kind, openedNow.has(id) && (!historical || reached), level);
+          const identity = identityOf(
+            attrs.kind,
+            openedNow.has(id) && (!historical || reached),
+            level,
+            // A SUPERSEDED OBJECT IS STILL HISTORY AT EVERY DISTANCE. Zoom
+            // reveals what a thing is; it does not un-supersede it.
+            resolvedByZoom && onScreen.has(id) && (!historical || reached)
+          );
           const latent = identity === "latent";
           const depth = nodeDepth(id, latent);
           // A LABEL RUNS OUTWARD — UNLESS OUTWARD IS OFF THE SCREEN.
@@ -2150,6 +2211,7 @@ const GraphNode = memo(function GraphNode({
           // reading as texture.
           className={depth > 0 ? DEPTH_CLASS[2] : undefined}
           style={{ pointerEvents: "none" }}
+          data-shoot="node-label"
         >
           {truncate(fieldLabel(attrs), attrs.kind === "finding" ? 34 : attrs.kind === "passage" ? 40 : 30)}
         </text>

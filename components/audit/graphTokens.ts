@@ -722,15 +722,40 @@ export function latentRadius(r: number, level: ZoomLevel, k: number): number {
 /**
  * What a node is showing right now.
  *
- * `opened` is the renderer's own visibility rule — the core slice, plus any
- * cluster the user has expanded. Zoom governs the step from formed to named
- * and never the step from latent to formed: expanding a cluster you are
- * looking at from a distance must still show you what is in it.
+ * TWO WAYS TO STOP BEING A MARK, AND THEY MEAN DIFFERENT THINGS.
+ *
+ * `opened` is the reader's own act — the core slice, plus any cluster,
+ * source or group they have expanded. It is a decision, it persists, and it
+ * holds at every zoom: expanding a cluster you are looking at from across
+ * the field must still show you what is in it.
+ *
+ * `resolved` is DISTANCE. This is the tranche's primary law — ZOOM REVEALS
+ * IDENTITY — and the rule it replaces was the opposite one: "zoom governs
+ * the step from formed to named and never the step from latent to formed".
+ * Measured against that rule, the real corpus at 300% was 392 nameless dots
+ * with two labels on the whole field. You could go as close as you liked and
+ * the field never told you what anything was, which is the gray-dot failure
+ * with extra steps.
+ *
+ * So from the NEAR tier inward, a mark that is actually on screen becomes
+ * itself. The caller decides what "on screen" means, because it owns the
+ * viewport; this function only knows that a resolved node is no longer dust.
+ *
+ * WHAT RESOLUTION IS NOT: it is not opening. A resolved node does not join
+ * `openedNow`, so it wakes NO EDGES — going closer must not turn the field
+ * into the hairball that the whole layout refuses. And it is not a licence to
+ * print: naming is still gated by the tier's own vocabulary here, and then by
+ * the renderer's collision-and-budget pass, which is what keeps 156 passages
+ * from stacking into a smear.
  */
-export function identityOf(kind: NodeKind, opened: boolean, level: ZoomLevel): Identity {
-  if (!opened) return "latent";
+export function identityOf(kind: NodeKind, opened: boolean, level: ZoomLevel, resolved = false): Identity {
+  if (!opened && !resolved) return "latent";
   return labelsFor(level).has(kind) ? "named" : "formed";
 }
+
+/** The tier from which distance alone resolves a mark into itself. Below it
+    the marks are population and the shells are the subject. */
+export const RESOLVE_AT: ZoomLevel = "near";
 
 /**
  * Edges that are membership, not relationship.
