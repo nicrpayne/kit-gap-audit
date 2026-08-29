@@ -145,6 +145,10 @@ const flyTo = () => p.evaluate(() => {
   document.querySelector('[data-shoot="cluster-toggle-linear"]')?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
 });
 
+/** The zoom `flyTo` is aiming at — expanding a cluster frames it at 1.35.
+    Named so an interruption proof can say "it did not arrive". */
+const FLY_K = 1.35;
+
 // T1/T2 — it animates, and it lands inside the budget.
 //
 // Clicked and sampled inside ONE page evaluation. Driving the click from the
@@ -206,7 +210,16 @@ const flyTo = () => p.evaluate(() => {
 }
 
 // T4/T5/T6 — INTERRUPTION. The graph must never make the user wait.
-async function interrupt(label, act, n) {
+//
+// `reaims` marks the one interruption that is itself a camera command. Under
+// the Interaction Contract, selecting a node runs the framing law, so it does
+// not merely CANCEL the flight — it may cancel it and then make its own,
+// minimal move from wherever the camera actually got to. The law being
+// defended is the same one either way: the flight in progress is abandoned,
+// nothing is queued, and whatever happens next comes to rest. So an
+// interruption that re-aims is held to "abandoned the old destination and
+// settled" rather than to "did not move again".
+async function interrupt(label, act, n, reaims = false) {
   await p.locator('[data-shoot="collapse-all"]').click();
   await fit();
   await settle(400);
@@ -218,10 +231,21 @@ async function interrupt(label, act, n) {
   const justAfter = await cam();
   await p.waitForTimeout(500); // if the tween survived, it would arrive by now
   const later = await cam();
+  await p.waitForTimeout(400);
+  const settled = await cam();
   const stopped =
     Math.abs(later.x - justAfter.x) < 1.5 && Math.abs(later.y - justAfter.y) < 1.5 && Math.abs(later.k - justAfter.k) < 0.01;
-  record(`interrupt.${label}`, { mid: mid.k, after: justAfter.k, later: later.k, stopped });
-  check(`T${n} a running tween is cancelled by ${label}`, stopped, `k ${mid.k.toFixed(2)} → ${justAfter.k.toFixed(2)} → ${later.k.toFixed(2)}`);
+  const cameToRest =
+    Math.abs(settled.x - later.x) < 1.5 && Math.abs(settled.y - later.y) < 1.5 && Math.abs(settled.k - later.k) < 0.01;
+  const abandoned = Math.abs(later.k - FLY_K) > 0.02;
+  const ok = reaims ? cameToRest && abandoned : stopped;
+  record(`interrupt.${label}`, { mid: mid.k, after: justAfter.k, later: later.k, settled: settled.k, stopped, cameToRest, abandoned });
+  check(
+    `T${n} a running tween is cancelled by ${label}`,
+    ok,
+    `k ${mid.k.toFixed(2)} → ${justAfter.k.toFixed(2)} → ${later.k.toFixed(2)}` +
+      (reaims ? ` → ${settled.k.toFixed(2)} (abandoned the ${FLY_K} destination, then came to rest)` : "")
+  );
   await p.locator('[data-shoot="collapse-all"]').click();
   await fit();
 }
@@ -234,7 +258,7 @@ await interrupt("a pan drag", async () => {
 }, 5);
 await interrupt("selecting a node", async () => {
   await p.evaluate(() => document.querySelector('[data-shoot^="node-finding:"] g[role="button"]')?.dispatchEvent(new MouseEvent("click", { bubbles: true })));
-}, 6);
+}, 6, true);
 await p.keyboard.press("Escape");
 await settle(400);
 
@@ -281,7 +305,19 @@ await settle(400);
   await settle(400);
 }
 
-// S2 — a SEARCH RESULT, by contrast, is meant to fly.
+// S2 — AND A SEARCH RESULT DOES EXACTLY WHAT A CLICK DOES.
+//
+// This proof used to assert the opposite: that choosing a search result FLEW,
+// forcing at least 230% zoom. Hands-on testing at 438 real nodes found that
+// to be the single worst behaviour on the surface — it threw away whatever
+// view the reader had built in order to show them a node they could usually
+// already see, and it made the camera depend on HOW the selection happened
+// rather than on what was selected.
+//
+//   SELECTION SOURCE MUST NOT CHANGE CAMERA SEMANTICS.
+//
+// So the law is now the same one S1 states, and this proves the two agree:
+// at Fit the whole field is visible, so a search result moves nothing at all.
 {
   await fit();
   await p.locator('[data-shoot="graph-search"]').fill("offline");
@@ -290,9 +326,12 @@ await settle(400);
   await p.locator('[data-shoot="search-results"] button').first().click();
   await settle(900);
   const after = await cam();
-  const moved = Math.hypot(after.x - before.x, after.y - before.y) > 20 || Math.abs(after.k - before.k) > 0.1;
   record("search.fly", { before, after });
-  check("S2 choosing a search result does fly to it", moved, `k ${before.k.toFixed(2)} → ${after.k.toFixed(2)}`);
+  check(
+    "S2 choosing a search result obeys the same framing law as a click — no forced zoom",
+    cameraSettledEnough(before, after),
+    `k ${before.k.toFixed(2)} → ${after.k.toFixed(2)} at Fit, where the neighbourhood is already visible`
+  );
   await p.locator('[data-shoot="graph-search"]').fill("");
   await p.keyboard.press("Escape");
   await fit();

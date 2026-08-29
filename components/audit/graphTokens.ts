@@ -218,6 +218,81 @@ export const TIER = {
   latentDimmed: 0.08,
 } as const;
 
+// ── FUNCTIONAL LUMINANCE ───────────────────────────────────────────────
+//
+// Law 4: glow is not polish here, it is the hierarchy. `TIER.focus` used to
+// be one number for "everything the selection touches", which meant a
+// Finding's amber neighbour, the passage that grounds it and a `related_to`
+// claim from the producer all arrived at exactly the same brightness. The eye
+// was given eleven equally-bright things and no order to read them in.
+//
+// Five steps, and the gaps between them are chosen to be legible rather than
+// even: SEMANTIC has to look like the answer, TEMPORAL like a distinct kind
+// of answer, PROVENANCE like the footnote it is, and CONTEXTUAL like
+// something that is present rather than something you are being shown.
+//
+// UNRELATED IS DELIBERATELY BRIGHTER THAN THE OLD `dimmed` 0.1. That is only
+// affordable because unrelated marks are now also SOFTENED — optical depth
+// carries the separation that opacity alone used to have to carry, so the
+// field can stay legible as a map while asking the eye to read only the local
+// world. Dimming to near-black bought attention by destroying orientation.
+export const FOCUS_TIER = {
+  anchor: 1,
+  semantic: 0.94,
+  temporal: 0.88,
+  provenance: 0.7,
+  /** Present, reachable, listed in the inspector — and never competing. */
+  contextual: 0.3,
+  /** Everything the selection does not touch. Softened, not extinguished. */
+  unrelated: 0.24,
+  /** A latent mark that the selection does not touch. Below `unrelated`,
+      because a thing with no name on it must never outrank a real node that
+      has been pushed back. */
+  unrelatedLatent: 0.14,
+} as const;
+
+export type FocusTierName = keyof typeof FOCUS_TIER;
+
+/**
+ * How loud a woken edge is, by class.
+ *
+ * PROVENANCE IS QUIETER THAN THE MEANING IT SUPPORTS. A finding with nine
+ * citations should not read as nine equal statements about the project — the
+ * citations are how it is known, drawn as a filament, and the one `depends_on`
+ * is what it means.
+ */
+export const FOCUS_EDGE = {
+  semantic: 0.95,
+  temporal: 0.95,
+  provenance: 0.62,
+  /** `related_to` at its own endpoint: a hairline. Visible if looked for,
+      invisible if not. */
+  contextual: 0.16,
+} as const;
+
+// ── OPTICAL DEPTH ──────────────────────────────────────────────────────
+//
+// Three depths, addressed by CSS class rather than by an inline filter so the
+// browser sees one rule for four hundred elements instead of four hundred
+// distinct filter chains. See `.sg-depth-*` in app/globals.css.
+//
+//   0  sharp      the selection, its semantic and temporal neighbours, and
+//                 the provenance route. Everything the reader is being asked
+//                 to READ.
+//   1  soft       unrelated marks and unrelated structure. Still exactly
+//                 where they were, still the right colour and size — the map
+//                 survives, the invitation to read it does not.
+//   2  softer     unrelated LABELS, which is where blur does its real work:
+//                 text is what the eye tries hardest to resolve, so text is
+//                 what has to stop asking.
+export type Depth = 0 | 1 | 2;
+
+export const DEPTH_CLASS: Record<Depth, string | undefined> = {
+  0: undefined,
+  1: "sg-depth-1",
+  2: "sg-depth-2",
+};
+
 /**
  * ZOOM THRESHOLDS — explicit, not "labels scale with k".
  *

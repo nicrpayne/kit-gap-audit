@@ -32,7 +32,7 @@ import {
 } from "@/lib/audit/graph";
 import { layoutGraph, layoutExtent, CLUSTER_ORDER, FIELD } from "@/lib/audit/graphLayout";
 import { mutateReality } from "@/lib/instrument/reality";
-import SignalGraph, { focusCamera, fitCamera } from "./SignalGraph";
+import SignalGraph, { fitCamera } from "./SignalGraph";
 import {
   DEFAULT_CAMERA,
   MAX_ZOOM,
@@ -42,12 +42,16 @@ import {
   interpolateCamera,
   cameraSettled,
   prefersReducedMotion,
+  frameFocus,
+  boundsOf,
   type Camera,
+  type Viewport,
 } from "./cameraMotion";
 import GraphInspector from "./GraphInspector";
 import FindingInspector from "./FindingInspector";
 import AuditReviewConsole, { type ConsoleMode } from "./AuditReviewConsole";
 import { zoomLevel, nextZoomLevel, nodeColor, KIND_LABEL, type ZoomLevel } from "./graphTokens";
+import { semanticFocus, hasTraceRoute } from "@/lib/audit/focus";
 
 type Provenance = FindingProvenance & { grounding: ReturnType<typeof groundingLabel> };
 
@@ -68,6 +72,13 @@ interface TruthPayload {
 
 const SWEEP_MS = 2600;
 
+/** One step of local graph navigation. See the history block below. */
+interface NavEntry {
+  id: string;
+  camera: Camera;
+  expanded: string[];
+}
+
 export default function AuditInstrument({ initialScopeId }: { initialScopeId?: string }) {
   const [scopeId, setScopeId] = useState<string | undefined>(initialScopeId);
   const [payload, setPayload] = useState<GraphPayload | null>(null);
@@ -82,6 +93,25 @@ export default function AuditInstrument({ initialScopeId }: { initialScopeId?: s
   const [solo, setSolo] = useState(false);
   const [mode, setMode] = useState<ConsoleMode>("A");
   const [awaiting, setAwaiting] = useState<Set<string>>(new Set());
+  /** Whether the search result list is showing. Collapsed once a result has
+      been taken, so the panel stops covering the thing it just found. */
+  const [resultsOpen, setResultsOpen] = useState(true);
+
+  // The measured field, reported up by the renderer. The framing law cannot
+  // be evaluated without it — "is this already comfortably in view" is a
+  // question about a real rectangle on a real screen.
+  //
+  // Held in BOTH a ref and state, and the split is deliberate: the framing law
+  // reads it synchronously inside `select`, where a state value could be a
+  // render behind; `homeCamera` is derived from it, so it also has to be
+  // something React recomputes. A resize is rare enough that the extra render
+  // costs nothing.
+  const viewportRef = useRef<Viewport>({ w: 1000, h: 800 });
+  const [viewport, setViewport] = useState<Viewport | null>(null);
+  const onViewport = useCallback((vp: Viewport) => {
+    viewportRef.current = vp;
+    setViewport((prev) => (prev && prev.w === vp.w && prev.h === vp.h ? prev : vp));
+  }, []);
 
   const [busy, setBusy] = useState<ActionId | null>(null);
   const [result, setResult] = useState<{ ok: boolean; message: string } | null>(null);
@@ -225,9 +255,27 @@ export default function AuditInstrument({ initialScopeId }: { initialScopeId?: s
   // `edgeR`, so a Scope with no external intelligence still fits at exactly
   // the zoom it always has.
   const homeCamera = useMemo(
-    () => (layout ? fitCamera(layoutExtent(layout)) : DEFAULT_CAMERA),
-    [layout]
+    () => (layout ? fitCamera(layoutExtent(layout), viewport ?? undefined) : DEFAULT_CAMERA),
+    [layout, viewport]
   );
+
+  // AND THE INSTRUMENT OPENS AT FIT, not at a constant that happens to be
+  // near it. `fitCamera`'s own docstring has always said "what the instrument
+  // opens at"; the code opened at DEFAULT_CAMERA instead, so on a project
+  // with external intelligence the outer band was off screen on arrival, and
+  // on a short window the record itself overflowed. Both make Law 5's first
+  // rule — "if it is already visible, do not move" — false on the very first
+  // click.
+  //
+  // Once per project, and only after the field has actually been measured;
+  // never again, so it can never fight a camera the reader has set.
+  const homedFor = useRef<string | null>(null);
+  useEffect(() => {
+    if (!layout || !viewport || !payload) return;
+    if (homedFor.current === payload.scope.id) return;
+    homedFor.current = payload.scope.id;
+    setCamera(homeCamera);
+  }, [layout, viewport, payload, homeCamera, setCamera]);
 
   // ── WHAT IS OPEN, NOT WHAT EXISTS ────────────────────────────────────
   //
@@ -336,22 +384,147 @@ export default function AuditInstrument({ initialScopeId }: { initialScopeId?: s
   }, [selectedAttrs, selectedId, truth]);
 
   // ── EVIDENCE SOLO — a guarded traversal, not a neighbourhood walk ─────
-  const soloNodes = useMemo(() => {
-    if (!solo || !graph || !selectedId) return null;
-    return evidenceSolo(graph, selectedId).nodes;
-  }, [solo, graph, selectedId]);
+  //
+  // COMPUTED WHETHER OR NOT SOLO IS ON, because Law 10 needs the answer to
+  // "is there a route" before the button is offered, not after it is pressed.
+  // A Trace that lights one node — the node you already had — reads as the
+  // instrument being broken rather than as the object being ungrounded.
+  const traceRoute = useMemo(() => {
+    if (!graph || !selectedId || !graph.hasNode(selectedId)) return null;
+    const kind = graph.getNodeAttribute(selectedId, "kind");
+    if (kind !== "finding" && kind !== "intel") return null;
+    return evidenceSolo(graph, selectedId);
+  }, [graph, selectedId]);
 
-  const select = useCallback((id: string | null) => {
-    // Taking hold of a node is taking control. A tween still running would
-    // carry the field out from under the thing just clicked.
-    stopTween();
-    setSelectedId(id);
-    setResult(null);
-    if (id === null) {
-      setSolo(false);
-      setMode("A");
-    }
-  }, [stopTween]);
+  const soloNodes = useMemo(() => (solo && traceRoute ? traceRoute.nodes : null), [solo, traceRoute]);
+
+  // ── THE FRAMING LAW, APPLIED ─────────────────────────────────────────
+  //
+  // ONE function, called by every selection source. Law 5: a direct click, a
+  // search result, an inspector relationship row and a summary card must all
+  // leave the camera in the same place, because they are all the same act.
+  //
+  // What it frames is the selection PLUS its useful one-hop neighbourhood —
+  // the same set the renderer is about to light. Framing only the node would
+  // be honest about the node and useless about the answer: the whole reason
+  // to look at a Finding is the four things around it.
+  const frameFor = useCallback(
+    (id: string | null): Camera | null => {
+      if (!id || !graph || !layout || !graph.hasNode(id)) return null;
+      const anchor = layout.get(id);
+      if (!anchor) return null;
+      const f = semanticFocus(graph, id);
+      const ids = f ? f.frame : [id];
+      // SEATS ARE CENTRES; NODES HAVE BODIES. Each contributes its own
+      // extent rather than the set being padded by the largest radius in it —
+      // otherwise one Reality node (radius 54) in the neighbourhood inflates
+      // the box by 54 units in every direction, and a set that fits the field
+      // exactly reads as overflowing it.
+      const pts: { x: number; y: number }[] = [];
+      for (const n of ids) {
+        const p = layout.get(n);
+        if (!p) continue;
+        pts.push({ x: p.x - p.r, y: p.y - p.r });
+        pts.push({ x: p.x + p.r, y: p.y + p.r });
+      }
+      const b = boundsOf(pts);
+      if (!b) return null;
+      return frameFocus(b, { x: anchor.x, y: anchor.y }, cameraRef.current, viewportRef.current);
+    },
+    [graph, layout]
+  );
+
+  // ── SELECTION HISTORY ────────────────────────────────────────────────
+  //
+  // Law 8. Local graph navigation, not browser history and not saved views:
+  // where you were, what you were looking at it from, and which clusters had
+  // to be open for it to make sense.
+  //
+  // The camera is captured ON LEAVING an entry rather than on arriving at it,
+  // which is the only way Back can return you to the view you actually built
+  // up — pan and zoom after selecting are part of "where you were".
+  const [nav, setNav] = useState<{ stack: NavEntry[]; i: number }>({ stack: [], i: -1 });
+  const navigating = useRef(false);
+  const expandedRef = useRef(expanded);
+  expandedRef.current = expanded;
+
+  const select = useCallback(
+    (id: string | null) => {
+      // Taking hold of a node is taking control. A tween still running would
+      // carry the field out from under the thing just clicked.
+      stopTween();
+      setSelectedId(id);
+      setResult(null);
+      if (id === null) {
+        setSolo(false);
+        setMode("A");
+        // LAW 9: clearing does NOT move the camera. You stay exactly where you
+        // were looking; a silent Fit throws away the view you built.
+        return;
+      }
+      // LAW 7: attention transfers. No cleared intermediate state, no rebuild
+      // — the neighbourhood is replaced in one commit.
+      if (!navigating.current) {
+        setNav((prev) => {
+          const stack = prev.stack.slice(0, prev.i + 1);
+          if (stack.length > 0 && stack[stack.length - 1].id === id) return prev;
+          if (stack.length > 0) {
+            stack[stack.length - 1] = { ...stack[stack.length - 1], camera: cameraRef.current };
+          }
+          stack.push({ id, camera: cameraRef.current, expanded: [...expandedRef.current] });
+          // Forty steps is more than anyone walks in one sitting and bounds
+          // the memory this can hold.
+          const trimmed = stack.slice(-40);
+          return { stack: trimmed, i: trimmed.length - 1 };
+        });
+      }
+      const next = frameFor(id);
+      if (next) flyCamera(next);
+    },
+    [stopTween, frameFor, flyCamera]
+  );
+
+  const navigateTo = useCallback(
+    (delta: -1 | 1) => {
+      setNav((prev) => {
+        const i = prev.i + delta;
+        if (i < 0 || i >= prev.stack.length) return prev;
+        const stack = prev.stack.slice();
+        // Leaving here: remember the view, so coming back returns to it.
+        if (prev.i >= 0 && prev.i < stack.length) {
+          stack[prev.i] = { ...stack[prev.i], camera: cameraRef.current };
+        }
+        const entry = stack[i];
+        navigating.current = true;
+        stopTween();
+        // UNION, NEVER REPLACE. The entry records which clusters that focus
+        // needed open; it is not a claim that nothing else may be. Replacing
+        // would make Back silently collapse work the reader has done since.
+        setExpanded((cur) => {
+          let out: Set<string> | null = null;
+          for (const c of entry.expanded) {
+            if (cur.has(c)) continue;
+            if (!out) out = new Set(cur);
+            out.add(c);
+          }
+          return out ?? cur;
+        });
+        setSelectedId(entry.id);
+        setResult(null);
+        flyCamera(entry.camera);
+        // Released after the commit that this call schedules, so the
+        // selection it causes is not itself pushed onto the stack.
+        queueMicrotask(() => {
+          navigating.current = false;
+        });
+        return { stack, i };
+      });
+    },
+    [stopTween, flyCamera]
+  );
+
+  const canBack = nav.i > 0;
+  const canForward = nav.i >= 0 && nav.i < nav.stack.length - 1;
 
   // EVIDENCE SOLO MUST REVEAL WHAT IT LIGHTS.
   //
@@ -371,11 +544,44 @@ export default function AuditInstrument({ initialScopeId }: { initialScopeId?: s
     if (needed.size > 0) setExpanded((prev) => new Set([...prev, ...needed]));
   }, [soloNodes, graph]);
 
+  // AND A ROUTE THAT IS OFF SCREEN IS NOT A ROUTE.
+  //
+  // Law 10: when Trace is on, the thing it lit has to be in the viewport. A
+  // finding's evidence reaches out to the sources ring, which at any close
+  // zoom is somewhere else entirely — so the route was drawn correctly and
+  // nobody saw it. Framed by the SAME minimal law as everything else: still
+  // if it already fits, the smallest pull-back if it does not.
+  useEffect(() => {
+    if (!soloNodes || !layout || !selectedId) return;
+    const anchor = layout.get(selectedId);
+    if (!anchor) return;
+    const pts: { x: number; y: number }[] = [];
+    for (const n of soloNodes) {
+      const p = layout.get(n);
+      if (!p) continue;
+      pts.push({ x: p.x - p.r, y: p.y - p.r });
+      pts.push({ x: p.x + p.r, y: p.y + p.r });
+    }
+    const b = boundsOf(pts);
+    if (!b) return;
+    const next = frameFocus(b, { x: anchor.x, y: anchor.y }, cameraRef.current, viewportRef.current);
+    if (next) flyCamera(next);
+    // Deliberately keyed on the route itself: re-framing on every camera
+    // change would fight the hand, which always outranks the instrument.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [soloNodes, layout, selectedId]);
+
   // WHICH NODES CAN BE TRACED. A finding — "why does Signal believe this" —
   // and an external object — "why does the producer say this". Both questions
   // are answered by the same guarded traversal over the same allowlist; only
   // the starting node differs.
-  const soloable = selectedAttrs?.kind === "finding" || selectedAttrs?.kind === "intel";
+  //
+  // AND ONLY WHEN THE ANSWER IS NOT EMPTY. Law 10: an ungrounded Finding used
+  // to offer a Trace that turned on, dimmed the whole field and lit exactly
+  // the node already selected. The traversal is run up front and the control
+  // is offered only if it reaches something; the inspector says so in words
+  // instead of handing over a button that lies.
+  const soloable = hasTraceRoute(traceRoute, selectedId);
 
   // Leaving a traceable node must drop the trace with it, and the hypothetical
   // mode with it — that one belongs to findings alone.
@@ -387,8 +593,27 @@ export default function AuditInstrument({ initialScopeId }: { initialScopeId?: s
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       if (e.key === "Escape") {
-        if (query) setQuery("");
-        else if (selectedId) select(null);
+        // THE FIRST THING ESCAPE DOES IS STOP THE WORLD MOVING.
+        //
+        // The tested defect: Escape cleared the selection and the camera kept
+        // flying to the zoom that selection had asked for, so the instrument
+        // ended up somewhere nobody had chosen, showing nothing. Cancelling
+        // is unconditional and comes first — before the query, before the
+        // selection, and whether or not either exists. An interrupted move
+        // stops where it has got to and stays there.
+        stopTween();
+        if (query) {
+          setQuery("");
+          setResultsOpen(true);
+        } else if (selectedId) select(null);
+      }
+      if ((e.key === "[" && (e.metaKey || e.altKey)) || (e.key === "ArrowLeft" && e.altKey)) {
+        e.preventDefault();
+        navigateTo(-1);
+      }
+      if ((e.key === "]" && (e.metaKey || e.altKey)) || (e.key === "ArrowRight" && e.altKey)) {
+        e.preventDefault();
+        navigateTo(1);
       }
       if (e.key === "/" && document.activeElement?.tagName !== "INPUT") {
         e.preventDefault();
@@ -397,7 +622,7 @@ export default function AuditInstrument({ initialScopeId }: { initialScopeId?: s
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [selectedId, query, select]);
+  }, [selectedId, query, select, stopTween, navigateTo]);
 
   // EXPANDING FLIES TO WHAT IT REVEALED.
   //
@@ -444,12 +669,25 @@ export default function AuditInstrument({ initialScopeId }: { initialScopeId?: s
     });
   }, []);
 
-  const flyTo = useCallback(
+  // WHAT USED TO BE `flyTo`.
+  //
+  // It forced `max(k, 2.3)` — roughly 230% — on every search result and every
+  // inspector relationship row, which is the single most-complained-about
+  // behaviour in the hands-on test. It threw away whatever view the reader
+  // had built in order to show them a node they could usually already see,
+  // and it made the camera depend on HOW the selection happened.
+  //
+  // There is no forced zoom any more, and nothing here decides anything: the
+  // framing law decides, exactly as it does for a direct click. Kept as a
+  // named callback only because `select` already frames, so the remaining
+  // callers want a re-frame of the current selection rather than a second
+  // selection.
+  const frameNode = useCallback(
     (id: string) => {
-      if (!layout) return;
-      flyCamera(focusCamera(layout, id, cameraRef.current, Math.max(cameraRef.current.k, 2.3)));
+      const next = frameFor(id);
+      if (next) flyCamera(next);
     },
-    [layout, flyCamera]
+    [frameFor, flyCamera]
   );
 
   // ── RUN AUDIT ────────────────────────────────────────────────────────
@@ -658,6 +896,7 @@ export default function AuditInstrument({ initialScopeId }: { initialScopeId?: s
             onToggleCluster={toggleCluster}
             sweepAngle={sweepAngle}
             swept={swept}
+            onViewport={onViewport}
           />
 
           {/* SEARCH + CAMERA, floating over the field — the reference keeps
@@ -669,22 +908,29 @@ export default function AuditInstrument({ initialScopeId }: { initialScopeId?: s
             >
               <input
                 value={query}
-                onChange={(e) => setQuery(e.target.value)}
+                onChange={(e) => {
+                  setQuery(e.target.value);
+                  setResultsOpen(true);
+                }}
                 placeholder={`Search ${graph.order} nodes…  ( / )`}
                 aria-label="Search the graph"
                 data-shoot="graph-search"
                 className="w-full rounded-md px-2.5 py-1.5 text-[11.5px] outline-none"
                 style={{ background: "var(--i-recess)", border: "1px solid var(--i-border-strong)", color: "var(--i-text)" }}
               />
-              {matchList.length > 0 && (
+              {matchList.length > 0 && resultsOpen && (
                 <div className="mt-2 max-h-[220px] overflow-y-auto i-noscrollbar" data-shoot="search-results">
                   {matchList.map((m) => (
                     <button
                       key={m.id}
                       type="button"
                       onClick={() => {
+                        // ONE ACT. `select` frames under the same law a direct
+                        // click uses — no second camera call, no forced zoom,
+                        // and the list folds away so it stops covering the
+                        // thing it just found.
                         select(m.id);
-                        flyTo(m.id);
+                        setResultsOpen(false);
                       }}
                       className="flex w-full items-center gap-2 rounded px-1.5 py-1 text-left transition-colors hover:bg-white/[0.05]"
                     >
@@ -695,17 +941,39 @@ export default function AuditInstrument({ initialScopeId }: { initialScopeId?: s
                       <span className="min-w-0 flex-1 truncate text-[11px] text-[var(--i-text)]">
                         {String(m.attrs.label)}
                       </span>
+                      {/* A RESULT MUST SAY WHAT IT IS. Every external object
+                          used to read "External intelligence", so a list of
+                          nine results named its own type nine times and told
+                          the reader nothing. The producer already says
+                          Decision, Risk, Commitment — this shows that. */}
                       <span className="shrink-0 text-[9px] text-[var(--i-text-faint)]">
-                        {KIND_LABEL[m.attrs.kind] ?? m.attrs.kind}
+                        {resultKind(m.attrs)}
                       </span>
                     </button>
                   ))}
                 </div>
               )}
               {matches && matchList.length === 0 && (
-                <p className="mt-2 px-1 text-[10.5px]" style={{ color: "var(--i-text-faint)" }}>
-                  Nothing in this project matches. Try a ticket id, a person, or a cluster name.
-                </p>
+                <div className="mt-2 px-1" data-shoot="search-empty">
+                  <p className="text-[11px]" style={{ color: "var(--i-text)" }}>
+                    No results
+                  </p>
+                  <p className="mt-0.5 text-[10.5px]" style={{ color: "var(--i-text-faint)" }}>
+                    Nothing in this project matches “{query.trim()}”. Try a ticket id, a person, or a
+                    cluster name.
+                  </p>
+                </div>
+              )}
+              {matchList.length > 0 && !resultsOpen && (
+                <button
+                  type="button"
+                  onClick={() => setResultsOpen(true)}
+                  className="mt-2 w-full rounded px-1.5 py-1 text-left text-[10.5px] transition-colors hover:bg-white/[0.05]"
+                  style={{ color: "var(--i-text-faint)" }}
+                  data-shoot="search-reopen"
+                >
+                  {matchList.length} result{matchList.length === 1 ? "" : "s"} · show
+                </button>
               )}
 
               <div className="mt-2.5 flex items-center justify-between border-t pt-2" style={{ borderColor: "var(--i-border)" }}>
@@ -713,6 +981,25 @@ export default function AuditInstrument({ initialScopeId }: { initialScopeId?: s
                   {level} · {Math.round(camera.k * 100)}%
                 </span>
                 <div className="flex gap-1">
+                  {/* WHERE YOU HAVE BEEN. Law 8 — local graph navigation, not
+                      browser history: the object, the view you had of it, and
+                      the clusters that focus needed open. Disabled rather than
+                      hidden, so the control's existence is learnable before
+                      there is anywhere to go. */}
+                  <MiniButton
+                    onClick={() => navigateTo(-1)}
+                    label="‹"
+                    title="Back to the previous selection"
+                    shoot="nav-back"
+                    disabled={!canBack}
+                  />
+                  <MiniButton
+                    onClick={() => navigateTo(1)}
+                    label="›"
+                    title="Forward"
+                    shoot="nav-forward"
+                    disabled={!canForward}
+                  />
                   {/* THE ZOOM STEPS CUT; FIT FLIES. A step adjusts the view
                       you are in — the same act as a wheel notch, and tweening
                       it would make five quick clicks fight each other, since
@@ -782,28 +1069,26 @@ export default function AuditInstrument({ initialScopeId }: { initialScopeId?: s
               finding={selectedFinding}
               provenance={truth.provenance[selectedFinding.id] ?? null}
               onSelect={(id) => select(gid.finding(id))}
-              onEvidenceSolo={() => setSolo(true)}
+              onEvidenceSolo={soloable ? () => setSolo(true) : null}
             />
           ) : selectedId && graph.hasNode(selectedId) ? (
             <GraphInspector
               graph={graph}
               nodeId={selectedId}
               onSelect={select}
-              onFocusNode={flyTo}
+              onFocusNode={frameNode}
               expandedNodes={expanded}
               onToggleNode={toggleNode}
               evidenceSolo={solo}
               onEvidenceSolo={soloable ? setSolo : null}
+              onExpandCluster={toggleCluster}
             />
           ) : (
             <GraphOverview
               graph={graph}
               truth={truth}
               counts={counts}
-              onSelect={(id) => {
-                select(id);
-                flyTo(id);
-              }}
+              onSelect={select}
             />
           )}
         </div>
@@ -833,6 +1118,25 @@ export default function AuditInstrument({ initialScopeId }: { initialScopeId?: s
 }
 
 // ── RESTING INSPECTOR ──────────────────────────────────────────────────
+
+/**
+ * WHAT A SEARCH RESULT IS, IN THE WORDS THAT DISTINGUISH IT.
+ *
+ * `KIND_LABEL` is Signal's own vocabulary and it is correct — every external
+ * object IS an "External intelligence" node. It is also useless in a result
+ * list, where nine rows carrying the same three words is the same as no label
+ * at all. The producer already types its objects; this shows that type, which
+ * is what the reader typed the query looking for.
+ */
+function resultKind(attrs: AuditNodeAttributes): string {
+  if (attrs.kind === "intel") {
+    const t = String(attrs.intelligenceType ?? "").trim();
+    if (!t) return "External";
+    const spaced = t.replace(/([a-z0-9])([A-Z])/g, "$1 $2").replace(/[_-]+/g, " ");
+    return `External ${spaced.charAt(0).toLowerCase()}${spaced.slice(1)}`;
+  }
+  return KIND_LABEL[attrs.kind] ?? attrs.kind;
+}
 
 function GraphOverview({
   graph,
@@ -964,20 +1268,27 @@ function MiniButton({
   label,
   title,
   shoot,
+  disabled,
 }: {
   onClick: () => void;
   label: string;
   title?: string;
   shoot?: string;
+  disabled?: boolean;
 }) {
   return (
     <button
       type="button"
       onClick={onClick}
       title={title}
+      disabled={disabled}
       data-shoot={shoot}
-      className="rounded px-1.5 py-0.5 text-[10px] transition-colors hover:bg-white/[0.06]"
-      style={{ border: "1px solid var(--i-border-strong)", color: "var(--i-text-soft)" }}
+      className="rounded px-1.5 py-0.5 text-[10px] transition-colors enabled:hover:bg-white/[0.06] disabled:cursor-default"
+      style={{
+        border: "1px solid var(--i-border-strong)",
+        color: disabled ? "var(--i-text-faint)" : "var(--i-text-soft)",
+        opacity: disabled ? 0.45 : 1,
+      }}
     >
       {label}
     </button>

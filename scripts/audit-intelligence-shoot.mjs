@@ -75,9 +75,27 @@ const cam = () => p.evaluate(() => {
   return { x: +(v.x + v.width / 2).toFixed(2), y: +(v.y + v.height / 2).toFixed(2), k: +(s.getBoundingClientRect().width / v.width).toFixed(4) };
 });
 const count = (sel) => p.locator(sel).count();
-const inspector = async () => {
+/**
+ * The inspector's readable text.
+ *
+ * `full` opens the TECHNICAL DETAILS disclosure first. Under the Interaction
+ * Contract the canonical id, the producer id, the quote hash and the
+ * character offsets are all still present and all still exact — they are just
+ * no longer in the primary reading path, which is what Law 12 asked for. A
+ * proof that needs an identifier opens the drawer, exactly as a person
+ * verifying something would.
+ */
+const inspector = async (full = false) => {
   const el = p.locator('[data-shoot="graph-inspector"]');
-  return (await el.count()) > 0 ? el.innerText() : "";
+  if ((await el.count()) === 0) return "";
+  if (full) {
+    await p.evaluate(() => {
+      const d = document.querySelector('[data-shoot="inspector-technical"]');
+      if (d) d.open = true;
+    });
+    await p.waitForTimeout(120);
+  }
+  return el.innerText();
 };
 /** Clear any selection, so the next click SELECTS rather than toggling the
     previous one shut. Clicking the same node twice deselects it, which is
@@ -260,9 +278,14 @@ await park();
   // statement in the synthetic payload contained the word; the real one does
   // not, and six is the honest answer to "offline".
   check("9. search reaches the corpus by statement", n > 0 && listed > 0, `"offline" matched ${n} external objects, ${listed} results listed`);
+  // AND IN THE PRODUCER'S OWN WORDS. This used to accept "External
+  // intelligence" — Signal's carrier word, correct and useless in a list
+  // where nine rows carried it. The producer types every object; a result
+  // now says External risk, External decision, External observation, which
+  // is what the reader typed the query looking for.
   check(
     "9b. and results say which KIND of thing each answer is",
-    distinct.size >= 2 && [...distinct].some((k) => /external intelligence/i.test(k)),
+    distinct.size >= 2 && [...distinct].some((k) => /^external \w/i.test(k)),
     `result kinds: ${[...distinct].join(" · ")}`
   );
   await p.locator('[data-shoot="graph-search"]').fill("");
@@ -561,7 +584,7 @@ await park();
   await p.locator('[data-shoot="graph-search"]').fill("");
   await settle(600);
 
-  const step1 = await inspector();
+  const step1 = await inspector(true);
   const toPassage = await p.evaluate((evId) => {
     for (const b of document.querySelectorAll('[data-shoot="connection-cites"]')) {
       if (b.innerText.includes(evId)) {
@@ -572,7 +595,7 @@ await park();
     return false;
   }, TRACE.evidence);
   await settle(800);
-  const step2 = await inspector();
+  const step2 = await inspector(true);
   await shot("17-trace-passage");
 
   const toSource = await p.evaluate(() => {
@@ -582,7 +605,7 @@ await park();
     return true;
   });
   await settle(800);
-  const step3 = await inspector();
+  const step3 = await inspector(true);
   await shot("18-trace-transcript");
 
   check(
@@ -725,6 +748,15 @@ check(
   // measurement waiting for a panel that hover never opens reports two
   // seconds of latency that does not exist. What is timed is the thing hover
   // actually causes: the rest of the field receding.
+  //
+  // RECEDING IS NO LONGER ONLY A DROP IN OPACITY. Optical depth now carries
+  // most of that separation, which let the unrelated tier come UP from 0.10
+  // to 0.24 — a field dimmed to near-black bought attention by destroying
+  // orientation. So the signal this waits for is the depth class, which is
+  // the thing that actually marks "not part of the local world"; watching for
+  // an opacity below 0.11 that nothing reaches any more was a poll that ran
+  // to its 120-frame timeout and reported two seconds of latency that,
+  // again, did not exist.
   // WITH A REAL POINTER. React synthesises onMouseEnter from `mouseover`
   // delegation, so a dispatched `mouseenter` — which does not bubble — never
   // reaches it and the measurement times out reporting two seconds of
@@ -737,17 +769,13 @@ check(
     await p.mouse.move(1560, 960);
     await p.waitForTimeout(140);
     await p.evaluate(() => {
-      window.__dim0 = [...document.querySelectorAll('[data-shoot^="node-"]')].filter(
-        (g) => parseFloat(g.getAttribute("opacity") ?? "1") <= 0.11
-      ).length;
+      window.__dim0 = document.querySelectorAll('[data-shoot^="node-"].sg-depth-1').length;
       window.__t0 = performance.now();
     });
     await p.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
     return p.evaluate(async () => {
       for (let k = 0; k < 120; k++) {
-        const now = [...document.querySelectorAll('[data-shoot^="node-"]')].filter(
-          (g) => parseFloat(g.getAttribute("opacity") ?? "1") <= 0.11
-        ).length;
+        const now = document.querySelectorAll('[data-shoot^="node-"].sg-depth-1').length;
         if (now !== window.__dim0) return performance.now() - window.__t0;
         await new Promise((r) => requestAnimationFrame(r));
       }

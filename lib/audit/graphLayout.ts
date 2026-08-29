@@ -577,7 +577,7 @@ export function layoutGraph(graph: AuditGraph): GraphLayout {
  * to the angular distance travelled, so a short local edge stays nearly
  * straight and a long one sweeps.
  */
-export function edgePath(a: Placement, b: Placement): string {
+export function edgeControl(a: Placement, b: Placement): { x: number; y: number } {
   const mx = (a.x + b.x) / 2;
   const my = (a.y + b.y) / 2;
   const dx = mx - FIELD.cx;
@@ -587,9 +587,53 @@ export function edgePath(a: Placement, b: Placement): string {
   // Pull the control point inward by a fraction of the chord — the longer the
   // span, the deeper the bow.
   const pull = Math.min(0.34, chord / 1600) * midR;
-  const cx = FIELD.cx + (dx / midR) * (midR - pull);
-  const cy = FIELD.cy + (dy / midR) * (midR - pull);
-  return `M ${a.x.toFixed(1)} ${a.y.toFixed(1)} Q ${cx.toFixed(1)} ${cy.toFixed(1)}, ${b.x.toFixed(1)} ${b.y.toFixed(1)}`;
+  return { x: FIELD.cx + (dx / midR) * (midR - pull), y: FIELD.cy + (dy / midR) * (midR - pull) };
+}
+
+export function edgePath(a: Placement, b: Placement): string {
+  const c = edgeControl(a, b);
+  return `M ${a.x.toFixed(1)} ${a.y.toFixed(1)} Q ${c.x.toFixed(1)} ${c.y.toFixed(1)}, ${b.x.toFixed(1)} ${b.y.toFixed(1)}`;
+}
+
+/**
+ * WHERE A VERB GOES, AND WHICH WAY IT POINTS.
+ *
+ * Law 3 asks for the relation to be readable on the line when the line wakes.
+ * A quadratic's midpoint is not the average of its endpoints — putting the
+ * word there floats it off the curve on any long span — so it is evaluated
+ * properly at t=0.5, and the tangent comes from the same curve so the word
+ * lies along the stroke rather than across it.
+ *
+ * `angle` is degrees, already flipped when it would otherwise be upside down:
+ * a label the reader has to tilt their head for is not a label.
+ */
+export function edgeLabelAnchor(
+  a: Placement,
+  b: Placement
+): { x: number; y: number; angle: number; tx: number; ty: number } {
+  const c = edgeControl(a, b);
+  const x = (a.x + 2 * c.x + b.x) / 4;
+  const y = (a.y + 2 * c.y + b.y) / 4;
+  // dP/dt at t = 0.5 for a quadratic is (b - a), which is also the chord —
+  // the bow is symmetric, so at the midpoint the tangent is parallel to it.
+  let tx = b.x - a.x;
+  let ty = b.y - a.y;
+  const len = Math.hypot(tx, ty) || 1;
+  tx /= len;
+  ty /= len;
+  let angle = (Math.atan2(ty, tx) * 180) / Math.PI;
+  if (angle > 90) angle -= 180;
+  if (angle < -90) angle += 180;
+  return { x, y, angle, tx, ty };
+}
+
+/** The unit tangent AT THE TARGET END — where an arrowhead has to sit. */
+export function edgeEndTangent(a: Placement, b: Placement): { x: number; y: number } {
+  const c = edgeControl(a, b);
+  const x = b.x - c.x;
+  const y = b.y - c.y;
+  const len = Math.hypot(x, y) || 1;
+  return { x: x / len, y: y / len };
 }
 
 /**

@@ -35,6 +35,8 @@ import {
   BANDS,
   layoutGraph,
   edgePath,
+  edgeLabelAnchor,
+  edgeEndTangent,
   clusterLabelPoint,
   CLUSTER_ORDER,
   RECORD_EXTENT,
@@ -44,18 +46,31 @@ import {
   NODE_SHAPE,
   nodeColor,
   TIER,
-  MEMBERSHIP_RELS,
+  FOCUS_TIER,
+  FOCUS_EDGE,
+  DEPTH_CLASS,
   LATENT,
   latentRadius,
   identityOf,
+  type Depth,
   type ZoomLevel,
   type Identity,
 } from "./graphTokens";
+import {
+  semanticFocus,
+  edgeFocusClass,
+  edgeVerb,
+  verbIsDirectional,
+  type FocusClass,
+  type FocusModel,
+  type FocusRank,
+} from "@/lib/audit/focus";
 import {
   DEFAULT_CAMERA,
   MAX_ZOOM,
   MIN_ZOOM,
   quantizeScale,
+  FRAME_SLACK,
   type Camera,
 } from "./cameraMotion";
 
@@ -124,6 +139,17 @@ export interface SignalGraphProps {
   sweepAngle: number | null;
   /** Clusters the sweep has already tested this pass. */
   swept: Set<string>;
+  /**
+   * The measured viewport, in CSS pixels, reported upward whenever it
+   * changes.
+   *
+   * The FRAMING LAW lives in the instrument — it has to, because it is the
+   * instrument that owns the camera — but the only thing that knows how big
+   * the field actually is on screen is the element being resized. Guessing
+   * 1000x800 there would make "is this already comfortably in view" a lie on
+   * every window that is not exactly that size.
+   */
+  onViewport?: (vp: { w: number; h: number }) => void;
 }
 
 export default function SignalGraph({
@@ -143,9 +169,16 @@ export default function SignalGraph({
   onToggleCluster,
   sweepAngle,
   swept,
+  onViewport,
 }: SignalGraphProps) {
   const svgRef = useRef<SVGSVGElement | null>(null);
   const [size, setSize] = useState({ w: 1000, h: 800 });
+  // Held in a ref so the observer is installed once. A callback prop in the
+  // effect's dependency list would tear down and rebuild the ResizeObserver
+  // on every parent render, which is a lot of observer churn to pay for a
+  // number that changes when someone drags a window edge.
+  const viewportRef = useRef(onViewport);
+  viewportRef.current = onViewport;
   // Labelling is decided per node by identityOf(), which folds the zoom level
   // and whether the node's cluster is open into one answer — a node can be at
   // close zoom and still be a nameless mark.
@@ -165,7 +198,9 @@ export default function SignalGraph({
     if (!el) return;
     const measure = () => {
       const r = el.getBoundingClientRect();
-      setSize({ w: r.width || 1000, h: r.height || 800 });
+      const next = { w: r.width || 1000, h: r.height || 800 };
+      setSize(next);
+      viewportRef.current?.(next);
     };
     measure();
     const ro = new ResizeObserver(measure);
@@ -247,7 +282,17 @@ export default function SignalGraph({
     const c = getCamera();
     drag.current = { sx: e.clientX, sy: e.clientY, cx: c.x, cy: c.y, k: c.k };
     moved.current = false;
-    (e.target as Element).setPointerCapture?.(e.pointerId);
+    // Capture so a drag that leaves the SVG still delivers its moves. Guarded
+    // because a pointerdown does not guarantee a LIVE pointer with that id —
+    // a synthetic event, a pointer that ended between dispatch and handler, or
+    // assistive tech all throw here, and a throw in a pointer handler takes
+    // the whole gesture down. Losing capture costs a drag that stops at the
+    // edge; throwing costs the field.
+    try {
+      (e.target as Element).setPointerCapture?.(e.pointerId);
+    } catch {
+      /* no live pointer to capture — the drag still works inside the field */
+    }
   };
   const onPointerMove = (e: React.PointerEvent) => {
     const d = drag.current;
@@ -265,29 +310,49 @@ export default function SignalGraph({
 
   // ── FOCUS SETS ───────────────────────────────────────────────────────
   //
-  // Selection lights a node's own neighbourhood: the edges it actually has,
-  // membership excluded. Nothing is reached transitively — a neighbourhood is
-  // one hop, or it is the whole graph.
-  const focus = useMemo(() => {
-    const anchor = selectedId ?? hoveredId;
-    if (!anchor || !graph.hasNode(anchor)) return null;
-    const nodes = new Set<string>([anchor]);
-    const edges = new Set<string>();
-    for (const e of graph.edges(anchor)) {
-      if (MEMBERSHIP_RELS.has(graph.getEdgeAttribute(e, "rel"))) continue;
-      edges.add(e);
-      nodes.add(graph.source(e));
-      nodes.add(graph.target(e));
-    }
-    return { nodes, edges };
-  }, [selectedId, hoveredId, graph]);
+  // Selection lights a node's own neighbourhood, ONE HOP, membership
+  // excluded — and now CLASSIFIED. lib/audit/focus.ts owns the sorting; this
+  // file owns only what each class looks like. The split matters because the
+  // classification is assertable by a proof and a stroke width is not.
+  const focus: FocusModel | null = useMemo(
+    () => semanticFocus(graph, selectedId ?? hoveredId),
+    [selectedId, hoveredId, graph]
+  );
 
   /** How loudly a node speaks right now. */
   const nodeOpacity = (id: string): number => {
-    if (soloNodes) return soloNodes.has(id) ? TIER.focus : TIER.soloDimmed;
-    if (matches) return matches.has(id) ? TIER.focus : TIER.dimmed;
-    if (focus) return focus.nodes.has(id) ? TIER.focus : TIER.dimmed;
+    if (soloNodes) return soloNodes.has(id) ? FOCUS_TIER.anchor : TIER.soloDimmed;
+    if (matches && !focus) return matches.has(id) ? FOCUS_TIER.anchor : FOCUS_TIER.unrelated;
+    if (focus) {
+      const rank = focus.nodes.get(id);
+      if (rank) return FOCUS_TIER[rank];
+      // A search match that the selection does not touch stays findable:
+      // search is a question about the whole field, and answering it only
+      // inside the current neighbourhood would read as the search breaking.
+      return matches?.has(id) ? FOCUS_TIER.contextual : FOCUS_TIER.unrelated;
+    }
     return TIER.rest;
+  };
+
+  /**
+   * SHARP OR SOFT — the other half of the hierarchy.
+   *
+   * Everything the reader is being asked to read is sharp: the selection, its
+   * semantic and temporal neighbours, the provenance route, the current
+   * search matches. Everything else is softened by half a pixel, which is
+   * enough for the eye to stop trying to resolve it and nowhere near enough
+   * to stop it being a map.
+   */
+  const nodeDepth = (id: string, latent: boolean): Depth => {
+    if (soloNodes) return soloNodes.has(id) ? 0 : latent ? 1 : 1;
+    if (focus) {
+      const rank = focus.nodes.get(id);
+      if (rank && rank !== "contextual") return 0;
+      if (matches?.has(id)) return 0;
+      return 1;
+    }
+    if (matches) return matches.has(id) ? 0 : 1;
+    return 0;
   };
 
   const edgeOpacity = (edge: string, basis: string): number => {
@@ -295,7 +360,10 @@ export default function SignalGraph({
       const lit = soloNodes.has(graph.source(edge)) && soloNodes.has(graph.target(edge));
       return lit ? 0.95 : TIER.soloDimmed * 0.5;
     }
-    if (focus) return focus.edges.has(edge) ? 0.95 : TIER.dimmed * 0.5;
+    if (focus) {
+      const cls = focus.edges.get(edge);
+      return cls ? FOCUS_EDGE[cls] : TIER.dimmed * 0.5;
+    }
     if (matches) return TIER.dimmed * 0.6;
     if (basis === "attested") return TIER.attestedRest;
     return basis === "external" ? TIER.externalRest : TIER.inferredRest;
@@ -348,34 +416,82 @@ export default function SignalGraph({
   // exist, the inspector lists them, and selecting either end draws them.
   // This is a rule about REST, not about existence.
   const anchorId = selectedId ?? hoveredId;
+
+  // SELECTION REVEALS ITS OWN NEIGHBOURHOOD.
+  //
+  // A Finding's work item can sit in a collapsed cluster. Before this, focus
+  // lit it and the cluster kept it a nameless mark — so "reveal the one-hop
+  // neighbourhood" produced a glowing dot with no name and no line reaching
+  // it, which is the exact "selection reveals only one useful relationship"
+  // the hands-on test found.
+  //
+  // This is PROMOTION AT THE SAME SEAT, not a topology change: the node was
+  // always drawn, always there, always in that position. Law 1 holds — no
+  // node moves, nothing is created, and it reverts the moment the selection
+  // does, because it is attention rather than state.
+  //
+  // Contextual neighbours are excluded (`focus.frame`, not `focus.nodes`):
+  // opening every `related_to` partner would promote a large part of the
+  // outer band on every click.
+  const openedNow = useMemo(() => {
+    if (!focus) return opened;
+    let extra: Set<string> | null = null;
+    for (const id of focus.frame) {
+      if (opened.has(id)) continue;
+      if (!extra) extra = new Set(opened);
+      extra.add(id);
+    }
+    return extra ?? opened;
+  }, [focus, opened]);
+
   const drawnEdges = useMemo(() => {
-    const out: { id: string; from: string; to: string; rel: string; basis: string }[] = [];
+    const out: {
+      id: string;
+      from: string;
+      to: string;
+      rel: string;
+      basis: string;
+      cls: FocusClass;
+      verb: string;
+      directional: boolean;
+    }[] = [];
     graph.forEachEdge((e, a, s, t) => {
       // MEMBERSHIP IS NEVER AN EDGE. See the header.
-      if (MEMBERSHIP_RELS.has(a.rel)) return;
-      if (!opened.has(s) || !opened.has(t)) return;
+      const cls = edgeFocusClass(a as { rel: string; relClass?: string | null });
+      if (!cls) return;
+      if (!openedNow.has(s) || !openedNow.has(t)) return;
       if (!layout.has(s) || !layout.has(t)) return;
-      if (a.basis === "external" && (a.relClass === "contextual" || a.relClass === "provenance" || a.rel === "cites")) {
+      if (a.basis === "external" && (cls === "contextual" || cls === "provenance")) {
         const reached =
           (soloNodes ? soloNodes.has(s) || soloNodes.has(t) : false) ||
           (anchorId != null && (s === anchorId || t === anchorId));
         if (!reached) return;
       }
-      out.push({ id: e, from: s, to: t, rel: a.rel, basis: a.basis });
+      const verb = edgeVerb(a as { rel: string; intelRel?: string | null });
+      out.push({
+        id: e,
+        from: s,
+        to: t,
+        rel: a.rel,
+        basis: a.basis,
+        cls,
+        verb,
+        directional: verbIsDirectional(verb),
+      });
     });
     return out;
-  }, [graph, opened, layout, anchorId, soloNodes]);
+  }, [graph, openedNow, layout, anchorId, soloNodes]);
 
   /** Latent nodes per cluster — what "+N" is actually counting. */
   const latentByCluster = useMemo(() => {
     const m = new Map<string, number>();
     for (const n of drawnNodes) {
-      if (opened.has(n)) continue;
+      if (openedNow.has(n)) continue;
       const lane = graph.getNodeAttribute(n, "lane") as string | undefined;
       if (lane) m.set(lane, (m.get(lane) ?? 0) + 1);
     }
     return m;
-  }, [drawnNodes, opened, graph]);
+  }, [drawnNodes, openedNow, graph]);
 
   // KEYBOARD ORDER FOLLOWS MEANING, NOT GEOMETRY.
   //
@@ -389,14 +505,14 @@ export default function SignalGraph({
   // cluster's contents is its own toggle, which says how many there are.
   const tabOrder = useMemo(
     () =>
-      drawnNodes.filter((n) => opened.has(n)).sort((a, b) => {
+      drawnNodes.filter((n) => openedNow.has(n)).sort((a, b) => {
         const aa = graph.getNodeAttributes(a);
         const ba = graph.getNodeAttributes(b);
         const k = KIND_ORDER.indexOf(aa.kind) - KIND_ORDER.indexOf(ba.kind);
         if (k !== 0) return k;
         return String(aa.label).localeCompare(String(ba.label));
       }),
-    [drawnNodes, opened, graph]
+    [drawnNodes, openedNow, graph]
   );
   const tabIndexOf = useMemo(() => {
     const m = new Map<string, number>();
@@ -432,7 +548,21 @@ export default function SignalGraph({
       {/* ── STRUCTURE ─────────────────────────────────────────────────
           The disagreement bands, and the sector gutters that make cluster
           territory legible without drawing a box around anything. */}
-      <g opacity={TIER.structure} style={{ pointerEvents: "none" }} data-shoot="graph-structure">
+      {/* BACKGROUND GEOMETRY RECEDES; IT DOES NOT DISAPPEAR.
+
+          Softened by LUMINANCE alone, deliberately — no filter. A blur on
+          this group would take a filter region covering the entire field,
+          which at close zoom is a multi-thousand-pixel offscreen surface
+          re-rasterised on every pan. The rings are hairlines at 15% already;
+          two thirds of that is the same perceptual step the nodes get from
+          half a pixel of softening, for no paint at all. Orientation is what
+          this layer is FOR, so it is the last thing allowed to become
+          expensive. */}
+      <g
+        opacity={focus || soloNodes ? TIER.structure * 0.62 : TIER.structure}
+        style={{ pointerEvents: "none", transition: "opacity 200ms ease" }}
+        data-shoot="graph-structure"
+      >
         {BANDS.map((b) => (
           <circle
             key={b.id}
@@ -505,7 +635,7 @@ export default function SignalGraph({
 
       {/* Band names, on the one axis no cluster puck occupies. */}
       {level !== "close" && (
-        <g opacity={TIER.structure * 1.6} style={{ pointerEvents: "none" }}>
+        <g opacity={TIER.structure * (focus || soloNodes ? 1.0 : 1.6)} style={{ pointerEvents: "none" }}>
           {BANDS.map((b) => {
             // On a sector GUTTER, not the horizontal axis: stacked on one
             // radius line the three names ran into each other
@@ -573,38 +703,139 @@ export default function SignalGraph({
       )}
 
       {/* ── EDGES ─────────────────────────────────────────────────────
-          Relationships only. Attested solid, inferred dashed — the epistemic
-          basis is visible before anything is clicked. */}
+
+          TWO CHANNELS, TWO QUESTIONS, AND THEY MUST NOT SHARE ONE.
+
+          THE DASH SAYS WHOSE CLAIM IT IS. Solid is Signal's own attested
+          record; a wide dash is Signal's own inference; a fine broken stitch
+          is somebody else's. This channel is never overridden by focus,
+          because "Signal Reality must remain distinguishable from external
+          intelligence" has to hold whether or not something is selected.
+
+          THE COLOUR, WEIGHT AND HEAD SAY WHAT KIND OF RELATIONSHIP IT IS,
+          and only once the edge has woken:
+
+            SEMANTIC    signal-coloured, full weight, arrowhead where the
+                        verb is not symmetric. What this thing means.
+            TEMPORAL    the same weight, and a DOUBLE head — the only place
+                        on this field that mark appears. Supersession is the
+                        one relation whose whole content is a direction in
+                        time, so it gets the mark that reads as one.
+            PROVENANCE  a fine neutral filament. How the thing is known is
+                        not a statement about the project, and a finding with
+                        nine citations must not read as nine claims.
+            CONTEXTUAL  a hairline. Present because it is true, quiet because
+                        `related_to` is most of the producer's corpus.
+
+          AND A WOKEN EDGE CARRIES ITS VERB. Law 3: the reader must be able to
+          say WHY two objects are joined without opening a panel. Only woken
+          edges, only when the word will actually be legible, and never on the
+          contextual hairline — labelling seventy `related_to` strokes is how
+          you make a field nobody reads. */}
       <g data-shoot="graph-edges" style={{ pointerEvents: "none" }}>
         {drawnEdges.map((e) => {
           const a = layout.get(e.from)!;
           const b = layout.get(e.to)!;
           const op = edgeOpacity(e.id, e.basis);
           if (op < 0.02) return null;
-          const lit = focus?.edges.has(e.id) || (soloNodes && op > 0.5);
+          const woken = focus?.edges.get(e.id) ?? null;
+          const soloLit = !!soloNodes && op > 0.5;
+          const lit = woken != null || soloLit;
+          // Provenance keeps its filament treatment even when a Trace lights
+          // it — that IS the trace, and making it look like a semantic claim
+          // would be the route lying about what it is.
+          const filament = (woken ?? (soloLit ? "provenance" : null)) === "provenance";
+          const strokeColor = !lit
+            ? "var(--i-text-soft)"
+            : filament
+              ? "var(--i-text-soft)"
+              : woken === "contextual"
+                ? "var(--i-text-faint)"
+                : "var(--i-signal)";
+          const weight = !lit ? 1 : woken === "contextual" ? 0.8 : filament ? 1.15 : 1.9;
+          // THE WORD IS ONLY DRAWN WHERE THERE IS ROOM FOR IT.
+          //
+          // Not gated on zoom: every label on this field is sized in `1/k`, so
+          // a verb is always 9 device pixels whatever the camera is doing. The
+          // thing that actually decides legibility is how long the LINE is on
+          // screen — a word straddling a 20px stroke is illegible at every
+          // zoom, and readable at every zoom once the stroke is 60px.
+          //
+          // And provenance labels are rationed rather than tiered: a finding
+          // with nine citations does not need "cites" written nine times, but
+          // an object with one is being asked exactly the question the word
+          // answers.
+          const chordPx = Math.hypot(b.x - a.x, b.y - a.y) * camera.k;
+          const showVerb =
+            chordPx >= 58 &&
+            (woken === "semantic" ||
+              woken === "temporal" ||
+              (woken === "provenance" && (level === "close" || (focus?.counts.provenance ?? 0) <= 4)));
+          const anchorPt = showVerb ? edgeLabelAnchor(a, b) : null;
+          const head = lit && woken !== "contextual" && e.directional ? edgeEndTangent(a, b) : null;
           return (
-            <path
-              key={e.id}
-              d={edgePath(a, b)}
-              fill="none"
-              stroke={lit ? "var(--i-signal)" : "var(--i-text-soft)"}
-              strokeWidth={(lit ? 1.8 : 1) / camera.k}
-              // THREE BASES, THREE STROKES. Solid is Signal's own attested
-              // record; a wide dash is Signal's own inference; a fine broken
-              // stitch is somebody else's claim. The fine stitch matches the
-              // shard glyph, so the external world reads as one material.
-              strokeDasharray={
-                e.basis === "external"
-                  ? `${2.2 / camera.k} ${2.6 / camera.k}`
-                  : e.basis === "inferred"
-                    ? `${4 / camera.k} ${4 / camera.k}`
-                    : undefined
-              }
-              opacity={op}
-              data-rel={e.rel}
-              data-basis={e.basis}
-              style={{ transition: "opacity 200ms ease" }}
-            />
+            <g key={e.id}>
+              <path
+                // ON THE PATH, WHERE THEY HAVE ALWAYS BEEN. The stroke is what
+                // every screenshot pass and QA selector addresses; moving the
+                // attributes up to the wrapper made "count the external edges
+                // on the field" return zero without anything having changed
+                // about the field.
+                data-rel={e.rel}
+                data-basis={e.basis}
+                data-focus-class={woken ?? undefined}
+                d={edgePath(a, b)}
+                fill="none"
+                stroke={strokeColor}
+                strokeWidth={weight / camera.k}
+                strokeDasharray={
+                  e.basis === "external"
+                    ? `${2.2 / camera.k} ${2.6 / camera.k}`
+                    : e.basis === "inferred"
+                      ? `${4 / camera.k} ${4 / camera.k}`
+                      : undefined
+                }
+                opacity={op}
+                style={{ transition: "opacity 200ms ease" }}
+              />
+              {head && (
+                <path
+                  d={arrowHead(b.x, b.y, head, camera.k, b.r, woken === "temporal")}
+                  fill="none"
+                  stroke={strokeColor}
+                  strokeWidth={1.5 / camera.k}
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  opacity={op}
+                  data-shoot="edge-arrow"
+                />
+              )}
+              {anchorPt && (
+                <text
+                  x={anchorPt.x}
+                  y={anchorPt.y}
+                  transform={`rotate(${anchorPt.angle.toFixed(1)} ${anchorPt.x.toFixed(1)} ${anchorPt.y.toFixed(1)})`}
+                  textAnchor="middle"
+                  dominantBaseline="middle"
+                  fontSize={9 / camera.k}
+                  letterSpacing={`${0.06 / camera.k}em`}
+                  fill={filament ? "var(--i-text-soft)" : "var(--i-signal)"}
+                  paintOrder="stroke"
+                  stroke="var(--i-bg)"
+                  strokeWidth={3 / camera.k}
+                  strokeLinejoin="round"
+                  // A WORD IS EITHER READABLE OR IT IS NOISE. The stroke's own
+                  // opacity says how loud the RELATIONSHIP is; the label says
+                  // what it is called, and a name at 62% of a faint grey is a
+                  // smudge that costs paint and answers nothing.
+                  opacity={Math.max(op, 0.88)}
+                  data-shoot="edge-verb"
+                  style={{ pointerEvents: "none" }}
+                >
+                  {e.verb}
+                </text>
+              )}
+            </g>
           );
         })}
       </g>
@@ -630,10 +861,16 @@ export default function SignalGraph({
           const isOpen = expanded.has(cluster);
           const dim = soloNodes || matches || focus ? 0.34 : 1;
           const flip = p.angle > 90 || p.angle < -90;
+          // A cluster name is the map's legend, so it is never removed — but
+          // it is text, and text on a dimmed field is the thing that keeps
+          // pulling the eye. Softened, it stays available to anyone who looks
+          // for it and stops competing with the local world.
+          const soft = focus?.nodes.has(laneId) ? undefined : soloNodes || matches || focus ? DEPTH_CLASS[1] : undefined;
           return (
             <g
               key={cluster}
               opacity={dim}
+              className={soft}
               style={{ transition: "opacity 200ms ease" }}
               data-shoot={`cluster-${cluster}`}
             >
@@ -734,14 +971,33 @@ export default function SignalGraph({
           // superseded object that matched and then stayed a nameless mark
           // reads as the search being broken rather than as the object being
           // history.
+          const rank = focus?.nodes.get(id) ?? null;
           const reached =
             selectedId === id ||
             hoveredId === id ||
             (matches?.has(id) ?? false) ||
             (soloNodes?.has(id) ?? false) ||
-            (focus?.nodes.has(id) ?? false);
-          const identity = identityOf(attrs.kind, opened.has(id) && (!historical || reached), level);
+            rank != null;
+          const identity = identityOf(attrs.kind, openedNow.has(id) && (!historical || reached), level);
           const latent = identity === "latent";
+          const depth = nodeDepth(id, latent);
+          // A LABEL RUNS OUTWARD — UNLESS OUTWARD IS OFF THE SCREEN.
+          //
+          // Labels are anchored away from the centre so they do not run back
+          // across the field. At the rim that sends the selected node's own
+          // name past the edge of the viewport, which is the one label on
+          // screen that must be legible: the framing law deliberately holds
+          // the camera still, so the fix belongs here rather than in a pan.
+          //
+          // Computed ONLY for the two nodes that are already re-rendering —
+          // the selection and whatever is under the cursor. Deriving it for
+          // all four hundred would make every node's props change on every
+          // frame of every pan, which is exactly the re-render the quantised
+          // scale exists to prevent.
+          const anchored = selectedId === id || hoveredId === id;
+          const screenX = anchored ? (p.x - camera.x) * camera.k + size.w / 2 : 0;
+          const labelInward =
+            anchored && (p.x < FIELD.cx ? screenX < LABEL_ROOM : screenX > size.w - LABEL_ROOM);
           return (
             <GraphNode
               key={id}
@@ -753,21 +1009,38 @@ export default function SignalGraph({
               k={nodeScale}
               identity={identity}
               latentR={latentRadius(p.r, level, nodeScale)}
-              // A latent mark recedes further when something else is being
-              // explained, for the same reason the cluster names do: it is
-              // orientation, not the answer.
+              // A latent mark recedes when something else is being explained,
+              // for the same reason the cluster names do: it is orientation,
+              // not the answer. It no longer recedes to near-nothing — the
+              // softening carries that now, and a field of invisible dust is
+              // a field you cannot navigate by.
               opacity={
                 latent
-                  ? soloNodes || matches || focus
+                  ? soloNodes
                     ? TIER.latentDimmed
-                    : LATENT[level].opacity
+                    : matches || focus
+                      ? FOCUS_TIER.unrelatedLatent
+                      : LATENT[level].opacity
                   : nodeOpacity(id)
               }
+              depth={depth}
+              rank={rank}
               selected={selectedId === id}
               hovered={hoveredId === id}
               matched={matches?.has(id) ?? false}
               swept={swept.has((attrs.lane as string) ?? "")}
-              labelled={identity === "named" || selectedId === id || hoveredId === id}
+              labelInward={labelInward}
+              // A NEIGHBOUR THE SELECTION WOKE IS READABLE. Law 4: the eye
+              // must be able to answer "what belongs to it" without zooming,
+              // and a nameless glowing dot answers nothing. Contextual
+              // neighbours are deliberately excluded — naming seventy
+              // `related_to` partners is the density failure, not the fix.
+              labelled={
+                identity === "named" ||
+                selectedId === id ||
+                hoveredId === id ||
+                (rank != null && rank !== "contextual")
+              }
               tabIndex={tabIndexOf.get(id) ?? -1}
               onSelect={onSelect}
               onHover={onHover}
@@ -823,6 +1096,9 @@ const GraphNode = memo(function GraphNode({
   matched,
   swept,
   labelled,
+  labelInward,
+  depth,
+  rank,
   tabIndex,
   onSelect,
   onHover,
@@ -841,12 +1117,20 @@ const GraphNode = memo(function GraphNode({
   matched: boolean;
   swept: boolean;
   labelled: boolean;
+  /** Draw the name toward the centre instead of away from it, because away
+      from it is off the edge of the viewport. Only ever true for the selected
+      or hovered node. */
+  labelInward: boolean;
+  /** Optical depth. 0 sharp, 1 softened. See DEPTH_CLASS. */
+  depth: Depth;
+  /** What this node is to the current selection, or null when nothing is. */
+  rank: FocusRank | null;
   tabIndex: number;
   onSelect: (id: string | null) => void;
   onHover: (id: string | null) => void;
 }) {
   const latent = identity === "latent";
-  const leftHalf = x < FIELD.cx;
+  const leftHalf = labelInward ? x >= FIELD.cx : x < FIELD.cx;
   const color = nodeColor(attrs);
   const shape = NODE_SHAPE[attrs.kind];
   const stroke = 1.4 / k;
@@ -1049,9 +1333,15 @@ const GraphNode = memo(function GraphNode({
   return (
     <g
       opacity={opacity}
+      // DEPTH IS A CLASS, NOT AN INLINE FILTER. One compiled rule shared by
+      // four hundred elements; see `.sg-depth-*` and the measurement in
+      // scripts/audit-focus-measure.ts.
+      className={DEPTH_CLASS[depth]}
       style={{ transition: "opacity 260ms ease" }}
       data-shoot={`node-${id}`}
       data-kind={attrs.kind}
+      data-rank={rank ?? undefined}
+      data-depth={depth}
       // The producer's own type string, for the same reason `data-kind` is
       // here: a QA pass and a screenshot script must be able to find "the
       // external Decision" without reading a label out of an accessible name.
@@ -1075,6 +1365,30 @@ const GraphNode = memo(function GraphNode({
         aria-hidden="true"
         data-shoot="latent-mark"
       />
+
+      {/* THE GLOW — one node on the field wears it, and only while it is the
+          thing being explained.
+
+          Two soft rings rather than a filter: a blur on the selected node
+          would cost a rasterisation surface on the one element that has to
+          respond instantly, and would soften the very thing Law 4 says must
+          be the sharpest. Concentric falloff reads as luminance and costs two
+          strokes. */}
+      {!latent && selected && (
+        <>
+          <circle
+            cx={x}
+            cy={y}
+            r={grown + 12 / k}
+            fill="none"
+            stroke={color}
+            strokeWidth={3 / k}
+            opacity={0.14}
+            data-shoot="node-glow"
+          />
+          <circle cx={x} cy={y} r={grown + 18 / k} fill="none" stroke={color} strokeWidth={5 / k} opacity={0.06} />
+        </>
+      )}
 
       {/* Halo: selection, search match, or the sweep passing over. */}
       {!latent && (selected || matched || swept) && (
@@ -1134,7 +1448,14 @@ const GraphNode = memo(function GraphNode({
           y={y + 3.5 / k}
           textAnchor={leftHalf ? "end" : "start"}
           fontSize={(attrs.kind === "work" || attrs.kind === "passage" ? 9.5 : 11) / k}
-          fill={selected || hovered ? "var(--i-text)" : "var(--i-text-soft)"}
+          fill={selected || hovered || rank != null ? "var(--i-text)" : "var(--i-text-soft)"}
+          // TEXT IS WHERE BLUR EARNS ITS KEEP. The eye works hardest to
+          // resolve letterforms, so an unrelated label is the single loudest
+          // thing on a dimmed field. It gets the second depth on top of the
+          // group's — compounding to a little over a pixel, which is exactly
+          // the point at which a word stops asking to be read and starts
+          // reading as texture.
+          className={depth > 0 ? DEPTH_CLASS[2] : undefined}
           style={{ pointerEvents: "none" }}
         >
           {truncate(String(attrs.label), attrs.kind === "finding" ? 34 : 28)}
@@ -1167,6 +1488,50 @@ const KIND_NAME: Record<string, string> = {
 };
 
 /**
+ * THE HEAD ON A WOKEN EDGE.
+ *
+ * Drawn as an explicit path rather than an SVG `marker`, for one reason: a
+ * marker cannot be scaled per-use, and every stroke on this field is sized in
+ * `1/k` so that it stays the same number of device pixels at any zoom. A
+ * marker would be correct at exactly one camera scale and wrong at every
+ * other.
+ *
+ * It sits at the RIM of the target, not at its centre, so the head reads as
+ * arriving at the object rather than as buried inside it.
+ *
+ * `double` is the temporal mark, and it appears nowhere else on this field. A
+ * chevron behind a chevron reads as motion along the line — which is exactly
+ * what `supersedes` and `resolves` are: not "A relates to B" but "A came
+ * after B and replaced it".
+ */
+function arrowHead(
+  x: number,
+  y: number,
+  t: { x: number; y: number },
+  k: number,
+  r: number,
+  double: boolean
+): string {
+  const back = r + 3 / k;
+  const len = 6.5 / k;
+  const spread = 0.62;
+  const draw = (offset: number) => {
+    const tipX = x - t.x * (back + offset);
+    const tipY = y - t.y * (back + offset);
+    const bx = -t.x;
+    const by = -t.y;
+    const c = Math.cos(spread);
+    const sn = Math.sin(spread);
+    const ax = tipX + (bx * c - by * sn) * len;
+    const ay = tipY + (bx * sn + by * c) * len;
+    const cx2 = tipX + (bx * c + by * sn) * len;
+    const cy2 = tipY + (-bx * sn + by * c) * len;
+    return `M ${ax.toFixed(1)} ${ay.toFixed(1)} L ${tipX.toFixed(1)} ${tipY.toFixed(1)} L ${cx2.toFixed(1)} ${cy2.toFixed(1)}`;
+  };
+  return double ? `${draw(0)} ${draw(len * 0.72)}` : draw(0);
+}
+
+/**
  * Trim a label to fit, KEEPING THE END WHEN THE END IS WHAT DISTINGUISHES IT.
  *
  * A source artifact's label is its ref, and the producer's refs are URIs:
@@ -1189,7 +1554,7 @@ function truncate(s: string, n: number): string {
 
 /** Fit the whole field in view — the "reset" the reference offers as a
     home button, and what the instrument opens at. */
-export function fitCamera(extent: number = RECORD_EXTENT): Camera {
+export function fitCamera(extent: number = RECORD_EXTENT, vp?: { w: number; h: number }): Camera {
   // FIT MUST ACTUALLY FIT. External intelligence seats outside the record's
   // edge, so a fixed zoom would push the outermost band off screen at the one
   // moment the user asked to see everything.
@@ -1197,9 +1562,30 @@ export function fitCamera(extent: number = RECORD_EXTENT): Camera {
   // The comparison is against RECORD_EXTENT — how far Signal's own material
   // reaches, which is what the default zoom was chosen for — so a Scope with
   // no external intelligence comes back at exactly the zoom it always did.
-  // This is not a change to the existing field; it is the same field, plus a
-  // rule for when the field is larger.
-  const k = DEFAULT_CAMERA.k * (RECORD_EXTENT / Math.max(RECORD_EXTENT, extent));
+  //
+  // ── AND IT MUST FIT THE SCREEN IT IS ON ───────────────────────────────
+  //
+  // 0.72 was chosen against a viewport at least ~870px tall. Measured on a
+  // 1440×900 window the graph gets 856px, the record is 1194 world units
+  // across, and the field overflowed the view by 5% — "Fit" that does not fit
+  // was still shipping, just less obviously than before.
+  //
+  // It matters more now than it did: the framing law's first rule is "if the
+  // neighbourhood is already visible, do not move", and at a Fit that does
+  // not fit, selecting anything near the rim was legitimately a camera move.
+  // Every selection at the home camera nudged the field. Making Fit honest
+  // makes the whole selection grammar hold still.
+  //
+  // This can only ever REDUCE the zoom from the historic value, so on a
+  // window tall enough for the original constant nothing changes at all.
+  const base = DEFAULT_CAMERA.k * (RECORD_EXTENT / Math.max(RECORD_EXTENT, extent));
+  // The field must land INSIDE the framing law's trigger inset, not exactly
+  // on the frame edge — otherwise Fit is a view in which every rim node is
+  // one pixel from needing a camera move, and the first click pans.
+  const k =
+    vp && vp.w > 0 && vp.h > 0
+      ? Math.min(base, (Math.min(vp.w, vp.h) * (1 - 2 * FRAME_SLACK)) / (2 * extent))
+      : base;
   return { x: FIELD.cx, y: FIELD.cy, k: Math.max(MIN_ZOOM, k) };
 }
 
@@ -1209,6 +1595,16 @@ export function focusCamera(layout: GraphLayout, id: string, camera: Camera, k?:
   if (!p) return camera;
   return { x: p.x, y: p.y, k: k ?? Math.max(camera.k, 1.6) };
 }
+
+/**
+ * How much screen a label needs beside its node.
+ *
+ * 28 characters at 11px in this face is a little under 170px; 186 leaves the
+ * gap between the node and the first letter. In DEVICE pixels, not world
+ * units — every label on this field is sized in `1/k`, so its width on screen
+ * is the same at every zoom.
+ */
+const LABEL_ROOM = 186;
 
 export type { GraphLayout };
 export { layoutGraph };
