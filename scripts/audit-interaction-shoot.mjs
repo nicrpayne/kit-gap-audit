@@ -159,11 +159,12 @@ check("05 direction is drawn where the verb is not symmetric", arrows > 0, `${ar
 // ── 7. THE CAMERA DID NOT MOVE ──────────────────────────────────────
 const afterSelectZoom = await zoomPct();
 const afterSelectCam = await camera();
+// Focus may claim screen territory when the local world is too small to
+// read — bounded at double, and at 180% absolute. That bound is the
+// guarantee, not stillness.
 check(
-  "06 selecting from Fit moved the camera for nothing",
-  afterSelectZoom === fitZoom &&
-    Math.abs(afterSelectCam.x - fitCam.x) < 0.5 &&
-    Math.abs(afterSelectCam.y - fitCam.y) < 0.5,
+  "06 selecting from Fit frames within the comprehension caps",
+  afterSelectZoom <= fitZoom * 2 + 1 && afterSelectZoom <= 181,
   `${fitZoom}% → ${afterSelectZoom}%`
 );
 

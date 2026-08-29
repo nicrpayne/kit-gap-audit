@@ -116,8 +116,8 @@ async function wobbleAt(targetK, label) {
   );
   return out;
 }
-await wobbleAt(1.05, "wobble.far");
-await wobbleAt(2.1, "wobble.medium");
+await wobbleAt(0.95, "wobble.far");
+await wobbleAt(1.6, "wobble.medium");
 
 // H3 — the deadband must still be CROSSABLE. Hysteresis that never lets go
 // is a worse bug than chatter.
@@ -129,9 +129,19 @@ await wobbleAt(2.1, "wobble.medium");
   for (let i = 0; i < 40; i++) { await p.mouse.wheel(0, 120); await p.waitForTimeout(20); tiers.push(await zoomLevel()); }
   const seq = tiers.filter((t, i) => i === 0 || t !== tiers[i - 1]);
   record("sweep.tiers", seq.join(" → "));
+  // FOUR TIERS NOW, not three: `near` was added between the constellation
+  // level and the evidence level, because with three tiers a reader went
+  // from unlabelled mass straight to a hundred names. A clean sweep is
+  // therefore seven states, not five — and the law is unchanged: every tier
+  // is reachable, and the deadband lets go on the way back down.
   check(
     "H3 a full zoom sweep still reaches every tier and comes back",
-    seq[0] === "far" && seq.includes("close") && seq[seq.length - 1] === "far" && seq.length <= 6,
+    seq[0] === "far" &&
+      seq.includes("medium") &&
+      seq.includes("near") &&
+      seq.includes("close") &&
+      seq[seq.length - 1] === "far" &&
+      seq.length <= 8,
     seq.join(" → ")
   );
 }
@@ -296,10 +306,20 @@ await settle(400);
   // Read back through the SVG's own viewBox, so the comparison is against
   // sub-pixel float noise rather than exact equality — a camera that has not
   // moved still reads a few ten-millionths apart.
+  // COMPREHENSION, NOT STILLNESS. Selecting used to be forbidden from moving
+  // the camera at all; that was right against a rule which forced 230% zoom,
+  // and became wrong once a selection could be unarguably visible and
+  // completely unreadable — eleven pixels of local world in a corner.
+  //
+  // What survives is the bound, and it is what this proves: whatever the
+  // camera does on a selection, it does the same thing whether the selection
+  // came from a click, a search result or an inspector row, and it never
+  // more than doubles.
+  const ratio = after.k / before.k;
   check(
-    "S1 selecting a node moves the camera not at all",
-    cameraSettledEnough(before, after),
-    `(${Math.round(before.x)}, ${Math.round(before.y)}) @ ${before.k.toFixed(3)} unchanged`
+    "S1 selecting a node frames it within the comprehension caps",
+    ratio <= 2.01 && after.k <= 1.81,
+    `(${Math.round(before.x)}, ${Math.round(before.y)}) @ ${before.k.toFixed(3)} → @ ${after.k.toFixed(3)} (${ratio.toFixed(2)}×)`
   );
   await p.keyboard.press("Escape");
   await settle(400);

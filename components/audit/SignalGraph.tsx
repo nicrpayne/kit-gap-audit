@@ -40,6 +40,7 @@ import {
   clusterLabelPoint,
   CLUSTER_ORDER,
   RECORD_EXTENT,
+  layoutAggregates,
   type GraphLayout,
 } from "@/lib/audit/graphLayout";
 import {
@@ -50,11 +51,13 @@ import {
   FOCUS_EDGE,
   WEB,
   DEPTH_CLASS,
+  intelColor,
   LATENT,
   latentRadius,
   identityOf,
   intelIsHollow,
   fieldLabel,
+  labelsFor,
   type Depth,
   type ZoomLevel,
   type Identity,
@@ -191,6 +194,20 @@ export default function SignalGraph({
   // the only value handed down to the 64 memoised nodes, so a slow trackpad
   // zoom stops re-rendering all of them on every frame. See cameraMotion.
   const nodeScale = useMemo(() => quantizeScale(camera.k), [camera.k]);
+
+  /**
+   * THE CAMERA, ROUNDED, FOR THINGS THAT MUST NOT RECOMPUTE EVERY FRAME.
+   *
+   * Which labels fit and which nodes are on screen both depend on where the
+   * camera is — in principle every frame, and in practice that meant twenty
+   * recomputations during one 320ms framing move, each able to hand a name
+   * from one node to another or create four hundred filter surfaces.
+   *
+   * Twelve device pixels of pan and one quantised zoom step. The camera
+   * itself stays exactly continuous; only what is DERIVED from it is stepped.
+   */
+  const planKey =
+    `${Math.round((camera.x * camera.k) / 12)}:${Math.round((camera.y * camera.k) / 12)}:${nodeScale.toFixed(3)}`;
 
   // Layout is computed from the WHOLE graph, not the visible subset, so a
   // node does not move when its neighbours are collapsed. Expanding a cluster
@@ -347,18 +364,6 @@ export default function SignalGraph({
    * enough for the eye to stop trying to resolve it and nowhere near enough
    * to stop it being a map.
    */
-  const nodeDepth = (id: string, latent: boolean): Depth => {
-    if (soloNodes) return soloNodes.has(id) ? 0 : latent ? 1 : 1;
-    if (focus) {
-      const rank = focus.nodes.get(id);
-      if (rank && rank !== "contextual") return 0;
-      if (matches?.has(id)) return 0;
-      return 1;
-    }
-    if (matches) return matches.has(id) ? 0 : 1;
-    return 0;
-  };
-
   const edgeOpacity = (edge: string, basis: string): number => {
     if (soloNodes) {
       const lit = soloNodes.has(graph.source(edge)) && soloNodes.has(graph.target(edge));
@@ -381,6 +386,49 @@ export default function SignalGraph({
   // exist.
   const drawnNodes = useMemo(() => graph.nodes().filter((n) => layout.has(n)), [graph, layout]);
 
+  /**
+   * WHAT IS ON SCREEN, QUANTISED.
+   *
+   * Optical depth is a filter, and a filter is an offscreen rasterisation
+   * surface per element. Profiled during a Trace on the real payload, 44% of
+   * the transition was browser style-and-paint work: four hundred blur
+   * surfaces being created at once, most of them for nodes outside the
+   * viewport that nobody could see either way.
+   *
+   * Softening something off screen is not a perceptual effect, it is a bill.
+   * Shares the label plan's quantised camera key, so crossing the frame edge
+   * during a pan does not re-render the field.
+   */
+  const onScreen = useMemo(() => {
+    const out = new Set<string>();
+    const halfW = size.w / 2 + 80;
+    const halfH = size.h / 2 + 80;
+    for (const id of drawnNodes) {
+      const p = layout.get(id);
+      if (!p) continue;
+      if (Math.abs((p.x - camera.x) * camera.k) > halfW) continue;
+      if (Math.abs((p.y - camera.y) * camera.k) > halfH) continue;
+      out.add(id);
+    }
+    return out;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [drawnNodes, layout, planKey, size.w, size.h]);
+
+  const nodeDepth = (id: string, latent: boolean): Depth => {
+    if (!onScreen.has(id)) return 0;
+    if (soloNodes) return soloNodes.has(id) ? 0 : latent ? 1 : 1;
+    if (focus) {
+      const rank = focus.nodes.get(id);
+      if (rank && rank !== "contextual") return 0;
+      if (matches?.has(id)) return 0;
+      return 1;
+    }
+    if (matches) return matches.has(id) ? 0 : 1;
+    return 0;
+  };
+
+
+
   // ── THE CALM-STATE WEB ───────────────────────────────────────────────
   //
   // Computed from the graph and the seats alone — not from `opened`, not from
@@ -402,6 +450,70 @@ export default function SignalGraph({
     });
     return m;
   }, [graph]);
+
+  // ── THE CONSTELLATIONS, AND WHAT THEY SHOW AT EACH TIER ──────────────
+  //
+  // A shell is not a node. It is a way of saying "these N things" without
+  // drawing N labels, and it fades out as the things themselves become
+  // readable — at `near` the members carry their own names and a shell around
+  // them would be a second, redundant claim about the same region.
+  const aggregates = useMemo(() => layoutAggregates(layout), [layout]);
+
+  /**
+   * HOW LOUD A SHELL IS, BY TIER.
+   *
+   * The ladder in four numbers. It reaches zero at `near` rather than fading
+   * asymptotically, because a 4%-opacity ring around a region whose contents
+   * are all named is not subtle, it is a smudge nobody can account for.
+   */
+  const aggShellOpacity = level === "far" ? 1 : level === "medium" ? 0.5 : 0;
+
+  /**
+   * REALITY STOPS GROWING AT 190 DEVICE PIXELS.
+   *
+   * It is 54 world units where nothing else is more than 15, so at close zoom
+   * it became a planet: a reader who went in to read one passage got the core
+   * filling a third of the field and the passage pushed off the edge. Capped
+   * in SCREEN space rather than world space, because "too big" is a fact
+   * about the viewport, not about the model — at far zoom nothing changes at
+   * all, and the cap only ever engages past roughly 350%.
+   */
+  const coreScale = Math.min(1, CORE_MAX_PX / (FIELD.coreR * camera.k));
+
+  /**
+   * WHICH SHELLS GET TO PRINT THEIR NAME.
+   *
+   * The same greedy, authority-ordered collision pass the focused labels use.
+   * Type groups are the regions of this field and go first, largest first,
+   * because "OBSERVATION 59" is the most useful thing a reader can be told
+   * about that mass. Anything that would land on top of a name already
+   * printed keeps its count and loses its name.
+   */
+  const aggLabels = useMemo(() => {
+    const kept = new Set<string>();
+    if (aggShellOpacity <= 0.01) return kept;
+    // SEEDED WITH THE CLUSTER NAMES, which are the map's legend and are drawn
+    // whatever else happens. A shell name that lands on "HERMES / WIKI" has
+    // not been placed, it has been hidden — and it hides the legend with it.
+    const placed: { x: number; y: number }[] = CLUSTER_ORDER.map((c) => {
+      const q = clusterLabelPoint(c);
+      return { x: (q.x - camera.x) * camera.k, y: (q.y - camera.y) * camera.k };
+    });
+    const ordered = [...aggregates].sort(
+      (a, b) =>
+        (a.kind === "type" ? 0 : 1) - (b.kind === "type" ? 0 : 1) ||
+        b.count - a.count ||
+        a.id.localeCompare(b.id)
+    );
+    for (const agg of ordered) {
+      const sx = (agg.x - camera.x) * camera.k;
+      const sy = (agg.y - camera.y) * camera.k;
+      if (placed.some((q) => Math.abs(q.y - sy) < 17 && Math.abs(q.x - sx) < 210)) continue;
+      kept.add(agg.id);
+      placed.push({ x: sx, y: sy });
+    }
+    return kept;
+  }, [aggregates, aggShellOpacity, camera.x, camera.y, camera.k]);
 
   /** Whether this Scope has any external intelligence at all. Governs the
       outer boundary ring, and nothing else — an absent band draws no ring
@@ -485,6 +597,11 @@ export default function SignalGraph({
       cls: FocusClass;
       verb: string;
       directional: boolean;
+      d: string;
+      anchor: ReturnType<typeof edgeLabelAnchor>;
+      tangent: { x: number; y: number };
+      chord: number;
+      target: { x: number; y: number; r: number };
     }[] = [];
     graph.forEachEdge((e, a, s, t) => {
       // MEMBERSHIP IS NEVER AN EDGE. See the header.
@@ -499,6 +616,8 @@ export default function SignalGraph({
         if (!reached) return;
       }
       const verb = edgeVerb(a as { rel: string; intelRel?: string | null });
+      const pa = layout.get(s)!;
+      const pb = layout.get(t)!;
       out.push({
         id: e,
         from: s,
@@ -508,58 +627,128 @@ export default function SignalGraph({
         cls,
         verb,
         directional: verbIsDirectional(verb),
+        // GEOMETRY IS WORLD SPACE AND DOES NOT MOVE WITH THE CAMERA.
+        //
+        // These were rebuilt inside the render for every drawn edge on every
+        // frame — 187 path strings and three trig calls each, per frame of
+        // every pan and every framing move. Measured, the largest single
+        // contributor to the 60-90ms long tasks a Trace was producing. The
+        // camera changes what a stroke LOOKS like, never where it is.
+        d: edgePath(pa, pb),
+        anchor: edgeLabelAnchor(pa, pb),
+        tangent: edgeEndTangent(pa, pb),
+        chord: Math.hypot(pb.x - pa.x, pb.y - pa.y),
+        target: pb,
       });
     });
     return out;
   }, [graph, openedNow, layout, anchorId, soloNodes]);
 
-  // ── WHICH NAMES ACTUALLY GET PRINTED ─────────────────────────────────
+  // ── LABEL AUTHORITY ──────────────────────────────────────────────────
   //
-  // Waking a neighbourhood means naming it — and on the real corpus a
-  // Decision cites four passages seated within ten world units of each other
-  // in the evidence arc. Printed, that is four quotations occupying one line
-  // of pixels: a smear that answers nothing and hides the one label that
-  // could have.
+  // ONE PASS DECIDES EVERY NAME ON THE FIELD.
   //
-  // The camera cannot fix this on its own. It closes in until the marks
-  // separate, but it is capped at double — deliberately, because the
-  // alternative is the 230% zoom that this whole line of work removed. So
-  // past that cap the LABELS yield instead:
+  // Zoom says which KINDS of thing may be named at this tier. That is not
+  // enough on its own: measured at close zoom over a real transcript, 130
+  // passage quotes printed on top of each other and the region became an
+  // illegible grey smear. A label that cannot be read costs the space a
+  // readable one would have used.
   //
-  //   A LABEL THAT CANNOT BE READ IS WORSE THAN NO LABEL. It costs the space
-  //   a readable one would have used, and it makes the field look broken.
+  // So a second rule runs after the tier's: greedy, deterministic, in
+  // authority order, keeping a name only where nothing already printed sits
+  // in the same place.
   //
-  // Greedy, in authority order — the selection first, then semantic, then
-  // temporal, then provenance — keeping a name only where nothing already
-  // named is sitting in the same place. Everything unnamed keeps its ring,
-  // its colour and its row in the inspector; it simply does not shout its
-  // name over its neighbour's.
-  const labelledFocus = useMemo(() => {
-    if (!focus) return null;
-    const rank = (id: string) => {
-      const r = focus.nodes.get(id);
-      return r === "anchor" ? 0 : r === "semantic" ? 1 : r === "temporal" ? 2 : 3;
-    };
-    const cands = focus.frame
-      .filter((id) => layout.has(id))
-      .sort((a, b) => rank(a) - rank(b) || (degreeOf.get(b) ?? 0) - (degreeOf.get(a) ?? 0));
+  //   1. WHAT IS OFF SCREEN IS NOT A LABEL. Candidates are filtered to the
+  //      viewport first, which is both the largest saving and the most
+  //      obviously correct rule: the names you get are the names of the
+  //      things you are looking at.
+  //   2. The selection and its neighbourhood go first — that is what the
+  //      reader asked for.
+  //   3. Then representatives, so every constellation names a couple of its
+  //      own at the tier where it is still a mass.
+  //   4. Then everything the tier permits, by kind, then by how connected it
+  //      is, then by id. A hub outranks a leaf; a leaf nothing else refers to
+  //      goes last.
+  //
+  // Recomputed on camera change, which sounds expensive and is not: the
+  // viewport filter leaves tens of candidates, and a name changing hands is a
+  // prop change on one node rather than a re-render of the field.
+  const labelPlan = useMemo(() => {
     const kept = new Set<string>();
     const placed: { x: number; y: number; left: boolean }[] = [];
-    for (const id of cands) {
-      const p = layout.get(id)!;
-      // Screen space: a label is a fixed size on screen whatever the zoom,
-      // so collision has to be judged there and not in world units.
-      const sx = (p.x - camera.x) * camera.k;
-      const sy = (p.y - camera.y) * camera.k;
+    const halfW = size.w / 2;
+    const halfH = size.h / 2;
+    const screen = (p: { x: number; y: number }) => ({
+      x: (p.x - camera.x) * camera.k,
+      y: (p.y - camera.y) * camera.k,
+    });
+    const room = (sx: number, sy: number, left: boolean) =>
+      !placed.some((q) => q.left === left && Math.abs(q.y - sy) < 15 && Math.abs(q.x - sx) < 190);
+    const take = (id: string) => {
+      if (kept.has(id) || kept.size >= LABEL_BUDGET) return;
+      const p = layout.get(id);
+      if (!p) return;
+      const s = screen(p);
+      // Off screen, plus a margin so a label does not pop the instant its
+      // node crosses the frame.
+      if (Math.abs(s.x) > halfW + 120 || Math.abs(s.y) > halfH + 60) return;
       const left = p.x < FIELD.cx;
-      const clash = placed.some((q) => q.left === left && Math.abs(q.y - sy) < 15 && Math.abs(q.x - sx) < 190);
-      if (clash) continue;
+      if (!room(s.x, s.y, left)) return;
       kept.add(id);
-      placed.push({ x: sx, y: sy, left });
-      if (kept.size >= 9) break;
+      placed.push({ x: s.x, y: s.y, left });
+    };
+
+    // 1. the selection, then its neighbourhood in authority order
+    if (selectedId) take(selectedId);
+    if (hoveredId) take(hoveredId);
+    if (focus) {
+      const order = (id: string) => {
+        const r = focus.nodes.get(id);
+        return r === "anchor" ? 0 : r === "semantic" ? 1 : r === "temporal" ? 2 : 3;
+      };
+      for (const id of [...focus.frame].sort(
+        (a, b) => order(a) - order(b) || (degreeOf.get(b) ?? 0) - (degreeOf.get(a) ?? 0)
+      )) {
+        take(id);
+      }
     }
+
+    // 2. a couple of representatives per constellation, at the tier where the
+    //    constellation is still a mass
+    if (level === "medium") {
+      for (const agg of aggregates) {
+        const ranked = [...agg.members]
+          .sort((a, b) => (degreeOf.get(b) ?? 0) - (degreeOf.get(a) ?? 0) || a.localeCompare(b))
+          .filter((id) => (degreeOf.get(id) ?? 0) > 0)
+          .slice(0, 2);
+        for (const id of ranked) take(id);
+      }
+    }
+
+    // 3. everything the tier permits
+    const allowed = labelsFor(level);
+    const candidates = drawnNodes
+      .filter((id) => allowed.has(graph.getNodeAttribute(id, "kind")))
+      .sort((a, b) => {
+        const ka = LABEL_PRIORITY.indexOf(graph.getNodeAttribute(a, "kind"));
+        const kb = LABEL_PRIORITY.indexOf(graph.getNodeAttribute(b, "kind"));
+        return ka - kb || (degreeOf.get(b) ?? 0) - (degreeOf.get(a) ?? 0) || a.localeCompare(b);
+      });
+    for (const id of candidates) take(id);
     return kept;
-  }, [focus, layout, camera.x, camera.y, camera.k, degreeOf]);
+    // QUANTISED AGAINST THE CAMERA, not tied to it.
+    //
+    // Which names fit depends on where the camera is, so in principle this
+    // belongs in every frame — and in practice that meant recomputing the
+    // plan twenty times during a single 320ms framing move, each one
+    // potentially handing a name from one node to another. Measured, it put a
+    // Trace 7ms over its budget and made labels flicker during the tween.
+    //
+    // Rounded to 12 device pixels of pan and one quantised zoom step, the
+    // plan changes when the view meaningfully changes and not while it is
+    // merely on its way there. The camera itself stays exactly continuous.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [layout, drawnNodes, graph, level, aggregates, degreeOf, focus, selectedId, hoveredId, planKey, size.w, size.h]);
 
   /** ONE RELATIONSHIP, ONE LINE. Once both ends of a strand are open the
       edge layer draws it properly — with its weight, its head and its verb —
@@ -816,6 +1005,97 @@ export default function SignalGraph({
           edges, only when the word will actually be legible, and never on the
           contextual hairline — labelling seventy `related_to` strokes is how
           you make a field nobody reads. */}
+      {/* ── CONSTELLATION SHELLS ──────────────────────────────────────
+
+          The aggregate layer. A shell says "these N things, and they are all
+          Risks" — at a tier where naming all N would be a wall of text over
+          the region it is trying to describe.
+
+          IT IS NOT A NODE AND NEVER BECOMES ONE. No row, no ref, no truth
+          status, nothing stored, no pointer events. Every mark inside it is a
+          real node at its real seat, and the count is exactly how many of
+          them there are.
+
+          IT FADES AS ITS CONTENTS BECOME READABLE. At `far` it is the thing
+          you see; at `medium` it is a boundary around forming marks; by
+          `near` the members carry their own names and a shell would be a
+          second, redundant claim about the same region. That is the whole
+          disclosure ladder in one opacity. */}
+      {aggShellOpacity > 0.01 && (
+        <g data-shoot="graph-aggregates" style={{ pointerEvents: "none", transition: "opacity 220ms ease" }}>
+          {aggregates.map((agg) => {
+            // A homogeneous group may wear its type's colour, because every
+            // mark inside really is that type. A mixed one may not: one hue
+            // over mixed contents is a lie about what is in there.
+            const tint = agg.homogeneous ? intelColor(agg.homogeneous) : "var(--i-text-soft)";
+            const named = aggLabels.has(agg.id);
+            // Outward, unless outward is off the screen — the same rule the
+            // node labels follow, for the same reason.
+            const sx = (agg.x - camera.x) * camera.k + size.w / 2;
+            const flip = agg.x < FIELD.cx ? sx > LABEL_ROOM : sx > size.w - LABEL_ROOM;
+            const off = agg.discR + 7 / camera.k;
+            return (
+              <g key={agg.id} opacity={aggShellOpacity} data-shoot={`aggregate-${agg.id}`} data-agg-count={agg.count}>
+                <circle
+                  cx={agg.x}
+                  cy={agg.y}
+                  r={agg.discR}
+                  fill={`color-mix(in srgb, ${tint} 9%, transparent)`}
+                  stroke={tint}
+                  strokeWidth={1 / camera.k}
+                  strokeOpacity={0.34}
+                />
+                {/* A TYPE GROUP IS A REGION AND CARRIES ITS NAME. A SOURCE
+                    GROUP IS A HUB AND DOES NOT — its artifact is a real node
+                    sitting at the middle of it, and that node labels itself
+                    from the constellation tier onward. Printing eleven
+                    transcript names at project scale produced exactly the
+                    stack of overlapping text this tier exists to avoid, over
+                    the region it was trying to describe. */}
+                {agg.kind === "type" && named && (
+                  <text
+                    x={agg.x + (flip ? -off : off)}
+                    y={agg.y}
+                    textAnchor={flip ? "end" : "start"}
+                    dominantBaseline="middle"
+                    fontSize={11 / camera.k}
+                    letterSpacing={`${0.1 / camera.k}em`}
+                    fill="var(--i-text)"
+                    paintOrder="stroke"
+                    stroke="var(--i-bg)"
+                    strokeWidth={3 / camera.k}
+                    strokeLinejoin="round"
+                    style={{ textTransform: "uppercase" }}
+                    data-shoot="aggregate-name"
+                  >
+                    {agg.label}
+                  </text>
+                )}
+                {/* THE COUNT IS THE POINT, and it is short enough to survive
+                    a crowd. A shell without it is a blob; with it, the reader
+                    knows the scale of what they are looking at before
+                    deciding whether to go in. */}
+                <text
+                  x={agg.kind === "type" && named ? agg.x + (flip ? -off : off) : agg.x}
+                  y={agg.kind === "type" && named ? agg.y + 13 / camera.k : agg.y}
+                  textAnchor={agg.kind === "type" && named ? (flip ? "end" : "start") : "middle"}
+                  dominantBaseline="middle"
+                  fontSize={10 / camera.k}
+                  fill={tint}
+                  paintOrder="stroke"
+                  stroke="var(--i-bg)"
+                  strokeWidth={3 / camera.k}
+                  strokeLinejoin="round"
+                  data-shoot="aggregate-count"
+                >
+                  {agg.count}
+                </text>
+              </g>
+            );
+          })}
+        </g>
+      )}
+
       {/* ── THE CALM-STATE WEB ────────────────────────────────────────
 
           Under everything, and never touchable. This is the layer that
@@ -852,7 +1132,15 @@ export default function SignalGraph({
               // citation of it is slate. One mesh, two authorships, and the
               // eye can tell which without a legend.
               stroke={sh.kind === "extraction" ? "var(--i-source)" : "var(--i-slate)"}
-              strokeWidth={0.55 / camera.k}
+              // NON-SCALING STROKE, so the width is a device fact rather than
+              // a camera fact. Every other stroke on this field is written as
+              // `n / camera.k`, which is correct and costs an attribute
+              // rewrite on all 88 sheaves in every frame of every pan —
+              // measured, part of a 94ms long task during a framing move.
+              // These carry no dash pattern, so the one channel this
+              // property is unreliable for is not in use here.
+              strokeWidth={0.55}
+              vectorEffect="non-scaling-stroke"
               strokeLinecap="round"
               data-web="sheaf"
               data-web-kind={sh.kind}
@@ -896,8 +1184,6 @@ export default function SignalGraph({
 
       <g data-shoot="graph-edges" style={{ pointerEvents: "none" }}>
         {drawnEdges.map((e) => {
-          const a = layout.get(e.from)!;
-          const b = layout.get(e.to)!;
           const op = edgeOpacity(e.id, e.basis);
           if (op < 0.02) return null;
           const woken = focus?.edges.get(e.id) ?? null;
@@ -940,14 +1226,14 @@ export default function SignalGraph({
           // with nine citations does not need "cites" written nine times, but
           // an object with one is being asked exactly the question the word
           // answers.
-          const chordPx = Math.hypot(b.x - a.x, b.y - a.y) * camera.k;
+          const chordPx = e.chord * camera.k;
           const showVerb =
             chordPx >= 58 &&
             (woken === "semantic" ||
               woken === "temporal" ||
               (woken === "provenance" && (level === "close" || (focus?.counts.provenance ?? 0) <= 4)));
-          const anchorPt = showVerb ? edgeLabelAnchor(a, b) : null;
-          const head = lit && woken !== "contextual" && e.directional ? edgeEndTangent(a, b) : null;
+          const anchorPt = showVerb ? e.anchor : null;
+          const head = lit && woken !== "contextual" && e.directional ? e.tangent : null;
           return (
             <g key={e.id}>
               {/* A LUMINOUS UNDERLAY ON THE PROVENANCE ROUTE. Law: "object
@@ -959,7 +1245,7 @@ export default function SignalGraph({
                   on a focused route and nothing at rest. */}
               {filament && lit && (
                 <path
-                  d={edgePath(a, b)}
+                  d={e.d}
                   fill="none"
                   stroke="var(--i-source)"
                   strokeWidth={5 / camera.k}
@@ -977,7 +1263,7 @@ export default function SignalGraph({
                 data-rel={e.rel}
                 data-basis={e.basis}
                 data-focus-class={woken ?? undefined}
-                d={edgePath(a, b)}
+                d={e.d}
                 fill="none"
                 stroke={strokeColor}
                 strokeWidth={weight / camera.k}
@@ -993,7 +1279,7 @@ export default function SignalGraph({
               />
               {head && (
                 <path
-                  d={arrowHead(b.x, b.y, head, camera.k, b.r, woken === "temporal")}
+                  d={arrowHead(e.target.x, e.target.y, head, camera.k, e.target.r, woken === "temporal")}
                   fill="none"
                   stroke={strokeColor}
                   strokeWidth={1.5 / camera.k}
@@ -1107,15 +1393,23 @@ export default function SignalGraph({
 
       {/* ── REALITY ───────────────────────────────────────────────────
           The hero, and visibly a different KIND of object from everything
-          orbiting it. */}
-      <g data-shoot="graph-reality" style={{ pointerEvents: "none" }}>
-        <circle cx={FIELD.cx} cy={FIELD.cy} r={FIELD.coreR + 46} fill="url(#sg-core)" />
+          orbiting it.
+
+          AND IT IS CAPPED. Every other mark on this field is a few units
+          across; Reality is 54, so at close zoom it grew into a planet that
+          pushed the thing you had gone in to read off the screen. It now
+          stops growing at 190 device pixels: still unmistakably the largest
+          object on the field at any zoom, and never the reason you cannot see
+          what you came for. The rings and the text scale with it, so it stays
+          one object rather than a disc with a halo that outgrew it. */}
+      <g data-shoot="graph-reality" style={{ pointerEvents: "none" }} data-core-scale={coreScale.toFixed(3)}>
+        <circle cx={FIELD.cx} cy={FIELD.cy} r={(FIELD.coreR + 46) * coreScale} fill="url(#sg-core)" />
         {[FIELD.coreR + 16, FIELD.coreR + 7].map((r, i) => (
           <circle
             key={r}
             cx={FIELD.cx}
             cy={FIELD.cy}
-            r={r}
+            r={r * coreScale}
             fill="none"
             stroke="var(--i-signal)"
             strokeWidth={1 / camera.k}
@@ -1125,7 +1419,7 @@ export default function SignalGraph({
         <circle
           cx={FIELD.cx}
           cy={FIELD.cy}
-          r={FIELD.coreR}
+          r={FIELD.coreR * coreScale}
           fill="var(--i-void)"
           stroke="var(--i-signal)"
           strokeWidth={1.7 / camera.k}
@@ -1133,16 +1427,22 @@ export default function SignalGraph({
         />
         <text
           x={FIELD.cx}
-          y={FIELD.cy - 6}
+          y={FIELD.cy - 6 * coreScale}
           textAnchor="middle"
-          fontSize={10 / camera.k}
+          fontSize={Math.min(10 / camera.k, 14 * coreScale)}
           letterSpacing={`${0.18 / camera.k}em`}
           fill="var(--i-signal)"
           style={{ textTransform: "uppercase" }}
         >
           Accepted
         </text>
-        <text x={FIELD.cx} y={FIELD.cy + 12} textAnchor="middle" fontSize={17 / camera.k} fill="var(--i-text)">
+        <text
+          x={FIELD.cx}
+          y={FIELD.cy + 12 * coreScale}
+          textAnchor="middle"
+          fontSize={Math.min(17 / camera.k, 24 * coreScale)}
+          fill="var(--i-text)"
+        >
           Reality
         </text>
       </g>
@@ -1243,12 +1543,12 @@ export default function SignalGraph({
               // and a nameless glowing dot answers nothing. Contextual
               // neighbours are deliberately excluded — naming seventy
               // `related_to` partners is the density failure, not the fix.
-              labelled={
-                identity === "named" ||
-                selectedId === id ||
-                hoveredId === id ||
-                (rank != null && rank !== "contextual" && (labelledFocus?.has(id) ?? true))
-              }
+              // ONE SOURCE OF TRUTH FOR EVERY NAME ON THE FIELD. The tier
+              // says which kinds MAY be named; the plan says which of them
+              // actually fit. Neither alone is enough — the first produced a
+              // smear at close zoom, the second on its own would name things
+              // the reader has not asked to see yet.
+              labelled={labelPlan.has(id)}
               tabIndex={tabIndexOf.get(id) ?? -1}
               onSelect={onSelect}
               onHover={onHover}
@@ -1884,6 +2184,48 @@ export function focusCamera(layout: GraphLayout, id: string, camera: Camera, k?:
  * is the same at every zoom.
  */
 const LABEL_ROOM = 186;
+
+/**
+ * The most names that may be on screen at once.
+ *
+ * Not a rendering limit — it is a reading limit. Past roughly sixty, a field
+ * of labels stops being something anybody reads and becomes texture, and the
+ * sixty-first is displacing one somebody might have wanted.
+ */
+const LABEL_BUDGET = 60;
+
+/**
+ * Which kinds get first refusal on the space, when two names want it.
+ *
+ * Roughly: the project's own structure, then its disagreements, then the
+ * external claims about it, then the substrate they were read from. Within a
+ * kind the tie is broken by how connected the node actually is, so a hub
+ * outranks a leaf and a leaf nothing refers to goes last.
+ */
+const LABEL_PRIORITY: NodeKind[] = [
+  "reality",
+  "lane",
+  "scope",
+  "finding",
+  "decision",
+  "dependency",
+  "decisionGate",
+  "requirement",
+  "person",
+  "transcript",
+  "notion_page",
+  "figma_artifact",
+  "source",
+  "intelligence",
+  "intel",
+  "feature",
+  "work",
+  "passage",
+  "checkpoint",
+];
+
+/** The largest Reality is allowed to be drawn, in device pixels. */
+const CORE_MAX_PX = 190;
 
 export type { GraphLayout };
 export { layoutGraph };

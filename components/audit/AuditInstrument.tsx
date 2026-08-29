@@ -750,7 +750,19 @@ export default function AuditInstrument({ initialScopeId }: { initialScopeId?: s
           // Framed from what is actually there: the puck, the core, and every
           // seat that belongs to the cluster. The same framing law does the
           // rest, so expanding obeys exactly the rule selecting does.
-          const pts: { x: number; y: number }[] = [{ x: FIELD.cx, y: FIELD.cy }];
+          // THE CLUSTER'S OWN CONTENTS, AND NOT THE CORE.
+          //
+          // This used to seed the bounds with Reality so that "the cluster's
+          // relationship to Reality stays in view". Under the comprehension
+          // law that made every cluster's bounds span half the field, so the
+          // coverage test was satisfied before it started and expanding
+          // stopped moving the camera at all — including for a six-member
+          // Capacity that ends up eleven pixels across.
+          //
+          // Reality is the largest object on the field and the camera is
+          // capped at doubling; it does not need to be in the box to stay in
+          // the frame.
+          const pts: { x: number; y: number }[] = [];
           const members: string[] = [];
           graph.forEachNode((n, a) => {
             if (a.lane !== cluster) return;
@@ -763,7 +775,17 @@ export default function AuditInstrument({ initialScopeId }: { initialScopeId?: s
           const b = boundsOf(pts);
           const p = layout.get(anchor)!;
           if (b) {
-            const next = frameFocus(b, { x: p.x, y: p.y }, cameraRef.current, viewportRef.current, spreadOf(layout, members));
+            // COVERAGE ONLY, NO SPACING TEST. Expanding a cluster is about
+            // seeing the REGION, not about reading every label in it — the
+            // label plan decides which names fit once you are there.
+            //
+            // Passing the spacing test here made every cluster frame
+            // identically: inside any constellation the closest pair is about
+            // ten units apart, so the law asked for 2.6x, hit the 2x cap, and
+            // a six-member Capacity and a hundred-and-thirty-member Hermes
+            // arrived at exactly the same zoom. Which is the defect this was
+            // written to fix.
+            const next = frameFocus(b, { x: p.x, y: p.y }, cameraRef.current, viewportRef.current, 0);
             if (next) {
               // Remember where we were BEFORE the expansion framed it, so
               // collapsing this cluster is a return rather than a stranding.

@@ -259,7 +259,6 @@ record("qa", qa);
 // ── 3. TRACE IS A ROUTE, NOT AN EXPLOSION ───────────────────────────
 {
   await reset();
-  const before = record("trace.before", { ...(await webCount()), zoom: await zoomPct() });
   const idx = await visibleIdx('g[data-intel-type="risk"]');
   let traced = false;
   for (const i of idx) {
@@ -270,6 +269,11 @@ record("qa", qa);
       break;
     }
   }
+  // CAPTURED AFTER THE SELECTION, not before it. What Trace promises to put
+  // back is the world it interrupted — which by then already includes
+  // whatever framing the selection itself did.
+  await settle(400);
+  const before = record("trace.before", { ...(await webCount()), zoom: await zoomPct() });
   if (traced) {
     await p.locator('[data-shoot="intel-solo"]').click();
     await settle(800);

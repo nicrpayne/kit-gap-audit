@@ -89,14 +89,19 @@ await park();
 
 // ── 3. CLOSE — titles resolve ────────────────────────────────────────
 {
-  await zoomTo("close");
+  // NAMES ARRIVE AT THE CONSTELLATION TIER, NOT AT THE EVIDENCE TIER. A
+  // source artifact IS the hub of its constellation, so its name is part of
+  // the shape you are looking at rather than detail inside it — and by
+  // `close` the camera is at 260%+, where the whole field no longer fits and
+  // "do all four resolve" has become a question about the viewport.
+  await zoomTo("medium");
   await park();
   await shot("03-close-names");
   const labels = await p.evaluate(() =>
     [...document.querySelectorAll('[data-kind="transcript"], [data-kind="notion_page"], [data-kind="figma_artifact"]')]
       .map((e) => e.querySelector("text")?.textContent ?? null).filter(Boolean)
   );
-  check("3. source titles resolve at close zoom", labels.length === 4, labels.join(" · "));
+  check("3. source titles resolve at the constellation tier", labels.length === 4, labels.join(" · "));
   await p.locator('[data-shoot="collapse-all"]').click();
   await fit();
 }

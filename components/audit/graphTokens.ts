@@ -458,13 +458,39 @@ export const DEPTH_CLASS: Record<Depth, string | undefined> = {
  * labels, which is worse.
  */
 export const ZOOM = {
-  /** Below this: project shape only. */
-  far: 1.05,
-  /** Below this: delivery structure. Above: source-level detail. */
-  medium: 2.1,
+  /** Below this: project shape only — regions, constellation shells, counts. */
+  far: 0.95,
+  /** Below this: constellation level — hubs, groups, representative names. */
+  medium: 1.6,
+  /** Below this: named objects. Above: evidence, verbatim. */
+  near: 2.6,
 } as const;
 
-export type ZoomLevel = "far" | "medium" | "close";
+/**
+ * FOUR TIERS, AND WHAT EACH ONE IS FOR.
+ *
+ * ZOOM REVEALS IDENTITY, NOT TRUTH. The entity and its truth status never
+ * change; what changes is how much of itself it is showing.
+ *
+ *   far     the whole project. Regions, constellation shells and their
+ *           counts, the structural web. No individual names — at 407 nodes
+ *           that is not a map, it is a wall of text.
+ *   medium  the constellations. Hubs and groups form; each group names a
+ *           couple of representatives so the reader learns what KIND of
+ *           thing lives in it without reading four hundred labels.
+ *   near    the named objects. Every risk, decision, commitment, unknown,
+ *           observation, transcript and finding carries its short human
+ *           name. This is where a selection's framing lands.
+ *   close   the evidence. Passages carry their quote, checkpoints their
+ *           assertion, relationships their verb.
+ *
+ * A THIRD TIER WAS ADDED HERE, and the reason is the whole tranche: with
+ * three tiers, external objects went from unlabelled mass straight to a
+ * hundred labels, and passages from mass to a hundred quotes. There was no
+ * step at which you could read "what kinds of knowledge live here" — the
+ * question the middle of the ladder exists to answer.
+ */
+export type ZoomLevel = "far" | "medium" | "near" | "close";
 
 /**
  * HYSTERESIS — THE DEADBAND EITHER SIDE OF EACH THRESHOLD.
@@ -496,17 +522,30 @@ export const ZOOM_GATES = {
   enterMedium: ZOOM.far * (1 + ZOOM_BAND),
   /** medium → far */
   exitMedium: ZOOM.far * (1 - ZOOM_BAND),
-  /** medium → close */
-  enterClose: ZOOM.medium * (1 + ZOOM_BAND),
-  /** close → medium */
-  exitClose: ZOOM.medium * (1 - ZOOM_BAND),
+  /** medium → near */
+  enterNear: ZOOM.medium * (1 + ZOOM_BAND),
+  /** near → medium */
+  exitNear: ZOOM.medium * (1 - ZOOM_BAND),
+  /** near → close */
+  enterClose: ZOOM.near * (1 + ZOOM_BAND),
+  /** close → near */
+  exitClose: ZOOM.near * (1 - ZOOM_BAND),
 } as const;
+
+/** The tiers in order, outermost first. Used wherever a comparison needs to
+    know which of two tiers is closer in. */
+export const ZOOM_ORDER: ZoomLevel[] = ["far", "medium", "near", "close"];
+
+export function atLeast(level: ZoomLevel, min: ZoomLevel): boolean {
+  return ZOOM_ORDER.indexOf(level) >= ZOOM_ORDER.indexOf(min);
+}
 
 /** The tier a camera starting from nothing sits at. Bare thresholds, because
     with no previous tier there is nothing to be sticky about. */
 export function zoomLevel(k: number): ZoomLevel {
   if (k < ZOOM.far) return "far";
   if (k < ZOOM.medium) return "medium";
+  if (k < ZOOM.near) return "near";
   return "close";
 }
 
@@ -521,29 +560,45 @@ export function zoomLevel(k: number): ZoomLevel {
  * — so hysteresis never makes the zoom feel sticky, only stable.
  */
 export function nextZoomLevel(k: number, from: ZoomLevel): ZoomLevel {
+  // Each case asks only whether the camera has cleared a gate in the
+  // direction it is travelling; anything inside a band keeps the tier it is
+  // already in. Written out per tier rather than as a loop because the
+  // asymmetry IS the hysteresis, and a loop hides it.
+  const upFrom = (base: ZoomLevel): ZoomLevel => {
+    if (k >= ZOOM_GATES.enterClose) return "close";
+    if (k >= ZOOM_GATES.enterNear) return "near";
+    if (k >= ZOOM_GATES.enterMedium) return "medium";
+    return base;
+  };
   switch (from) {
     case "far":
-      if (k >= ZOOM_GATES.enterClose) return "close";
-      return k >= ZOOM_GATES.enterMedium ? "medium" : "far";
+      return upFrom("far");
     case "medium":
-      if (k >= ZOOM_GATES.enterClose) return "close";
+      if (k >= ZOOM_GATES.enterNear) return upFrom("medium");
       return k <= ZOOM_GATES.exitMedium ? "far" : "medium";
+    case "near":
+      if (k >= ZOOM_GATES.enterClose) return "close";
+      if (k <= ZOOM_GATES.exitMedium) return "far";
+      return k <= ZOOM_GATES.exitNear ? "medium" : "near";
     case "close":
       if (k <= ZOOM_GATES.exitMedium) return "far";
-      return k <= ZOOM_GATES.exitClose ? "medium" : "close";
+      if (k <= ZOOM_GATES.exitNear) return "medium";
+      return k <= ZOOM_GATES.exitClose ? "near" : "close";
   }
 }
 
 /** Which kinds carry a visible label at each level. Reality and cluster
     pucks always label — they are the map's legend. */
 const LABELLED_AT: Record<ZoomLevel, NodeKind[]> = {
+  // THE PROJECT'S OWN LEGEND, AND NOTHING ELSE. Regions and Reality. The
+  // constellation shells carry their own names and counts at this tier, and
+  // they are not nodes, so they are not in this table.
   far: ["reality", "lane"],
-  // Work, passages and sources join at medium because expanding a cluster
-  // flies the camera to exactly this zoom. They are only ever FORMED when
-  // their cluster has been opened, so this cannot crowd the resting field —
-  // it means that if you went and opened something, you can read it. Before
-  // this, expanding Linear at its own fly-to produced fourteen unlabelled
-  // grey dots, which is the reveal failing at the moment it should land.
+  // THE CONSTELLATION TIER. Hubs and structure: what KINDS of knowledge live
+  // where. Source artifacts label here because a source IS the hub of its
+  // constellation — "2026-08-06 · KE Backlog Refinement" is the name of the
+  // shape you are looking at, not detail inside it. Each group also names a
+  // couple of representative members; see `representatives`.
   medium: [
     "reality",
     "lane",
@@ -552,19 +607,40 @@ const LABELLED_AT: Record<ZoomLevel, NodeKind[]> = {
     "feature",
     "scope",
     "intelligence",
-    "work",
-    "passage",
+    "requirement",
+    "person",
     "source",
     "transcript",
     "notion_page",
     "figma_artifact",
-    "person",
-    // A requirement is project structure, so its identity belongs with the
-    // delivery structure tier rather than with source detail. At far zoom it
-    // is mass; here it is nameable; at close the inspector carries the full
-    // statement.
-    "requirement",
   ],
+  // THE NAMED-OBJECT TIER, and where a selection's framing lands. Every
+  // external claim, every work item, every finding carries its short human
+  // name. This is the answer to the gray-dot test: zoom toward any real
+  // information-rich mark and by this tier it has told you what it is.
+  near: [
+    "reality",
+    "lane",
+    "dependency",
+    "decision",
+    "decisionGate",
+    "feature",
+    "scope",
+    "intelligence",
+    "requirement",
+    "person",
+    "source",
+    "transcript",
+    "notion_page",
+    "figma_artifact",
+    "work",
+    "finding",
+    "intel",
+  ],
+  // THE EVIDENCE TIER. Passages arrive last and carry their quote — 156 of
+  // them, each a sentence, and printing those at any wider tier buries the
+  // structure they belong to. Checkpoints join here for the same reason: they
+  // are Signal's own computed assertions, the finest grain the field holds.
   close: [
     "reality",
     "lane",
@@ -574,26 +650,17 @@ const LABELLED_AT: Record<ZoomLevel, NodeKind[]> = {
     "feature",
     "scope",
     "intelligence",
-    "work",
-    "passage",
-    "source",
-    "finding",
-    "checkpoint",
     "requirement",
     "person",
+    "source",
     "transcript",
     "notion_page",
     "figma_artifact",
-    // CLOSE ONLY, and this one is a density decision rather than an
-    // importance one. Work and passages join at MEDIUM because expanding
-    // their cluster flies the camera to exactly that zoom and fourteen
-    // unlabelled dots is a reveal that failed. External intelligence is an
-    // order of magnitude denser — the real JSA corpus puts around a hundred
-    // objects in one sector — and a hundred labels at medium is not a reveal,
-    // it is a wall of text over the band it is trying to describe. At medium
-    // the band forms and you can see its shape and its size; at close you
-    // read it; and search reaches any single object at any zoom.
+    "work",
+    "finding",
     "intel",
+    "passage",
+    "checkpoint",
   ],
 };
 
@@ -642,6 +709,7 @@ export type Identity = "latent" | "formed" | "named";
 export const LATENT: Record<ZoomLevel, { scale: number; opacity: number; minPx: number }> = {
   far: { scale: 0.42, opacity: 0.52, minPx: 2.4 },
   medium: { scale: 0.56, opacity: 0.62, minPx: 2.6 },
+  near: { scale: 0.64, opacity: 0.66, minPx: 2.7 },
   close: { scale: 0.7, opacity: 0.7, minPx: 2.8 },
 };
 
