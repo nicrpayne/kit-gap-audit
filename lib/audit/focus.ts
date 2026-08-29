@@ -34,6 +34,7 @@
 // names it — which is what Selection Transfer is for.
 
 import type { AuditGraph } from "./graph";
+import { SOURCE_KINDS } from "./sources";
 
 export type FocusClass = "semantic" | "temporal" | "provenance" | "contextual";
 
@@ -181,6 +182,43 @@ export function hasTraceRoute(
   if (!solo || !anchorId) return false;
   for (const n of solo.nodes) if (n !== anchorId) return true;
   return false;
+}
+
+/**
+ * AND WHETHER THE ROUTE IS A ROUTE, RATHER THAN A FIRST STEP.
+ *
+ * "Reaches something" was too weak. A finding whose only outbound edge is
+ * `concerns` to its own lane passes it, and Trace then dims the whole field
+ * to light a finding and a cluster puck — which answers nothing about where
+ * the knowledge came from, and reads as the instrument being broken.
+ *
+ * A provenance trace is complete when it lands on an ARTIFACT:
+ *
+ *   semantic object → evidence passage → source artifact
+ *
+ * Anything short of that is a chain that stops in mid-air, and the honest
+ * response is to say so in words rather than to animate it.
+ */
+export function traceIsComplete(
+  graph: AuditGraph,
+  solo: { nodes: ReadonlySet<string> } | null | undefined,
+  anchorId: string | null
+): boolean {
+  if (!solo || !anchorId) return false;
+  let passage = false;
+  let artifact = false;
+  for (const n of solo.nodes) {
+    if (n === anchorId || !graph.hasNode(n)) continue;
+    const kind = graph.getNodeAttribute(n, "kind");
+    if (kind === "passage") passage = true;
+    else if (SOURCE_KINDS.includes(kind)) artifact = true;
+  }
+  // The anchor may itself BE a passage — tracing one back to its transcript
+  // is a legitimate, complete, two-node route.
+  if (!passage && graph.hasNode(anchorId) && graph.getNodeAttribute(anchorId, "kind") === "passage") {
+    passage = true;
+  }
+  return passage && artifact;
 }
 
 // ── THE VERBS ──────────────────────────────────────────────────────────

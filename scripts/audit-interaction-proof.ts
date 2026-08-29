@@ -27,13 +27,16 @@ import {
   type AuditGraph,
 } from "../lib/audit/graph";
 import { layoutGraph, layoutExtent, FIELD } from "../lib/audit/graphLayout";
+import { SOURCE_KINDS } from "../lib/audit/sources";
 import { fitCamera } from "../components/audit/SignalGraph";
+import { structuralWeb } from "../lib/audit/structuralWeb";
 import {
   semanticFocus,
   edgeFocusClass,
   edgeVerb,
   verbIsDirectional,
   hasTraceRoute,
+  traceIsComplete,
   MEMBERSHIP_EDGE_RELS,
   type FocusClass,
 } from "../lib/audit/focus";
@@ -44,6 +47,8 @@ import {
   contains,
   containsPoint,
   FRAME_MARGIN,
+  COMPREHEND_MAX_K,
+  COMPREHEND_MAX_RATIO,
   MIN_ZOOM,
   DEFAULT_CAMERA,
   type Camera,
@@ -100,6 +105,21 @@ async function census() {
     registrations: await prisma.sourceRegistration.count(),
     runs: await prisma.auditRun.count(),
   };
+}
+
+/** Closest pair in a set, world units. Mirrors AuditInstrument's own. */
+function spreadOf(layout: ReturnType<typeof layoutGraph>, ids: string[]): number {
+  const pts = ids.map((id) => layout.get(id)).filter(Boolean) as { x: number; y: number }[];
+  if (pts.length < 2) return 0;
+  const n = Math.min(pts.length, 40);
+  let min = Infinity;
+  for (let i = 0; i < n; i++) {
+    for (let j = i + 1; j < n; j++) {
+      const d = Math.hypot(pts[i].x - pts[j].x, pts[i].y - pts[j].y);
+      if (d < min) min = d;
+    }
+  }
+  return Number.isFinite(min) ? min : 0;
 }
 
 async function main() {
@@ -175,8 +195,24 @@ async function main() {
   {
     const cam: Camera = { x: 700, y: 700, k: 1.4 };
     const view = worldViewport(cam, VP);
-    const inside: Extent = { x0: 690, y0: 690, x1: 710, y1: 710 };
-    check("C1 a neighbourhood already comfortably in view moves nothing", frameFocus(inside, { x: 700, y: 700 }, cam, VP) === null);
+    // IN VIEW *AND* LEGIBLE. This used to be a 20-unit box, which is in view
+    // and completely unreadable — eleven pixels of local world in a 1064x856
+    // field. Under the comprehension law that is now a reason to reframe, so
+    // the "do not move" case is stated as what it always meant: a
+    // neighbourhood the reader can already read.
+    const legible: Extent = { x0: 560, y0: 560, x1: 840, y1: 840 };
+    check(
+      "C1 a neighbourhood already in view AND legible moves nothing",
+      frameFocus(legible, { x: 700, y: 700 }, cam, VP, 120) === null,
+      `${((840 - 560) * cam.k).toFixed(0)}px of a ${Math.min(VP.w, VP.h)}px field`
+    );
+    const speck: Extent = { x0: 694, y0: 694, x1: 706, y1: 706 };
+    const claimed = frameFocus(speck, { x: 700, y: 700 }, cam, VP, 12);
+    check(
+      "C1b a neighbourhood that is visible but a speck claims some territory",
+      claimed != null && claimed.k > cam.k && claimed.k <= Math.min(cam.k * COMPREHEND_MAX_RATIO, COMPREHEND_MAX_K),
+      claimed ? `k ${cam.k} → ${claimed.k.toFixed(3)} (capped at ${Math.min(cam.k * COMPREHEND_MAX_RATIO, COMPREHEND_MAX_K)})` : "no move"
+    );
 
     // A neighbour just outside the comfortable inset, anchor on screen.
     const nudge: Extent = { x0: 690, y0: 690, x1: view.x1 - 2, y1: 710 };
@@ -201,11 +237,11 @@ async function main() {
 
     // Anchor off screen entirely: centre, do not merely nudge.
     const far: Extent = { x0: 1500, y0: 1500, x1: 1520, y1: 1520 };
-    const flown = frameFocus(far, { x: 1510, y: 1510 }, cam, VP);
+    const flown = frameFocus(far, { x: 1510, y: 1510 }, cam, VP, 20);
     check(
-      "C4 an off-screen selection is centred, at the scale the reader chose",
-      flown != null && flown.k === cam.k && Math.abs(flown.x - 1510) < 0.001 && Math.abs(flown.y - 1510) < 0.001,
-      flown ? `centred at ${flown.x}, ${flown.y}, k ${flown.k}` : "no move"
+      "C4 an off-screen selection is brought to the middle of the field",
+      flown != null && containsPoint(worldViewport(flown, VP), { x: 1510, y: 1510 }) && flown.k <= COMPREHEND_MAX_K,
+      flown ? `centred near ${flown.x.toFixed(0)}, ${flown.y.toFixed(0)} at k ${flown.k.toFixed(2)}` : "no move"
     );
 
     // Too big to fit: zoom OUT, and only as far as it takes.
@@ -237,32 +273,55 @@ async function main() {
       { x: FIELD.cx, y: FIELD.cy, k: 2.6 },
       { x: 300, y: 1100, k: 3.4 },
     ];
+    let overCap = 0;
+    let overRatio = 0;
     let zoomIns = 0;
     let moves = 0;
     let stills = 0;
     let samples = 0;
+    let maxK = 0;
     for (const { g } of graphs) {
       const layout = layoutGraph(g);
       for (const n of g.nodes()) {
         const b = frameBounds(g, layout, n);
         if (!b) continue;
         const p = layout.get(n)!;
+        const f = semanticFocus(g, n);
+        const spread = spreadOf(layout, f ? f.frame : [n]);
         for (const cam of cameras) {
           samples++;
-          const next = frameFocus(b, { x: p.x, y: p.y }, cam, VP);
+          const next = frameFocus(b, { x: p.x, y: p.y }, cam, VP, spread);
           if (!next) {
             stills++;
             continue;
           }
           moves++;
-          if (next.k > cam.k + 1e-9) zoomIns++;
+          // THE CAPS GOVERN CLOSING IN, NOT THE SCALE THE READER IS ALREADY
+          // AT. A camera at 3.4x that pulls BACK to 2.7 to fit a large
+          // neighbourhood is the law working; measuring that against a 1.8
+          // ceiling would forbid the reader from ever being zoomed in at all.
+          if (next.k <= cam.k + 1e-9) continue;
+          zoomIns++;
+          maxK = Math.max(maxK, next.k);
+          if (next.k > COMPREHEND_MAX_K + 1e-9) overCap++;
+          if (next.k > cam.k * COMPREHEND_MAX_RATIO + 1e-9) overRatio++;
         }
       }
     }
+    // THE 230% GUARANTEE, RESTATED RATHER THAN ABANDONED.
+    //
+    // The previous form of this proof was "never zooms in", which was the
+    // right guarantee against a rule that forced 2.3 on every search result.
+    // This tranche gives focus permission to claim screen territory, so the
+    // guarantee moves to where it belongs: the framing law may close in, and
+    // it may never close in FAR, or FAST, or differently depending on how the
+    // selection was made. It cannot reach 2.3 from any input.
     check(
-      "C6 the framing law NEVER zooms in — no forced 230%, from any selection source",
-      zoomIns === 0,
-      `${samples} selection×camera samples: ${stills} moved nothing, ${moves} framed, ${zoomIns} zoomed in`
+      "C6 focus may claim territory — but never past the caps, and never 230%",
+      overCap === 0 && overRatio === 0 && maxK < 2.3,
+      `${samples} selection×camera samples: ${stills} moved nothing, ${moves} framed, ` +
+        `${zoomIns} of those closed in · highest scale any zoom-in reached ${maxK.toFixed(3)} ` +
+        `(cap ${COMPREHEND_MAX_K}, ratio ${COMPREHEND_MAX_RATIO}×) · ${overCap} over the cap, ${overRatio} over the ratio`
     );
 
     // And at Fit specifically, which is where the reported defect was worst:
@@ -272,8 +331,11 @@ async function main() {
     // the layout's extent AND the measured field. Asserted at this viewport
     // because the old constant overflowed it by 5%, which by itself turned
     // one selection in five into a camera move.
-    let fitMoves = 0;
+    let fitStill = 0;
+    let fitReframed = 0;
+    let fitPanned = 0;
     let fitSamples = 0;
+    let fitMax = 0;
     for (const { g } of graphs) {
       const layout = layoutGraph(g);
       const home = fitCamera(layoutExtent(layout), VP);
@@ -281,14 +343,21 @@ async function main() {
         const b = frameBounds(g, layout, n);
         const p = layout.get(n);
         if (!b || !p) continue;
+        const f = semanticFocus(g, n);
         fitSamples++;
-        if (frameFocus(b, { x: p.x, y: p.y }, home, VP) != null) fitMoves++;
+        const next = frameFocus(b, { x: p.x, y: p.y }, home, VP, spreadOf(layout, f ? f.frame : [n]));
+        if (!next) fitStill++;
+        else if (next.k > home.k + 1e-9) {
+          fitReframed++;
+          fitMax = Math.max(fitMax, next.k);
+        } else fitPanned++;
       }
     }
     check(
-      "C7 from Fit, selection moves the camera for nothing",
-      fitMoves === 0,
-      `${fitSamples} nodes selected at the home camera, ${fitMoves} camera moves`
+      "C7 from Fit, a selection either stays put or makes a BOUNDED reframe",
+      fitPanned === 0 && fitMax <= COMPREHEND_MAX_K,
+      `${fitSamples} nodes at the home camera: ${fitStill} moved nothing, ${fitReframed} claimed territory ` +
+        `(highest ${fitMax.toFixed(3)}), ${fitPanned} panned without reason`
     );
   }
 
@@ -335,7 +404,21 @@ async function main() {
     check(
       "T1 Trace is offered exactly when the traversal reaches something",
       wouldHaveLied === 0,
-      `${offered} traceable, ${empty} with no route — the control is withheld for all ${empty}`
+      `${offered} reach something, ${empty} reach nothing`
+    );
+    check(
+      "T1b and a route that stops before an artifact is not a route",
+      graphs.every(({ g }) =>
+        g.nodes().every((n) => {
+          const kind = g.getNodeAttribute(n, "kind");
+          if (kind !== "finding" && kind !== "intel") return true;
+          const route = evidenceSolo(g, n);
+          if (!traceIsComplete(g, route, n)) return true;
+          // Every route the instrument will offer must land on an artifact.
+          return [...route.nodes].some((m) => m !== n && SOURCE_KINDS.includes(g.getNodeAttribute(m, "kind")));
+        })
+      ),
+      "every offered Trace reaches a source artifact"
     );
     check(
       "T2 the traversal allowlist still excludes external object-to-object relations",
@@ -465,19 +548,28 @@ async function main() {
     // selected, from the camera the instrument opens at.
     {
       const home = fitCamera(layoutExtent(layout), VP);
-      let moves = 0;
+      let still = 0;
+      let reframed = 0;
       let n = 0;
+      let worst = 0;
       for (const id of g.nodes()) {
         const b = frameBounds(g, layout, id);
         const p = layout.get(id);
         if (!b || !p) continue;
         n++;
-        if (frameFocus(b, { x: p.x, y: p.y }, home, VP) != null) moves++;
+        const f = semanticFocus(g, id);
+        const next = frameFocus(b, { x: p.x, y: p.y }, home, VP, spreadOf(layout, f ? f.frame : [id]));
+        if (!next) still++;
+        else {
+          reframed++;
+          worst = Math.max(worst, next.k);
+        }
       }
       check(
-        "R3 on the real payload, selecting from Fit never moves the camera",
-        moves === 0,
-        `${n} real nodes selected at k=${home.k.toFixed(3)}, ${moves} camera moves`
+        "R3 on the real payload, a selection from Fit is still or bounded",
+        worst <= COMPREHEND_MAX_K,
+        `${n} real nodes at k=${home.k.toFixed(3)}: ${still} moved nothing, ${reframed} reframed, ` +
+          `highest scale ${worst.toFixed(3)} — the removed rule forced 2.3 on every one of them`
       );
     }
 
@@ -512,6 +604,40 @@ async function main() {
     }
 
     if (!preExisting) await dropPrerequisites(prisma);
+  }
+
+  // ── W. THE CALM-STATE WEB ───────────────────────────────────────────
+  //
+  // The tranche's central claim, asserted as arithmetic: the resting field
+  // accounts for the corpus, and every relationship it does NOT draw is
+  // deliberately excluded rather than forgotten.
+  {
+    for (const { name, g } of graphs) {
+      const layout = layoutGraph(g);
+      const w = structuralWeb(g, layout);
+      let membership = 0;
+      g.forEachEdge((_e, a) => {
+        if (edgeFocusClass(a) === null) membership++;
+      });
+      const elements = w.strands.length + w.sheaves.length;
+      check(
+        `W1 ${name}: every relationship is represented, suppressed on purpose, or position`,
+        w.represented + w.suppressed + membership === g.size,
+        `${w.represented} shown + ${w.suppressed} suppressed + ${membership} membership = ${g.size}`
+      );
+      check(
+        `W2 ${name}: and it costs far fewer paths than relationships`,
+        elements <= g.size,
+        `${elements} paths for ${w.represented} relationships ` +
+          `(${w.strands.length} strands, ${w.sheaves.length} bundled sheaves)`
+      );
+      // The exclusions the brief names, checked rather than assumed.
+      check(
+        `W3 ${name}: no membership edge and no related_to is woken at rest`,
+        w.strands.every((st) => st.cls !== "contextual"),
+        `${w.suppressedByClass.contextual ?? 0} contextual held back · ${membership} membership never drawn`
+      );
+    }
   }
 
   // ── AND NONE OF IT WROTE ────────────────────────────────────────────

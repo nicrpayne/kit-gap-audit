@@ -180,9 +180,10 @@ if (results > 0) {
 }
 const afterSearchZoom = await zoomPct();
 check(
-  "07 a search result does NOT force ~230% zoom",
-  afterSearchZoom === beforeSearchZoom,
-  `${results} results · ${beforeSearchZoom}% → ${afterSearchZoom}% (was: forced to at least 230%)`
+  "07 a search result is framed like a click — bounded, never ~230%",
+  afterSearchZoom <= beforeSearchZoom * 2 + 1 && afterSearchZoom <= 181,
+  `${results} results · ${beforeSearchZoom}% → ${afterSearchZoom}% ` +
+    `(the removed rule forced at least 230%; the comprehension law caps at 2× and 180%)`
 );
 const overlayOpen = await p.locator('[data-shoot="search-results"]').count();
 check(
@@ -203,7 +204,12 @@ for (let i = 0; i < 8; i++) await p.mouse.wheel(0, -120);
 await settle(350);
 const zoomed = await zoomPct();
 await p.locator('[data-shoot="camera-fit"]').click();
-await p.waitForTimeout(90); // mid-flight
+// BACK OVER THE FIELD. Clicking Fit leaves the pointer on the button, and a
+// wheel tick there scrolls the panel rather than reaching the graph — so the
+// "interruption" was never delivered and the flight completed on its own.
+// The camera used not to move on selection, so the test passed anyway.
+await p.mouse.move(620, 470);
+await p.waitForTimeout(70); // mid-flight
 await p.mouse.wheel(0, -120); // the hand
 await p.waitForTimeout(60);
 const interrupted = await zoomPct();
@@ -249,6 +255,12 @@ await p.locator('[data-shoot="camera-fit"]').click();
 await settle(700);
 await clickNode(DECISION);
 const a = await p.locator("[data-selected]").first().getAttribute("data-shoot");
+// Back to the whole field between the two. Focus may now claim screen
+// territory, so the first selection legitimately reframes to ~111% — and the
+// second object is then somewhere else entirely. Fit is not part of what is
+// being tested here; reaching the second node is.
+await p.locator('[data-shoot="camera-fit"]').click();
+await settle(650);
 await clickNode(RISK);
 const bSel = await p.locator("[data-selected]").first().getAttribute("data-shoot");
 check("11 two selections in a row transfer without an empty state", a !== bSel, `${a} → ${bSel}`);
@@ -272,7 +284,11 @@ if (rows > 0) {
   const afterTransfer = await p.locator("[data-selected]").first().getAttribute("data-shoot");
   const zoomAfter = await zoomPct();
   check("14 clicking a relationship transfers the selection to it", afterTransfer !== beforeTransfer, `${beforeTransfer} → ${afterTransfer}`);
-  check("15 and it uses the same camera law as a direct click", zoomAfter === zoomBefore, `${zoomBefore}% → ${zoomAfter}%`);
+  check(
+    "15 and it uses the same camera law as a direct click",
+    zoomAfter <= zoomBefore * 2 + 1 && zoomAfter <= 181,
+    `${zoomBefore}% → ${zoomAfter}% (bounded by the same 2× / 180% caps a click gets)`
+  );
 } else {
   check("14 clicking a relationship transfers the selection to it", false, "no connection rows found");
 }
@@ -296,7 +312,16 @@ const riskIdx = await p.evaluate((s) => {
   return out;
 }, RISK);
 for (const i of riskIdx.slice(0, 12)) {
-  await p.locator(RISK).nth(i).locator(".sg-node").click({ force: true });
+  // Back to the whole field first. Each selection may reframe now — focus is
+  // allowed to claim screen territory — so an index that was on screen when
+  // the list was taken has usually moved by the next iteration.
+  await p.keyboard.press("Escape");
+  await p.locator('[data-shoot="camera-fit"]').click();
+  await settle(500);
+  const n = p.locator(RISK).nth(i);
+  const bb = await n.boundingBox();
+  if (!bb) continue;
+  await n.locator(".sg-node").click({ force: true });
   await settle(260);
   if ((await p.locator('[data-shoot="intel-solo"]').count()) === 1) traced++;
   else if ((await p.locator('[data-shoot="intel-no-trace"]').count()) === 1) refused++;
@@ -309,8 +334,11 @@ check(
 if (traced > 0) {
   // Find one with a route and run it.
   for (const i of riskIdx) {
+    await p.keyboard.press("Escape");
+    await p.locator('[data-shoot="camera-fit"]').click();
+    await settle(450);
     await p.locator(RISK).nth(i).locator(".sg-node").click({ force: true });
-    await settle(220);
+    await settle(260);
     if ((await p.locator('[data-shoot="intel-solo"]').count()) === 1) break;
   }
   await p.locator('[data-shoot="intel-solo"]').click();
@@ -616,6 +644,9 @@ const escMs = await timed(
   }
 );
 await settle(300);
+// The cold-click measurement above left the camera reframed on that object.
+await p.locator('[data-shoot="camera-fit"]').click();
+await settle(600);
 await clickNode(RISK);
 await settle(300);
 const backMs = await timed(
@@ -646,6 +677,11 @@ await p.locator('[data-shoot="expand-all"]').click();
 await settle(900);
 
 const interrogate = async (label, sel) => {
+  // Each interrogation reframes, so the next one starts from the whole field
+  // again — otherwise the list measures the camera rather than the panel.
+  await p.keyboard.press("Escape");
+  await p.locator('[data-shoot="camera-fit"]').click();
+  await settle(600);
   const n = await visibleNode(sel);
   if (!n) return { label, found: false };
   await n.locator(".sg-node").click({ force: true });
@@ -706,7 +742,9 @@ await shot("11-qa-last");
 const noRoute = qa.find((q) => q.trace === "explained");
 check(
   "31 an ungrounded object refuses to enter a fake trace state",
-  noRoute != null || qa.filter((q) => q.trace === "offered").length === qa.filter((q) => q.trace !== "n/a").length,
+  noRoute != null ||
+    qa.filter((q) => q.found && q.trace === "offered").length ===
+      qa.filter((q) => q.found && q.trace !== "n/a").length,
   noRoute ? `${noRoute.label} says so in words` : "every external object on screen has a real route"
 );
 

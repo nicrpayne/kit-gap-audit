@@ -82,6 +82,43 @@ body {
      violet without being it. Time is the frame, not a domain. */
   --i-cool: #7f9cf5;
   --i-cool-soft: rgba(127, 156, 245, 0.16);
+
+  /* ── THE EXTERNAL POPULATIONS ──────────────────────────────────────
+     Added for the Signal Graph, and for one measured reason: a blind
+     production audit scored external Risk, Decision, Dependency,
+     Commitment and Unknown at 0/5 for "can you tell what this is without
+     reading the label". Five hundred marks in one grey is not an
+     instrument, it is a scatter plot.
+
+     THE ORGANISING RULE IS NOT "one hue per type". It is:
+
+       COOL AND NEUTRAL  = Signal's own record. Reality's cyan, a source
+                           artifact's steel blue, a passage's silver.
+       CHROMATIC         = somebody else's claim about the project.
+
+     So the boundary that used to be carried only by shape, stroke and
+     radius is now carried by temperature too, and the field reads as
+     "Signal's material, and around it a ring of other people's" before a
+     single label is resolved. Trust stays where it was — on the stroke —
+     because hue is now spent on identity. */
+
+  /* Warm, and deliberately NOT --i-red: Signal's own dependency node keeps
+     that alarm red, and a risk somebody else asserts must not borrow it. */
+  --i-coral: #f4846d;
+  --i-coral-soft: rgba(244, 132, 109, 0.16);
+  /* An observation is the producer's largest and least pointed population
+     (59 of 161). Blue-grey: present, legible, never competing. */
+  --i-slate: #8496a6;
+  --i-slate-soft: rgba(132, 150, 166, 0.14);
+  /* A passage is a quotation — Signal's own material, luminous rather than
+     coloured, because it carries no position of its own. */
+  --i-silver: #b9c6cf;
+  --i-silver-soft: rgba(185, 198, 207, 0.14);
+  /* Source artifacts are the hubs the whole evidence sector hangs off.
+     Same family as Reality's cyan, a step deeper, so "where knowledge came
+     from" reads as Signal's own without ever being mistaken for Reality. */
+  --i-source: #58a6cc;
+  --i-source-soft: rgba(88, 166, 204, 0.16);
 }
 
 .instrument {

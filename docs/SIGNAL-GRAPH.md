@@ -921,3 +921,119 @@ data. Requires `npx tsx scripts/seed-real-jsa-package.ts` first, and
 
 `scripts/audit-density-measure.ts` — the per-node visibility inventory, read
 from the renderer's own `identityOf()` rather than a restatement of it.
+
+---
+
+## Connection visibility — the calm-state web
+
+A 20-minute production audit of the real JSA graph established the fact this
+section exists to answer:
+
+| | |
+|---|---|
+| nodes | 438 |
+| relationships | 543 |
+| **rendered at calm Fit** | **44** |
+| suppressed at rest | **499 — 91.9%** |
+| rendered even at Expand All | 255 |
+
+A blind pass over 20 anonymous grey marks found 20/20 had a real identity,
+18/20 had relationships, and 16/20 had two or more. The problem was never
+whether Signal holds a connected body of knowledge. It was whether a person
+can see the one it already holds.
+
+The old policy — an edge appears only once both endpoints are open — was right
+about hairballs and wrong about the alternative being nothing.
+
+### Two materials, and why
+
+`lib/audit/structuralWeb.ts` draws the resting field in two materials:
+
+**STRANDS** — individual relationships with authority. Every semantic edge,
+every temporal edge, Signal's attested `depends_on` / `blocks` / `implements`,
+the lane spine into Reality, and `evidenced_by`. 31 of them on the real
+corpus. Each one is a fact somebody could act on, so each one is a line.
+
+**SHEAVES** — the provenance mesh, bundled. **367 of the corpus's 480 edges are
+provenance**: 156 passages extracted from 45 source artifacts, and 207
+citations from 141 external objects into those same passages. Drawn
+individually that is a grey fog over three quarters of the field. Drawn as
+bundles it is the true shape of the thing — a source artifact is a HUB, and
+what hangs off it is what Signal read and who else quoted it.
+
+A sheaf is one `<path>` carrying many filaments that share a waist:
+hierarchical edge bundling. Each filament still ends at its real endpoint;
+they simply travel together, and 26 passages read as one artifact's evidence
+rather than as 26 strokes crossing the same space.
+
+### What the resting field now accounts for
+
+| | before | after |
+|---|---|---|
+| relationships visible at rest | 44 | **385** |
+| DOM paths to draw them | 44 | **119** |
+| suppressed, on purpose | 499 | **74** |
+| membership (position, never a line) | 130 | 21 |
+
+The 74 are named rather than forgotten: 61 `related_to` (the producer's bulk,
+which says nothing about this project in particular), 9 citations from
+superseded objects, and 4 external object-to-object provenance claims. Every
+one of them is still reachable, still listed in the inspector, and still drawn
+the moment either endpoint is selected. `W1` in
+`scripts/audit-interaction-proof.ts` asserts the arithmetic closes:
+`represented + suppressed + membership = size`, on every Scope.
+
+### Colour means identity in the external band — an amendment
+
+The field's older rule was "colour means state, not category". A blind
+production audit scored every external population **0/5** for "can you tell
+what this is without reading the label":
+
+| | before |
+|---|---|
+| external Risk / Decision / Dependency / Commitment / Unknown | 0/5 |
+| Evidence Passage · Transcript | 1/5 |
+| Signal Finding | 4/5 |
+| Accepted Reality | 5/5 |
+
+161 objects of eight types in one grey is a scatter plot. The rule was written
+when the whole field was Signal's own record, where category is already
+carried by shape and by sector; it does not survive a population where **type
+IS the state** — a risk being a risk is the actionable fact about it.
+
+The organising principle is not one hue per type. It is:
+
+> **COOL AND NEUTRAL** is Signal's own record — Reality's cyan, a source
+> artifact's steel blue, a passage's silver.
+> **CHROMATIC** is somebody else's claim — risk coral, decision violet,
+> dependency amber, commitment mint, unknown indigo and hollow, observation
+> slate.
+
+So the trust boundary is now carried by temperature as well as by the shard
+glyph, the broken stroke and a seat outside the record's edge. What did not
+change: Findings keep their state colours, Reality keeps its cyan and nothing
+else may take it, trust stays on the stroke, and selection stays luminance,
+scale and glow rather than a new hue.
+
+### Comprehension framing
+
+The camera law asked "is it technically on screen?" — narrower than the real
+question. Selections were unarguably visible and completely unreadable: an
+object and four neighbours occupying eleven pixels in a corner.
+
+It now asks whether the neighbourhood can be READ — at least 30% of the
+shorter viewport dimension, with at least 26 device pixels between the closest
+pair so their labels resolve. **Focus may therefore claim screen territory**,
+and these are the caps that stop that becoming the 230% problem again: never
+more than doubling in one move, never past 1.8 on the framing law's own
+authority. Where the caps are not enough, the LABELS yield instead — a name
+that cannot be read costs the space a readable one would have used.
+
+### Trace is a route
+
+Turning Trace on used to expand the CLUSTER of every node on the route. On the
+demo Scope that opened four extra nodes; on the real corpus it opened Hermes,
+and one external claim's provenance ended with **394 nodes and 253
+relationships** on screen. The route now promotes exactly its own nodes at
+their own seats — measured, **3 nodes: object → passage → source** — and it is
+offered only where the traversal actually lands on an artifact.

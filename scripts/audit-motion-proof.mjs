@@ -327,10 +327,22 @@ await settle(400);
   await settle(900);
   const after = await cam();
   record("search.fly", { before, after });
+  // AND THE LAW ITSELF CHANGED AGAIN, ON PURPOSE.
+  //
+  // "Does not move" was right against a rule that forced 2.3 on every search
+  // result. It became wrong once focus was allowed to claim screen territory:
+  // a production audit found selections that were unarguably visible and
+  // completely unreadable — a local world eleven pixels across.
+  //
+  // What survives, and is what this now proves, is the guarantee that
+  // mattered: whatever the camera does, it is BOUNDED, and it is the same
+  // whether the selection came from a click, a search result or an inspector
+  // row. Never 230%, never more than doubling.
+  const ratio = after.k / before.k;
   check(
-    "S2 choosing a search result obeys the same framing law as a click — no forced zoom",
-    cameraSettledEnough(before, after),
-    `k ${before.k.toFixed(2)} → ${after.k.toFixed(2)} at Fit, where the neighbourhood is already visible`
+    "S2 choosing a search result is framed like a click — bounded, never 230%",
+    ratio <= 2.01 && after.k <= 1.81,
+    `k ${before.k.toFixed(2)} → ${after.k.toFixed(2)} (${ratio.toFixed(2)}×, cap 2× and 1.8 absolute)`
   );
   await p.locator('[data-shoot="graph-search"]').fill("");
   await p.keyboard.press("Escape");

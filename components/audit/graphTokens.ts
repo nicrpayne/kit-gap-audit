@@ -105,21 +105,30 @@ export const KIND_COLOR: Record<NodeKind, string> = {
   feature: "var(--i-cool)",
   work: "var(--i-text-soft)",
   intelligence: "var(--i-violet)",
-  passage: "var(--i-text-faint)",
-  source: "var(--i-text-faint)",
-  // Provenance stays muted whatever its kind. These are the substrate the
-  // project is made of, not the thing Audit is pointing at — the eye should
-  // still find a critical finding before it finds a Notion page.
-  transcript: "var(--i-text-faint)",
-  notion_page: "var(--i-text-faint)",
-  figma_artifact: "var(--i-text-faint)",
-  // EXTERNAL INTELLIGENCE IS QUIET, AND THAT IS THE POINT. It gets no hue of
-  // its own: a hundred coloured marks in the outer band would out-shout the
-  // findings, and the field's first rule is that the eye finds a critical
-  // finding before it finds anything else. Externality is carried by shape,
-  // by the broken stroke, and by sitting outside the record's edge — three
-  // channels, none of them colour, because colour here means STATE.
-  intel: "var(--i-text-soft)",
+  // A PASSAGE IS A QUOTATION, AND SIGNAL'S OWN. Luminous neutral rather than
+  // faint grey: the evidence sector is 156 of the field's 407 seats, and at
+  // --i-text-faint the entire substrate of the project read as dust. Silver
+  // is still quieter than any claim and now legible as a population.
+  passage: "var(--i-silver)",
+  source: "var(--i-source)",
+  // SOURCE ARTIFACTS ARE HUBS, AND THE FIELD SHOULD SAY SO. They are the
+  // anchor points the whole evidence sector hangs off — 45 of them carrying
+  // 156 passages and cited by 141 external objects — and at --i-text-faint
+  // that entire structure was invisible. Same cyan family as Reality, a step
+  // deeper: "where knowledge came from" reads as Signal's own material,
+  // never as Reality itself. Shape still says which KIND of artifact.
+  transcript: "var(--i-source)",
+  notion_page: "var(--i-source)",
+  figma_artifact: "var(--i-source)",
+  // EXTERNAL INTELLIGENCE NOW CARRIES ITS PRODUCER'S TYPE AS COLOUR — see
+  // INTEL_COLOR and the amendment written above it. This entry is the
+  // fallback for an object whose type Signal does not recognise; the live
+  // value comes from `intelColor`.
+  //
+  // The three channels that carry EXTERNALITY are unchanged and still do all
+  // the boundary work: the shard glyph, the broken stroke, and a seat outside
+  // the record's edge. Hue was never one of them.
+  intel: "var(--i-slate)",
   checkpoint: "var(--i-text-faint)",
 };
 
@@ -136,6 +145,119 @@ export const CONFIRMED_COLOR = "var(--i-mint)";
 /** The colour a node is drawn in: state where the kind carries one, its kind
     colour otherwise. Human judgement outranks state on a finding, because
     "only a person can settle this" changes what you do next. */
+/**
+ * THE PRODUCER'S TYPES, IN COLOUR.
+ *
+ * A blind production audit scored every external population at 0/5 for "can
+ * you tell what this is without reading the label". 161 objects in one grey
+ * is a scatter plot, not an instrument — and the objects are not
+ * interchangeable: a Risk and a Commitment are opposite kinds of news about
+ * the same project.
+ *
+ * THIS IS A DELIBERATE AMENDMENT to the field's older rule that "colour means
+ * state, not category". That rule was written when the whole field was
+ * Signal's own record, where the categories are already carried by shape and
+ * by sector, and the only thing left to say was how bad something was. It
+ * does not survive a population of 161 external claims of eight different
+ * types occupying one band: there, TYPE IS THE STATE — a risk being a risk is
+ * the actionable fact about it.
+ *
+ * What the amendment does NOT do:
+ *   · Findings keep their state colours. Severity still means severity.
+ *   · Reality keeps its cyan. Nothing else may take it.
+ *   · Trust is untouched. attested / inferred / external stays on the stroke,
+ *     because a hue that meant both identity and trust would mean neither.
+ *   · Selection stays luminance, scale and glow. No new hue is spent on it.
+ *
+ * Unrecognised types fall to slate rather than to a new colour: the producer
+ * may add a type tomorrow, and an instrument that invents a hue for something
+ * it does not understand is claiming to understand it.
+ */
+const INTEL_COLOR: Record<string, string> = {
+  risk: "var(--i-coral)",
+  decision: "var(--i-violet)",
+  dependency: "var(--i-amber)",
+  commitment: "var(--i-mint)",
+  // Open questions are drawn hollow as well as indigo — see NODE_SHAPE. An
+  // unknown is the one population whose whole content is that it has no
+  // content yet, and an empty outline says that before any hue does.
+  unknown: "var(--i-cool)",
+  observation: "var(--i-slate)",
+  availability_observation: "var(--i-slate)",
+  climate_evidence: "var(--i-slate)",
+};
+
+/**
+ * THE NAME A HUMAN WOULD USE.
+ *
+ * `label` is the canonical thing the node projects, and for two populations
+ * that is an identifier rather than a name:
+ *
+ *   a passage       `hermes-ev:2026-07-30_KE-Teams-…-seg018`
+ *   a package source `ke://source/transcript/2026-08-19_KE-User-Interview-…`
+ *
+ * 156 passages and 45 artifacts labelled like that is a field of accession
+ * numbers. The quote and the meeting name are both already on the node; they
+ * were simply never the thing drawn.
+ *
+ * The identifier is not lost — it is exact, it is what you check against the
+ * producer, and it is one disclosure away in Technical details. This is about
+ * which of the two is in the reading path.
+ */
+export function fieldLabel(attrs: Record<string, unknown>): string {
+  if (attrs.kind === "passage" && typeof attrs.excerpt === "string" && attrs.excerpt.trim()) {
+    return `“${attrs.excerpt.replace(/^["“”']+|["“”']+$/g, "").trim()}”`;
+  }
+  if (
+    attrs.kind === "source" ||
+    attrs.kind === "transcript" ||
+    attrs.kind === "notion_page" ||
+    attrs.kind === "figma_artifact"
+  ) {
+    return humanizeRef(String(attrs.label ?? ""));
+  }
+  return String(attrs.label ?? "");
+}
+
+/**
+ * A producer's source ref, read as a meeting rather than as a URI.
+ *
+ *   ke://source/transcript/2026-08-19_KE-User-Interview-Follow-Up
+ *     →  2026-08-19 · KE User Interview Follow Up
+ *
+ * The date is kept intact — its hyphens are part of it, and a transcript's
+ * date is half of how anyone identifies it. Only the underscore-separated
+ * name is unpicked.
+ */
+export function humanizeRef(ref: string): string {
+  if (!ref.includes("/") && !ref.includes("_")) return ref;
+  const seg = ref.split("/").filter(Boolean).pop() ?? ref;
+  const parts = seg.split("_");
+  const head = parts[0];
+  if (/^\d{4}-\d{2}-\d{2}$/.test(head) && parts.length > 1) {
+    return `${head} · ${parts.slice(1).join(" ").replace(/-/g, " ")}`;
+  }
+  return seg.replace(/_+/g, " ");
+}
+
+export function intelColor(type: unknown): string {
+  return INTEL_COLOR[normalizeIntelType(type)] ?? "var(--i-slate)";
+}
+
+/** The producer writes `availability_observation`, `AvailabilityObservation`
+    and `availability observation` for the same thing. One reading, here. */
+export function normalizeIntelType(type: unknown): string {
+  return String(type ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/[\s-]+/g, "_");
+}
+
+/** Whether this external type is drawn as an empty outline. */
+export function intelIsHollow(type: unknown): boolean {
+  return normalizeIntelType(type) === "unknown";
+}
+
 export function nodeColor(attrs: Record<string, unknown>): string {
   const kind = attrs.kind as NodeKind;
   if (kind === "finding") {
@@ -149,6 +271,9 @@ export function nodeColor(attrs: Record<string, unknown>): string {
   if (kind === "source" || kind === "transcript" || kind === "notion_page" || kind === "figma_artifact") {
     return attrs.supplied === false ? "var(--i-reality)" : KIND_COLOR[kind];
   }
+  // A passage that nobody has cited and nothing was extracted into is still a
+  // passage; it takes the same silver. Emptiness is carried by the web, not
+  // by hue.
   if (kind === "lane" || kind === "dependency") {
     if (attrs.supplied === false) return "var(--i-reality)";
     return STATE_COLOR[attrs.state as string] ?? KIND_COLOR[kind];
@@ -166,7 +291,11 @@ export function nodeColor(attrs: Record<string, unknown>): string {
   // — the corpus contains objects that are `open` and superseded, and a
   // renderer inferring currentness from status would draw those as live.
   if (kind === "intel") {
-    return attrs.isCurrent === false ? "var(--i-text-faint)" : "var(--i-text-soft)";
+    // Superseded history keeps a single muted grey whatever it once was: it
+    // is no longer a live claim of any kind, and colouring it by type would
+    // put the past on equal footing with the present.
+    if (attrs.isCurrent === false) return "var(--i-text-faint)";
+    return intelColor(attrs.intelligenceType);
   }
   if (kind === "work") {
     // Completed work recedes: it is no longer part of what remains.
@@ -285,6 +414,33 @@ export const FOCUS_EDGE = {
 //   2  softer     unrelated LABELS, which is where blur does its real work:
 //                 text is what the eye tries hardest to resolve, so text is
 //                 what has to stop asking.
+/**
+ * THE CALM-STATE WEB, AS LITERAL OPACITIES.
+ *
+ * "Very faint, label-free, visually subordinate, still clearly present" is
+ * four constraints and they fight. These are where they settle:
+ *
+ * A STRAND is one real relationship, so it may be read. 0.3 on a hairline is
+ * legible if you look at it and invisible if you are looking at something
+ * else, which is the definition of subordinate.
+ *
+ * A SHEAF FILAMENT is one three-hundred-and-fifty-fourth of a mesh. It is
+ * drawn at a tenth of a strand because it is not there to be read — it is
+ * there to ACCUMULATE. Where twenty-six passages converge on one artifact the
+ * overlapping filaments sum into something the eye reads as a stem; where
+ * nothing converges there is almost nothing on screen. The density IS the
+ * information, and that only works if a single filament is nearly nothing.
+ *
+ * Both recede further the moment something is selected, because then the
+ * field has a subject and the web is its context.
+ */
+export const WEB = {
+  strand: 0.3,
+  strandFocused: 0.09,
+  sheaf: 0.14,
+  sheafFocused: 0.045,
+} as const;
+
 export type Depth = 0 | 1 | 2;
 
 export const DEPTH_CLASS: Record<Depth, string | undefined> = {

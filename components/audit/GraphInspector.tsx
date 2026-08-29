@@ -20,7 +20,7 @@ import { useMemo } from "react";
 import type { AuditGraph, AuditNodeAttributes, EdgeBasis } from "@/lib/audit/graph";
 import { EDGE_RULES } from "@/lib/audit/graph";
 import { SOURCE_KINDS } from "@/lib/audit/sources";
-import { nodeColor, KIND_LABEL, REL_LABEL, MEMBERSHIP_RELS } from "./graphTokens";
+import { nodeColor, fieldLabel, KIND_LABEL, REL_LABEL, MEMBERSHIP_RELS } from "./graphTokens";
 
 export interface Connection {
   edgeId: string;
@@ -64,7 +64,7 @@ export function connectionsOf(graph: AuditGraph, id: string): Connection[] {
         rule: a.rule,
         outbound,
         otherId,
-        otherLabel: String(other.label),
+        otherLabel: fieldLabel(other),
         otherKind: String(other.kind),
         // The quantity the edge itself was grounded in, when it carries one.
         // An allocation without its share is half a fact.
@@ -155,7 +155,7 @@ export default function GraphInspector({
       out.push({
         id: n,
         kind: String(a.kind),
-        label: String(a.label),
+        label: fieldLabel(a),
         core: a.slice === "core",
         current: a.kind !== "intel" || a.isCurrent !== false,
       });
@@ -189,7 +189,7 @@ export default function GraphInspector({
           {KIND_LABEL[attrs.kind] ?? attrs.kind}
         </div>
         <h2 className="mt-2 text-[15px] font-medium leading-snug text-[var(--i-text)]">
-          {isRequirement ? String(attrs.statement ?? attrs.label) : String(attrs.label)}
+          {isRequirement ? String(attrs.statement ?? attrs.label) : fieldLabel(attrs)}
         </h2>
 
         <div className="mt-2 flex flex-wrap items-center gap-1.5">
@@ -693,6 +693,12 @@ export default function GraphInspector({
                 onClick={() => onSelect(c.otherId)}
                 onDoubleClick={() => onFocusNode(c.otherId)}
                 data-shoot={`connection-${c.rel}`}
+                // The other end's node id. The row NAMES the thing in human
+                // terms — a quote, a meeting — which is what a reader needs
+                // and what a script cannot match on. This is how a QA pass
+                // follows an exact chain without the panel having to print
+                // accession numbers at it.
+                data-target={c.otherId}
                 title={EDGE_RULES[c.rule]?.why ?? ""}
                 className="flex w-full items-start gap-2 rounded-md border px-2.5 py-2 text-left transition-colors hover:bg-white/[0.035]"
                 style={{ borderColor: "var(--i-border)", background: "var(--i-panel)" }}

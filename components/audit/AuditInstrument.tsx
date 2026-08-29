@@ -32,7 +32,7 @@ import {
 } from "@/lib/audit/graph";
 import { layoutGraph, layoutExtent, CLUSTER_ORDER, FIELD } from "@/lib/audit/graphLayout";
 import { mutateReality } from "@/lib/instrument/reality";
-import SignalGraph, { fitCamera } from "./SignalGraph";
+import SignalGraph, { fitCamera, type GraphLayout } from "./SignalGraph";
 import {
   DEFAULT_CAMERA,
   MAX_ZOOM,
@@ -50,8 +50,9 @@ import {
 import GraphInspector from "./GraphInspector";
 import FindingInspector from "./FindingInspector";
 import AuditReviewConsole, { type ConsoleMode } from "./AuditReviewConsole";
-import { zoomLevel, nextZoomLevel, nodeColor, KIND_LABEL, type ZoomLevel } from "./graphTokens";
-import { semanticFocus, hasTraceRoute } from "@/lib/audit/focus";
+import { zoomLevel, nextZoomLevel, nodeColor, fieldLabel, KIND_LABEL, type ZoomLevel } from "./graphTokens";
+import { semanticFocus, traceIsComplete, edgeFocusClass } from "@/lib/audit/focus";
+import { structuralWeb } from "@/lib/audit/structuralWeb";
 
 type Provenance = FindingProvenance & { grounding: ReturnType<typeof groundingLabel> };
 
@@ -71,6 +72,31 @@ interface TruthPayload {
 }
 
 const SWEEP_MS = 2600;
+
+/**
+ * THE CLOSEST PAIR IN A SET, IN WORLD UNITS.
+ *
+ * The comprehension law needs it to answer "will these labels collide" —
+ * labels are a fixed size on screen, so what varies is how much room the
+ * marks leave between them. O(n²), which is free at the sizes this is called
+ * with (a one-hop neighbourhood, or a provenance route) and capped anyway:
+ * past 40 nodes the answer is always "too tight", and computing it exactly
+ * would be the one place this file does real work.
+ */
+function spreadOf(layout: GraphLayout | null, ids: string[]): number {
+  if (!layout || ids.length < 2) return 0;
+  const pts = ids.map((id) => layout.get(id)).filter(Boolean) as { x: number; y: number }[];
+  if (pts.length < 2) return 0;
+  const n = Math.min(pts.length, 40);
+  let min = Infinity;
+  for (let i = 0; i < n; i++) {
+    for (let j = i + 1; j < n; j++) {
+      const d = Math.hypot(pts[i].x - pts[j].x, pts[i].y - pts[j].y);
+      if (d < min) min = d;
+    }
+  }
+  return Number.isFinite(min) ? min : 0;
+}
 
 /** One step of local graph navigation. See the history block below. */
 interface NavEntry {
@@ -429,7 +455,7 @@ export default function AuditInstrument({ initialScopeId }: { initialScopeId?: s
       }
       const b = boundsOf(pts);
       if (!b) return null;
-      return frameFocus(b, { x: anchor.x, y: anchor.y }, cameraRef.current, viewportRef.current);
+      return frameFocus(b, { x: anchor.x, y: anchor.y }, cameraRef.current, viewportRef.current, spreadOf(layout, ids));
     },
     [graph, layout]
   );
@@ -448,6 +474,33 @@ export default function AuditInstrument({ initialScopeId }: { initialScopeId?: s
   const expandedRef = useRef(expanded);
   expandedRef.current = expanded;
 
+  // ── EXACT RETURN STATE ───────────────────────────────────────────────
+  //
+  // Turning Trace on, and expanding a cluster, are both TEMPORARY VIEWS: the
+  // reader is stepping into something and expects to step back out of it.
+  // Before this they were one-way — Trace off left the field wherever the
+  // route had framed it, and collapsing a cluster left the camera at the zoom
+  // the expansion had flown to, looking at a sector that was no longer open.
+  //
+  // Each records the world it interrupted, and puts it back.
+  const restoreTrace = useRef<{ camera: Camera; expanded: string[] } | null>(null);
+  const restoreCluster = useRef(new Map<string, Camera>());
+
+  const setTrace = useCallback(
+    (on: boolean) => {
+      if (on) {
+        restoreTrace.current = { camera: cameraRef.current, expanded: [...expandedRef.current] };
+      } else if (restoreTrace.current) {
+        const world = restoreTrace.current;
+        restoreTrace.current = null;
+        setExpanded(new Set(world.expanded));
+        flyCamera(world.camera);
+      }
+      setSolo(on);
+    },
+    [flyCamera]
+  );
+
   const select = useCallback(
     (id: string | null) => {
       // Taking hold of a node is taking control. A tween still running would
@@ -456,7 +509,7 @@ export default function AuditInstrument({ initialScopeId }: { initialScopeId?: s
       setSelectedId(id);
       setResult(null);
       if (id === null) {
-        setSolo(false);
+        setTrace(false);
         setMode("A");
         // LAW 9: clearing does NOT move the camera. You stay exactly where you
         // were looking; a silent Fit throws away the view you built.
@@ -481,7 +534,7 @@ export default function AuditInstrument({ initialScopeId }: { initialScopeId?: s
       const next = frameFor(id);
       if (next) flyCamera(next);
     },
-    [stopTween, frameFor, flyCamera]
+    [stopTween, frameFor, flyCamera, setTrace]
   );
 
   const navigateTo = useCallback(
@@ -526,23 +579,21 @@ export default function AuditInstrument({ initialScopeId }: { initialScopeId?: s
   const canBack = nav.i > 0;
   const canForward = nav.i >= 0 && nav.i < nav.stack.length - 1;
 
-  // EVIDENCE SOLO MUST REVEAL WHAT IT LIGHTS.
+  // A TRACE IS A ROUTE, NOT A CLUSTER EXPANSION.
   //
-  // The traversal reaches passages and sources, which live in the `evidence`
-  // slice and are collapsed by default — so soloing a finding lit a route
-  // whose far end was not mounted, and the answer to "why does Signal believe
-  // this" was two nodes and some empty space. Turning solo on expands
-  // whatever it needs, for the same reason searching does.
-  useEffect(() => {
-    if (!soloNodes || !graph) return;
-    const needed = new Set<string>();
-    for (const n of soloNodes) {
-      if (!graph.hasNode(n)) continue;
-      const a = graph.getNodeAttributes(n);
-      if (a.slice !== "core" && a.lane) needed.add(a.lane as string);
-    }
-    if (needed.size > 0) setExpanded((prev) => new Set([...prev, ...needed]));
-  }, [soloNodes, graph]);
+  // This effect used to expand the CLUSTER of every node on the route, for
+  // the honest reason that a route whose far end is an unnamed mark answers
+  // nothing. On the demo Scope that opened four extra nodes. On the real
+  // corpus it opened the Hermes cluster — and a provenance trace of one
+  // external claim ended with 394 nodes and 253 relationships on screen,
+  // which is not a trace, it is the hairball wearing a trace's name.
+  //
+  // The route now promotes EXACTLY ITS OWN NODES, at their own seats, by the
+  // same mechanism focus already uses. Nothing unrelated opens, no cluster
+  // state is touched, and there is therefore nothing to put back.
+  //
+  // What replaced the expansion is `restoreTrace` below: turning Trace off
+  // returns the world to precisely what it was before it went on.
 
   // AND A ROUTE THAT IS OFF SCREEN IS NOT A ROUTE.
   //
@@ -564,7 +615,7 @@ export default function AuditInstrument({ initialScopeId }: { initialScopeId?: s
     }
     const b = boundsOf(pts);
     if (!b) return;
-    const next = frameFocus(b, { x: anchor.x, y: anchor.y }, cameraRef.current, viewportRef.current);
+    const next = frameFocus(b, { x: anchor.x, y: anchor.y }, cameraRef.current, viewportRef.current, spreadOf(layout, [...soloNodes]));
     if (next) flyCamera(next);
     // Deliberately keyed on the route itself: re-framing on every camera
     // change would fight the hand, which always outranks the instrument.
@@ -581,14 +632,63 @@ export default function AuditInstrument({ initialScopeId }: { initialScopeId?: s
   // the node already selected. The traversal is run up front and the control
   // is offered only if it reaches something; the inspector says so in words
   // instead of handing over a button that lies.
-  const soloable = hasTraceRoute(traceRoute, selectedId);
+  const soloable = !!graph && traceIsComplete(graph, traceRoute, selectedId);
+
 
   // Leaving a traceable node must drop the trace with it, and the hypothetical
   // mode with it — that one belongs to findings alone.
   useEffect(() => {
-    if (!soloable) setSolo(false);
+    if (!soloable) setTrace(false);
     if (!selectedFinding) setMode("A");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [soloable, selectedFinding]);
+
+  // ── THE DIAGNOSTIC, AND ONLY WHEN ASKED FOR ──────────────────────────
+  //
+  // `?debug=graph`. Read once from the URL rather than from state, so a build
+  // that nobody has asked to debug computes none of this: the memo below is
+  // guarded on the flag, and the whole panel is absent from the tree.
+  const debug = useMemo(
+    () => (typeof window === "undefined" ? false : new URLSearchParams(window.location.search).get("debug") === "graph"),
+    []
+  );
+
+  const graphStats = useMemo(() => {
+    if (!debug || !graph || !layout) return null;
+    const web = structuralWeb(graph, layout);
+    let membership = 0;
+    graph.forEachEdge((_e, a) => {
+      if (edgeFocusClass(a) === null) membership++;
+    });
+    const selected = { total: 0, woken: 0, asleep: 0, byClass: {} as Record<string, number> };
+    if (selectedId && graph.hasNode(selectedId)) {
+      const f = semanticFocus(graph, selectedId);
+      if (f) {
+        for (const [, cls] of f.edges) {
+          selected.total++;
+          selected.byClass[cls] = (selected.byClass[cls] ?? 0) + 1;
+          // A woken edge needs both ends promoted, which focus does for its
+          // own non-contextual frame — so a contextual partner in a collapsed
+          // cluster is reachable and not drawn, and this says so.
+          if (cls === "contextual") selected.asleep++;
+          else selected.woken++;
+        }
+      }
+    }
+    return {
+      nodes: graph.order,
+      edges: graph.size,
+      strands: web.strands.length,
+      sheaves: web.sheaves.length,
+      represented: web.represented,
+      suppressed: web.suppressed,
+      byClass: web.suppressedByClass,
+      membership,
+      drawnNow: web.strands.length + web.sheaves.length,
+      selected,
+    };
+  }, [debug, graph, layout, selectedId]);
+
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
@@ -640,21 +740,47 @@ export default function AuditInstrument({ initialScopeId }: { initialScopeId?: s
       });
       if (!expanded.has(cluster)) {
         const anchor = gid.lane(cluster);
-        if (layout?.has(anchor)) {
-          const p = layout.get(anchor)!;
-          // Framed between the puck and the core, so the cluster's contents
-          // AND its relationship to Reality stay in view. Eased, so the
-          // cluster reads as unfolding where you were already looking rather
-          // than as a new screen.
-          flyCamera({
-            x: FIELD.cx + (p.x - FIELD.cx) * 1.02,
-            y: FIELD.cy + (p.y - FIELD.cy) * 1.02,
-            k: 1.35,
+        if (layout?.has(anchor) && graph) {
+          // A 6-MEMBER CLUSTER AND A 130-MEMBER CLUSTER ARE DIFFERENT VISUAL
+          // PROBLEMS, and the old rule — fly to a fixed 1.35 over the puck —
+          // treated them identically. Capacity's six people ended up filling
+          // a sliver of the frame; Hermes's hundred and thirty ran off three
+          // sides of it.
+          //
+          // Framed from what is actually there: the puck, the core, and every
+          // seat that belongs to the cluster. The same framing law does the
+          // rest, so expanding obeys exactly the rule selecting does.
+          const pts: { x: number; y: number }[] = [{ x: FIELD.cx, y: FIELD.cy }];
+          const members: string[] = [];
+          graph.forEachNode((n, a) => {
+            if (a.lane !== cluster) return;
+            const p = layout.get(n);
+            if (!p) return;
+            members.push(n);
+            pts.push({ x: p.x - p.r, y: p.y - p.r });
+            pts.push({ x: p.x + p.r, y: p.y + p.r });
           });
+          const b = boundsOf(pts);
+          const p = layout.get(anchor)!;
+          if (b) {
+            const next = frameFocus(b, { x: p.x, y: p.y }, cameraRef.current, viewportRef.current, spreadOf(layout, members));
+            if (next) {
+              // Remember where we were BEFORE the expansion framed it, so
+              // collapsing this cluster is a return rather than a stranding.
+              restoreCluster.current.set(cluster, cameraRef.current);
+              flyCamera(next);
+            }
+          }
+        }
+      } else {
+        const back = restoreCluster.current.get(cluster);
+        if (back) {
+          restoreCluster.current.delete(cluster);
+          flyCamera(back);
         }
       }
     },
-    [expanded, layout, flyCamera]
+    [expanded, layout, graph, flyCamera]
   );
 
   // Expanding ONE node — a source artifact — rather than a whole cluster.
@@ -939,7 +1065,7 @@ export default function AuditInstrument({ initialScopeId }: { initialScopeId?: s
                         style={{ background: nodeColor(m.attrs) }}
                       />
                       <span className="min-w-0 flex-1 truncate text-[11px] text-[var(--i-text)]">
-                        {String(m.attrs.label)}
+                        {fieldLabel(m.attrs)}
                       </span>
                       {/* A RESULT MUST SAY WHAT IT IS. Every external object
                           used to read "External intelligence", so a list of
@@ -1032,6 +1158,63 @@ export default function AuditInstrument({ initialScopeId }: { initialScopeId?: s
             </div>
           </div>
 
+          {/* ── WHAT IS HERE — DEVELOPMENT DIAGNOSTIC ───────────────────
+
+              Gated behind `?debug=graph`, so it does not exist for anyone
+              who has not asked for it by hand. It answers the one question
+              the renderer cannot be interrogated about from the outside:
+              WHAT IS BEING SUPPRESSED, and why.
+
+              This tranche was written because a production audit had to
+              count edges in the DOM to discover that 91.9% of the graph was
+              invisible. That should not have needed guessing. */}
+          {debug && graphStats && (
+            <div
+              className="pointer-events-none absolute bottom-3 right-3 max-w-[300px] rounded-md px-2.5 py-2 text-[10px] leading-[1.6]"
+              style={{
+                background: "color-mix(in srgb, var(--i-panel) 94%, transparent)",
+                border: "1px solid var(--i-border-strong)",
+                color: "var(--i-text-soft)",
+                fontFeatureSettings: '"tnum"',
+              }}
+              data-shoot="graph-debug"
+            >
+              <div className="i-label mb-1" style={{ color: "var(--i-text-faint)" }}>
+                What is here
+              </div>
+              <div>
+                {graphStats.nodes} nodes · {graphStats.edges} relationships
+              </div>
+              <div>
+                web: {graphStats.strands} strands + {graphStats.sheaves} sheaves ={" "}
+                <span style={{ color: "var(--i-text)" }}>{graphStats.represented}</span> shown at rest
+              </div>
+              <div>
+                suppressed {graphStats.suppressed}
+                {Object.entries(graphStats.byClass).map(([k, v]) => ` · ${k} ${v}`)}
+                {` · membership ${graphStats.membership}`}
+              </div>
+              <div>opened {opened.size} · drawn edges {graphStats.drawnNow}</div>
+              {selectedId && graph?.hasNode(selectedId) && (
+                <div className="mt-1.5 border-t pt-1.5" style={{ borderColor: "var(--i-border)" }}>
+                  <div style={{ color: "var(--i-text)" }}>
+                    {String(graph.getNodeAttribute(selectedId, "kind"))}
+                    {graph.getNodeAttribute(selectedId, "intelligenceType")
+                      ? ` · ${String(graph.getNodeAttribute(selectedId, "intelligenceType"))}`
+                      : ""}
+                  </div>
+                  <div>
+                    {graphStats.selected.total} direct
+                    {Object.entries(graphStats.selected.byClass).map(([k, v]) => ` · ${k} ${v}`)}
+                  </div>
+                  <div>
+                    {graphStats.selected.woken} woken · {graphStats.selected.asleep} asleep
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
           {/* A legend only where it earns its place: what the two edge
               treatments mean. Everything else is learnable by clicking. */}
           <div
@@ -1069,7 +1252,7 @@ export default function AuditInstrument({ initialScopeId }: { initialScopeId?: s
               finding={selectedFinding}
               provenance={truth.provenance[selectedFinding.id] ?? null}
               onSelect={(id) => select(gid.finding(id))}
-              onEvidenceSolo={soloable ? () => setSolo(true) : null}
+              onEvidenceSolo={soloable ? () => setTrace(true) : null}
             />
           ) : selectedId && graph.hasNode(selectedId) ? (
             <GraphInspector
@@ -1080,7 +1263,7 @@ export default function AuditInstrument({ initialScopeId }: { initialScopeId?: s
               expandedNodes={expanded}
               onToggleNode={toggleNode}
               evidenceSolo={solo}
-              onEvidenceSolo={soloable ? setSolo : null}
+              onEvidenceSolo={soloable ? setTrace : null}
               onExpandCluster={toggleCluster}
             />
           ) : (
@@ -1104,7 +1287,7 @@ export default function AuditInstrument({ initialScopeId }: { initialScopeId?: s
           finding={selectedFinding}
           provenance={truth.provenance[selectedFinding.id] ?? null}
           evidenceSolo={solo}
-          onEvidenceSolo={setSolo}
+          onEvidenceSolo={setTrace}
           mode={mode}
           onMode={setMode}
           onAction={runAction}

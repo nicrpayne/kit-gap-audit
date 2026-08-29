@@ -48,14 +48,18 @@ import {
   TIER,
   FOCUS_TIER,
   FOCUS_EDGE,
+  WEB,
   DEPTH_CLASS,
   LATENT,
   latentRadius,
   identityOf,
+  intelIsHollow,
+  fieldLabel,
   type Depth,
   type ZoomLevel,
   type Identity,
 } from "./graphTokens";
+import { structuralWeb } from "@/lib/audit/structuralWeb";
 import {
   semanticFocus,
   edgeFocusClass,
@@ -377,6 +381,28 @@ export default function SignalGraph({
   // exist.
   const drawnNodes = useMemo(() => graph.nodes().filter((n) => layout.has(n)), [graph, layout]);
 
+  // ── THE CALM-STATE WEB ───────────────────────────────────────────────
+  //
+  // Computed from the graph and the seats alone — not from `opened`, not from
+  // selection, not from the camera. It is a property of the corpus, so it is
+  // the same web whatever the reader has open, and it costs one memo per
+  // graph rather than one per frame.
+  const web = useMemo(() => structuralWeb(graph, layout), [graph, layout]);
+
+  /** How many real relationships each node has — membership excluded, since
+      that is position. On the node as `data-degree`, which is what makes
+      "20 anonymous marks, 16 of them with two or more relationships"
+      checkable from outside instead of by opening twenty panels. */
+  const degreeOf = useMemo(() => {
+    const m = new Map<string, number>();
+    graph.forEachEdge((_e, a, src, tgt) => {
+      if (edgeFocusClass(a as { rel: string; relClass?: string | null }) === null) return;
+      m.set(src, (m.get(src) ?? 0) + 1);
+      m.set(tgt, (m.get(tgt) ?? 0) + 1);
+    });
+    return m;
+  }, [graph]);
+
   /** Whether this Scope has any external intelligence at all. Governs the
       outer boundary ring, and nothing else — an absent band draws no ring
       rather than an empty one. */
@@ -434,15 +460,20 @@ export default function SignalGraph({
   // opening every `related_to` partner would promote a large part of the
   // outer band on every click.
   const openedNow = useMemo(() => {
-    if (!focus) return opened;
+    // AND A TRACE PROMOTES ITS OWN ROUTE, for exactly the same reason and by
+    // exactly the same mechanism. The alternative — expanding the CLUSTER of
+    // every node on the route — is what turned one claim's provenance into
+    // 394 open nodes on the real corpus. A route is the nodes on the route.
+    const reveal = soloNodes ? [...soloNodes] : focus ? focus.frame : null;
+    if (!reveal) return opened;
     let extra: Set<string> | null = null;
-    for (const id of focus.frame) {
+    for (const id of reveal) {
       if (opened.has(id)) continue;
       if (!extra) extra = new Set(opened);
       extra.add(id);
     }
     return extra ?? opened;
-  }, [focus, opened]);
+  }, [focus, opened, soloNodes]);
 
   const drawnEdges = useMemo(() => {
     const out: {
@@ -481,6 +512,59 @@ export default function SignalGraph({
     });
     return out;
   }, [graph, openedNow, layout, anchorId, soloNodes]);
+
+  // ── WHICH NAMES ACTUALLY GET PRINTED ─────────────────────────────────
+  //
+  // Waking a neighbourhood means naming it — and on the real corpus a
+  // Decision cites four passages seated within ten world units of each other
+  // in the evidence arc. Printed, that is four quotations occupying one line
+  // of pixels: a smear that answers nothing and hides the one label that
+  // could have.
+  //
+  // The camera cannot fix this on its own. It closes in until the marks
+  // separate, but it is capped at double — deliberately, because the
+  // alternative is the 230% zoom that this whole line of work removed. So
+  // past that cap the LABELS yield instead:
+  //
+  //   A LABEL THAT CANNOT BE READ IS WORSE THAN NO LABEL. It costs the space
+  //   a readable one would have used, and it makes the field look broken.
+  //
+  // Greedy, in authority order — the selection first, then semantic, then
+  // temporal, then provenance — keeping a name only where nothing already
+  // named is sitting in the same place. Everything unnamed keeps its ring,
+  // its colour and its row in the inspector; it simply does not shout its
+  // name over its neighbour's.
+  const labelledFocus = useMemo(() => {
+    if (!focus) return null;
+    const rank = (id: string) => {
+      const r = focus.nodes.get(id);
+      return r === "anchor" ? 0 : r === "semantic" ? 1 : r === "temporal" ? 2 : 3;
+    };
+    const cands = focus.frame
+      .filter((id) => layout.has(id))
+      .sort((a, b) => rank(a) - rank(b) || (degreeOf.get(b) ?? 0) - (degreeOf.get(a) ?? 0));
+    const kept = new Set<string>();
+    const placed: { x: number; y: number; left: boolean }[] = [];
+    for (const id of cands) {
+      const p = layout.get(id)!;
+      // Screen space: a label is a fixed size on screen whatever the zoom,
+      // so collision has to be judged there and not in world units.
+      const sx = (p.x - camera.x) * camera.k;
+      const sy = (p.y - camera.y) * camera.k;
+      const left = p.x < FIELD.cx;
+      const clash = placed.some((q) => q.left === left && Math.abs(q.y - sy) < 15 && Math.abs(q.x - sx) < 190);
+      if (clash) continue;
+      kept.add(id);
+      placed.push({ x: sx, y: sy, left });
+      if (kept.size >= 9) break;
+    }
+    return kept;
+  }, [focus, layout, camera.x, camera.y, camera.k, degreeOf]);
+
+  /** ONE RELATIONSHIP, ONE LINE. Once both ends of a strand are open the
+      edge layer draws it properly — with its weight, its head and its verb —
+      so the web must stop drawing its faint understudy underneath. */
+  const drawnEdgeIds = useMemo(() => new Set(drawnEdges.map((e) => e.id)), [drawnEdges]);
 
   /** Latent nodes per cluster — what "+N" is actually counting. */
   const latentByCluster = useMemo(() => {
@@ -732,6 +816,84 @@ export default function SignalGraph({
           edges, only when the word will actually be legible, and never on the
           contextual hairline — labelling seventy `related_to` strokes is how
           you make a field nobody reads. */}
+      {/* ── THE CALM-STATE WEB ────────────────────────────────────────
+
+          Under everything, and never touchable. This is the layer that
+          answers "is this a connected knowledge system" before anything is
+          clicked — 385 of the corpus's 480 relationships, carried in 119
+          paths, against the 44 the field used to draw at rest.
+
+          It recedes rather than disappears when something is selected: the
+          local world is what the reader is being asked to read, and the web
+          becomes the ground it stands on. */}
+      <g
+        data-shoot="graph-web"
+        style={{ pointerEvents: "none" }}
+        className={focus || soloNodes ? DEPTH_CLASS[1] : undefined}
+      >
+        {/* THE BUNDLED PROVENANCE MESH. Each path is one source artifact's
+            whole fan — the passages Signal pulled out of it, and the external
+            claims that quote them. Filaments share a waist so the fan reads
+            as one stem opening rather than as N unrelated chords, which is
+            the entire difference between structure and a hairball. */}
+        {/* ONE OPACITY, ON THE GROUP. Putting the focus tier on each path
+            meant that selecting anything rewrote 119 attributes — measured,
+            it pushed a Trace from 240ms to 260ms, past its budget, for a
+            change that is identical on every path in the layer. The group
+            carries what focus changes; a path carries only what is true of
+            that path forever. */}
+        <g opacity={focus || soloNodes ? WEB.sheafFocused : WEB.sheaf} style={{ transition: "opacity 200ms ease" }}>
+          {web.sheaves.map((sh) => (
+            <path
+              key={sh.id}
+              d={sh.d}
+              fill="none"
+              // Signal's own extraction is source-blue; somebody else's
+              // citation of it is slate. One mesh, two authorships, and the
+              // eye can tell which without a legend.
+              stroke={sh.kind === "extraction" ? "var(--i-source)" : "var(--i-slate)"}
+              strokeWidth={0.55 / camera.k}
+              strokeLinecap="round"
+              data-web="sheaf"
+              data-web-kind={sh.kind}
+              data-web-count={sh.count}
+            />
+          ))}
+        </g>
+        {/* AND THE RELATIONSHIPS WITH AUTHORITY, AS THEMSELVES. Every
+            semantic and temporal edge, Signal's attested structure, and the
+            lane spine into Reality. Faint, but a line rather than a filament,
+            because each of these is a fact somebody could act on. */}
+        <g opacity={focus || soloNodes ? WEB.strandFocused : WEB.strand} style={{ transition: "opacity 200ms ease" }}>
+          {web.strands.map((st) =>
+            drawnEdgeIds.has(st.id) ? null : (
+              <path
+                key={`web-${st.id}`}
+                d={st.d}
+                fill="none"
+                stroke={WEB_STRAND_COLOR[st.cls]}
+                strokeWidth={(st.cls === "semantic" || st.cls === "temporal" ? 1 : 0.85) / camera.k}
+                strokeDasharray={
+                  st.basis === "external"
+                    ? `${2.2 / camera.k} ${2.6 / camera.k}`
+                    : st.basis === "inferred"
+                      ? `${4 / camera.k} ${4 / camera.k}`
+                      : undefined
+                }
+                // A temporal strand reaching into superseded history is
+                // quieter than one between two live things — a property of
+                // the relationship, not of the reader's attention, so it
+                // lives on the path and never changes.
+                opacity={st.current ? 1 : 0.6}
+                data-web="strand"
+                data-web-class={st.cls}
+                data-rel={st.rel}
+              />
+            )
+          )}
+        </g>
+      </g>
+
       <g data-shoot="graph-edges" style={{ pointerEvents: "none" }}>
         {drawnEdges.map((e) => {
           const a = layout.get(e.from)!;
@@ -745,14 +907,27 @@ export default function SignalGraph({
           // it — that IS the trace, and making it look like a semantic claim
           // would be the route lying about what it is.
           const filament = (woken ?? (soloLit ? "provenance" : null)) === "provenance";
+          // FIVE CLASSES, FIVE MATERIALS. Hue and weight carry the class;
+          // the dash still carries trust, untouched, because a channel that
+          // meant both would mean neither.
+          //
+          //   SEMANTIC    signal cyan, full weight, arrowhead, verb
+          //   TEMPORAL    cream — the one warm line on the field — with the
+          //               double chevron that appears nowhere else. Sequence.
+          //   PROVENANCE  source-blue filament, the same blue as the artifact
+          //               it ends at, so object → passage → source reads as
+          //               one continuous route rather than three hops
+          //   CONTEXTUAL  a faint hairline
           const strokeColor = !lit
             ? "var(--i-text-soft)"
             : filament
-              ? "var(--i-text-soft)"
-              : woken === "contextual"
-                ? "var(--i-text-faint)"
-                : "var(--i-signal)";
-          const weight = !lit ? 1 : woken === "contextual" ? 0.8 : filament ? 1.15 : 1.9;
+              ? "var(--i-source)"
+              : woken === "temporal"
+                ? "var(--i-text)"
+                : woken === "contextual"
+                  ? "var(--i-text-faint)"
+                  : "var(--i-signal)";
+          const weight = !lit ? 1 : woken === "contextual" ? 0.8 : filament ? 1.4 : 1.9;
           // THE WORD IS ONLY DRAWN WHERE THERE IS ROOM FOR IT.
           //
           // Not gated on zoom: every label on this field is sized in `1/k`, so
@@ -775,6 +950,24 @@ export default function SignalGraph({
           const head = lit && woken !== "contextual" && e.directional ? edgeEndTangent(a, b) : null;
           return (
             <g key={e.id}>
+              {/* A LUMINOUS UNDERLAY ON THE PROVENANCE ROUTE. Law: "object
+                  → passage → source should read as one route". A wider, very
+                  faint stroke of the same blue under the filament makes the
+                  chain glow as a single continuous thing across the darker
+                  field, which two separate hairlines never did. Drawn only
+                  for the class that needs it, so it costs two extra strokes
+                  on a focused route and nothing at rest. */}
+              {filament && lit && (
+                <path
+                  d={edgePath(a, b)}
+                  fill="none"
+                  stroke="var(--i-source)"
+                  strokeWidth={5 / camera.k}
+                  strokeLinecap="round"
+                  opacity={op * 0.22}
+                  data-shoot="route-glow"
+                />
+              )}
               <path
                 // ON THE PATH, WHERE THEY HAVE ALWAYS BEEN. The stroke is what
                 // every screenshot pass and QA selector addresses; moving the
@@ -819,7 +1012,9 @@ export default function SignalGraph({
                   dominantBaseline="middle"
                   fontSize={9 / camera.k}
                   letterSpacing={`${0.06 / camera.k}em`}
-                  fill={filament ? "var(--i-text-soft)" : "var(--i-signal)"}
+                  fill={
+                    filament ? "var(--i-source)" : woken === "temporal" ? "var(--i-text)" : "var(--i-signal)"
+                  }
                   paintOrder="stroke"
                   stroke="var(--i-bg)"
                   strokeWidth={3 / camera.k}
@@ -1030,6 +1225,19 @@ export default function SignalGraph({
               matched={matches?.has(id) ?? false}
               swept={swept.has((attrs.lane as string) ?? "")}
               labelInward={labelInward}
+              degree={degreeOf.get(id) ?? 0}
+              // A MARK YOU CANNOT REACH IS A DEAD END ON THE FIELD.
+              //
+              // Superseded history is drawn as a mark on purpose — it is not
+              // news — but a mark has no pointer events, so the arrow the
+              // temporal chain draws INTO it could not be followed. The one
+              // thing on this field the reader is explicitly invited to look
+              // at was the one thing they could not click.
+              //
+              // It stays a mark and becomes reachable. Not the same rule as a
+              // collapsed cluster's contents, and deliberately: those have a
+              // toggle that names them, and this has nothing else.
+              reachable={historical && openedNow.has(id)}
               // A NEIGHBOUR THE SELECTION WOKE IS READABLE. Law 4: the eye
               // must be able to answer "what belongs to it" without zooming,
               // and a nameless glowing dot answers nothing. Contextual
@@ -1039,7 +1247,7 @@ export default function SignalGraph({
                 identity === "named" ||
                 selectedId === id ||
                 hoveredId === id ||
-                (rank != null && rank !== "contextual")
+                (rank != null && rank !== "contextual" && (labelledFocus?.has(id) ?? true))
               }
               tabIndex={tabIndexOf.get(id) ?? -1}
               onSelect={onSelect}
@@ -1097,6 +1305,8 @@ const GraphNode = memo(function GraphNode({
   swept,
   labelled,
   labelInward,
+  degree,
+  reachable,
   depth,
   rank,
   tabIndex,
@@ -1121,6 +1331,10 @@ const GraphNode = memo(function GraphNode({
       from it is off the edge of the viewport. Only ever true for the selected
       or hovered node. */
   labelInward: boolean;
+  /** Non-membership relationships this node actually has. */
+  degree: number;
+  /** Drawn as a mark, but still a pointer target. Superseded history only. */
+  reachable: boolean;
   /** Optical depth. 0 sharp, 1 softened. See DEPTH_CLASS. */
   depth: Depth;
   /** What this node is to the current selection, or null when nothing is. */
@@ -1133,6 +1347,7 @@ const GraphNode = memo(function GraphNode({
   const leftHalf = labelInward ? x >= FIELD.cx : x < FIELD.cx;
   const color = nodeColor(attrs);
   const shape = NODE_SHAPE[attrs.kind];
+  const hollow = attrs.kind === "intel" && intelIsHollow(attrs.intelligenceType);
   const stroke = 1.4 / k;
   const grown = selected ? r * 1.35 : hovered ? r * 1.15 : r;
 
@@ -1293,10 +1508,21 @@ const GraphNode = memo(function GraphNode({
         // Same grammar as the external edges — broken means somebody outside
         // Signal says so. The dash is sized in screen units so it survives at
         // a 4.6-unit node.
+        //
+        // AND IT NOW CARRIES A BODY, tinted with its own type's colour. At
+        // 4.6 units a hollow outline is three faint dashes; a tinted body is
+        // a mark you can name from across the field, which is the whole
+        // point of giving the types colours at all.
+        //
+        // AN UNKNOWN STAYS GENUINELY EMPTY. Its entire content is that it has
+        // no content yet — an open question the producer could not answer —
+        // and an empty outline says that before any hue does. It is the one
+        // external type whose form differs, because it is the one whose
+        // MEANING is absence.
         return (
           <path
             d={`M ${x} ${y - grown * 1.15} L ${x + grown} ${y + grown * 0.72} L ${x - grown} ${y + grown * 0.72} Z`}
-            fill="var(--i-void)"
+            fill={hollow ? "var(--i-void)" : `color-mix(in srgb, ${color} 34%, var(--i-void))`}
             stroke={color}
             strokeWidth={stroke}
             strokeDasharray={`${2.4 / k} ${1.8 / k}`}
@@ -1341,6 +1567,7 @@ const GraphNode = memo(function GraphNode({
       data-shoot={`node-${id}`}
       data-kind={attrs.kind}
       data-rank={rank ?? undefined}
+      data-degree={degree}
       data-depth={depth}
       // The producer's own type string, for the same reason `data-kind` is
       // here: a QA pass and a screenshot script must be able to find "the
@@ -1366,28 +1593,64 @@ const GraphNode = memo(function GraphNode({
         data-shoot="latent-mark"
       />
 
-      {/* THE GLOW — one node on the field wears it, and only while it is the
-          thing being explained.
+      {/* ── FUNCTIONAL GLOW ───────────────────────────────────────────
 
-          Two soft rings rather than a filter: a blur on the selected node
-          would cost a rasterisation surface on the one element that has to
-          respond instantly, and would soften the very thing Law 4 says must
-          be the sharpest. Concentric falloff reads as luminance and costs two
-          strokes. */}
+          Three levels of perceptual authority, and none of them decorative:
+
+            SELECTED  three concentric falloffs. Unmistakable from across the
+                      field, at any zoom, without having read a word.
+            HOVERED   one ring — PRESELECTION authority. The reader is asking
+                      "what about this one?" and the field answers before the
+                      click, which is what makes a dense graph explorable by
+                      sweeping rather than by clicking forty times.
+            NEIGHBOUR a single soft ring on whatever the selection reached, so
+                      "what belongs to it" is answerable by shape alone even
+                      where the connecting line is off screen.
+
+          Rings rather than a filter, deliberately: a blur on the node that
+          must respond instantly would cost a rasterisation surface on exactly
+          the wrong element, and would soften the one thing that has to be the
+          sharpest on the field. Concentric strokes read as luminance and cost
+          a stroke each. */}
       {!latent && selected && (
         <>
           <circle
             cx={x}
             cy={y}
-            r={grown + 12 / k}
+            r={grown + 9 / k}
             fill="none"
             stroke={color}
-            strokeWidth={3 / k}
-            opacity={0.14}
+            strokeWidth={2.5 / k}
+            opacity={0.3}
             data-shoot="node-glow"
           />
-          <circle cx={x} cy={y} r={grown + 18 / k} fill="none" stroke={color} strokeWidth={5 / k} opacity={0.06} />
+          <circle cx={x} cy={y} r={grown + 15 / k} fill="none" stroke={color} strokeWidth={4 / k} opacity={0.15} />
+          <circle cx={x} cy={y} r={grown + 23 / k} fill="none" stroke={color} strokeWidth={6 / k} opacity={0.06} />
         </>
+      )}
+      {!latent && !selected && hovered && (
+        <circle
+          cx={x}
+          cy={y}
+          r={grown + 10 / k}
+          fill="none"
+          stroke={color}
+          strokeWidth={2.5 / k}
+          opacity={0.22}
+          data-shoot="node-preselect"
+        />
+      )}
+      {!latent && !selected && !hovered && rank != null && rank !== "contextual" && (
+        <circle
+          cx={x}
+          cy={y}
+          r={grown + 7 / k}
+          fill="none"
+          stroke={color}
+          strokeWidth={1.6 / k}
+          opacity={rank === "provenance" ? 0.16 : 0.26}
+          data-shoot="node-neighbour"
+        />
       )}
 
       {/* Halo: selection, search match, or the sweep passing over. */}
@@ -1403,18 +1666,18 @@ const GraphNode = memo(function GraphNode({
         />
       )}
       <g
-        role={latent ? undefined : "button"}
-        tabIndex={latent ? undefined : tabIndex}
-        aria-label={latent ? undefined : accessibleName}
-        aria-hidden={latent ? "true" : undefined}
-        aria-pressed={latent ? undefined : selected}
+        role={latent && !reachable ? undefined : "button"}
+        tabIndex={latent && !reachable ? undefined : tabIndex}
+        aria-label={latent && !reachable ? undefined : accessibleName}
+        aria-hidden={latent && !reachable ? "true" : undefined}
+        aria-pressed={latent && !reachable ? undefined : selected}
         className="sg-node"
         opacity={latent ? 0 : 1}
         style={{
           cursor: "pointer",
           outline: "none",
           transition: "opacity 260ms ease",
-          pointerEvents: latent ? "none" : undefined,
+          pointerEvents: latent && !reachable ? "none" : undefined,
         }}
         onClick={(e) => {
           e.stopPropagation();
@@ -1458,7 +1721,7 @@ const GraphNode = memo(function GraphNode({
           className={depth > 0 ? DEPTH_CLASS[2] : undefined}
           style={{ pointerEvents: "none" }}
         >
-          {truncate(String(attrs.label), attrs.kind === "finding" ? 34 : 28)}
+          {truncate(fieldLabel(attrs), attrs.kind === "finding" ? 34 : attrs.kind === "passage" ? 40 : 30)}
         </text>
       )}
     </g>
@@ -1485,6 +1748,22 @@ const KIND_NAME: Record<string, string> = {
   notion_page: "Notion page",
   figma_artifact: "Figma artifact",
   intel: "External intelligence",
+};
+
+/**
+ * A STRAND'S COLOUR IS ITS CLASS, AT REST.
+ *
+ * The same families the woken edges use, so nothing changes meaning when it
+ * wakes — a semantic line is cyan whether you are looking at it or not, and
+ * a provenance filament is source-blue in both states. Waking changes
+ * brightness, weight and whether it carries a word. It never changes what
+ * kind of thing the line is.
+ */
+const WEB_STRAND_COLOR: Record<FocusClass, string> = {
+  semantic: "var(--i-signal)",
+  temporal: "var(--i-text)",
+  provenance: "var(--i-source)",
+  contextual: "var(--i-text-faint)",
 };
 
 /**

@@ -585,9 +585,14 @@ await park();
   await settle(600);
 
   const step1 = await inspector(true);
+  // A CONNECTION ROW NAMES ITS TARGET IN HUMAN TERMS NOW — a quote, a
+  // meeting — so it can no longer be found by matching an accession number
+  // in its text. It carries the id it points at as `data-target`, which is
+  // the honest way for a script to follow an exact chain without the panel
+  // having to print identifiers at the reader.
   const toPassage = await p.evaluate((evId) => {
     for (const b of document.querySelectorAll('[data-shoot="connection-cites"]')) {
-      if (b.innerText.includes(evId)) {
+      if ((b.getAttribute("data-target") ?? "").includes(evId)) {
         b.dispatchEvent(new MouseEvent("click", { bubbles: true }));
         return true;
       }
@@ -809,21 +814,30 @@ check(
   await settle(600);
   const soloBtn = p.locator('[data-shoot="intel-solo"]');
   if ((await soloBtn.count()) > 0) {
+    // MEASURED IN THE PAGE, FROM THE POINTER EVENT ITSELF.
+    //
+    // Reading `performance.now()` through one CDP round trip, clicking
+    // through a second and polling through a third put roughly 150ms of the
+    // harness's own latency inside a number reported as the instrument's.
+    // The clock now starts on the real pointerdown, inside the page.
     const runs = [];
     for (let i = 0; i < 5; i++) {
-      const t0 = await p.evaluate(() => performance.now());
+      await p.evaluate(() => {
+        window.__t0 = null;
+        document.addEventListener("pointerdown", () => (window.__t0 = performance.now()), { capture: true, once: true });
+      });
       await soloBtn.click();
-      const t1 = await p.evaluate(async () => {
+      const t = await p.evaluate(async () => {
         for (let k = 0; k < 240; k++) {
           const dim = [...document.querySelectorAll('[data-shoot^="node-"]')].filter(
             (g) => parseFloat(g.getAttribute("opacity") ?? "1") < 0.1
           ).length;
-          if (dim > 100) return performance.now();
+          if (dim > 100) return performance.now() - (window.__t0 ?? performance.now());
           await new Promise((r) => requestAnimationFrame(r));
         }
-        return performance.now();
+        return performance.now() - (window.__t0 ?? performance.now());
       });
-      runs.push(t1 - t0);
+      runs.push(t);
       if (i === 0) await shot("21-solo");
       await soloBtn.click();
       await settle(350);
