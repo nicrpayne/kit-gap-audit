@@ -26,7 +26,7 @@ import {
   EVIDENCE_SOLO_RELATIONS,
   type AuditGraph,
 } from "../lib/audit/graph";
-import { layoutGraph, layoutExtent, FIELD } from "../lib/audit/graphLayout";
+import { layoutGraph, layoutAggregates, layoutExtent, FIELD } from "../lib/audit/graphLayout";
 import { SOURCE_KINDS } from "../lib/audit/sources";
 import { fitCamera } from "../components/audit/SignalGraph";
 import { structuralWeb } from "../lib/audit/structuralWeb";
@@ -637,6 +637,64 @@ async function main() {
         w.strands.every((st) => st.cls !== "contextual"),
         `${w.suppressedByClass.contextual ?? 0} contextual held back · ${membership} membership never drawn`
       );
+    }
+  }
+
+  // ── K. CONSTELLATIONS ───────────────────────────────────────────────
+  //
+  // Deterministic placement is the whole basis of this layout: there is no
+  // physics, nothing relaxes, and the same corpus must produce the same seats
+  // forever. And an aggregate must be a PROJECTION of real members — never a
+  // node, never a count that disagrees with what it stands on.
+  {
+    for (const { name, g } of graphs) {
+      const a = layoutGraph(g);
+      const b = layoutGraph(g);
+      let moved = 0;
+      a.forEach((p, id) => {
+        const q = b.get(id);
+        if (!q || Math.abs(p.x - q.x) > 1e-9 || Math.abs(p.y - q.y) > 1e-9) moved++;
+      });
+      check(`K1 ${name}: constellation seats are deterministic`, moved === 0, `${moved} of ${a.size} seats moved between two builds`);
+
+      const aggs = layoutAggregates(a);
+      let fake = 0;
+      let miscounted = 0;
+      let outside = 0;
+      for (const agg of aggs) {
+        if (agg.count !== agg.members.length) miscounted++;
+        for (const m of agg.members) {
+          // EVERY MEMBER IS A REAL NODE. An aggregate that stands on
+          // something the graph does not hold is a fabricated entity, which
+          // is the one thing a projection may never be.
+          if (!g.hasNode(m)) fake++;
+          const p = a.get(m);
+          if (!p) {
+            fake++;
+            continue;
+          }
+          // And every member sits inside the disc drawn around it, or the
+          // shell is a claim about a region its contents are not in.
+          if (Math.hypot(p.x - agg.x, p.y - agg.y) > agg.discR + 2) outside++;
+        }
+        if (agg.hub && !g.hasNode(agg.hub)) fake++;
+      }
+      check(
+        `K2 ${name}: every aggregate is a projection of real members`,
+        fake === 0 && miscounted === 0,
+        `${aggs.length} aggregates over ${aggs.reduce((n, x) => n + x.count, 0)} members, ${fake} fabricated, ${miscounted} miscounted`
+      );
+      check(
+        `K3 ${name}: every member sits inside its own constellation`,
+        outside === 0,
+        `${outside} members outside the disc drawn around them`
+      );
+
+      // No member belongs to two groups: a mark can only be inside one shell.
+      const seen = new Set<string>();
+      let doubled = 0;
+      for (const agg of aggs) for (const m of agg.members) (seen.has(m) ? doubled++ : seen.add(m));
+      check(`K4 ${name}: no node is inside two constellations`, doubled === 0, `${doubled} double-counted`);
     }
   }
 
