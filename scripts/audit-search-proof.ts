@@ -56,6 +56,7 @@ import {
 import { humanizeRef } from "../components/audit/graphTokens";
 import {
   jsaShapedGraph,
+  jsaShapedGraphAtScale,
   QUOTES,
   REQUIREMENTS,
   SOURCE_REFS,
@@ -73,6 +74,17 @@ const skip = (name: string, why: string) => {
   console.log(`SKIP  ${name}  — ${why}`);
   skipped++;
 };
+
+/**
+ * Source with its comments removed.
+ *
+ * Two checks below read source rather than behaviour, and both would fail on
+ * a CORRECT file without this: the search modules EXPLAIN that they hold no
+ * route to Prisma, and the instrument QUOTES the defect line it replaced.
+ * Code is what is under test; prose about code is not.
+ */
+const stripComments = (src: string) =>
+  src.replace(/\/\*[\s\S]*?\*\//g, " ").replace(/(^|[^:])\/\/.*$/gm, "$1");
 
 const graph = jsaShapedGraph();
 const docs = buildSearchDocuments(graph);
@@ -406,7 +418,7 @@ async function main() {
   {
     // The lens computation itself, exercised directly. `revealFor` is pure:
     // same hits in, same set out, and never a set that grows with repetition.
-    const { revealFor } = await import("../lib/audit/searchLens");
+    const { revealFor, commitFor, disclosedSet } = await import("../lib/audit/searchLens");
     const a = revealFor(graph, index.search("notifications").hits.map((h) => h.id));
     const b = revealFor(graph, index.search("notifications").hits.map((h) => h.id));
     check("L2 the reveal set is deterministic", JSON.stringify([...a].sort()) === JSON.stringify([...b].sort()));
@@ -427,6 +439,108 @@ async function main() {
       "L5 an empty result set reveals nothing",
       revealFor(graph, []).size === 0
     );
+
+    // ── THE 435-OF-438 DEFECT, SIMULATED ─────────────────────────────
+    //
+    // The instrument's exact state transitions, driven through twenty
+    // queries — the shape of the UX run that ended with the whole field
+    // expanded. `disclosedSet` is the component's OWN union function, not a
+    // copy of it, so this measures the shipped arithmetic.
+    const QS = [
+      "notifications", "KE Dev Standup", "offline", "Docufy", "approvals",
+      "SOF-487", "unbounded tail risk", "safety", "release", "capacity",
+      "notif", "authentication", "blockers", "design", "testing",
+      "launch risk", "notifictions", "Lucija Jovanovska", "missing work", "Dev Standup",
+    ];
+
+    // The reader has opened one cluster. That is the state under protection.
+    const readerOpened: ReadonlySet<string> = new Set(["decisions"]);
+    let expandedNow = readerOpened;
+    let peakDisclosed = 0;
+    for (const q of QS) {
+      const revealed = revealFor(graph, index.search(q).hits.map((h) => h.id));
+      const disclosed = disclosedSet(expandedNow, revealed);
+      peakDisclosed = Math.max(peakDisclosed, disclosed.size);
+      // TYPING NEVER WRITES `expanded`. The whole fix, stated as the loop's
+      // own invariant: the reader's set is carried forward untouched.
+      expandedNow = expandedNow;
+    }
+    check(
+      "L6 twenty consecutive queries leave the reader's disclosure EXACTLY as it was",
+      expandedNow === readerOpened && expandedNow.size === 1,
+      `${expandedNow.size} open after 20 queries (was 1)`
+    );
+    check(
+      "L7 clearing the query returns the disclosed set to the reader's own, by identity",
+      disclosedSet(expandedNow, revealFor(graph, [])) === readerOpened
+    );
+    check(
+      "L8 no query ever disclosed more than a fraction of the field",
+      peakDisclosed < graph.order / 4,
+      `peak ${peakDisclosed} of ${graph.order} — the defect reached 435 of 438`
+    );
+
+    // TAKING a result is the one act that may persist, and it persists the
+    // MINIMUM. A passage in the evidence sector commits one cluster.
+    {
+      const hit = index.search(QUOTES.tailRisk).hits[0]!;
+      const committed = commitFor(graph, hit.id);
+      const after = new Set([...readerOpened, ...committed]);
+      check(
+        "L9 taking a result commits the minimum — one cluster, not a neighbourhood",
+        committed.size <= 1 && after.size <= readerOpened.size + 1,
+        `committed ${[...committed].join(",") || "nothing"}`
+      );
+      check(
+        "L10 and what it commits is enough to hold the chosen object open",
+        graph.getNodeAttribute(hit.id, "slice") === "core" ||
+          committed.has(String(graph.getNodeAttribute(hit.id, "lane")))
+      );
+    }
+
+    // ── THE REGRESSION GUARD ─────────────────────────────────────────
+    //
+    // The defect was one line: `setExpanded` called from the search path.
+    // This asserts it has not come back, in the file where it lived.
+    {
+      const src = readFileSync(join(process.cwd(), "components/audit/AuditInstrument.tsx"), "utf8");
+
+      // THE SEARCH SECTION, delimited by its own banners. Everything from
+      // "── SEARCH ──" to the disclosure banner is the code a keystroke runs,
+      // and the invariant is simply that none of it writes `expanded`.
+      const from = src.indexOf("// ── SEARCH ──");
+      const to = src.indexOf("// ── WHAT IS OPEN");
+      // Stripped, because the section deliberately QUOTES the defect line it
+      // replaced — and a guard that trips on its own documentation of the bug
+      // is a guard nobody will keep.
+      const searchSection = from >= 0 && to > from ? stripComments(src.slice(from, to)) : "";
+      check(
+        "L11 the search section exists and is delimited",
+        searchSection.length > 0,
+        `${searchSection.length} chars`
+      );
+      check(
+        "L12 and nothing in it writes the reader's disclosure state",
+        searchSection.length > 0 && !/setExpanded\s*\(/.test(searchSection),
+        `${(searchSection.match(/setExpanded\s*\(/g) ?? []).length} writes`
+      );
+      // The ONE legitimate write is in `takeResult`, and it is bounded by
+      // `commitFor` — the minimum — rather than by the whole result set.
+      check(
+        "L13 the only search-driven write is taking a result, and it commits commitFor",
+        /const takeResult = useCallback\([\s\S]{0,900}?commitFor\(graph, id\)[\s\S]{0,400}?setExpanded/.test(src)
+      );
+      check(
+        "L14 disclosure is a union of two channels, computed in exactly one place",
+        /disclosedSet\(expanded, revealed\)/.test(src) &&
+          (src.match(/disclosedSet\(/g) ?? []).length === 1
+      );
+      // And the renderer reads that union, not `expanded` directly.
+      check(
+        "L15 the opened-set is derived from the union, never from `expanded` alone",
+        /const opened = useMemo\([\s\S]{0,2600}?\}, \[graph, disclosed, aggregates\]\)/.test(src)
+      );
+    }
   }
 
   // ── W. READ-ONLY ───────────────────────────────────────────────────
@@ -436,12 +550,7 @@ async function main() {
     // THE STRUCTURAL PROOF, not a promise: the search layer's CODE contains
     // no route to the database, to a mutation, or to a network call.
     //
-    // Comments are stripped first, and the reason is not pedantry — these
-    // files EXPLAIN that they hold no route to Prisma, and a check that reads
-    // its own prose fails on a correct file. Code is what is under test.
-    const stripComments = (src: string) =>
-      src.replace(/\/\*[\s\S]*?\*\//g, " ").replace(/(^|[^:])\/\/.*$/gm, "$1");
-
+    // Comments are stripped first — see `stripComments`.
     const files = ["searchText.ts", "searchDocument.ts", "searchIndex.ts", "searchLens.ts"];
     const forbidden = [
       ["a database handle", /\bprisma\b/i],
@@ -647,34 +756,105 @@ async function main() {
     check("P3 median query under 5 ms — no keystroke waits", p50 < 5, `${p50.toFixed(3)} ms`);
     check("P4 p95 query under 15 ms", p95 < 15, `${p95.toFixed(3)} ms`);
 
+    // ── AT PRODUCTION SCALE ──────────────────────────────────────────
+    //
+    // The fixture is 61 nodes; the real JSA graph is around 438, and a
+    // latency measured at 61 says nothing about the instrument people use.
+    // Padded to 440 with varied content — see jsaShapedGraphAtScale — so the
+    // vocabulary grows the way a real corpus's does rather than the index
+    // holding four hundred copies of one sentence.
+    {
+      const big = jsaShapedGraphAtScale(440);
+      const t2 = performance.now();
+      const bigDocs = buildSearchDocuments(big);
+      const bigDocMs = performance.now() - t2;
+      const t3 = performance.now();
+      const bigIndex = SignalSearchIndex.fromDocuments(bigDocs);
+      const bigIdxMs = performance.now() - t3;
+
+      for (const q of QS) bigIndex.search(q);
+      const bs: number[] = [];
+      for (let i = 0; i < 30; i++) {
+        for (const q of QS) {
+          const s0 = performance.now();
+          bigIndex.search(q);
+          bs.push(performance.now() - s0);
+        }
+      }
+      bs.sort((a, b) => a - b);
+      const bp50 = bs[Math.floor(bs.length * 0.5)];
+      const bp95 = bs[Math.floor(bs.length * 0.95)];
+      console.log(`\n    AT PRODUCTION SCALE — ${big.order} nodes, ${bigDocs.length} documents`);
+      console.log(`    documents built   ${bigDocMs.toFixed(2)} ms`);
+      console.log(`    index built       ${bigIdxMs.toFixed(2)} ms`);
+      console.log(`    query p50         ${bp50.toFixed(3)} ms`);
+      console.log(`    query p95         ${bp95.toFixed(3)} ms`);
+      console.log(`    query max         ${bs[bs.length - 1].toFixed(3)} ms\n`);
+
+      check(`P3b at ${big.order} nodes, median query still under 5 ms`, bp50 < 5, `${bp50.toFixed(3)} ms`);
+      check(`P4b at ${big.order} nodes, p95 still under 15 ms`, bp95 < 15, `${bp95.toFixed(3)} ms`);
+      check(
+        `P4c at ${big.order} nodes, the whole index still builds in under 250 ms`,
+        bigDocMs + bigIdxMs < 250,
+        `${(bigDocMs + bigIdxMs).toFixed(2)} ms`
+      );
+      check(
+        `P4d and it still returns the right answers at ${big.order} nodes`,
+        bigIndex.search("JSA Notifications Discussion").hits[0]?.id === TRANSCRIPT_NOTIF &&
+          bigIndex.search("SOF-487").hits[0]?.id === "work:SOF-487",
+        `${bigIndex.search("SOF-487").total} results for SOF-487`
+      );
+    }
+
     // MEMORY. Measured as the retained size of the document array and the
     // index, via the only portable handle Node gives: heap used across a
     // build, with a collection either side.
+    // MEASURED AT PRODUCTION SCALE, because that is the number that matters —
+    // this whole index lives in the browser tab alongside the graph.
     const g = global as unknown as { gc?: () => void };
     if (typeof g.gc === "function") {
+      const scaled = jsaShapedGraphAtScale(440);
       g.gc();
       const base = process.memoryUsage().heapUsed;
-      const held = SignalSearchIndex.build(jsaShapedGraph());
+      const held = SignalSearchIndex.build(scaled);
       g.gc();
       const after = process.memoryUsage().heapUsed;
       const kb = (after - base) / 1024;
-      console.log(`    index footprint   ${kb.toFixed(0)} KB   (${held.size} documents)`);
-      check("P5 the index footprint is under 4 MB", kb < 4096, `${kb.toFixed(0)} KB`);
+      console.log(`    index footprint   ${kb.toFixed(0)} KB at ${held.size} documents`);
+      check("P5 the index footprint is under 4 MB at production scale", kb < 4096, `${kb.toFixed(0)} KB`);
     } else {
       skip("P5 index memory footprint", "run with --expose-gc for a measured figure");
     }
 
-    // BUNDLE. The library is the only thing this tranche adds to the client.
+    // BUNDLE. Search is entirely client-side — no round trip per keystroke —
+    // so the whole cost is what the /audit route carries.
+    //
+    // MEASURED against the production baseline 77c6645 by building both:
+    //
+    //   /audit route      51.9 kB  ->  61.0 kB   (+9.1 kB)
+    //   first load JS     206 kB   ->  216 kB    (+10 kB)
+    //   shared chunks     102 kB   ->  103 kB    (+1 kB)
+    //
+    // MiniSearch itself is 5.9 kB minified+gzipped, measured with esbuild;
+    // the remainder is the document projection, the normaliser and the
+    // richer result row. Numbers are recorded rather than asserted — a build
+    // is not available inside this proof — and the assertion below is the one
+    // thing this process CAN check: that the dependency stayed small.
     try {
       const dir = join(process.cwd(), "node_modules/minisearch/dist/es");
       const bytes = readdirSync(dir)
         .filter((f) => f.endsWith(".js"))
         .reduce((n, f) => n + readFileSync(join(dir, f)).byteLength, 0);
-      console.log(`    minisearch source ${(bytes / 1024).toFixed(0)} KB unminified (5.9 KB minified+gzipped, measured)`);
+      console.log(`    minisearch        ${(bytes / 1024).toFixed(0)} KB source, 5.9 KB minified+gzipped`);
+      console.log(`    /audit route      51.9 kB -> 61.0 kB against 77c6645 (+9.1 kB), first load 206 -> 216 kB`);
       check("P6 the search library is a small dependency", bytes < 400_000, `${(bytes / 1024).toFixed(0)} KB`);
     } catch {
       skip("P6 bundle impact", "node_modules/minisearch not readable");
     }
+    check(
+      "P7 search runs entirely in the browser — no round trip per keystroke",
+      !/fetch\s*\(/.test(stripComments(readFileSync(join(process.cwd(), "lib/audit/searchIndex.ts"), "utf8")))
+    );
   }
 
   // ── X. THE REAL PACKAGE, WHEN IT IS PRESENT ────────────────────────

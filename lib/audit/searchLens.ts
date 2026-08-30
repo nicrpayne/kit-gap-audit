@@ -73,3 +73,24 @@ export function revealFor(graph: AuditGraph, ids: readonly string[]): Set<string
 export function commitFor(graph: AuditGraph, id: string): Set<string> {
   return revealFor(graph, [id]);
 }
+
+/**
+ * The two channels, unioned. The ONE answer to "why is this node showing its
+ * name".
+ *
+ * Returns `expanded` ITSELF when there is nothing to reveal, which is not a
+ * micro-optimisation: it makes "no search is running" referentially equal to
+ * the reader's own state, so React skips the work and — more usefully — so
+ * that a proof can assert set IDENTITY rather than only set equality.
+ *
+ * Shared by the instrument and by the proof deliberately. A proof that
+ * simulates the component's arithmetic with its own copy of the arithmetic
+ * proves nothing about the component.
+ */
+export function disclosedSet(
+  expanded: ReadonlySet<string>,
+  revealed: ReadonlySet<string>
+): ReadonlySet<string> {
+  if (revealed.size === 0) return expanded;
+  return new Set<string>([...expanded, ...revealed]);
+}

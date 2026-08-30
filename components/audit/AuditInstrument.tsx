@@ -57,7 +57,10 @@ import GraphInspector from "./GraphInspector";
 import AggregateInspector from "./AggregateInspector";
 import FindingInspector from "./FindingInspector";
 import AuditReviewConsole, { type ConsoleMode } from "./AuditReviewConsole";
-import { zoomLevel, nextZoomLevel, nodeColor, fieldLabel, KIND_LABEL, type ZoomLevel } from "./graphTokens";
+import { zoomLevel, nextZoomLevel, nodeColor, KIND_LABEL, type ZoomLevel } from "./graphTokens";
+import { SignalSearchIndex, SEARCH_MATURITY, type SearchHit } from "@/lib/audit/searchIndex";
+import { revealFor, commitFor, disclosedSet } from "@/lib/audit/searchLens";
+import type { SearchFamily, SearchFieldName } from "@/lib/audit/searchDocument";
 import { semanticFocus, traceIsComplete, edgeFocusClass } from "@/lib/audit/focus";
 import { structuralWeb } from "@/lib/audit/structuralWeb";
 
@@ -112,6 +115,10 @@ interface NavEntry {
   expanded: string[];
 }
 
+/** A stable empty set, so "no search is running" is referentially equal
+    between renders and does not retrigger every memo that reads it. */
+const EMPTY_SET: ReadonlySet<string> = new Set();
+
 export default function AuditInstrument({ initialScopeId }: { initialScopeId?: string }) {
   const [scopeId, setScopeId] = useState<string | undefined>(initialScopeId);
   const [payload, setPayload] = useState<GraphPayload | null>(null);
@@ -129,6 +136,10 @@ export default function AuditInstrument({ initialScopeId }: { initialScopeId?: s
   /** Whether the search result list is showing. Collapsed once a result has
       been taken, so the panel stops covering the thing it just found. */
   const [resultsOpen, setResultsOpen] = useState(true);
+  /** Which result the arrow keys are on. Zero is the top hit, so Enter with
+      no arrowing at all takes the best answer — the common case. */
+  const [cursor, setCursor] = useState(0);
+  const resultsRef = useRef<HTMLDivElement | null>(null);
 
   // The measured field, reported up by the renderer. The framing law cannot
   // be evaluated without it — "is this already comfortably in view" is a
@@ -320,6 +331,67 @@ export default function AuditInstrument({ initialScopeId }: { initialScopeId?: s
     setCamera(homeCamera);
   }, [layout, viewport, payload, homeCamera, setCamera]);
 
+  // ── SEARCH ───────────────────────────────────────────────────────────
+  //
+  // LEVEL 1: lexical, tokenised, fuzzy. The whole model — normalisation, the
+  // document projection, field weights, typo thresholds — lives in
+  // lib/audit/search*.ts and is proved by scripts/audit-search-proof.ts. This
+  // component only holds the query, renders the results, and decides what a
+  // query is ALLOWED to do to the field.
+  //
+  // Built once per graph. Rebuilding on a keystroke would be the one thing
+  // that makes a several-hundred-node search feel slow; the index is
+  // immutable, so "does the index agree with the graph" needs no reasoning.
+  const searchIndex = useMemo(() => (graph ? SignalSearchIndex.build(graph) : null), [graph]);
+
+  const outcome = useMemo(() => {
+    if (!searchIndex || query.trim().length === 0) return null;
+    return searchIndex.search(query);
+  }, [searchIndex, query]);
+
+  /** Memoised so the keyboard handler's identity is stable between renders —
+      an empty array literal is a new array every time, and that would rebuild
+      `onSearchKey` on every keystroke of every other piece of state. */
+  const matchList: SearchHit[] = useMemo(() => outcome?.hits ?? [], [outcome]);
+
+  /** The set the renderer dims against. Identity only — the ranking lives in
+      `matchList`, and handing the renderer a scored list would make it care
+      about relevance, which is not its job. */
+  const matches = useMemo(() => {
+    if (!outcome) return null;
+    return new Set(outcome.hits.map((h) => h.id));
+  }, [outcome]);
+
+  // ── THE LENS: WHAT A QUERY MAY REVEAL, AND WHAT IT MAY NOT ───────────
+  //
+  // THE VERIFIED PRODUCTION DEFECT. This effect used to be:
+  //
+  //     setExpanded((prev) => new Set([...prev, ...needed]))
+  //
+  // — right in intent (a match nobody can see reads as broken) and wrong in
+  // mechanism. `expanded` is what the READER opened, it is persistent, and
+  // nothing ever took those additions back. Escape clears the query and does
+  // not close what the query opened, so every search left the field a little
+  // more open than it found it. One tested UX run ended at 435 of 438 nodes
+  // expanded, at which point the progressive disclosure the whole layout
+  // depends on is simply gone.
+  //
+  // `revealed` is a SECOND, TEMPORARY channel. It is DERIVED from the current
+  // hits — not accumulated into — so it is replaced wholesale on every
+  // keystroke and is empty the moment the query is. The renderer unions the
+  // two. Nothing needs restoring because nothing was disturbed: clearing the
+  // search does not undo a mutation, it stops deriving a set. That is a
+  // stronger guarantee than snapshot-and-restore, which is only ever as
+  // correct as its most recent snapshot.
+  //
+  // Taking a result is different, and `select` treats it so: choosing is an
+  // act, and an act may open the minimum structure that holds the chosen
+  // object in view.
+  const revealed = useMemo(
+    () => (graph && outcome ? revealFor(graph, outcome.hits.map((h) => h.id)) : EMPTY_SET),
+    [graph, outcome]
+  );
+
   // ── WHAT IS OPEN, NOT WHAT EXISTS ────────────────────────────────────
   //
   // This set used to be called `visible`, and that name was the bug: a node
@@ -328,12 +400,23 @@ export default function AuditInstrument({ initialScopeId }: { initialScopeId?: s
   // names something narrower and truer — which nodes are showing their
   // IDENTITY. Everything else is still on screen, at its real seat, as a
   // latent mark. The renderer owns that distinction; see graphTokens.
+  //
+  // TWO CHANNELS FEED IT, AND THE DIFFERENCE IS THE WHOLE SEARCH-LENS LAW:
+  //
+  //   `expanded`  what the READER opened. Persistent. Survives everything.
+  //   `revealed`  what the CURRENT QUERY needs visible. Derived, replaced on
+  //               every keystroke, empty the moment the query is.
+  //
+  // Unioned here and nowhere else, so there is exactly one answer to "why is
+  // this node showing its name".
+  const disclosed = useMemo(() => disclosedSet(expanded, revealed), [expanded, revealed]);
+
   const opened = useMemo(() => {
     const out = new Set<string>();
     if (!graph) return out;
     graph.forEachNode((n, a) => {
       if (a.slice === "core") out.add(n);
-      else if (a.lane && expanded.has(a.lane)) out.add(n);
+      else if (a.lane && disclosed.has(a.lane)) out.add(n);
     });
     // ONE SOURCE, OPENED ON ITS OWN.
     //
@@ -349,7 +432,7 @@ export default function AuditInstrument({ initialScopeId }: { initialScopeId?: s
       if (a.kind !== "passage" || out.has(n)) return;
       for (const e of graph.outEdges(n)) {
         if (graph.getEdgeAttribute(e, "rel") !== "extracted_from") continue;
-        if (expanded.has(graph.target(e))) {
+        if (disclosed.has(graph.target(e))) {
           out.add(n);
           return;
         }
@@ -366,73 +449,12 @@ export default function AuditInstrument({ initialScopeId }: { initialScopeId?: s
     // Additive, like the source case: a member still opens when its cluster
     // does, and closing the group leaves the cluster exactly as it was.
     for (const agg of aggregates) {
-      if (!expanded.has(agg.id)) continue;
+      if (!disclosed.has(agg.id)) continue;
       for (const m of agg.members) if (graph.hasNode(m)) out.add(m);
       if (agg.hub && graph.hasNode(agg.hub)) out.add(agg.hub);
     }
     return out;
-  }, [graph, expanded, aggregates]);
-
-  // ── SEARCH ───────────────────────────────────────────────────────────
-  //
-  // Deterministic, over label, identifier and the canonical ref. No semantic
-  // search: a graph search that sometimes finds the wrong node is worse than
-  // one that only finds what you typed.
-  const matches = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    if (!q || !graph) return null;
-    const out = new Set<string>();
-    graph.forEachNode((n, a) => {
-      // Grounded fields only. A requirement's LABEL is its statement trimmed
-      // to fit, so the full statement is searched separately — otherwise
-      // typing a phrase from the back half of a long requirement would find
-      // nothing, which reads as the search being broken rather than as the
-      // label being short.
-      const hay = [
-        a.label,
-        a.ref,
-        a.identifier ?? "",
-        a.kind,
-        a.statement ?? "",
-        a.section ?? "",
-        a.sourceRef ?? "",
-        a.dataStatus ?? "",
-        // A person's name IS their label, so nothing extra is needed to find
-        // them — but the cluster makes "who is on capacity" answerable by
-        // typing the sector's own name.
-        a.kind === "person" ? "capacity" : "",
-        // An external object is found by what it CLAIMS (already covered by
-        // `statement`), by its producer type, and by the producer's own id —
-        // which is what a Hermes operator will paste in.
-        a.intelligenceType ?? "",
-        a.externalId ?? "",
-      ]
-        .join(" ")
-        .toLowerCase();
-      if (hay.includes(q)) out.add(n);
-    });
-    return out;
-  }, [query, graph]);
-
-  const matchList = useMemo(() => {
-    if (!matches || !graph) return [];
-    return [...matches]
-      .map((n) => ({ id: n, attrs: graph.getNodeAttributes(n) }))
-      .sort((a, b) => String(a.attrs.label).localeCompare(String(b.attrs.label)))
-      .slice(0, 40);
-  }, [matches, graph]);
-
-  // Searching reveals what it finds: a match inside a collapsed cluster would
-  // otherwise be "found" and invisible, which reads as broken.
-  useEffect(() => {
-    if (!matches || !graph || matches.size === 0) return;
-    const needed = new Set<string>();
-    for (const n of matches) {
-      const a = graph.getNodeAttributes(n);
-      if (a.slice !== "core" && a.lane) needed.add(a.lane as string);
-    }
-    if (needed.size > 0) setExpanded((prev) => new Set([...prev, ...needed]));
-  }, [matches, graph]);
+  }, [graph, disclosed, aggregates]);
 
   const selectedAggregate = useMemo(
     () => (selectedId ? aggregates.find((a) => a.id === selectedId) ?? null : null),
@@ -595,6 +617,86 @@ export default function AuditInstrument({ initialScopeId }: { initialScopeId?: s
     },
     [stopTween, frameFor, flyCamera, setTrace]
   );
+
+  // ── TAKING A RESULT ──────────────────────────────────────────────────
+  //
+  // THE ONE PLACE SEARCH IS ALLOWED TO CHANGE THE FIELD, and it is allowed
+  // because the reader chose it. Typing is a question; taking a result is an
+  // act, and an act may leave the world different.
+  //
+  // What it commits is the MINIMUM — `commitFor` returns the cluster the
+  // chosen object sits behind and nothing else, by the same rule the
+  // temporary reveal uses. Not the neighbourhood, and emphatically not
+  // Expand All: the previous behaviour's whole problem was opening more than
+  // was asked for and never closing it again.
+  //
+  // Then `select`, unchanged, which frames under the SAME law a direct click
+  // uses. Law 5: a click, a result, an inspector row and a summary card all
+  // leave the camera in the same place, because they are the same act. No
+  // second camera call and no forced zoom — the 230% search rule is gone and
+  // stays gone.
+  const takeResult = useCallback(
+    (id: string) => {
+      if (graph) {
+        const need = commitFor(graph, id);
+        // Written only when it would actually change something, so taking a
+        // result already in view costs no render and no history entry.
+        if (need.size > 0) {
+          setExpanded((prev) => {
+            let changed = false;
+            for (const n of need) if (!prev.has(n)) changed = true;
+            return changed ? new Set([...prev, ...need]) : prev;
+          });
+        }
+      }
+      select(id);
+      // The list folds away so it stops covering the thing it just found.
+      // The QUERY stays: search navigation state survives taking a result,
+      // so "next one" is one keystroke rather than a retype.
+      setResultsOpen(false);
+    },
+    [graph, select]
+  );
+
+  // ── THE SEARCH BOX'S OWN KEYS ────────────────────────────────────────
+  //
+  // Arrow keys move the cursor, Enter takes it, Escape is handled globally
+  // (see the window handler — cancelling motion must come first, and that is
+  // true whether or not the search box has focus).
+  //
+  // The list is small and bounded at forty, so this is exactly the case the
+  // brief calls "naturally small": no virtualisation, no focus trap, just a
+  // cursor and a scroll into view.
+  const onSearchKey = useCallback(
+    (e: React.KeyboardEvent<HTMLInputElement>) => {
+      if (matchList.length === 0) return;
+      if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+        e.preventDefault();
+        setResultsOpen(true);
+        setCursor((c) => {
+          const next = e.key === "ArrowDown" ? c + 1 : c - 1;
+          // Clamped rather than wrapped. Wrapping past the end of a ranked
+          // list silently sends the reader from the best answer to the worst.
+          return Math.max(0, Math.min(matchList.length - 1, next));
+        });
+        return;
+      }
+      if (e.key === "Enter") {
+        e.preventDefault();
+        const hit = matchList[cursor] ?? matchList[0];
+        if (hit) takeResult(hit.id);
+      }
+    },
+    [matchList, cursor, takeResult]
+  );
+
+  // Keep the cursor on screen. A list of forty with the cursor on the
+  // thirty-first is a list showing the reader nothing.
+  useEffect(() => {
+    if (!resultsOpen) return;
+    const el = resultsRef.current?.querySelector<HTMLElement>(`[data-result-index="${cursor}"]`);
+    el?.scrollIntoView({ block: "nearest" });
+  }, [cursor, resultsOpen]);
 
   const navigateTo = useCallback(
     (delta: -1 | 1) => {
@@ -762,8 +864,14 @@ export default function AuditInstrument({ initialScopeId }: { initialScopeId?: s
         // stops where it has got to and stays there.
         stopTween();
         if (query) {
+          // CLEARING THE QUERY PUTS THE FIELD BACK, AND COSTS NOTHING TO DO.
+          // `revealed` is derived from the hits, so an empty query derives an
+          // empty set and the disclosure the reader built is exactly what is
+          // left. There is no restore step here because there was no
+          // mutation to undo — see the lens note above `revealed`.
           setQuery("");
           setResultsOpen(true);
+          setCursor(0);
         } else if (selectedId) select(null);
       }
       if ((e.key === "[" && (e.metaKey || e.altKey)) || (e.key === "ArrowLeft" && e.altKey)) {
@@ -1118,59 +1226,88 @@ export default function AuditInstrument({ initialScopeId }: { initialScopeId?: s
                 onChange={(e) => {
                   setQuery(e.target.value);
                   setResultsOpen(true);
+                  setCursor(0);
                 }}
-                placeholder={`Search ${graph.order} nodes…  ( / )`}
-                aria-label="Search the graph"
+                onKeyDown={onSearchKey}
+                placeholder={`Search ${searchIndex?.size ?? graph.order} things\u2026  ( / )`}
+                aria-label="Search the project"
+                aria-autocomplete="list"
+                aria-expanded={matchList.length > 0 && resultsOpen}
+                aria-activedescendant={
+                  matchList.length > 0 && resultsOpen ? `search-result-${cursor}` : undefined
+                }
+                role="combobox"
+                aria-controls="graph-search-results"
                 data-shoot="graph-search"
                 className="w-full rounded-md px-2.5 py-1.5 text-[11.5px] outline-none"
                 style={{ background: "var(--i-recess)", border: "1px solid var(--i-border-strong)", color: "var(--i-text)" }}
               />
+
               {matchList.length > 0 && resultsOpen && (
-                <div className="mt-2 max-h-[220px] overflow-y-auto i-noscrollbar" data-shoot="search-results">
-                  {matchList.map((m) => (
-                    <button
-                      key={m.id}
-                      type="button"
-                      onClick={() => {
-                        // ONE ACT. `select` frames under the same law a direct
-                        // click uses — no second camera call, no forced zoom,
-                        // and the list folds away so it stops covering the
-                        // thing it just found.
-                        select(m.id);
-                        setResultsOpen(false);
-                      }}
-                      className="flex w-full items-center gap-2 rounded px-1.5 py-1 text-left transition-colors hover:bg-white/[0.05]"
-                    >
-                      <span
-                        className="h-1.5 w-1.5 shrink-0 rounded-full"
-                        style={{ background: nodeColor(m.attrs) }}
+                <>
+                  {/* WHAT THIS LIST IS, BEFORE THE LIST. A count, and — when
+                      the second pass had to run — the fact that not every word
+                      matched. A partial answer presented as a complete one is
+                      the kind of quiet lie a project brain cannot afford. */}
+                  <div
+                    className="mt-2 flex items-baseline justify-between gap-2 px-1"
+                    data-shoot="search-summary"
+                  >
+                    <span className="text-[9.5px] uppercase tracking-[0.12em]" style={{ color: "var(--i-text-faint)" }}>
+                      {outcome!.total} result{outcome!.total === 1 ? "" : "s"}
+                      {outcome!.total > matchList.length ? ` \u00b7 top ${matchList.length}` : ""}
+                    </span>
+                    {outcome!.partial && (
+                      <span className="text-[9.5px]" style={{ color: "var(--i-amber)" }} title="No single thing contained every word you typed, so these match most of them.">
+                        partial match
+                      </span>
+                    )}
+                  </div>
+
+                  <div
+                    id="graph-search-results"
+                    role="listbox"
+                    ref={resultsRef}
+                    className="mt-1 max-h-[300px] overflow-y-auto i-noscrollbar"
+                    data-shoot="search-results"
+                  >
+                    {matchList.map((hit, i) => (
+                      <SearchResultRow
+                        key={hit.id}
+                        hit={hit}
+                        index={i}
+                        active={i === cursor}
+                        onHover={() => setCursor(i)}
+                        onTake={() => takeResult(hit.id)}
                       />
-                      <span className="min-w-0 flex-1 truncate text-[11px] text-[var(--i-text)]">
-                        {fieldLabel(m.attrs)}
-                      </span>
-                      {/* A RESULT MUST SAY WHAT IT IS. Every external object
-                          used to read "External intelligence", so a list of
-                          nine results named its own type nine times and told
-                          the reader nothing. The producer already says
-                          Decision, Risk, Commitment — this shows that. */}
-                      <span className="shrink-0 text-[9px] text-[var(--i-text-faint)]">
-                        {resultKind(m.attrs)}
-                      </span>
-                    </button>
-                  ))}
-                </div>
+                    ))}
+                  </div>
+                </>
               )}
-              {matches && matchList.length === 0 && (
+
+              {/* NO RESULTS SAYS WHAT WAS ACTUALLY SEARCHED FOR.
+                  A bare "No results" leaves the reader unable to tell a typo
+                  from an absence. Showing how the query was READ \u2014 the
+                  normalised form \u2014 makes the separator law visible at the one
+                  moment it matters, and names what this search can and cannot
+                  do rather than letting the reader assume it understood them. */}
+              {outcome && matchList.length === 0 && (
                 <div className="mt-2 px-1" data-shoot="search-empty">
                   <p className="text-[11px]" style={{ color: "var(--i-text)" }}>
-                    No results
+                    Nothing matches \u201c{query.trim()}\u201d
                   </p>
-                  <p className="mt-0.5 text-[10.5px]" style={{ color: "var(--i-text-faint)" }}>
-                    Nothing in this project matches “{query.trim()}”. Try a ticket id, a person, or a
-                    cluster name.
+                  <p className="mt-1 text-[10.5px] leading-[1.5]" style={{ color: "var(--i-text-faint)" }}>
+                    Read as{" "}
+                    <span style={{ color: "var(--i-text-soft)" }}>{outcome.normalizedQuery}</span>.
+                    Hyphens, underscores and capitals do not matter here. Try fewer words, a ticket
+                    id, a person, or words from a quote.
+                  </p>
+                  <p className="mt-1.5 text-[9.5px] leading-[1.45]" style={{ color: "var(--i-text-faint)" }}>
+                    {SEARCH_MATURITY.claim}
                   </p>
                 </div>
               )}
+
               {matchList.length > 0 && !resultsOpen && (
                 <button
                   type="button"
@@ -1179,7 +1316,7 @@ export default function AuditInstrument({ initialScopeId }: { initialScopeId?: s
                   style={{ color: "var(--i-text-faint)" }}
                   data-shoot="search-reopen"
                 >
-                  {matchList.length} result{matchList.length === 1 ? "" : "s"} · show
+                  {outcome!.total} result{outcome!.total === 1 ? "" : "s"} \u00b7 show
                 </button>
               )}
 
@@ -1395,26 +1532,154 @@ export default function AuditInstrument({ initialScopeId }: { initialScopeId?: s
   );
 }
 
-// ── RESTING INSPECTOR ──────────────────────────────────────────────────
+// ── A SEARCH RESULT ────────────────────────────────────────────────────
+//
+// WHAT A RESULT HAS TO ANSWER, IN THE ORDER A READER ASKS IT:
+//
+//   WHAT IS THIS?      the type, named the way the producer names it —
+//                      "External risk", not nine rows all saying "External
+//                      intelligence".
+//   WHICH ONE?         the human title. A humanised transcript name, a
+//                      finding's claim, a ticket's title. Never a raw id
+//                      while anything better exists.
+//   WHY DID IT MATCH?  the snippet, plus the field when the field is not the
+//                      obvious one.
+//   FROM WHERE?        the source artifact and its date, where there is one.
+//
+// And one thing it must answer without being asked: WHOSE CLAIM IS THIS.
+// Signal's own model, an outside producer's, a quotation, or the artifact a
+// quotation came from. Four families, four marks, and the distinction is a
+// trust boundary rather than a decoration — a result list that let an
+// external Risk read as a Signal Risk would be a correctness failure.
 
-/**
- * WHAT A SEARCH RESULT IS, IN THE WORDS THAT DISTINGUISH IT.
- *
- * `KIND_LABEL` is Signal's own vocabulary and it is correct — every external
- * object IS an "External intelligence" node. It is also useless in a result
- * list, where nine rows carrying the same three words is the same as no label
- * at all. The producer already types its objects; this shows that type, which
- * is what the reader typed the query looking for.
- */
-function resultKind(attrs: AuditNodeAttributes): string {
-  if (attrs.kind === "intel") {
-    const t = String(attrs.intelligenceType ?? "").trim();
-    if (!t) return "External";
-    const spaced = t.replace(/([a-z0-9])([A-Z])/g, "$1 $2").replace(/[_-]+/g, " ");
-    return `External ${spaced.charAt(0).toLowerCase()}${spaced.slice(1)}`;
-  }
-  return KIND_LABEL[attrs.kind] ?? attrs.kind;
+/** The one-word family mark. Short on purpose: it sits beside the type, and
+    two long words there push the title off the row. */
+const FAMILY_MARK: Record<SearchFamily, { label: string; title: string }> = {
+  reality: { label: "Signal", title: "Signal's own model of this project" },
+  external: { label: "External", title: "An outside producer's claim. Not Signal's." },
+  evidence: { label: "Quote", title: "Words quoted from a source" },
+  source: { label: "Artifact", title: "The document, transcript or frame itself" },
+};
+
+/** Only shown when it is not the obvious reason. A title match needs no
+    explanation; a match in a raw id or in a person field does. */
+const FIELD_REASON: Partial<Record<SearchFieldName, string>> = {
+  excerpt: "in the quote",
+  statement: "in the claim",
+  source: "in the source name",
+  identifier: "id",
+  person: "person",
+  alias: "raw id",
+  meta: "metadata",
+};
+
+/** A date as a reader reads it. Invalid or absent dates render nothing —
+    a row that says "Invalid Date" is worse than a row that says nothing. */
+function shortDate(iso: string | null): string | null {
+  if (!iso) return null;
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return null;
+  return d.toISOString().slice(0, 10);
 }
+
+function SearchResultRow({
+  hit,
+  index,
+  active,
+  onHover,
+  onTake,
+}: {
+  hit: SearchHit;
+  index: number;
+  active: boolean;
+  onHover: () => void;
+  onTake: () => void;
+}) {
+  const d = hit.doc;
+  const family = FAMILY_MARK[d.family];
+  const date = shortDate(d.sourceDate);
+  const reason = FIELD_REASON[hit.matchedField];
+  // The title already IS the quote for a passage, so repeating it underneath
+  // is noise. Everything else shows the snippet when it adds something.
+  const showSnippet =
+    hit.snippet.length > 0 && hit.snippet.replace(/^[\u201c"]|[\u201d"]$/g, "") !== d.title.replace(/^[\u201c"]|[\u201d"]$/g, "");
+
+  return (
+    <button
+      type="button"
+      role="option"
+      id={`search-result-${index}`}
+      aria-selected={active}
+      data-result-index={index}
+      data-shoot="search-result"
+      data-result-kind={d.kind}
+      data-result-family={d.family}
+      onClick={onTake}
+      onMouseMove={onHover}
+      className="w-full rounded px-1.5 py-1.5 text-left transition-colors"
+      style={{ background: active ? "rgba(255,255,255,0.06)" : "transparent" }}
+    >
+      <span className="flex items-baseline gap-1.5">
+        <span
+          className="mt-[3px] h-1.5 w-1.5 shrink-0 self-start rounded-full"
+          style={{ background: nodeColor(d as unknown as Record<string, unknown>) }}
+        />
+        <span className="min-w-0 flex-1">
+          {/* WHAT IS THIS — always first, always present. */}
+          <span className="flex items-baseline gap-1.5">
+            <span
+              className="shrink-0 text-[8.5px] uppercase tracking-[0.13em]"
+              style={{ color: "var(--i-text-faint)" }}
+              title={family.title}
+            >
+              {family.label}
+            </span>
+            <span className="truncate text-[9px] uppercase tracking-[0.1em]" style={{ color: "var(--i-text-soft)" }}>
+              {d.typeLabel}
+            </span>
+            {/* WHY IT MATCHED, only when that is not self-evident. */}
+            {reason && (
+              <span className="ml-auto shrink-0 text-[8.5px]" style={{ color: "var(--i-text-faint)" }}>
+                {reason}
+              </span>
+            )}
+          </span>
+
+          {/* WHICH ONE. Two lines, so a long claim is readable rather than
+              truncated to its first four words — the prior list gave every
+              result one truncated line, and an evidence quote cut at 30
+              characters identifies nothing. */}
+          <span
+            className="mt-0.5 block text-[11px] leading-[1.4] text-[var(--i-text)]"
+            style={{ display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}
+          >
+            {d.title}
+          </span>
+
+          {showSnippet && (
+            <span
+              className="mt-0.5 block truncate text-[10px] leading-[1.4]"
+              style={{ color: "var(--i-text-soft)" }}
+            >
+              {hit.snippet}
+            </span>
+          )}
+
+          {/* FROM WHERE. A passage without its source is a quote with no
+              provenance on screen, which is the one thing Signal must not
+              show. */}
+          {(d.sourceTitle || date) && (
+            <span className="mt-0.5 block truncate text-[9.5px]" style={{ color: "var(--i-text-faint)" }}>
+              {[d.sourceTitle, date].filter(Boolean).join("  \u00b7  ")}
+            </span>
+          )}
+        </span>
+      </span>
+    </button>
+  );
+}
+
+// ── RESTING INSPECTOR ──────────────────────────────────────────────────
 
 function GraphOverview({
   graph,

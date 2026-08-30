@@ -615,3 +615,85 @@ function entities(): GraphEntityInputs {
 export function jsaShapedGraph(): AuditGraph {
   return buildAuditGraph({ model: truthModel(), provenance: provenance(), entities: entities() });
 }
+
+/**
+ * The same fixture, padded to roughly `targetNodes`.
+ *
+ *   FOR PERFORMANCE MEASUREMENT ONLY. The real JSA graph is around 438 nodes
+ *   and this fixture is 61; a query latency measured at 61 says nothing
+ *   useful about the instrument people actually use. Padding reproduces the
+ *   SIZE, and it does so with the kinds that actually dominate the real
+ *   corpus — external objects and evidence passages, which is where the real
+ *   package's several hundred nodes are.
+ *
+ * The padded content is deliberately varied rather than repeated: an index
+ * over four hundred copies of one sentence has a vocabulary of a dozen tokens
+ * and would measure nothing. Every padded object carries its own number, so
+ * the vocabulary grows the way a real corpus's does.
+ *
+ * Never used for a correctness assertion — the QA matrix runs against the
+ * unpadded fixture, whose exact strings this file states.
+ */
+export function jsaShapedGraphAtScale(targetNodes: number): AuditGraph {
+  const base = entities();
+  const seed = base.intelligence;
+  const objects = [...seed.objects];
+  const passages = [...seed.citedPassages];
+
+  // A handful of topic stems, combined with a running number, so padded text
+  // is plausible project prose rather than one string repeated.
+  const STEMS = [
+    "Approval routing for site",
+    "Device provisioning batch",
+    "Offline sync backlog on route",
+    "Notification digest for team",
+    "Safety walkthrough for depot",
+    "Vendor callback latency on endpoint",
+    "Capacity handover for sprint",
+    "Release checklist item",
+  ];
+  const TYPES = ["risk", "decision", "commitment", "unknown", "availability_observation"];
+
+  let n = 0;
+  while (objects.length + passages.length + 61 < targetNodes) {
+    const stem = STEMS[n % STEMS.length];
+    const num = 1000 + n;
+    passages.push({
+      snapshotId: SNAP,
+      evidenceId: `ke-ev-${num}`,
+      excerpt: `${stem} ${num} has not been confirmed, and the owner has not been named in the last two reviews.`,
+      sourceRef: n % 2 === 0 ? SOURCE_REFS.devStandup : SOURCE_REFS.fieldPilot,
+      sourceType: "transcript",
+      observedAt: "2026-08-25T14:00:00.000Z",
+      role: "evidence",
+      status: "active",
+      externalRef: null,
+      anchor: {},
+      independence: null,
+    } as (typeof seed.citedPassages)[number]);
+    objects.push({
+      snapshotId: SNAP,
+      externalId: `KE-PAD-${num}`,
+      intelligenceType: TYPES[n % TYPES.length],
+      trust: "external_unverified",
+      statement: `${stem} ${num} is outstanding and blocks the review it belongs to.`,
+      statementBasis: "verbatim",
+      status: "open",
+      isCurrent: true,
+      observedDate: "2026-08-25",
+      dates: {},
+      scope: ["jsa"],
+      evidenceRefs: [`ke-ev-${num}`],
+      fields: {},
+      provenance: {},
+      extra: {},
+    } as (typeof seed.objects)[number]);
+    n++;
+  }
+
+  return buildAuditGraph({
+    model: truthModel(),
+    provenance: provenance(),
+    entities: { ...base, intelligence: { ...seed, objects, citedPassages: passages } },
+  });
+}
