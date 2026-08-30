@@ -35,7 +35,7 @@ import type { AuditGraph, AuditNodeAttributes, GraphSlice, NodeKind } from "./gr
 // humaniser is the whole point: a second implementation would drift, and the
 // drift IS the defect. `KIND_LABEL` comes along for the same reason — a
 // result must be named the way the inspector names it.
-import { humanizeRef, KIND_LABEL } from "@/components/audit/graphTokens";
+import { fieldLabel, humanizeRef, KIND_LABEL } from "@/components/audit/graphTokens";
 import { compactSearchText, normalizeSearchText } from "./searchText";
 
 /**
@@ -220,7 +220,47 @@ export function titleFor(attrs: AuditNodeAttributes): { title: string; raw: bool
     return { title: humanizeRef(label), raw: false };
   }
 
+  // A LABEL TRUNCATED FOR THE FIELD IS NOT A TITLE FOR A LIST.
+  //
+  // A requirement's label is its statement cut to 64 characters so it fits
+  // beside a mark, and an external object's is its statement cut to 56. A
+  // result row is two lines wide and has room for the whole sentence — and
+  // the sentence is the only thing that distinguishes two requirements whose
+  // first sixty characters agree. The full text is on the node; use it.
+  if (typeof attrs.statement === "string" && attrs.statement.trim().length > 0) {
+    const s = attrs.statement.trim().replace(/^["“”']+|["“”']+$/g, "");
+    if (s.length > label.length) return { title: s, raw: false };
+  }
+
   return { title: label, raw: label.length === 0 };
+}
+
+/**
+ * THE NAME THE FIELD ACTUALLY PAINTS — which is what the `title` FIELD
+ * indexes, and it is deliberately not always what a result row displays.
+ *
+ * The two differ in LENGTH ONLY, never in content, and the distinction earns
+ * its keep at both ends:
+ *
+ *   INDEXING wants the short form. MiniSearch scores BM25, which normalises
+ *   by field length; indexing a 140-character statement as a "title" makes
+ *   every one-word title in the corpus outrank it. Measured: promoting the
+ *   full statement into `title` pushed a Requirement from second to fourth
+ *   on `offline`, behind a Notion page named after a file. The full text is
+ *   already indexed at `statement` and `excerpt` weight, so nothing becomes
+ *   unfindable.
+ *
+ *   DISPLAY wants the long form. A requirement cut at sixty characters is
+ *   not distinguishable from the next requirement cut at sixty characters.
+ *
+ * `fieldLabel` is the renderer's own function. Calling it — rather than
+ * reimplementing "what does the field show" — is the same anti-drift move
+ * `humanizeRef` is here for, and it is the whole reason the original defect
+ * cannot come back: the string on screen and the string in the index are
+ * produced by one piece of code.
+ */
+function indexedTitleFor(attrs: AuditNodeAttributes): string {
+  return fieldLabel(attrs as unknown as Record<string, unknown>);
 }
 
 /** A field entry, or nothing when the text is empty. Keeps the callers below
@@ -282,7 +322,7 @@ export function buildSearchDocuments(graph: AuditGraph): SearchDocument[] {
       (typeof a.observedDate === "string" ? a.observedDate : null);
 
     const f: (SearchDocumentField | null)[] = [
-      field("title", title),
+      field("title", indexedTitleFor(a)),
       field("type", typeLabel),
 
       // ── THE SEMANTIC CLAIM ────────────────────────────────────────

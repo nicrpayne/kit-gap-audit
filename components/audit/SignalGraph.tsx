@@ -1657,9 +1657,12 @@ export default function SignalGraph({
             (matches?.has(id) ?? false) ||
             (soloNodes?.has(id) ?? false) ||
             rank != null;
+          // DISCLOSURE, SEPARATELY FROM RESOLUTION. `identityOf` folds the two
+          // together, and the search lens's claim is about this one alone.
+          const disclosed = openedNow.has(id) && (!historical || reached);
           const identity = identityOf(
             attrs.kind,
-            openedNow.has(id) && (!historical || reached),
+            disclosed,
             level,
             // A SUPERSEDED OBJECT IS STILL HISTORY AT EVERY DISTANCE. Zoom
             // reveals what a thing is; it does not un-supersede it.
@@ -1694,6 +1697,7 @@ export default function SignalGraph({
               r={p.r}
               k={nodeScale}
               identity={identity}
+              opened={disclosed}
               latentR={latentRadius(p.r, level, nodeScale)}
               // A latent mark recedes when something else is being explained,
               // for the same reason the cluster names do: it is orientation,
@@ -1788,6 +1792,7 @@ const GraphNode = memo(function GraphNode({
   r,
   k,
   identity,
+  opened,
   latentR,
   opacity,
   selected,
@@ -1811,6 +1816,11 @@ const GraphNode = memo(function GraphNode({
   r: number;
   k: number;
   identity: Identity;
+  /** Whether DISCLOSURE has reached this node, as opposed to whether distance
+      has resolved it. The two are folded together in `identity`; the search
+      lens's contract is about this one alone, so it is carried separately and
+      exposed in the DOM for the shoot to count. */
+  opened: boolean;
   latentR: number;
   opacity: number;
   selected: boolean;
@@ -2066,6 +2076,14 @@ const GraphNode = memo(function GraphNode({
       data-intel-type={attrs.kind === "intel" ? String(attrs.intelligenceType) : undefined}
       data-current={attrs.kind === "intel" ? String(attrs.isCurrent !== false) : undefined}
       data-identity={identity}
+      // WHETHER DISCLOSURE HAS REACHED THIS NODE, as opposed to whether
+      // distance has resolved it. `data-identity` folds the two together —
+      // a latent mark at close zoom reads "formed" without anything having
+      // been opened — and the search lens's whole claim is about the first
+      // of them: repeated searches must not leave more nodes opened than
+      // they found. That is a number, and this is where it is counted.
+      // See scripts/audit-search-shoot.mjs.
+      data-opened={opened ? "true" : "false"}
       data-selected={selected ? "true" : undefined}
       data-matched={matched ? "true" : undefined}
     >

@@ -1264,11 +1264,21 @@ export default function AuditInstrument({ initialScopeId }: { initialScopeId?: s
                     )}
                   </div>
 
+                  {/* A CUT ROW SHOULD READ AS "MORE BELOW", NOT AS A BROKEN
+                      RENDER. The list scrolls, so the last visible result is
+                      clipped mid-sentence; a fade over the final few pixels
+                      is the difference between an edge and a defect. Masked
+                      rather than overlaid, so it works on any background and
+                      costs no extra element. */}
                   <div
                     id="graph-search-results"
                     role="listbox"
                     ref={resultsRef}
                     className="mt-1 max-h-[300px] overflow-y-auto i-noscrollbar"
+                    style={{
+                      maskImage: "linear-gradient(to bottom, #000 calc(100% - 14px), transparent)",
+                      WebkitMaskImage: "linear-gradient(to bottom, #000 calc(100% - 14px), transparent)",
+                    }}
                     data-shoot="search-results"
                   >
                     {matchList.map((hit, i) => (
@@ -1294,7 +1304,7 @@ export default function AuditInstrument({ initialScopeId }: { initialScopeId?: s
               {outcome && matchList.length === 0 && (
                 <div className="mt-2 px-1" data-shoot="search-empty">
                   <p className="text-[11px]" style={{ color: "var(--i-text)" }}>
-                    Nothing matches \u201c{query.trim()}\u201d
+                    Nothing matches “{query.trim()}”
                   </p>
                   <p className="mt-1 text-[10.5px] leading-[1.5]" style={{ color: "var(--i-text-faint)" }}>
                     Read as{" "}
@@ -1316,7 +1326,7 @@ export default function AuditInstrument({ initialScopeId }: { initialScopeId?: s
                   style={{ color: "var(--i-text-faint)" }}
                   data-shoot="search-reopen"
                 >
-                  {outcome!.total} result{outcome!.total === 1 ? "" : "s"} \u00b7 show
+                  {outcome!.total} result{outcome!.total === 1 ? "" : "s"} · show
                 </button>
               )}
 
@@ -1599,10 +1609,12 @@ function SearchResultRow({
   const family = FAMILY_MARK[d.family];
   const date = shortDate(d.sourceDate);
   const reason = FIELD_REASON[hit.matchedField];
-  // The title already IS the quote for a passage, so repeating it underneath
-  // is noise. Everything else shows the snippet when it adds something.
-  const showSnippet =
-    hit.snippet.length > 0 && hit.snippet.replace(/^[\u201c"]|[\u201d"]$/g, "") !== d.title.replace(/^[\u201c"]|[\u201d"]$/g, "");
+  // A SNIPPET THAT REPEATS THE TITLE IS NOISE. It happens for a passage
+  // (whose title IS the quote) and for a requirement (whose title is the
+  // whole statement the snippet was cut from), so the test is containment
+  // rather than equality — a 120-character cut of a title is still the title.
+  const bare = (t: string) => t.replace(/[\u201c\u201d"\u2026]/g, "").trim().toLowerCase();
+  const showSnippet = hit.snippet.length > 0 && !bare(d.title).includes(bare(hit.snippet));
 
   return (
     <button

@@ -237,8 +237,30 @@ async function main() {
     docs.some((d) => d.typeLabel === "External risk") && docs.some((d) => d.typeLabel === "External commitment"),
     [...new Set(docs.filter((d) => d.kind === "intel").map((d) => d.typeLabel))].join(", ")
   );
+  {
+    // THE INDEX/DISPLAY SPLIT. They differ in LENGTH only, never in content —
+    // the displayed title is the full statement, the indexed one is what the
+    // field paints, and the full text is still reachable at `statement`.
+    const req = docs.find((d) => d.kind === "requirement");
+    const indexedTitle = (req?.fields ?? []).find((f) => f.field === "title");
+    check(
+      "D18 a requirement DISPLAYS its whole statement, not the field's truncation",
+      (req?.title ?? "").length > 0 && !req!.title.endsWith("…"),
+      req?.title ?? "missing"
+    );
+    check(
+      "D19 while the `title` FIELD indexes what the field paints, so BM25 length does not bury it",
+      indexedTitle != null && indexedTitle.text.length <= req!.title.length
+    );
+    check(
+      "D20 and the full wording is still indexed, at statement weight",
+      (req?.fields ?? []).some(
+        (f) => f.field === "statement" && f.norm === normalizeSearchText(req!.title)
+      )
+    );
+  }
   check(
-    "D18 the projection is deterministic — same graph, byte-identical documents",
+    "D21 the projection is deterministic — same graph, byte-identical documents",
     JSON.stringify(buildSearchDocuments(jsaShapedGraph())) === JSON.stringify(buildSearchDocuments(jsaShapedGraph()))
   );
 
@@ -295,10 +317,25 @@ async function main() {
     const r = index.search("SOF-487");
     check("R7 an exact ticket id returns exactly one result", r.total === 1, `${r.total} results`);
     check("R8 and it is the right ticket", r.hits[0]?.id === "work:SOF-487", r.hits[0]?.id ?? "none");
+    // A TICKET ID MUST NEVER REPORT AS A RAW ID. It reports `title` here
+    // rather than `identifier`, and that is stronger, not weaker: `SOF-487`
+    // is literally the name the field paints on that node, so matching it IS
+    // a title match. What the check forbids is `alias` — which is what it
+    // reported before `identifier` was populated for work items at all.
     check(
-      "R9 and it reports `identifier` as the reason, not `alias`",
-      r.hits[0]?.matchedField === "identifier",
+      "R9 and it reports a first-class field as the reason, never `alias`",
+      r.hits[0]?.matchedField === "title" || r.hits[0]?.matchedField === "identifier",
       r.hits[0]?.matchedField ?? "none"
+    );
+    check(
+      "R9b and the ticket id is present in BOTH the title and identifier fields",
+      (() => {
+        const d = r.hits[0]?.doc;
+        return (
+          (d?.fields ?? []).some((f) => f.field === "title" && f.norm === "sof 487") &&
+          (d?.fields ?? []).some((f) => f.field === "identifier" && f.norm === "sof 487")
+        );
+      })()
     );
     check(
       "R10 the WRONG tickets are not admitted — SOF-400 and SOF-401 are absent",
