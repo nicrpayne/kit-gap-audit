@@ -1,7 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { SESSION_COOKIE, sessionTokenFor } from "@/lib/auth";
 
-const PUBLIC_PATHS = ["/login", "/api/login"];
+// `/api/version` is here on purpose, and it is the only route on this list
+// that is not part of signing in. It answers ONE question — which commit is
+// this process running — from a six-key allowlist that no request can widen
+// (see lib/version.ts). Putting it behind the session would make it useless
+// for the check it exists for: proving from outside, before anyone logs in,
+// that the running build is the build that was pushed.
+const PUBLIC_PATHS = ["/login", "/api/login", "/api/version"];
 
 export async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
