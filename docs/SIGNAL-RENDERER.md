@@ -1,65 +1,101 @@
-# The Signal renderer boundary — Slice 1
+# The Signal Audit graph engine
 
-Audit's graph viewport now has two painters behind one contract. SVG is what
-ships; `?renderer=canvas` mounts a Canvas viewport over **the same Signal
-coordinates**, so the comparison isolates one variable: how much of the feel is
-the renderer.
+Audit's viewport has two painters behind one contract. SVG is what ships;
+`?renderer=canvas` mounts a **Rubric-derived Canvas engine** — its painter,
+its spatial physics, and both of its layouts — over Signal's data, semantics
+and product actions.
 
-No physics. No layout change. No camera change. That is deliberate — the point
-of the slice is that if the same coordinates feel materially different under
-Canvas, the renderer was carrying more than we thought; and if they do not, we
-have learned that layout is the larger missing piece.
+```
+?renderer=canvas                     the Rubric engine, Rings (default)
+?renderer=canvas&layout=constellations   the organic cell view
+?renderer=canvas&camera=rubric       Rubric's camera instead of Signal's
+?renderer=svg                        the shipped renderer, untouched
+```
 
 ---
 
-## 0. The Rubric reference does not exist in this environment
+## 0. Provenance — two passes, and what changed between them
 
-**This has to be stated first, because the brief is built on it.**
+**Pass 1** ran before the Rubric source was available. It built a renderer
+boundary, a visual-scene adapter, an accessibility mirror, a hit-test index
+and a homemade Canvas painter, then measured it against SVG at identical
+coordinates. Its conclusion was negative in the useful direction: a materially
+better painter over the same coordinates still read as the same map. The
+missing piece was the arrangement, which that pass was explicitly told not to
+touch.
 
-The task specifies reading `~/Downloads/RUBRIC-SIGNAL-ENGINE-HANDOFF.md` and
-verifying it against the Rubric source under `~/Downloads/rubric*`
-(`rubric-second-brain/public/_core.js`, `_flows2.js`, `index.html`), with named
-line offsets for the render loop, hit testing, `buildSim` and the Rings helpers.
+**Pass 2** — this one — has the reference implementation in the branch at
+`lab/rubric-reference/`. It replaced the homemade painter with Rubric's and
+added the spatial engine.
 
-None of it is reachable here. This session runs in an ephemeral cloud container
-that was created by cloning the repository; `~/Downloads` does not exist, and a
-filesystem-wide search for `*rubric*` and `*HANDOFF*` returns only this repo's
-own files. The materials are on Nic's machine.
+Kept from pass 1: the scene adapter, the renderer boundary, the accessibility
+mirror, the hit-test index, and the four performance fixes it found.
+Replaced: the painter, the glow treatment, the edge treatment, the depth
+treatment, the node treatment, and the static structural web.
 
-What follows from that, precisely:
+Licensing, attribution and the full change list required by CC BY 4.0 are in
+**[ATTRIBUTION.md](../ATTRIBUTION.md)**.
 
-| Brief item | Status |
-| --- | --- |
-| §1 licensing inspection (LICENSE / NOTICE / copyright) | **Not done.** Nothing to inspect. |
-| §1 `lab/rubric-reference-local/` | **Not created.** Copying nothing achieves nothing, and the rule against committing unlicensed source means the correct action here is to create nothing. |
-| §3 adapting Rubric's painter mechanics from source | **Not done as a port.** The mechanics below are built from the problem and from Signal's own measurements. |
-| §7 Rubric's visual effects as ground truth | **Not done.** Signal's SVG renderer was used as ground truth instead. |
-| §12 third-way comparison against the reference visuals | **Not done.** There is no reference to compare against. |
-| §14 Rubric camera study | **Not done.** See §12 below for what was studied instead and what the study needs. |
+---
 
-**No claim in this document is sourced from Rubric.** Where the brief expected
-"adapted from `_core.js` around line 931", what actually happened is "built to
-solve the same problem, and measured". Nothing here should be read as evidence
-about what Rubric does, and none of it has been checked against Rubric's
-licence — because it is not Rubric's code.
+## 0a. What was taken from Rubric, and what was not
 
-Everything else in the brief — the adapter, the renderer boundary, the Canvas
-painter, hit testing, the accessibility mirror, the comparison harness, the
-performance work, the Signal camera study — was buildable without it, and is
-below.
+| Mechanism | Source | Taken |
+| --- | --- | --- |
+| Cached orb / glow sprites | `_flows2.js` 32-58 | **yes** — the single highest-value primitive |
+| Deterministic edge curvature | `_flows2.js` 17-30 | yes, re-keyed on canonical ids |
+| Hex backdrop + vignette, cached | `index.html` 127-152 | yes, recoloured to Signal tokens |
+| Group fog under anchors | `index.html` 156-170 | yes |
+| Layer order, culling, batching | `_core.js` 932-1069 | yes |
+| Gradient focus wake on links | `index.html` 205-235 | yes |
+| Pulsing double selection ring | `index.html` 476-484 | yes |
+| Bounded Circle/Hex engine | `_core.js` 547-736 | yes |
+| Rings target engine, spin, wobble | `_core.js` 339-545 | yes, with Signal's bands |
+| Position-retaining polar morph | `_core.js` 341-389 | yes, on an elapsed-time clock |
+| Camera | `_core.js` 811-940 | behind an A/B; Signal's still default |
+| Comet flow on ambient edges | `index.html` 238-269 | **no** — only for an explicit Trace |
+| File-byte node sizing | `_core.js` 739-750 | **no** — no meaning in an audit |
+| Label placement | `index.html` 486-510 | **no** — replaced; Rubric has no collision |
+| Graph search | `scan.js` 374-400 | **no** — Signal keeps MiniSearch |
+| Generic relationship springs | `_core.js` 651-656 | **no** — held at zero, as a law |
+| Filesystem / ARMS semantics | throughout | **no** |
+| `_icons.js` brand data | — | **no** — separate trademark permissions |
 
-### What re-running the Rubric half needs
+---
 
-On a machine that has the materials:
+## 0b. The two layouts
 
-1. Inspect `~/Downloads/rubric*` for LICENSE / NOTICE / package licence
-   metadata / copyright headers, and record the finding here.
-2. Read the handoff, then verify its claims against the actual source — the
-   brief is right that the source is ground truth and the handoff is not.
-3. Diff Rubric's painter against §4 below. The interesting question is not
-   "did we match it" but "does it do something we did not think of".
-4. Do the camera study in §12, which is the one deliberately-deferred item
-   that has a decision attached to it.
+**RINGS** (default) keeps Signal's semantic law exactly: **distance from
+Reality is distance from agreement.** A critical Finding sits on the conflict
+radius because that is what the radius means. Rubric supplies the arithmetic
+around that — sqrt-weighted sector allocation so a 195-seat lane does not
+drown a 1-seat one, row capacity, target caching, spin and radial wobble — and
+supplies no meaning at all.
+
+**CONSTELLATIONS** is Rubric's bounded cell engine: a radius sized from the
+population, lane anchors on a ring, short-range charge, collision, group pull,
+a soft boundary, and no relationship springs. It emphasises semantic groups
+and local structure; it makes **no radial claim**, so its guide is a single
+boundary rather than the disagreement rings.
+
+Both are reached from one control on the field, and the morph between them
+retains every position — the field reorganises rather than reloading.
+
+---
+
+## 0c. Ambient motion is governed, not assumed
+
+Rubric's loop never stops. On GPU-composited hardware that costs nothing; on a
+software rasteriser a canvas repaint re-rasterises the whole backing store.
+Measured in this container (`ANGLE … SwiftShader`): a loop that draws a 4×4
+rectangle and waits for the next frame costs **167ms at 2880×1800 and 30ms at
+1440×900**, with the painter itself at **1.7ms in both**.
+
+So the field measures its own machine. If ambient frames cost more than ~2.2
+display intervals, the Ring spin, the selection pulse and the Trace comets
+switch off and the field is *still* rather than *slow*; where they are cheap
+they run. A morph is exempt — a layout change that does not animate is a cut,
+not a morph.
 
 ---
 

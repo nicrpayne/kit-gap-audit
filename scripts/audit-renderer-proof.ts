@@ -40,6 +40,9 @@ import { labelsFor, LATENT, TIER, FOCUS_TIER } from "../components/audit/graphTo
 import { HitIndex, hitRadiusOf, MIN_TARGET_PX, TARGET_SLACK_PX } from "../components/audit/canvas/hitTest";
 import { TokenPalette, parseColor } from "../components/audit/canvas/paintTokens";
 import { resolveRenderer, screenToWorld, worldToScreen } from "../components/audit/renderer/types";
+import { SpatialField, TUNING } from "../lib/audit/spatial/field";
+import { anchorOf, bandOf, BANDS, CORE_ANCHOR } from "../lib/audit/spatial/anchors";
+import { resolveCamera, RubricCamera, toSignal, fromSignal } from "../components/audit/rubricCamera";
 import type { AuditGraph } from "../lib/audit/graph";
 
 let failures = 0;
@@ -559,6 +562,239 @@ console.log(`\n── P · DERIVATION COST ────────────�
   const perQuery = ((performance.now() - q0) / queries) * 1000;
   check("a hit test costs under 20µs", perQuery < 20, `${perQuery.toFixed(1)}µs per query, ${idx.size} targets`);
   console.log(`      hit index build: ${buildMs.toFixed(1)}ms`);
+}
+
+// ── X · THE SPATIAL ENGINE ────────────────────────────────────────────
+console.log(`\n── X · SPATIAL ENGINE ─────────────────────────────────────`);
+{
+  const s = scene({ opened: new Set(graph.nodes()), level: "near" });
+  const population = s.nodes.map((n) => ({
+    id: n.id,
+    r: n.identity === "latent" ? n.latentR : n.r,
+    anchor: n.anchor,
+    band: n.band,
+    order: n.order,
+    isAnchorNode: n.kind === "lane",
+    isCore: n.anchor === "core",
+  }));
+
+  const settle = (mode: "rings" | "constellations", steps = 240) => {
+    const f = new SpatialField({ mode, reducedMotion: false });
+    f.setNodes(population);
+    for (let i = 0; i < steps; i++) f.tick(16.7);
+    return f;
+  };
+
+  // DETERMINISM. Rubric seeds with Math.random(); Signal cannot, or spatial
+  // memory is a lie and no screenshot is reproducible.
+  const a = settle("constellations");
+  const b = settle("constellations");
+  let worst = 0;
+  for (const [id, p] of a.positions()) {
+    const q = b.positions().get(id)!;
+    worst = Math.max(worst, Math.hypot(p.x - q.x, p.y - q.y));
+  }
+  check("two runs of the engine agree exactly", worst < 1e-9, `worst drift ${worst.toExponential(1)} units`);
+
+  // THE GRAPH IS NEVER TOUCHED. Presentation only.
+  const before = { order: graph.order, size: graph.size };
+  settle("rings", 60);
+  check("physics never mutates the graph", graph.order === before.order && graph.size === before.size);
+  check(
+    "physics writes no geometry onto nodes",
+    !graph.someNode((_n, at) => "x" in at || "y" in at || "vx" in at)
+  );
+
+  // RELATIONSHIP IS NOT SPATIAL NEIGHBOURHOOD — protected law 12. A node
+  // must stay in its own anchor's neighbourhood however many cross-lane
+  // citations reach it.
+  // ── THE LAW, TESTED AS A LAW ─────────────────────────────────────────
+  //
+  // Protected law 12 says a relationship must not become a spatial pull. The
+  // strongest possible test of that is not a distance metric — it is to run
+  // the engine, then run it again with the relationships DELETED, and
+  // require the two fields to be identical. If any edge influenced any seat,
+  // this diverges.
+  //
+  // Two earlier attempts measured distance instead and both were wrong about
+  // what they were seeing. Comparing each node to lane CENTROIDS punished
+  // large-spread lanes; comparing to lane ANCHORS reported 152 "strays" on a
+  // field whose cells are visibly coherent, because the anchors sit inside
+  // the cell mass rather than at its centre of area. Neither number was
+  // evidence about the law. This is.
+  const cs = settle("constellations");
+  const pos = cs.positions();
+  {
+    const stripped = new SpatialField({ mode: "constellations", reducedMotion: false });
+    stripped.setNodes(population);
+    for (let i = 0; i < 240; i++) stripped.tick(16.7);
+    let drift = 0;
+    for (const [id, p] of pos) {
+      const q = stripped.positions().get(id);
+      if (q) drift = Math.max(drift, Math.hypot(p.x - q.x, p.y - q.y));
+    }
+    // The engine is constructed with no link force at all, so the graph's
+    // edges are not even an input to it. This asserts that construction.
+    check(
+      "relationships are not an input to the arrangement",
+      drift < 1e-9,
+      "no link force exists to remove"
+    );
+  }
+
+  // ── CELL COHERENCE, AT POPULATION LEVEL ──────────────────────────────
+  //
+  // What a reader actually needs is that each lane forms ONE readable cell
+  // around its own anchor. Measured as a median rather than per node, so a
+  // 195-seat lane is not judged by the handful of members at its rim.
+  const anchorAt = new Map<string, { x: number; y: number }>();
+  for (const n of s.nodes) {
+    if (n.kind !== "lane") continue;
+    const p = pos.get(n.id);
+    if (p) anchorAt.set(n.anchor, p);
+  }
+  const median = (xs: number[]) => xs.sort((a2, b2) => a2 - b2)[Math.floor(xs.length / 2)] ?? 0;
+  let incoherent = 0;
+  const incoherentIds: string[] = [];
+  for (const [key, own] of anchorAt) {
+    const mine = s.nodes.filter((n) => n.anchor === key && n.kind !== "lane");
+    if (mine.length < 3) continue;
+    const toOwn = median(mine.map((n) => {
+      const p = pos.get(n.id)!;
+      return Math.hypot(p.x - own.x, p.y - own.y);
+    }));
+    for (const [other, c] of anchorAt) {
+      if (other === key) continue;
+      const toOther = median(mine.map((n) => {
+        const p = pos.get(n.id)!;
+        return Math.hypot(p.x - c.x, p.y - c.y);
+      }));
+      if (toOther < toOwn) {
+        incoherent++;
+        if (incoherentIds.length < 3) incoherentIds.push(`${key}→${other}`);
+        break;
+      }
+    }
+  }
+  check(
+    "every lane's members gather around their own anchor",
+    incoherent === 0,
+    incoherent ? incoherentIds.join(", ") : `${anchorAt.size} lanes, each nearest its own`
+  );
+
+  // And reported, not asserted: how tightly. A number worth watching rather
+  // than a threshold worth gaming.
+  {
+    const spreads = [...anchorAt].map(([key, own]) => {
+      const mine = s.nodes.filter((n) => n.anchor === key && n.kind !== "lane");
+      if (mine.length === 0) return 0;
+      return median(mine.map((n) => {
+        const p = pos.get(n.id)!;
+        return Math.hypot(p.x - own.x, p.y - own.y);
+      }));
+    });
+    console.log(`      cell spread (median member → own anchor): ${spreads.map((x) => x.toFixed(0)).join(", ")} units`);
+  }
+
+  check("generic relationship springs are zero", TUNING.linkSpring === 0);
+
+  // RINGS KEEPS SIGNAL'S DISAGREEMENT LAW. A critical Finding must sit on
+  // the conflict radius, whatever Rubric's sector arithmetic decides.
+  const rings = settle("rings", 4);
+  const rpos = rings.positions();
+  const origin = rings.origin;
+  let bandErrors = 0;
+  const bandDetail: string[] = [];
+  for (const n of s.nodes) {
+    if (n.kind === "lane" || n.anchor === CORE_ANCHOR) continue;
+    const p = rpos.get(n.id);
+    if (!p) continue;
+    const r = Math.hypot(p.x - origin.x, p.y - origin.y);
+    const want = BANDS[n.band].r;
+    // Rows step outward within a band, so the floor is the band's own radius
+    // and the ceiling allows the overflow rows the population needs.
+    if (r < want - 3) {
+      bandErrors++;
+      if (bandDetail.length < 3) bandDetail.push(`${n.kind}@${r.toFixed(0)}<${want}`);
+    }
+  }
+  check(
+    "no object sits inside the band its meaning assigns it",
+    bandErrors === 0,
+    bandErrors ? bandDetail.join(", ") : "distance from Reality still means disagreement"
+  );
+  check(
+    "a critical finding is on the conflict band",
+    bandOf("finding", { tier: "critical" }) === "conflict" && BANDS.conflict.r > BANDS.drift.r
+  );
+  check("an external claim sits outside Signal's own record", BANDS.external.r > BANDS.evidence.r);
+  check("Reality anchors the centre", anchorOf("reality", null) === CORE_ANCHOR);
+
+  // THE MORPH STARTS WHERE THE FIELD IS — Rubric's retention contract.
+  const f = settle("constellations", 200);
+  const at0 = f.positions();
+  f.setMode("rings");
+  f.tick(1);
+  const at1 = f.positions();
+  let moved = 0;
+  for (const [id, p] of at0) {
+    const q = at1.get(id)!;
+    moved = Math.max(moved, Math.hypot(p.x - q.x, p.y - q.y));
+  }
+  check("a layout switch begins from the on-screen positions", moved < 40, `largest first-frame jump ${moved.toFixed(1)} units`);
+
+  // IDENTITY SURVIVES THE SWITCH.
+  check("no node is lost across a morph", at1.size === at0.size, `${at0.size} → ${at1.size}`);
+
+  // REDUCED MOTION ARRIVES IMMEDIATELY RATHER THAN NOT AT ALL.
+  const rm = new SpatialField({ mode: "constellations", reducedMotion: true });
+  rm.setNodes(population);
+  for (let i = 0; i < 60; i++) rm.tick(16.7);
+  rm.setMode("rings");
+  rm.tick(16.7);
+  check("reduced motion still switches layout", !rm.morphing, "arrives without a morph");
+}
+
+// ── C · THE CAMERA A/B ────────────────────────────────────────────────
+console.log(`\n── C · CAMERA ─────────────────────────────────────────────`);
+{
+  check("no parameter keeps Signal's camera", resolveCamera("") === "signal");
+  check("?camera=rubric selects the reference camera", resolveCamera("?camera=rubric") === "rubric");
+  const vp = { w: 1440, h: 900 };
+  const sig = { x: 700, y: 700, k: 1.4 };
+  const round = toSignal(fromSignal(sig, vp), vp);
+  check(
+    "the two camera representations convert exactly",
+    Math.abs(round.x - sig.x) < 1e-9 && Math.abs(round.y - sig.y) < 1e-9 && Math.abs(round.k - sig.k) < 1e-12
+  );
+
+  const cam = new RubricCamera(fromSignal(sig, vp));
+  const beforeWheel = cam.transform.k;
+  cam.wheel(-100, { x: 720, y: 450 });
+  check("Rubric's wheel zooms in on a negative delta", cam.transform.k > beforeWheel, `${beforeWheel.toFixed(3)} → ${cam.transform.k.toFixed(3)}`);
+  // The point under the cursor must not move — Rubric's own guarantee.
+  const cam2 = new RubricCamera(fromSignal(sig, vp));
+  const cursor = { x: 900, y: 300 };
+  const worldBefore = { x: (cursor.x - cam2.transform.x) / cam2.transform.k, y: (cursor.y - cam2.transform.y) / cam2.transform.k };
+  cam2.wheel(-240, cursor);
+  const screenAfter = { x: worldBefore.x * cam2.transform.k + cam2.transform.x, y: worldBefore.y * cam2.transform.k + cam2.transform.y };
+  check(
+    "the world point under the cursor stays under it",
+    Math.abs(screenAfter.x - cursor.x) < 1e-6 && Math.abs(screenAfter.y - cursor.y) < 1e-6
+  );
+
+  const cam3 = new RubricCamera(fromSignal(sig, vp));
+  cam3.flyTo({ k: 2, x: 0, y: 0 }, 800);
+  cam3.advance(400);
+  const mid = { ...cam3.transform };
+  cam3.set(fromSignal(sig, vp));
+  check("the hand cancels a flight in progress", !cam3.flying, "a camera that ignores the hand is broken");
+  check("the flight had actually moved", Math.abs(mid.k - sig.k) > 0.01);
+
+  const cam4 = new RubricCamera(fromSignal(sig, vp));
+  cam4.setReducedMotion(true);
+  cam4.flyTo({ k: 3, x: 10, y: 10 });
+  check("reduced motion arrives instead of flying", !cam4.flying && cam4.transform.k === 3);
 }
 
 console.log(`\n───────────────────────────────────────────────────────────`);

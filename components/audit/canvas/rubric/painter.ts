@@ -93,6 +93,19 @@ export interface PaintInput {
       are stale. Anything else changing reuses the bitmap. */
   sceneKey: string;
   reducedMotion: boolean;
+  /** Whether the spatial field has stopped moving. A depth layer can only be
+      cached when the world under it is still. */
+  settled: boolean;
+  /**
+   * Whether this machine can afford continuous canvas animation.
+   *
+   * One decision, applied to everything that would repaint the field forever:
+   * the Ring spin, the selection pulse, and the Trace comets. Where a canvas
+   * frame costs a display interval they all run; where it costs ten, none of
+   * them do, and the field is still rather than slow. See the governor in
+   * CanvasAuditRenderer for how the answer is reached.
+   */
+  ambient: boolean;
   /** Milliseconds. Rubric drives everything from an integer frame `tick`;
       Signal uses a clock so motion is display-rate independent. */
   time: number;
@@ -322,7 +335,7 @@ export function paintScene(input: PaintInput): PaintStats {
   paintEdges(ctx, scene, placed, palette, k, { vx0, vx1, vy0, vy1 }, stats);
 
   // ── MID LAYER: TRACE ONLY ────────────────────────────────────────────
-  if (input.traceEdges && input.traceEdges.size > 0 && !input.reducedMotion) {
+  if (input.traceEdges && input.traceEdges.size > 0 && input.ambient) {
     paintTraceComets(ctx, scene, placed, palette, input, stats);
   }
 
@@ -358,41 +371,67 @@ export function paintScene(input: PaintInput): PaintStats {
 
   if (soft.length > 0 || softLabels.length > 0) {
     stats.softLayer = true;
-    const lw = Math.max(1, Math.round(W * SOFT_LAYER_SCALE));
-    const lh = Math.max(1, Math.round(H * SOFT_LAYER_SCALE));
-    const layerKey = `${input.sceneKey}|${camera.x.toFixed(2)},${camera.y.toFixed(2)},${k.toFixed(5)}|${lw}x${lh}`;
-    const layer = input.softLayer.acquire(
-      layerKey,
-      lw,
-      lh,
-      DEPTH_BLUR_PX[1] * dpr * SOFT_LAYER_SCALE,
-      (lc) => {
-        const s = dpr * k * SOFT_LAYER_SCALE;
-        lc.setTransform(
-          s,
-          0,
-          0,
-          s,
-          dpr * SOFT_LAYER_SCALE * (viewport.w / 2 - camera.x * k),
-          dpr * SOFT_LAYER_SCALE * (viewport.h / 2 - camera.y * k)
-        );
-        lc.lineCap = "round";
-        lc.lineJoin = "round";
-        for (const p of soft) paintNode(lc, p, palette, sprites, k, input, stats);
-        const ss = dpr * SOFT_LAYER_SCALE;
-        lc.setTransform(ss, 0, 0, ss, 0, 0);
-        for (const n of softLabels) paintNodeName(lc, placed.get(n.id)!, camera, viewport, fontFamily, palette, stats);
-      }
-    );
-    if (layer) {
+    // ── THE DEPTH LAYER ONLY EXISTS WHEN THE WORLD IS STILL ────────────
+    //
+    // One blur for the whole softened population is a real win over the
+    // DOM's one-filter-per-element — while the field is static. Once the
+    // spatial engine is moving nodes, the layer's pixels are stale the frame
+    // after they are made, so the cache never hits and every frame pays a
+    // full-viewport rasterisation. Measured during a morph, that alone was
+    // most of a 166ms frame.
+    //
+    // So: cached blur at rest, and during motion the softened content is
+    // painted directly at a lower alpha. Motion masks the missing blur — the
+    // eye cannot resolve a moving mark anyway, which is the same reason the
+    // blur was wanted in the first place.
+    if (!input.settled) {
+      const wasAlpha = ctx.globalAlpha;
+      for (const p of soft) paintNode(ctx, p, palette, sprites, k, input, stats, 0.55);
       toScreen();
-      ctx.drawImage(layer, 0, 0, lw, lh, 0, 0, viewport.w, viewport.h);
-      stats.calls++;
+      for (const n of softLabels) {
+        paintNodeName(ctx, placed.get(n.id)!, camera, viewport, fontFamily, palette, stats);
+      }
       toWorld();
+      ctx.globalAlpha = wasAlpha;
     } else {
-      for (const p of soft) paintNode(ctx, p, palette, sprites, k, input, stats);
+      const lw = Math.max(1, Math.round(W * SOFT_LAYER_SCALE));
+      const lh = Math.max(1, Math.round(H * SOFT_LAYER_SCALE));
+      const layerKey = `${input.sceneKey}|${camera.x.toFixed(2)},${camera.y.toFixed(2)},${k.toFixed(5)}|${lw}x${lh}`;
+      const layer = input.softLayer.acquire(
+        layerKey,
+        lw,
+        lh,
+        DEPTH_BLUR_PX[1] * dpr * SOFT_LAYER_SCALE,
+        (lc) => {
+          const sc = dpr * k * SOFT_LAYER_SCALE;
+          lc.setTransform(
+            sc,
+            0,
+            0,
+            sc,
+            dpr * SOFT_LAYER_SCALE * (viewport.w / 2 - camera.x * k),
+            dpr * SOFT_LAYER_SCALE * (viewport.h / 2 - camera.y * k)
+          );
+          lc.lineCap = "round";
+          lc.lineJoin = "round";
+          for (const p of soft) paintNode(lc, p, palette, sprites, k, input, stats);
+          const ss = dpr * SOFT_LAYER_SCALE;
+          lc.setTransform(ss, 0, 0, ss, 0, 0);
+          for (const n of softLabels) {
+            paintNodeName(lc, placed.get(n.id)!, camera, viewport, fontFamily, palette, stats);
+          }
+        }
+      );
+      if (layer) {
+        toScreen();
+        ctx.drawImage(layer, 0, 0, lw, lh, 0, 0, viewport.w, viewport.h);
+        stats.calls++;
+        toWorld();
+      } else {
+        for (const p of soft) paintNode(ctx, p, palette, sprites, k, input, stats);
+      }
+      stats.softBuilds = input.softLayer.stats.builds;
     }
-    stats.softBuilds = input.softLayer.stats.builds;
   }
 
   // Rubric line 1043: the batch, one fill per colour.
@@ -837,11 +876,13 @@ function paintNode(
   sprites: RubricSprites,
   k: number,
   input: PaintInput,
-  stats: PaintStats
+  stats: PaintStats,
+  /** Multiplies opacity. Stands in for the blur while the field is moving. */
+  alphaScale = 1
 ): void {
   const n = p.n;
   const color = palette.css(n.color);
-  ctx.globalAlpha = n.opacity;
+  ctx.globalAlpha = n.opacity * alphaScale;
   ctx.setLineDash([]);
 
   if (n.identity === "latent") {

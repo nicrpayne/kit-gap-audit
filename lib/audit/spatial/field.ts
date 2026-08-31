@@ -113,10 +113,18 @@ export const TUNING = {
   chargeAnchor: -300 * 0.15,
   chargeLeaf: -22 * 1.238,
   chargeStructure: -34 * 1.238,
-  /** Rubric hub orbit ring: radius 105, radial strength .85. Signal's field
-      is ~4× larger in world units, so the ring is scaled to sit where the
-      lane pucks already live rather than at Rubric's literal 105. */
-  anchorRing: FIELD.clusterR * 0.62,
+  /**
+   * Rubric hub orbit ring: radius 105, radial strength .85 (`_core.js` 667-678).
+   *
+   * AS A FRACTION OF THE BOUNDED RADIUS, NOT AS A WORLD CONSTANT. Rubric's
+   * 105 sits at roughly a third of its own R, so its cells have room to form
+   * AROUND their hubs. Pinning Signal's ring to a fixed 263 world units put
+   * it at 88% of a computed R of ~300 — the pucks were against the wall and
+   * every cell had to sprawl inward past its neighbours. Measured, 261 of 413
+   * nodes ended up nearer a foreign lane's anchor than their own, which is
+   * the spatial law failing outright even though the picture looked fine.
+   */
+  anchorRingFraction: 0.42,
   anchorRingStrength: 0.85,
   /**
    * How firmly a lane holds its own bearing.
@@ -130,6 +138,17 @@ export const TUNING = {
       `g_pull: 0` → .4 multiplier; v is the per-department gravity, shipped
       ~.85 → .85² * .34 * .4 ≈ .098. */
   groupPull: 0.098,
+  /**
+   * And how hard a cell holds together once the simulation has cooled.
+   *
+   * Rubric's `deptPull` is multiplied by alpha, so it vanishes as the field
+   * settles and whatever it achieved while hot is the final arrangement.
+   * That works at Rubric's densities; Signal's largest lane holds 195 seats
+   * against a 1-seat neighbour, and charge plus collision push a cell that
+   * big apart faster than a decaying pull can gather it. A small residual
+   * keeps the cell coherent at rest without freezing it.
+   */
+  groupPullFloor: 0.16,
   /** Rubric bound force: `(lim/r - 1) * .22` applied to velocity. */
   boundStrength: 0.22,
   /** GENERIC RELATIONSHIP SPRINGS. Zero, and not a dial. */
@@ -215,8 +234,46 @@ export class SpatialField {
     return this.morph != null;
   }
 
+  /**
+   * Whether the field is doing something OTHER than idling.
+   *
+   * The ambient governor needs to judge the cost of ambient motion alone, and
+   * `tick()`'s return value cannot tell it: ambient motion makes `tick()`
+   * report movement, so "is anything moving" was always true and the governor
+   * never sampled a single frame.
+   */
+  get busy(): boolean {
+    if (this.morph != null) return true;
+    if (this.order.some((n) => n.spring || n.pin)) return true;
+    if (this.mode === "constellations" && this.sim) return this.sim.alpha() > this.sim.alphaMin();
+    return false;
+  }
+
   setReducedMotion(reduced: boolean): void {
     this.reduced = reduced;
+  }
+
+  /**
+   * AMBIENT MOTION — the spin and the wobble that keep a settled field alive.
+   *
+   * Rubric's loop never stops and its rings never stop turning. On hardware
+   * that composites a canvas on the GPU that is free; on hardware that does
+   * not, every ambient frame re-rasterises the whole backing store, and a
+   * field that is doing nothing costs more than a field being dragged.
+   *
+   * So it is governed rather than assumed — see the governor in
+   * CanvasAuditRenderer. It stays on where it is affordable, which is the
+   * reference feel, and turns itself off where it is not, which is the
+   * difference between a slow instrument and a still one.
+   */
+  private ambient = true;
+
+  setAmbient(on: boolean): void {
+    this.ambient = on;
+  }
+
+  get ambientOn(): boolean {
+    return this.ambient && !this.reduced;
   }
 
   /**
@@ -392,7 +449,7 @@ export class SpatialField {
 
   private placeRings(dt: number): void {
     // Rubric line 419: `ringsState.rot += spin * .0014` per frame.
-    if (!this.reduced) this.ringRot += TUNING.ringSpin * dt;
+    if (this.ambientOn) this.ringRot += TUNING.ringSpin * dt;
     const key = this.ringsCacheKey();
     if (key !== this.ringsKey) {
       this.computeRingTargets();
@@ -408,9 +465,9 @@ export class SpatialField {
       const ang = n.rA + this.ringRot * n.rSpin;
       // Rubric `placeRingNode` line 540: radial wobble, low amplitude, phase
       // from the seat itself so neighbours do not breathe in unison.
-      const w = this.reduced
-        ? 0
-        : Math.sin(this.clock * TUNING.ringWobbleRate * 0.001 + n.rR + ang * 7) * TUNING.ringWobble;
+      const w = this.ambientOn
+        ? Math.sin(this.clock * TUNING.ringWobbleRate * 0.001 + n.rR + ang * 7) * TUNING.ringWobble
+        : 0;
       const tx = Math.cos(ang) * (n.rR + w);
       const ty = Math.sin(ang) * (n.rR + w);
       const [bx, by] = this.blend(n, tx, ty, k);
@@ -477,6 +534,7 @@ export class SpatialField {
     // inside rather than being squashed against the wall.
     const R = Math.max(300, 30 * Math.sqrt(nodes.length / Math.PI)) * (0.55 + 0.34 * 0.9);
     this.boundR = R;
+    const anchorRing = R * TUNING.anchorRingFraction;
 
     const anchors = anchorPolicies().filter((a) => a.key !== CORE_ANCHOR);
     const anchorNode = new Map<string, FieldNode>();
@@ -501,8 +559,8 @@ export class SpatialField {
       const hub = anchorNode.get(a.key);
       if (!hub) return;
       const ang = a.angle ?? 0;
-      hub.bTx = Math.cos(ang) * TUNING.anchorRing;
-      hub.bTy = Math.sin(ang) * TUNING.anchorRing;
+      hub.bTx = Math.cos(ang) * anchorRing;
+      hub.bTy = Math.sin(ang) * anchorRing;
       if (hub.pin) return;
       hub.x = hub.bTx;
       hub.y = hub.bTy;
@@ -544,7 +602,7 @@ export class SpatialField {
       )
       .force(
         "anchorRing",
-        forceRadial<FieldNode>(TUNING.anchorRing).strength((d) =>
+        forceRadial<FieldNode>(anchorRing).strength((d) =>
           d.isAnchorNode && d.fx == null && !d.pin ? TUNING.anchorRingStrength : 0
         )
       )
@@ -552,7 +610,7 @@ export class SpatialField {
       // itself, and it is not in any lane.
       .force(
         "model",
-        forceRadial<FieldNode>(FIELD.modelR).strength((d) =>
+        forceRadial<FieldNode>(anchorRing * 0.28).strength((d) =>
           d.isCore && d.band !== "core" && d.fx == null && !d.pin ? 0.5 : 0
         )
       )
@@ -582,7 +640,9 @@ export class SpatialField {
         if (d.fx != null || d.isAnchorNode || d.pin) continue;
         const hub = anchorNode.get(d.anchor);
         if (!hub) continue;
-        const g = TUNING.groupPull * a2;
+        // Rubric scales this by alpha alone; the floor is Signal's addition,
+        // for the reason stated at `groupPullFloor`.
+        const g = TUNING.groupPull * a2 + TUNING.groupPullFloor * TUNING.groupPull;
         d.vx += (hub.x - d.x) * g;
         d.vy += (hub.y - d.y) * g;
       }
@@ -682,7 +742,7 @@ export class SpatialField {
       this.placeRings(dt);
       // Rings is deterministic placement, so it is "moving" only while it
       // spins, wobbles, morphs or returns a dragged node.
-      return !this.reduced || this.morph != null || this.order.some((n) => n.spring);
+      return this.ambientOn || this.morph != null || this.order.some((n) => n.spring);
     }
     const sim = this.sim;
     if (!sim) return false;
@@ -703,10 +763,31 @@ export class SpatialField {
     return sim.alpha() > sim.alphaMin() || k < 1;
   }
 
+  /**
+   * THE SAME MAP, MUTATED — not a fresh one every frame.
+   *
+   * A new Map plus 427 fresh point objects per frame is 25,600 allocations a
+   * second whose only purpose is to be read once and discarded. Measured, it
+   * was a material part of a frame budget that had nothing else wrong with
+   * it. Callers read this within the frame and never retain it.
+   */
+  private readonly out = new Map<string, { x: number; y: number }>();
+
   positions(): Map<string, { x: number; y: number }> {
-    const out = new Map<string, { x: number; y: number }>();
-    for (const n of this.order) out.set(n.id, { x: n.x + this.ox, y: n.y + this.oy });
-    return out;
+    for (const n of this.order) {
+      const held = this.out.get(n.id);
+      if (held) {
+        held.x = n.x + this.ox;
+        held.y = n.y + this.oy;
+      } else {
+        this.out.set(n.id, { x: n.x + this.ox, y: n.y + this.oy });
+      }
+    }
+    if (this.out.size !== this.order.length) {
+      const live = new Set(this.order.map((n) => n.id));
+      for (const id of [...this.out.keys()]) if (!live.has(id)) this.out.delete(id);
+    }
+    return this.out;
   }
 
   /** Where the field's centre sits in Signal world coordinates. */

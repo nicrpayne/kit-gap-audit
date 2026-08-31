@@ -49,6 +49,8 @@ declare global {
       frames: number[];
       hitTests: number[];
       repaints: number;
+      /** Whether the field is still animating at rest on this machine. */
+      ambient: boolean;
       layout: LayoutMode;
       camera: CameraId;
     };
@@ -276,7 +278,24 @@ export default function CanvasAuditRenderer(props: AuditRendererProps) {
   if (sceneKey.current.scene !== scene) sceneKey.current = { id: sceneKey.current.id + 1, scene };
 
   const rafRef = useRef<number | null>(null);
+  const lastHitBuild = useRef(0);
   const lastT = useRef(0);
+
+  // ── THE AMBIENT-MOTION GOVERNOR ──────────────────────────────────────
+  //
+  // Rubric's field never stops moving, and on hardware that composites a
+  // canvas on the GPU that costs nothing worth measuring. This environment
+  // has no GPU — WebGL reports SwiftShader — and there a canvas repaint
+  // re-rasterises the entire backing store: ~65ms at 1944×1618. Measured, a
+  // RESTING field cost 166ms a frame while the painter itself took 1.8ms.
+  //
+  // The answer is not to delete the spin, which is part of what makes the
+  // reference feel alive, and not to keep it and ship a 6fps instrument. It
+  // is to let the field find out which machine it is on. If ambient frames
+  // are consistently costing more than two display intervals, ambient motion
+  // switches off and the field becomes still until something happens; if
+  // they are cheap, it stays on.
+  const ambient = useRef({ on: true, samples: [] as number[], decided: false });
   const running = useRef(false);
   const invalidateRef = useRef<(() => void) | null>(null);
 
@@ -296,6 +315,7 @@ export default function CanvasAuditRenderer(props: AuditRendererProps) {
       }
 
       const dt = lastT.current ? Math.min(64, now - lastT.current) : 16.7;
+      const interval = lastT.current ? now - lastT.current : 16.7;
       lastT.current = now;
 
       const vp = sizeRef.current;
@@ -334,8 +354,10 @@ export default function CanvasAuditRenderer(props: AuditRendererProps) {
         sprites: sprites.current,
         backdrop: backdrop.current,
         softLayer: softLayer.current,
-        sceneKey: `${sceneKey.current.id}|${f.layout}|${Math.round(now / 90)}`,
+        sceneKey: `${sceneKey.current.id}|${f.layout}`,
+        settled: !moving,
         reducedMotion: reducedRef.current,
+        ambient: f.ambientOn,
         time: now,
         sweepAngle: sweepRef.current,
         fontFamily: fontFamily.current,
@@ -346,26 +368,58 @@ export default function CanvasAuditRenderer(props: AuditRendererProps) {
       });
       const paintMs = performance.now() - t0;
 
-      hits.current.buildFrom(sceneRef.current, livePositions.current, cam.k);
+      // ── THE HIT INDEX IS NOT A PER-FRAME COST ────────────────────────
+      //
+      // It was, briefly, and it was the single most expensive thing in a
+      // moving frame: 427 candidates and a fresh bucket map, rebuilt sixty
+      // times a second so that a pointer which had not moved could be
+      // answered against positions that had barely changed. Throttled to
+      // ~12Hz, which is far faster than a hand can cross a node, and rebuilt
+      // immediately whenever the scene itself changes.
+      if (now - lastHitBuild.current > 80) {
+        lastHitBuild.current = now;
+        hits.current.buildFrom(sceneRef.current, livePositions.current, cam.k);
+      }
 
       const probe = (window.__signalCanvas ??= {
         stats: null,
         frames: [],
         hitTests: [],
         repaints: 0,
+        ambient: f.ambientOn,
         layout: f.layout,
         camera: cameraIdRef.current,
       });
       probe.stats = stats;
+      probe.ambient = f.ambientOn;
       probe.layout = f.layout;
       probe.camera = cameraIdRef.current;
       probe.repaints++;
       probe.frames.push(paintMs);
       if (probe.frames.length > 400) probe.frames.shift();
 
-      const spinning = f.layout === "rings" && !reducedRef.current;
-      const pulsing = !reducedRef.current && sceneRef.current.nodes.some((n) => n.selected);
-      const tracing = !reducedRef.current && (traceRef.current?.size ?? 0) > 0;
+      // Judge only frames where ambient motion is the ONLY thing running:
+      // a morph or a drag is supposed to be expensive, and counting those
+      // would switch the spin off for the wrong reason.
+      const ambientOnly = !f.busy && !camMoving && sweepRef.current == null;
+      if (ambient.current.on && ambientOnly) {
+        const a = ambient.current;
+        a.samples.push(interval);
+        if (a.samples.length >= 24) {
+          const sorted = [...a.samples].sort((x, y) => x - y);
+          const med = sorted[Math.floor(sorted.length / 2)];
+          if (med > (1000 / 60) * 2.2) {
+            a.on = false;
+            f.setAmbient(false);
+          }
+          a.decided = true;
+          a.samples = [];
+        }
+      }
+
+      const spinning = f.layout === "rings" && f.ambientOn;
+      const pulsing = f.ambientOn && sceneRef.current.nodes.some((n) => n.selected);
+      const tracing = f.ambientOn && (traceRef.current?.size ?? 0) > 0;
       const alive = moving || camMoving || spinning || pulsing || tracing || sweepRef.current != null;
       if (alive) {
         running.current = true;
@@ -390,6 +444,7 @@ export default function CanvasAuditRenderer(props: AuditRendererProps) {
     if (rafRef.current != null) cancelAnimationFrame(rafRef.current);
     rafRef.current = null;
     running.current = false;
+    lastHitBuild.current = 0;
     invalidate();
   }, [scene, camera, size, sweepAngle, reducedMotion, clusterLabels, layoutMode, cameraId, invalidate]);
 
@@ -510,6 +565,7 @@ export default function CanvasAuditRenderer(props: AuditRendererProps) {
       frames: [],
       hitTests: [],
       repaints: 0,
+      ambient: true,
       layout: "rings",
       camera: "signal",
     });
