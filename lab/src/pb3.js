@@ -1629,11 +1629,11 @@ window.__lab = {
   groupSeparation,
 
   // ── B3 CONTROLS ────────────────────────────────────────────────────
-  approach: (a) => { if (a == null) return approach; approach = APPROACHES.has(a) ? a : approach; syncInflation(true); return approach; },
+  approach: (a) => { if (a == null) return approach; approach = APPROACHES.has(a) ? a : approach; syncInflation(true); syncHud(); return approach; },
   strengths: () => Object.keys(BLOOMS),
   strength: (k) => {
     if (k == null) return strength;
-    if (BLOOMS[k]) { strength = k; B = BLOOMS[k]; syncInflation(true); }
+    if (BLOOMS[k]) { strength = k; B = BLOOMS[k]; syncInflation(true); syncHud(); }
     return strength;
   },
   contextual: (on) => { if (on != null) bloomContextual = !!on; return bloomContextual; },
@@ -1898,7 +1898,15 @@ window.__lab = {
   needsDraw();
 }
 
+/** The HUD has to say what the frame it is in was actually taken with. B2's
+    variant is also called "balanced", and so is one of B3's bloom strengths;
+    a screenshot showing one while the run used the other is a caption that
+    lies. Both are named, and both update when they change. */
+function syncHud() {
+  document.getElementById("meta").textContent =
+    `${V.name} · bloom ${B.name.toLowerCase()} / ${approach} · ${nodes.length} nodes · ` +
+    `${data.edges.length} relationships · ${groupList.length} cells · seed ${SEED.toString(16)}`;
+}
 document.getElementById("mode").textContent = MODES.rings.label;
-document.getElementById("meta").textContent =
-  `${V.name} · ${nodes.length} nodes · ${data.edges.length} relationships · ${groupList.length} cells · seed ${SEED.toString(16)}`;
+syncHud();
 setTimeout(() => window.__lab.fit(), 80);
