@@ -1,0 +1,40 @@
+# THE LAB IS A WORKBENCH, NOT A DELIVERABLE. Only its sources are committed.
+
+# THE FIXTURE IS REAL CUSTOMER CONTENT. `graph.json` is a projection of the
+# JSA package — statements, passage excerpts, meeting refs. It is regenerated
+# with `npx tsx lab/export-graph.ts <scopeId>` and never committed.
+graph.json
+
+# Its own dependency tree (G6, d3-force, react-force-graph, pixi) — 213 MB,
+# and separate from the app's on purpose so a prototype's library can never
+# reach production's package.json.
+node_modules
+
+# esbuild output and the pages it writes.
+*.bundle.js
+*.bundle.js.map
+p0.html
+pa.html
+pb.html
+pb2.html
+pb3.html
+pc.html
+
+# Measurements, screenshots and recordings. Regenerate them; they are large,
+# and several of them show real customer content.
+out/
+out2/
+out3/
+final/
+b2out/
+b2shots/
+b3out/
+b3shots/
+deliver/
+b2deliver/
+b3deliver/
+shots/
+*.png
+*.webm
+*.log
+results.json

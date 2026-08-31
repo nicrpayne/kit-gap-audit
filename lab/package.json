@@ -1,0 +1,1 @@
+{"name":"signal-spatial-bakeoff","private":true,"type":"module","dependencies":{"@antv/g6":"^5.1.1","d3-drag":"^3.0.0","d3-force":"^3.0.0","d3-quadtree":"^3.0.1","d3-selection":"^3.0.0","d3-zoom":"^3.0.0","esbuild":"^0.28.2","pixi-viewport":"^6.0.3","pixi.js":"^8.20.1","react":"^19.2.8","react-dom":"^19.2.8","react-force-graph-2d":"^1.29.1"}}

@@ -12,7 +12,11 @@ const compat = new FlatCompat({
 const eslintConfig = [
   ...compat.extends("next/core-web-vitals", "next/typescript"),
   {
-    ignores: [".next/**", "out/**", "build/**", "next-env.d.ts"],
+    // `lab/` is the spatial-engine workbench: prototypes against
+    // third-party graph engines, deliberately outside the app's build and
+    // its dependency tree. Linting it against next/core-web-vitals would be
+    // linting a standalone canvas experiment as if it were a React page.
+    ignores: [".next/**", "out/**", "build/**", "next-env.d.ts", "lab/**"],
   },
 ];
 
