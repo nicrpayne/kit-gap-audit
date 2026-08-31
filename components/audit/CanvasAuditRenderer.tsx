@@ -42,7 +42,15 @@ import type { AuditRendererProps } from "./renderer/types";
 import { screenToWorld } from "./renderer/types";
 import { TokenPalette } from "./canvas/paintTokens";
 import { SpriteCache } from "./canvas/sprites";
-import { PathCache, paintScene, releaseLayer, type PaintStats } from "./canvas/painter";
+import {
+  PathCache,
+  SoftLayer,
+  paintScene,
+  paintSelectionPulse,
+  pulseTargetFor,
+  PULSE_DEPTH,
+  type PaintStats,
+} from "./canvas/painter";
 import { HitIndex, hitRadiusOf } from "./canvas/hitTest";
 
 /** Exposed for the harness: the last frame's paint statistics, and a rolling
@@ -83,6 +91,9 @@ export default function CanvasAuditRenderer(props: AuditRendererProps) {
 
   const hostRef = useRef<HTMLDivElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  // The pulse lives on its own small surface — see paintSelectionPulse for
+  // the measurement that forced the split.
+  const pulseRef = useRef<HTMLCanvasElement | null>(null);
   const [size, setSize] = useState({ w: 1000, h: 800 });
   const viewportRef = useRef(onViewport);
   viewportRef.current = onViewport;
@@ -158,6 +169,7 @@ export default function CanvasAuditRenderer(props: AuditRendererProps) {
   const sprites = useRef<SpriteCache>(new SpriteCache());
   const paths = useRef<PathCache>(new PathCache());
   const hits = useRef<HitIndex>(new HitIndex());
+  const softLayer = useRef<SoftLayer>(new SoftLayer());
   const fontFamily = useRef<string>("system-ui, sans-serif");
 
   // ── MEASUREMENT ──────────────────────────────────────────────────────
@@ -181,7 +193,8 @@ export default function CanvasAuditRenderer(props: AuditRendererProps) {
     if (!el) return;
     palette.current.attach(el);
     fontFamily.current = getComputedStyle(el).fontFamily || "system-ui, sans-serif";
-    return () => releaseLayer();
+    const layer = softLayer.current;
+    return () => layer.release();
   }, []);
 
   // Reduced motion is asked once and then watched: someone who turns it on
@@ -197,9 +210,27 @@ export default function CanvasAuditRenderer(props: AuditRendererProps) {
   }, []);
 
   // ── THE HIT INDEX ────────────────────────────────────────────────────
+  //
+  // REBUILT ON GEOMETRY, NOT ON THE CAMERA.
+  //
+  // The index is in WORLD space: a pan cannot move a target, because the
+  // targets are where the nodes are, not where the screen is. Keying this on
+  // the scene rebuilt all 427 buckets every twelve pixels of pan — measured
+  // as a 66.7ms stall in a drag that was otherwise a clean 16.7ms, for work
+  // whose output was identical every time.
+  //
+  // What DOES change a target: which nodes exist and where they sit (graph,
+  // layout), how big they are drawn (selection and hover grow their node,
+  // the tier decides latent versus formed), what is disclosed, and the
+  // camera's SCALE — because the 11px minimum target is a screen fact and so
+  // converts differently at each zoom. The camera's position is not on that
+  // list, and that is the whole saving.
+  const sceneForHits = useRef(scene);
+  sceneForHits.current = scene;
   useEffect(() => {
-    hits.current.build(scene, nodeScale);
-  }, [scene, nodeScale]);
+    hits.current.build(sceneForHits.current, nodeScale);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [graph, layout, nodeScale, level, selectedId, hoveredId, opened, soloNodes, matches]);
 
   // ── THE RENDER LOOP ──────────────────────────────────────────────────
   //
@@ -212,15 +243,27 @@ export default function CanvasAuditRenderer(props: AuditRendererProps) {
   const rafRef = useRef<number | null>(null);
   const sceneRef = useRef(scene);
   sceneRef.current = scene;
+  // A monotonic id for the current scene. The softened layer's bitmap depends
+  // on WHICH scene and WHERE the camera is, and on nothing else — so a pulse
+  // frame must not invalidate it.
+  const sceneKey = useRef({ id: 0, scene });
+  if (sceneKey.current.scene !== scene) sceneKey.current = { id: sceneKey.current.id + 1, scene };
   const clusterRef = useRef(clusterLabels);
   clusterRef.current = clusterLabels;
   const sweepRef = useRef(sweepAngle);
   sweepRef.current = sweepAngle;
-  const reducedRef = useRef(reducedMotion);
-  reducedRef.current = reducedMotion;
   const sizeRef = useRef(size);
   sizeRef.current = size;
   const focusedRef = useRef<string | null>(null);
+
+  const onFocusNode = useCallback(
+    (id: string | null) => {
+      focusedRef.current = id;
+      invalidateRef.current?.();
+    },
+    []
+  );
+  const invalidateRef = useRef<(() => void) | null>(null);
 
   const draw = useCallback(() => {
     const canvas = canvasRef.current;
@@ -248,9 +291,9 @@ export default function CanvasAuditRenderer(props: AuditRendererProps) {
       palette: palette.current,
       sprites: sprites.current,
       paths: paths.current,
-      reducedMotion: reducedRef.current,
-      time: t0,
       sweepAngle: sweepRef.current,
+      softLayer: softLayer.current,
+      sceneKey: String(sceneKey.current.id),
       fontFamily: fontFamily.current,
       clusterLabels: clusterRef.current,
     });
@@ -271,11 +314,12 @@ export default function CanvasAuditRenderer(props: AuditRendererProps) {
       if (!dirty.current) return;
       dirty.current = false;
       draw();
-      // The selection pulse is the only thing that animates a resting field,
-      // and it does not run at all when the system has asked for less motion.
-      const scn = sceneRef.current;
-      const animating =
-        (!reducedRef.current && scn.nodes.some((n) => n.selected)) || sweepRef.current != null;
+      // THE MAIN SURFACE DOES NOT ANIMATE. The selection's breathing is on
+      // the overlay below, so a selected node no longer forces the whole
+      // field to re-composite sixty times a second. What is left here is the
+      // audit sweep, which is a transient progress indicator the SVG
+      // animates too.
+      const animating = sweepRef.current != null;
       if (animating) {
         dirty.current = true;
         rafRef.current = requestAnimationFrame(tick);
@@ -283,6 +327,8 @@ export default function CanvasAuditRenderer(props: AuditRendererProps) {
     };
     rafRef.current = requestAnimationFrame(tick);
   }, [draw]);
+
+  invalidateRef.current = invalidate;
 
   useEffect(() => {
     invalidate();
@@ -303,6 +349,50 @@ export default function CanvasAuditRenderer(props: AuditRendererProps) {
     },
     []
   );
+
+  // ── THE PULSE LOOP ───────────────────────────────────────────────────
+  //
+  // Its own surface, its own rAF, and its own lifetime. It runs only while
+  // something is selected and only when motion is wanted; the rest of the
+  // time the overlay is not merely idle but zero-sized, so it costs no
+  // compositing at all.
+  const pulseBox = useMemo(
+    () => pulseTargetFor(scene, camera, size),
+    [scene, camera, size]
+  );
+
+  useEffect(() => {
+    const el = pulseRef.current;
+    if (!el) return;
+    if (!pulseBox || reducedMotion) {
+      el.width = 0;
+      el.height = 0;
+      return;
+    }
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const r = pulseBox.radius * (1 + PULSE_DEPTH) + 2;
+    const side = Math.ceil(r * 2);
+    const originX = pulseBox.x - r;
+    const originY = pulseBox.y - r;
+    if (el.width !== Math.round(side * dpr) || el.height !== Math.round(side * dpr)) {
+      el.width = Math.round(side * dpr);
+      el.height = Math.round(side * dpr);
+    }
+    el.style.width = `${side}px`;
+    el.style.height = `${side}px`;
+    el.style.left = `${originX}px`;
+    el.style.top = `${originY}px`;
+
+    const ctx = el.getContext("2d");
+    if (!ctx) return;
+    let raf = 0;
+    const tick = (t: number) => {
+      paintSelectionPulse(ctx, pulseBox, originX, originY, dpr, palette.current, sprites.current, t);
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [pulseBox, reducedMotion]);
 
   // ── THE CAMERA GESTURES ──────────────────────────────────────────────
   //
@@ -411,13 +501,36 @@ export default function CanvasAuditRenderer(props: AuditRendererProps) {
   // keyboard order and carrying the same name. Visually hidden — the canvas
   // is already drawing the thing — but present in the accessibility tree, in
   // the tab sequence, and reachable by a screen reader's element list.
-  const mirror = useMemo(
+  //
+  // ── AND IT MUST NOT RE-RENDER WHEN THE CAMERA MOVES ──────────────────
+  //
+  // The mirror depends on WHICH nodes are disclosed and what they are called.
+  // It does not depend on the camera at all. But the scene is rebuilt every
+  // time the quantised camera steps, so keying the mirror on the scene made
+  // React reconcile up to 339 buttons on every twelve pixels of pan —
+  // measured during a Trace as 66.7ms median frames while the painter itself
+  // was taking 1.1ms. The canvas was fast and the DOM around it was not.
+  //
+  // So the list is rebuilt only when its own CONTENT changes. A camera move
+  // produces an identical signature, the memo holds, and the child component
+  // below bails out of reconciliation entirely.
+  const mirrorRows = useMemo(
     () =>
       scene.nodes
         .filter((n) => n.tabIndex >= 1)
-        .sort((a, b) => a.tabIndex - b.tabIndex),
+        .sort((a, b) => a.tabIndex - b.tabIndex)
+        .map((n) => ({
+          id: n.id,
+          name: n.accessibleName,
+          kind: n.kind as string,
+          tabIndex: n.tabIndex,
+          selected: n.selected,
+        })),
     [scene.nodes]
   );
+  const mirrorSignature = mirrorRows.map((m) => `${m.id}:${m.tabIndex}:${m.selected ? 1 : 0}`).join("|");
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const mirror = useMemo(() => mirrorRows, [mirrorSignature]);
 
   return (
     <div
@@ -447,29 +560,19 @@ export default function CanvasAuditRenderer(props: AuditRendererProps) {
         aria-hidden="true"
         style={{ width: "100%", height: "100%", display: "block" }}
       />
-      <div
-        role="application"
-        aria-label={`Signal Graph: ${scene.stats.drawn} nodes, ${scene.stats.opened} opened and ${scene.stats.drawn - scene.stats.opened} collapsed into marks, ${scene.stats.edges} relationships shown, ${level} zoom`}
-        data-shoot="canvas-a11y-mirror"
-        style={SR_ONLY}
-      >
-        {mirror.map((n) => (
-          <MirrorNode
-            key={n.id}
-            id={n.id}
-            name={n.accessibleName}
-            kind={n.kind}
-            tabIndex={n.tabIndex}
-            selected={n.selected}
-            onSelect={onSelect}
-            onHover={onHover}
-            onFocusNode={(id) => {
-              focusedRef.current = id;
-              invalidate();
-            }}
-          />
-        ))}
-      </div>
+      <canvas
+        ref={pulseRef}
+        aria-hidden="true"
+        data-shoot="canvas-pulse"
+        style={{ position: "absolute", pointerEvents: "none", left: 0, top: 0 }}
+      />
+      <A11yMirror
+        nodes={mirror}
+        label={`Signal Graph: ${scene.stats.drawn} nodes, ${scene.stats.opened} opened and ${scene.stats.drawn - scene.stats.opened} collapsed into marks, ${scene.stats.edges} relationships shown, ${level} zoom`}
+        onSelect={onSelect}
+        onHover={onHover}
+        onFocusNode={onFocusNode}
+      />
     </div>
   );
 }
@@ -494,6 +597,46 @@ const SR_ONLY: React.CSSProperties = {
   whiteSpace: "nowrap",
   border: 0,
 };
+
+interface MirrorRow {
+  id: string;
+  name: string;
+  kind: string;
+  tabIndex: number;
+  selected: boolean;
+}
+
+const A11yMirror = memo(function A11yMirror({
+  nodes,
+  label,
+  onSelect,
+  onHover,
+  onFocusNode,
+}: {
+  nodes: MirrorRow[];
+  label: string;
+  onSelect: (id: string | null) => void;
+  onHover: (id: string | null) => void;
+  onFocusNode: (id: string | null) => void;
+}) {
+  return (
+    <div role="application" aria-label={label} data-shoot="canvas-a11y-mirror" style={SR_ONLY}>
+      {nodes.map((n) => (
+        <MirrorNode
+          key={n.id}
+          id={n.id}
+          name={n.name}
+          kind={n.kind}
+          tabIndex={n.tabIndex}
+          selected={n.selected}
+          onSelect={onSelect}
+          onHover={onHover}
+          onFocusNode={onFocusNode}
+        />
+      ))}
+    </div>
+  );
+});
 
 const MirrorNode = memo(function MirrorNode({
   id,

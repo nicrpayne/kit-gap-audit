@@ -65,15 +65,14 @@ export interface PaintInput {
   palette: TokenPalette;
   sprites: SpriteCache;
   paths: PathCache;
-  /** Someone who asked their system for less motion has asked this
-      instrument too. Kills the pulse; never kills contrast. */
-  reducedMotion: boolean;
-  /** Milliseconds, for the one animated thing on the field. */
-  time: number;
   sweepAngle: number | null;
   /** The font stack the surrounding document is using, so canvas text is the
       same text the SVG drew. */
   fontFamily: string;
+  softLayer: SoftLayer;
+  /** Identifies the current scene, so the softened layer knows when its
+      pixels are stale. Anything else changing reuses the bitmap. */
+  sceneKey: string;
   clusterLabels: {
     cluster: string;
     x: number;
@@ -101,6 +100,9 @@ export interface PaintStats {
   spritesHeld: number;
   /** Whether the softened layer was needed this frame. */
   softLayer: boolean;
+  /** How many times the softened layer has actually been rasterised. The
+      number that separates "one blur per change" from "one blur per frame". */
+  softBuilds: number;
 }
 
 /**
@@ -144,6 +146,14 @@ export class PathCache {
   }
 }
 
+/**
+ * The scale the softened layer is rasterised at, relative to the frame.
+ *
+ * Half. See the comment at its use for why a layer nobody is meant to read
+ * is the right place to spend resolution.
+ */
+export const SOFT_LAYER_SCALE = 0.5;
+
 /** A world-space rectangle, with slack, for culling. */
 function worldBounds(camera: PaintCamera, vp: { w: number; h: number }, slackPx: number) {
   const hw = vp.w / 2 / camera.k;
@@ -171,6 +181,7 @@ export function paintScene(input: PaintInput): PaintStats {
     labelsPainted: 0,
     spritesHeld: 0,
     softLayer: false,
+    softBuilds: 0,
   };
 
   const W = Math.max(1, Math.round(viewport.w * dpr));
@@ -190,6 +201,7 @@ export function paintScene(input: PaintInput): PaintStats {
   };
 
   const bounds = worldBounds(camera, viewport, 120);
+  const sharpLabelFallback: AuditVisualNode[] = [];
 
   toWorld();
   ctx.lineCap = "round";
@@ -223,7 +235,9 @@ export function paintScene(input: PaintInput): PaintStats {
   // per element and four hundred of them is four hundred surfaces.
   const soft: AuditVisualNode[] = [];
   const sharp: AuditVisualNode[] = [];
+  const softLabels: AuditVisualNode[] = [];
   for (const n of scene.nodes) {
+    if (n.labelled && n.depth > 0 && n.kind !== "reality") softLabels.push(n);
     if (n.kind === "reality") continue; // drawn above, as the hero
     if (n.opacity < 0.012) continue;
     const rr = Math.max(n.r, n.latentR) + 26 / k;
@@ -236,28 +250,62 @@ export function paintScene(input: PaintInput): PaintStats {
 
   if (soft.length > 0) {
     stats.softLayer = true;
-    const layer = acquireLayer(W, H);
-    if (layer) {
-      const lc = layer.getContext("2d")!;
-      lc.setTransform(1, 0, 0, 1, 0, 0);
-      lc.clearRect(0, 0, W, H);
-      lc.setTransform(dpr * k, 0, 0, dpr * k, dpr * (viewport.w / 2 - camera.x * k), dpr * (viewport.h / 2 - camera.y * k));
+    // HALF RESOLUTION, BECAUSE THIS LAYER'S WHOLE PURPOSE IS TO BE UNREADABLE.
+    //
+    // The softened layer is rebuilt whenever the camera moves — its pixels
+    // genuinely change — and at full resolution that is a 1944×1618 repaint
+    // plus a full-surface blur on every frame of a drag. Measured at 24.5ms
+    // a frame during a pan with something hovered, which is 60fps missed on
+    // its own.
+    //
+    // But nothing in it is meant to be resolved: it is the part of the field
+    // the reader has been asked NOT to read. Rendering it at half scale and
+    // letting the upsample carry some of the softening costs a quarter of
+    // the pixels for a layer whose defining property is that detail in it is
+    // already being thrown away.
+    const lw = Math.max(1, Math.round(W * SOFT_LAYER_SCALE));
+    const lh = Math.max(1, Math.round(H * SOFT_LAYER_SCALE));
+    const layerKey = `${input.sceneKey}|${camera.x.toFixed(2)},${camera.y.toFixed(2)},${k.toFixed(5)}|${lw}x${lh}`;
+    // The blur is specified in CSS pixels to match `.sg-depth-1`, so it is
+    // converted into this surface's own pixels before use.
+    const layerBlur = DEPTH_BLUR_PX[1] * dpr * SOFT_LAYER_SCALE;
+    const layer = input.softLayer.acquire(layerKey, lw, lh, layerBlur, (lc) => {
+      const scale = dpr * k * SOFT_LAYER_SCALE;
+      lc.setTransform(
+        scale,
+        0,
+        0,
+        scale,
+        dpr * SOFT_LAYER_SCALE * (viewport.w / 2 - camera.x * k),
+        dpr * SOFT_LAYER_SCALE * (viewport.h / 2 - camera.y * k)
+      );
       lc.lineCap = "round";
       lc.lineJoin = "round";
       for (const n of soft) paintNode(lc, n, palette, sprites, k, input, stats);
-      // ONE BLUR, FOR THE WHOLE LAYER.
+      // The names of everything that has been pushed back, riding the same
+      // single blur. See paintSoftLabels.
+      paintSoftLabels(lc, softLabels, camera, viewport, dpr, fontFamily, palette, stats);
+    });
+    if (layer) {
       toScreen();
-      ctx.filter = `blur(${DEPTH_BLUR_PX[1]}px)`;
-      ctx.drawImage(layer, 0, 0, W, H, 0, 0, viewport.w, viewport.h);
-      ctx.filter = "none";
-      stats.calls += 2;
+      ctx.drawImage(layer, 0, 0, lw, lh, 0, 0, viewport.w, viewport.h);
+      stats.calls++;
       toWorld();
     } else {
-      // No offscreen available (a context that refused one): paint them
-      // sharp rather than not at all. Losing the softening costs hierarchy;
-      // losing the nodes costs the map.
+      // No offscreen available: paint them sharp rather than not at all.
+      // Losing the softening costs hierarchy; losing the nodes costs the map.
       for (const n of soft) paintNode(ctx, n, palette, sprites, k, input, stats);
+      toScreen();
+      for (const n of softLabels) paintNodeName(ctx, n, camera, viewport, fontFamily, palette, stats);
+      toWorld();
     }
+    stats.softBuilds = input.softLayer.stats.builds;
+  }
+
+  if (soft.length === 0 && softLabels.length > 0) {
+    // Softened names with no softened marks to accompany them: nothing built
+    // the layer, so they are drawn plainly in the labels pass below.
+    for (const n of softLabels) sharpLabelFallback.push(n);
   }
   for (const n of sharp) paintNode(ctx, n, palette, sprites, k, input, stats);
 
@@ -269,7 +317,7 @@ export function paintScene(input: PaintInput): PaintStats {
   // layer whose cost does not fall with zoom, which is why the plan upstream
   // caps it at sixty.
   toScreen();
-  paintLabels(ctx, scene, palette, camera, viewport, fontFamily, input, stats);
+  paintLabels(ctx, scene, palette, camera, viewport, fontFamily, { ...input, sharpLabelFallback }, stats);
 
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   stats.spritesHeld = sprites.size;
@@ -698,10 +746,11 @@ function paintNode(
 
   // ── FUNCTIONAL GLOW ──────────────────────────────────────────────────
   if (n.selected) {
-    // A PULSE, AND THE ONLY ANIMATED THING ON A RESTING FIELD. It says "this
-    // one" without spending a hue, and it stops dead under reduced motion.
-    const pulse = input.reducedMotion ? 1 : 1 + 0.06 * Math.sin(input.time / 420);
-    const radiusPx = (grown + 23 / k) * k * pulse;
+    // THE CORONA IS STATIC ON THIS SURFACE, and its breathing lives on a
+    // separate overlay — see `paintSelectionPulse` and the measurement that
+    // forced the split. The static ring is the whole effect if the overlay
+    // is ever unavailable, so nothing is lost when it is.
+    const radiusPx = (grown + 23 / k) * k;
     const got = sprites.get("corona", color, radiusPx);
     if (got) {
       const r = got.radius / k;
@@ -786,7 +835,7 @@ function paintLabels(
   camera: PaintCamera,
   vp: { w: number; h: number },
   fontFamily: string,
-  input: PaintInput,
+  input: PaintInput & { sharpLabelFallback: AuditVisualNode[] },
   stats: PaintStats
 ): void {
   const toScreen = (x: number, y: number) => ({
@@ -903,26 +952,18 @@ function paintLabels(
     stats.labelsPainted++;
   }
 
-  // Node names.
+  // Node names, sharp only.
+  //
+  // The SOFTENED names are not drawn here at all — they were painted into the
+  // depth layer, which is the only place a canvas can blur text without
+  // paying per glyph. See `paintSoftLabels` and the measurement above it.
   for (const n of scene.nodes) {
     // Reality prints its own two words below, as the hero. Labelling it here
     // as well printed the name twice, a few pixels apart.
-    if (!n.labelled || n.kind === "reality") continue;
-    const p = toScreen(n.x, n.y);
-    if (p.x < -200 || p.x > vp.w + 200 || p.y < -40 || p.y > vp.h + 40) continue;
-    const grown = n.selected ? n.r * 1.35 : n.hovered ? n.r * 1.15 : n.r;
-    const leftHalf = n.labelInward ? n.x >= FIELD.cx : n.x < FIELD.cx;
-    const dx = (grown * camera.k + 6) * (leftHalf ? -1 : 1);
-    ctx.globalAlpha = n.opacity;
-    ctx.textAlign = leftHalf ? "right" : "left";
-    ctx.font = `${n.kind === "work" || n.kind === "passage" ? 9.5 : 11}px ${fontFamily}`;
-    ctx.fillStyle = palette.css(
-      n.selected || n.hovered || n.rank != null ? "var(--i-text)" : "var(--i-text-soft)"
-    );
-    ctx.fillText(truncateLabel(n.label, n.kind === "finding" ? 34 : n.kind === "passage" ? 40 : 30), p.x + dx, p.y + 3.5);
-    stats.calls++;
-    stats.labelsPainted++;
+    if (!n.labelled || n.kind === "reality" || n.depth > 0) continue;
+    paintNodeName(ctx, n, camera, vp, fontFamily, palette, stats);
   }
+  for (const n of input.sharpLabelFallback) paintNodeName(ctx, n, camera, vp, fontFamily, palette, stats);
 
   // Reality's own two words.
   const core = scene.nodes.find((n) => n.kind === "reality");
@@ -941,6 +982,89 @@ function paintLabels(
   }
 
   ctx.globalAlpha = 1;
+}
+
+/**
+ * ONE NODE'S NAME, in screen space.
+ *
+ * Shared by the sharp pass and the softened one so that a name does not move
+ * or change size depending on which layer it landed in — the only difference
+ * between the two is the blur the layer applies.
+ */
+function paintNodeName(
+  ctx: CanvasRenderingContext2D,
+  n: AuditVisualNode,
+  camera: PaintCamera,
+  vp: { w: number; h: number },
+  fontFamily: string,
+  palette: TokenPalette,
+  stats: PaintStats
+): void {
+  const sx = (n.x - camera.x) * camera.k + vp.w / 2;
+  const sy = (n.y - camera.y) * camera.k + vp.h / 2;
+  if (sx < -200 || sx > vp.w + 200 || sy < -40 || sy > vp.h + 40) return;
+  const grown = n.selected ? n.r * 1.35 : n.hovered ? n.r * 1.15 : n.r;
+  const leftHalf = n.labelInward ? n.x >= FIELD.cx : n.x < FIELD.cx;
+  const dx = (grown * camera.k + 6) * (leftHalf ? -1 : 1);
+  ctx.globalAlpha = n.opacity;
+  ctx.textBaseline = "middle";
+  ctx.textAlign = leftHalf ? "right" : "left";
+  ctx.font = `${n.kind === "work" || n.kind === "passage" ? 9.5 : 11}px ${fontFamily}`;
+  ctx.fillStyle = palette.css(
+    n.selected || n.hovered || n.rank != null ? "var(--i-text)" : "var(--i-text-soft)"
+  );
+  ctx.fillText(
+    truncateLabel(n.label, n.kind === "finding" ? 34 : n.kind === "passage" ? 40 : 30),
+    sx + dx,
+    sy + 3.5
+  );
+  ctx.globalAlpha = 1;
+  stats.calls++;
+  stats.labelsPainted++;
+}
+
+/**
+ * THE SOFTENED NAMES, PAINTED INTO THE DEPTH LAYER.
+ *
+ * ── WHY NOT `ctx.filter` ───────────────────────────────────────────────
+ *
+ * TEXT IS WHERE OPTICAL DEPTH EARNS ITS KEEP: the eye works hardest to
+ * resolve letterforms, so an unrelated label is the loudest thing on a dimmed
+ * field. Without softening, the canvas drew a correctly-dimmed field with
+ * perfectly sharp names scattered across it and the hierarchy was visibly
+ * weaker than the SVG's.
+ *
+ * The obvious fix is to set `ctx.filter = "blur(…)"` around the softened
+ * names. Measured, that is a disaster: a 2D context applies a filter PER DRAW
+ * CALL, so twenty labels are twenty full-pipeline rasterisations, and a Trace
+ * went to 550ms frames — thirty-two dropped frames in one gesture, five times
+ * worse than the problem it was fixing.
+ *
+ * ── WHAT WORKS ─────────────────────────────────────────────────────────
+ *
+ * The depth layer is already being blurred exactly once. Painting the
+ * softened names into it costs nothing extra: they ride the same blur, and
+ * the half-resolution upsample adds the second step of softening the SVG
+ * gets from stacking `.sg-depth-2` on top of its group's own depth.
+ *
+ * Drawn in SCREEN space inside a world-space layer, so the transform is reset
+ * for this pass — and drawn after the soft nodes, so a name sits over the
+ * marks it belongs to rather than under them.
+ */
+function paintSoftLabels(
+  lc: CanvasRenderingContext2D,
+  soft: AuditVisualNode[],
+  camera: PaintCamera,
+  vp: { w: number; h: number },
+  dpr: number,
+  fontFamily: string,
+  palette: TokenPalette,
+  stats: PaintStats
+): void {
+  if (soft.length === 0) return;
+  const s = dpr * SOFT_LAYER_SCALE;
+  lc.setTransform(s, 0, 0, s, 0, 0);
+  for (const n of soft) paintNodeName(lc, n, camera, vp, fontFamily, palette, stats);
 }
 
 /** A word over a dark field needs its own ground, or it reads as a smudge
@@ -976,25 +1100,179 @@ export function truncateLabel(s: string, n: number): string {
   return pathShaped ? `…${s.slice(s.length - (n - 1))}` : `${s.slice(0, n - 1)}…`;
 }
 
-// ── THE OFFSCREEN LAYER ────────────────────────────────────────────────
+// ── THE SELECTION PULSE, ON ITS OWN SURFACE ────────────────────────────
 //
-// One canvas, reused. Allocating a full-viewport canvas per frame is a
-// per-frame GC pause; this keeps exactly one and resizes it only when the
-// viewport does.
-let layerCanvas: HTMLCanvasElement | null = null;
+// ── WHAT THIS COST BEFORE IT WAS SPLIT OUT ─────────────────────────────
+//
+// The pulse was painted with everything else, which meant the whole field
+// was repainted sixty times a second for as long as anything was selected.
+// The PAINTING was never the problem — measured at 1.0ms a frame on the
+// 427-node corpus. The problem is that a canvas is one element: touching any
+// pixel of it makes the browser re-composite the entire backing store, and
+// at 1944×1618 on a software rasteriser that is ~65ms. Frames during a Trace
+// went to 66.7ms against the SVG's 16.7ms — the canvas was fast and the
+// compositor around it was not.
+//
+// THE SVG PAYS NOTHING HERE because it does not animate the selection at
+// all; its three concentric strokes are static, by an explicit decision in
+// its own header.
+//
+// ── THE FIX ────────────────────────────────────────────────────────────
+//
+// Put the moving part on a small surface of its own. The main canvas draws
+// the corona statically and never repaints for the pulse; a second canvas,
+// sized to the corona and positioned over it, carries the breathing. About
+// 0.2% of the field's area re-composites per frame instead of all of it.
+//
+// It is ADDITIVE, deliberately: the overlay brightens an already-complete
+// corona rather than replacing it. If the overlay is unavailable, or motion
+// is not wanted, what remains is the static ring — which is exactly what the
+// SVG draws, so the degraded state is the shipped product's own.
+export const PULSE_PERIOD_MS = 1320;
+export const PULSE_DEPTH = 0.1;
 
-function acquireLayer(w: number, h: number): HTMLCanvasElement | null {
-  if (typeof document === "undefined") return null;
-  if (!layerCanvas) layerCanvas = document.createElement("canvas");
-  if (layerCanvas.width !== w || layerCanvas.height !== h) {
-    layerCanvas.width = w;
-    layerCanvas.height = h;
-  }
-  return layerCanvas;
+export interface PulseTarget {
+  /** Centre in CSS pixels, relative to the field's own box. */
+  x: number;
+  y: number;
+  /** The static corona's radius in CSS pixels. */
+  radius: number;
+  color: string;
 }
 
-/** Released when the painter unmounts, so a closed instrument is not holding
-    a viewport-sized bitmap. */
-export function releaseLayer(): void {
-  layerCanvas = null;
+/** Where the pulse overlay must sit, or null when nothing is selected. */
+export function pulseTargetFor(
+  scene: AuditScene,
+  camera: PaintCamera,
+  vp: { w: number; h: number }
+): PulseTarget | null {
+  const n = scene.nodes.find((node) => node.selected && node.identity !== "latent");
+  if (!n) return null;
+  const grown = n.r * 1.35;
+  const radius = (grown + 23 / camera.k) * camera.k;
+  const x = (n.x - camera.x) * camera.k + vp.w / 2;
+  const y = (n.y - camera.y) * camera.k + vp.h / 2;
+  // Off screen: no overlay, and no cost.
+  const r = radius * (1 + PULSE_DEPTH);
+  if (x + r < 0 || x - r > vp.w || y + r < 0 || y - r > vp.h) return null;
+  return { x, y, radius, color: n.color };
+}
+
+/**
+ * One frame of the pulse, on the overlay's own context.
+ *
+ * `originX/Y` is where the overlay's top-left sits in field coordinates, so
+ * the pulse lands exactly over the corona the main canvas already drew.
+ */
+export function paintSelectionPulse(
+  ctx: CanvasRenderingContext2D,
+  target: PulseTarget,
+  originX: number,
+  originY: number,
+  dpr: number,
+  palette: TokenPalette,
+  sprites: SpriteCache,
+  time: number
+): void {
+  const w = ctx.canvas.width;
+  const h = ctx.canvas.height;
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.clearRect(0, 0, w, h);
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+  const breathe = 1 + PULSE_DEPTH * Math.sin((time / PULSE_PERIOD_MS) * Math.PI * 2);
+  const css = palette.css(target.color);
+  const got = sprites.get("corona", css, target.radius * breathe);
+  if (!got) return;
+  // ADDITIVE. The corona underneath is already complete; this brightens it.
+  ctx.globalCompositeOperation = "lighter";
+  ctx.globalAlpha = 0.55;
+  const r = got.radius;
+  ctx.drawImage(got.sprite, target.x - originX - r, target.y - originY - r, r * 2, r * 2);
+  ctx.globalCompositeOperation = "source-over";
+  ctx.globalAlpha = 1;
+}
+
+// ── THE OFFSCREEN LAYER, AND WHY IT IS CACHED ──────────────────────────
+//
+// Optical depth is one blur for the whole softened population instead of one
+// filter surface per element — that is the mechanic, and it is a real win
+// over the DOM. But "one blur per FRAME" is still a full-viewport
+// rasterisation sixty times a second, and measured during a Trace on the
+// 427-node field that cost 83ms median frames against the SVG's 17ms. The
+// canvas was losing badly at the one gesture it was supposed to win.
+//
+// The reason it is fixable: during a Trace the softened layer does not
+// change. The route is chosen, the camera is still, and the only thing
+// animating is the selected node's pulse — which is SHARP, and painted
+// separately. So the layer is rendered and blurred once, kept, and simply
+// blitted on every frame that did not change it.
+//
+// The key is what the layer's pixels actually depend on: which scene, where
+// the camera is, and how big the surface is. Anything else changing — a
+// pulse, a hover ring, a frame tick — reuses the bitmap.
+export class SoftLayer {
+  private raw: HTMLCanvasElement | null = null;
+  private blurred: HTMLCanvasElement | null = null;
+  private key = "";
+  private builds = 0;
+  private reuses = 0;
+
+  get stats(): { builds: number; reuses: number } {
+    return { builds: this.builds, reuses: this.reuses };
+  }
+
+  /**
+   * The blurred layer, ready to composite — rebuilt only when `key` changes.
+   * Returns null where no offscreen canvas is available, and the caller then
+   * paints the softened content sharp rather than not at all.
+   */
+  acquire(
+    key: string,
+    w: number,
+    h: number,
+    blurPx: number,
+    paint: (ctx: CanvasRenderingContext2D) => void
+  ): HTMLCanvasElement | null {
+    if (typeof document === "undefined") return null;
+    if (this.key === key && this.blurred && this.blurred.width === w && this.blurred.height === h) {
+      this.reuses++;
+      return this.blurred;
+    }
+
+    if (!this.raw) this.raw = document.createElement("canvas");
+    if (!this.blurred) this.blurred = document.createElement("canvas");
+    for (const c of [this.raw, this.blurred]) {
+      if (c.width !== w || c.height !== h) {
+        c.width = w;
+        c.height = h;
+      }
+    }
+
+    const rc = this.raw.getContext("2d");
+    const bc = this.blurred.getContext("2d");
+    if (!rc || !bc) return null;
+
+    rc.setTransform(1, 0, 0, 1, 0, 0);
+    rc.clearRect(0, 0, w, h);
+    paint(rc);
+
+    bc.setTransform(1, 0, 0, 1, 0, 0);
+    bc.clearRect(0, 0, w, h);
+    bc.filter = blurPx > 0 ? `blur(${blurPx}px)` : "none";
+    bc.drawImage(this.raw, 0, 0);
+    bc.filter = "none";
+
+    this.key = key;
+    this.builds++;
+    return this.blurred;
+  }
+
+  /** Released when the painter unmounts, so a closed instrument is not
+      holding two viewport-sized bitmaps. */
+  release(): void {
+    this.raw = null;
+    this.blurred = null;
+    this.key = "";
+  }
 }
