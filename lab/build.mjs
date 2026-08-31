@@ -6,6 +6,7 @@ const pages = [
   ["pa", "A · ANTV G6 HYBRID"],
   ["pc", "C · REACT-FORCE-GRAPH-2D"],
   ["pb2", "B2 · ANCHORED FORCE"],
+  ["pb3", "B3 · LOCAL BLOOM"],
 ];
 const shell = readFileSync("shell.html", "utf8");
 for (const [id, name] of pages) {

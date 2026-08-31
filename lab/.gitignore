@@ -22,19 +22,18 @@ pc.html
 
 # Measurements, screenshots and recordings. Regenerate them; they are large,
 # and several of them show real customer content.
-out/
-out2/
-out3/
+out*/
 final/
-b2out/
-b2shots/
-b3out/
-b3shots/
-deliver/
-b2deliver/
-b3deliver/
+b2out*/
+b2shots*/
+b3out*/
+b3shots*/
+*deliver*/
 shots/
 *.png
 *.webm
 *.log
 results.json
+
+# Throwaway diagnostics. Anything worth keeping gets a real name.
+_*.mjs
