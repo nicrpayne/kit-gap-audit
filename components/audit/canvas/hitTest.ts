@@ -86,8 +86,21 @@ export class HitIndex {
     return this.built;
   }
 
+  /**
+   * Rebuild from LIVE positions.
+   *
+   * The spatial field moves nodes every frame, so the index can no longer be
+   * built from the scene's own coordinates — those are the resting seats the
+   * adapter projected, not where the thing is. Rubric's own `hitTest` reads
+   * `n.x/n.y` straight off the simulation for exactly this reason
+   * (`_core.js` lines 918-929).
+   */
+  buildFrom(scene: AuditScene, positions: ReadonlyMap<string, { x: number; y: number }>, k: number): void {
+    this.build(scene, k, positions);
+  }
+
   /** Rebuild from the scene at a given camera scale. */
-  build(scene: AuditScene, k: number): void {
+  build(scene: AuditScene, k: number, positions?: ReadonlyMap<string, { x: number; y: number }>): void {
     this.cells = new Map();
     this.maxRadius = 0;
     this.built = 0;
@@ -99,7 +112,8 @@ export class HitIndex {
       // Something painted at effectively zero opacity is not on the field as
       // far as a reader is concerned, and must not swallow their click.
       if (n.opacity < 0.012) continue;
-      candidates.push({ id: n.id, x: n.x, y: n.y, radius, drawn });
+      const p = positions?.get(n.id);
+      candidates.push({ id: n.id, x: p ? p.x : n.x, y: p ? p.y : n.y, radius, drawn });
       if (radius > this.maxRadius) this.maxRadius = radius;
     }
 

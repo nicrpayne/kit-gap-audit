@@ -71,6 +71,7 @@ import {
   type NodeShape,
 } from "@/components/audit/graphTokens";
 import { structuralWeb, aggregateBundles, type StructuralWeb, type WebBundle } from "./structuralWeb";
+import { anchorOf, bandOf, type Band } from "./spatial/anchors";
 import {
   semanticFocus,
   edgeFocusClass,
@@ -150,6 +151,19 @@ export interface AuditVisualNode {
   /** Non-membership degree. How connected this actually is. */
   importance: number;
   layoutRole: LayoutRole;
+  /**
+   * WHERE THIS BELONGS, SPATIALLY.
+   *
+   * The one anchor the spatial engine may pull it toward, and the radial band
+   * whose distance from Reality states what it MEANS. Both are projections of
+   * Signal's own semantics — see ./spatial/anchors — and they are produced
+   * here rather than in the layout so that the painter, the physics and the
+   * Rings target generator cannot disagree about where a thing lives.
+   */
+  anchor: string;
+  band: Band;
+  /** Stable order inside a sector: semantic priority, never size or degree. */
+  order: number;
   x: number;
   y: number;
   /** Drawn radius at rest, world units. */
@@ -289,6 +303,8 @@ export interface AuditScene {
   aggregates: AuditVisualAggregate[];
   bundles: AuditVisualBundle[];
   web: StructuralWeb;
+  /** The whole mesh, for the ambient layer. See AmbientEdge. */
+  ambient: AmbientEdge[];
   structure: SceneStructure;
   /** The layer opacities the tier decides. */
   webOpacity: number;
@@ -793,6 +809,13 @@ export function buildScene(input: SceneInput, cached?: SceneCache): AuditScene {
       count: 0,
       importance: degreeOf.get(id) ?? 0,
       layoutRole: layoutRoleOf(attrs.kind),
+      anchor: anchorOf(attrs.kind, typeof attrs.lane === "string" ? attrs.lane : null),
+      band: bandOf(attrs.kind, attrs),
+      // The label priority table doubles as the seating order: the project's
+      // own structure first, then its disagreements, then external claims,
+      // then the substrate they were read from. It is semantic, which is the
+      // requirement — Rubric sorts by byte size and that has no Audit meaning.
+      order: LABEL_PRIORITY.indexOf(attrs.kind) * 1000 + Math.min(999, 999 - (degreeOf.get(id) ?? 0)),
       x: p.x,
       y: p.y,
       // REALITY STOPS GROWING AT 190 DEVICE PIXELS — a screen fact, applied
@@ -868,6 +891,7 @@ export function buildScene(input: SceneInput, cached?: SceneCache): AuditScene {
     aggregates,
     bundles,
     web,
+    ambient: cache.ambient,
     structure: {
       cx: FIELD.cx,
       cy: FIELD.cy,
@@ -910,8 +934,38 @@ export function buildScene(input: SceneInput, cached?: SceneCache): AuditScene {
 // module could make, so they are a cache with its own lifetime, keyed by the
 // caller on `[graph, layout]`.
 
+/**
+ * ONE RELATIONSHIP, AS THE AMBIENT MESH NEEDS IT.
+ *
+ * ADAPTED FROM RUBRIC — `_core.js` `S.drawLinks`, painted every frame at low
+ * alpha (`index.html` `drawLink()` lines 205-235).
+ *
+ * Signal's edge layer draws a relationship only once BOTH its endpoints are
+ * disclosed, which at rest is 20 of 439. That is the right rule for the layer
+ * that carries meaning — an edge to a nameless mark explains nothing — but it
+ * left the resting field with nothing saying "this is a connected system".
+ * The SVG renderer answered that with a precomputed structural web.
+ *
+ * That web cannot survive a moving field: its paths are baked from static
+ * seats. Rubric's answer is better here anyway, and it is the reference's
+ * own: draw the WHOLE mesh, faintly, from live positions, and let focus
+ * brighten what matters. So the endpoints travel with the scene and the
+ * geometry is computed per frame from wherever the nodes actually are.
+ */
+export interface AmbientEdge {
+  id: string;
+  from: string;
+  to: string;
+  cls: FocusClass;
+  basis: string;
+  /** A temporal strand into superseded history is quieter than one between
+      two live things — a property of the relationship, not of attention. */
+  current: boolean;
+}
+
 export interface SceneCache {
   web: StructuralWeb;
+  ambient: AmbientEdge[];
   aggregates: SeatedAggregate[];
   bundles: WebBundle[];
   degreeOf: ReadonlyMap<string, number>;
@@ -920,6 +974,23 @@ export interface SceneCache {
 
 export function buildSceneCache(graph: AuditGraph, layout: GraphLayout): SceneCache {
   const web = structuralWeb(graph, layout);
+
+  // Every real relationship, once, regardless of disclosure. Membership is
+  // still never an edge — position states it, and that rule does not bend.
+  const ambient: AmbientEdge[] = [];
+  graph.forEachEdge((e, a, s2, t2) => {
+    const cls = edgeFocusClass(a as { rel: string; relClass?: string | null });
+    if (!cls) return;
+    if (!layout.has(s2) || !layout.has(t2)) return;
+    ambient.push({
+      id: e,
+      from: s2,
+      to: t2,
+      cls,
+      basis: String(a.basis),
+      current: graph.getNodeAttribute(t2, "isCurrent") !== false,
+    });
+  });
   const aggregates = layoutAggregates(layout);
 
   const degreeOf = new Map<string, number>();
@@ -945,7 +1016,7 @@ export function buildSceneCache(graph: AuditGraph, layout: GraphLayout): SceneCa
           seatOf: (id) => seat.get(id) ?? null,
         });
 
-  return { web, aggregates, bundles, degreeOf, hasIntel: graph.someNode((_n, a) => a.kind === "intel") };
+  return { web, ambient, aggregates, bundles, degreeOf, hasIntel: graph.someNode((_n, a) => a.kind === "intel") };
 }
 
 // Kept local rather than imported from the renderer, so this module has no
