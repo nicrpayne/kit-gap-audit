@@ -229,7 +229,6 @@ export default function CanvasAuditRenderer(props: AuditRendererProps) {
   sceneForHits.current = scene;
   useEffect(() => {
     hits.current.build(sceneForHits.current, nodeScale);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [graph, layout, nodeScale, level, selectedId, hoveredId, opened, soloNodes, matches]);
 
   // ── THE RENDER LOOP ──────────────────────────────────────────────────
