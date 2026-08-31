@@ -38,7 +38,13 @@ import {
   FIELD,
 } from "@/lib/audit/graphLayout";
 import { mutateReality } from "@/lib/instrument/reality";
-import SignalGraph, { fitCamera, type GraphLayout } from "./SignalGraph";
+import { fitCamera, type GraphLayout } from "./SignalGraph";
+// THE RENDERER BOUNDARY. The instrument mounts a painter without knowing
+// which one it got — `?renderer=canvas` picks the experimental Canvas
+// viewport, and SVG stays the default. Every prop below is the same either
+// way, which is the property that makes the A/B a comparison of painters
+// rather than of two different products.
+import AuditGraphRenderer from "./renderer/AuditGraphRenderer";
 import {
   DEFAULT_CAMERA,
   MAX_ZOOM,
@@ -1194,7 +1200,7 @@ export default function AuditInstrument({ initialScopeId }: { initialScopeId?: s
       {/* ── BODY: the graph owns it ──────────────────────────────── */}
       <div className="grid min-h-0 flex-1" style={{ gridTemplateColumns: "minmax(0,1fr) minmax(340px,376px)" }}>
         <div className="relative min-h-0" data-shoot="graph-viewport">
-          <SignalGraph
+          <AuditGraphRenderer
             graph={graph}
             opened={opened}
             selectedId={selectedId}
