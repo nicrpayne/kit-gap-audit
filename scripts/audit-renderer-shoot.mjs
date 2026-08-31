@@ -749,6 +749,11 @@ console.log(`\n── BUDGETS ────────────────�
 // moved between 50.0 and 66.6 for BOTH painters; anything inside one frame is
 // this measurement's noise floor and must not be reported as a finding.
 const FRAME_MS = 1000 / 60;
+// "Within a frame" has to be inclusive of a frame. Deltas come back as
+// 16.7 / 33.3 / 50.0 — the browser's own rounding of a 16.667ms interval — so
+// one frame of difference measures as 1.002 frames and a strict `<= 1` fails
+// on the exact case the budget is written to allow.
+const FRAME_TOLERANCE = 1.05;
 for (const [label, key] of gestureRows) {
   const s = measured[key]?.svg;
   const c = measured[key]?.canvas;
@@ -756,12 +761,12 @@ for (const [label, key] of gestureRows) {
   const framesWorse = (a, b) => (a - b) / FRAME_MS;
   check(
     `${label}: Canvas median is within a frame of SVG's`,
-    framesWorse(c.median, s.median) <= 1.0,
+    framesWorse(c.median, s.median) <= FRAME_TOLERANCE,
     `svg ${fmt(s.median)}ms · canvas ${fmt(c.median)}ms  (${framesWorse(c.median, s.median).toFixed(1)} frames)`
   );
   check(
     `${label}: Canvas p95 is within a frame of SVG's`,
-    framesWorse(c.p95, s.p95) <= 1.0,
+    framesWorse(c.p95, s.p95) <= FRAME_TOLERANCE,
     `svg ${fmt(s.p95)}ms · canvas ${fmt(c.p95)}ms  (${framesWorse(c.p95, s.p95).toFixed(1)} frames)`
   );
   // THE WORST FRAME IS REPORTED, NOT BUDGETED — AND THAT IS A JUDGEMENT.
