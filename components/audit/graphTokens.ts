@@ -443,6 +443,24 @@ export const WEB = {
 
 export type Depth = 0 | 1 | 2;
 
+/**
+ * THE SAME SOFTENING, IN PIXELS.
+ *
+ * The SVG renderer reaches optical depth through a CSS class, because one
+ * compiled rule shared by four hundred elements is far cheaper than four
+ * hundred inline filter chains. A canvas has no stylesheet to reach, so it
+ * needs the numbers themselves.
+ *
+ * THESE MUST TRACK `.sg-depth-*` IN app/globals.css. They are stated here
+ * rather than read from the stylesheet because a painter that queried CSS per
+ * frame would be paying a style recalculation for a constant.
+ */
+export const DEPTH_BLUR_PX: Record<Depth, number> = {
+  0: 0,
+  1: 0.5,
+  2: 1.15,
+};
+
 export const DEPTH_CLASS: Record<Depth, string | undefined> = {
   0: undefined,
   1: "sg-depth-1",
