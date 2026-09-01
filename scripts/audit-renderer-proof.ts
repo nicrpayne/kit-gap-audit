@@ -41,6 +41,7 @@ import { HitIndex, hitRadiusOf, MIN_TARGET_PX, TARGET_SLACK_PX } from "../compon
 import { TokenPalette, parseColor } from "../components/audit/canvas/paintTokens";
 import { resolveRenderer, screenToWorld, worldToScreen } from "../components/audit/renderer/types";
 import { SpatialField, TUNING } from "../lib/audit/spatial/field";
+import { adaptSignalSceneToRubric } from "../lib/audit/rubricVisualAdapter";
 import { anchorOf, bandOf, BANDS, CORE_ANCHOR } from "../lib/audit/spatial/anchors";
 import { resolveCamera, RubricCamera, toSignal, fromSignal } from "../components/audit/rubricCamera";
 import type { AuditGraph } from "../lib/audit/graph";
@@ -568,15 +569,18 @@ console.log(`\n── P · DERIVATION COST ────────────�
 console.log(`\n── X · SPATIAL ENGINE ─────────────────────────────────────`);
 {
   const s = scene({ opened: new Set(graph.nodes()), level: "near" });
-  const population = s.nodes.map((n) => ({
-    id: n.id,
-    r: n.identity === "latent" ? n.latentR : n.r,
-    anchor: n.anchor,
-    band: n.band,
-    order: n.order,
-    isAnchorNode: n.kind === "lane",
-    isCore: n.anchor === "core",
-  }));
+  const world = adaptSignalSceneToRubric(s);
+  const population = world.nodes;
+  check("the thin Rubric adapter preserves every canonical node", population.length === s.nodes.length);
+  check("the thin Rubric adapter preserves every visual relationship", world.links.length === s.edges.length);
+  check(
+    "source artifacts map to Rubric's rim role",
+    s.nodes.filter((n) => n.layoutRole === "rim").every((n) => population.find((p) => p.id === n.id)?.role === "rim")
+  );
+  check(
+    "the adapter exposes no filesystem or ARMS role",
+    population.every((n) => !["file", "dir", "app", "routine", "skill", "agent"].includes(n.role))
+  );
 
   const settle = (mode: "rings" | "constellations", steps = 240) => {
     const f = new SpatialField({ mode, reducedMotion: false });
@@ -657,7 +661,11 @@ console.log(`\n── X · SPATIAL ENGINE ────────────�
   let incoherent = 0;
   const incoherentIds: string[] = [];
   for (const [key, own] of anchorAt) {
-    const mine = s.nodes.filter((n) => n.anchor === key && n.kind !== "lane");
+    // Rim objects deliberately form Rubric's silhouette instead of joining a
+    // cell; test the population the group-pull force actually owns.
+    const mine = s.nodes.filter((n) =>
+      n.anchor === key && n.kind !== "lane" && population.find((p) => p.id === n.id)?.role !== "rim"
+    );
     if (mine.length < 3) continue;
     const toOwn = median(mine.map((n) => {
       const p = pos.get(n.id)!;
@@ -686,7 +694,9 @@ console.log(`\n── X · SPATIAL ENGINE ────────────�
   // than a threshold worth gaming.
   {
     const spreads = [...anchorAt].map(([key, own]) => {
-      const mine = s.nodes.filter((n) => n.anchor === key && n.kind !== "lane");
+      const mine = s.nodes.filter((n) =>
+        n.anchor === key && n.kind !== "lane" && population.find((p) => p.id === n.id)?.role !== "rim"
+      );
       if (mine.length === 0) return 0;
       return median(mine.map((n) => {
         const p = pos.get(n.id)!;
@@ -758,8 +768,8 @@ console.log(`\n── X · SPATIAL ENGINE ────────────�
 // ── C · THE CAMERA A/B ────────────────────────────────────────────────
 console.log(`\n── C · CAMERA ─────────────────────────────────────────────`);
 {
-  check("no parameter keeps Signal's camera", resolveCamera("") === "signal");
-  check("?camera=rubric selects the reference camera", resolveCamera("?camera=rubric") === "rubric");
+  check("no parameter uses Rubric's camera in the Rubric viewport", resolveCamera("") === "rubric");
+  check("?camera=signal keeps the control camera available", resolveCamera("?camera=signal") === "signal");
   const vp = { w: 1440, h: 900 };
   const sig = { x: 700, y: 700, k: 1.4 };
   const round = toSignal(fromSignal(sig, vp), vp);

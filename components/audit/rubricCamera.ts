@@ -166,6 +166,23 @@ export class RubricCamera {
     this.flyTo({ k, x: vp.w / 2 - FIELD.cx * k, y: vp.h / 2 - FIELD.cy * k }, ms);
   }
 
+  /** Rubric's reset-camera contract applied to the live visual world's
+      measured radius instead of its original fixed 1500-unit filesystem.
+      This is the only fit adaptation: affine camera, easing and timing stay
+      the source implementation. */
+  fitWorld(
+    world: { x: number; y: number },
+    radius: number,
+    vp: { w: number; h: number },
+    ms = RUBRIC_RESET_MS
+  ): void {
+    const room = Math.max(160, Math.min(vp.w - 96, vp.h - 96));
+    const k = Math.max(RUBRIC_MIN_ZOOM, Math.min(RUBRIC_MAX_ZOOM, room / Math.max(1, radius * 2)));
+    const target = { k, x: vp.w / 2 - world.x * k, y: vp.h / 2 - world.y * k };
+    if (ms <= 0) this.set(target);
+    else this.flyTo(target, ms);
+  }
+
   /** `flyToNode` — line 815. */
   flyToPoint(world: { x: number; y: number }, vp: { w: number; h: number }): void {
     const k = Math.max(RUBRIC_FOCUS_K, this.t.k);
@@ -197,10 +214,10 @@ export class RubricCamera {
 
 export type CameraId = "signal" | "rubric";
 
-/** `?camera=rubric` picks the reference camera. Signal's remains the default
-    until the A/B says otherwise. */
+/** Canvas is the Rubric viewport candidate, so its own camera is the default.
+    `?camera=signal` remains the explicit control for the A/B. */
 export function resolveCamera(search: string | null | undefined): CameraId {
-  if (!search) return "signal";
+  if (!search) return "rubric";
   const p = new URLSearchParams(search.startsWith("?") ? search.slice(1) : search);
-  return p.get("camera") === "rubric" ? "rubric" : "signal";
+  return p.get("camera") === "signal" ? "signal" : "rubric";
 }

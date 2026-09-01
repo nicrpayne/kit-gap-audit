@@ -30,17 +30,16 @@
 
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { buildScene, buildSceneCache, type AuditScene } from "@/lib/audit/visualScene";
+import { adaptSignalSceneToRubric } from "@/lib/audit/rubricVisualAdapter";
 import { layoutGraph, clusterLabelPoint, CLUSTER_ORDER, type GraphLayout } from "@/lib/audit/graphLayout";
-import { SpatialField, type LayoutMode } from "@/lib/audit/spatial/field";
+import type { LayoutMode } from "@/lib/audit/spatial/field";
 import { MAX_ZOOM, MIN_ZOOM, quantizeScale, type Camera } from "./cameraMotion";
 import type { AuditRendererProps } from "./renderer/types";
 import { screenToWorld } from "./renderer/types";
 import { TokenPalette } from "./canvas/paintTokens";
-import { RubricSprites } from "./canvas/rubric/sprites2";
-import { BackdropCache } from "./canvas/rubric/backdrop";
-import { SoftLayer, paintScene, type PaintStats } from "./canvas/rubric/painter";
-import { HitIndex } from "./canvas/hitTest";
-import { RubricCamera, fromSignal, toSignal, resolveCamera, type CameraId } from "./rubricCamera";
+import type { PaintStats } from "./canvas/rubric/painter";
+import { RubricViewportEngine } from "./canvas/rubric/engine";
+import { fromSignal, toSignal, resolveCamera, type CameraId } from "./rubricCamera";
 
 declare global {
   interface Window {
@@ -93,7 +92,7 @@ export default function CanvasAuditRenderer(props: AuditRendererProps) {
   viewportRef.current = onViewport;
 
   const [layoutMode, setLayoutMode] = useState<LayoutMode>("rings");
-  const [cameraId, setCameraId] = useState<CameraId>("signal");
+  const [cameraId, setCameraId] = useState<CameraId>("rubric");
   useEffect(() => {
     if (typeof window === "undefined") return;
     setLayoutMode(resolveLayout(window.location.search));
@@ -133,8 +132,14 @@ export default function CanvasAuditRenderer(props: AuditRendererProps) {
   // Presentation only. It reads the scene's anchor/band projection and writes
   // x/y into its own node objects; Graphology and `layoutGraph` are never
   // touched, so the semantic layer stays free of geometry.
-  const fieldRef = useRef<SpatialField | null>(null);
-  if (!fieldRef.current) fieldRef.current = new SpatialField({ mode: "rings", reducedMotion: false });
+  const engineRef = useRef<RubricViewportEngine | null>(null);
+  if (!engineRef.current) {
+    engineRef.current = new RubricViewportEngine({
+      mode: "rings",
+      reducedMotion: false,
+      camera: fromSignal(camera, size),
+    });
+  }
 
   const [reducedMotion, setReducedMotion] = useState(false);
   useEffect(() => {
@@ -146,42 +151,29 @@ export default function CanvasAuditRenderer(props: AuditRendererProps) {
     return () => mq.removeEventListener("change", on);
   }, []);
   useEffect(() => {
-    fieldRef.current?.setReducedMotion(reducedMotion);
+    engineRef.current?.setReducedMotion(reducedMotion);
   }, [reducedMotion]);
 
   // The population changes when the graph or what is disclosed changes — not
   // when the camera moves.
   const populationKey = `${scene.stats.drawn}|${scene.stats.opened}|${level}`;
-  const population = useMemo(
-    () =>
-      scene.nodes.map((n) => ({
-        id: n.id,
-        r: n.identity === "latent" ? n.latentR : n.r,
-        anchor: n.anchor,
-        band: n.band,
-        order: n.order,
-        isAnchorNode: n.kind === "lane",
-        isCore: n.anchor === "core",
-      })),
+  const rubricWorld = useMemo(
+    () => adaptSignalSceneToRubric(scene),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [populationKey]
   );
   useEffect(() => {
-    fieldRef.current?.setNodes(population);
-  }, [population]);
+    engineRef.current?.setNodes(rubricWorld.nodes);
+  }, [rubricWorld]);
 
   useEffect(() => {
-    fieldRef.current?.setMode(layoutMode);
+    engineRef.current?.setMode(layoutMode);
   }, [layoutMode]);
 
   // ── PAINT MACHINERY ──────────────────────────────────────────────────
   const palette = useRef(new TokenPalette(null));
-  const sprites = useRef(new RubricSprites());
-  const backdrop = useRef(new BackdropCache());
-  const softLayer = useRef(new SoftLayer());
-  const hits = useRef(new HitIndex());
   const fontFamily = useRef("system-ui, sans-serif");
-  const rubricCam = useRef<RubricCamera | null>(null);
+  const lastPublishedCamera = useRef<Camera | null>(null);
   const livePositions = useRef<Map<string, { x: number; y: number }>>(new Map());
 
   useEffect(() => {
@@ -204,13 +196,9 @@ export default function CanvasAuditRenderer(props: AuditRendererProps) {
     if (!el) return;
     palette.current.attach(el);
     fontFamily.current = getComputedStyle(el).fontFamily || "system-ui, sans-serif";
-    const layer = softLayer.current;
-    const back = backdrop.current;
-    const f = fieldRef.current;
+    const engine = engineRef.current;
     return () => {
-      layer.release();
-      back.release();
-      f?.dispose();
+      engine?.dispose();
     };
   }, []);
 
@@ -218,14 +206,45 @@ export default function CanvasAuditRenderer(props: AuditRendererProps) {
   // A/B starts from an identical view.
   useEffect(() => {
     if (cameraId !== "rubric") {
-      rubricCam.current = null;
       return;
     }
-    const cam = new RubricCamera(fromSignal(getCamera(), sizeRefInit(size)));
+    const vp = sizeRefInit(size);
+    const engine = engineRef.current;
+    if (!engine) return;
+    const cam = engine.camera;
+    cam.set(fromSignal(getCamera(), vp));
     cam.setReducedMotion(reducedMotion);
-    rubricCam.current = cam;
+    const field = engine.field;
+    if (field) cam.fitWorld(field.origin, field.viewRadius, vp, 0);
+    const fitted = toSignal(cam.transform, vp);
+    lastPublishedCamera.current = fitted;
+    onCamera(fitted);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cameraId, size.w, size.h, reducedMotion]);
+  }, [cameraId, size.w, size.h, reducedMotion, getCamera, onCamera]);
+
+  // Camera controls outside the canvas (Fit / +/- / Back / Forward) still
+  // own product intent. Mirror their direct writes into Rubric's affine
+  // transform, while ignoring the values this camera just published itself.
+  useEffect(() => {
+    const rc = engineRef.current?.camera;
+    if (cameraId !== "rubric" || !rc) return;
+    const own = lastPublishedCamera.current;
+    const same =
+      own &&
+      Math.abs(own.x - camera.x) < 1e-5 &&
+      Math.abs(own.y - camera.y) < 1e-5 &&
+      Math.abs(own.k - camera.k) < 1e-7;
+    if (!same) rc.set(fromSignal(camera, size));
+  }, [camera, cameraId, size]);
+
+  useEffect(() => {
+    const engine = engineRef.current;
+    const rc = engine?.camera;
+    const field = engine?.field;
+    if (cameraId !== "rubric" || !rc || !field) return;
+    rc.fitWorld(field.origin, field.viewRadius, size);
+    invalidateRef.current?.();
+  }, [layoutMode, cameraId, size]);
 
   const clusterLabels = useMemo(
     () =>
@@ -303,8 +322,9 @@ export default function CanvasAuditRenderer(props: AuditRendererProps) {
     (now: number) => {
       rafRef.current = null;
       const canvas = canvasRef.current;
-      const f = fieldRef.current;
-      if (!canvas || !f) {
+      const engine = engineRef.current;
+      const f = engine?.field;
+      if (!canvas || !engine || !f) {
         running.current = false;
         return;
       }
@@ -325,7 +345,7 @@ export default function CanvasAuditRenderer(props: AuditRendererProps) {
       if (canvas.width !== W || canvas.height !== H) {
         canvas.width = W;
         canvas.height = H;
-        sprites.current.setDpr(dpr);
+        engine.setDpr(dpr);
       }
 
       // Advance the world, then the camera, then paint. One clock for all
@@ -336,24 +356,25 @@ export default function CanvasAuditRenderer(props: AuditRendererProps) {
 
       let cam: Camera;
       let camMoving = false;
-      if (cameraIdRef.current === "rubric" && rubricCam.current) {
-        camMoving = rubricCam.current.advance(dt);
-        cam = toSignal(rubricCam.current.transform, vp);
+      if (cameraIdRef.current === "rubric") {
+        camMoving = engine.camera.advance(dt);
+        cam = toSignal(engine.camera.transform, vp);
+        if (camMoving) {
+          lastPublishedCamera.current = cam;
+          onCamera(cam);
+        }
       } else {
         cam = getCamera();
       }
 
       const t0 = performance.now();
-      const stats = paintScene({
+      const stats = engine.paint({
         ctx,
         scene: sceneRef.current,
         camera: cam,
         viewport: vp,
         dpr,
         palette: palette.current,
-        sprites: sprites.current,
-        backdrop: backdrop.current,
-        softLayer: softLayer.current,
         sceneKey: `${sceneKey.current.id}|${f.layout}`,
         settled: !moving,
         reducedMotion: reducedRef.current,
@@ -378,7 +399,7 @@ export default function CanvasAuditRenderer(props: AuditRendererProps) {
       // immediately whenever the scene itself changes.
       if (now - lastHitBuild.current > 80) {
         lastHitBuild.current = now;
-        hits.current.buildFrom(sceneRef.current, livePositions.current, cam.k);
+        engine.rebuildHits(sceneRef.current, livePositions.current, cam.k);
       }
 
       const probe = (window.__signalCanvas ??= {
@@ -428,7 +449,7 @@ export default function CanvasAuditRenderer(props: AuditRendererProps) {
         running.current = false;
       }
     },
-    [getCamera]
+    [getCamera, onCamera]
   );
 
   const invalidate = useCallback(() => {
@@ -472,9 +493,11 @@ export default function CanvasAuditRenderer(props: AuditRendererProps) {
       const sy = e.clientY - r.top;
       const vp = sizeRef.current;
 
-      if (cameraIdRef.current === "rubric" && rubricCam.current) {
-        rubricCam.current.wheel(e.deltaY, { x: sx, y: sy });
-        onCamera(toSignal(rubricCam.current.transform, vp));
+      if (cameraIdRef.current === "rubric" && engineRef.current) {
+        engineRef.current.camera.wheel(e.deltaY, { x: sx, y: sy });
+        const next = toSignal(engineRef.current.camera.transform, vp);
+        lastPublishedCamera.current = next;
+        onCamera(next);
         invalidateRef.current?.();
         return;
       }
@@ -504,8 +527,8 @@ export default function CanvasAuditRenderer(props: AuditRendererProps) {
   );
 
   const currentCam = useCallback((): Camera => {
-    if (cameraIdRef.current === "rubric" && rubricCam.current) {
-      return toSignal(rubricCam.current.transform, sizeRef.current);
+    if (cameraIdRef.current === "rubric" && engineRef.current) {
+      return toSignal(engineRef.current.camera.transform, sizeRef.current);
     }
     return getCamera();
   }, [getCamera]);
@@ -524,9 +547,9 @@ export default function CanvasAuditRenderer(props: AuditRendererProps) {
     if (e.button !== 0) return;
     const w = worldAt(e.clientX, e.clientY);
     // A pointer on a node grabs the node; a pointer on the field pans.
-    const node = w ? hits.current.at(w.x, w.y) : null;
+    const node = w ? engineRef.current?.hitAt(w.x, w.y) ?? null : null;
     drag.current = { sx: e.clientX, sy: e.clientY, cam: currentCam(), node, moved: false };
-    if (node && graph.hasNode(node)) fieldRef.current?.grab(node);
+    if (node && graph.hasNode(node)) engineRef.current?.field.grab(node);
     try {
       (e.target as Element).setPointerCapture?.(e.pointerId);
     } catch {
@@ -545,11 +568,11 @@ export default function CanvasAuditRenderer(props: AuditRendererProps) {
         // THE HAND OUTRANKS EVERY LAYOUT. Rubric pins a dragged node; so does
         // this, and the release returns it to its semantic seat.
         const w = worldAt(e.clientX, e.clientY);
-        if (w) fieldRef.current?.dragTo(d.node, w.x, w.y);
-      } else if (cameraIdRef.current === "rubric" && rubricCam.current) {
+        if (w) engineRef.current?.field.dragTo(d.node, w.x, w.y);
+      } else if (cameraIdRef.current === "rubric" && engineRef.current) {
         const base = fromSignal(d.cam, sizeRef.current);
-        rubricCam.current.set({ k: d.cam.k, x: base.x + dx, y: base.y + dy });
-        onCamera(toSignal(rubricCam.current.transform, sizeRef.current));
+        engineRef.current.camera.set({ k: d.cam.k, x: base.x + dx, y: base.y + dy });
+        onCamera(toSignal(engineRef.current.camera.transform, sizeRef.current));
       } else {
         onCamera({ x: d.cam.x - dx / d.cam.k, y: d.cam.y - dy / d.cam.k, k: d.cam.k });
       }
@@ -559,7 +582,7 @@ export default function CanvasAuditRenderer(props: AuditRendererProps) {
     const w = worldAt(e.clientX, e.clientY);
     if (!w) return;
     const t0 = performance.now();
-    const id = hits.current.at(w.x, w.y);
+    const id = engineRef.current?.hitAt(w.x, w.y) ?? null;
     const probe = (window.__signalCanvas ??= {
       stats: null,
       frames: [],
@@ -576,7 +599,7 @@ export default function CanvasAuditRenderer(props: AuditRendererProps) {
 
   const onPointerUp = () => {
     const d = drag.current;
-    if (d?.node) fieldRef.current?.release(d.node);
+    if (d?.node) engineRef.current?.field.release(d.node);
     drag.current = null;
     invalidateRef.current?.();
   };
@@ -607,12 +630,12 @@ export default function CanvasAuditRenderer(props: AuditRendererProps) {
       onToggleCluster(toggle);
       return;
     }
-    const id = hits.current.at(w.x, w.y);
+    const id = engineRef.current?.hitAt(w.x, w.y) ?? null;
     onSelect(id === null ? null : id === selectedId ? null : id);
     // A new selection wants a little room. Rubric's own click path changes no
     // physics (`select()`); this is Signal's B3 law added on top — the local
     // world opens, the global map does not move.
-    if (id) fieldRef.current?.reheat(0.22);
+    if (id) engineRef.current?.field.reheat(0.22);
   };
 
   // ── ACCESSIBLE MIRROR ────────────────────────────────────────────────

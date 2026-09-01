@@ -71,7 +71,7 @@ export const SKIN = {
   litGroup: 0.45,
   /** Backdrop hex field. Rubric's is 1; Signal runs it quieter because the
       Audit field is denser than a filesystem and the grid competes. */
-  backdropField: 0.55,
+  backdropField: 1,
   backdropVignette: 0.4,
   /** Rubric batches nodes below this projected radius (`loop()` line 1027). */
   batchBelowPx: 4.2,

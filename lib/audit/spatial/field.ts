@@ -44,6 +44,7 @@ import { FIELD } from "../graphLayout";
 import { anchorPolicies, BANDS, CORE_ANCHOR, type Band } from "./anchors";
 
 export type LayoutMode = "rings" | "constellations";
+export type RubricVisualRole = "router" | "hub" | "aggregate" | "rim" | "leaf";
 
 export interface FieldNodeInput {
   id: string;
@@ -53,6 +54,8 @@ export interface FieldNodeInput {
   band: Band;
   /** Stable sort key inside a sector. Semantic priority, never size. */
   order: number;
+  /** Rubric visual role selected by the Signal adapter. */
+  role: RubricVisualRole;
   /** A lane puck or Reality — seats the cell its members gather around. */
   isAnchorNode: boolean;
   isCore: boolean;
@@ -124,7 +127,7 @@ export const TUNING = {
    * nodes ended up nearer a foreign lane's anchor than their own, which is
    * the spatial law failing outright even though the picture looked fine.
    */
-  anchorRingFraction: 0.42,
+  anchorRingFraction: 0.58,
   anchorRingStrength: 0.85,
   /**
    * How firmly a lane holds its own bearing.
@@ -148,7 +151,7 @@ export const TUNING = {
    * big apart faster than a decaying pull can gather it. A small residual
    * keeps the cell coherent at rest without freezing it.
    */
-  groupPullFloor: 0.16,
+  groupPullFloor: 0.08,
   /** Rubric bound force: `(lim/r - 1) * .22` applied to velocity. */
   boundStrength: 0.22,
   /** GENERIC RELATIONSHIP SPRINGS. Zero, and not a dial. */
@@ -161,7 +164,16 @@ export const TUNING = {
   ringWobbleRate: 0.008 * 60,
   /** Rubric seats: roughly 15 world units per seat on a ring. Signal's marks
       are smaller, so seats are tighter. */
-  seatWidth: 13,
+  seatWidth: 15,
+  /** Rubric's Circle/Hex size control. The source exposes 0..1 and computes
+      `R * (.55 + boundSize * .9)`. Signal's two 190+ member groups need the
+      upper half of that native range to occupy a reviewable field. */
+  boundSize: 0.9,
+  /** Rubric's shipped `g_rim: .69` through `0.12 + g_rim * .36`. */
+  rimHomeStrength: 0.12 + 0.69 * 0.36,
+  /** Keep dense Ring sectors territorial instead of turning them into long
+      radar arcs. This only changes angle; Signal's band radius remains law. */
+  ringSectorCompactness: 0.68,
   /** Rubric transition: 26-136 FRAMES. Signal: milliseconds. */
   morphMs: 620,
   /** Rubric drag return: 36 frames, ease-out cubic. */
@@ -234,6 +246,14 @@ export class SpatialField {
     return this.morph != null;
   }
 
+  /** Radius the Rubric camera should frame for the current arrangement. */
+  get viewRadius(): number {
+    if (this.mode === "constellations") return this.boundR || 300;
+    let r: number = FIELD.outerR;
+    for (const node of this.order) r = Math.max(r, node.rR + node.r + 18);
+    return r;
+  }
+
   /**
    * Whether the field is doing something OTHER than idling.
    *
@@ -295,6 +315,7 @@ export class SpatialField {
         held.anchor = n.anchor;
         held.band = n.band;
         held.order = n.order;
+        held.role = n.role;
         held.isAnchorNode = n.isAnchorNode;
         held.isCore = n.isCore;
         continue;
@@ -400,7 +421,8 @@ export class SpatialField {
       acc += width;
       // Rubric line 470: span is a fraction of the sector, clamped clear of
       // its neighbours. Shipped `span: .59` → spanBase .512.
-      const span = Math.min(width * 0.42, width / 2 - 0.03) * (0.6 + 0.512);
+      const span =
+        Math.min(width * 0.42, width / 2 - 0.03) * (0.6 + 0.512) * TUNING.ringSectorCompactness;
 
       const hub = this.order.find((n) => n.isAnchorNode && n.anchor === a.key);
       if (hub) {
@@ -532,7 +554,7 @@ export class SpatialField {
 
     // Rubric line 578: R from the population with slack, so cells float free
     // inside rather than being squashed against the wall.
-    const R = Math.max(300, 30 * Math.sqrt(nodes.length / Math.PI)) * (0.55 + 0.34 * 0.9);
+    const R = Math.max(300, 30 * Math.sqrt(nodes.length / Math.PI)) * (0.55 + TUNING.boundSize * 0.9);
     this.boundR = R;
     const anchorRing = R * TUNING.anchorRingFraction;
 
@@ -566,6 +588,18 @@ export class SpatialField {
       hub.y = hub.bTy;
     });
 
+    // Rubric `buildSim()` lines 617-624: rim objects form the silhouette.
+    // Signal maps source artifacts and integrations to that role; they stay
+    // real Signal objects, but their visual job is the same — state where the
+    // world's material entered from without pulling their cell toward them.
+    const rim = nodes.filter((n) => n.role === "rim").sort((a, b) => a.id.localeCompare(b.id));
+    rim.forEach((n, i) => {
+      const ang = -Math.PI / 2 + (i / Math.max(1, rim.length)) * Math.PI * 2;
+      const br = R - n.r - 6;
+      n.bTx = Math.cos(ang) * br;
+      n.bTy = Math.sin(ang) * br;
+    });
+
     for (const n of nodes) {
       n.fx = null;
       n.fy = null;
@@ -589,6 +623,8 @@ export class SpatialField {
               ? TUNING.chargeCore
               : d.isAnchorNode
                 ? TUNING.chargeAnchor
+                : d.role === "rim"
+                  ? -60 * 1.238
                 : d.band === "structure"
                   ? TUNING.chargeStructure
                   : TUNING.chargeLeaf
@@ -617,13 +653,13 @@ export class SpatialField {
       .force(
         "x",
         forceX<FieldNode>((d) => d.bTx).strength((d) =>
-          d.isAnchorNode && !d.pin && d.fx == null ? TUNING.anchorBearing : 0
+          d.fx != null || d.pin ? 0 : d.role === "rim" ? TUNING.rimHomeStrength : d.isAnchorNode ? TUNING.anchorBearing : 0
         )
       )
       .force(
         "y",
         forceY<FieldNode>((d) => d.bTy).strength((d) =>
-          d.isAnchorNode && !d.pin && d.fx == null ? TUNING.anchorBearing : 0
+          d.fx != null || d.pin ? 0 : d.role === "rim" ? TUNING.rimHomeStrength : d.isAnchorNode ? TUNING.anchorBearing : 0
         )
       )
       .force("center", forceCenter(0, 0))
@@ -637,7 +673,7 @@ export class SpatialField {
     // where a thing sits, and it reads one field — the node's anchor.
     sim.force("groupPull", (a2: number) => {
       for (const d of nodes) {
-        if (d.fx != null || d.isAnchorNode || d.pin) continue;
+        if (d.fx != null || d.isAnchorNode || d.pin || d.role === "rim") continue;
         const hub = anchorNode.get(d.anchor);
         if (!hub) continue;
         // Rubric scales this by alpha alone; the floor is Signal's addition,
