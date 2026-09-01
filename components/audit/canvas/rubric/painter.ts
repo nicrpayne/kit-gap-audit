@@ -350,7 +350,8 @@ export function paintScene(input: PaintInput): PaintStats {
   const batch = new Map<string, { color: string; alpha: number; pts: number[] }>();
 
   for (const n of scene.nodes) {
-    const p = placed.get(n.id)!;
+    const p = placed.get(n.id);
+    if (!p) continue;
     if (n.labelled && n.depth > 0 && n.kind !== "reality") softLabels.push(n);
     if (n.opacity < 0.012) continue;
     const rr = Math.max(n.r, n.latentR) + 26 / k;
@@ -457,7 +458,8 @@ export function paintScene(input: PaintInput): PaintStats {
 
   // ── SELECTION ────────────────────────────────────────────────────────
   const sel = scene.nodes.find((n) => n.selected && n.identity !== "latent");
-  if (sel) paintSelection(ctx, placed.get(sel.id)!, palette, k, input, stats);
+  const selected = sel ? placed.get(sel.id) : null;
+  if (selected) paintSelection(ctx, selected, palette, k, input, stats);
 
   // ── LABELS, SCREEN SPACE ─────────────────────────────────────────────
   toScreen();
@@ -1030,7 +1032,8 @@ function paintReality(
 ): void {
   const core = scene.nodes.find((n) => n.kind === "reality");
   if (!core) return;
-  const p = placed.get(core.id)!;
+  const p = placed.get(core.id);
+  if (!p) return;
   const cs = scene.coreScale;
   const signal = palette.css("var(--i-signal)");
   const t = input.reducedMotion ? 0 : input.time;
@@ -1299,7 +1302,7 @@ function paintLabels(
   // MANDATORY FIRST: the selection, whatever is under the cursor, and any
   // search match. Those are what the reader asked for and they may overlap
   // anything. Everything else takes what is left, in the plan's own order.
-  const named = scene.nodes.filter((n) => n.labelled && n.kind !== "reality" && n.depth === 0);
+  const named = scene.nodes.filter((n) => n.labelled && n.kind !== "reality" && n.depth === 0 && placed.has(n.id));
   const mandatory = named.filter((n) => n.selected || n.hovered || n.matched);
   const optional = named.filter((n) => !(n.selected || n.hovered || n.matched));
   for (const n of mandatory) {
@@ -1311,8 +1314,9 @@ function paintLabels(
 
   // Reality's own two words.
   const core = scene.nodes.find((n) => n.kind === "reality");
-  if (core) {
-    const p = toScreen(placed.get(core.id)!.x, placed.get(core.id)!.y);
+  const corePlaced = core ? placed.get(core.id) : null;
+  if (core && corePlaced) {
+    const p = toScreen(corePlaced.x, corePlaced.y);
     const cs = scene.coreScale * camera.k;
     ctx.globalAlpha = 1;
     ctx.textAlign = "center";

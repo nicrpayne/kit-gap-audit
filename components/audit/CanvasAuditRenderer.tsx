@@ -427,6 +427,16 @@ export default function CanvasAuditRenderer(props: AuditRendererProps) {
           ? [...soloRef.current].filter((id) => !visible(id)).length
           : 0,
       };
+      const host = hostRef.current;
+      if (host) {
+        host.dataset.projectedCanonical = String(probe.geometry.projectedCanonical);
+        host.dataset.aggregateRegions = String(probe.geometry.aggregateRegions);
+        host.dataset.openedIdentities = String(probe.geometry.openedIdentities);
+        host.dataset.nearestOwnHubPct = probe.geometry.nearestOwnHubPct.toFixed(1);
+        host.dataset.largestTerritoryShare = probe.geometry.largestTerritoryAreaShare.toFixed(3);
+        host.dataset.selectedOffscreen = String(probe.geometry.selectedOffscreen);
+        host.dataset.traceEndpointsOffscreen = String(probe.geometry.traceEndpointsOffscreen);
+      }
       probe.repaints++;
       probe.frames.push(paintMs);
       if (probe.frames.length > 400) probe.frames.shift();

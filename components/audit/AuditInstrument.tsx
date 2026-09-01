@@ -1184,7 +1184,17 @@ export default function AuditInstrument({ initialScopeId }: { initialScopeId?: s
   );
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col" style={{ background: "var(--i-bg)" }}>
+    <div
+      className="flex min-h-0 flex-1 flex-col"
+      style={{ background: "var(--i-bg)" }}
+      data-selected-id={selectedId ?? ""}
+      data-trace-complete={soloable ? "true" : "false"}
+      data-trace-node-kinds={
+        traceRoute
+          ? [...new Set([...traceRoute.nodes].map((id) => graph.getNodeAttribute(id, "kind")))].join(",")
+          : ""
+      }
+    >
       {/* ── HEADER ───────────────────────────────────────────────── */}
       <div
         className="flex shrink-0 items-center gap-3 px-4 py-2.5"

@@ -256,7 +256,15 @@ export class SpatialField {
 
   /** Radius the Rubric camera should frame for the current arrangement. */
   get viewRadius(): number {
-    if (this.mode === "constellations") return this.boundR || 300;
+    if (this.mode === "constellations") {
+      // Fit the geography that actually settled, not the empty outer safety
+      // bound. The latter is intentionally generous so cells can breathe;
+      // using it as the camera extent made four healthy territories read as
+      // one small cloud stranded in the middle of the viewport.
+      let occupied = 0;
+      for (const node of this.order) occupied = Math.max(occupied, Math.hypot(node.x, node.y) + node.r);
+      return Math.max(180, Math.min(this.boundR || 300, occupied + 28));
+    }
     let r: number = FIELD.outerR;
     for (const node of this.order) r = Math.max(r, node.rR + node.r + 18);
     return r;
