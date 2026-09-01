@@ -13,15 +13,16 @@ Brain**.
 - **Reference copy of the source used:** `lab/rubric-reference/second-brain/`
   (build-excluded; not part of any Signal bundle or deployment)
 
-**Changes were made.** The adaptation is not a redistribution of Rubric — it
-is a reimplementation of specific rendering, layout and camera mechanics
-inside Signal-owned modules, with Signal's own data model, semantics, colours
-and product behaviour throughout.
+**Changes were made.** The adaptation is not a redistribution of Rubric. Its
+viewport state/lifecycle, rendering, layout and camera mechanics are directly
+adapted inside Signal-owned modules, with Signal's own data model, semantics,
+colours and product behaviour throughout.
 
 ### Signal files containing adapted work
 
 | File | Adapted from |
 | --- | --- |
+| `components/audit/canvas/rubric/engine.ts` | `public/_core.js` single `S` viewport state, `start()`/`stop()`, resource ownership and `loop()` lifecycle — reorganised as a typed class |
 | `components/audit/canvas/rubric/sprites2.ts` | `public/_flows2.js` lines 17-58 — cached orb/glow sprites, deterministic edge curvature |
 | `components/audit/canvas/rubric/backdrop.ts` | `public/index.html` `drawBackdrop()` 127-152 — hex field and vignette |
 | `components/audit/canvas/rubric/painter.ts` | `public/_core.js` `loop()` 932-1069, `drawLabels()` 1071-1092; `public/index.html` `underLayer()` 154-203, `drawLink()` 205-235, `midLayer()` 238-269, `drawNode()` 271-463, `drawSelection()` 476-484 |
@@ -31,6 +32,10 @@ and product behaviour throughout.
 
 Each file carries its own attribution header and an explicit list of the
 changes made in it.
+
+`lib/audit/rubricVisualAdapter.ts` is original Signal integration code. It is
+listed here for clarity because it is the sole semantic boundary into the
+adapted engine, but it does not copy Rubric implementation code.
 
 ### Summary of substantive changes
 
@@ -51,6 +56,9 @@ changes made in it.
 - **Rubric's graph search not taken.** Signal keeps its own MiniSearch index.
 - **Generic relationship springs held at zero,** matching Rubric's own shipped
   bounded configuration, and stated as a law rather than a dial.
+- **The monolithic browser-global state became a typed viewport engine.** It
+  retains Rubric's ownership model while exposing only Signal-safe inputs and
+  callbacks.
 
 ### Not used
 

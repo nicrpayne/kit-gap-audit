@@ -8,13 +8,13 @@ and product actions.
 ```
 ?renderer=canvas                     the Rubric engine, Rings (default)
 ?renderer=canvas&layout=constellations   the organic cell view
-?renderer=canvas&camera=rubric       Rubric's camera instead of Signal's
+?renderer=canvas&camera=signal       the old Signal camera as a control
 ?renderer=svg                        the shipped renderer, untouched
 ```
 
 ---
 
-## 0. Provenance — two passes, and what changed between them
+## 0. Provenance — three passes, and what changed between them
 
 **Pass 1** ran before the Rubric source was available. It built a renderer
 boundary, a visual-scene adapter, an accessibility mirror, a hit-test index
@@ -24,7 +24,7 @@ better painter over the same coordinates still read as the same map. The
 missing piece was the arrangement, which that pass was explicitly told not to
 touch.
 
-**Pass 2** — this one — has the reference implementation in the branch at
+**Pass 2** had the reference implementation in the branch at
 `lab/rubric-reference/`. It replaced the homemade painter with Rubric's and
 added the spatial engine.
 
@@ -32,6 +32,19 @@ Kept from pass 1: the scene adapter, the renderer boundary, the accessibility
 mirror, the hit-test index, and the four performance fixes it found.
 Replaced: the painter, the glow treatment, the edge treatment, the depth
 treatment, the node treatment, and the static structural web.
+
+**Pass 3** stops asking the React component to assemble Rubric mechanics one
+at a time. `components/audit/canvas/rubric/engine.ts` is now the viewport
+substrate: one Rubric-style stateful chassis owns the field, affine camera,
+sprites, backdrop, soft layer, hit index and paint lifecycle. The component is
+a host for Signal controls and callbacks. `lib/audit/rubricVisualAdapter.ts`
+is the only Signal-to-Rubric boundary; it projects canonical Signal nodes and
+relationships into five visual roles without importing Rubric's filesystem or
+ARMS meanings.
+
+The local visual oracle at `scripts/rubric-reference-server.mjs` serves the
+unmodified reference renderer with the same deterministic Signal fixture. It
+is an audit harness only and is never imported by the application.
 
 Licensing, attribution and the full change list required by CC BY 4.0 are in
 **[ATTRIBUTION.md](../ATTRIBUTION.md)**.
@@ -52,7 +65,8 @@ Licensing, attribution and the full change list required by CC BY 4.0 are in
 | Bounded Circle/Hex engine | `_core.js` 547-736 | yes |
 | Rings target engine, spin, wobble | `_core.js` 339-545 | yes, with Signal's bands |
 | Position-retaining polar morph | `_core.js` 341-389 | yes, on an elapsed-time clock |
-| Camera | `_core.js` 811-940 | behind an A/B; Signal's still default |
+| Single viewport state/lifecycle | `_core.js` `S`, `start()`, `loop()` | **yes** — adapted as `RubricViewportEngine` |
+| Camera | `_core.js` 811-940 | **yes** — default for Canvas; `?camera=signal` remains the control |
 | Comet flow on ambient edges | `index.html` 238-269 | **no** — only for an explicit Trace |
 | File-byte node sizing | `_core.js` 739-750 | **no** — no meaning in an audit |
 | Label placement | `index.html` 486-510 | **no** — replaced; Rubric has no collision |
@@ -102,6 +116,13 @@ not a morph.
 ## 1. The Signal → visual adapter
 
 `lib/audit/visualScene.ts`. Pure — no React, no DOM, no canvas, no CSS.
+
+`lib/audit/rubricVisualAdapter.ts` is a second, deliberately thin projection.
+It does not decide trust, labels, visibility, actions, selection, or product
+state. It gives the Rubric substrate only stable ids, radii, Signal-authored
+anchors/bands/order and a visual role: router, hub, aggregate, rim or leaf.
+Every visual relationship keeps its canonical id and trust basis, but no
+relationship enters the force simulation.
 
 The obvious way to add a second renderer is to write a Canvas component that
 re-derives what to draw. That is the wrong way, and the brief says so: *no
@@ -196,8 +217,10 @@ nothing but pixels — and it does, because the SVG one still runs.
 `screenToWorld` / `worldToScreen`. Deliberately narrow: no inertia, no gesture
 state, no easing curve, no queue, because those are the camera's own business
 and putting them in the interface would bake today's answers into the seam
-meant to outlive them. Signal's camera is not replaced in this slice; the seam
-exists so that stays a reversible decision.
+meant to outlive them. Rubric's affine camera is the Canvas default in this
+slice. The adapter keeps Signal's shared camera controls synchronized in both
+directions, and `?camera=signal` keeps the old camera available as a reversible
+control.
 
 ---
 
@@ -212,6 +235,12 @@ exists so that stays a reversible decision.
 | `shapes.ts` | The fourteen glyphs and the arrowhead, transcribed from the SVG's own constants. |
 | `painter.ts` | The frame: ground, structure, sweep, web, aggregates, edges, Reality, nodes, words. |
 | `hitTest.ts` | The bucketed world-space hit index. |
+| `rubric/engine.ts` | The direct Rubric viewport chassis: field, camera, resources, hits and paint lifecycle in one stateful engine. |
+
+Matched evidence for the focused pass is committed under
+`artifacts/rubric-engine-audit/`: the starting candidate, the actual local
+Rubric reference populated with the same Signal fixture, the adapted Rings and
+Constellations candidates, and a layout-morph video.
 
 Z-order is the SVG's, because the reading of the field depends on it.
 
