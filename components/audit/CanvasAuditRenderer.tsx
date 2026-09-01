@@ -33,13 +33,12 @@ import { buildScene, buildSceneCache, type AuditScene } from "@/lib/audit/visual
 import { adaptSignalSceneToRubric } from "@/lib/audit/rubricVisualAdapter";
 import { layoutGraph, clusterLabelPoint, CLUSTER_ORDER, type GraphLayout } from "@/lib/audit/graphLayout";
 import type { LayoutMode } from "@/lib/audit/spatial/field";
-import { MAX_ZOOM, MIN_ZOOM, quantizeScale, type Camera } from "./cameraMotion";
+import { quantizeScale, type Camera } from "./cameraMotion";
 import type { AuditRendererProps } from "./renderer/types";
-import { screenToWorld } from "./renderer/types";
 import { TokenPalette } from "./canvas/paintTokens";
 import type { PaintStats } from "./canvas/rubric/painter";
 import { RubricViewportEngine } from "./canvas/rubric/engine";
-import { fromSignal, toSignal, resolveCamera, type CameraId } from "./rubricCamera";
+import { fromSignal, toSignal } from "./rubricCamera";
 
 declare global {
   interface Window {
@@ -51,7 +50,7 @@ declare global {
       /** Whether the field is still animating at rest on this machine. */
       ambient: boolean;
       layout: LayoutMode;
-      camera: CameraId;
+      camera: "rubric";
     };
   }
 }
@@ -77,6 +76,7 @@ export default function CanvasAuditRenderer(props: AuditRendererProps) {
     getCamera,
     onCamera,
     onSelect,
+    onPointerSelect,
     onHover,
     expanded,
     onToggleCluster,
@@ -92,11 +92,9 @@ export default function CanvasAuditRenderer(props: AuditRendererProps) {
   viewportRef.current = onViewport;
 
   const [layoutMode, setLayoutMode] = useState<LayoutMode>("rings");
-  const [cameraId, setCameraId] = useState<CameraId>("rubric");
   useEffect(() => {
     if (typeof window === "undefined") return;
     setLayoutMode(resolveLayout(window.location.search));
-    setCameraId(resolveCamera(window.location.search));
   }, []);
 
   // ── SCENE ────────────────────────────────────────────────────────────
@@ -202,12 +200,10 @@ export default function CanvasAuditRenderer(props: AuditRendererProps) {
     };
   }, []);
 
-  // The Rubric camera keeps its own transform, seeded from Signal's so the
-  // A/B starts from an identical view.
+  // The canvas has one camera: Rubric's affine transform. Signal's camera
+  // state is only the product-facing mirror used by the controls outside the
+  // canvas and by the semantic scene builder.
   useEffect(() => {
-    if (cameraId !== "rubric") {
-      return;
-    }
     const vp = sizeRefInit(size);
     const engine = engineRef.current;
     if (!engine) return;
@@ -220,14 +216,14 @@ export default function CanvasAuditRenderer(props: AuditRendererProps) {
     lastPublishedCamera.current = fitted;
     onCamera(fitted);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cameraId, size.w, size.h, reducedMotion, getCamera, onCamera]);
+  }, [size.w, size.h, reducedMotion, getCamera, onCamera]);
 
   // Camera controls outside the canvas (Fit / +/- / Back / Forward) still
   // own product intent. Mirror their direct writes into Rubric's affine
   // transform, while ignoring the values this camera just published itself.
   useEffect(() => {
     const rc = engineRef.current?.camera;
-    if (cameraId !== "rubric" || !rc) return;
+    if (!rc) return;
     const own = lastPublishedCamera.current;
     const same =
       own &&
@@ -235,16 +231,16 @@ export default function CanvasAuditRenderer(props: AuditRendererProps) {
       Math.abs(own.y - camera.y) < 1e-5 &&
       Math.abs(own.k - camera.k) < 1e-7;
     if (!same) rc.set(fromSignal(camera, size));
-  }, [camera, cameraId, size]);
+  }, [camera, size]);
 
   useEffect(() => {
     const engine = engineRef.current;
     const rc = engine?.camera;
     const field = engine?.field;
-    if (cameraId !== "rubric" || !rc || !field) return;
+    if (!rc || !field) return;
     rc.fitWorld(field.origin, field.viewRadius, size);
     invalidateRef.current?.();
-  }, [layoutMode, cameraId, size]);
+  }, [layoutMode, size]);
 
   const clusterLabels = useMemo(
     () =>
@@ -291,13 +287,10 @@ export default function CanvasAuditRenderer(props: AuditRendererProps) {
   reducedRef.current = reducedMotion;
   const sizeRef = useRef(size);
   sizeRef.current = size;
-  const cameraIdRef = useRef(cameraId);
-  cameraIdRef.current = cameraId;
   const sceneKey = useRef({ id: 0, scene });
   if (sceneKey.current.scene !== scene) sceneKey.current = { id: sceneKey.current.id + 1, scene };
 
   const rafRef = useRef<number | null>(null);
-  const lastHitBuild = useRef(0);
   const lastT = useRef(0);
 
   // ── THE AMBIENT-MOTION GOVERNOR ──────────────────────────────────────
@@ -354,17 +347,11 @@ export default function CanvasAuditRenderer(props: AuditRendererProps) {
       const moving = f.tick(dt);
       livePositions.current = f.positions();
 
-      let cam: Camera;
-      let camMoving = false;
-      if (cameraIdRef.current === "rubric") {
-        camMoving = engine.camera.advance(dt);
-        cam = toSignal(engine.camera.transform, vp);
-        if (camMoving) {
-          lastPublishedCamera.current = cam;
-          onCamera(cam);
-        }
-      } else {
-        cam = getCamera();
+      const camMoving = engine.camera.advance(dt);
+      const cam = toSignal(engine.camera.transform, vp);
+      if (camMoving) {
+        lastPublishedCamera.current = cam;
+        onCamera(cam);
       }
 
       const t0 = performance.now();
@@ -389,18 +376,10 @@ export default function CanvasAuditRenderer(props: AuditRendererProps) {
       });
       const paintMs = performance.now() - t0;
 
-      // ── THE HIT INDEX IS NOT A PER-FRAME COST ────────────────────────
-      //
-      // It was, briefly, and it was the single most expensive thing in a
-      // moving frame: 427 candidates and a fresh bucket map, rebuilt sixty
-      // times a second so that a pointer which had not moved could be
-      // answered against positions that had barely changed. Throttled to
-      // ~12Hz, which is far faster than a hand can cross a node, and rebuilt
-      // immediately whenever the scene itself changes.
-      if (now - lastHitBuild.current > 80) {
-        lastHitBuild.current = now;
-        engine.rebuildHits(sceneRef.current, livePositions.current, cam.k);
-      }
+      // Rubric hit-tests the coordinates painted on this frame. A second,
+      // throttled Signal index would make a moving node and its grab target
+      // disagree, so the engine keeps direct references to this live frame.
+      engine.updateHitFrame(sceneRef.current, livePositions.current, cam.k);
 
       const probe = (window.__signalCanvas ??= {
         stats: null,
@@ -409,12 +388,12 @@ export default function CanvasAuditRenderer(props: AuditRendererProps) {
         repaints: 0,
         ambient: f.ambientOn,
         layout: f.layout,
-        camera: cameraIdRef.current,
+        camera: "rubric",
       });
       probe.stats = stats;
       probe.ambient = f.ambientOn;
       probe.layout = f.layout;
-      probe.camera = cameraIdRef.current;
+      probe.camera = "rubric";
       probe.repaints++;
       probe.frames.push(paintMs);
       if (probe.frames.length > 400) probe.frames.shift();
@@ -449,7 +428,7 @@ export default function CanvasAuditRenderer(props: AuditRendererProps) {
         running.current = false;
       }
     },
-    [getCamera, onCamera]
+    [onCamera]
   );
 
   const invalidate = useCallback(() => {
@@ -465,9 +444,8 @@ export default function CanvasAuditRenderer(props: AuditRendererProps) {
     if (rafRef.current != null) cancelAnimationFrame(rafRef.current);
     rafRef.current = null;
     running.current = false;
-    lastHitBuild.current = 0;
     invalidate();
-  }, [scene, camera, size, sweepAngle, reducedMotion, clusterLabels, layoutMode, cameraId, invalidate]);
+  }, [scene, camera, size, sweepAngle, reducedMotion, clusterLabels, layoutMode, invalidate]);
 
   useEffect(
     () => () => {
@@ -480,39 +458,39 @@ export default function CanvasAuditRenderer(props: AuditRendererProps) {
 
   // ── GESTURES ─────────────────────────────────────────────────────────
   //
-  // Two cameras, one gesture surface: which camera receives the gesture is
-  // the only thing the A/B changes, so what is compared is camera FEEL rather
-  // than two different interactions.
+  // Rubric owns the gesture state machine. React only converts browser
+  // coordinates, publishes the resulting camera/selection to the product,
+  // and invalidates the painter. There is deliberately no second Signal drag
+  // ref, hit policy, click threshold, camera branch or selection toggle here.
+  const localPoint = useCallback((clientX: number, clientY: number) => {
+    const el = hostRef.current;
+    if (!el) return null;
+    const r = el.getBoundingClientRect();
+    return { x: clientX - r.left, y: clientY - r.top };
+  }, []);
+
+  const publishCamera = useCallback(() => {
+    const engine = engineRef.current;
+    if (!engine) return;
+    const next = toSignal(engine.camera.transform, sizeRef.current);
+    lastPublishedCamera.current = next;
+    onCamera(next);
+    invalidateRef.current?.();
+  }, [onCamera]);
+
+  const setCursor = useCallback((cursor: "grab" | "grabbing" | "pointer") => {
+    if (hostRef.current) hostRef.current.style.cursor = cursor;
+  }, []);
+
   const onWheel = useCallback(
     (e: WheelEvent) => {
       e.preventDefault();
-      const el = hostRef.current;
-      if (!el) return;
-      const r = el.getBoundingClientRect();
-      const sx = e.clientX - r.left;
-      const sy = e.clientY - r.top;
-      const vp = sizeRef.current;
-
-      if (cameraIdRef.current === "rubric" && engineRef.current) {
-        engineRef.current.camera.wheel(e.deltaY, { x: sx, y: sy });
-        const next = toSignal(engineRef.current.camera.transform, vp);
-        lastPublishedCamera.current = next;
-        onCamera(next);
-        invalidateRef.current?.();
-        return;
-      }
-      const c = getCamera();
-      const w0 = vp.w / c.k;
-      const h0 = vp.h / c.k;
-      const before = { x: c.x - w0 / 2 + (sx / r.width) * w0, y: c.y - h0 / 2 + (sy / r.height) * h0 };
-      const k = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, c.k * Math.exp(-e.deltaY * 0.0016)));
-      onCamera({
-        x: before.x - (sx / r.width - 0.5) * (vp.w / k),
-        y: before.y - (sy / r.height - 0.5) * (vp.h / k),
-        k,
-      });
+      const point = localPoint(e.clientX, e.clientY);
+      if (!point || !engineRef.current) return;
+      engineRef.current.wheel(e.deltaY, point);
+      publishCamera();
     },
-    [getCamera, onCamera]
+    [localPoint, publishCamera]
   );
 
   useEffect(() => {
@@ -522,36 +500,15 @@ export default function CanvasAuditRenderer(props: AuditRendererProps) {
     return () => el.removeEventListener("wheel", onWheel);
   }, [onWheel]);
 
-  const drag = useRef<{ sx: number; sy: number; cam: Camera; node: string | null; moved: boolean } | null>(
-    null
-  );
-
-  const currentCam = useCallback((): Camera => {
-    if (cameraIdRef.current === "rubric" && engineRef.current) {
-      return toSignal(engineRef.current.camera.transform, sizeRef.current);
-    }
-    return getCamera();
-  }, [getCamera]);
-
-  const worldAt = useCallback(
-    (clientX: number, clientY: number) => {
-      const el = hostRef.current;
-      if (!el) return null;
-      const r = el.getBoundingClientRect();
-      return screenToWorld({ x: clientX - r.left, y: clientY - r.top }, currentCam(), sizeRef.current);
-    },
-    [currentCam]
-  );
-
   const onPointerDown = (e: React.PointerEvent) => {
     if (e.button !== 0) return;
-    const w = worldAt(e.clientX, e.clientY);
-    // A pointer on a node grabs the node; a pointer on the field pans.
-    const node = w ? engineRef.current?.hitAt(w.x, w.y) ?? null : null;
-    drag.current = { sx: e.clientX, sy: e.clientY, cam: currentCam(), node, moved: false };
-    if (node && graph.hasNode(node)) engineRef.current?.field.grab(node);
+    const point = localPoint(e.clientX, e.clientY);
+    const engine = engineRef.current;
+    if (!point || !engine) return;
+    const result = engine.pointerDown(point);
+    setCursor(result.cursor);
     try {
-      (e.target as Element).setPointerCapture?.(e.pointerId);
+      e.currentTarget.setPointerCapture(e.pointerId);
     } catch {
       /* no live pointer to capture — the drag still works inside the field */
     }
@@ -559,30 +516,11 @@ export default function CanvasAuditRenderer(props: AuditRendererProps) {
   };
 
   const onPointerMove = (e: React.PointerEvent) => {
-    const d = drag.current;
-    if (d) {
-      const dx = e.clientX - d.sx;
-      const dy = e.clientY - d.sy;
-      if (Math.abs(dx) + Math.abs(dy) > 3) d.moved = true;
-      if (d.node) {
-        // THE HAND OUTRANKS EVERY LAYOUT. Rubric pins a dragged node; so does
-        // this, and the release returns it to its semantic seat.
-        const w = worldAt(e.clientX, e.clientY);
-        if (w) engineRef.current?.field.dragTo(d.node, w.x, w.y);
-      } else if (cameraIdRef.current === "rubric" && engineRef.current) {
-        const base = fromSignal(d.cam, sizeRef.current);
-        engineRef.current.camera.set({ k: d.cam.k, x: base.x + dx, y: base.y + dy });
-        onCamera(toSignal(engineRef.current.camera.transform, sizeRef.current));
-      } else {
-        onCamera({ x: d.cam.x - dx / d.cam.k, y: d.cam.y - dy / d.cam.k, k: d.cam.k });
-      }
-      invalidateRef.current?.();
-      return;
-    }
-    const w = worldAt(e.clientX, e.clientY);
-    if (!w) return;
+    const point = localPoint(e.clientX, e.clientY);
+    const engine = engineRef.current;
+    if (!point || !engine) return;
     const t0 = performance.now();
-    const id = engineRef.current?.hitAt(w.x, w.y) ?? null;
+    const result = engine.pointerMove(point);
     const probe = (window.__signalCanvas ??= {
       stats: null,
       frames: [],
@@ -590,25 +528,32 @@ export default function CanvasAuditRenderer(props: AuditRendererProps) {
       repaints: 0,
       ambient: true,
       layout: "rings",
-      camera: "signal",
+      camera: "rubric",
     });
     probe.hitTests.push(performance.now() - t0);
     if (probe.hitTests.length > 400) probe.hitTests.shift();
-    if (id !== hoveredId) onHover(id);
-  };
-
-  const onPointerUp = () => {
-    const d = drag.current;
-    if (d?.node) engineRef.current?.field.release(d.node);
-    drag.current = null;
+    if (result.hover !== hoveredId) onHover(result.hover);
+    if (result.cameraChanged) publishCamera();
+    setCursor(result.cursor);
     invalidateRef.current?.();
   };
 
-  const onClick = (e: React.MouseEvent) => {
-    if (drag.current?.moved) return;
-    const w = worldAt(e.clientX, e.clientY);
-    if (!w) return;
-    const cam = currentCam();
+  const onPointerUp = (e: React.PointerEvent) => {
+    const point = localPoint(e.clientX, e.clientY);
+    const engine = engineRef.current;
+    if (!point || !engine) return;
+    const result = engine.pointerUp(point);
+    setCursor(result.cursor);
+    try {
+      e.currentTarget.releasePointerCapture(e.pointerId);
+    } catch {
+      /* the browser may already have released it */
+    }
+    if (!result.clicked) {
+      invalidateRef.current?.();
+      return;
+    }
+    const cam = toSignal(engine.camera.transform, sizeRef.current);
     const project = (x: number, y: number) => ({
       x: (x - cam.x) * cam.k + sizeRef.current.w / 2,
       y: (y - cam.y) * cam.k + sizeRef.current.h / 2,
@@ -617,8 +562,7 @@ export default function CanvasAuditRenderer(props: AuditRendererProps) {
     // region is taken from the live position rather than the static seat.
     const live = livePositions.current;
     const toggle = clusterToggleAt(
-      e,
-      hostRef.current,
+      point,
       clusterLabels.map((c) => {
         const p = live.get(`lane:${c.cluster}`);
         return p ? { ...c, x: p.x, y: p.y } : c;
@@ -630,12 +574,28 @@ export default function CanvasAuditRenderer(props: AuditRendererProps) {
       onToggleCluster(toggle);
       return;
     }
-    const id = engineRef.current?.hitAt(w.x, w.y) ?? null;
-    onSelect(id === null ? null : id === selectedId ? null : id);
-    // A new selection wants a little room. Rubric's own click path changes no
-    // physics (`select()`); this is Signal's B3 law added on top — the local
-    // world opens, the global map does not move.
-    if (id) engineRef.current?.field.reheat(0.22);
+    // Rubric's ordinary click selects in place and does not toggle, reheat the
+    // field or fly the camera. Signal still decides what that id means.
+    (onPointerSelect ?? onSelect)(result.hit);
+    invalidateRef.current?.();
+  };
+
+  const onPointerCancel = () => {
+    engineRef.current?.pointerCancel();
+    setCursor("grab");
+    invalidateRef.current?.();
+  };
+
+  const onPointerLeave = () => {
+    const engine = engineRef.current;
+    if (!engine || engine.pointerActive) return;
+    const next = engine.pointerLeave();
+    if (next !== hoveredId) onHover(next);
+    setCursor("grab");
+  };
+
+  const onDoubleClick = () => {
+    if (engineRef.current?.doubleClick(sizeRef.current)) invalidateRef.current?.();
   };
 
   // ── ACCESSIBLE MIRROR ────────────────────────────────────────────────
@@ -664,24 +624,22 @@ export default function CanvasAuditRenderer(props: AuditRendererProps) {
       data-shoot="signal-graph"
       data-renderer="canvas"
       data-layout={layoutMode}
-      data-camera={cameraId}
+      data-camera="rubric"
       data-zoom={level}
       style={{
         width: "100%",
         height: "100%",
         position: "relative",
         display: "block",
-        cursor: drag.current?.node ? "grabbing" : "grab",
+        cursor: "grab",
         touchAction: "none",
       }}
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
-      onPointerLeave={() => {
-        onPointerUp();
-        onHover(null);
-      }}
-      onClick={onClick}
+      onPointerCancel={onPointerCancel}
+      onPointerLeave={onPointerLeave}
+      onDoubleClick={onDoubleClick}
     >
       <canvas ref={canvasRef} aria-hidden="true" style={{ width: "100%", height: "100%", display: "block" }} />
 
@@ -695,6 +653,9 @@ export default function CanvasAuditRenderer(props: AuditRendererProps) {
           border: "1px solid var(--i-border-strong)",
         }}
         data-shoot="layout-switch"
+        onPointerDown={(e) => e.stopPropagation()}
+        onPointerUp={(e) => e.stopPropagation()}
+        onDoubleClick={(e) => e.stopPropagation()}
       >
         {(["rings", "constellations"] as LayoutMode[]).map((m) => (
           <button
@@ -720,7 +681,7 @@ export default function CanvasAuditRenderer(props: AuditRendererProps) {
       <A11yMirror
         nodes={mirror}
         label={`Signal Graph: ${scene.stats.drawn} nodes, ${scene.stats.opened} opened and ${scene.stats.drawn - scene.stats.opened} collapsed into marks, ${scene.stats.edges} relationships shown, ${level} zoom, ${layoutMode} layout`}
-        onSelect={onSelect}
+        onSelect={onPointerSelect ?? onSelect}
         onHover={onHover}
         onFocusNode={onFocusNode}
       />
@@ -808,7 +769,7 @@ const MirrorNode = memo(function MirrorNode({
       }}
       onClick={(e) => {
         e.stopPropagation();
-        onSelect(selected ? null : id);
+        onSelect(id);
       }}
     >
       {name}
@@ -817,16 +778,13 @@ const MirrorNode = memo(function MirrorNode({
 });
 
 function clusterToggleAt(
-  e: React.MouseEvent,
-  host: HTMLElement | null,
+  point: { x: number; y: number },
   labels: { cluster: string; x: number; y: number; latent: number; flip: boolean }[],
   expanded: Set<string>,
   project: (x: number, y: number) => { x: number; y: number }
 ): string | null {
-  if (!host) return null;
-  const r = host.getBoundingClientRect();
-  const px = e.clientX - r.left;
-  const py = e.clientY - r.top;
+  const px = point.x;
+  const py = point.y;
   for (const c of labels) {
     if (c.latent <= 0 && !expanded.has(c.cluster)) continue;
     const p = project(c.x, c.y);

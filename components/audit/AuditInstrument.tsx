@@ -589,14 +589,21 @@ export default function AuditInstrument({ initialScopeId }: { initialScopeId?: s
   );
 
   const select = useCallback(
-    (id: string | null) => {
+    (id: string | null, moveCamera = true) => {
       // Taking hold of a node is taking control. A tween still running would
       // carry the field out from under the thing just clicked.
       stopTween();
       setSelectedId(id);
       setResult(null);
       if (id === null) {
-        setTrace(false);
+        if (moveCamera) {
+          setTrace(false);
+        } else {
+          // Rubric background click clears selection in place. Do not run
+          // Signal's trace-return flight through a direct canvas gesture.
+          restoreTrace.current = null;
+          setSolo(false);
+        }
         setMode("A");
         // LAW 9: clearing does NOT move the camera. You stay exactly where you
         // were looking; a silent Fit throws away the view you built.
@@ -604,7 +611,7 @@ export default function AuditInstrument({ initialScopeId }: { initialScopeId?: s
       }
       // LAW 7: attention transfers. No cleared intermediate state, no rebuild
       // — the neighbourhood is replaced in one commit.
-      if (!navigating.current) {
+      if (moveCamera && !navigating.current) {
         setNav((prev) => {
           const stack = prev.stack.slice(0, prev.i + 1);
           if (stack.length > 0 && stack[stack.length - 1].id === id) return prev;
@@ -618,11 +625,17 @@ export default function AuditInstrument({ initialScopeId }: { initialScopeId?: s
           return { stack: trimmed, i: trimmed.length - 1 };
         });
       }
-      const next = frameFor(id);
-      if (next) flyCamera(next);
+      if (moveCamera) {
+        const next = frameFor(id);
+        if (next) flyCamera(next);
+      }
     },
     [stopTween, frameFor, flyCamera, setTrace]
   );
+
+  /** Rubric's canvas click changes focus without moving the camera. Search,
+      inspector navigation and summary cards keep Signal's product framing. */
+  const selectInPlace = useCallback((id: string | null) => select(id, false), [select]);
 
   // ── TAKING A RESULT ──────────────────────────────────────────────────
   //
@@ -636,11 +649,10 @@ export default function AuditInstrument({ initialScopeId }: { initialScopeId?: s
   // Expand All: the previous behaviour's whole problem was opening more than
   // was asked for and never closing it again.
   //
-  // Then `select`, unchanged, which frames under the SAME law a direct click
-  // uses. Law 5: a click, a result, an inspector row and a summary card all
-  // leave the camera in the same place, because they are the same act. No
-  // second camera call and no forced zoom — the 230% search rule is gone and
-  // stays gone.
+  // Then `select`, which frames deliberate product navigation. A direct
+  // canvas click now follows Rubric instead: it selects in place. No second
+  // camera call and no forced zoom — the 230% search rule is gone and stays
+  // gone.
   const takeResult = useCallback(
     (id: string) => {
       if (graph) {
@@ -1212,6 +1224,7 @@ export default function AuditInstrument({ initialScopeId }: { initialScopeId?: s
             getCamera={getCamera}
             onCamera={setCamera}
             onSelect={select}
+            onPointerSelect={selectInPlace}
             onHover={setHoveredId}
             expanded={expanded}
             onToggleCluster={toggleCluster}

@@ -14,7 +14,7 @@
 //   7  Rings → Constellations, sampled through the morph
 //   8  Constellations → Rings, sampled through the morph
 //   9  rapid pan and zoom
-//  10  camera A/B — Signal's against Rubric's, same gestures
+//  10  Rubric gesture stress — zoom and pan through the one interaction path
 //
 // Plus recordings, frame timings, and the semantic guards that must survive
 // all of it.
@@ -53,7 +53,7 @@ const fmt = (n) => (typeof n === "number" ? n.toFixed(1) : String(n));
 
 const browser = await chromium.launch({ executablePath: CHROME });
 
-async function open({ layout = "rings", camera = "signal", video = false } = {}) {
+async function open({ layout = "rings", video = false } = {}) {
   const ctx = await browser.newContext({
     viewport: VIEWPORT,
     deviceScaleFactor: video ? 1 : 2,
@@ -72,7 +72,7 @@ async function open({ layout = "rings", camera = "signal", video = false } = {})
   await page.route("**/api/audit/truth*", (r) =>
     r.fulfill({ status: 404, contentType: "application/json", body: '{"error":"absent"}' })
   );
-  await page.goto(`${BASE}/audit?renderer=canvas&layout=${layout}&camera=${camera}`, {
+  await page.goto(`${BASE}/audit?renderer=canvas&layout=${layout}`, {
     waitUntil: "networkidle",
   });
   await page.waitForSelector('[data-shoot="signal-graph"]', { timeout: 20000 });
@@ -334,13 +334,13 @@ console.log(`\n══ RUBRIC ENGINE — ACCEPTANCE ═════════�
 }
 
 // ─────────────────────────────────────────────────────────────────────
-//  10 · CAMERA A/B — the same gestures, twice
+//  10 · RUBRIC GESTURE STRESS — one camera, one pointer contract
 // ─────────────────────────────────────────────────────────────────────
-for (const camera of ["signal", "rubric"]) {
-  const { ctx, page, errors } = await open({ layout: "constellations", camera });
+{
+  const { ctx, page, errors } = await open({ layout: "constellations" });
   const b = await box(page);
   const c = centre(b);
-  await page.screenshot({ path: `${out}/10-camera-${camera}-rest.png` });
+  await page.screenshot({ path: `${out}/10-rubric-gesture-rest.png` });
 
   await page.mouse.move(c.x - 150, c.y - 100);
   await startSample(page);
@@ -350,7 +350,7 @@ for (const camera of ["signal", "rubric"]) {
   }
   await page.waitForTimeout(300);
   const zoomIn = await stopSample(page);
-  await page.screenshot({ path: `${out}/10-camera-${camera}-zoomed.png` });
+  await page.screenshot({ path: `${out}/10-rubric-gesture-zoomed.png` });
 
   await startSample(page);
   await page.mouse.down();
@@ -365,8 +365,8 @@ for (const camera of ["signal", "rubric"]) {
     const el = document.querySelector('[data-shoot="signal-graph"]');
     return el?.getAttribute("data-zoom") ?? null;
   });
-  measured[`camera_${camera}`] = { zoomIn, pan, zoomRange, errors };
-  await page.screenshot({ path: `${out}/10-camera-${camera}-panned.png` });
+  measured.rubricGestures = { zoomIn, pan, zoomRange, errors };
+  await page.screenshot({ path: `${out}/10-rubric-gesture-panned.png` });
   await ctx.close();
 }
 
@@ -466,14 +466,15 @@ if (s) {
   );
 }
 
-console.log(`\n── CAMERA A/B ─────────────────────────────────────────────`);
-for (const cam of ["signal", "rubric"]) {
-  const m = measured[`camera_${cam}`];
-  if (!m) continue;
+console.log(`\n── RUBRIC GESTURES ────────────────────────────────────────`);
+{
+  const m = measured.rubricGestures;
+  if (m) {
   console.log(
-    `  ${cam.padEnd(8)} zoom median ${fmt(m.zoomIn.median)}ms p95 ${fmt(m.zoomIn.p95)}ms  ·  pan median ${fmt(m.pan.median)}ms p95 ${fmt(m.pan.p95)}ms  ·  tier after zoom: ${m.zoomRange}`
+    `  zoom median ${fmt(m.zoomIn.median)}ms p95 ${fmt(m.zoomIn.p95)}ms  ·  pan median ${fmt(m.pan.median)}ms p95 ${fmt(m.pan.p95)}ms  ·  tier after zoom: ${m.zoomRange}`
   );
-  check(`${cam} camera: no errors`, m.errors.length === 0, m.errors.slice(0, 1).join(""));
+    check("Rubric gestures: no errors", m.errors.length === 0, m.errors.slice(0, 1).join(""));
+  }
 }
 
 console.log(`\n── BUDGETS ────────────────────────────────────────────────`);

@@ -1,4 +1,4 @@
-// THE RUBRIC CAMERA, FOR AN HONEST A/B.
+// THE RUBRIC CAMERA — THE CANVAS VIEWPORT'S ONLY DIRECT-MANIPULATION CAMERA.
 //
 // ADAPTED FROM RUBRIC SECOND BRAIN — `public/_core.js`:
 //   `w2s` / `s2w` / `flyCam` / `resetCam` / `flyToNode`  lines 811-816
@@ -12,11 +12,7 @@
 //
 // ── WHY THIS EXISTS AT ALL ─────────────────────────────────────────────
 //
-// Nic is explicitly open to replacing Signal's camera, and "do not retain
-// Signal's camera merely because it already exists" is the instruction. The
-// only way to answer that honestly is to have both and drive them.
-//
-// So this is Rubric's camera, faithfully: an affine `{k, x, y}` where x/y are
+// This is Rubric's camera, faithfully: an affine `{k, x, y}` where x/y are
 // a SCREEN-SPACE translation rather than a world centre, a wheel that
 // preserves the world point under the cursor, `.1-8` bounds, and a fly that
 // eases x, y and k independently with ease-out cubic.
@@ -26,7 +22,7 @@
 // 1. FRAME COUNTS BECOME MILLISECONDS. Rubric's fly runs `S.fly.t++` once per
 //    `requestAnimationFrame` over a duration of ~50 FRAMES, so the same move
 //    takes 833ms on a 60Hz display and 417ms on a 120Hz one. That is not a
-//    style difference to A/B, it is a bug the reference happens to contain,
+//    style difference, it is a bug the reference happens to contain,
 //    and shipping it would make Signal's motion depend on the reader's
 //    monitor. Duration is converted at 60fps and driven by elapsed time.
 //
@@ -38,8 +34,8 @@
 //
 // Everything else — the exponential wheel constant, the zoom bounds, the
 // cursor-anchored zoom, ease-out cubic on each axis independently, the
-// absence of geometric scale interpolation — is Rubric's, so that what the
-// A/B compares is Rubric's feel and not a paraphrase of it.
+// absence of geometric scale interpolation — is Rubric's feel, not a
+// paraphrase of it.
 
 import { FIELD } from "@/lib/audit/graphLayout";
 import type { Camera } from "./cameraMotion";
@@ -80,9 +76,9 @@ export function s2w(p: { x: number; y: number }, t: RubricTransform): { x: numbe
 /**
  * SIGNAL'S CAMERA IS A WORLD CENTRE; RUBRIC'S IS A SCREEN OFFSET.
  *
- * They describe the same view, and both painters and both hit tests need one
- * of them. These convert, so the A/B swaps a camera without touching anything
- * downstream — which is the entire point of having had a `CameraAdapter`.
+ * They describe the same view. These conversions let Signal's product-level
+ * controls and scene builder mirror the Rubric transform without becoming a
+ * second gesture camera.
  */
 export function toSignal(t: RubricTransform, vp: { w: number; h: number }): Camera {
   return { k: t.k, x: (vp.w / 2 - t.x) / t.k, y: (vp.h / 2 - t.y) / t.k };
@@ -194,8 +190,7 @@ export class RubricCamera {
   }
 
   /** One frame. Rubric eases x, y and k INDEPENDENTLY with ease-out cubic and
-      no geometric interpolation on scale — kept exactly, because that is one
-      of the two things the A/B is actually testing. */
+      no geometric interpolation on scale — kept exactly. */
   advance(dt: number): boolean {
     const f = this.fly;
     if (!f) return false;
@@ -210,14 +205,4 @@ export class RubricCamera {
     if (p >= 1) this.fly = null;
     return this.fly != null;
   }
-}
-
-export type CameraId = "signal" | "rubric";
-
-/** Canvas is the Rubric viewport candidate, so its own camera is the default.
-    `?camera=signal` remains the explicit control for the A/B. */
-export function resolveCamera(search: string | null | undefined): CameraId {
-  if (!search) return "rubric";
-  const p = new URLSearchParams(search.startsWith("?") ? search.slice(1) : search);
-  return p.get("camera") === "signal" ? "signal" : "rubric";
 }

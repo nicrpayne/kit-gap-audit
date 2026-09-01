@@ -79,6 +79,9 @@ export interface AuditRendererProps {
   getCamera: () => Camera;
   onCamera: (c: Camera) => void;
   onSelect: (id: string | null) => void;
+  /** Direct surface selection. Rubric clicks select in place; product
+      navigation such as Search may still use `onSelect` to frame a result. */
+  onPointerSelect?: (id: string | null) => void;
   onHover: (id: string | null) => void;
   /** Cluster ids the user has expanded. */
   expanded: Set<string>;

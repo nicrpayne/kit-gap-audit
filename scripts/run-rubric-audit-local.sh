@@ -16,7 +16,7 @@ APP_PORT="${RUBRIC_APP_PORT:-3001}"
 
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 REPO_DIR=$(CDPATH= cd -- "$SCRIPT_DIR/.." && pwd)
-REVIEW_URL="http://localhost:${REVIEW_PORT}/audit?renderer=canvas&layout=rings&camera=rubric"
+REVIEW_URL="http://localhost:${REVIEW_PORT}/audit?renderer=canvas&layout=rings"
 
 fail() {
   printf 'Rubric local review could not start: %s\n' "$1" >&2

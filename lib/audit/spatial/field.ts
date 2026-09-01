@@ -79,6 +79,8 @@ interface FieldNode extends FieldNodeInput {
   pin: { x: number; y: number } | null;
   /** Released from the hand: easing back to its seat. */
   spring: { x: number; y: number; t0: number } | null;
+  /** Rubric bounded-layout free drop: the hand chose this temporary home. */
+  userHome: boolean;
   /** Constellation scatter target, for nodes the cell does not gather. */
   bTx: number;
   bTy: number;
@@ -339,6 +341,7 @@ export class SpatialField {
         trY: 0,
         pin: null,
         spring: null,
+        userHome: false,
         bTx: 0,
         bTy: 0,
       });
@@ -581,6 +584,7 @@ export class SpatialField {
     anchors.forEach((a) => {
       const hub = anchorNode.get(a.key);
       if (!hub) return;
+      if (hub.userHome) return;
       const ang = a.angle ?? 0;
       hub.bTx = Math.cos(ang) * anchorRing;
       hub.bTy = Math.sin(ang) * anchorRing;
@@ -595,6 +599,7 @@ export class SpatialField {
     // world's material entered from without pulling their cell toward them.
     const rim = nodes.filter((n) => n.role === "rim").sort((a, b) => a.id.localeCompare(b.id));
     rim.forEach((n, i) => {
+      if (n.userHome) return;
       const ang = -Math.PI / 2 + (i / Math.max(1, rim.length)) * Math.PI * 2;
       const br = R - n.r - 6;
       n.bTx = Math.cos(ang) * br;
@@ -640,7 +645,7 @@ export class SpatialField {
       .force(
         "anchorRing",
         forceRadial<FieldNode>(anchorRing).strength((d) =>
-          d.isAnchorNode && d.fx == null && !d.pin ? TUNING.anchorRingStrength : 0
+          d.isAnchorNode && d.fx == null && !d.pin && !d.userHome ? TUNING.anchorRingStrength : 0
         )
       )
       // The model stays near the centre: it is the project's own statement of
@@ -648,19 +653,35 @@ export class SpatialField {
       .force(
         "model",
         forceRadial<FieldNode>(anchorRing * 0.28).strength((d) =>
-          d.isCore && d.band !== "core" && d.fx == null && !d.pin ? 0.5 : 0
+          d.isCore && d.band !== "core" && d.fx == null && !d.pin && !d.userHome ? 0.5 : 0
         )
       )
       .force(
         "x",
         forceX<FieldNode>((d) => d.bTx).strength((d) =>
-          d.fx != null || d.pin ? 0 : d.role === "rim" ? TUNING.rimHomeStrength : d.isAnchorNode ? TUNING.anchorBearing : 0
+          d.fx != null || d.pin
+            ? 0
+            : d.userHome
+              ? 0.2
+              : d.role === "rim"
+                ? TUNING.rimHomeStrength
+                : d.isAnchorNode
+                  ? TUNING.anchorBearing
+                  : 0
         )
       )
       .force(
         "y",
         forceY<FieldNode>((d) => d.bTy).strength((d) =>
-          d.fx != null || d.pin ? 0 : d.role === "rim" ? TUNING.rimHomeStrength : d.isAnchorNode ? TUNING.anchorBearing : 0
+          d.fx != null || d.pin
+            ? 0
+            : d.userHome
+              ? 0.2
+              : d.role === "rim"
+                ? TUNING.rimHomeStrength
+                : d.isAnchorNode
+                  ? TUNING.anchorBearing
+                  : 0
         )
       )
       .force("center", forceCenter(0, 0))
@@ -674,7 +695,7 @@ export class SpatialField {
     // where a thing sits, and it reads one field — the node's anchor.
     sim.force("groupPull", (a2: number) => {
       for (const d of nodes) {
-        if (d.fx != null || d.isAnchorNode || d.pin || d.role === "rim") continue;
+        if (d.fx != null || d.isAnchorNode || d.pin || d.role === "rim" || d.userHome) continue;
         const hub = anchorNode.get(d.anchor);
         if (!hub) continue;
         // Rubric scales this by alpha alone; the floor is Signal's addition,
@@ -748,12 +769,9 @@ export class SpatialField {
   /**
    * Release.
    *
-   * A released node RETURNS to its semantic seat. Rubric offers a `freeDrop`
-   * mode where a dragged node keeps its new home for the session; Signal does
-   * not take it, because a seat here MEANS something — distance from Reality
-   * is distance from agreement — and letting a hand move a thing to a place
-   * it does not belong would make the map lie. The hand may look; it may not
-   * re-file.
+   * Rubric's shipped skin enables `freeDrop` in bounded Circle/Hex layouts,
+   * which is the source of Constellations. Rings still pulls a released node
+   * back because radial position carries Signal's disagreement meaning.
    */
   release(id: string): void {
     const n = this.nodes.get(id);
@@ -761,13 +779,31 @@ export class SpatialField {
     n.pin = null;
     n.fx = null;
     n.fy = null;
-    n.spring = this.reduced ? null : { x: n.x, y: n.y, t0: this.clock };
-    if (this.mode === "constellations") this.sim?.alphaTarget(0).alpha(0.35);
+    if (this.mode === "constellations" && n.role !== "router") {
+      n.bTx = n.x;
+      n.bTy = n.y;
+      n.userHome = true;
+      n.spring = null;
+      // d3-force caches forceX/forceY accessors when a force is initialised.
+      // Rebuild so Rubric's newly assigned `_userHome` and `_bT*` values are
+      // actually adopted; merely reheating would keep the pre-drop target.
+      this.buildSim(0.25);
+    } else {
+      n.spring = this.reduced ? null : { x: n.x, y: n.y, t0: this.clock };
+      if (this.mode === "constellations") this.buildSim(0.5);
+    }
   }
 
-  /** Local reheat, for a selection that wants breathing room. */
-  reheat(alpha = 0.3): void {
-    if (this.mode === "constellations") this.sim?.alpha(Math.max(this.sim.alpha(), alpha));
+  /** Rubric double-click: forget a free-drop home and rejoin layout gravity. */
+  resetHome(id: string): void {
+    const n = this.nodes.get(id);
+    if (!n) return;
+    n.pin = null;
+    n.fx = null;
+    n.fy = null;
+    n.userHome = false;
+    n.spring = null;
+    if (this.mode === "constellations") this.buildSim(0.3);
   }
 
   // ── THE CLOCK ────────────────────────────────────────────────────────

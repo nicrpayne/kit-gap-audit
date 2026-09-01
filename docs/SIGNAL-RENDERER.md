@@ -8,7 +8,6 @@ and product actions.
 ```
 ?renderer=canvas                     the Rubric engine, Rings (default)
 ?renderer=canvas&layout=constellations   the organic cell view
-?renderer=canvas&camera=signal       the old Signal camera as a control
 ?renderer=svg                        the shipped renderer, untouched
 ```
 
@@ -42,6 +41,14 @@ is the only Signal-to-Rubric boundary; it projects canonical Signal nodes and
 relationships into five visual roles without importing Rubric's filesystem or
 ARMS meanings.
 
+**Pass 4** removes the remaining direct-manipulation mix. The viewport engine
+now owns Rubric's complete pointer contract: live-coordinate hit testing,
+pointer-down target retention, five-pixel click/drag discrimination, node
+pinning and release, empty-field pan, cursor-anchored wheel zoom, hover policy,
+free-drop homes in Constellations, and double-click focus. Signal receives the
+selected canonical id, but no longer runs a parallel drag ref, click toggle,
+selection reheat, hit policy, or gesture-camera branch.
+
 The local visual oracle at `scripts/rubric-reference-server.mjs` serves the
 unmodified reference renderer with the same deterministic Signal fixture. It
 is an audit harness only and is never imported by the application.
@@ -66,7 +73,8 @@ Licensing, attribution and the full change list required by CC BY 4.0 are in
 | Rings target engine, spin, wobble | `_core.js` 339-545 | yes, with Signal's bands |
 | Position-retaining polar morph | `_core.js` 341-389 | yes, on an elapsed-time clock |
 | Single viewport state/lifecycle | `_core.js` `S`, `start()`, `loop()` | **yes** — adapted as `RubricViewportEngine` |
-| Camera | `_core.js` 811-940 | **yes** — default for Canvas; `?camera=signal` remains the control |
+| Camera | `_core.js` 811-940 | **yes** — the Canvas gesture camera; no Signal gesture branch |
+| Pointer / click / drag contract | `_core.js` 819-917 | **yes** — one Rubric-owned state machine |
 | Comet flow on ambient edges | `index.html` 238-269 | **no** — only for an explicit Trace |
 | File-byte node sizing | `_core.js` 739-750 | **no** — no meaning in an audit |
 | Label placement | `index.html` 486-510 | **no** — replaced; Rubric has no collision |
@@ -211,16 +219,13 @@ and evidence panels, keyboard commands, reduced motion, Back/Forward and
 routing all stay outside. The practical test: deleting a painter must lose
 nothing but pixels — and it does, because the SVG one still runs.
 
-### The camera seam
+### The camera boundary
 
-`CameraAdapter` — `getTransform` / `setTransform` / `animateTo` / `cancel` /
-`screenToWorld` / `worldToScreen`. Deliberately narrow: no inertia, no gesture
-state, no easing curve, no queue, because those are the camera's own business
-and putting them in the interface would bake today's answers into the seam
-meant to outlive them. Rubric's affine camera is the Canvas default in this
-slice. The adapter keeps Signal's shared camera controls synchronized in both
-directions, and `?camera=signal` keeps the old camera available as a reversible
-control.
+Rubric's affine camera is the Canvas gesture camera. Signal's world-centre
+camera value remains only as a product-state boundary so Fit, +/−,
+Back/Forward, Search and the inspectors can address the same view. The two
+representations are converted at that boundary; there is no query-selectable
+Signal camera and no second pointer implementation inside Canvas.
 
 ---
 

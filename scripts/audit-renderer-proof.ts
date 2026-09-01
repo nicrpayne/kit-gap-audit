@@ -43,7 +43,8 @@ import { resolveRenderer, screenToWorld, worldToScreen } from "../components/aud
 import { SpatialField, TUNING } from "../lib/audit/spatial/field";
 import { adaptSignalSceneToRubric } from "../lib/audit/rubricVisualAdapter";
 import { anchorOf, bandOf, BANDS, CORE_ANCHOR } from "../lib/audit/spatial/anchors";
-import { resolveCamera, RubricCamera, toSignal, fromSignal } from "../components/audit/rubricCamera";
+import { RubricCamera, toSignal, fromSignal, w2s } from "../components/audit/rubricCamera";
+import { RubricViewportEngine } from "../components/audit/canvas/rubric/engine";
 import type { AuditGraph } from "../lib/audit/graph";
 
 let failures = 0;
@@ -708,6 +709,37 @@ console.log(`\n── X · SPATIAL ENGINE ────────────�
 
   check("generic relationship springs are zero", TUNING.linkSpring === 0);
 
+  // THE RELEASE CONTRACT COMES FROM RUBRIC TOO. Its shipped bounded skin
+  // uses freeDrop; Rings has no freeDrop and returns to the layout seat.
+  {
+    const watched = population.find((n) => n.role === "leaf")!;
+    const freeDrop = settle("constellations");
+    const start = { ...freeDrop.positions().get(watched.id)! };
+    const chosen = { x: start.x + 64, y: start.y - 38 };
+    freeDrop.grab(watched.id);
+    freeDrop.dragTo(watched.id, chosen.x, chosen.y);
+    freeDrop.release(watched.id);
+    for (let i = 0; i < 45; i++) freeDrop.tick(16.7);
+    const held = freeDrop.positions().get(watched.id)!;
+    const heldToChosen = Math.hypot(held.x - chosen.x, held.y - chosen.y);
+    const heldToStart = Math.hypot(held.x - start.x, held.y - start.y);
+    check(
+      "Constellations keeps Rubric's bounded free-drop home",
+      heldToChosen < heldToStart,
+      `distance to drop ${heldToChosen.toFixed(1)}, to old seat ${heldToStart.toFixed(1)}`
+    );
+
+    const ringReturn = settle("rings", 4);
+    ringReturn.setAmbient(false);
+    const ringStart = { ...ringReturn.positions().get(watched.id)! };
+    ringReturn.grab(watched.id);
+    ringReturn.dragTo(watched.id, ringStart.x + 80, ringStart.y + 50);
+    ringReturn.release(watched.id);
+    for (let i = 0; i < 70; i++) ringReturn.tick(16.7);
+    const returned = ringReturn.positions().get(watched.id)!;
+    check("Rings returns a released node to its semantic seat", Math.hypot(returned.x - ringStart.x, returned.y - ringStart.y) < 2);
+  }
+
   // RING MOTION USES ELAPSED MILLISECONDS. The source increments once per
   // frame; this port stores the equivalent rate in radians/second. A missing
   // ms→s conversion makes the whole field spin exactly 1,000× too fast.
@@ -786,11 +818,9 @@ console.log(`\n── X · SPATIAL ENGINE ────────────�
   check("reduced motion still switches layout", !rm.morphing, "arrives without a morph");
 }
 
-// ── C · THE CAMERA A/B ────────────────────────────────────────────────
-console.log(`\n── C · CAMERA ─────────────────────────────────────────────`);
+// ── C · THE RUBRIC CAMERA + GESTURE CONTRACT ─────────────────────────
+console.log(`\n── C · RUBRIC CAMERA + GESTURES ───────────────────────────`);
 {
-  check("no parameter uses Rubric's camera in the Rubric viewport", resolveCamera("") === "rubric");
-  check("?camera=signal keeps the control camera available", resolveCamera("?camera=signal") === "signal");
   const vp = { w: 1440, h: 900 };
   const sig = { x: 700, y: 700, k: 1.4 };
   const round = toSignal(fromSignal(sig, vp), vp);
@@ -826,6 +856,71 @@ console.log(`\n── C · CAMERA ───────────────�
   cam4.setReducedMotion(true);
   cam4.flyTo({ k: 3, x: 10, y: 10 });
   check("reduced motion arrives instead of flying", !cam4.flying && cam4.transform.k === 3);
+
+  // The engine, not React, retains Rubric's down target and decides click vs
+  // drag. This is the regression seam that previously allowed a drag to fire
+  // Signal's later browser `click` handler after the drag ref was cleared.
+  const interactionScene = scene();
+  const world = adaptSignalSceneToRubric(interactionScene);
+  const engine = new RubricViewportEngine({ mode: "rings", reducedMotion: false, camera: fromSignal(sig, vp) });
+  engine.setNodes(world.nodes);
+  engine.field.tick(16.7);
+  engine.camera.fitWorld(engine.field.origin, engine.field.viewRadius, vp, 0);
+  const positions = engine.field.positions();
+  engine.updateHitFrame(interactionScene, positions, engine.camera.transform.k);
+
+  const target = interactionScene.nodes.find((n) => world.nodes.some((w) => w.id === n.id && w.role === "leaf"));
+  const targetPosition = target ? positions.get(target.id) : null;
+  const targetScreen = targetPosition ? w2s(targetPosition, engine.camera.transform) : null;
+  check("the Rubric gesture proof has a draggable node", !!target && !!targetScreen);
+  if (target && targetScreen) {
+    const down = engine.pointerDown(targetScreen);
+    const click = engine.pointerUp(targetScreen);
+    check("Rubric retains the pointer-down hit through mouseup", down.hit === target.id && click.hit === target.id);
+    check("an ordinary Rubric node click selects without toggling", click.clicked && click.hit === target.id);
+
+    engine.pointerDown(targetScreen);
+    const dragPoint = { x: targetScreen.x + 34, y: targetScreen.y + 18 };
+    const dragMove = engine.pointerMove(dragPoint);
+    const dragged = engine.pointerUp(dragPoint);
+    check("a node drag is owned by Rubric", dragMove.kind === "drag" && dragMove.cursor === "grabbing");
+    check("a Rubric drag can never become a click", !dragged.clicked && dragged.hit === null);
+
+    const movedPosition = engine.field.positions().get(target.id)!;
+    engine.updateHitFrame(interactionScene, engine.field.positions(), engine.camera.transform.k);
+    const movedScreen = w2s(movedPosition, engine.camera.transform);
+    engine.pointerMove(movedScreen);
+    const focused = engine.doubleClick(vp);
+    check("Rubric double-click releases home and starts a camera flight", focused === target.id && engine.camera.flying);
+    engine.camera.cancel();
+  }
+
+  let empty = { x: 4, y: 4 };
+  outer: for (let y = 4; y < vp.h; y += 40) {
+    for (let x = 4; x < vp.w; x += 40) {
+      if (engine.hitAtScreen({ x, y }) === null) {
+        empty = { x, y };
+        break outer;
+      }
+    }
+  }
+  const panFrom = { ...engine.camera.transform };
+  engine.pointerDown(empty);
+  const panTo = { x: empty.x + 27, y: empty.y + 19 };
+  const panMove = engine.pointerMove(panTo);
+  const panned = engine.pointerUp(panTo);
+  check(
+    "empty-field pan uses Rubric's screen-space camera delta",
+    panMove.kind === "pan" &&
+      Math.abs(engine.camera.transform.x - (panFrom.x + 27)) < 1e-9 &&
+      Math.abs(engine.camera.transform.y - (panFrom.y + 19)) < 1e-9
+  );
+  check("a Rubric pan can never become a click", !panned.clicked && panned.hit === null);
+
+  engine.pointerDown(empty);
+  const cleared = engine.pointerUp(empty);
+  check("a stationary background click clears selection", cleared.clicked && cleared.hit === null);
+  engine.dispose();
 }
 
 console.log(`\n───────────────────────────────────────────────────────────`);
