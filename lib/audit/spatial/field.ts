@@ -471,7 +471,8 @@ export class SpatialField {
 
   private placeRings(dt: number): void {
     // Rubric line 419: `ringsState.rot += spin * .0014` per frame.
-    if (this.ambientOn) this.ringRot += TUNING.ringSpin * dt;
+    // `ringSpin` is radians/second; the shared render clock is milliseconds.
+    if (this.ambientOn) this.ringRot += TUNING.ringSpin * dt * 0.001;
     const key = this.ringsCacheKey();
     if (key !== this.ringsKey) {
       this.computeRingTargets();

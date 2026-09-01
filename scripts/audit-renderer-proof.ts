@@ -708,6 +708,27 @@ console.log(`\n── X · SPATIAL ENGINE ────────────�
 
   check("generic relationship springs are zero", TUNING.linkSpring === 0);
 
+  // RING MOTION USES ELAPSED MILLISECONDS. The source increments once per
+  // frame; this port stores the equivalent rate in radians/second. A missing
+  // ms→s conversion makes the whole field spin exactly 1,000× too fast.
+  {
+    const timed = new SpatialField({ mode: "rings", reducedMotion: false });
+    timed.setNodes(population);
+    timed.tick(0);
+    const watched = population.find((n) => n.role === "leaf")!;
+    const p0 = timed.positions().get(watched.id)!;
+    const a0 = Math.atan2(p0.y - timed.origin.y, p0.x - timed.origin.x);
+    timed.tick(1000);
+    const p1 = timed.positions().get(watched.id)!;
+    const a1 = Math.atan2(p1.y - timed.origin.y, p1.x - timed.origin.x);
+    const turn = ((a1 - a0 + Math.PI * 3) % (Math.PI * 2)) - Math.PI;
+    check(
+      "Rings rotate at Rubric's converted real-time rate",
+      Math.abs(turn - TUNING.ringSpin) < 1e-6,
+      `${(turn * 180 / Math.PI).toFixed(2)}° per second`
+    );
+  }
+
   // RINGS KEEPS SIGNAL'S DISAGREEMENT LAW. A critical Finding must sit on
   // the conflict radius, whatever Rubric's sector arithmetic decides.
   const rings = settle("rings", 4);
