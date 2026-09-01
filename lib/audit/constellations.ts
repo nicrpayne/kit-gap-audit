@@ -246,19 +246,20 @@ export function constellations(graph: AuditGraph): Aggregate[] {
     if (a.kind !== "intel") return;
     const cluster = String(a.lane ?? "hermes");
     const type = normalizeType(a.intelligenceType);
-    const key = `${cluster} ${type}`;
+    const currentness = a.isCurrent === false ? "previous" : "current";
+    const key = `${cluster}\u0000${type}\u0000${currentness}`;
     const list = byTypeInCluster.get(key);
     if (list) list.push(n);
     else byTypeInCluster.set(key, [n]);
   });
   for (const [key, members] of byTypeInCluster) {
     if (members.length < AGGREGATE_MIN) continue;
-    const [cluster, type] = key.split(" ");
+    const [cluster, type, currentness] = key.split("\u0000");
     out.push({
-      id: `agg:type:${cluster}:${type}`,
+      id: `agg:type:${cluster}:${type}:${currentness}`,
       kind: "type",
       cluster,
-      label: typeLabel(type),
+      label: `${currentness === "previous" ? "Previous" : "Current"} ${typeLabel(type)}`,
       members: [...members].sort(),
       count: members.length,
       homogeneous: type,

@@ -34,17 +34,16 @@ import {
   forceSimulation,
   forceManyBody,
   forceCollide,
-  forceRadial,
   forceX,
   forceY,
-  forceCenter,
   type Simulation,
 } from "d3-force";
 import { FIELD } from "../graphLayout";
 import { anchorPolicies, BANDS, CORE_ANCHOR, type Band } from "./anchors";
 
 export type LayoutMode = "rings" | "constellations";
-export type RubricVisualRole = "router" | "hub" | "aggregate" | "rim" | "leaf";
+export type RubricVisualRole = "router" | "hub" | "aggregate" | "artifact" | "rim" | "leaf";
+export type AuditTerritory = "model" | "delivery" | "evidence" | "external";
 
 export interface FieldNodeInput {
   id: string;
@@ -59,6 +58,12 @@ export interface FieldNodeInput {
   /** A lane puck or Reality — seats the cell its members gather around. */
   isAnchorNode: boolean;
   isCore: boolean;
+  /** First-level Audit geography. */
+  territory: AuditTerritory;
+  /** Second-level semantic lane, source artifact, or subtype/currentness cell. */
+  cell: string;
+  /** Canonical or projected local hub; never inferred from graph edges in the field. */
+  parentId: string | null;
 }
 
 interface FieldNode extends FieldNodeInput {
@@ -222,6 +227,7 @@ export class SpatialField {
   private ringsKey = "";
   /** Reported upward so the painter can draw the boundary the physics uses. */
   boundR = 0;
+  private territoryGeometry = new Map<AuditTerritory, { x: number; y: number; r: number }>();
 
   // ── THE ORIGIN ─────────────────────────────────────────────────────
   //
@@ -320,6 +326,9 @@ export class SpatialField {
         held.role = n.role;
         held.isAnchorNode = n.isAnchorNode;
         held.isCore = n.isCore;
+        held.territory = n.territory;
+        held.cell = n.cell;
+        held.parentId = n.parentId;
         continue;
       }
       const a = byKey.get(n.anchor);
@@ -556,178 +565,145 @@ export class SpatialField {
     const nodes = this.order;
     if (nodes.length === 0) return;
 
-    // Rubric line 578: R from the population with slack, so cells float free
-    // inside rather than being squashed against the wall.
-    const R = Math.max(300, 30 * Math.sqrt(nodes.length / Math.PI)) * (0.55 + TUNING.boundSize * 0.9);
+    // Population means the CURRENT zoom-tier projection, not all hidden
+    // canonical members. That is what prevents corpus volume from deciding
+    // the size of the geography at Fit.
+    const R = Math.max(360, 68 * Math.sqrt(nodes.length / Math.PI));
     this.boundR = R;
-    const anchorRing = R * TUNING.anchorRingFraction;
 
-    const anchors = anchorPolicies().filter((a) => a.key !== CORE_ANCHOR);
-    const anchorNode = new Map<string, FieldNode>();
-    for (const n of nodes) if (n.isAnchorNode) anchorNode.set(n.anchor, n);
+    const territoryCentre: Record<AuditTerritory, { x: number; y: number; r: number }> = {
+      model: { x: 0, y: 0, r: R * 0.22 },
+      delivery: { x: -R * 0.42, y: R * 0.18, r: R * 0.29 },
+      evidence: { x: R * 0.42, y: R * 0.18, r: R * 0.29 },
+      external: { x: 0, y: -R * 0.48, r: R * 0.29 },
+    };
+    this.territoryGeometry = new Map(Object.entries(territoryCentre) as [AuditTerritory, { x: number; y: number; r: number }][]);
 
-    // Rubric line 667: every hub is seeded onto one ring around the centre —
-    // "seeded, not pinned - physics keeps the ring".
-    //
-    // SIGNAL NEEDS ONE MORE THING THAN RUBRIC DOES HERE. Rubric's departments
-    // are comparable in size, so seeding plus a weak charge is enough to hold
-    // the ring. Signal's are not: evidence holds 195 seats and figma holds
-    // one, and a 195-member cell drags its hub wherever its own mass goes.
-    // Measured, all eight lanes collapsed onto one side of the field.
-    //
-    // So each lane also gets an ANGULAR target — its own sector bearing, the
-    // same one the static layout and the Rings view use. It is Rubric's own
-    // `_bTx/_bTy` mechanism (lines 620-624), applied to hubs rather than to
-    // rim apps. The cell is still free to breathe; it simply cannot wander
-    // into its neighbour's sector, which would make the bearings a reader
-    // learned in one layout a lie in the other.
-    anchors.forEach((a) => {
-      const hub = anchorNode.get(a.key);
-      if (!hub) return;
-      if (hub.userHome) return;
-      const ang = a.angle ?? 0;
-      hub.bTx = Math.cos(ang) * anchorRing;
-      hub.bTy = Math.sin(ang) * anchorRing;
-      if (hub.pin) return;
-      hub.x = hub.bTx;
-      hub.y = hub.bTy;
-    });
+    // Second-level territories are semantic cells. A golden-angle packing is
+    // deterministic, fills the allotted area, and never consults an edge.
+    const cells = new Map<AuditTerritory, string[]>();
+    for (const n of nodes) {
+      const list = cells.get(n.territory) ?? [];
+      if (!list.includes(n.cell)) list.push(n.cell);
+      cells.set(n.territory, list);
+    }
+    for (const list of cells.values()) list.sort();
+    const cellTarget = new Map<string, { x: number; y: number }>();
+    const golden = Math.PI * (3 - Math.sqrt(5));
+    for (const [territory, list] of cells) {
+      const t = territoryCentre[territory];
+      list.forEach((cell, i) => {
+        if (territory === "model" && cell === CORE_ANCHOR) {
+          cellTarget.set(`${territory}|${cell}`, { x: 0, y: 0 });
+          return;
+        }
+        const frac = Math.sqrt((i + 0.65) / Math.max(1, list.length));
+        const angle = i * golden + hash01(`${territory}|${cell}`, 7) * 0.35;
+        const radius = t.r * 0.78 * frac;
+        cellTarget.set(`${territory}|${cell}`, {
+          x: t.x + Math.cos(angle) * radius,
+          y: t.y + Math.sin(angle) * radius,
+        });
+      });
+    }
 
-    // Rubric `buildSim()` lines 617-624: rim objects form the silhouette.
-    // Signal maps source artifacts and integrations to that role; they stay
-    // real Signal objects, but their visual job is the same — state where the
-    // world's material entered from without pulling their cell toward them.
-    const rim = nodes.filter((n) => n.role === "rim").sort((a, b) => a.id.localeCompare(b.id));
-    rim.forEach((n, i) => {
-      if (n.userHome) return;
-      const ang = -Math.PI / 2 + (i / Math.max(1, rim.length)) * Math.PI * 2;
-      const br = R - n.r - 6;
-      n.bTx = Math.cos(ang) * br;
-      n.bTy = Math.sin(ang) * br;
-    });
-
+    const byId = new Map(nodes.map((n) => [n.id, n]));
     for (const n of nodes) {
       n.fx = null;
       n.fy = null;
+      if (n.userHome) continue;
+      const target = cellTarget.get(`${n.territory}|${n.cell}`) ?? territoryCentre[n.territory];
+      const jitter = n.role === "leaf" ? Math.max(8, Math.min(28, n.r * 2.5)) : 0;
+      const angle = hash01(n.id, 9) * Math.PI * 2;
+      n.bTx = target.x + Math.cos(angle) * jitter;
+      n.bTy = target.y + Math.sin(angle) * jitter;
     }
-    // Reality is fixed at the origin — Rubric line 556, `S.router.fx = 0`.
-    const reality = nodes.find((n) => n.band === "core");
+
+    // Reality is the sole router and the sole fixed node.
+    const reality = nodes.find((n) => n.role === "router");
     if (reality) {
       reality.fx = 0;
       reality.fy = 0;
     }
 
     const sim = forceSimulation<FieldNode>(nodes)
-      // NO LINK FORCE AT ALL. Rubric ships `g_link: 0`, which multiplies its
-      // link strengths to nothing; Signal does not construct the force, so
-      // there is no dial that could turn a citation into a spring.
       .force(
         "charge",
         forceManyBody<FieldNode>()
           .strength((d) =>
-            d.band === "core"
-              ? TUNING.chargeCore
-              : d.isAnchorNode
-                ? TUNING.chargeAnchor
-                : d.role === "rim"
-                  ? -60 * 1.238
-                : d.band === "structure"
-                  ? TUNING.chargeStructure
-                  : TUNING.chargeLeaf
+            d.role === "router" ? -520 :
+            d.role === "hub" ? -115 :
+            d.role === "artifact" || d.role === "aggregate" ? -58 :
+            d.band === "structure" ? -26 : -18
           )
-          .distanceMax(TUNING.chargeDistanceMax)
+          .distanceMax(Math.max(155, R * 0.32))
           .theta(TUNING.chargeTheta)
       )
-      .force(
-        "collide",
-        forceCollide<FieldNode>((d) => d.r + TUNING.collidePad).strength(TUNING.collideStrength)
-      )
-      .force(
-        "anchorRing",
-        forceRadial<FieldNode>(anchorRing).strength((d) =>
-          d.isAnchorNode && d.fx == null && !d.pin && !d.userHome ? TUNING.anchorRingStrength : 0
-        )
-      )
-      // The model stays near the centre: it is the project's own statement of
-      // itself, and it is not in any lane.
-      .force(
-        "model",
-        forceRadial<FieldNode>(anchorRing * 0.28).strength((d) =>
-          d.isCore && d.band !== "core" && d.fx == null && !d.pin && !d.userHome ? 0.5 : 0
-        )
-      )
+      .force("collide", forceCollide<FieldNode>((d) => d.r + TUNING.collidePad).strength(0.82))
       .force(
         "x",
         forceX<FieldNode>((d) => d.bTx).strength((d) =>
-          d.fx != null || d.pin
-            ? 0
-            : d.userHome
-              ? 0.2
-              : d.role === "rim"
-                ? TUNING.rimHomeStrength
-                : d.isAnchorNode
-                  ? TUNING.anchorBearing
-                  : 0
+          d.fx != null || d.pin ? 0 : d.userHome ? 0.2 :
+          d.role === "hub" || d.role === "artifact" || d.role === "aggregate" ? 0.32 : 0.045
         )
       )
       .force(
         "y",
         forceY<FieldNode>((d) => d.bTy).strength((d) =>
-          d.fx != null || d.pin
-            ? 0
-            : d.userHome
-              ? 0.2
-              : d.role === "rim"
-                ? TUNING.rimHomeStrength
-                : d.isAnchorNode
-                  ? TUNING.anchorBearing
-                  : 0
+          d.fx != null || d.pin ? 0 : d.userHome ? 0.2 :
+          d.role === "hub" || d.role === "artifact" || d.role === "aggregate" ? 0.32 : 0.045
         )
       )
-      .force("center", forceCenter(0, 0))
       .alphaDecay(TUNING.alphaDecay)
       .velocityDecay(TUNING.velocityDecay);
 
-    // ── GROUP PULL — Rubric's `deptPull`, lines 711-732 ────────────────
-    //
-    // A custom velocity force, not a spring: each member is pulled toward its
-    // OWN anchor and nothing else. This is the single force that decides
-    // where a thing sits, and it reads one field — the node's anchor.
+    // Nested group pull. Passages pull to their own artifact; external claims
+    // pull to their subtype/currentness aggregate; ordinary delivery objects
+    // pull to their semantic lane hub. No generic relationship is consulted.
     sim.force("groupPull", (a2: number) => {
       for (const d of nodes) {
-        if (d.fx != null || d.isAnchorNode || d.pin || d.role === "rim" || d.userHome) continue;
-        const hub = anchorNode.get(d.anchor);
+        if (d.fx != null || d.pin || d.userHome || !d.parentId) continue;
+        const hub = byId.get(d.parentId);
         if (!hub) continue;
-        // Rubric scales this by alpha alone; the floor is Signal's addition,
-        // for the reason stated at `groupPullFloor`.
-        const g = TUNING.groupPull * a2 + TUNING.groupPullFloor * TUNING.groupPull;
+        const g = 0.22 * a2 + 0.085;
         d.vx += (hub.x - d.x) * g;
         d.vy += (hub.y - d.y) * g;
       }
     });
 
-    // ── SOFT BOUNDARY — Rubric lines 657-664 ──────────────────────────
-    //
-    // Velocity toward the interior, and only once a node is outside. A hard
-    // wall squashes cells into slabs against the rim; this lets them press
-    // against it and relax.
+    // First-level territory bounds keep any one cloud from consuming the
+    // field. Equal maximum radii cap the largest territory below 35% of the
+    // four-territory area while preserving organic motion inside each cell.
+    sim.force("territories", () => {
+      for (const d of nodes) {
+        if (d.fx != null || d.pin || d.userHome) continue;
+        const t = territoryCentre[d.territory];
+        const dx = d.x - t.x;
+        const dy = d.y - t.y;
+        const distance = Math.hypot(dx, dy);
+        const limit = t.r - d.r - 4;
+        if (distance > limit && distance > 0) {
+          const f = (limit / distance - 1) * 0.28;
+          d.vx += dx * f;
+          d.vy += dy * f;
+        }
+      }
+    });
+
     sim.force("bound", () => {
       for (const d of nodes) {
         if (d.fx != null || d.pin) continue;
-        const r = Math.hypot(d.x, d.y);
-        if (r < 1) continue;
-        const lim = R - d.r - 6;
-        if (r > lim) {
-          const f2 = (lim / r - 1) * TUNING.boundStrength;
-          d.vx += d.x * f2;
-          d.vy += d.y * f2;
+        const distance = Math.hypot(d.x, d.y);
+        const limit = R - d.r - 6;
+        if (distance > limit && distance > 0) {
+          const f = (limit / distance - 1) * TUNING.boundStrength;
+          d.vx += d.x * f;
+          d.vy += d.y * f;
         }
       }
     });
 
     sim.alpha(Math.max(0.35, alpha));
-    // The field is driven from the render loop so that physics, morph and
-    // paint advance on one clock. D3's own timer would be a second one.
     sim.stop();
     this.sim = sim;
   }
@@ -863,6 +839,54 @@ export class SpatialField {
     return this.out;
   }
 
+  constellationMetrics(): {
+    membersWithHub: number;
+    nearestOwnHub: number;
+    nearestOwnHubPct: number;
+    largestTerritoryAreaShare: number;
+    byTerritory: Record<AuditTerritory, { members: number; nearest: number; pct: number }>;
+  } {
+    const hubs = this.order.filter(
+      (n) => n.role === "hub" || n.role === "artifact" || (n.role === "aggregate" && n.parentId == null)
+    );
+    let membersWithHub = 0;
+    let nearestOwnHub = 0;
+    const counts: Record<AuditTerritory, { members: number; nearest: number }> = {
+      model: { members: 0, nearest: 0 },
+      delivery: { members: 0, nearest: 0 },
+      evidence: { members: 0, nearest: 0 },
+      external: { members: 0, nearest: 0 },
+    };
+    for (const node of this.order) {
+      if (!node.parentId) continue;
+      const own = this.nodes.get(node.parentId);
+      if (!own) continue;
+      membersWithHub++;
+      counts[node.territory].members++;
+      const ownDistance = Math.hypot(node.x - own.x, node.y - own.y);
+      let best = Infinity;
+      for (const hub of hubs) best = Math.min(best, Math.hypot(node.x - hub.x, node.y - hub.y));
+      if (ownDistance <= best + 1e-6) {
+        nearestOwnHub++;
+        counts[node.territory].nearest++;
+      }
+    }
+    const areas = [...this.territoryGeometry.values()].map((t) => Math.PI * t.r * t.r);
+    const totalArea = areas.reduce((sum, area) => sum + area, 0);
+    return {
+      membersWithHub,
+      nearestOwnHub,
+      nearestOwnHubPct: membersWithHub > 0 ? (nearestOwnHub / membersWithHub) * 100 : 100,
+      largestTerritoryAreaShare: totalArea > 0 ? Math.max(0, ...areas) / totalArea : 0,
+      byTerritory: Object.fromEntries(
+        (Object.entries(counts) as [AuditTerritory, { members: number; nearest: number }][]).map(([key, value]) => [
+          key,
+          { ...value, pct: value.members > 0 ? (value.nearest / value.members) * 100 : 100 },
+        ])
+      ) as Record<AuditTerritory, { members: number; nearest: number; pct: number }>,
+    };
+  }
+
   /** Where the field's centre sits in Signal world coordinates. */
   get origin(): { x: number; y: number } {
     return { x: this.ox, y: this.oy };
@@ -873,5 +897,6 @@ export class SpatialField {
     this.sim = null;
     this.nodes.clear();
     this.order = [];
+    this.territoryGeometry.clear();
   }
 }

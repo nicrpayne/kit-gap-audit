@@ -102,23 +102,24 @@ export interface SceneViewport {
  * PROJECTION of Signal's kinds — the kinds themselves are unchanged and no
  * foreign filesystem or agent semantics cross into them.
  *
- *   router   Reality and the Scope. The field routes through these.
+ *   router   Reality alone. The field has one accepted-truth centre.
  *   hub      a lane. A cluster's own puck.
  *   cell     a typed aggregate or a source family — a group, not an object.
- *   rim      an integration or source artifact: where knowledge came from.
+ *   artifact a local provenance hub for the passages extracted from it.
+ *   rim      a true producer/integration boundary.
  *   leaf     every object the project is actually made of.
  */
-export type LayoutRole = "router" | "hub" | "cell" | "rim" | "leaf";
+export type LayoutRole = "router" | "hub" | "cell" | "artifact" | "rim" | "leaf";
 
 const ROLE_BY_KIND: Partial<Record<NodeKind, LayoutRole>> = {
   reality: "router",
-  scope: "router",
+  scope: "cell",
   lane: "hub",
   intelligence: "cell",
-  source: "rim",
-  transcript: "rim",
-  notion_page: "rim",
-  figma_artifact: "rim",
+  source: "artifact",
+  transcript: "artifact",
+  notion_page: "artifact",
+  figma_artifact: "artifact",
 };
 
 export function layoutRoleOf(kind: NodeKind): LayoutRole {

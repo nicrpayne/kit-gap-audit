@@ -123,19 +123,19 @@ console.log(`\n── A · PROJECTION, NOT MUTATION ─────────�
 console.log(`\n── R · ROLE MAPPING ───────────────────────────────────────`);
 {
   check("reality → router", layoutRoleOf("reality") === "router");
-  check("scope → router", layoutRoleOf("scope") === "router");
+  check("scope → model aggregate", layoutRoleOf("scope") === "cell");
   check("lane → hub", layoutRoleOf("lane") === "hub");
   check("intelligence package → cell", layoutRoleOf("intelligence") === "cell");
-  check("transcript → rim", layoutRoleOf("transcript") === "rim");
-  check("notion page → rim", layoutRoleOf("notion_page") === "rim");
-  check("figma artifact → rim", layoutRoleOf("figma_artifact") === "rim");
+  check("transcript → artifact", layoutRoleOf("transcript") === "artifact");
+  check("notion page → artifact", layoutRoleOf("notion_page") === "artifact");
+  check("figma artifact → artifact", layoutRoleOf("figma_artifact") === "artifact");
   check("finding → leaf", layoutRoleOf("finding") === "leaf");
   check("external claim → leaf", layoutRoleOf("intel") === "leaf");
   check("passage → leaf", layoutRoleOf("passage") === "leaf");
   const s = scene();
   check(
     "every node carries a role",
-    s.nodes.every((n) => ["router", "hub", "cell", "rim", "leaf"].includes(n.layoutRole))
+    s.nodes.every((n) => ["router", "hub", "cell", "artifact", "rim", "leaf"].includes(n.layoutRole))
   );
   // The brief's own guardrail: Rubric's ARMS / filesystem semantics do not
   // cross. The role vocabulary is the ONLY foreign-facing channel, and it is
@@ -475,12 +475,12 @@ console.log(`\n── T · TOKENS ───────────────�
 // ── R2 · THE RENDERER SWITCH ──────────────────────────────────────────
 console.log(`\n── R2 · THE SWITCH ────────────────────────────────────────`);
 {
-  check("no parameter means the shipped renderer", resolveRenderer("") === "svg");
+  check("no parameter means the Rubric Canvas renderer", resolveRenderer("") === "canvas");
   check("?renderer=canvas selects Canvas", resolveRenderer("?renderer=canvas") === "canvas");
   check("?renderer=svg selects SVG", resolveRenderer("?renderer=svg") === "svg");
-  check("a typo falls back to the product", resolveRenderer("?renderer=webgl") === "svg");
+  check("a typo falls back to the product", resolveRenderer("?renderer=webgl") === "canvas");
   check("other parameters are ignored", resolveRenderer("?scope=jsa&renderer=canvas") === "canvas");
-  check("null is safe", resolveRenderer(null) === "svg");
+  check("null is safe", resolveRenderer(null) === "canvas");
 
   // The two projections must be exact inverses, or a click lands somewhere
   // other than where the reader pointed.
@@ -570,13 +570,14 @@ console.log(`\n── P · DERIVATION COST ────────────�
 console.log(`\n── X · SPATIAL ENGINE ─────────────────────────────────────`);
 {
   const s = scene({ opened: new Set(graph.nodes()), level: "near" });
-  const world = adaptSignalSceneToRubric(s);
+  const world = adaptSignalSceneToRubric(s, "near");
   const population = world.nodes;
-  check("the thin Rubric adapter preserves every canonical node", population.length === s.nodes.length);
+  check("the thin Rubric adapter preserves every opened canonical node", world.projectedCanonicalIds.size === s.nodes.length);
+  check("visual aggregates are projection-only", population.length === s.nodes.length + world.aggregateIds.size);
   check("the thin Rubric adapter preserves every visual relationship", world.links.length === s.edges.length);
   check(
-    "source artifacts map to Rubric's rim role",
-    s.nodes.filter((n) => n.layoutRole === "rim").every((n) => population.find((p) => p.id === n.id)?.role === "rim")
+    "source artifacts map to Rubric's artifact role",
+    s.nodes.filter((n) => n.layoutRole === "artifact").every((n) => population.find((p) => p.id === n.id)?.role === "artifact")
   );
   check(
     "the adapter exposes no filesystem or ARMS role",
@@ -647,65 +648,22 @@ console.log(`\n── X · SPATIAL ENGINE ────────────�
     );
   }
 
-  // ── CELL COHERENCE, AT POPULATION LEVEL ──────────────────────────────
-  //
-  // What a reader actually needs is that each lane forms ONE readable cell
-  // around its own anchor. Measured as a median rather than per node, so a
-  // 195-seat lane is not judged by the handful of members at its rim.
-  const anchorAt = new Map<string, { x: number; y: number }>();
-  for (const n of s.nodes) {
-    if (n.kind !== "lane") continue;
-    const p = pos.get(n.id);
-    if (p) anchorAt.set(n.anchor, p);
-  }
-  const median = (xs: number[]) => xs.sort((a2, b2) => a2 - b2)[Math.floor(xs.length / 2)] ?? 0;
-  let incoherent = 0;
-  const incoherentIds: string[] = [];
-  for (const [key, own] of anchorAt) {
-    // Rim objects deliberately form Rubric's silhouette instead of joining a
-    // cell; test the population the group-pull force actually owns.
-    const mine = s.nodes.filter((n) =>
-      n.anchor === key && n.kind !== "lane" && population.find((p) => p.id === n.id)?.role !== "rim"
-    );
-    if (mine.length < 3) continue;
-    const toOwn = median(mine.map((n) => {
-      const p = pos.get(n.id)!;
-      return Math.hypot(p.x - own.x, p.y - own.y);
-    }));
-    for (const [other, c] of anchorAt) {
-      if (other === key) continue;
-      const toOther = median(mine.map((n) => {
-        const p = pos.get(n.id)!;
-        return Math.hypot(p.x - c.x, p.y - c.y);
-      }));
-      if (toOther < toOwn) {
-        incoherent++;
-        if (incoherentIds.length < 3) incoherentIds.push(`${key}→${other}`);
-        break;
-      }
-    }
-  }
-  check(
-    "every lane's members gather around their own anchor",
-    incoherent === 0,
-    incoherent ? incoherentIds.join(", ") : `${anchorAt.size} lanes, each nearest its own`
+  const territorial = cs.constellationMetrics();
+  console.log(
+    `      own-hub by territory: ${Object.entries(territorial.byTerritory)
+      .map(([key, value]) => `${key} ${value.pct.toFixed(1)}% (${value.nearest}/${value.members})`)
+      .join(" · ")}`
   );
-
-  // And reported, not asserted: how tightly. A number worth watching rather
-  // than a threshold worth gaming.
-  {
-    const spreads = [...anchorAt].map(([key, own]) => {
-      const mine = s.nodes.filter((n) =>
-        n.anchor === key && n.kind !== "lane" && population.find((p) => p.id === n.id)?.role !== "rim"
-      );
-      if (mine.length === 0) return 0;
-      return median(mine.map((n) => {
-        const p = pos.get(n.id)!;
-        return Math.hypot(p.x - own.x, p.y - own.y);
-      }));
-    });
-    console.log(`      cell spread (median member → own anchor): ${spreads.map((x) => x.toFixed(0)).join(", ")} units`);
-  }
+  check(
+    "at least 90% of projected members are nearest their own semantic hub",
+    territorial.nearestOwnHubPct >= 90,
+    `${territorial.nearestOwnHubPct.toFixed(1)}% (${territorial.nearestOwnHub}/${territorial.membersWithHub})`
+  );
+  check(
+    "the largest first-level territory is at most 35% of territory area",
+    territorial.largestTerritoryAreaShare <= 0.35,
+    `${(territorial.largestTerritoryAreaShare * 100).toFixed(1)}%`
+  );
 
   check("generic relationship springs are zero", TUNING.linkSpring === 0);
 
@@ -861,7 +819,7 @@ console.log(`\n── C · RUBRIC CAMERA + GESTURES ─────────�
   // drag. This is the regression seam that previously allowed a drag to fire
   // Signal's later browser `click` handler after the drag ref was cleared.
   const interactionScene = scene();
-  const world = adaptSignalSceneToRubric(interactionScene);
+  const world = adaptSignalSceneToRubric(interactionScene, "far");
   const engine = new RubricViewportEngine({ mode: "rings", reducedMotion: false, camera: fromSignal(sig, vp) });
   engine.setNodes(world.nodes);
   engine.field.tick(16.7);

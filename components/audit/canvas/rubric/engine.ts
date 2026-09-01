@@ -54,6 +54,11 @@ export class RubricViewportEngine {
   private nodeIds = new Set<string>();
   private routerIds = new Set<string>();
   private hover: string | null = null;
+  private pendingFrame: {
+    ids: readonly string[];
+    viewport: { w: number; h: number };
+    options: { padding?: number };
+  } | null = null;
   private pointer: {
     start: ScreenPoint;
     hit: string | null;
@@ -104,6 +109,11 @@ export class RubricViewportEngine {
     this.hitScene = scene;
     this.hitPositions = positions;
     this.hitScale = k;
+    const pending = this.pendingFrame;
+    if (pending) {
+      this.pendingFrame = null;
+      this.frameIds(pending.ids, pending.viewport, pending.options);
+    }
   }
 
   /** The exact current world position used by paint and hit testing. */
@@ -157,7 +167,13 @@ export class RubricViewportEngine {
       const node = scene.nodes.find((n) => n.id === id);
       if (p && node) points.push({ ...p, r: node.identity === "latent" ? node.latentR : node.r });
     }
-    if (points.length === 0) return false;
+    if (points.length === 0) {
+      // Selection state and the zoom-tier population commit in React before
+      // the next Rubric frame has positions. Retain intent by canonical id;
+      // never fall back to the static Signal seat during that one-frame gap.
+      this.pendingFrame = { ids: [...ids], viewport: { ...viewport }, options: { ...options } };
+      return true;
+    }
 
     let x0 = Infinity;
     let y0 = Infinity;
@@ -245,7 +261,8 @@ export class RubricViewportEngine {
     for (const a of scene.aggregates) {
       if (a.opacity <= 0.01) continue;
       const radius = a.discR + 6 / this.hitScale;
-      const d = (a.x - x) ** 2 + (a.y - y) ** 2;
+      const p = this.resolveWorldPosition(a.id) ?? a;
+      const d = (p.x - x) ** 2 + (p.y - y) ** 2;
       if (d < radius * radius && d < best) {
         best = d;
         hit = a.id;
@@ -337,6 +354,7 @@ export class RubricViewportEngine {
   }
 
   dispose(): void {
+    this.pendingFrame = null;
     this.pointerCancel();
     this.field.dispose();
     this.softLayer.release();

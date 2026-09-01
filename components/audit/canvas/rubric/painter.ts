@@ -289,7 +289,10 @@ export function paintScene(input: PaintInput): PaintStats {
   ctx.lineJoin = "round";
 
   const placed = new Map<string, Placed>();
-  for (const n of scene.nodes) placed.set(n.id, at(n));
+  for (const n of scene.nodes) {
+    if (input.positions && !input.positions.has(n.id)) continue;
+    placed.set(n.id, at(n));
+  }
 
   // ── SHELLS FOLLOW THEIR MEMBERS ──────────────────────────────────────
   //
@@ -301,6 +304,7 @@ export function paintScene(input: PaintInput): PaintStats {
   // stays TRUE, which is the law it exists under.
   const shells = scene.aggregates.map((agg) => {
     if (!input.positions) return { agg, x: agg.x, y: agg.y, r: agg.discR };
+    const projected = input.positions.get(agg.id);
     let sx = 0;
     let sy = 0;
     let count = 0;
@@ -311,9 +315,9 @@ export function paintScene(input: PaintInput): PaintStats {
       sy += p.y;
       count++;
     }
-    if (count === 0) return { agg, x: agg.x, y: agg.y, r: agg.discR };
-    const cx = sx / count;
-    const cy = sy / count;
+    if (count === 0 && !projected) return { agg, x: agg.x, y: agg.y, r: agg.discR };
+    const cx = projected?.x ?? sx / count;
+    const cy = projected?.y ?? sy / count;
     let far = 0;
     for (const id of agg.members) {
       const p = input.positions.get(id);

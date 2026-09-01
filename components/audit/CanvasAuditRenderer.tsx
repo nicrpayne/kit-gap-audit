@@ -51,6 +51,15 @@ declare global {
       ambient: boolean;
       layout: LayoutMode;
       camera: "rubric";
+      geometry?: {
+        projectedCanonical: number;
+        aggregateRegions: number;
+        openedIdentities: number;
+        nearestOwnHubPct: number;
+        largestTerritoryAreaShare: number;
+        selectedOffscreen: boolean;
+        traceEndpointsOffscreen: number;
+      };
     };
   }
 }
@@ -155,12 +164,16 @@ export default function CanvasAuditRenderer(props: AuditRendererProps) {
 
   // The population changes when the graph or what is disclosed changes — not
   // when the camera moves.
-  const populationKey = `${scene.stats.drawn}|${scene.stats.opened}|${level}`;
+  const populationKey = `${scene.stats.drawn}|${scene.stats.opened}|${level}|${[...opened].sort().join(",")}|${selectedId ?? ""}|${
+    matches ? [...matches].sort().join(",") : ""
+  }|${soloNodes ? [...soloNodes].sort().join(",") : ""}`;
   const rubricWorld = useMemo(
-    () => adaptSignalSceneToRubric(scene),
+    () => adaptSignalSceneToRubric(scene, level),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [populationKey]
   );
+  const worldRef = useRef(rubricWorld);
+  worldRef.current = rubricWorld;
   useEffect(() => {
     engineRef.current?.setNodes(rubricWorld.nodes);
   }, [rubricWorld]);
@@ -282,6 +295,8 @@ export default function CanvasAuditRenderer(props: AuditRendererProps) {
   sweepRef.current = sweepAngle;
   const traceRef = useRef(traceEdges);
   traceRef.current = traceEdges;
+  const soloRef = useRef(soloNodes);
+  soloRef.current = soloNodes;
   const reducedRef = useRef(reducedMotion);
   reducedRef.current = reducedMotion;
   const sizeRef = useRef(size);
@@ -393,6 +408,25 @@ export default function CanvasAuditRenderer(props: AuditRendererProps) {
       probe.ambient = f.ambientOn;
       probe.layout = f.layout;
       probe.camera = "rubric";
+      const visible = (id: string) => {
+        const p = livePositions.current.get(id);
+        if (!p) return false;
+        const sx = (p.x - cam.x) * cam.k + vp.w / 2;
+        const sy = (p.y - cam.y) * cam.k + vp.h / 2;
+        return sx >= 0 && sx <= vp.w && sy >= 0 && sy <= vp.h;
+      };
+      const constellation = f.constellationMetrics();
+      probe.geometry = {
+        projectedCanonical: worldRef.current.projectedCanonicalIds.size,
+        aggregateRegions: worldRef.current.aggregateIds.size,
+        openedIdentities: sceneRef.current.stats.opened,
+        nearestOwnHubPct: constellation.nearestOwnHubPct,
+        largestTerritoryAreaShare: constellation.largestTerritoryAreaShare,
+        selectedOffscreen: !!sceneRef.current.focus && !visible(sceneRef.current.focus.anchor),
+        traceEndpointsOffscreen: soloRef.current
+          ? [...soloRef.current].filter((id) => !visible(id)).length
+          : 0,
+      };
       probe.repaints++;
       probe.frames.push(paintMs);
       if (probe.frames.length > 400) probe.frames.shift();
@@ -419,7 +453,7 @@ export default function CanvasAuditRenderer(props: AuditRendererProps) {
       const spinning = f.layout === "rings" && f.ambientOn;
       const pulsing = f.ambientOn && sceneRef.current.nodes.some((n) => n.selected);
       const tracing = f.ambientOn && (traceRef.current?.size ?? 0) > 0;
-      const alive = moving || camMoving || spinning || pulsing || tracing || sweepRef.current != null;
+      const alive = moving || camMoving || engine.camera.flying || spinning || pulsing || tracing || sweepRef.current != null;
       if (alive) {
         running.current = true;
         rafRef.current = requestAnimationFrame(frame);
@@ -628,7 +662,7 @@ export default function CanvasAuditRenderer(props: AuditRendererProps) {
   const mirrorRows = useMemo(
     () =>
       scene.nodes
-        .filter((n) => n.tabIndex >= 1)
+        .filter((n) => n.tabIndex >= 1 && rubricWorld.projectedCanonicalIds.has(n.id))
         .sort((a, b) => a.tabIndex - b.tabIndex)
         .map((n) => ({
           id: n.id,
@@ -637,7 +671,7 @@ export default function CanvasAuditRenderer(props: AuditRendererProps) {
           tabIndex: n.tabIndex,
           selected: n.selected,
         })),
-    [scene.nodes]
+    [scene.nodes, rubricWorld.projectedCanonicalIds]
   );
   const mirrorSignature = mirrorRows.map((m) => `${m.id}:${m.tabIndex}:${m.selected ? 1 : 0}`).join("|");
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -706,7 +740,7 @@ export default function CanvasAuditRenderer(props: AuditRendererProps) {
 
       <A11yMirror
         nodes={mirror}
-        label={`Signal Graph: ${scene.stats.drawn} nodes, ${scene.stats.opened} opened and ${scene.stats.drawn - scene.stats.opened} collapsed into marks, ${scene.stats.edges} relationships shown, ${level} zoom, ${layoutMode} layout`}
+        label={`Signal Graph: ${rubricWorld.projectedCanonicalIds.size} of ${scene.stats.drawn} canonical nodes projected, ${scene.stats.opened} opened, ${rubricWorld.aggregateIds.size} aggregate regions, ${scene.stats.edges} relationships shown, ${level} zoom, ${layoutMode} layout`}
         onSelect={onPointerSelect ?? onSelect}
         onHover={onHover}
         onFocusNode={onFocusNode}
