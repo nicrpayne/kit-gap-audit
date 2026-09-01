@@ -1,0 +1,27 @@
+{
+  "startingSha": "1c6fd27a226d97530ff14da3f397399a17cfede8",
+  "corpus": { "nodes": 427, "edges": 439 },
+  "ringsFit": { "projectedCanonical": 55, "opened": 27, "aggregateRegions": 8 },
+  "constellationsFit": {
+    "projectedCanonical": 55,
+    "opened": 27,
+    "aggregateRegions": 8,
+    "farTierNearestOwnHubPct": 91.7,
+    "fullOpenedNearestOwnHub": { "nearest": 370, "members": 408, "pct": 90.7 },
+    "largestTerritoryAreaShare": 0.28
+  },
+  "search": {
+    "notifictions": {
+      "auditBaselineOpened": 421,
+      "afterOpened": 152,
+      "afterClearOpened": 27,
+      "repeatOpened": 152,
+      "repeatAfterClearOpened": 27
+    },
+    "transcript": { "auditBaselineAfterClearOpened": 222, "afterClearOpened": 29 }
+  },
+  "findingTrace": { "opened": 32, "traceEndpointsOffscreen": 0, "selectedOffscreen": false },
+  "externalTrace": { "opened": 30, "traceEndpointsOffscreen": 0, "selectedOffscreen": false },
+  "layoutMorph": { "beforeZoomPct": 37, "afterZoomPct": 37, "selectedOffscreen": false },
+  "directPanZoom": { "zoomPct": 69, "selectedOffscreen": false }
+}
