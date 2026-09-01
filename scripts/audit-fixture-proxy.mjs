@@ -10,7 +10,10 @@ import { readFileSync } from "node:fs";
 const upstream = new URL(process.env.UPSTREAM ?? "http://127.0.0.1:3000");
 const port = Number(process.env.PORT ?? 3001);
 const graphPath = process.env.RENDERER_GRAPH ?? "/tmp/signal-renderer-graph.json";
-const graph = readFileSync(graphPath);
+const fixture = JSON.parse(readFileSync(graphPath, "utf8"));
+const { truth, ...graphPayload } = fixture;
+const graph = Buffer.from(JSON.stringify(graphPayload));
+const truthPayload = truth ? Buffer.from(JSON.stringify(truth)) : null;
 const hopByHop = new Set([
   "connection",
   "content-length",
@@ -33,8 +36,8 @@ const server = createServer(async (request, response) => {
     return;
   }
   if (url.pathname === "/api/audit/truth") {
-    response.writeHead(404, { "content-type": "application/json", "cache-control": "no-store" });
-    response.end('{"error":"absent"}');
+    response.writeHead(truthPayload ? 200 : 404, { "content-type": "application/json", "cache-control": "no-store" });
+    response.end(truthPayload ?? '{"error":"absent"}');
     return;
   }
 

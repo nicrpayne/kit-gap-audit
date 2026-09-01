@@ -22,7 +22,7 @@
 //   npx tsx scripts/audit-renderer-fixture.ts [outfile]
 
 import { writeFileSync } from "fs";
-import { jsaShapedGraphAtScale } from "./lib/jsa-shaped-fixture";
+import { jsaShapedGraphAtScale, jsaShapedTruth } from "./lib/jsa-shaped-fixture";
 import { exportAuditGraph, measureGraph, EDGE_RULES } from "../lib/audit/graph";
 
 const TARGET_NODES = 438;
@@ -35,6 +35,7 @@ const payload = {
   measurement: measureGraph(graph),
   graph: exportAuditGraph(graph),
   rules: EDGE_RULES,
+  truth: jsaShapedTruth(),
   linearError: null,
 };
 

@@ -22,7 +22,7 @@
 // against is a real Signal Graph rather than a hand-built node list.
 
 import { buildAuditGraph, type AuditGraph, type GraphEntityInputs } from "../../lib/audit/graph";
-import type { FindingProvenance } from "../../lib/audit/provenance";
+import { groundingLabel, type FindingProvenance } from "../../lib/audit/provenance";
 import type { TruthMapModel } from "../../lib/audit/truth";
 
 const SNAP = "snap-jsa-1";
@@ -288,6 +288,25 @@ function provenance(): Record<string, FindingProvenance> {
       unresolvedRefs: [],
     },
   } as unknown as Record<string, FindingProvenance>;
+}
+
+/** The matching inspector payload for the browser review harness.
+ *
+ * The graph fixture alone is enough to exercise paint and hit testing, but a
+ * Finding inspector also needs the canonical Truth model. Keeping both views
+ * derived from these same fixture functions prevents the local review from
+ * reporting a missing Trace action merely because `/api/audit/truth` was
+ * deliberately absent.
+ */
+export function jsaShapedTruth() {
+  const model = truthModel();
+  const resolved = provenance();
+  return {
+    model,
+    provenance: Object.fromEntries(
+      Object.entries(resolved).map(([id, value]) => [id, { ...value, grounding: groundingLabel(value) }])
+    ),
+  };
 }
 
 function entities(): GraphEntityInputs {
