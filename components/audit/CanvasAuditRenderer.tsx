@@ -34,7 +34,7 @@ import { adaptSignalSceneToRubric } from "@/lib/audit/rubricVisualAdapter";
 import { layoutGraph, clusterLabelPoint, CLUSTER_ORDER, type GraphLayout } from "@/lib/audit/graphLayout";
 import type { LayoutMode } from "@/lib/audit/spatial/field";
 import { quantizeScale, type Camera } from "./cameraMotion";
-import type { AuditRendererProps } from "./renderer/types";
+import type { AuditRendererProps, AuditSpatialAuthority } from "./renderer/types";
 import { TokenPalette } from "./canvas/paintTokens";
 import type { PaintStats } from "./canvas/rubric/painter";
 import { RubricViewportEngine } from "./canvas/rubric/engine";
@@ -83,6 +83,7 @@ export default function CanvasAuditRenderer(props: AuditRendererProps) {
     sweepAngle,
     swept,
     onViewport,
+    onSpatialAuthority,
   } = props;
 
   const hostRef = useRef<HTMLDivElement | null>(null);
@@ -235,10 +236,8 @@ export default function CanvasAuditRenderer(props: AuditRendererProps) {
 
   useEffect(() => {
     const engine = engineRef.current;
-    const rc = engine?.camera;
-    const field = engine?.field;
-    if (!rc || !field) return;
-    rc.fitWorld(field.origin, field.viewRadius, size);
+    if (!engine) return;
+    engine.fitIfClipped(size);
     invalidateRef.current?.();
   }, [layoutMode, size]);
 
@@ -477,6 +476,33 @@ export default function CanvasAuditRenderer(props: AuditRendererProps) {
     onCamera(next);
     invalidateRef.current?.();
   }, [onCamera]);
+
+  useEffect(() => {
+    if (!onSpatialAuthority) return;
+    const authority: AuditSpatialAuthority = {
+      resolveWorldPosition: (id) => engineRef.current?.resolveWorldPosition(id) ?? null,
+      frameIds: (ids, options) => {
+        const moved = engineRef.current?.frameIds(ids, sizeRef.current, options) ?? false;
+        if (moved) invalidateRef.current?.();
+        return moved;
+      },
+      fit: () => {
+        engineRef.current?.fit(sizeRef.current);
+        invalidateRef.current?.();
+      },
+      zoomBy: (factor) => {
+        engineRef.current?.zoomBy(factor, sizeRef.current);
+        publishCamera();
+      },
+      flyToCamera: (next) => {
+        engineRef.current?.camera.flyTo(fromSignal(next, sizeRef.current));
+        invalidateRef.current?.();
+      },
+      cancelFlight: () => engineRef.current?.camera.cancel(),
+    };
+    onSpatialAuthority(authority);
+    return () => onSpatialAuthority(null);
+  }, [onSpatialAuthority, publishCamera]);
 
   const setCursor = useCallback((cursor: "grab" | "grabbing" | "pointer") => {
     if (hostRef.current) hostRef.current.style.cursor = cursor;

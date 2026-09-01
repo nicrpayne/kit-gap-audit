@@ -384,7 +384,7 @@ export const LABEL_PRIORITY: NodeKind[] = [
 ];
 
 /** The largest Reality is allowed to be drawn, in device pixels. */
-export const CORE_MAX_PX = 190;
+export const CORE_MAX_PX = 84;
 
 /** Hue per focus class, for the calm-state web and the bundles. */
 export const WEB_STRAND_COLOR: Record<FocusClass, string> = {
@@ -818,7 +818,7 @@ export function buildScene(input: SceneInput, cached?: SceneCache): AuditScene {
       order: LABEL_PRIORITY.indexOf(attrs.kind) * 1000 + Math.min(999, 999 - (degreeOf.get(id) ?? 0)),
       x: p.x,
       y: p.y,
-      // REALITY STOPS GROWING AT 190 DEVICE PIXELS — a screen fact, applied
+      // REALITY STOPS GROWING AT 84 CSS PIXELS — a screen fact, applied
       // to the one node large enough for it to matter.
       r: attrs.kind === "reality" ? p.r * coreScale : p.r,
 

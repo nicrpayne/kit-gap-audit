@@ -41,8 +41,8 @@ import { FIELD } from "@/lib/audit/graphLayout";
 import type { Camera } from "./cameraMotion";
 
 /** Rubric: `Math.max(.1, Math.min(8, …))` — _core.js line 823. */
-export const RUBRIC_MIN_ZOOM = 0.1;
-export const RUBRIC_MAX_ZOOM = 8;
+export const RUBRIC_MIN_ZOOM = 0.25;
+export const RUBRIC_MAX_ZOOM = 4.5;
 
 /** Rubric: `Math.exp(-e.deltaY * .0014)` — line 823. Signal's own is .0016,
     so Rubric's wheel is ~12% less sensitive per notch. */
@@ -50,8 +50,8 @@ export const RUBRIC_WHEEL = 0.0014;
 
 /** Rubric flies for 50 frames (`flyCam` default) and resets over 55. At 60fps
     that is 833ms and 917ms — roughly 2.6× Signal's 320ms. */
-export const RUBRIC_FLY_MS = (50 / 60) * 1000;
-export const RUBRIC_RESET_MS = (55 / 60) * 1000;
+export const RUBRIC_FLY_MS = 360;
+export const RUBRIC_RESET_MS = 420;
 
 /** Rubric's `flyToNode` raises zoom to at least 1.6 — line 815. */
 export const RUBRIC_FOCUS_K = 1.6;

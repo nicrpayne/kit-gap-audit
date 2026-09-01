@@ -45,6 +45,7 @@ import { fitCamera, type GraphLayout } from "./SignalGraph";
 // way, which is the property that makes the A/B a comparison of painters
 // rather than of two different products.
 import AuditGraphRenderer from "./renderer/AuditGraphRenderer";
+import type { AuditSpatialAuthority, SpatialFrameReason } from "./renderer/types";
 import {
   DEFAULT_CAMERA,
   MAX_ZOOM,
@@ -182,8 +183,13 @@ export default function AuditInstrument({ initialScopeId }: { initialScopeId?: s
   // every frame writes a complete camera.
   const tweenRef = useRef<number | null>(null);
   const cameraRef = useRef<Camera>(DEFAULT_CAMERA);
+  const spatialAuthorityRef = useRef<AuditSpatialAuthority | null>(null);
+  const onSpatialAuthority = useCallback((authority: AuditSpatialAuthority | null) => {
+    spatialAuthorityRef.current = authority;
+  }, []);
 
   const stopTween = useCallback(() => {
+    spatialAuthorityRef.current?.cancelFlight();
     if (tweenRef.current !== null) {
       cancelAnimationFrame(tweenRef.current);
       tweenRef.current = null;
@@ -547,6 +553,18 @@ export default function AuditInstrument({ initialScopeId }: { initialScopeId?: s
     [graph, layout, aggregates]
   );
 
+  /** Meaning chooses which canonical ids matter; Rubric alone frames them. */
+  const frameCanonicalIds = useCallback(
+    (ids: readonly string[], reason: SpatialFrameReason, fallbackId?: string | null) => {
+      const authority = spatialAuthorityRef.current;
+      if (authority) return authority.frameIds(ids, { reason });
+      const next = frameFor(fallbackId ?? ids[0] ?? null);
+      if (next) flyCamera(next);
+      return next != null;
+    },
+    [frameFor, flyCamera]
+  );
+
   // ── SELECTION HISTORY ────────────────────────────────────────────────
   //
   // Law 8. Local graph navigation, not browser history and not saved views:
@@ -581,7 +599,9 @@ export default function AuditInstrument({ initialScopeId }: { initialScopeId?: s
         const world = restoreTrace.current;
         restoreTrace.current = null;
         setExpanded(new Set(world.expanded));
-        flyCamera(world.camera);
+        const authority = spatialAuthorityRef.current;
+        if (authority) authority.flyToCamera(world.camera);
+        else flyCamera(world.camera);
       }
       setSolo(on);
     },
@@ -626,11 +646,11 @@ export default function AuditInstrument({ initialScopeId }: { initialScopeId?: s
         });
       }
       if (moveCamera) {
-        const next = frameFor(id);
-        if (next) flyCamera(next);
+        const focus = graph && graph.hasNode(id) ? semanticFocus(graph, id) : null;
+        frameCanonicalIds(focus?.frame ?? [id], "selection", id);
       }
     },
-    [stopTween, frameFor, flyCamera, setTrace]
+    [stopTween, graph, frameCanonicalIds, setTrace]
   );
 
   /** Rubric's canvas click changes focus without moving the camera. Search,
@@ -743,7 +763,9 @@ export default function AuditInstrument({ initialScopeId }: { initialScopeId?: s
         });
         setSelectedId(entry.id);
         setResult(null);
-        flyCamera(entry.camera);
+        const authority = spatialAuthorityRef.current;
+        if (authority) authority.flyToCamera(entry.camera);
+        else flyCamera(entry.camera);
         // Released after the commit that this call schedules, so the
         // selection it causes is not itself pushed onto the stack.
         queueMicrotask(() => {
@@ -783,6 +805,10 @@ export default function AuditInstrument({ initialScopeId }: { initialScopeId?: s
   // if it already fits, the smallest pull-back if it does not.
   useEffect(() => {
     if (!soloNodes || !layout || !selectedId) return;
+    if (spatialAuthorityRef.current) {
+      spatialAuthorityRef.current.frameIds([...soloNodes], { reason: "trace", padding: 64 });
+      return;
+    }
     const anchor = layout.get(selectedId);
     if (!anchor) return;
     const pts: { x: number; y: number }[] = [];
@@ -975,7 +1001,9 @@ export default function AuditInstrument({ initialScopeId }: { initialScopeId?: s
               // Remember where we were BEFORE the expansion framed it, so
               // collapsing this cluster is a return rather than a stranding.
               restoreCluster.current.set(cluster, cameraRef.current);
-              flyCamera(next);
+              const authority = spatialAuthorityRef.current;
+              if (authority) authority.frameIds(members, { reason: "cluster" });
+              else flyCamera(next);
             }
           }
         }
@@ -983,7 +1011,9 @@ export default function AuditInstrument({ initialScopeId }: { initialScopeId?: s
         const back = restoreCluster.current.get(cluster);
         if (back) {
           restoreCluster.current.delete(cluster);
-          flyCamera(back);
+          const authority = spatialAuthorityRef.current;
+          if (authority) authority.flyToCamera(back);
+          else flyCamera(back);
         }
       }
     },
@@ -1017,10 +1047,25 @@ export default function AuditInstrument({ initialScopeId }: { initialScopeId?: s
   // selection.
   const frameNode = useCallback(
     (id: string) => {
-      const next = frameFor(id);
-      if (next) flyCamera(next);
+      const focus = graph?.hasNode(id) ? semanticFocus(graph, id) : null;
+      frameCanonicalIds(focus?.frame ?? [id], "selection", id);
     },
-    [frameFor, flyCamera]
+    [graph, frameCanonicalIds]
+  );
+
+  const fitViewport = useCallback(() => {
+    const authority = spatialAuthorityRef.current;
+    if (authority) authority.fit();
+    else flyCamera(homeCamera);
+  }, [flyCamera, homeCamera]);
+
+  const zoomViewport = useCallback(
+    (factor: number) => {
+      const authority = spatialAuthorityRef.current;
+      if (authority) authority.zoomBy(factor);
+      else setCamera((c) => ({ ...c, k: Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, c.k * factor)) }));
+    },
+    [setCamera]
   );
 
   // ── RUN AUDIT ────────────────────────────────────────────────────────
@@ -1231,6 +1276,7 @@ export default function AuditInstrument({ initialScopeId }: { initialScopeId?: s
             sweepAngle={sweepAngle}
             swept={swept}
             onViewport={onViewport}
+            onSpatialAuthority={onSpatialAuthority}
           />
 
           {/* SEARCH + CAMERA, floating over the field — the reference keeps
@@ -1378,9 +1424,9 @@ export default function AuditInstrument({ initialScopeId }: { initialScopeId?: s
                       it would make five quick clicks fight each other, since
                       each would retarget the last. Fit GOES somewhere, so it
                       moves like every other going-somewhere. */}
-                  <MiniButton onClick={() => setCamera((c) => ({ ...c, k: Math.max(MIN_ZOOM, c.k / 1.35) }))} label="−" title="Zoom out" />
-                  <MiniButton onClick={() => setCamera((c) => ({ ...c, k: Math.min(MAX_ZOOM, c.k * 1.35) }))} label="+" title="Zoom in" />
-                  <MiniButton onClick={() => flyCamera(homeCamera)} label="Fit" title="Fit the whole project" shoot="camera-fit" />
+                  <MiniButton onClick={() => zoomViewport(1 / 1.35)} label="−" title="Zoom out" />
+                  <MiniButton onClick={() => zoomViewport(1.35)} label="+" title="Zoom in" />
+                  <MiniButton onClick={fitViewport} label="Fit" title="Fit the whole project" shoot="camera-fit" />
                 </div>
               </div>
 

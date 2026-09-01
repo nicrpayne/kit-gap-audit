@@ -13,7 +13,13 @@
 
 import type { AuditScene } from "@/lib/audit/visualScene";
 import { SpatialField, type FieldNodeInput, type LayoutMode } from "@/lib/audit/spatial/field";
-import { RubricCamera, s2w, type RubricTransform } from "../../rubricCamera";
+import {
+  RubricCamera,
+  RUBRIC_MAX_ZOOM,
+  RUBRIC_MIN_ZOOM,
+  s2w,
+  type RubricTransform,
+} from "../../rubricCamera";
 import { BackdropCache } from "./backdrop";
 import { paintScene, SoftLayer, type PaintInput, type PaintStats } from "./painter";
 import { RubricSprites } from "./sprites2";
@@ -100,6 +106,119 @@ export class RubricViewportEngine {
     this.hitScale = k;
   }
 
+  /** The exact current world position used by paint and hit testing. */
+  resolveWorldPosition(id: string): { x: number; y: number } | null {
+    const direct = this.hitPositions.get(id);
+    if (direct) return { ...direct };
+    const agg = this.hitScene?.aggregates.find((a) => a.id === id);
+    if (!agg) return null;
+    const members = agg.hub ? [...agg.members, agg.hub] : agg.members;
+    let x = 0;
+    let y = 0;
+    let count = 0;
+    for (const member of members) {
+      const p = this.hitPositions.get(member);
+      if (!p) continue;
+      x += p.x;
+      y += p.y;
+      count++;
+    }
+    return count > 0 ? { x: x / count, y: y / count } : null;
+  }
+
+  /**
+   * Frame canonical ids from the live Rubric world.
+   *
+   * Selection never zooms in: if the requested geometry already fits, the
+   * camera stays exactly where the reader left it; otherwise it recentres and
+   * only pulls back as far as required. Trace uses the same rule for every
+   * endpoint, so a route can never become a floating wire.
+   */
+  frameIds(
+    ids: readonly string[],
+    viewport: { w: number; h: number },
+    options: { padding?: number } = {}
+  ): boolean {
+    const scene = this.hitScene;
+    if (!scene || ids.length === 0) return false;
+    const padding = options.padding ?? 56;
+    const points: { x: number; y: number; r: number }[] = [];
+    for (const id of new Set(ids)) {
+      const aggregate = scene.aggregates.find((a) => a.id === id);
+      if (aggregate) {
+        for (const member of aggregate.hub ? [...aggregate.members, aggregate.hub] : aggregate.members) {
+          const p = this.hitPositions.get(member);
+          const node = scene.nodes.find((n) => n.id === member);
+          if (p && node) points.push({ ...p, r: node.identity === "latent" ? node.latentR : node.r });
+        }
+        continue;
+      }
+      const p = this.hitPositions.get(id);
+      const node = scene.nodes.find((n) => n.id === id);
+      if (p && node) points.push({ ...p, r: node.identity === "latent" ? node.latentR : node.r });
+    }
+    if (points.length === 0) return false;
+
+    let x0 = Infinity;
+    let y0 = Infinity;
+    let x1 = -Infinity;
+    let y1 = -Infinity;
+    for (const p of points) {
+      x0 = Math.min(x0, p.x - p.r);
+      y0 = Math.min(y0, p.y - p.r);
+      x1 = Math.max(x1, p.x + p.r);
+      y1 = Math.max(y1, p.y + p.r);
+    }
+
+    const t = this.camera.transform;
+    const sx0 = x0 * t.k + t.x;
+    const sy0 = y0 * t.k + t.y;
+    const sx1 = x1 * t.k + t.x;
+    const sy1 = y1 * t.k + t.y;
+    if (
+      sx0 >= padding && sy0 >= padding &&
+      sx1 <= viewport.w - padding && sy1 <= viewport.h - padding
+    ) return false;
+
+    const width = Math.max(1, x1 - x0);
+    const height = Math.max(1, y1 - y0);
+    const fitK = Math.min(
+      (viewport.w - padding * 2) / width,
+      (viewport.h - padding * 2) / height
+    );
+    const k = Math.max(RUBRIC_MIN_ZOOM, Math.min(RUBRIC_MAX_ZOOM, t.k, fitK));
+    const cx = (x0 + x1) / 2;
+    const cy = (y0 + y1) / 2;
+    this.camera.flyTo({ k, x: viewport.w / 2 - cx * k, y: viewport.h / 2 - cy * k });
+    return true;
+  }
+
+  fit(viewport: { w: number; h: number }): void {
+    this.camera.fitWorld(this.field.origin, this.field.viewRadius, viewport);
+  }
+
+  /** Layout changes preserve learned framing unless the new world clips. */
+  fitIfClipped(viewport: { w: number; h: number }, padding = 36): boolean {
+    const t = this.camera.transform;
+    const o = this.field.origin;
+    const r = this.field.viewRadius;
+    if (
+      (o.x - r) * t.k + t.x >= padding &&
+      (o.y - r) * t.k + t.y >= padding &&
+      (o.x + r) * t.k + t.x <= viewport.w - padding &&
+      (o.y + r) * t.k + t.y <= viewport.h - padding
+    ) return false;
+    this.fit(viewport);
+    return true;
+  }
+
+  zoomBy(factor: number, viewport: { w: number; h: number }): void {
+    const t = this.camera.transform;
+    const world = s2w({ x: viewport.w / 2, y: viewport.h / 2 }, t);
+    const k = Math.max(RUBRIC_MIN_ZOOM, Math.min(RUBRIC_MAX_ZOOM, t.k * factor));
+    this.camera.set({ k, x: viewport.w / 2 - world.x * k, y: viewport.h / 2 - world.y * k });
+  }
+
   /** Rubric `_core.js` 918-929: drawn radius + 6 screen px; raw nearest centre wins. */
   hitAt(x: number, y: number, includeRouter = true): string | null {
     const scene = this.hitScene;
@@ -142,6 +261,7 @@ export class RubricViewportEngine {
 
   /** Rubric `mousedown`: a node begins a drag; empty space begins a pan. */
   pointerDown(point: ScreenPoint): { hit: string | null; cursor: "grab" | "grabbing" } {
+    this.camera.cancel();
     const hit = this.hitAtScreen(point, true);
     const dragId = hit && this.nodeIds.has(hit) ? hit : null;
     this.pointer = { start: { ...point }, hit, dragId, panFrom: { ...this.camera.transform } };

@@ -32,7 +32,25 @@ export const RENDERERS: RendererId[] = ["svg", "canvas"];
 /** The renderer that ships. Canvas is opt-in for as long as this slice is an
     experiment — an A/B you have to ask for is an A/B nobody is exposed to by
     accident. */
-export const DEFAULT_RENDERER: RendererId = "svg";
+export const DEFAULT_RENDERER: RendererId = "canvas";
+
+export type SpatialFrameReason = "selection" | "search" | "trace" | "history" | "cluster";
+
+/**
+ * The Canvas viewport's imperative spatial seam.
+ *
+ * Product code supplies canonical ids and intent. It never supplies a world
+ * coordinate: only the Rubric viewport knows where those ids are *now*.
+ * SVG keeps its legacy camera path and simply never registers this API.
+ */
+export interface AuditSpatialAuthority {
+  resolveWorldPosition(id: string): { x: number; y: number } | null;
+  frameIds(ids: readonly string[], options?: { reason?: SpatialFrameReason; padding?: number }): boolean;
+  fit(): void;
+  zoomBy(factor: number): void;
+  flyToCamera(camera: Camera): void;
+  cancelFlight(): void;
+}
 
 /**
  * WHICH PAINTER, FROM THE URL.
@@ -94,6 +112,8 @@ export interface AuditRendererProps {
       changes. The framing law lives in the instrument, but only the element
       being resized knows how big the field actually is on screen. */
   onViewport?: (vp: { w: number; h: number }) => void;
+  /** Canvas registers the sole live geometry/camera authority here. */
+  onSpatialAuthority?: (authority: AuditSpatialAuthority | null) => void;
 }
 
 /**
