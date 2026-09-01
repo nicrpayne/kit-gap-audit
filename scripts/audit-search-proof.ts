@@ -469,8 +469,10 @@ async function main() {
     );
     check(
       "L4 a reveal set is a small fraction of the field, never everything",
-      revealFor(graph, docs.map((d) => d.id)).size <= graph.order,
-      `worst case ${revealFor(graph, docs.map((d) => d.id)).size} of ${graph.order}`
+      Math.max(...["notifications", "offline", "Docufy", "notifictions"].map((q) =>
+        revealFor(graph, index.search(q).hits.map((h) => h.id)).size
+      )) < graph.order / 4,
+      "exact hits + locating hubs only"
     );
     check(
       "L5 an empty result set reveals nothing",
@@ -518,20 +520,21 @@ async function main() {
     );
 
     // TAKING a result is the one act that may persist, and it persists the
-    // MINIMUM. A passage in the evidence sector commits one cluster.
+    // MINIMUM. A passage commits itself, its lane hub and its own source —
+    // never the lane key whose meaning is "open every member".
     {
       const hit = index.search(QUOTES.tailRisk).hits[0]!;
       const committed = commitFor(graph, hit.id);
       const after = new Set([...readerOpened, ...committed]);
       check(
-        "L9 taking a result commits the minimum — one cluster, not a neighbourhood",
-        committed.size <= 1 && after.size <= readerOpened.size + 1,
+        "L9 taking a result commits exact promotion, never a whole lane",
+        committed.has(hit.id) && committed.size <= 3 && !committed.has(String(graph.getNodeAttribute(hit.id, "lane"))) &&
+          after.size <= readerOpened.size + 3,
         `committed ${[...committed].join(",") || "nothing"}`
       );
       check(
-        "L10 and what it commits is enough to hold the chosen object open",
-        graph.getNodeAttribute(hit.id, "slice") === "core" ||
-          committed.has(String(graph.getNodeAttribute(hit.id, "lane")))
+        "L10 and what it commits directly holds the chosen object open",
+        committed.has(hit.id)
       );
     }
 
@@ -575,7 +578,7 @@ async function main() {
       // And the renderer reads that union, not `expanded` directly.
       check(
         "L15 the opened-set is derived from the union, never from `expanded` alone",
-        /const opened = useMemo\([\s\S]{0,2600}?\}, \[graph, disclosed, aggregates\]\)/.test(src)
+        /const opened = useMemo\([\s\S]{0,2800}?\}, \[graph, disclosed, expanded, aggregates\]\)/.test(src)
       );
     }
   }

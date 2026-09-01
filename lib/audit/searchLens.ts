@@ -37,16 +37,11 @@ import type { AuditGraph } from "./graph";
 /**
  * What must be OPEN for `ids` to be visible on the field.
  *
- * The renderer's own disclosure rule, read backwards. A node is drawn when it
- * is `core`, or when its lane is expanded, or — for a passage — when its
- * source artifact is expanded. So the reveal set is the LANES and SOURCES
- * those hits sit behind, never the hits themselves and never their
- * neighbours.
- *
- *   MINIMUM, NOT NEIGHBOURHOOD. Revealing one hit's lane makes that lane's
- *   whole sector visible, which is already generous; adding one hop of
- *   context on top would put most of the evidence sector on screen for any
- *   query that touches a transcript.
+ * The renderer's disclosure rule, read backwards. The exact hit is promoted,
+ * plus the lane hub that locates it. A passage also promotes its own source
+ * artifact so the quotation never appears without provenance. Crucially, the
+ * lane KEY is not returned: lane keys mean "open every member" and Search is
+ * never allowed to turn one match into a corpus-wide reveal.
  *
  * Pure. Same graph and same ids in, same set out, every time.
  */
@@ -55,9 +50,16 @@ export function revealFor(graph: AuditGraph, ids: readonly string[]): Set<string
   for (const id of ids) {
     if (!graph.hasNode(id)) continue;
     const a = graph.getNodeAttributes(id);
-    // A core node is always drawn. Nothing needs opening for it.
-    if (a.slice === "core") continue;
-    if (typeof a.lane === "string" && a.lane) out.add(a.lane);
+    out.add(id);
+    if (typeof a.lane === "string" && a.lane) {
+      const laneId = `lane:${a.lane}`;
+      if (graph.hasNode(laneId)) out.add(laneId);
+    }
+    if (a.kind === "passage") {
+      graph.forEachOutboundEdge(id, (_edge, edge, _source, target) => {
+        if (edge.rel === "extracted_from" && graph.hasNode(target)) out.add(target);
+      });
+    }
   }
   return out;
 }
@@ -65,8 +67,9 @@ export function revealFor(graph: AuditGraph, ids: readonly string[]): Set<string
 /**
  * What to OPEN PERMANENTLY when the reader takes a result.
  *
- * Same rule, one id — but this one is applied to `expanded`, because
- * selecting is a choice and the reader expects the field to have moved.
+ * Same exact-promotion rule, one id — but this one is applied to `expanded`,
+ * because selecting is a choice and the reader expects the object to remain
+ * formed after the query clears.
  * Returning a set rather than mutating anything keeps the decision at the
  * call site, where the difference between "typing" and "choosing" lives.
  */

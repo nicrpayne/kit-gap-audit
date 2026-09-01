@@ -428,7 +428,8 @@ export default function AuditInstrument({ initialScopeId }: { initialScopeId?: s
     if (!graph) return out;
     graph.forEachNode((n, a) => {
       if (a.slice === "core") out.add(n);
-      else if (a.lane && disclosed.has(a.lane)) out.add(n);
+      else if (disclosed.has(n)) out.add(n);
+      else if (a.lane && expanded.has(a.lane)) out.add(n);
     });
     // ONE SOURCE, OPENED ON ITS OWN.
     //
@@ -466,7 +467,7 @@ export default function AuditInstrument({ initialScopeId }: { initialScopeId?: s
       if (agg.hub && graph.hasNode(agg.hub)) out.add(agg.hub);
     }
     return out;
-  }, [graph, disclosed, aggregates]);
+  }, [graph, disclosed, expanded, aggregates]);
 
   const selectedAggregate = useMemo(
     () => (selectedId ? aggregates.find((a) => a.id === selectedId) ?? null : null),
