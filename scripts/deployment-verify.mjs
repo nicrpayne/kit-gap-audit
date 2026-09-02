@@ -12,23 +12,12 @@
 //
 //   BASE_URL=https://… APP_PASSWORD=… node scripts/deployment-verify.mjs
 //
-// AND WHICH COMMIT IS IT. Set EXPECTED_SHA and check 0 asserts that the
-// running process reports that commit — which is the question every other
-// check here silently assumed an answer to, and which cost two UX audits
-// before /api/version existed to answer it:
-//
-//   EXPECTED_SHA=0318a82 BASE_URL=https://… node scripts/deployment-verify.mjs
-//
 // Auth: APP_PASSWORD is sent as `Authorization: Bearer` (the route the
-// middleware already offers programmatic callers). KIT_SESSION works too,
-// and check 6 REQUIRES it — `/audit` is a page route, and pages are
-// cookie-only by design (see middleware.ts). Check 0 needs neither:
-// /api/version is public.
+// middleware already offers programmatic callers). KIT_SESSION works too.
 
 const BASE = (process.env.BASE_URL ?? "http://localhost:3000").replace(/\/$/, "");
 const PW = process.env.APP_PASSWORD ?? "";
 const COOKIE = process.env.KIT_SESSION ?? "";
-const EXPECTED = (process.env.EXPECTED_SHA ?? "").trim().toLowerCase();
 
 let failures = 0;
 const check = (name, ok, detail = "") => {
@@ -53,53 +42,6 @@ const get = async (path) => {
 };
 
 console.log(`\nverifying ${BASE}\n`);
-
-// ── 0. WHICH BUILD IS ACTUALLY RUNNING ──────────────────────────────
-//
-// FIRST, because every other check below is a statement about "the
-// deployment" and is worth exactly as much as your confidence about which
-// commit that is. Unauthenticated on purpose, so this answers even when the
-// session is wrong — a 404 here is itself the answer on any build older than
-// the tranche that added the route.
-//
-// WRITE-FREE: one GET.
-{
-  const res = await fetch(`${BASE}/api/version`, { headers: { "cache-control": "no-cache" } });
-  const build = await res.json().catch(() => null);
-  if (res.status === 404) {
-    check(
-      "0. the running build identifies itself",
-      false,
-      "404 — this deployment predates /api/version, so its commit cannot be read from outside"
-    );
-  } else if (!res.ok || !build?.commit) {
-    check("0. the running build identifies itself", false, `HTTP ${res.status}`);
-  } else {
-    check(
-      "0. the running build identifies itself",
-      true,
-      `${build.shortCommit} on ${build.branch} (${build.environment})` +
-        (build.deploymentId && build.deploymentId !== "local" ? ` · deploy ${build.deploymentId}` : "")
-    );
-    if (EXPECTED) {
-      // Prefix match, so a short SHA from `git log --oneline` works as well
-      // as the full forty. Compared case-insensitively and both directions
-      // are reported, because "expected 0318a82, got 8de8028" is the whole
-      // value of this check.
-      const actual = String(build.commit).toLowerCase();
-      const ok = actual.startsWith(EXPECTED) || String(build.shortCommit).toLowerCase().startsWith(EXPECTED);
-      check(
-        `0b. runtime build is ${EXPECTED}`,
-        ok,
-        ok
-          ? `${build.commit}`
-          : `expected ${EXPECTED}, production reports ${build.shortCommit} (${build.commit}) — "${build.commitMessage}"`
-      );
-    } else {
-      console.log(`      (set EXPECTED_SHA to assert this is the commit you pushed)`);
-    }
-  }
-}
 
 // ── 1. THE READ SURFACE EXISTS ──────────────────────────────────────
 //

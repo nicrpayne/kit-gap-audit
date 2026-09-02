@@ -32,14 +32,6 @@
 
 import type { AuditGraph, NodeKind } from "./graph";
 import { SOURCE_KINDS } from "./sources";
-import {
-  constellations,
-  discRadius,
-  packWedge,
-  vogel,
-  type Aggregate,
-  type PackedUnit,
-} from "./constellations";
 
 export const FIELD = {
   size: 1400,
@@ -99,18 +91,6 @@ export const FIELD = {
    * packs into at most three rows and reads as a dense rim, which is what a
    * large external corpus honestly looks like.
    */
-  /**
-   * WHERE SOURCE CONSTELLATIONS LIVE.
-   *
-   * The sources layer used to be one ring at `childR` with passages fanned 52
-   * units outside it. A constellation needs AREA, not a ring, so the layer
-   * became a band — the same layer of the world, given room to have a shape.
-   * It sits outside the disagreement rings and inside the record's edge:
-   * where knowledge came from is not a position on the disagreement axis, and
-   * it is unambiguously Signal's own.
-   */
-  sourceInner: 440,
-  sourceOuter: 584,
   intelR: 622,
   intelRowStep: 36,
   /** Closes the field when external intelligence is present. */
@@ -206,52 +186,9 @@ export const CLUSTER_ORDER = [
 
 const RAD = Math.PI / 180;
 const SECTOR = 360 / CLUSTER_ORDER.length;
-
-/**
- * How much room one mark gets inside its constellation, in world units.
- *
- * A passage's body is 4.2 across and an external object's 4.6, so these are
- * roughly two body-widths — dense enough that a group reads as one mass at a
- * distance, open enough that individual marks stay countable when you close
- * in. Denser than this and the disc becomes a blob you cannot resolve; looser
- * and the sector runs out of room and the packer shrinks everything anyway.
- */
-const SOURCE_SPACING = 10;
-const INTEL_SPACING = 10;
-
-/**
- * THE GUTTER BETWEEN CONSTELLATIONS, and the floor on how small one gets.
- *
- * `GUTTER` pads every disc before packing, so neighbouring constellations
- * never touch and each reads as its own object. `DISC_MIN` stops a source
- * with one passage from collapsing to a point.
- *
- * The provenance law — a passage nearer its own hub than any other — is NOT
- * enforced by these. It is enforced per hub, from the distance to its actual
- * nearest neighbour, where the seating happens. A constant here could only be
- * tuned for the worst pair in the corpus, which packed every isolated
- * constellation as tightly as the most crowded one; measured, that cost the
- * densest transcript's 26 passages two units of separation each.
- */
-const GUTTER = 1.1;
-const DISC_MIN = 9;
 /** Usable arc inside a sector, leaving a gutter so neighbouring clusters do
     not visually merge. */
 const SECTOR_ARC = SECTOR - 9;
-
-/**
- * The arc a CONSTELLATION field may use, wider than a ring's.
- *
- * A ring is narrowed so a cluster holds its own tightly and its labels do not
- * collide with the next sector's. A constellation field has no labels of its
- * own at the level it is drawn and its members are packed rather than fanned,
- * so it can safely take almost the whole sector — and it needs to: the
- * Evidence sector alone holds 45 artifacts and 156 passages, half the corpus.
- *
- * Still comfortably inside the half-sector the layout proof enforces, because
- * `packWedge` keeps each disc's full extent within the arc it is given.
- */
-const WEDGE_ARC = SECTOR - 5;
 
 export interface Placement {
   x: number;
@@ -311,36 +248,6 @@ export function layoutGraph(graph: AuditGraph): GraphLayout {
       cluster,
     });
   };
-
-  /**
-   * Seat a node at a CARTESIAN point, deriving its polar coordinates.
-   *
-   * Everything on this field used to be placed by (angle, radius) because
-   * everything sat on a ring. A constellation is a disc, and a member of one
-   * is at an offset from the disc's centre — so the cartesian point is the
-   * primary fact and the polar pair is computed from it. `angle` and `radius`
-   * stay correct and still mean what they always meant, which is what lets
-   * the sector proof and the disagreement proof go on working unchanged.
-   */
-  const placeXY = (id: string, x: number, y: number, cluster: string | null) => {
-    const dx = x - FIELD.cx;
-    const dy = y - FIELD.cy;
-    out.set(id, {
-      x,
-      y,
-      r: NODE_SIZE[graph.getNodeAttribute(id, "kind")] ?? 5,
-      angle: (Math.atan2(dy, dx) / RAD + 540) % 360 - 180,
-      radius: Math.hypot(dx, dy),
-      cluster,
-    });
-  };
-
-  // The groups this corpus supports, and a member-to-group index so the
-  // seating passes below can ask "which constellation is this in" in O(1).
-  const aggregates = constellations(graph);
-  const aggregateOfMember = new Map<string, Aggregate>();
-  for (const agg of aggregates) for (const m of agg.members) aggregateOfMember.set(m, agg);
-  const constellationSeats = new Map<string, PackedUnit & { cluster: string }>();
 
   // Stable ordering everywhere below: node ids are sorted before seating, so
   // insertion order in the graph cannot move anything on screen.
@@ -501,23 +408,22 @@ export function layoutGraph(graph: AuditGraph): GraphLayout {
     );
   }
 
-  // ── SOURCE CONSTELLATIONS — an artifact and what came out of it ──────
+  // ── EVIDENCE CHAIN — a source expands into its OWN passages ──────────
   //
-  // 367 of the real corpus's 480 edges are provenance. That is the shape the
-  // knowledge actually has, so it is the shape the field takes: a source
-  // artifact is a HUB, and the passages extracted from it are its satellites,
-  // packed in a phyllotaxis disc around it.
+  // Every source-artifact kind seats together on one ring: they are the same
+  // layer of the world (where we learned things), differing by what they ARE
+  // rather than by where they sit.
   //
-  // WHAT THIS REPLACES was correct and unreadable. Sources sat on one ring
-  // and each fanned its passages into an angular slot outside it: provenance
-  // was answerable by position, but 45 artifacts and 156 passages resolved
-  // into a rack of marks, and no amount of zoom made it anything else.
+  // Sources are seated first and each is given a SLOT of its cluster's arc;
+  // its passages then fan inside that slot and nowhere else. The previous
+  // pass fanned every passage across a fixed 14 degrees regardless of how
+  // many sources shared the sector, so with three sources 14.4 degrees apart
+  // one source's evidence sat under its neighbour — the provenance chain read
+  // backwards at exactly the zoom where you go looking for it.
   //
-  // The law it was protecting is kept and strengthened. It used to be
-  // "a passage sits angularly nearer its own source than any other", which
-  // was the right question while every source shared one radius. Now that a
-  // sector is an AREA the honest form is euclidean: a passage is nearer its
-  // own hub than any other hub, full stop. A proof asserts exactly that.
+  // Because a passage now always lands nearer its own source than any other,
+  // "which source is this quote from" is answerable by position before the
+  // extracted_from edge is drawn at all. A proof asserts that.
   {
     const childrenOf = new Map<string, string[]>();
     for (const id of byKind("passage")) {
@@ -535,56 +441,55 @@ export function layoutGraph(graph: AuditGraph): GraphLayout {
       byCluster.set(cluster, [...(byCluster.get(cluster) ?? []), id]);
     }
 
-    // Packed per sector, then seated together — because the provenance law
-    // is GLOBAL. A passage must be nearer its own hub than any other hub in
-    // the field, including one in the next sector along, so the orbit each
-    // hub may use cannot be decided until every hub has a seat.
-    const seated: { unit: PackedUnit; cluster: string; x: number; y: number }[] = [];
     for (const [cluster, ids] of byCluster) {
-      const units = ids.map((sid) => ({
-        id: sid,
-        radius: discRadius((childrenOf.get(sid) ?? []).length + 1, SOURCE_SPACING, DISC_MIN) * GUTTER,
-      }));
-      const packed = packWedge(units, {
-        baseAngle: sectorAngle(cluster),
-        arcDeg: WEDGE_ARC,
-        inner: FIELD.sourceInner,
-        outer: FIELD.sourceOuter,
-      });
-      for (const unit of packed) {
-        const centre = polar(unit.angle, unit.radius);
-        seated.push({ unit, cluster, x: centre.x, y: centre.y });
-      }
-    }
-
-    for (const { unit, cluster, x, y } of seated) {
-      placeXY(unit.id, x, y, cluster);
-      constellationSeats.set(`agg:src:${unit.id}`, { ...unit, cluster });
-      const kids = (childrenOf.get(unit.id) ?? []).sort();
-      if (kids.length === 0) continue;
-      // HOW FAR A SATELLITE MAY ORBIT, DERIVED RATHER THAN ASSUMED.
+      const base = sectorAngle(cluster);
+      // Wider than the other rings on purpose: a source carries a long,
+      // human label ("Delivery sync · 21 Aug"), and three of them packed into
+      // a narrow arc collide as text long before they collide as marks.
       //
-      // Half the distance to the nearest other hub, less a hair. Inside that
-      // radius a satellite is provably nearer its own artifact than any
-      // other, which is the law — "which meeting did this quote come from"
-      // answerable by position, before a single line is drawn.
+      // AND THE FULL SECTOR ONCE ONE HOLDS A REAL CORPUS. The real JSA
+      // payload puts 30 transcripts and 19 generic sources in the Evidence
+      // sector alone; across the narrow arc that is half a degree each.
       //
-      // A constant could only ever be tuned for the worst pair in the corpus,
-      // which meant every isolated constellation was packed as tightly as the
-      // most crowded one. This lets a hub with room use it.
-      let nearest = Infinity;
-      for (const other of seated) {
-        if (other.unit.id === unit.id) continue;
-        nearest = Math.min(nearest, Math.hypot(other.x - x, other.y - y));
-      }
-      const orbit = Math.min(
-        // Its own disc, less the gutter it was padded with.
-        (unit.discR / GUTTER) * 0.94,
-        Number.isFinite(nearest) ? nearest * 0.47 : Infinity
-      );
-      kids.forEach((kid, k) => {
-        const v = vogel(k, kids.length);
-        placeXY(kid, x + v.dx * orbit, y + v.dy * orbit, cluster);
+      // A SECOND RADIAL ROW WAS TRIED HERE AND REVERTED, and the reason is
+      // worth keeping. Sources sit 52 units inside their own passages, so a
+      // second row 27 units away puts SOMEBODY ELSE'S source nearer a passage
+      // than its own — radial proximity beats angular, and "which source is
+      // this quote from" stops being answerable by position. The proof caught
+      // it: 22 of 122 passages misseated. The field has no radial room for a
+      // second source band while that law holds, so it gets angular room
+      // instead.
+      const crowded = ids.length > 12;
+      const arc = SECTOR_ARC * (crowded ? 1 : 0.66);
+      const slot = arc / Math.max(1, ids.length);
+      ids.forEach((sid, i) => {
+        const sAngle = fanAngle(base, i, ids.length, arc);
+        place(sid, sAngle, FIELD.childR, cluster);
+        const kids = (childrenOf.get(sid) ?? []).sort();
+        // Never wider than the slot the source owns, so two sources in one
+        // sector cannot interleave their evidence.
+        const kidArc = Math.min(9, slot * 0.72);
+        kids.forEach((kid, k) =>
+          place(
+            kid,
+            // A LONE PASSAGE STEPS OFF ITS SOURCE'S RAY. Everywhere else a
+            // single child sits on the axis, but source and passage are only
+            // 52 units apart radially, so exactly collinear their two labels
+            // land on one baseline and print over each other. The nudge is
+            // what makes them read as a pair rather than as a smear.
+            //
+            // BOUNDED BY THE SLOT, because a fixed 3.2 degrees was only safe
+            // while a sector held three sources. Measured at thirteen, whose
+            // slots are 1.8 degrees wide, that nudge walked a lone passage
+            // clean past its neighbour and provenance read backwards by
+            // position — the exact thing this seating exists to guarantee.
+            kids.length === 1
+              ? sAngle + Math.min(3.2, slot * 0.45)
+              : fanAngle(sAngle, k, kids.length, kidArc),
+            FIELD.childR + 52,
+            cluster
+          )
+        );
       });
     }
 
@@ -600,7 +505,7 @@ export function layoutGraph(graph: AuditGraph): GraphLayout {
     for (const [cluster, ids] of strayByCluster) {
       const base = sectorAngle(cluster);
       ids.forEach((id, i) =>
-        place(id, fanAngle(base, i, ids.length, SECTOR_ARC * 0.42), FIELD.sourceOuter + 10, cluster)
+        place(id, fanAngle(base, i, ids.length, SECTOR_ARC * 0.42), FIELD.childR + 52, cluster)
       );
     }
   }
@@ -610,70 +515,46 @@ export function layoutGraph(graph: AuditGraph): GraphLayout {
   // widest radius a wide fan scatters them further than any other ring.
   onClusterRing("checkpoint", FIELD.edgeR, 0.28);
 
-  // ── EXTERNAL INTELLIGENCE, AS TYPE CONSTELLATIONS ────────────────
+  // ── EXTERNAL INTELLIGENCE, OUTSIDE THE RECORD'S EDGE ─────────────────
   //
-  // Seated by SECTOR (what the object means), by CONSTELLATION (which kind of
-  // claim it is), and outside `edgeR` (whose intelligence it is). Three facts,
-  // three channels, no channel doing two jobs.
+  // Seated by SECTOR (what the object means) and by ROW (how many there are),
+  // outside `edgeR` (whose intelligence it is). Three facts, three channels,
+  // no channel doing two jobs.
   //
-  // THIS USED TO BE THREE ROWS ACROSS THE SECTOR, and that was the defect the
-  // constellations exist to end: 126 objects of five different kinds fanned
-  // into one arc, so the arrangement said nothing that position had not
-  // already said, and zoom enlarged the geometry without revealing anything.
-  //
-  //   HERMES IS A PRODUCER, NOT A MEANING.
-  //
-  // A Decision is a Decision and already sits on the Decisions axis; the four
-  // kinds Signal has no sector for - risk, commitment, unknown, observation -
-  // now get their own sub-regions inside the Hermes sector instead of being
-  // one undifferentiated rail. Each is a phyllotaxis disc: even at any count,
-  // no preferred axis, and a function of (index, count) alone.
-  //
-  // CURRENT MATERIAL SITS NEARER THE CENTRE OF ITS OWN DISC. Superseded and
-  // resolved objects are the producer's history, and the same gradient the
-  // rest of the field runs on puts history further out. Nothing is dropped: a
-  // historical object keeps a real seat because the temporal chain that
-  // reaches it has to land somewhere.
+  // CURRENT MATERIAL FILLS THE INNER ROWS FIRST. Superseded and resolved
+  // objects are the producer's own history, and pushing them outward puts
+  // them literally further from accepted Reality than the head they were
+  // replaced by — the same gradient the rest of the field already runs on.
+  // Nothing is dropped: a historical object keeps a real seat because the
+  // temporal chain that reaches it has to land somewhere.
   {
     const byCluster = new Map<string, string[]>();
     for (const id of byKind("intel")) {
       const cluster = (graph.getNodeAttribute(id, "lane") as string) ?? "hermes";
       byCluster.set(cluster, [...(byCluster.get(cluster) ?? []), id]);
     }
-    // Head first, then by key - deterministic, and the ordering IS the
-    // radial meaning inside each disc.
-    const rank = (id: string) => (graph.getNodeAttribute(id, "isCurrent") === false ? 1 : 0);
-    const order = (a: string, b: string) => rank(a) - rank(b) || a.localeCompare(b);
-
-    for (const [cluster, all] of byCluster) {
-      const groups = new Map<string, string[]>();
-      for (const id of all) {
-        const agg = aggregateOfMember.get(id);
-        // A type with fewer than four members is not a constellation; those
-        // objects share one group per sector, so a lone Availability
-        // observation is still seated with its neighbours rather than given a
-        // disc of its own.
-        const key = agg ? agg.id : `loose:${cluster}`;
-        groups.set(key, [...(groups.get(key) ?? []), id]);
-      }
-      const units = [...groups].map(([key, ids]) => ({
-        id: key,
-        radius: discRadius(ids.length, INTEL_SPACING, DISC_MIN),
-      }));
-      const packed = packWedge(units, {
-        baseAngle: sectorAngle(cluster),
-        arcDeg: WEDGE_ARC,
-        inner: FIELD.edgeR + 10,
-        outer: FIELD.outerR - 6,
+    for (const [cluster, unsorted] of byCluster) {
+      const base = sectorAngle(cluster);
+      // Head first, then by key — deterministic, and the ordering IS the
+      // radial meaning.
+      const ids = [...unsorted].sort((a, b) => {
+        const ac = graph.getNodeAttribute(a, "isCurrent") === false ? 1 : 0;
+        const bc = graph.getNodeAttribute(b, "isCurrent") === false ? 1 : 0;
+        return ac === bc ? a.localeCompare(b) : ac - bc;
       });
-      for (const unit of packed) {
-        const ids = (groups.get(unit.id) ?? []).sort(order);
-        const centre = polar(unit.angle, unit.radius);
-        constellationSeats.set(unit.id, { ...unit, cluster });
-        ids.forEach((id, i) => {
-          const v = vogel(i, ids.length);
-          placeXY(id, centre.x + v.dx * unit.discR, centre.y + v.dy * unit.discR, cluster);
-        });
+      // As many rows as the count needs, never more than the band holds.
+      const rows = Math.min(INTEL_ROWS, Math.max(1, Math.ceil(ids.length / 34)));
+      const perRow = Math.ceil(ids.length / rows);
+      for (let row = 0; row < rows; row++) {
+        const slice = ids.slice(row * perRow, (row + 1) * perRow);
+        if (slice.length === 0) continue;
+        const radius = FIELD.intelR + row * FIELD.intelRowStep;
+        // The full sector arc. Every other ring on this field is deliberately
+        // narrowed so a cluster holds its own tightly; this one is not,
+        // because a hundred marks in a narrow arc is a smear rather than a
+        // band, and the boundary ring already says which side of the record
+        // they are on.
+        slice.forEach((id, i) => place(id, fanAngle(base, i, slice.length, SECTOR_ARC), radius, cluster));
       }
     }
   }
@@ -685,49 +566,6 @@ export function layoutGraph(graph: AuditGraph): GraphLayout {
     place(id, sectorAngle(cluster), FIELD.edgeR, cluster);
   }
 
-  // THE GROUPS' OWN SEATS, carried on the same map the nodes use.
-  //
-  // A constellation is not a node and never becomes one — it has no row, no
-  // ref and no truth status — but the renderer has to know where to draw its
-  // shell and its count, and the camera has to be able to frame it. Keyed by
-  // the aggregate's id, which no node can collide with.
-  LAYOUT_AGGREGATES.set(out, { aggregates, seats: constellationSeats });
-
-  return out;
-}
-
-/**
- * The constellations behind a layout.
- *
- * A WeakMap rather than a second return value: `layoutGraph` returns a
- * `Map<string, Placement>` in a dozen call sites and proofs, and widening its
- * signature to carry a second thing would touch all of them for a fact only
- * the renderer and the camera need. The layout owns its groups; ask it.
- */
-const LAYOUT_AGGREGATES = new WeakMap<
-  GraphLayout,
-  { aggregates: Aggregate[]; seats: Map<string, PackedUnit & { cluster: string }> }
->();
-
-export interface SeatedAggregate extends Aggregate {
-  x: number;
-  y: number;
-  /** Radius of the disc its members are packed into. */
-  discR: number;
-}
-
-/** Every group in this layout, with the seat its members are packed around. */
-export function layoutAggregates(layout: GraphLayout): SeatedAggregate[] {
-  const held = LAYOUT_AGGREGATES.get(layout);
-  if (!held) return [];
-  const out: SeatedAggregate[] = [];
-  for (const agg of held.aggregates) {
-    const seat = held.seats.get(agg.id);
-    if (!seat) continue;
-    const x = FIELD.cx + Math.cos(seat.angle * RAD) * seat.radius;
-    const y = FIELD.cy + Math.sin(seat.angle * RAD) * seat.radius;
-    out.push({ ...agg, x, y, discR: seat.discR });
-  }
   return out;
 }
 
@@ -739,7 +577,7 @@ export function layoutAggregates(layout: GraphLayout): SeatedAggregate[] {
  * to the angular distance travelled, so a short local edge stays nearly
  * straight and a long one sweeps.
  */
-export function edgeControl(a: Placement, b: Placement): { x: number; y: number } {
+export function edgePath(a: Placement, b: Placement): string {
   const mx = (a.x + b.x) / 2;
   const my = (a.y + b.y) / 2;
   const dx = mx - FIELD.cx;
@@ -749,53 +587,9 @@ export function edgeControl(a: Placement, b: Placement): { x: number; y: number 
   // Pull the control point inward by a fraction of the chord — the longer the
   // span, the deeper the bow.
   const pull = Math.min(0.34, chord / 1600) * midR;
-  return { x: FIELD.cx + (dx / midR) * (midR - pull), y: FIELD.cy + (dy / midR) * (midR - pull) };
-}
-
-export function edgePath(a: Placement, b: Placement): string {
-  const c = edgeControl(a, b);
-  return `M ${a.x.toFixed(1)} ${a.y.toFixed(1)} Q ${c.x.toFixed(1)} ${c.y.toFixed(1)}, ${b.x.toFixed(1)} ${b.y.toFixed(1)}`;
-}
-
-/**
- * WHERE A VERB GOES, AND WHICH WAY IT POINTS.
- *
- * Law 3 asks for the relation to be readable on the line when the line wakes.
- * A quadratic's midpoint is not the average of its endpoints — putting the
- * word there floats it off the curve on any long span — so it is evaluated
- * properly at t=0.5, and the tangent comes from the same curve so the word
- * lies along the stroke rather than across it.
- *
- * `angle` is degrees, already flipped when it would otherwise be upside down:
- * a label the reader has to tilt their head for is not a label.
- */
-export function edgeLabelAnchor(
-  a: Placement,
-  b: Placement
-): { x: number; y: number; angle: number; tx: number; ty: number } {
-  const c = edgeControl(a, b);
-  const x = (a.x + 2 * c.x + b.x) / 4;
-  const y = (a.y + 2 * c.y + b.y) / 4;
-  // dP/dt at t = 0.5 for a quadratic is (b - a), which is also the chord —
-  // the bow is symmetric, so at the midpoint the tangent is parallel to it.
-  let tx = b.x - a.x;
-  let ty = b.y - a.y;
-  const len = Math.hypot(tx, ty) || 1;
-  tx /= len;
-  ty /= len;
-  let angle = (Math.atan2(ty, tx) * 180) / Math.PI;
-  if (angle > 90) angle -= 180;
-  if (angle < -90) angle += 180;
-  return { x, y, angle, tx, ty };
-}
-
-/** The unit tangent AT THE TARGET END — where an arrowhead has to sit. */
-export function edgeEndTangent(a: Placement, b: Placement): { x: number; y: number } {
-  const c = edgeControl(a, b);
-  const x = b.x - c.x;
-  const y = b.y - c.y;
-  const len = Math.hypot(x, y) || 1;
-  return { x: x / len, y: y / len };
+  const cx = FIELD.cx + (dx / midR) * (midR - pull);
+  const cy = FIELD.cy + (dy / midR) * (midR - pull);
+  return `M ${a.x.toFixed(1)} ${a.y.toFixed(1)} Q ${cx.toFixed(1)} ${cy.toFixed(1)}, ${b.x.toFixed(1)} ${b.y.toFixed(1)}`;
 }
 
 /**

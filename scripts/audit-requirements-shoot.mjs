@@ -147,15 +147,6 @@ await park();
     b?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
   });
   await settle(800);
-  // The canonical ref moved behind the TECHNICAL DETAILS disclosure when the
-  // inspector became human-first — present and exact, just no longer in the
-  // primary reading path. A proof that checks an identifier opens the drawer,
-  // exactly as a person verifying one would.
-  await p.evaluate(() => {
-    const d = document.querySelector('[data-shoot="inspector-technical"]');
-    if (d) d.open = true;
-  });
-  await settle(200);
   const sourceText = await p.locator('[data-shoot="graph-inspector"]').innerText();
   check(
     "7b. and the chain walks through to the Source",

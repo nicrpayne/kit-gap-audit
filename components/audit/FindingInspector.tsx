@@ -40,11 +40,7 @@ export default function FindingInspector({
   finding: TruthFinding | null;
   provenance: Provenance | null;
   onSelect: (id: string) => void;
-  /** Null when the graph holds no provenance route out of this finding.
-      LAW 10: a Trace that lights only the node you already had reads as the
-      instrument being broken, not as the finding being ungrounded. The panel
-      says so in words instead of offering a control that cannot work. */
-  onEvidenceSolo: (() => void) | null;
+  onEvidenceSolo: () => void;
 }) {
   if (!finding) return <AuditOverview model={model} onSelect={onSelect} />;
   return (
@@ -181,11 +177,7 @@ function SelectedFinding({
   model: TruthMapModel;
   finding: TruthFinding;
   provenance: Provenance | null;
-  /** Null when the graph holds no provenance route out of this finding.
-      LAW 10: a Trace that lights only the node you already had reads as the
-      instrument being broken, not as the finding being ungrounded. The panel
-      says so in words instead of offering a control that cannot work. */
-  onEvidenceSolo: (() => void) | null;
+  onEvidenceSolo: () => void;
 }) {
   const color = findingColor(finding);
   const Icon = findingIcon(finding.type, finding.blocking);
@@ -301,26 +293,15 @@ function SelectedFinding({
                   <ProvRow key={id} laneId="linear" title={id} sub="matched against execution" />
                 ))}
               </div>
-              {onEvidenceSolo ? (
-                <button
-                  type="button"
-                  onClick={onEvidenceSolo}
-                  data-shoot="inspector-evidence-solo"
-                  className="mt-2 w-full rounded-md border px-3 py-2 text-[11px] transition-colors hover:bg-white/[0.04]"
-                  style={{ borderColor: "var(--i-border-strong)", color: "var(--i-signal)" }}
-                >
-                  Trace it on the map →
-                </button>
-              ) : (
-                <p
-                  className="mt-2 text-[10.5px] leading-[1.55]"
-                  style={{ color: "var(--i-text-faint)" }}
-                  data-shoot="inspector-no-trace"
-                >
-                  No route to trace on the map. This finding is stated from the model rather than
-                  from a passage the graph can walk back to a source.
-                </p>
-              )}
+              <button
+                type="button"
+                onClick={onEvidenceSolo}
+                data-shoot="inspector-evidence-solo"
+                className="mt-2 w-full rounded-md border px-3 py-2 text-[11px] transition-colors hover:bg-white/[0.04]"
+                style={{ borderColor: "var(--i-border-strong)", color: "var(--i-signal)" }}
+              >
+                Trace it on the map →
+              </button>
             </>
           )}
         </div>

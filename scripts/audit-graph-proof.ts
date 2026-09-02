@@ -764,28 +764,14 @@ async function main() {
       check("R8 no latent mark falls below the screen-space floor", tooSmall === 0, `${tooSmall} sub-pixel marks`);
     }
 
-    // R9 — a source expands into ITS OWN passages. Every passage must sit
-    // nearer the artifact it was extracted from than any other artifact in
-    // the field, so provenance is readable by position before a single
+    // R9 — §6: a source expands into ITS OWN passages. Every passage must sit
+    // angularly nearer the source it was extracted from than any other source
+    // in the field, so provenance is readable by position before a single
     // extracted_from edge is drawn.
-    //
-    // THIS USED TO BE AN ANGULAR TEST, and that was right for exactly as long
-    // as every source shared one radius: on a ring, "nearer" can only mean
-    // "fewer degrees away". Sources now occupy an AREA — each is the hub of
-    // its own constellation with its passages orbiting it — so the angular
-    // form stopped being the question. Two hubs can sit at almost the same
-    // angle and 60 units apart radially, and a passage plainly belonging to
-    // one of them reads as angularly ambiguous while being unambiguous to
-    // any eye looking at the screen.
-    //
-    // The euclidean form is what the reader actually perceives, and it is
-    // strictly stronger: the layout derives each hub's orbit from the
-    // distance to its true nearest neighbour rather than from a constant, so
-    // this holds by construction rather than by tuning.
     for (const { name, g } of graphs) {
       const l = layoutGraph(g);
-      const hubs = g.filterNodes((_n, a) => SOURCE_KINDS.includes(a.kind));
-      if (hubs.length < 2) continue;
+      const sources = g.filterNodes((_n, a) => a.kind === "source");
+      if (sources.length < 2) continue;
       let strays = 0;
       let checked = 0;
       for (const psg of g.filterNodes((_n, a) => a.kind === "passage")) {
@@ -795,16 +781,18 @@ async function main() {
           .map((e) => g.target(e))[0];
         if (!own || !l.has(own) || !l.has(psg)) continue;
         checked++;
-        const p = l.get(psg)!;
-        const o = l.get(own)!;
-        const mine = Math.hypot(p.x - o.x, p.y - o.y);
-        for (const other of hubs) {
+        const a = l.get(psg)!.angle;
+        // Shortest angular distance, smaller = nearer. Written out rather
+        // than folded into one expression because the last time this was
+        // condensed it came out inverted and reported every node as a stray.
+        const gap = (x: number) => {
+          const raw = (((a - x) % 360) + 540) % 360 - 180;
+          return Math.abs(raw);
+        };
+        const mine = gap(l.get(own)!.angle);
+        for (const other of sources) {
           if (other === own || !l.has(other)) continue;
-          const q = l.get(other)!;
-          if (Math.hypot(p.x - q.x, p.y - q.y) < mine - 1e-9) {
-            strays++;
-            break;
-          }
+          if (gap(l.get(other)!.angle) < mine - 1e-9) strays++;
         }
       }
       check(

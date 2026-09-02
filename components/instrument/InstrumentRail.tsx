@@ -19,7 +19,6 @@ import { useEffect, useRef, useState, type MouseEvent } from "react";
 import Link from "next/link";
 import { AnimatePresence, MotionConfig, motion } from "motion/react";
 import { DESTINATIONS, type ShellDestination } from "@/lib/shell/mode";
-import BuildId from "@/components/instrument/BuildId";
 
 // Drawn rather than typed. A 14px text glyph is at the mercy of whatever
 // font resolves it, and the two most important marks here (Portfolio and
@@ -507,13 +506,6 @@ export default function InstrumentRail({
         <span className="text-[12px] leading-none">‹</span>
         <span className="text-[9.5px] leading-none">Collapse</span>
       </button>
-
-      {/* LAST, SMALLEST, AND IN EVERY SCREENSHOT. The rail is the only chrome
-          present on every instrument, so a build marker here is in every
-          capture anyone takes without their having to remember it. It is 9px
-          and faint on purpose: nobody should look at it while working, only
-          find it afterwards. */}
-      <BuildId />
     </nav>
   );
 }

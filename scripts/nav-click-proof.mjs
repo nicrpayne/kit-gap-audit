@@ -182,44 +182,15 @@ check("The rail renders its destinations", rows.length >= 8, `${rows.length} ent
 
 // A row carrying a visible label but no link is the exact defect this file
 // was written for: it reads as a destination and behaves as decoration.
-//
-// A ROW MAY OPT OUT, AND MUST THEN PAY FOR IT. The rail now carries one
-// thing that is deliberately not a destination — the build marker, which
-// discloses the running commit in place rather than navigating. Exempting it
-// by name would blunt the law, so the rule is stated instead: a row that is
-// not a destination must SAY SO in the DOM, and must still do something when
-// pressed. Decoration cannot satisfy both.
-const NON_DESTINATION = '[data-shoot="build-id"]';
-const inert = await p.$$eval(
-  '[data-shoot="instrument-rail"] > div',
-  (ds, nd) =>
-    ds
-      .filter((d) => !d.matches(nd))
-      .filter((d) => {
-        const labelled = [...d.children].find((c) => c.tagName !== "A" && c.innerText?.trim());
-        return labelled && !labelled.querySelector("a");
-      })
-      .map((d) => d.innerText.trim().split("\n")[0]),
-  NON_DESTINATION
+const inert = await p.$$eval('[data-shoot="instrument-rail"] > div', (ds) =>
+  ds
+    .filter((d) => {
+      const labelled = [...d.children].find((c) => c.tagName !== "A" && c.innerText?.trim());
+      return labelled && !labelled.querySelector("a");
+    })
+    .map((d) => d.innerText.trim().split("\n")[0])
 );
 check("No labelled rail row is inert", inert.length === 0, inert.join(", ") || "none");
-
-// And the one row that opted out is held to the harder half of the rule.
-const optedOut = await p.$$(`[data-shoot="instrument-rail"] > div${NON_DESTINATION}`);
-if (optedOut.length) {
-  const toggle = p.locator('[data-shoot="build-id-toggle"]');
-  const before = await p.locator('[data-shoot="build-id-detail"]').count();
-  await toggle.click();
-  await p.waitForTimeout(300);
-  const after = await p.locator('[data-shoot="build-id-detail"]').count();
-  await toggle.click();
-  await p.waitForTimeout(200);
-  check(
-    "…and the one row that is not a destination still does something",
-    before === 0 && after === 1,
-    `build marker: ${await toggle.innerText()} — discloses in place, navigates nowhere`
-  );
-}
 
 // Warm every route first: a cold dev-server compile can outlast the click
 // wait and look like a navigation failure when it is only a slow build.
