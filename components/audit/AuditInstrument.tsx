@@ -126,6 +126,15 @@ interface NavEntry {
     between renders and does not retrigger every memo that reads it. */
 const EMPTY_SET: ReadonlySet<string> = new Set();
 
+/**
+ * Search may return dozens of valid lexical hits, but the map is a locating
+ * surface rather than a second copy of the result list. Keep the full ranked
+ * result set in the panel and promote only the leading context on the field.
+ * Eight covers the best answer plus its nearest alternatives without letting
+ * a broad/typo query turn corpus volume back into composition.
+ */
+const SEARCH_FIELD_PROMOTION_LIMIT = 8;
+
 export default function AuditInstrument({ initialScopeId }: { initialScopeId?: string }) {
   const [scopeId, setScopeId] = useState<string | undefined>(initialScopeId);
   const [payload, setPayload] = useState<GraphPayload | null>(null);
@@ -366,13 +375,18 @@ export default function AuditInstrument({ initialScopeId }: { initialScopeId?: s
       `onSearchKey` on every keystroke of every other piece of state. */
   const matchList: SearchHit[] = useMemo(() => outcome?.hits ?? [], [outcome]);
 
+  const fieldMatchList: SearchHit[] = useMemo(
+    () => matchList.slice(0, SEARCH_FIELD_PROMOTION_LIMIT),
+    [matchList]
+  );
+
   /** The set the renderer dims against. Identity only — the ranking lives in
       `matchList`, and handing the renderer a scored list would make it care
       about relevance, which is not its job. */
   const matches = useMemo(() => {
     if (!outcome) return null;
-    return new Set(outcome.hits.map((h) => h.id));
-  }, [outcome]);
+    return new Set(fieldMatchList.map((h) => h.id));
+  }, [outcome, fieldMatchList]);
 
   // ── THE LENS: WHAT A QUERY MAY REVEAL, AND WHAT IT MAY NOT ───────────
   //
@@ -400,8 +414,8 @@ export default function AuditInstrument({ initialScopeId }: { initialScopeId?: s
   // act, and an act may open the minimum structure that holds the chosen
   // object in view.
   const revealed = useMemo(
-    () => (graph && outcome ? revealFor(graph, outcome.hits.map((h) => h.id)) : EMPTY_SET),
-    [graph, outcome]
+    () => (graph && outcome ? revealFor(graph, fieldMatchList.map((h) => h.id)) : EMPTY_SET),
+    [graph, outcome, fieldMatchList]
   );
 
   // ── WHAT IS OPEN, NOT WHAT EXISTS ────────────────────────────────────
@@ -445,7 +459,11 @@ export default function AuditInstrument({ initialScopeId }: { initialScopeId?: s
       if (a.kind !== "passage" || out.has(n)) return;
       for (const e of graph.outEdges(n)) {
         if (graph.getEdgeAttribute(e, "rel") !== "extracted_from") continue;
-        if (disclosed.has(graph.target(e))) {
+        // Temporary Search promotion of an artifact names the artifact; it
+        // must not open every passage the artifact owns. Only the reader's
+        // persistent act of opening/selecting that artifact expands its local
+        // passage territory.
+        if (expanded.has(graph.target(e))) {
           out.add(n);
           return;
         }
@@ -462,7 +480,9 @@ export default function AuditInstrument({ initialScopeId }: { initialScopeId?: s
     // Additive, like the source case: a member still opens when its cluster
     // does, and closing the group leaves the cluster exactly as it was.
     for (const agg of aggregates) {
-      if (!disclosed.has(agg.id)) continue;
+      // As above, a temporary hit on an aggregate locates the aggregate. It
+      // does not temporarily disclose the whole population it represents.
+      if (!expanded.has(agg.id)) continue;
       for (const m of agg.members) if (graph.hasNode(m)) out.add(m);
       if (agg.hub && graph.hasNode(agg.hub)) out.add(agg.hub);
     }

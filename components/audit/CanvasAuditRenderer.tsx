@@ -179,6 +179,11 @@ export default function CanvasAuditRenderer(props: AuditRendererProps) {
   }, [rubricWorld]);
 
   useEffect(() => {
+    const id = selectedId ?? hoveredId;
+    engineRef.current?.field.setFocus(id, scene.focus?.frame ?? (id ? [id] : []));
+  }, [selectedId, hoveredId, scene.focus, rubricWorld]);
+
+  useEffect(() => {
     engineRef.current?.setMode(layoutMode);
   }, [layoutMode]);
 

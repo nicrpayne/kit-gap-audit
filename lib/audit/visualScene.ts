@@ -464,6 +464,73 @@ export function buildScene(input: SceneInput, cached?: SceneCache): AuditScene {
   const focus: FocusModel | null = semanticFocus(graph, selectedId ?? hoveredId);
   const anchorId = selectedId ?? hoveredId;
 
+  // ── DISPLAY IMPORTANCE ──────────────────────────────────────────────
+  //
+  // Degree alone is not cartography. A source that owns forty passages, a
+  // current cross-lane Finding and a contextual membership spoke are not
+  // equivalent simply because each has edges. This score is presentation
+  // policy only: it chooses mass/label order and never enters Graphology.
+  const aggregateMembers = new Map<string, number>();
+  for (const agg of seatedAggregates) {
+    if (agg.hub) aggregateMembers.set(agg.hub, Math.max(aggregateMembers.get(agg.hub) ?? 0, agg.count));
+  }
+  const crossGroup = new Map<string, number>();
+  const contextual = new Map<string, number>();
+  graph.forEachEdge((_edge, edge, source, target) => {
+    const cls = edgeFocusClass(edge as { rel: string; relClass?: string | null });
+    if (!cls) return; // membership contributes exactly zero
+    if (cls === "contextual") {
+      contextual.set(source, (contextual.get(source) ?? 0) + 1);
+      contextual.set(target, (contextual.get(target) ?? 0) + 1);
+      return;
+    }
+    const sa = graph.getNodeAttributes(source);
+    const ta = graph.getNodeAttributes(target);
+    if (sa.lane !== ta.lane) {
+      crossGroup.set(source, (crossGroup.get(source) ?? 0) + 1);
+      crossGroup.set(target, (crossGroup.get(target) ?? 0) + 1);
+    }
+  });
+  const semanticBase: Partial<Record<NodeKind, number>> = {
+    reality: 1000,
+    lane: 850,
+    scope: 850,
+    transcript: 850,
+    notion_page: 850,
+    figma_artifact: 850,
+    source: 850,
+    intelligence: 850,
+    finding: 780,
+    decision: 720,
+    dependency: 720,
+    decisionGate: 700,
+    requirement: 660,
+    person: 520,
+    work: 520,
+    feature: 560,
+    intel: 380,
+    passage: 120,
+    checkpoint: 120,
+  };
+  const displayImportanceOf = (id: string): number => {
+    const attrs = graph.getNodeAttributes(id);
+    let score = semanticBase[attrs.kind] ?? 300;
+    if (selectedId === id) score += 10_000;
+    if (hoveredId === id) score += 9_000;
+    if (soloNodes?.has(id)) score += 8_500;
+    if (matches?.has(id)) score += 8_000;
+    if (attrs.kind === "intel" && attrs.isCurrent === false) score -= 180;
+    else if (attrs.handled === true) score -= 180;
+    else if (attrs.kind === "finding" || attrs.kind === "decision" || attrs.kind === "dependency") score += 160;
+    const members = aggregateMembers.get(id) ?? 0;
+    if (members > 0) score += Math.min(210, 35 * Math.log2(1 + members));
+    score += Math.min(144, (crossGroup.get(id) ?? 0) * 24);
+    score += Math.min(108, (degreeOf.get(id) ?? 0) * 18);
+    score += Math.min(196, members > 0 ? 28 * Math.log2(1 + members) : 0);
+    score += Math.min(40, (contextual.get(id) ?? 0) * 8);
+    return score;
+  };
+
   // ── TIER LAYER OPACITIES ─────────────────────────────────────────────
   const aggShellOpacity = level === "far" ? 1 : level === "medium" ? 0.5 : 0;
   const webOpacity = level === "close" ? 0 : level === "near" ? 0.5 : 1;
@@ -716,7 +783,7 @@ export function buildScene(input: SceneInput, cached?: SceneCache): AuditScene {
     if (level === "medium") {
       for (const agg of seatedAggregates) {
         const ranked = [...agg.members]
-          .sort((a, b) => (degreeOf.get(b) ?? 0) - (degreeOf.get(a) ?? 0) || a.localeCompare(b))
+          .sort((a, b) => displayImportanceOf(b) - displayImportanceOf(a) || a.localeCompare(b))
           .filter((id) => (degreeOf.get(id) ?? 0) > 0)
           .slice(0, 2);
         for (const id of ranked) take(id);
@@ -727,9 +794,7 @@ export function buildScene(input: SceneInput, cached?: SceneCache): AuditScene {
     const candidates = drawnNodes
       .filter((id) => allowed.has(graph.getNodeAttribute(id, "kind")))
       .sort((a, b) => {
-        const ka = LABEL_PRIORITY.indexOf(graph.getNodeAttribute(a, "kind"));
-        const kb = LABEL_PRIORITY.indexOf(graph.getNodeAttribute(b, "kind"));
-        return ka - kb || (degreeOf.get(b) ?? 0) - (degreeOf.get(a) ?? 0) || a.localeCompare(b);
+        return displayImportanceOf(b) - displayImportanceOf(a) || a.localeCompare(b);
       });
     for (const id of candidates) take(id);
   }
@@ -808,7 +873,7 @@ export function buildScene(input: SceneInput, cached?: SceneCache): AuditScene {
       cluster: typeof attrs.lane === "string" ? attrs.lane : null,
       basis: basisOf(attrs),
       count: 0,
-      importance: degreeOf.get(id) ?? 0,
+      importance: displayImportanceOf(id),
       layoutRole: layoutRoleOf(attrs.kind),
       anchor: anchorOf(attrs.kind, typeof attrs.lane === "string" ? attrs.lane : null),
       band: bandOf(attrs.kind, attrs),
@@ -816,7 +881,7 @@ export function buildScene(input: SceneInput, cached?: SceneCache): AuditScene {
       // own structure first, then its disagreements, then external claims,
       // then the substrate they were read from. It is semantic, which is the
       // requirement — Rubric sorts by byte size and that has no Audit meaning.
-      order: LABEL_PRIORITY.indexOf(attrs.kind) * 1000 + Math.min(999, 999 - (degreeOf.get(id) ?? 0)),
+      order: Math.max(0, 20_000 - Math.round(displayImportanceOf(id))),
       x: p.x,
       y: p.y,
       // REALITY STOPS GROWING AT 84 CSS PIXELS — a screen fact, applied

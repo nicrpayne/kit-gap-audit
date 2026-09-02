@@ -346,13 +346,16 @@ export function paintScene(input: PaintInput): PaintStats {
   // ── NODES ────────────────────────────────────────────────────────────
   const soft: Placed[] = [];
   const sharp: Placed[] = [];
+  // Softened/unrelated identities stay marks while a subject is active.
+  // Painting their names into the blurred layer made focus look like brighter
+  // clutter and bypassed the collision allocator below.
   const softLabels: AuditVisualNode[] = [];
   const batch = new Map<string, { color: string; alpha: number; pts: number[] }>();
 
   for (const n of scene.nodes) {
     const p = placed.get(n.id);
     if (!p) continue;
-    if (n.labelled && n.depth > 0 && n.kind !== "reality") softLabels.push(n);
+    // Deliberately do not enqueue labels for depth-softened nodes.
     if (n.opacity < 0.012) continue;
     const rr = Math.max(n.r, n.latentR) + 26 / k;
     if (p.x + rr < vx0 || p.x - rr > vx1 || p.y + rr < vy0 || p.y - rr > vy1) {
@@ -1116,6 +1119,8 @@ function paintSelection(
 // So: Rubric's gate, Signal's allocator. The scene's label plan already ran a
 // deterministic screen-space collision pass upstream; this only decides how a
 // surviving name is drawn.
+const LABEL_ANCHOR_MEMORY = new Map<string, number>();
+
 function paintNodeName(
   ctx: CanvasRenderingContext2D,
   p: Placed,
@@ -1135,23 +1140,50 @@ function paintNodeName(
   const big = n.layoutRole === "router" || n.layoutRole === "hub";
   const label = big ? n.label.toUpperCase() : truncateLabel(n.label, n.kind === "passage" ? 40 : 32);
 
-  // Rubric places labels BENEATH the node at a fixed offset, which is what
-  // keeps a dense field readable: every name is in the same relation to its
-  // mark, so the eye stops hunting for which label belongs to what.
-  const oy = sy + grown * camera.k + (big ? 16 : 11);
   ctx.textAlign = "center";
-  ctx.textBaseline = "alphabetic";
+  ctx.textBaseline = "middle";
   ctx.font = big ? `600 10.5px ${fontFamily}` : `400 9.5px ${fontFamily}`;
-  if (reserve && !reserve(sx, oy - 4, ctx.measureText(label).width + 8, big ? 16 : 13, mandatory)) return;
+  const w = ctx.measureText(label).width + 8;
+  const h = big ? 16 : 13;
+  const rr = grown * camera.k;
+  const gap = big ? 13 : 9;
+  const candidates = [
+    { x: sx, y: sy + rr + gap },
+    { x: sx, y: sy - rr - gap },
+    { x: sx + rr + gap + w / 2, y: sy },
+    { x: sx - rr - gap - w / 2, y: sy },
+    { x: sx + rr * 0.7 + w / 2, y: sy + rr * 0.7 + gap },
+    { x: sx - rr * 0.7 - w / 2, y: sy + rr * 0.7 + gap },
+  ];
+  const remembered = LABEL_ANCHOR_MEMORY.get(n.id) ?? 0;
+  const order = [remembered, ...candidates.map((_c, i) => i).filter((i) => i !== remembered)];
+  let chosen = -1;
+  for (const i of order) {
+    const c = candidates[i];
+    if (c.x - w / 2 < 4 || c.x + w / 2 > vp.w - 4 || c.y - h / 2 < 4 || c.y + h / 2 > vp.h - 4) continue;
+    if (!reserve || reserve(c.x, c.y, w, h, false)) {
+      chosen = i;
+      break;
+    }
+  }
+  // Mandatory identities are never dropped. Only after every collision-free
+  // anchor fails do they take their stable prior anchor and accept overlap.
+  if (chosen < 0 && mandatory) {
+    chosen = remembered;
+    reserve?.(candidates[chosen].x, candidates[chosen].y, w, h, true);
+  }
+  if (chosen < 0) return;
+  LABEL_ANCHOR_MEMORY.set(n.id, chosen);
+  const target = candidates[chosen];
   ctx.globalAlpha = n.opacity;
   // Rubric's halo: the same string drawn one pixel down-right in the
   // background colour. Cheaper than a stroke and reads the same.
   ctx.fillStyle = rgba(palette.css("var(--i-void)"), 0.9);
-  ctx.fillText(label, sx + 1, oy + 1);
+  ctx.fillText(label, target.x + 1, target.y + 1);
   ctx.fillStyle = palette.css(
     n.selected || n.hovered || n.rank != null ? "var(--i-text)" : "var(--i-text-soft)"
   );
-  ctx.fillText(label, sx, oy);
+  ctx.fillText(label, target.x, target.y);
   ctx.globalAlpha = 1;
   stats.calls += 2;
   stats.labelsPainted++;

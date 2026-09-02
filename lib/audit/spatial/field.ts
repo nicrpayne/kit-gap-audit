@@ -228,6 +228,9 @@ export class SpatialField {
   /** Reported upward so the painter can draw the boundary the physics uses. */
   boundR = 0;
   private territoryGeometry = new Map<AuditTerritory, { x: number; y: number; r: number }>();
+  private focusId: string | null = null;
+  private bloomTargets = new Set<string>();
+  private bloom = new Map<string, number>();
 
   // ── THE ORIGIN ─────────────────────────────────────────────────────
   //
@@ -287,6 +290,47 @@ export class SpatialField {
 
   setReducedMotion(reduced: boolean): void {
     this.reduced = reduced;
+    if (reduced) this.bloom.clear();
+  }
+
+  /**
+   * B3 LOCAL WAKE: stable global topology, elastic local geometry.
+   *
+   * The semantic focus set supplies candidates, but only already-nearby,
+   * non-anchor clutter is displaced. A related node on the other side of the
+   * map is never pulled across the field. Offsets live in the output field;
+   * resting homes, D3 state and Graphology remain untouched.
+   */
+  setFocus(id: string | null, related: readonly string[]): void {
+    this.focusId = id && this.nodes.has(id) ? id : null;
+    this.bloomTargets.clear();
+    if (!this.focusId || this.reduced) return;
+    const focus = this.nodes.get(this.focusId)!;
+    const local = related
+      .map((rid) => this.nodes.get(rid))
+      .filter((n): n is FieldNode => !!n && n.id !== focus.id)
+      .filter((n) => !n.isAnchorNode && n.role !== "router" && n.role !== "hub" && n.role !== "artifact" && n.role !== "aggregate")
+      .map((n) => ({ n, distance: Math.hypot(n.x - focus.x, n.y - focus.y) }))
+      .filter(({ n, distance }) => distance <= 132 || n.cell === focus.cell)
+      .sort((a, b) => a.distance - b.distance || a.n.id.localeCompare(b.n.id))
+      .slice(0, 12);
+    for (const { n } of local) this.bloomTargets.add(n.id);
+  }
+
+  private advanceBloom(dt: number): boolean {
+    if (this.reduced) return false;
+    let moving = false;
+    const ids = new Set([...this.bloom.keys(), ...this.bloomTargets]);
+    for (const id of ids) {
+      const from = this.bloom.get(id) ?? 0;
+      const target = this.bloomTargets.has(id) ? 1 : 0;
+      const step = dt / (target > from ? 180 : 260);
+      const next = target > from ? Math.min(target, from + step) : Math.max(target, from - step);
+      if (next <= 0.001 && target === 0) this.bloom.delete(id);
+      else this.bloom.set(id, next);
+      if (Math.abs(next - target) > 0.001) moving = true;
+    }
+    return moving;
   }
 
   /**
@@ -576,7 +620,13 @@ export class SpatialField {
     // Population means the CURRENT zoom-tier projection, not all hidden
     // canonical members. That is what prevents corpus volume from deciding
     // the size of the geography at Fit.
-    const R = Math.max(360, 68 * Math.sqrt(nodes.length / Math.PI));
+    // Rings teaches the reader a world roughly FIELD.outerR across. The
+    // bounded view must inhabit that same learned scale; a 55-node far-tier
+    // projection previously collapsed into a 360-unit island at the centre
+    // while the preserved Rings camera kept looking at a 706-unit world.
+    // Population may grow the bound, but progressive aggregation may not
+    // shrink the whole instrument into a thumbnail.
+    const R = Math.max(FIELD.outerR * 0.9, 68 * Math.sqrt(nodes.length / Math.PI));
     this.boundR = R;
 
     const territoryCentre: Record<AuditTerritory, { x: number; y: number; r: number }> = {
@@ -795,11 +845,12 @@ export class SpatialField {
   /** Advance the world by `dt` milliseconds. Returns whether it still moves. */
   tick(dt: number): boolean {
     this.clock += dt;
+    const blooming = this.advanceBloom(dt);
     if (this.mode === "rings") {
       this.placeRings(dt);
       // Rings is deterministic placement, so it is "moving" only while it
       // spins, wobbles, morphs or returns a dragged node.
-      return this.ambientOn || this.morph != null || this.order.some((n) => n.spring);
+      return this.ambientOn || this.morph != null || this.order.some((n) => n.spring) || blooming;
     }
     const sim = this.sim;
     if (!sim) return false;
@@ -817,7 +868,7 @@ export class SpatialField {
         n.y = n.trY + (n.y - n.trY) * e;
       }
     }
-    return sim.alpha() > sim.alphaMin() || k < 1;
+    return sim.alpha() > sim.alphaMin() || k < 1 || blooming;
   }
 
   /**
@@ -831,13 +882,31 @@ export class SpatialField {
   private readonly out = new Map<string, { x: number; y: number }>();
 
   positions(): Map<string, { x: number; y: number }> {
+    const focus = this.focusId ? this.nodes.get(this.focusId) : null;
     for (const n of this.order) {
+      let ox = 0;
+      let oy = 0;
+      const amount = this.bloom.get(n.id) ?? 0;
+      if (focus && amount > 0) {
+        let dx = n.x - focus.x;
+        let dy = n.y - focus.y;
+        let distance = Math.hypot(dx, dy);
+        if (distance < 0.001) {
+          const angle = hash01(n.id, 41) * Math.PI * 2;
+          dx = Math.cos(angle);
+          dy = Math.sin(angle);
+          distance = 1;
+        }
+        const push = Math.max(18, Math.min(36, 42 - distance * 0.12)) * easeOutCubic(amount);
+        ox = (dx / distance) * push;
+        oy = (dy / distance) * push;
+      }
       const held = this.out.get(n.id);
       if (held) {
-        held.x = n.x + this.ox;
-        held.y = n.y + this.oy;
+        held.x = n.x + this.ox + ox;
+        held.y = n.y + this.oy + oy;
       } else {
-        this.out.set(n.id, { x: n.x + this.ox, y: n.y + this.oy });
+        this.out.set(n.id, { x: n.x + this.ox + ox, y: n.y + this.oy + oy });
       }
     }
     if (this.out.size !== this.order.length) {
@@ -905,6 +974,8 @@ export class SpatialField {
     this.sim = null;
     this.nodes.clear();
     this.order = [];
+    this.bloom.clear();
+    this.bloomTargets.clear();
     this.territoryGeometry.clear();
   }
 }
