@@ -115,6 +115,8 @@ export interface PaintInput {
   positions: Map<string, { x: number; y: number }> | null;
   /** The bounded silhouette the physics is using, or 0 in Rings. */
   boundR: number;
+  /** Rubric-runtime ring geometry; no parallel scene-coordinate guides. */
+  ringGuides: readonly { id: string; label: string; r: number }[];
   clusterLabels: {
     cluster: string;
     x: number;
@@ -550,13 +552,14 @@ function paintGuides(
   }
 
   const byMaterial = new Map<string, { path: Path2D; dash: number[]; opacity: number }>();
-  for (const ring of s.rings) {
-    const dash = ring.dash ? [ring.dash[0] / k, ring.dash[1] / k] : [];
-    const key = `${dash.join(",")}|${ring.opacity}`;
+  for (const ring of input.ringGuides) {
+    const dash = ring.id === "project-world" ? [2 / k, 5 / k] : [];
+    const opacity = ring.id === "project-world" ? 0.32 : 0.58;
+    const key = `${dash.join(",")}|${opacity}`;
     let b = byMaterial.get(key);
-    if (!b) byMaterial.set(key, (b = { path: new Path2D(), dash, opacity: ring.opacity }));
-    b.path.moveTo(s.cx + ring.r, s.cy);
-    b.path.arc(s.cx, s.cy, ring.r, 0, Math.PI * 2);
+    if (!b) byMaterial.set(key, (b = { path: new Path2D(), dash, opacity }));
+    b.path.moveTo(FIELD.cx + ring.r, FIELD.cy);
+    b.path.arc(FIELD.cx, FIELD.cy, ring.r, 0, Math.PI * 2);
   }
   for (const b of byMaterial.values()) {
     ctx.globalAlpha = s.opacity * b.opacity;
@@ -565,15 +568,7 @@ function paintGuides(
     stats.calls++;
   }
   ctx.setLineDash([]);
-  ctx.globalAlpha = s.opacity * 0.5;
-  const sectors = new Path2D();
-  for (const g of s.sectors) {
-    sectors.moveTo(g.x1, g.y1);
-    sectors.lineTo(g.x2, g.y2);
-  }
-  ctx.stroke(sectors);
   ctx.globalAlpha = 1;
-  stats.calls++;
 }
 
 function paintSweep(
@@ -1137,7 +1132,7 @@ function paintNodeName(
   const sy = (p.y - camera.y) * camera.k + vp.h / 2;
   if (sx < -200 || sx > vp.w + 200 || sy < -40 || sy > vp.h + 40) return;
   const grown = n.selected ? n.r * 1.35 : n.hovered ? n.r * 1.15 : n.r;
-  const big = n.layoutRole === "router" || n.layoutRole === "hub";
+  const big = n.layoutRole === "router" || n.layoutRole === "hub" || n.layoutRole === "rim";
   const label = big ? n.label.toUpperCase() : truncateLabel(n.label, n.kind === "passage" ? 40 : 32);
 
   ctx.textAlign = "center";
@@ -1245,23 +1240,17 @@ function paintLabels(
   // legend. Signal keeps that spatial reading while replacing Rubric's
   // Applications/Routines/Memory vocabulary with the only radial meanings
   // Audit actually encodes. Sources name the separate provenance horizon.
-  if (input.boundR <= 0 && scene.structure.showBandNames) {
-    const bandColor: Record<string, string> = {
-      aligned: "var(--i-signal)",
-      drift: "var(--i-amber)",
-      conflict: "var(--i-red)",
-      sources: "var(--i-source)",
-    };
-    for (const band of [...scene.structure.bands].reverse()) {
-      const p = toScreen(scene.structure.cx, scene.structure.cy - band.r);
+  if (input.boundR <= 0) {
+    for (const band of [...input.ringGuides].reverse()) {
+      const p = toScreen(FIELD.cx, FIELD.cy - band.r);
       if (p.y < 8 || p.y > vp.h - 8) continue;
       const label = band.label.toUpperCase();
       ctx.textAlign = "center";
-      ctx.font = `650 ${band.id === "sources" ? 17 : 14}px ${fontFamily}`;
+      ctx.font = `650 ${band.id === "source-systems" ? 17 : 14}px ${fontFamily}`;
       const width = ctx.measureText(label).width + 14;
       if (!reserve(p.x, p.y, width, 24)) continue;
-      ctx.globalAlpha = scene.structure.bandLabelOpacity;
-      write(label, p.x, p.y, palette.css(bandColor[band.id] ?? "var(--i-text-soft)"));
+      ctx.globalAlpha = 0.78;
+      write(label, p.x, p.y, palette.css(band.id === "source-systems" ? "var(--i-source)" : "var(--i-text-soft)"));
       ctx.globalAlpha = 1;
       stats.labelsPainted++;
     }
