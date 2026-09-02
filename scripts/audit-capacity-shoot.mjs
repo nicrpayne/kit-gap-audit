@@ -117,7 +117,19 @@ await park();
   });
   await settle(900);
   const after = await cam();
-  check("5. choosing the result flies to them", Math.abs(after.k - before.k) > 0.1 || Math.hypot(after.x - before.x, after.y - before.y) > 20, `k ${before.k} → ${after.k}`);
+  // THIS USED TO ASSERT A FLIGHT, AND THE FLIGHT WAS THE DEFECT.
+  //
+  // A search result forced roughly 230% zoom, so finding a person threw away
+  // whatever view of the project the reader had built. Selection source must
+  // not change camera semantics: a result is now framed by the same law a
+  // direct click uses, which at Fit — where the whole field is visible —
+  // means the camera does not move at all.
+  const settledStill = Math.abs(after.k - before.k) < 0.005 && Math.hypot(after.x - before.x, after.y - before.y) < 1;
+  check(
+    "5. choosing the result frames them under the same law a click uses — no forced zoom",
+    settledStill,
+    `k ${before.k} → ${after.k} at Fit, where they are already visible`
+  );
   await p.locator('[data-shoot="graph-search"]').fill("");
   await settle(400);
   await park();

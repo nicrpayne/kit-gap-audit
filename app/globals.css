@@ -82,6 +82,43 @@ body {
      violet without being it. Time is the frame, not a domain. */
   --i-cool: #7f9cf5;
   --i-cool-soft: rgba(127, 156, 245, 0.16);
+
+  /* ── THE EXTERNAL POPULATIONS ──────────────────────────────────────
+     Added for the Signal Graph, and for one measured reason: a blind
+     production audit scored external Risk, Decision, Dependency,
+     Commitment and Unknown at 0/5 for "can you tell what this is without
+     reading the label". Five hundred marks in one grey is not an
+     instrument, it is a scatter plot.
+
+     THE ORGANISING RULE IS NOT "one hue per type". It is:
+
+       COOL AND NEUTRAL  = Signal's own record. Reality's cyan, a source
+                           artifact's steel blue, a passage's silver.
+       CHROMATIC         = somebody else's claim about the project.
+
+     So the boundary that used to be carried only by shape, stroke and
+     radius is now carried by temperature too, and the field reads as
+     "Signal's material, and around it a ring of other people's" before a
+     single label is resolved. Trust stays where it was — on the stroke —
+     because hue is now spent on identity. */
+
+  /* Warm, and deliberately NOT --i-red: Signal's own dependency node keeps
+     that alarm red, and a risk somebody else asserts must not borrow it. */
+  --i-coral: #f4846d;
+  --i-coral-soft: rgba(244, 132, 109, 0.16);
+  /* An observation is the producer's largest and least pointed population
+     (59 of 161). Blue-grey: present, legible, never competing. */
+  --i-slate: #8496a6;
+  --i-slate-soft: rgba(132, 150, 166, 0.14);
+  /* A passage is a quotation — Signal's own material, luminous rather than
+     coloured, because it carries no position of its own. */
+  --i-silver: #b9c6cf;
+  --i-silver-soft: rgba(185, 198, 207, 0.14);
+  /* Source artifacts are the hubs the whole evidence sector hangs off.
+     Same family as Reality's cyan, a step deeper, so "where knowledge came
+     from" reads as Signal's own without ever being mistaken for Reality. */
+  --i-source: #58a6cc;
+  --i-source-soft: rgba(88, 166, 204, 0.16);
 }
 
 .instrument {
@@ -675,4 +712,33 @@ body {
      removed entirely rather than left as a static circle nobody can
      interpret. */
   [data-shoot="strike-ring"] { display: none; }
+}
+
+/* ── OPTICAL DEPTH ────────────────────────────────────────────────────
+   Signal Graph focus depth. Not decoration: it is the channel that lets
+   unrelated nodes stay BRIGHT enough to keep the map readable as a map
+   while still not asking the eye to read them. Dimming alone had to choose
+   between orientation and attention; softening buys both.
+
+   Two classes, shared by every element that needs them, so the browser
+   compiles one filter chain rather than one per node. Kept deliberately
+   small -- 0.5px and 1.15px at device scale. Anything heavier stops being
+   depth and starts being fog, and fog destroys the orientation this exists
+   to preserve.
+
+   NO TRANSITION ON `filter`. Animating a blur re-rasterises the element on
+   every frame of the transition, which at four hundred nodes is exactly the
+   paint cost this whole design is trying not to spend. Depth switches at
+   once and the LUMINANCE beside it carries the 200ms transition -- measured,
+   the eye reads the pair as one soft settle. */
+.sg-depth-1 { filter: blur(0.5px); }
+.sg-depth-2 { filter: blur(1.15px); }
+
+/* Someone who asked their system for less motion did not ask for less
+   legibility, but a static blur is not motion -- it stays. What goes is
+   nothing here. Blur is removed only when the OS asks for reduced
+   TRANSPARENCY, which is the setting that actually means "stop making
+   things hard to read". */
+@media (prefers-reduced-transparency: reduce) {
+  .sg-depth-1, .sg-depth-2 { filter: none; }
 }

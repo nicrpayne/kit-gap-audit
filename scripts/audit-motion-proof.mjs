@@ -116,8 +116,8 @@ async function wobbleAt(targetK, label) {
   );
   return out;
 }
-await wobbleAt(1.05, "wobble.far");
-await wobbleAt(2.1, "wobble.medium");
+await wobbleAt(0.95, "wobble.far");
+await wobbleAt(1.6, "wobble.medium");
 
 // H3 — the deadband must still be CROSSABLE. Hysteresis that never lets go
 // is a worse bug than chatter.
@@ -129,9 +129,19 @@ await wobbleAt(2.1, "wobble.medium");
   for (let i = 0; i < 40; i++) { await p.mouse.wheel(0, 120); await p.waitForTimeout(20); tiers.push(await zoomLevel()); }
   const seq = tiers.filter((t, i) => i === 0 || t !== tiers[i - 1]);
   record("sweep.tiers", seq.join(" → "));
+  // FOUR TIERS NOW, not three: `near` was added between the constellation
+  // level and the evidence level, because with three tiers a reader went
+  // from unlabelled mass straight to a hundred names. A clean sweep is
+  // therefore seven states, not five — and the law is unchanged: every tier
+  // is reachable, and the deadband lets go on the way back down.
   check(
     "H3 a full zoom sweep still reaches every tier and comes back",
-    seq[0] === "far" && seq.includes("close") && seq[seq.length - 1] === "far" && seq.length <= 6,
+    seq[0] === "far" &&
+      seq.includes("medium") &&
+      seq.includes("near") &&
+      seq.includes("close") &&
+      seq[seq.length - 1] === "far" &&
+      seq.length <= 8,
     seq.join(" → ")
   );
 }
@@ -144,6 +154,10 @@ await fit();
 const flyTo = () => p.evaluate(() => {
   document.querySelector('[data-shoot="cluster-toggle-linear"]')?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
 });
+
+/** The zoom `flyTo` is aiming at — expanding a cluster frames it at 1.35.
+    Named so an interruption proof can say "it did not arrive". */
+const FLY_K = 1.35;
 
 // T1/T2 — it animates, and it lands inside the budget.
 //
@@ -206,7 +220,16 @@ const flyTo = () => p.evaluate(() => {
 }
 
 // T4/T5/T6 — INTERRUPTION. The graph must never make the user wait.
-async function interrupt(label, act, n) {
+//
+// `reaims` marks the one interruption that is itself a camera command. Under
+// the Interaction Contract, selecting a node runs the framing law, so it does
+// not merely CANCEL the flight — it may cancel it and then make its own,
+// minimal move from wherever the camera actually got to. The law being
+// defended is the same one either way: the flight in progress is abandoned,
+// nothing is queued, and whatever happens next comes to rest. So an
+// interruption that re-aims is held to "abandoned the old destination and
+// settled" rather than to "did not move again".
+async function interrupt(label, act, n, reaims = false) {
   await p.locator('[data-shoot="collapse-all"]').click();
   await fit();
   await settle(400);
@@ -218,10 +241,21 @@ async function interrupt(label, act, n) {
   const justAfter = await cam();
   await p.waitForTimeout(500); // if the tween survived, it would arrive by now
   const later = await cam();
+  await p.waitForTimeout(400);
+  const settled = await cam();
   const stopped =
     Math.abs(later.x - justAfter.x) < 1.5 && Math.abs(later.y - justAfter.y) < 1.5 && Math.abs(later.k - justAfter.k) < 0.01;
-  record(`interrupt.${label}`, { mid: mid.k, after: justAfter.k, later: later.k, stopped });
-  check(`T${n} a running tween is cancelled by ${label}`, stopped, `k ${mid.k.toFixed(2)} → ${justAfter.k.toFixed(2)} → ${later.k.toFixed(2)}`);
+  const cameToRest =
+    Math.abs(settled.x - later.x) < 1.5 && Math.abs(settled.y - later.y) < 1.5 && Math.abs(settled.k - later.k) < 0.01;
+  const abandoned = Math.abs(later.k - FLY_K) > 0.02;
+  const ok = reaims ? cameToRest && abandoned : stopped;
+  record(`interrupt.${label}`, { mid: mid.k, after: justAfter.k, later: later.k, settled: settled.k, stopped, cameToRest, abandoned });
+  check(
+    `T${n} a running tween is cancelled by ${label}`,
+    ok,
+    `k ${mid.k.toFixed(2)} → ${justAfter.k.toFixed(2)} → ${later.k.toFixed(2)}` +
+      (reaims ? ` → ${settled.k.toFixed(2)} (abandoned the ${FLY_K} destination, then came to rest)` : "")
+  );
   await p.locator('[data-shoot="collapse-all"]').click();
   await fit();
 }
@@ -234,7 +268,7 @@ await interrupt("a pan drag", async () => {
 }, 5);
 await interrupt("selecting a node", async () => {
   await p.evaluate(() => document.querySelector('[data-shoot^="node-finding:"] g[role="button"]')?.dispatchEvent(new MouseEvent("click", { bubbles: true })));
-}, 6);
+}, 6, true);
 await p.keyboard.press("Escape");
 await settle(400);
 
@@ -272,16 +306,38 @@ await settle(400);
   // Read back through the SVG's own viewBox, so the comparison is against
   // sub-pixel float noise rather than exact equality — a camera that has not
   // moved still reads a few ten-millionths apart.
+  // COMPREHENSION, NOT STILLNESS. Selecting used to be forbidden from moving
+  // the camera at all; that was right against a rule which forced 230% zoom,
+  // and became wrong once a selection could be unarguably visible and
+  // completely unreadable — eleven pixels of local world in a corner.
+  //
+  // What survives is the bound, and it is what this proves: whatever the
+  // camera does on a selection, it does the same thing whether the selection
+  // came from a click, a search result or an inspector row, and it never
+  // more than doubles.
+  const ratio = after.k / before.k;
   check(
-    "S1 selecting a node moves the camera not at all",
-    cameraSettledEnough(before, after),
-    `(${Math.round(before.x)}, ${Math.round(before.y)}) @ ${before.k.toFixed(3)} unchanged`
+    "S1 selecting a node frames it within the comprehension caps",
+    ratio <= 2.01 && after.k <= 1.81,
+    `(${Math.round(before.x)}, ${Math.round(before.y)}) @ ${before.k.toFixed(3)} → @ ${after.k.toFixed(3)} (${ratio.toFixed(2)}×)`
   );
   await p.keyboard.press("Escape");
   await settle(400);
 }
 
-// S2 — a SEARCH RESULT, by contrast, is meant to fly.
+// S2 — AND A SEARCH RESULT DOES EXACTLY WHAT A CLICK DOES.
+//
+// This proof used to assert the opposite: that choosing a search result FLEW,
+// forcing at least 230% zoom. Hands-on testing at 438 real nodes found that
+// to be the single worst behaviour on the surface — it threw away whatever
+// view the reader had built in order to show them a node they could usually
+// already see, and it made the camera depend on HOW the selection happened
+// rather than on what was selected.
+//
+//   SELECTION SOURCE MUST NOT CHANGE CAMERA SEMANTICS.
+//
+// So the law is now the same one S1 states, and this proves the two agree:
+// at Fit the whole field is visible, so a search result moves nothing at all.
 {
   await fit();
   await p.locator('[data-shoot="graph-search"]').fill("offline");
@@ -290,9 +346,24 @@ await settle(400);
   await p.locator('[data-shoot="search-results"] button').first().click();
   await settle(900);
   const after = await cam();
-  const moved = Math.hypot(after.x - before.x, after.y - before.y) > 20 || Math.abs(after.k - before.k) > 0.1;
   record("search.fly", { before, after });
-  check("S2 choosing a search result does fly to it", moved, `k ${before.k.toFixed(2)} → ${after.k.toFixed(2)}`);
+  // AND THE LAW ITSELF CHANGED AGAIN, ON PURPOSE.
+  //
+  // "Does not move" was right against a rule that forced 2.3 on every search
+  // result. It became wrong once focus was allowed to claim screen territory:
+  // a production audit found selections that were unarguably visible and
+  // completely unreadable — a local world eleven pixels across.
+  //
+  // What survives, and is what this now proves, is the guarantee that
+  // mattered: whatever the camera does, it is BOUNDED, and it is the same
+  // whether the selection came from a click, a search result or an inspector
+  // row. Never 230%, never more than doubling.
+  const ratio = after.k / before.k;
+  check(
+    "S2 choosing a search result is framed like a click — bounded, never 230%",
+    ratio <= 2.01 && after.k <= 1.81,
+    `k ${before.k.toFixed(2)} → ${after.k.toFixed(2)} (${ratio.toFixed(2)}×, cap 2× and 1.8 absolute)`
+  );
   await p.locator('[data-shoot="graph-search"]').fill("");
   await p.keyboard.press("Escape");
   await fit();

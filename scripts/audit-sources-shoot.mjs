@@ -89,14 +89,19 @@ await park();
 
 // ── 3. CLOSE — titles resolve ────────────────────────────────────────
 {
-  await zoomTo("close");
+  // NAMES ARRIVE AT THE CONSTELLATION TIER, NOT AT THE EVIDENCE TIER. A
+  // source artifact IS the hub of its constellation, so its name is part of
+  // the shape you are looking at rather than detail inside it — and by
+  // `close` the camera is at 260%+, where the whole field no longer fits and
+  // "do all four resolve" has become a question about the viewport.
+  await zoomTo("medium");
   await park();
   await shot("03-close-names");
   const labels = await p.evaluate(() =>
     [...document.querySelectorAll('[data-kind="transcript"], [data-kind="notion_page"], [data-kind="figma_artifact"]')]
       .map((e) => e.querySelector("text")?.textContent ?? null).filter(Boolean)
   );
-  check("3. source titles resolve at close zoom", labels.length === 4, labels.join(" · "));
+  check("3. source titles resolve at the constellation tier", labels.length === 4, labels.join(" · "));
   await p.locator('[data-shoot="collapse-all"]').click();
   await fit();
 }
@@ -133,30 +138,81 @@ await park();
   await selectKind("transcript");
   await settle(700);
   const after = await cam();
-  check("5. selecting a transcript does not move the camera", Math.abs(before.k - after.k) < 0.001 && Math.abs(before.x - after.x) < 0.5, `k ${before.k} → ${after.k}`);
+  // Focus may now claim screen territory when the local world is too small
+  // to read — bounded at double, and at 1.8 absolute. What is proved here is
+  // that bound, not stillness.
+  check(
+    "5. selecting a transcript frames it within the comprehension caps",
+    after.k <= before.k * 2.01 && after.k <= 1.81,
+    `k ${before.k} → ${after.k}`
+  );
   const t = await inspector();
   check("5b. and the inspector calls it a Transcript", /^TRANSCRIPT/im.test(t), t.split("\n")[0]);
   check("5c. with its role, status and read date", /raw_evidence/i.test(t) && /candidate/i.test(t) && /2026-08-21/.test(t));
-  check("5d. and a passage count rather than the transcript text", /Passages\s*2/i.test(t.replace(/\n/g, " ")) && !/we still cannot get the vpn/i.test(t), "a passage is a navigable anchor, not a paragraph");
+  // A PASSAGE IS STILL AN ANCHOR, NOT A PARAGRAPH — the artifact reports how
+  // many it has and never prints its own body. What changed is how each
+  // passage NAMES itself in the connections list: a one-line quote rather
+  // than `hermes-ev:2026-…-seg018`, because 156 accession numbers is not a
+  // reading path. The row is one line, clipped, and its exact id is one
+  // disclosure away on the passage itself.
+  check(
+    "5d. a passage count, and passages that name themselves by their words",
+    /Passages\s*2/i.test(t.replace(/\n/g, " ")) && !/hermes-ev:/i.test(t),
+    "a passage is a navigable anchor, not a paragraph"
+  );
   await park();
   await shot("05-transcript-selected");
 
   const openedBefore = await count('[data-kind="passage"]:not([data-identity="latent"])');
   await p.locator('[data-shoot="collapse-all"]').click();
   await settle(600);
-  await selectKind("transcript");
+  // NO RE-SELECTION HERE, DELIBERATELY.
+  //
+  // The transcript is still selected from step 5, and a selected node now
+  // survives a collapse — that is the fix for invisible selections. It is
+  // therefore the only artifact still carrying a role, so "click the first
+  // transcript" would land on the one already selected and toggle it OFF,
+  // leaving no inspector and no expand control. Collapsing around a live
+  // selection and finding its own control still there IS the thing being
+  // tested.
+  await settle(400);
+  await p.locator('[data-shoot="camera-fit"]').click();
   await settle(600);
-  const latentBefore = await count('[data-kind="passage"]:not([data-identity="latent"])');
+  // WHAT THE CONTROL IS NOW ACTUALLY FOR: PERSISTENCE.
+  //
+  // Selecting an artifact already promotes its own passages — that is the
+  // one-hop reveal, and it lasts exactly as long as the selection. Expanding
+  // makes them STAY, which is what lets a reader open one transcript's
+  // evidence and then go and look at something else.
+  //
+  // So the measurement is taken across the CLEAR, not across the click: with
+  // the cluster collapsed, an unexpanded artifact's passages fall back to
+  // marks the moment it is deselected, and an expanded one's do not. There is
+  // no second selection in here because there cannot be — a collapsed
+  // artifact is reachable only while it is the live selection, which is the
+  // whole reason its control has to be on its own panel.
+  const promoted = await count('[data-kind="passage"]:not([data-identity="latent"])');
   await p.locator('[data-shoot="source-expand"]').click();
-  await settle(900);
-  const latentAfter = await count('[data-kind="passage"]:not([data-identity="latent"])');
+  await settle(700);
+  await p.keyboard.press("Escape");
+  await settle(700);
+  const durable = await count('[data-kind="passage"]:not([data-identity="latent"])');
   await park();
   await shot("06-transcript-expanded");
   check(
-    "6. expanding the transcript opens exactly its own two passages",
-    latentAfter - latentBefore === 2,
-    `${latentBefore} → ${latentAfter} formed passages (the evidence sector holds 5)`
+    "6. expanding the transcript keeps exactly its own two passages open",
+    promoted === 2 && durable === 2,
+    `${promoted} promoted while selected → ${durable} still open after clearing (the evidence sector holds 5)`
   );
+  // And the durable set really is the artifact's own doing: clearing every
+  // expansion returns them to marks.
+  await p.locator('[data-shoot="collapse-all"]').click();
+  await settle(700);
+  const cleared = await count('[data-kind="passage"]:not([data-identity="latent"])');
+  check("6b. and collapsing everything returns them to marks", cleared === 0, `${durable} → ${cleared} formed passages`);
+  // Step 6b left the field closed; the next block needs a passage to click.
+  await p.locator('[data-shoot="cluster-toggle-evidence"]').click({ force: true });
+  await settle(900);
   void openedBefore;
 }
 
@@ -244,13 +300,54 @@ await park();
   await settle(600);
   const wasThere = await p.locator('[data-shoot="source-expand"]').count();
   if (wasThere) {
+    // Same reading as step 6, across the clear rather than across the click.
     await p.locator('[data-shoot="source-expand"]').click();
+    await settle(500);
+    await p.keyboard.press("Escape");
     await settle(700);
+    // READ IT FROM ACROSS THE FIELD.
+    //
+    // There are now TWO ways a mark stops being a mark, and this step is
+    // about one of them. Expansion is the reader's own act and is reversible;
+    // DISTANCE also resolves, from the NEAR tier inward, and is not something
+    // Collapse can or should undo — you are still standing there. Selecting a
+    // transcript flies the camera in, so without this the step would be
+    // measuring the zoom rather than the toggle.
+    await fit();
     const openState = await count('[data-kind="passage"]:not([data-identity="latent"])');
-    await p.locator('[data-shoot="source-expand"]').click();
+    await p.locator('[data-shoot="collapse-all"]').click();
     await settle(700);
     const closedState = await count('[data-kind="passage"]:not([data-identity="latent"])');
     check("11. collapsing the source returns its passages to marks", openState - closedState === 2, `${openState} → ${closedState} formed passages`);
+
+    // AND THE OTHER MECHANISM, STATED. Go close and the passages resolve
+    // whether or not anything is expanded — that is the tranche's primary
+    // law, and Collapse must not fight it.
+    // AIMED AT THE PASSAGES, not at the middle of the field — the middle is
+    // Reality and the ground around it, and going closer to empty ground
+    // measures nothing.
+    const at = await p.evaluate(() => {
+      // ONE passage, not the centroid of all of them: five marks spread
+      // around a sector have a centroid in the empty middle, and going closer
+      // to that puts every one of them off screen.
+      const g = document.querySelector('g[data-kind="passage"]');
+      if (!g) return null;
+      const b = g.getBoundingClientRect();
+      return { x: Math.round(b.x + b.width / 2), y: Math.round(b.y + b.height / 2) };
+    });
+    if (at) {
+      await p.mouse.move(at.x, at.y);
+      for (let i = 0; i < 16; i++) { await p.mouse.wheel(0, -110); await settle(30); await p.mouse.move(at.x, at.y); }
+    }
+    await settle(600);
+    await park();
+    const closeState = await count('[data-kind="passage"]:not([data-identity="latent"])');
+    check(
+      "11b. distance resolves what collapse put away, and that is the law not a leak",
+      closeState > closedState,
+      `${closedState} formed at Fit with everything collapsed → ${closeState} once you are standing in it`
+    );
+    await fit();
   } else {
     check("11. the expand control is present on a selected transcript", false);
   }

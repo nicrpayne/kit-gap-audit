@@ -1,0 +1,56 @@
+{
+  "startingExperimentalSha": "8edd9a7b376d3896495d1016fb50644ef725d49b",
+  "acceptedLocalSha": "1a0fd63",
+  "corpus": { "nodes": 427, "edges": 439 },
+  "fit": {
+    "rings": { "projected": 55, "opened": 27, "cameraPct": 38 },
+    "constellations": {
+      "projected": 55,
+      "opened": 27,
+      "cameraPct": 38,
+      "nearestOwnHubPct": 97.2,
+      "largestTerritoryAreaShare": 0.28
+    }
+  },
+  "searchDisclosure": {
+    "baselineOpened": 27,
+    "notifictions": { "priorTargeted": 152, "after": 32, "afterClear": 27, "repeat": 32, "repeatAfterClear": 27 },
+    "JSA Notifications Discussion": { "after": 29, "afterClear": 27 },
+    "KE Dev Standup": { "priorTargeted": 126, "after": 35, "afterClear": 27 },
+    "exactOfflineQuote": { "after": 29, "afterClear": 27 },
+    "SOF-487": { "after": 28, "afterClear": 27 },
+    "selectedTranscriptAfterClear": 29
+  },
+  "focusAndTrace": {
+    "selectedRiskOpened": 30,
+    "findingTraceOpened": 31,
+    "externalTraceOpened": 30,
+    "selectedOffscreen": false,
+    "traceEndpointsOffscreen": 0
+  },
+  "camera": {
+    "layoutMorphSelectedOffscreen": false,
+    "layoutMorphTraceEndpointsOffscreen": 0,
+    "directInputInterruptedFlight": true,
+    "fitRecoveredAfterPanZoom": true,
+    "historyBackForwardCoherent": true
+  },
+  "browserPerformance": {
+    "paintSamples": 400,
+    "paintP50Ms": 0.8,
+    "paintP95Ms": 1.4,
+    "paintMaxMs": 7.3,
+    "hitSamples": 7,
+    "hitP95Ms": 0.1,
+    "consoleWarnings": 0,
+    "consoleErrors": 0
+  },
+  "proofs": {
+    "renderer": "124/124 passed",
+    "search": "all checks passed; 2 environment skips",
+    "typescript": "passed",
+    "focusedEslint": "passed",
+    "productionBuild": "passed with pre-existing unrelated warnings",
+    "svgFallback": "passed"
+  }
+}

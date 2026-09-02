@@ -1,0 +1,140 @@
+// SIGNAL'S TOKENS, AS THINGS A CANVAS CAN ACTUALLY PAINT WITH.
+//
+// The scene names colours the way the rest of Signal does — `var(--i-signal)`,
+// `color-mix(in srgb, … 18%, var(--i-void))` — because those names ARE the
+// design system, and a painter that hard-coded `#46c3d6` would fork the
+// palette the first time a token moved.
+//
+// SVG can hand those strings straight to the browser. A canvas cannot: it
+// wants a concrete colour per fill. So this resolves token names against the
+// live document once and caches the answer.
+//
+//   RESOLVED ONCE PER DOCUMENT, NOT PER FRAME. `getComputedStyle` is a
+//   forced style recalculation, and calling it 427 times a frame is the
+//   single easiest way to make a canvas slower than the SVG it replaced.
+//   Every lookup goes through the cache; the cache is cleared when the theme
+//   could have changed, and never otherwise.
+//
+// NO NEW COLOURS ARE INVENTED HERE. Rubric's own palette does not cross into
+// Signal — this file only makes Signal's existing tokens paintable. The one
+// thing it adds is alpha, which is a compositing operation rather than a hue.
+
+export interface Rgb {
+  r: number;
+  g: number;
+  b: number;
+}
+
+const VAR_RE = /^var\(\s*(--[\w-]+)\s*\)$/;
+const MIX_RE = /^color-mix\(\s*in\s+srgb\s*,\s*(.+?)\s+([\d.]+)%\s*,\s*(.+?)\s*\)$/;
+
+const FALLBACK: Rgb = { r: 144, g: 153, b: 161 };
+
+export class TokenPalette {
+  private readonly cache = new Map<string, Rgb>();
+  private readonly cssCache = new Map<string, string>();
+  private root: Element | null = null;
+
+  constructor(root?: Element | null) {
+    this.root = root ?? null;
+  }
+
+  /** Point the palette at the element whose custom properties apply. Clears
+      the cache, because the answers may now be different. */
+  attach(root: Element | null): void {
+    if (this.root === root) return;
+    this.root = root;
+    this.clear();
+  }
+
+  clear(): void {
+    this.cache.clear();
+    this.cssCache.clear();
+  }
+
+  /**
+   * A token name, a `color-mix`, or a literal, as rgb.
+   *
+   * Unresolvable names return a neutral rather than throwing or painting
+   * black: a token that has not loaded yet should cost contrast for one
+   * frame, never a hole in the field.
+   */
+  rgb(color: string): Rgb {
+    const hit = this.cache.get(color);
+    if (hit) return hit;
+    const out = this.compute(color);
+    this.cache.set(color, out);
+    return out;
+  }
+
+  /** The same colour as a canvas fill/stroke string, with alpha applied. */
+  css(color: string, alpha = 1): string {
+    const a = alpha >= 1 ? 1 : alpha <= 0 ? 0 : alpha;
+    const key = a === 1 ? color : `${color}|${a.toFixed(3)}`;
+    const hit = this.cssCache.get(key);
+    if (hit) return hit;
+    const { r, g, b } = this.rgb(color);
+    const out = a === 1 ? `rgb(${r},${g},${b})` : `rgba(${r},${g},${b},${a})`;
+    this.cssCache.set(key, out);
+    return out;
+  }
+
+  private compute(color: string): Rgb {
+    const raw = color.trim();
+
+    const mix = MIX_RE.exec(raw);
+    if (mix) {
+      const a = this.rgb(mix[1]);
+      const pct = Number(mix[2]) / 100;
+      const b = this.rgb(mix[3]);
+      return {
+        r: Math.round(a.r * pct + b.r * (1 - pct)),
+        g: Math.round(a.g * pct + b.g * (1 - pct)),
+        b: Math.round(a.b * pct + b.b * (1 - pct)),
+      };
+    }
+
+    const v = VAR_RE.exec(raw);
+    if (v) {
+      const el = this.root ?? (typeof document !== "undefined" ? document.documentElement : null);
+      if (!el || typeof getComputedStyle === "undefined") return FALLBACK;
+      const value = getComputedStyle(el).getPropertyValue(v[1]).trim();
+      // A token may itself be another token or a mix; resolve through.
+      return value ? this.compute(value) : FALLBACK;
+    }
+
+    return parseColor(raw) ?? FALLBACK;
+  }
+}
+
+/** `#rgb`, `#rrggbb`, `rgb()` and `rgba()`. Everything Signal's token set
+    actually uses, and nothing it does not. */
+export function parseColor(raw: string): Rgb | null {
+  const s = raw.trim();
+  if (s.startsWith("#")) {
+    const hex = s.slice(1);
+    if (hex.length === 3) {
+      return {
+        r: parseInt(hex[0] + hex[0], 16),
+        g: parseInt(hex[1] + hex[1], 16),
+        b: parseInt(hex[2] + hex[2], 16),
+      };
+    }
+    if (hex.length === 6 || hex.length === 8) {
+      return {
+        r: parseInt(hex.slice(0, 2), 16),
+        g: parseInt(hex.slice(2, 4), 16),
+        b: parseInt(hex.slice(4, 6), 16),
+      };
+    }
+    return null;
+  }
+  const m = /^rgba?\(([^)]+)\)$/.exec(s);
+  if (m) {
+    const parts = m[1].split(/[\s,/]+/).filter(Boolean).map(Number);
+    if (parts.length >= 3 && parts.every((n, i) => i > 2 || Number.isFinite(n))) {
+      return { r: Math.round(parts[0]), g: Math.round(parts[1]), b: Math.round(parts[2]) };
+    }
+  }
+  return null;
+}

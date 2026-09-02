@@ -16,10 +16,11 @@
 //   "Reject finding" next to one would be offering an action that means
 //   nothing.
 
+import { useMemo } from "react";
 import type { AuditGraph, AuditNodeAttributes, EdgeBasis } from "@/lib/audit/graph";
 import { EDGE_RULES } from "@/lib/audit/graph";
 import { SOURCE_KINDS } from "@/lib/audit/sources";
-import { nodeColor, KIND_LABEL, REL_LABEL, MEMBERSHIP_RELS } from "./graphTokens";
+import { nodeColor, fieldLabel, KIND_LABEL, REL_LABEL, MEMBERSHIP_RELS } from "./graphTokens";
 
 export interface Connection {
   edgeId: string;
@@ -63,7 +64,7 @@ export function connectionsOf(graph: AuditGraph, id: string): Connection[] {
         rule: a.rule,
         outbound,
         otherId,
-        otherLabel: String(other.label),
+        otherLabel: fieldLabel(other),
         otherKind: String(other.kind),
         // The quantity the edge itself was grounded in, when it carries one.
         // An allocation without its share is half a fact.
@@ -84,6 +85,7 @@ export default function GraphInspector({
   onToggleNode,
   evidenceSolo,
   onEvidenceSolo,
+  onExpandCluster,
 }: {
   graph: AuditGraph;
   nodeId: string;
@@ -97,6 +99,10 @@ export default function GraphInspector({
       at all rather than offered and inert — a dead button is worse than no
       button, which this panel learned once already on the source expander. */
   onEvidenceSolo: ((on: boolean) => void) | null;
+  /** Expanding a CLUSTER, from the cluster's own panel. Selecting a cluster
+      and expanding one are deliberately different acts; this is the second
+      one, offered explicitly rather than fired by the first. */
+  onExpandCluster: (cluster: string) => void;
 }) {
   const attrs = graph.getNodeAttributes(nodeId) as AuditNodeAttributes;
   const color = nodeColor(attrs);
@@ -130,6 +136,44 @@ export default function GraphInspector({
   const allocations = (attrs.allocations as { scopeName: string; fraction: number; current: boolean }[] | undefined) ?? [];
   // Findings that explicitly cite this requirement's own evidence id. Read
   // off the graph rather than recomputed, so the panel and the field agree.
+  // ── WHAT A CLUSTER ACTUALLY CONTAINS ─────────────────────────────────
+  //
+  // Selecting a cluster used to say its name, its state and nothing else —
+  // the one question a cluster raises ("what is in here") had no answer in
+  // the panel that opened when you asked it.
+  //
+  // Read off the graph rather than from a stored count, so the panel and the
+  // field cannot disagree, and so "current" means what the producer says
+  // rather than what a cached number remembers.
+  const isLane = attrs.kind === "lane";
+  const clusterId = isLane ? String(attrs.lane) : null;
+  const clusterMembers = useMemo(() => {
+    if (!clusterId) return [];
+    const out: { id: string; kind: string; label: string; core: boolean; current: boolean }[] = [];
+    graph.forEachNode((n, a) => {
+      if (n === nodeId || a.lane !== clusterId) return;
+      out.push({
+        id: n,
+        kind: String(a.kind),
+        label: fieldLabel(a),
+        core: a.slice === "core",
+        current: a.kind !== "intel" || a.isCurrent !== false,
+      });
+    });
+    out.sort((x, y) => x.kind.localeCompare(y.kind) || x.label.localeCompare(y.label));
+    return out;
+  }, [graph, clusterId, nodeId]);
+
+  const clusterByKind = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const c of clusterMembers) m.set(c.kind, (m.get(c.kind) ?? 0) + 1);
+    return [...m.entries()].sort((a, b) => b[1] - a[1]);
+  }, [clusterMembers]);
+
+  const clusterOpened = clusterId != null && expandedNodes.has(clusterId);
+  const clusterLatent = clusterMembers.filter((c) => !c.core).length;
+  const clusterSuperseded = clusterMembers.filter((c) => !c.current).length;
+
   const concerningFindings = isRequirement
     ? graph
         .inEdges(nodeId)
@@ -145,7 +189,7 @@ export default function GraphInspector({
           {KIND_LABEL[attrs.kind] ?? attrs.kind}
         </div>
         <h2 className="mt-2 text-[15px] font-medium leading-snug text-[var(--i-text)]">
-          {isRequirement ? String(attrs.statement ?? attrs.label) : String(attrs.label)}
+          {isRequirement ? String(attrs.statement ?? attrs.label) : fieldLabel(attrs)}
         </h2>
 
         <div className="mt-2 flex flex-wrap items-center gap-1.5">
@@ -185,30 +229,154 @@ export default function GraphInspector({
         </div>
       </div>
 
-      {/* IDENTITY — the canonical row this node projects. The graph is a
-          projection, and the inspector says so rather than implying the node
-          is itself the thing. */}
-      <div className="mt-4 px-4">
-        <Row label="Projects" value={String(attrs.ref)} mono />
-        {attrs.lane != null && <Row label="Cluster" value={String(attrs.lane)} />}
-        {attrs.owner != null && <Row label="Owner" value={String(attrs.owner)} />}
-        {attrs.owner === null && attrs.kind === "decision" && (
-          <Row label="Owner" value="Not recorded" tone="var(--i-amber)" />
-        )}
-        {attrs.assignee != null && <Row label="Assignee" value={String(attrs.assignee)} />}
-        {attrs.assignee === null && attrs.kind === "work" && (
-          <Row label="Assignee" value="Unassigned" tone="var(--i-amber)" />
-        )}
-        {attrs.estimate != null && <Row label="Estimate" value={`${attrs.estimate} points`} />}
-        {attrs.estimate === null && attrs.kind === "work" && (
-          <Row label="Estimate" value="None" tone="var(--i-amber)" />
-        )}
-        {attrs.targetDate != null && <Row label="Target" value={String(attrs.targetDate).slice(0, 10)} />}
-        {attrs.producer != null && <Row label="Producer" value={String(attrs.producer)} />}
-        {attrs.observedAt != null && <Row label="Read" value={String(attrs.observedAt).slice(0, 10)} />}
-        {attrs.sourceType != null && <Row label="Source type" value={String(attrs.sourceType)} />}
-        {attrs.detail != null && <Row label="Measured" value={String(attrs.detail)} />}
-      </div>
+      {/* ── WHAT THIS SAYS ────────────────────────────────────────────
+
+          LAW 12: THE READING PATH IS HUMAN-FIRST.
+
+          This panel used to open with `Projects  IntelligenceObject:jsa-...`
+          — a canonical id, a batch, a hash and a set of character offsets —
+          and put the sentence the object actually asserts eleven rows down,
+          under four blocks of producer metadata. Everything needed to check
+          the claim was present and the claim itself was not readable without
+          scrolling.
+
+          Nothing has been deleted. The identifiers, the hashes, the offsets
+          and every unmodelled producer field are all still here, at the
+          bottom, behind one disclosure. They are what you open when you have
+          decided to verify something; they are not what you read to find out
+          what you selected. */}
+      {/* THE STATEMENT, VERBATIM. Never summarised and never rewritten — the
+          label above it is the same text trimmed to fit, and this is the one
+          place the whole claim is readable. */}
+      {isIntel && (
+        <div className="mt-4 px-4" data-shoot="intel-claim">
+          <div className="i-label mb-1.5" style={{ color: "var(--i-text-faint)" }}>
+            The claim
+          </div>
+          <div
+            className="rounded-md border p-2.5 text-[11px] leading-[1.6] text-[var(--i-text)]"
+            style={{ borderColor: "var(--i-border)", background: "var(--i-recess)" }}
+          >
+            {String(attrs.statement)}
+          </div>
+        </div>
+      )}
+
+      {/* CONTENT — enough of a source or passage to understand it without
+          leaving Audit, which is the whole point of a graph you explore. */}
+      {attrs.excerpt != null && !isRequirement && (
+        <div className="mt-4 px-4">
+          <div className="i-label mb-1.5" style={{ color: "var(--i-text-faint)" }}>
+            Passage
+          </div>
+          <div
+            className="rounded-md border p-2.5 text-[11px] leading-[1.6] text-[var(--i-text)]"
+            style={{ borderColor: "var(--i-border)", background: "var(--i-recess)" }}
+          >
+            “{String(attrs.excerpt).replace(/^["“”']+|["“”']+$/g, "")}”
+          </div>
+          {attrs.externalRef != null && (
+            <div className="mt-1.5 text-[10px] text-[var(--i-text-faint)]">{String(attrs.externalRef)}</div>
+          )}
+        </div>
+      )}
+
+      {/* ── A CLUSTER, AND WHAT IS IN IT ──────────────────────────────
+
+          SELECTING A CLUSTER IS NOT EXPANDING ONE, and keeping those two acts
+          separate is the whole point of this panel. Selecting asks "what is
+          this sector"; expanding asks "name everything in it". Firing the
+          second from the first is how a click on a label turned into forty
+          new labels on the field.
+
+          So: the count, the shape of the population, a handful of real
+          members you can go to one at a time, and one explicit control for
+          the other act. */}
+      {isLane && clusterId && (
+        <div className="mt-4 px-4" data-shoot="cluster-panel">
+          <div className="flex items-baseline justify-between">
+            <span className="i-label" style={{ color: "var(--i-text-faint)" }}>
+              Members
+            </span>
+            <span className="i-readout text-[13px] text-[var(--i-text)]">{clusterMembers.length}</span>
+          </div>
+
+          <div className="mt-2 flex flex-wrap gap-1.5">
+            {clusterByKind.map(([kind, n]) => (
+              <span
+                key={kind}
+                className="rounded px-1.5 py-[3px] text-[9.5px]"
+                style={{ border: "1px solid var(--i-border)", color: "var(--i-text-soft)" }}
+                data-shoot={`cluster-kind-${kind}`}
+              >
+                {n} {KIND_LABEL[kind as keyof typeof KIND_LABEL] ?? kind}
+              </span>
+            ))}
+          </div>
+
+          <div className="mt-3">
+            <Row
+              label="Showing their names"
+              value={clusterOpened ? `${clusterMembers.length} of ${clusterMembers.length}` : `${clusterMembers.length - clusterLatent} of ${clusterMembers.length}`}
+            />
+            {clusterSuperseded > 0 && (
+              <Row
+                label="Superseded by the producer"
+                value={String(clusterSuperseded)}
+                tone="var(--i-text-faint)"
+              />
+            )}
+          </div>
+
+          <button
+            type="button"
+            onClick={() => onExpandCluster(clusterId)}
+            data-shoot="cluster-expand"
+            aria-pressed={clusterOpened}
+            className="mt-3 w-full rounded-md border px-2.5 py-2 text-left text-[11px] transition-colors hover:bg-white/[0.04]"
+            style={{
+              borderColor: clusterOpened ? "var(--i-signal)" : "var(--i-border-strong)",
+              color: clusterOpened ? "var(--i-signal)" : "var(--i-text-soft)",
+            }}
+          >
+            {clusterOpened
+              ? "− Collapse back to marks"
+              : clusterLatent > 0
+                ? `Expand — name ${clusterLatent} more`
+                : "Everything here is already named"}
+          </button>
+
+          {clusterMembers.length > 0 && (
+            <div className="mt-3">
+              <div className="i-label mb-1.5" style={{ color: "var(--i-text-faint)" }}>
+                A few of them
+              </div>
+              <div className="space-y-1">
+                {clusterMembers.slice(0, 6).map((m) => (
+                  <button
+                    key={m.id}
+                    type="button"
+                    onClick={() => onSelect(m.id)}
+                    data-shoot="cluster-member"
+                    className="flex w-full items-baseline gap-2 rounded-md border px-2.5 py-1.5 text-left transition-colors hover:bg-white/[0.035]"
+                    style={{ borderColor: "var(--i-border)", background: "var(--i-panel)" }}
+                  >
+                    <span className="min-w-0 flex-1 truncate text-[11px] text-[var(--i-text)]">{m.label}</span>
+                    <span className="shrink-0 text-[9px] text-[var(--i-text-faint)]">
+                      {KIND_LABEL[m.kind as keyof typeof KIND_LABEL] ?? m.kind}
+                    </span>
+                  </button>
+                ))}
+              </div>
+              {clusterMembers.length > 6 && (
+                <p className="mt-1.5 text-[10px]" style={{ color: "var(--i-text-faint)" }}>
+                  and {clusterMembers.length - 6} more, on the field.
+                </p>
+              )}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* ── SOURCE ARTIFACT: WHERE WE LEARNED IT ──────────────────────
           Enough to know what this is and whether to trust it, plus the one
@@ -460,9 +628,7 @@ export default function GraphInspector({
               tone={attrs.isCurrent === false ? "var(--i-text-faint)" : undefined}
             />
             {attrs.dataStatus != null && <Row label="Producer status" value={String(attrs.dataStatus)} />}
-            {attrs.statementBasis != null && <Row label="Statement basis" value={String(attrs.statementBasis)} mono />}
             {attrs.observedDate != null && <Row label="Observed" value={String(attrs.observedDate).slice(0, 10)} />}
-            <Row label="Producer id" value={String(attrs.externalId)} mono />
           </div>
 
           {attrs.isCurrent === false && (
@@ -473,27 +639,21 @@ export default function GraphInspector({
             </p>
           )}
 
-          {Object.keys(intelDates).length > 0 && (
-            <KeyValues title="Dates" values={intelDates} />
-          )}
-          {Object.keys(intelFields).length > 0 && (
-            <KeyValues title={`${String(attrs.intelligenceType)} fields`} values={intelFields} />
-          )}
-          {Object.keys(intelProvenance).length > 0 && (
-            <KeyValues title="Producer provenance" values={intelProvenance} />
-          )}
-          {/* NOTHING IS DROPPED AT THE BOUNDARY. The transport preserves any
-              field Signal does not model; showing it here is what makes that
-              preservation checkable by a person rather than only by a proof. */}
-          {Object.keys(intelExtra).length > 0 && (
-            <KeyValues title="Not modelled by Signal" values={intelExtra} />
-          )}
-
           {/* WHY DOES THE PRODUCER SAY THIS — the same guarded traversal a
               finding gets, one boundary over. It follows citations out to the
               passages and the artifacts they were read from, and it does NOT
               follow external relations: the corpus is mostly `related_to`,
               and a walk that admitted it would light most of the outer band. */}
+          {!onEvidenceSolo && (
+            <p
+              className="mt-3 text-[10.5px] leading-[1.55]"
+              style={{ color: "var(--i-text-faint)" }}
+              data-shoot="intel-no-trace"
+            >
+              Nothing to trace. This object cites no passage that Signal holds, so there is no
+              route out of it and the control is not offered rather than offered and inert.
+            </p>
+          )}
           {onEvidenceSolo && (
             <button
               type="button"
@@ -512,41 +672,132 @@ export default function GraphInspector({
         </div>
       )}
 
-      {/* THE STATEMENT, VERBATIM. Never summarised and never rewritten — the
-          label above it is the same text trimmed to fit, and this is the one
-          place the whole claim is readable. */}
-      {isIntel && (
-        <div className="mt-4 px-4">
-          <div className="i-label mb-1.5" style={{ color: "var(--i-text-faint)" }}>
-            The claim
-          </div>
-          <div
-            className="rounded-md border p-2.5 text-[11px] leading-[1.6] text-[var(--i-text)]"
-            style={{ borderColor: "var(--i-border)", background: "var(--i-recess)" }}
-          >
-            {String(attrs.statement)}
-          </div>
+      {/* CONNECTIONS — the reference's own side-panel pattern, with the one
+          thing it does not have: WHERE each relationship came from. */}
+      <div className="mt-4 px-4 pb-6">
+        <div className="i-label mb-2 flex items-baseline justify-between" style={{ color: "var(--i-text-faint)" }}>
+          <span>Connections</span>
+          <span className="i-readout text-[11px]">{connections.length}</span>
         </div>
-      )}
-
-      {/* CONTENT — enough of a source or passage to understand it without
-          leaving Audit, which is the whole point of a graph you explore. */}
-      {attrs.excerpt != null && !isRequirement && (
-        <div className="mt-4 px-4">
-          <div className="i-label mb-1.5" style={{ color: "var(--i-text-faint)" }}>
-            Passage
+        {connections.length === 0 ? (
+          <p className="text-[11px] leading-[1.5]" style={{ color: "var(--i-text-faint)" }}>
+            Nothing points at this and it points at nothing. It sits in its cluster because of what it is, not
+            because of what it relates to.
+          </p>
+        ) : (
+          <div className="space-y-1">
+            {connections.map((c) => (
+              <button
+                key={c.edgeId}
+                type="button"
+                onClick={() => onSelect(c.otherId)}
+                onDoubleClick={() => onFocusNode(c.otherId)}
+                data-shoot={`connection-${c.rel}`}
+                // The other end's node id. The row NAMES the thing in human
+                // terms — a quote, a meeting — which is what a reader needs
+                // and what a script cannot match on. This is how a QA pass
+                // follows an exact chain without the panel having to print
+                // accession numbers at it.
+                data-target={c.otherId}
+                title={EDGE_RULES[c.rule]?.why ?? ""}
+                className="flex w-full items-start gap-2 rounded-md border px-2.5 py-2 text-left transition-colors hover:bg-white/[0.035]"
+                style={{ borderColor: "var(--i-border)", background: "var(--i-panel)" }}
+              >
+                <span className="min-w-0 flex-1">
+                  <span className="flex items-baseline gap-1.5">
+                    <span className="text-[9px] uppercase tracking-[0.13em]" style={{ color: "var(--i-text-faint)" }}>
+                      {c.outbound ? "" : "← "}
+                      {c.intelRel ?? REL_LABEL[c.rel] ?? c.rel}
+                    </span>
+                    {/* ATTESTED · INFERRED · EXTERNAL, in words. The
+                        difference between a relationship Signal's data
+                        states, one Signal read into it, and one somebody
+                        outside Signal asserted and Signal has not checked. */}
+                    <span
+                      className="rounded px-1 text-[8px] uppercase tracking-[0.12em]"
+                      style={{ color: BASIS_COLOR[c.basis], border: `1px solid color-mix(in srgb, ${BASIS_COLOR[c.basis]} 40%, transparent)` }}
+                    >
+                      {c.basis}
+                    </span>
+                    {c.relClass != null && (
+                      <span className="text-[8px] uppercase tracking-[0.12em]" style={{ color: "var(--i-text-faint)" }}>
+                        {c.relClass}
+                      </span>
+                    )}
+                    <span className="i-readout text-[10px]" style={{ color: "var(--i-text-soft)" }}>
+                      {c.detail ?? ""}
+                    </span>
+                  </span>
+                  <span className="mt-1 block truncate text-[11.5px] text-[var(--i-text)]">{c.otherLabel}</span>
+                  <span className="block text-[9.5px] text-[var(--i-text-faint)]">
+                    {KIND_LABEL[c.otherKind as keyof typeof KIND_LABEL] ?? c.otherKind}
+                  </span>
+                </span>
+              </button>
+            ))}
           </div>
-          <div
-            className="rounded-md border p-2.5 text-[11px] leading-[1.6] text-[var(--i-text)]"
-            style={{ borderColor: "var(--i-border)", background: "var(--i-recess)" }}
-          >
-            “{String(attrs.excerpt).replace(/^["“”']+|["“”']+$/g, "")}”
-          </div>
-          {attrs.externalRef != null && (
-            <div className="mt-1.5 text-[10px] text-[var(--i-text-faint)]">{String(attrs.externalRef)}</div>
+        )}
+      </div>
+      {/* ── TECHNICAL DETAILS ─────────────────────────────────────────
+          Canonical ids, producer ids, hashes, character offsets, batch
+          metadata and every field Signal does not model. MOVED, NEVER
+          DROPPED — the boundary must not be where information goes to die,
+          and a reader who can see an unmodelled field can tell Signal it
+          matters. Collapsed because verifying is a decision you make after
+          reading, not the thing you are made to read first. */}
+      <details className="mt-4 px-4 pb-6" data-shoot="inspector-technical">
+        <summary
+          className="cursor-pointer list-none text-[10.5px] uppercase tracking-[0.14em] outline-none"
+          style={{ color: "var(--i-text-faint)" }}
+        >
+          Technical details
+        </summary>
+        <div className="mt-2">
+          {isIntel && (
+            <>
+              <Row label="Producer id" value={String(attrs.externalId)} mono />
+              {attrs.statementBasis != null && (
+                <Row label="Statement basis" value={String(attrs.statementBasis)} mono />
+              )}
+            </>
           )}
-        </div>
-      )}
+          {isIntel && Object.keys(intelDates).length > 0 && <KeyValues title="Dates" values={intelDates} />}
+          {isIntel && Object.keys(intelFields).length > 0 && (
+            <KeyValues title={`${String(attrs.intelligenceType)} fields`} values={intelFields} />
+          )}
+          {isIntel && Object.keys(intelProvenance).length > 0 && (
+            <KeyValues title="Producer provenance" values={intelProvenance} />
+          )}
+          {/* NOTHING IS DROPPED AT THE BOUNDARY. The transport preserves any
+              field Signal does not model; showing it here is what makes that
+              preservation checkable by a person rather than only by a proof. */}
+          {isIntel && Object.keys(intelExtra).length > 0 && (
+            <KeyValues title="Not modelled by Signal" values={intelExtra} />
+          )}
+      {/* IDENTITY — the canonical row this node projects. The graph is a
+          projection, and the inspector says so rather than implying the node
+          is itself the thing. */}
+      <div className="mt-4 px-4">
+        <Row label="Projects" value={String(attrs.ref)} mono />
+        {attrs.lane != null && <Row label="Cluster" value={String(attrs.lane)} />}
+        {attrs.owner != null && <Row label="Owner" value={String(attrs.owner)} />}
+        {attrs.owner === null && attrs.kind === "decision" && (
+          <Row label="Owner" value="Not recorded" tone="var(--i-amber)" />
+        )}
+        {attrs.assignee != null && <Row label="Assignee" value={String(attrs.assignee)} />}
+        {attrs.assignee === null && attrs.kind === "work" && (
+          <Row label="Assignee" value="Unassigned" tone="var(--i-amber)" />
+        )}
+        {attrs.estimate != null && <Row label="Estimate" value={`${attrs.estimate} points`} />}
+        {attrs.estimate === null && attrs.kind === "work" && (
+          <Row label="Estimate" value="None" tone="var(--i-amber)" />
+        )}
+        {attrs.targetDate != null && <Row label="Target" value={String(attrs.targetDate).slice(0, 10)} />}
+        {attrs.producer != null && <Row label="Producer" value={String(attrs.producer)} />}
+        {attrs.observedAt != null && <Row label="Read" value={String(attrs.observedAt).slice(0, 10)} />}
+        {attrs.sourceType != null && <Row label="Source type" value={String(attrs.sourceType)} />}
+        {attrs.detail != null && <Row label="Measured" value={String(attrs.detail)} />}
+      </div>
 
       {/* ── WHERE EXACTLY THIS QUOTE IS ────────────────────────────────
           The producer anchors every structured passage to a character range
@@ -587,66 +838,8 @@ export default function GraphInspector({
         </div>
       )}
 
-      {/* CONNECTIONS — the reference's own side-panel pattern, with the one
-          thing it does not have: WHERE each relationship came from. */}
-      <div className="mt-4 px-4 pb-6">
-        <div className="i-label mb-2 flex items-baseline justify-between" style={{ color: "var(--i-text-faint)" }}>
-          <span>Connections</span>
-          <span className="i-readout text-[11px]">{connections.length}</span>
         </div>
-        {connections.length === 0 ? (
-          <p className="text-[11px] leading-[1.5]" style={{ color: "var(--i-text-faint)" }}>
-            Nothing points at this and it points at nothing. It sits in its cluster because of what it is, not
-            because of what it relates to.
-          </p>
-        ) : (
-          <div className="space-y-1">
-            {connections.map((c) => (
-              <button
-                key={c.edgeId}
-                type="button"
-                onClick={() => onSelect(c.otherId)}
-                onDoubleClick={() => onFocusNode(c.otherId)}
-                data-shoot={`connection-${c.rel}`}
-                title={EDGE_RULES[c.rule]?.why ?? ""}
-                className="flex w-full items-start gap-2 rounded-md border px-2.5 py-2 text-left transition-colors hover:bg-white/[0.035]"
-                style={{ borderColor: "var(--i-border)", background: "var(--i-panel)" }}
-              >
-                <span className="min-w-0 flex-1">
-                  <span className="flex items-baseline gap-1.5">
-                    <span className="text-[9px] uppercase tracking-[0.13em]" style={{ color: "var(--i-text-faint)" }}>
-                      {c.outbound ? "" : "← "}
-                      {c.intelRel ?? REL_LABEL[c.rel] ?? c.rel}
-                    </span>
-                    {/* ATTESTED · INFERRED · EXTERNAL, in words. The
-                        difference between a relationship Signal's data
-                        states, one Signal read into it, and one somebody
-                        outside Signal asserted and Signal has not checked. */}
-                    <span
-                      className="rounded px-1 text-[8px] uppercase tracking-[0.12em]"
-                      style={{ color: BASIS_COLOR[c.basis], border: `1px solid color-mix(in srgb, ${BASIS_COLOR[c.basis]} 40%, transparent)` }}
-                    >
-                      {c.basis}
-                    </span>
-                    {c.relClass != null && (
-                      <span className="text-[8px] uppercase tracking-[0.12em]" style={{ color: "var(--i-text-faint)" }}>
-                        {c.relClass}
-                      </span>
-                    )}
-                    <span className="i-readout text-[10px]" style={{ color: "var(--i-text-soft)" }}>
-                      {c.detail ?? ""}
-                    </span>
-                  </span>
-                  <span className="mt-1 block truncate text-[11.5px] text-[var(--i-text)]">{c.otherLabel}</span>
-                  <span className="block text-[9.5px] text-[var(--i-text-faint)]">
-                    {KIND_LABEL[c.otherKind as keyof typeof KIND_LABEL] ?? c.otherKind}
-                  </span>
-                </span>
-              </button>
-            ))}
-          </div>
-        )}
-      </div>
+      </details>
       <div className="flex-1" />
     </div>
   );
