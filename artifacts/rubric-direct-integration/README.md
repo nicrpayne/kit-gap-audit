@@ -11,5 +11,6 @@ The candidate now uses Rubric's structural roles and runtime lifecycle as the Au
 - `SCORECARD.md` — old/new score and deductions
 - `01`–`18` — source screenshots for reference/candidate, Search, Trace, navigation, layouts, pan, zoom, hover, and drag
 - `19-gesture-contact-sheet.png` — matched before/release/settled sequence
+- `20-visible-outer-orbits.png` — strengthened Rubric Attention / Open Loops and Source Systems circles, with source anchors seated on the outer orbit
 
 No deployment was performed.

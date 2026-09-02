@@ -732,10 +732,21 @@ console.log(`\n── X · SPATIAL ENGINE ────────────�
   const memory = radiiFor("memory");
   const routines = radiiFor("routine");
   const apps = radiiFor("app");
+  const attentionGuide = rings.ringGuides.find((guide) => guide.id === "attention");
+  const sourceGuide = rings.ringGuides.find((guide) => guide.id === "source-systems");
   check(
     "Rubric hierarchy is router → Skills → Memory → Routines → Applications",
     skills.length > 0 && memory.length > 0 && routines.length > 0 && apps.length > 0 &&
       Math.max(...skills) < Math.min(...memory) && Math.max(...memory) < Math.min(...routines) && Math.max(...routines) < Math.min(...apps)
+  );
+  const worstOrbitError = Math.max(
+    ...routines.map((radius) => Math.abs(radius - (attentionGuide?.r ?? radius))),
+    ...apps.map((radius) => Math.abs(radius - (sourceGuide?.r ?? radius)))
+  );
+  check(
+    "Routines and source icons ride the two outer Rubric circles",
+    !!attentionGuide && !!sourceGuide && worstOrbitError <= TUNING.ringWobble + 0.1,
+    `${worstOrbitError.toFixed(2)} world units worst wobble`
   );
   check(
     "a critical finding is on the conflict band",
