@@ -26,7 +26,7 @@ colours and product behaviour throughout.
 | `components/audit/canvas/rubric/sprites2.ts` | `public/_flows2.js` lines 17-58 — cached orb/glow sprites, deterministic edge curvature |
 | `components/audit/canvas/rubric/backdrop.ts` | `public/index.html` `drawBackdrop()` 127-152 — hex field and vignette |
 | `components/audit/canvas/rubric/painter.ts` | `public/_core.js` `loop()` 932-1069, `drawLabels()` 1071-1092; `public/index.html` `underLayer()` 154-203, `drawLink()` 205-235, `midLayer()` 238-269, `drawNode()` 271-463, `drawSelection()` 476-484 |
-| `lib/audit/spatial/field.ts` | `public/_core.js` Rings subsystem 339-545, `buildSim()` bounded branch 547-736, layout lifecycle 310-325 |
+| `lib/audit/spatial/field.ts` | Direct mechanical modularization of `public/_core.js` `setLayout()` / `refreshLayout()` 310-337, `ringsGeom()` / `computeRingTargets()` / `placeRingNode()` 394-545, and the Force/Circle/Hex branches of `buildSim()` 547-736. Signal supplies roles and a bounded disagreement offset inside Memory; Rubric retains spatial authority. |
 | `lib/audit/spatial/anchors.ts` | `public/_core.js` `buildSim()` group-pull mechanism 711-732 (mechanism only; the anchor policy is Signal's) |
 | `components/audit/rubricCamera.ts` | `public/_core.js` camera 811-816, wheel 819-830, fly advance 934-940 |
 
@@ -39,10 +39,11 @@ adapted engine, but it does not copy Rubric implementation code.
 
 ### Summary of substantive changes
 
-- **Semantics replaced entirely.** Rubric's filesystem/ARMS model — routers,
-  agents, departments, apps, routines, skills, folders, files — does not cross
-  into Signal. Node kinds, colours, trust basis, radial meaning, grouping and
-  every product action are Signal's.
+- **Content semantics are replaced; structural roles are retained.** Rubric's
+  filesystem/ARMS labels and data do not cross into Signal, while its actual
+  router / skills / memory / routines / applications hierarchy remains the
+  runtime chassis. Signal's thin adapter maps canonical objects into those
+  roles and creates presentation-only source-system application anchors.
 - **Random seeding replaced with a deterministic id hash,** so Signal reloads
   to the same field.
 - **Frame-count timings replaced with elapsed milliseconds,** so motion does

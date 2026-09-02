@@ -39,10 +39,19 @@ import {
   type Simulation,
 } from "d3-force";
 import { FIELD } from "../graphLayout";
-import { anchorPolicies, BANDS, CORE_ANCHOR, type Band } from "./anchors";
+import { anchorPolicies, CORE_ANCHOR, type Band } from "./anchors";
 
-export type LayoutMode = "rings" | "constellations";
-export type RubricVisualRole = "router" | "hub" | "aggregate" | "artifact" | "rim" | "leaf";
+export type LayoutMode = "rings" | "force" | "circle" | "hex" | "constellations";
+/**
+ * Rubric's actual structural vocabulary, with product-facing names kept out
+ * of the UI.  This is intentionally not a generic renderer role list: these
+ * values drive the same Skills / Memory / Routines / Applications branches
+ * as `_core.js::computeRingTargets()` and `buildSim()`.
+ */
+export type RubricVisualRole =
+  | "router" | "skill" | "memory" | "routine" | "app" | "hub"
+  /** Read-only compatibility for older proof fixtures; the adapter emits none. */
+  | "aggregate" | "artifact" | "leaf";
 export type AuditTerritory = "model" | "delivery" | "evidence" | "external";
 
 export interface FieldNodeInput {
@@ -64,6 +73,10 @@ export interface FieldNodeInput {
   cell: string;
   /** Canonical or projected local hub; never inferred from graph edges in the field. */
   parentId: string | null;
+  /** The source-system/application hub which owns this artifact, if any. */
+  sourceSystemId: string | null;
+  /** Presentation-only Rubric app/hub, never a canonical Signal object. */
+  presentationOnly: boolean;
 }
 
 interface FieldNode extends FieldNodeInput {
@@ -230,6 +243,7 @@ export class SpatialField {
   /** Paint-only progress when entering Constellations; never feeds physics. */
   private morphK = 1;
   private ringsKey = "";
+  private ringGuideValues: { id: string; label: string; r: number }[] = [];
   /** Reported upward so the painter can draw the boundary the physics uses. */
   boundR = 0;
   private territoryGeometry = new Map<AuditTerritory, { x: number; y: number; r: number }>();
@@ -264,7 +278,7 @@ export class SpatialField {
 
   /** Radius the Rubric camera should frame for the current arrangement. */
   get viewRadius(): number {
-    if (this.mode === "constellations") {
+    if (this.mode !== "rings") {
       // Fit the geography that actually settled, not the empty outer safety
       // bound. The latter is intentionally generous so cells can breathe;
       // using it as the camera extent made four healthy territories read as
@@ -278,6 +292,11 @@ export class SpatialField {
     return r;
   }
 
+  /** The exact guides produced by Rubric's ring geometry this epoch. */
+  get ringGuides(): readonly { id: string; label: string; r: number }[] {
+    return this.ringGuideValues;
+  }
+
   /**
    * Whether the field is doing something OTHER than idling.
    *
@@ -289,7 +308,7 @@ export class SpatialField {
   get busy(): boolean {
     if (this.morph != null) return true;
     if (this.order.some((n) => n.spring || n.pin)) return true;
-    if (this.mode === "constellations" && this.sim) return this.sim.alpha() > this.sim.alphaMin();
+    if (this.mode !== "rings" && this.sim) return this.sim.alpha() > this.sim.alphaMin();
     return false;
   }
 
@@ -386,6 +405,8 @@ export class SpatialField {
         held.territory = n.territory;
         held.cell = n.cell;
         held.parentId = n.parentId;
+        held.sourceSystemId = n.sourceSystemId;
+        held.presentationOnly = n.presentationOnly;
         continue;
       }
       const a = byKey.get(n.anchor);
@@ -415,7 +436,7 @@ export class SpatialField {
     for (const id of [...this.nodes.keys()]) if (!seen.has(id)) this.nodes.delete(id);
     this.order = [...this.nodes.values()];
     this.ringsKey = "";
-    if (this.mode === "constellations") this.buildSim(0.9);
+    if (this.mode !== "rings") this.buildSim(0.9);
   }
 
   /**
@@ -430,7 +451,7 @@ export class SpatialField {
     if (mode === this.mode) return;
     this.snapshot();
     this.mode = mode;
-    if (mode === "constellations") this.buildSim(0.55);
+    if (mode !== "rings") this.buildSim(0.55);
     else this.sim?.stop();
     this.ringsKey = "";
   }
@@ -448,14 +469,18 @@ export class SpatialField {
 
   // ── RINGS ────────────────────────────────────────────────────────────
   //
-  // ADAPTED FROM `computeRingTargets()` (lines 445-504) and `placeRingNode()`
-  // (lines 538-545). What is Rubric's: sqrt-weighted sector allocation,
-  // arithmetic row capacity, target caching by epoch, spin, radial wobble,
-  // and the blend. What is Signal's: which band a thing sits in and what that
-  // distance MEANS.
+  // DIRECTLY MODULARISED FROM `ringsGeom()` / `computeRingTargets()` /
+  // `placeRingNode()` (`_core.js` 394-545). Signal supplies only the role,
+  // group and the constrained disagreement offset inside Memory.
 
   private computeRingTargets(): void {
     const anchors = anchorPolicies().filter((a) => a.key !== CORE_ANCHOR);
+
+    for (const n of this.order) {
+      n.rA = 0;
+      n.rR = 0;
+      n.rSpin = 1;
+    }
 
     // SECTOR WIDTH BY SQRT OF POPULATION — Rubric line 461. Equal sectors
     // waste the field: Signal's evidence lane holds 194 seats and its figma
@@ -463,28 +488,43 @@ export class SpatialField {
     // other a desert.
     const pools = anchors.map((a) =>
       this.order
-        .filter((n) => n.anchor === a.key && !n.isAnchorNode)
+        .filter((n) => n.role === "memory" && n.anchor === a.key)
         .sort((x, y) => x.order - y.order || (x.id < y.id ? -1 : 1))
     );
     const weights = pools.map((p) => Math.sqrt(Math.max(4, p.length)));
     const wSum = weights.reduce((s, w) => s + w, 0) || 1;
 
     // The core is not in a sector: Reality at the centre, the model around it.
-    const core = this.order.filter((n) => n.isCore);
-    const reality = core.find((n) => n.band === "core");
+    const reality = this.order.find((n) => n.role === "router");
     if (reality) {
       reality.rA = 0;
       reality.rR = 0;
       reality.rSpin = 0;
     }
-    const model = core.filter((n) => n !== reality).sort((a, b) => a.order - b.order || (a.id < b.id ? -1 : 1));
-    model.forEach((n, i) => {
-      n.rA = -Math.PI / 2 + (i / Math.max(1, model.length)) * Math.PI * 2;
-      n.rR = BANDS.model.r;
-      n.rSpin = 1.4;
-    });
+    // Rubric Skills: innermost full-circle rings, fixed 15-unit seats.
+    const skills = this.order
+      .filter((n) => n.role === "skill")
+      .sort((a, b) => a.order - b.order || a.id.localeCompare(b.id));
+    let skillsR = 72;
+    let skillIndex = 0;
+    while (skillIndex < skills.length) {
+      const cap = Math.max(6, Math.floor((Math.PI * 2 * skillsR) / TUNING.seatWidth));
+      const count = Math.min(cap, skills.length - skillIndex);
+      for (let j = 0; j < count; j++) {
+        const n = skills[skillIndex + j];
+        n.rA = -Math.PI / 2 + (j / Math.max(1, count)) * Math.PI * 2;
+        n.rR = skillsR;
+        n.rSpin = 1.6;
+      }
+      skillIndex += count;
+      if (skillIndex < skills.length) skillsR += 17;
+    }
+    const skillsEnd = skills.length ? skillsR : 72;
+    const hubR = skillsEnd + 30;
+    const memR = skillsEnd + 62;
 
     let acc = -Math.PI / 2;
+    let maxMemR = memR;
     anchors.forEach((a, ci) => {
       const width = (weights[ci] / wSum) * Math.PI * 2;
       const a0 = acc + width / 2;
@@ -497,53 +537,54 @@ export class SpatialField {
       const hub = this.order.find((n) => n.isAnchorNode && n.anchor === a.key);
       if (hub) {
         hub.rA = a0;
-        hub.rR = BANDS.cluster.r;
+        hub.rR = hubR;
         hub.rSpin = 1;
       }
 
-      // SEATED BY BAND, NOT BY ONE RUNNING RADIUS. This is the Signal
-      // departure that matters: Rubric walks one pool outward from a single
-      // start radius, which is correct when radius means nothing. Here radius
-      // MEANS distance from agreement, so each band starts at its own radius
-      // and only overflows outward within itself.
-      const horizon = pools[ci].filter((n) => n.role === "artifact");
-      horizon.forEach((n, i) => {
-        const frac = horizon.length === 1 ? 0.5 : i / (horizon.length - 1);
-        n.rA = a0 - span + frac * 2 * span;
-        // Sources describe provenance, not truth. Seat them on a distinct
-        // outer horizon so their radius cannot be mistaken for disagreement.
-        n.rR = FIELD.outerR - 18;
-        n.rSpin = 0.72;
-      });
-
-      const byBand = new Map<Band, FieldNode[]>();
-      for (const n of pools[ci]) {
-        if (n.role === "artifact") continue;
-        const arr = byBand.get(n.band);
-        if (arr) arr.push(n);
-        else byBand.set(n.band, [n]);
-      }
-      for (const [band, pool] of byBand) {
-        const policy = BANDS[band];
-        let r = policy.r;
-        let idx = 0;
-        while (idx < pool.length) {
-          // Rubric line 476: capacity is arithmetic — how many seats of a
-          // fixed width fit the arc this sector owns at this radius.
-          const cap = Math.max(3, Math.floor((2 * span * r) / TUNING.seatWidth));
-          const count = Math.min(cap, pool.length - idx);
-          for (let j = 0; j < count; j++) {
-            const n = pool[idx + j];
-            const frac = count === 1 ? 0.5 : j / (count - 1);
-            n.rA = a0 - span + frac * 2 * span;
-            n.rR = r;
-            n.rSpin = 1;
-          }
-          idx += count;
-          r += policy.rowStep || 20;
+      // Rubric Memory: one coherent outward-walking pool per department.
+      // Signal disagreement is a bounded secondary offset inside each row.
+      const pool = pools[ci];
+      let r = memR;
+      let idx = 0;
+      while (idx < pool.length) {
+        const cap = Math.max(3, Math.floor((2 * span * r) / TUNING.seatWidth));
+        const count = Math.min(cap, pool.length - idx);
+        for (let j = 0; j < count; j++) {
+          const n = pool[idx + j];
+          const frac = count === 1 ? 0.5 : j / (count - 1);
+          const disagreement = n.band === "conflict" ? 12 : n.band === "drift" || n.band === "external" ? 6 : 0;
+          n.rA = a0 - span + frac * 2 * span;
+          n.rR = r + disagreement;
+          n.rSpin = 1;
         }
+        idx += count;
+        r += 20;
       }
+      maxMemR = Math.max(maxMemR, r);
     });
+
+    // Rubric Routines, then Applications. These are independent full rings;
+    // source systems are application-scale anchors, never artifact dots.
+    const routines = this.order.filter((n) => n.role === "routine").sort((a, b) => a.order - b.order || a.id.localeCompare(b.id));
+    const routineR = maxMemR + 46;
+    routines.forEach((n, i) => {
+      n.rA = -Math.PI / 2 + (i / Math.max(1, routines.length)) * Math.PI * 2;
+      n.rR = routineR;
+      n.rSpin = 0.7;
+    });
+    const apps = this.order.filter((n) => n.role === "app").sort((a, b) => a.id.localeCompare(b.id));
+    const appR = routineR + 62;
+    apps.forEach((n, i) => {
+      n.rA = 0.52 + ((i + 0.5) / Math.max(1, apps.length) - 0.5) * Math.PI * 2;
+      n.rR = appR;
+      n.rSpin = 0;
+    });
+    this.ringGuideValues = [
+      { id: "accepted-model", label: "Accepted model", r: skillsEnd },
+      { id: "project-world", label: "Project world", r: Math.max(memR, maxMemR - 20) },
+      { id: "attention", label: "Attention / open loops", r: routineR },
+      { id: "source-systems", label: "Source systems", r: appR },
+    ];
   }
 
   private ringsCacheKey(): string {
@@ -688,7 +729,7 @@ export class SpatialField {
       n.fy = null;
       if (n.userHome) continue;
       const target = cellTarget.get(`${n.territory}|${n.cell}`) ?? territoryCentre[n.territory];
-      const jitter = n.role === "leaf" ? Math.max(8, Math.min(28, n.r * 2.5)) : 0;
+      const jitter = n.role === "memory" ? Math.max(8, Math.min(28, n.r * 2.5)) : 0;
       const angle = hash01(n.id, 9) * Math.PI * 2;
       n.bTx = target.x + Math.cos(angle) * jitter;
       n.bTy = target.y + Math.sin(angle) * jitter;
@@ -708,7 +749,7 @@ export class SpatialField {
           .strength((d) =>
             d.role === "router" ? -520 :
             d.role === "hub" ? -115 :
-            d.role === "artifact" || d.role === "aggregate" ? -58 :
+            d.role === "app" || d.role === "routine" ? -60 :
             d.band === "structure" ? -26 : -18
           )
           .distanceMax(Math.max(155, R * 0.32))
@@ -719,14 +760,14 @@ export class SpatialField {
         "x",
         forceX<FieldNode>((d) => d.bTx).strength((d) =>
           d.fx != null || d.pin ? 0 : d.userHome ? 0.2 :
-          d.role === "hub" || d.role === "artifact" || d.role === "aggregate" ? 0.32 : 0.045
+          d.role === "hub" || d.role === "app" || d.role === "routine" ? 0.32 : 0.045
         )
       )
       .force(
         "y",
         forceY<FieldNode>((d) => d.bTy).strength((d) =>
           d.fx != null || d.pin ? 0 : d.userHome ? 0.2 :
-          d.role === "hub" || d.role === "artifact" || d.role === "aggregate" ? 0.32 : 0.045
+          d.role === "hub" || d.role === "app" || d.role === "routine" ? 0.32 : 0.045
         )
       )
       .alphaDecay(TUNING.alphaDecay)
@@ -799,7 +840,7 @@ export class SpatialField {
    */
   private enforceCellOwnership(): void {
     const hubs = this.order.filter(
-      (n) => n.role === "hub" || n.role === "artifact" || (n.role === "aggregate" && n.parentId == null)
+      (n) => n.role === "hub" || n.role === "app"
     );
     if (hubs.length < 2) return;
     const factor = TUNING.cellOwnershipFactor;
@@ -842,7 +883,7 @@ export class SpatialField {
     if (!n) return;
     n.pin = { x: n.x, y: n.y };
     n.spring = null;
-    if (this.mode === "constellations") {
+    if (this.mode !== "rings") {
       n.fx = n.x;
       n.fy = n.y;
       this.sim?.alphaTarget(0.28).alpha(Math.max(this.sim.alpha(), 0.28));
@@ -859,7 +900,7 @@ export class SpatialField {
     n.pin.y = ly;
     n.x = lx;
     n.y = ly;
-    if (this.mode === "constellations") {
+    if (this.mode !== "rings") {
       n.fx = lx;
       n.fy = ly;
     }
@@ -878,7 +919,7 @@ export class SpatialField {
     n.pin = null;
     n.fx = null;
     n.fy = null;
-    if (this.mode === "constellations" && n.role !== "router") {
+    if (this.mode !== "rings" && n.role !== "router") {
       n.bTx = n.x;
       n.bTy = n.y;
       n.userHome = true;
@@ -889,7 +930,7 @@ export class SpatialField {
       this.buildSim(0.25);
     } else {
       n.spring = this.reduced ? null : { x: n.x, y: n.y, t0: this.clock };
-      if (this.mode === "constellations") this.buildSim(0.5);
+      if (this.mode !== "rings") this.buildSim(0.5);
     }
   }
 
@@ -902,7 +943,7 @@ export class SpatialField {
     n.fy = null;
     n.userHome = false;
     n.spring = null;
-    if (this.mode === "constellations") this.buildSim(0.3);
+    if (this.mode !== "rings") this.buildSim(0.3);
   }
 
   // ── THE CLOCK ────────────────────────────────────────────────────────
@@ -967,7 +1008,7 @@ export class SpatialField {
         ox = (dx / distance) * push;
         oy = (dy / distance) * push;
       }
-      const [baseX, baseY] = this.mode === "constellations" && this.morphK < 1
+      const [baseX, baseY] = this.mode !== "rings" && this.morphK < 1
         ? this.blend(n, n.x, n.y, this.morphK)
         : [n.x, n.y];
       const held = this.out.get(n.id);
@@ -993,7 +1034,7 @@ export class SpatialField {
     byTerritory: Record<AuditTerritory, { members: number; nearest: number; pct: number }>;
   } {
     const hubs = this.order.filter(
-      (n) => n.role === "hub" || n.role === "artifact" || (n.role === "aggregate" && n.parentId == null)
+      (n) => n.role === "hub" || n.role === "app"
     );
     let membersWithHub = 0;
     let nearestOwnHub = 0;

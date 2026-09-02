@@ -66,12 +66,14 @@ declare global {
   }
 }
 
-/** `?layout=constellations` opens on the organic view. Rings stays the
-    default: it is the arrangement that carries Signal's disagreement law. */
+/** Rubric's four layout mechanics, under Signal-facing query values. */
 function resolveLayout(search: string | null | undefined): LayoutMode {
   if (!search) return "rings";
   const p = new URLSearchParams(search.startsWith("?") ? search.slice(1) : search);
-  return p.get("layout") === "constellations" ? "constellations" : "rings";
+  const layout = p.get("layout");
+  if (layout === "force" || layout === "circle" || layout === "hex") return layout;
+  if (layout === "constellations") return "circle";
+  return "rings";
 }
 
 export default function CanvasAuditRenderer(props: AuditRendererProps) {
@@ -182,6 +184,10 @@ export default function CanvasAuditRenderer(props: AuditRendererProps) {
   );
   const worldRef = useRef(rubricWorld);
   worldRef.current = rubricWorld;
+  const runtimeScene = useMemo<AuditScene>(
+    () => ({ ...scene, nodes: [...scene.nodes, ...rubricWorld.presentationNodes] }),
+    [scene, rubricWorld]
+  );
   useEffect(() => {
     engineRef.current?.setNodes(rubricWorld.nodes);
   }, [rubricWorld]);
@@ -295,8 +301,8 @@ export default function CanvasAuditRenderer(props: AuditRendererProps) {
   // anything is genuinely moving — physics settling, a morph, a camera fly, a
   // Ring spin, a Trace, a selection pulse — and idles otherwise. The handoff
   // recommends exactly this (§3): "support dirty-frame rendering when idle."
-  const sceneRef = useRef(scene);
-  sceneRef.current = scene;
+  const sceneRef = useRef(runtimeScene);
+  sceneRef.current = runtimeScene;
   const clusterRef = useRef(clusterLabels);
   clusterRef.current = clusterLabels;
   const sweepRef = useRef(sweepAngle);
@@ -391,7 +397,8 @@ export default function CanvasAuditRenderer(props: AuditRendererProps) {
         sweepAngle: sweepRef.current,
         fontFamily: fontFamily.current,
         positions: livePositions.current,
-        boundR: f.layout === "constellations" ? f.boundR : 0,
+        boundR: f.layout === "circle" || f.layout === "hex" ? f.boundR : 0,
+        ringGuides: f.ringGuides,
         clusterLabels: clusterRef.current,
         traceEdges: traceRef.current,
       });
@@ -632,7 +639,8 @@ export default function CanvasAuditRenderer(props: AuditRendererProps) {
     });
     probe.hitTests.push(performance.now() - t0);
     if (probe.hitTests.length > 400) probe.hitTests.shift();
-    if (result.hover !== hoveredId) onHover(result.hover);
+    const hover = result.hover ? rubricWorld.interactionTarget.get(result.hover) ?? result.hover : null;
+    if (hover !== hoveredId) onHover(hover);
     if (result.cameraChanged) publishCamera();
     setCursor(result.cursor);
     invalidateRef.current?.();
@@ -676,7 +684,8 @@ export default function CanvasAuditRenderer(props: AuditRendererProps) {
     }
     // Rubric's ordinary click selects in place and does not toggle, reheat the
     // field or fly the camera. Signal still decides what that id means.
-    (onPointerSelect ?? onSelect)(result.hit);
+    const hit = result.hit ? rubricWorld.interactionTarget.get(result.hit) ?? result.hit : null;
+    (onPointerSelect ?? onSelect)(hit);
     invalidateRef.current?.();
   };
 
@@ -757,7 +766,7 @@ export default function CanvasAuditRenderer(props: AuditRendererProps) {
         onPointerUp={(e) => e.stopPropagation()}
         onDoubleClick={(e) => e.stopPropagation()}
       >
-        {(["rings", "constellations"] as LayoutMode[]).map((m) => (
+        {(["rings", "circle", "hex", "force"] as LayoutMode[]).map((m) => (
           <button
             key={m}
             type="button"
@@ -773,7 +782,7 @@ export default function CanvasAuditRenderer(props: AuditRendererProps) {
               background: layoutMode === m ? "var(--i-signal-soft)" : "transparent",
             }}
           >
-            {m === "rings" ? "Rings" : "Constellations"}
+            {m === "rings" ? "Rings" : m === "circle" ? "World" : m === "hex" ? "Territories" : "Relations"}
           </button>
         ))}
       </div>
