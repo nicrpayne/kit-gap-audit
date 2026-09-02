@@ -125,7 +125,10 @@ export const BANDS: Record<Band, BandPolicy> = {
   cluster: { id: "cluster", r: FIELD.clusterR, meaning: "where a source system sits", rowStep: 0 },
   structure: { id: "structure", r: FIELD.childR, meaning: "execution and structure", rowStep: 24 },
   evidence: { id: "evidence", r: FIELD.sourceInner, meaning: "what Signal read", rowStep: 22 },
-  external: { id: "external", r: FIELD.intelR, meaning: "claims from outside Signal", rowStep: 26 },
+  // Kept as a compatibility band for old serialized diagnostics. New
+  // external claims are not placed here merely because they are external:
+  // trust/source is orthogonal to disagreement.
+  external: { id: "external", r: FIELD.driftR, meaning: "relationship to Reality not yet resolved", rowStep: 20 },
 };
 
 /**
@@ -158,8 +161,15 @@ export function bandOf(kind: NodeKind, attrs: Record<string, unknown>): Band {
       if (state === "drift") return "drift";
       return "aligned";
     }
-    case "intel":
-      return "external";
+    case "intel": {
+      // External is a trust boundary, not a distance from Reality. Until an
+      // explicit Signal relationship says support or conflict, the honest
+      // radial position is unresolved/drift — never "farther because outside".
+      const state = String(attrs.state ?? attrs.relationshipToReality ?? "");
+      if (state === "aligned" || state === "supports") return "aligned";
+      if (state === "conflict" || state === "contradicts") return "conflict";
+      return "drift";
+    }
     case "passage":
     case "source":
     case "transcript":

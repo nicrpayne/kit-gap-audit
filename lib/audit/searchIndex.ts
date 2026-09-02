@@ -274,7 +274,23 @@ export class SignalSearchIndex {
     //                                    one, which is what folding it into
     //                                    scoring would do.
     //   3. the canonical id              so the order is total, always.
+    const exactPriority = (hit: SearchHit): number => {
+      const q = normalized;
+      const title = normalizeSearchText(hit.doc.title);
+      const id = normalizeSearchText(hit.id);
+      const identifier = hit.doc.fields.find((f) => f.field === "identifier")?.norm ?? "";
+      // When Signal's canonical object and a quoted evidence passage repeat
+      // the same sentence verbatim, the object is the direct identity match;
+      // the passage remains immediately below it as provenance.
+      if (title === q) return hit.doc.family === "reality" ? 5 : 4;
+      if (id === q || identifier === q) return 4;
+      if (title.startsWith(`${q} `)) return 3;
+      if (title.includes(q)) return 2;
+      return 0;
+    };
     hits.sort((a, b) => {
+      const exact = exactPriority(b) - exactPriority(a);
+      if (exact !== 0) return exact;
       if (b.score !== a.score) return b.score - a.score;
       const aw = FIELD_WEIGHT[a.matchedField];
       const bw = FIELD_WEIGHT[b.matchedField];
@@ -284,6 +300,14 @@ export class SignalSearchIndex {
       const bd = b.doc.sourceDate ?? "";
       if (ad !== bd) return ad < bd ? 1 : -1;
       return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
+    });
+
+    // `relative` is a presentation of the final ranked list, not a second
+    // authority over it. Exact-identity reranking can place a lower BM25
+    // score first, so cap the remaining bars beneath the chosen first hit.
+    const rankedBest = hits[0]?.score ?? 1;
+    hits.forEach((hit, i) => {
+      hit.relative = i === 0 ? 1 : Math.min(1, rankedBest > 0 ? hit.score / rankedBest : 0);
     });
 
     return { query: rawQuery, normalizedQuery: normalized, hits, partial, total };

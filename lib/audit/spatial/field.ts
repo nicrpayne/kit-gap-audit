@@ -183,7 +183,7 @@ export const TUNING = {
   rimHomeStrength: 0.12 + 0.69 * 0.36,
   /** Keep dense Ring sectors territorial instead of turning them into long
       radar arcs. This only changes angle; Signal's band radius remains law. */
-  ringSectorCompactness: 0.68,
+  ringSectorCompactness: 1.55,
   /** Rubric transition: 26-136 FRAMES. Signal: milliseconds. */
   morphMs: 620,
   /** Rubric drag return: 36 frames, ease-out cubic. */
@@ -316,9 +316,9 @@ export class SpatialField {
       .filter((n): n is FieldNode => !!n && n.id !== focus.id)
       .filter((n) => !n.isAnchorNode && n.role !== "router" && n.role !== "hub" && n.role !== "artifact" && n.role !== "aggregate")
       .map((n) => ({ n, distance: Math.hypot(n.x - focus.x, n.y - focus.y) }))
-      .filter(({ n, distance }) => distance <= 132 || n.cell === focus.cell)
+      .filter(({ n, distance }) => distance <= 190 || n.cell === focus.cell)
       .sort((a, b) => a.distance - b.distance || a.n.id.localeCompare(b.n.id))
-      .slice(0, 12);
+      .slice(0, 36);
     for (const { n } of local) this.bloomTargets.add(n.id);
   }
 
@@ -506,8 +506,19 @@ export class SpatialField {
       // start radius, which is correct when radius means nothing. Here radius
       // MEANS distance from agreement, so each band starts at its own radius
       // and only overflows outward within itself.
+      const horizon = pools[ci].filter((n) => n.role === "artifact");
+      horizon.forEach((n, i) => {
+        const frac = horizon.length === 1 ? 0.5 : i / (horizon.length - 1);
+        n.rA = a0 - span + frac * 2 * span;
+        // Sources describe provenance, not truth. Seat them on a distinct
+        // outer horizon so their radius cannot be mistaken for disagreement.
+        n.rR = FIELD.outerR - 18;
+        n.rSpin = 0.72;
+      });
+
       const byBand = new Map<Band, FieldNode[]>();
       for (const n of pools[ci]) {
+        if (n.role === "artifact") continue;
         const arr = byBand.get(n.band);
         if (arr) arr.push(n);
         else byBand.set(n.band, [n]);

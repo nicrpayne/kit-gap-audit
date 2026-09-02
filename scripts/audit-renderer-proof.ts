@@ -748,7 +748,16 @@ console.log(`\n── X · SPATIAL ENGINE ────────────�
     "a critical finding is on the conflict band",
     bandOf("finding", { tier: "critical" }) === "conflict" && BANDS.conflict.r > BANDS.drift.r
   );
-  check("an external claim sits outside Signal's own record", BANDS.external.r > BANDS.evidence.r);
+  check(
+    "external trust does not invent disagreement distance",
+    bandOf("intel", {}) === "drift" && BANDS.external.r === BANDS.drift.r
+  );
+  const sourceHorizon = population.find((n) => n.role === "artifact");
+  const sourcePosition = sourceHorizon ? rpos.get(sourceHorizon.id) : null;
+  check(
+    "source artifacts sit on the orthogonal provenance horizon",
+    !!sourcePosition && Math.hypot(sourcePosition.x - origin.x, sourcePosition.y - origin.y) >= FIELD.outerR - 22
+  );
   check("Reality anchors the centre", anchorOf("reality", null) === CORE_ANCHOR);
 
   // THE MORPH STARTS WHERE THE FIELD IS — Rubric's retention contract.

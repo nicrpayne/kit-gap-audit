@@ -130,6 +130,7 @@ export default function CanvasAuditRenderer(props: AuditRendererProps) {
           viewport: size,
           level,
           opened,
+          hiddenIds: props.hiddenIds,
           selectedId,
           hoveredId,
           matches,
@@ -139,7 +140,7 @@ export default function CanvasAuditRenderer(props: AuditRendererProps) {
         sceneCache
       ),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [graph, layout, sceneCache, planKey, size.w, size.h, level, opened, selectedId, hoveredId, matches, soloNodes, swept]
+    [graph, layout, sceneCache, planKey, size.w, size.h, level, opened, props.hiddenIds, selectedId, hoveredId, matches, soloNodes, swept]
   );
 
   // ── THE SPATIAL FIELD ────────────────────────────────────────────────
@@ -171,7 +172,7 @@ export default function CanvasAuditRenderer(props: AuditRendererProps) {
 
   // The population changes when the graph or what is disclosed changes — not
   // when the camera moves.
-  const populationKey = `${scene.stats.drawn}|${scene.stats.opened}|${level}|${[...opened].sort().join(",")}|${selectedId ?? ""}|${
+  const populationKey = `${scene.stats.drawn}|${scene.stats.opened}|${level}|${[...opened].sort().join(",")}|${props.hiddenIds ? [...props.hiddenIds].sort().join(",") : ""}|${selectedId ?? ""}|${
     matches ? [...matches].sort().join(",") : ""
   }|${soloNodes ? [...soloNodes].sort().join(",") : ""}`;
   const rubricWorld = useMemo(
@@ -187,7 +188,7 @@ export default function CanvasAuditRenderer(props: AuditRendererProps) {
 
   useEffect(() => {
     const id = selectedId ?? hoveredId;
-    engineRef.current?.field.setFocus(id, scene.focus?.frame ?? (id ? [id] : []));
+    engineRef.current?.field.setFocus(id, scene.focus ? [...scene.focus.nodes.keys()] : (id ? [id] : []));
   }, [selectedId, hoveredId, scene.focus, rubricWorld]);
 
   useEffect(() => {
@@ -256,9 +257,8 @@ export default function CanvasAuditRenderer(props: AuditRendererProps) {
   // and cancelled eased flights after their first frame.
 
   useEffect(() => {
-    const engine = engineRef.current;
-    if (!engine) return;
-    engine.fitIfClipped(size);
+    // A layout switch changes the world beneath the camera; it does not seize
+    // the camera from the reader. Fit remains an explicit control.
     invalidateRef.current?.();
   }, [layoutMode, size]);
 
@@ -780,7 +780,7 @@ export default function CanvasAuditRenderer(props: AuditRendererProps) {
 
       <A11yMirror
         nodes={mirror}
-        label={`Signal Graph: ${rubricWorld.projectedCanonicalIds.size} of ${scene.stats.drawn} canonical nodes projected, ${scene.stats.opened} opened, ${rubricWorld.aggregateIds.size} aggregate regions, ${scene.stats.edges} relationships shown, ${level} zoom, ${layoutMode} layout`}
+        label={`Signal Graph: ${rubricWorld.projectedCanonicalIds.size} of ${graph.order} canonical nodes projected, ${scene.stats.opened} opened, ${rubricWorld.aggregateIds.size} aggregate regions, ${scene.stats.edges} relationships shown, ${level} zoom, ${layoutMode} layout`}
         onSelect={onPointerSelect ?? onSelect}
         onHover={onHover}
         onFocusNode={onFocusNode}

@@ -72,6 +72,7 @@ import {
 } from "@/components/audit/graphTokens";
 import { structuralWeb, aggregateBundles, type StructuralWeb, type WebBundle } from "./structuralWeb";
 import { anchorOf, bandOf, type Band } from "./spatial/anchors";
+import { SOURCE_KINDS } from "./sources";
 import {
   semanticFocus,
   edgeFocusClass,
@@ -346,6 +347,7 @@ export interface SceneInput {
   viewport: SceneViewport;
   level: ZoomLevel;
   opened: ReadonlySet<string>;
+  hiddenIds?: ReadonlySet<string>;
   selectedId: string | null;
   hoveredId: string | null;
   matches: ReadonlySet<string> | null;
@@ -538,7 +540,7 @@ export function buildScene(input: SceneInput, cached?: SceneCache): AuditScene {
 
   // ── WHAT IS DRAWN ────────────────────────────────────────────────────
   const drawnNodes: string[] = [];
-  for (const n of graph.nodes()) if (layout.has(n)) drawnNodes.push(n);
+  for (const n of graph.nodes()) if (layout.has(n) && !input.hiddenIds?.has(n)) drawnNodes.push(n);
 
   const halfW = viewport.w / 2;
   const halfH = viewport.h / 2;
@@ -614,6 +616,7 @@ export function buildScene(input: SceneInput, cached?: SceneCache): AuditScene {
     const cls = edgeFocusClass(a as { rel: string; relClass?: string | null });
     if (!cls) return;
     if (!openedNow.has(s) || !openedNow.has(t)) return;
+    if (input.hiddenIds?.has(s) || input.hiddenIds?.has(t)) return;
     if (!layout.has(s) || !layout.has(t)) return;
     if (a.basis === "external" && (cls === "contextual" || cls === "provenance")) {
       const reached =
@@ -841,9 +844,13 @@ export function buildScene(input: SceneInput, cached?: SceneCache): AuditScene {
     // DISCLOSURE, SEPARATELY FROM RESOLUTION. `identityOf` folds the two
     // together; the search lens's claim is about this one alone.
     const disclosed = openedNow.has(id) && (!historical || reached);
+    const sourceHorizon = SOURCE_KINDS.includes(attrs.kind);
     const identity = identityOf(
       attrs.kind,
-      disclosed,
+      // Source artifacts are the outer provenance horizon: real, graspable
+      // boundary objects even before their passages are disclosed. They are
+      // formed at far zoom but remain unnamed until the normal label tier.
+      disclosed || sourceHorizon,
       level,
       // A SUPERSEDED OBJECT IS STILL HISTORY AT EVERY DISTANCE. Zoom reveals
       // what a thing is; it does not un-supersede it.
@@ -966,8 +973,8 @@ export function buildScene(input: SceneInput, cached?: SceneCache): AuditScene {
       sectors,
       // The guides recede when there is a subject on the field, because then
       // they are the ground rather than the reading.
-      opacity: focus || soloNodes ? TIER.structure * 0.62 : TIER.structure,
-      bandLabelOpacity: TIER.structure * (focus || soloNodes ? 1.0 : 1.6),
+      opacity: focus || soloNodes ? 0.12 : 0.28,
+      bandLabelOpacity: focus || soloNodes ? 0.24 : 0.68,
       showBandNames: level !== "close",
     },
     webOpacity,
@@ -1114,4 +1121,5 @@ const BAND_LIST = [
   { id: "aligned", label: "Aligned", r: FIELD.alignedR },
   { id: "drift", label: "Drift", r: FIELD.driftR },
   { id: "conflict", label: "Conflict", r: FIELD.conflictR },
+  { id: "sources", label: "Sources", r: FIELD.outerR - 18 },
 ];

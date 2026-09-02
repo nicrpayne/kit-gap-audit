@@ -64,7 +64,7 @@ import GraphInspector from "./GraphInspector";
 import AggregateInspector from "./AggregateInspector";
 import FindingInspector from "./FindingInspector";
 import AuditReviewConsole, { type ConsoleMode } from "./AuditReviewConsole";
-import { zoomLevel, nextZoomLevel, nodeColor, KIND_LABEL, type ZoomLevel } from "./graphTokens";
+import { zoomLevel, nextZoomLevel, nodeColor, fieldLabel, KIND_LABEL, type ZoomLevel } from "./graphTokens";
 import { SignalSearchIndex, SEARCH_MATURITY, type SearchHit } from "@/lib/audit/searchIndex";
 import { revealFor, commitFor, disclosedSet } from "@/lib/audit/searchLens";
 import type { SearchFamily, SearchFieldName } from "@/lib/audit/searchDocument";
@@ -142,6 +142,10 @@ export default function AuditInstrument({ initialScopeId }: { initialScopeId?: s
   const [error, setError] = useState<string | null>(null);
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [detailsOpen, setDetailsOpen] = useState(false);
+  const [overviewOpen, setOverviewOpen] = useState(false);
+  const [copiedReference, setCopiedReference] = useState(false);
+  const [hiddenIds, setHiddenIds] = useState<Set<string>>(new Set());
   const [hoveredId, setHoveredId] = useState<string | null>(null);
   const [camera, setCameraState] = useState<Camera>(DEFAULT_CAMERA);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
@@ -645,6 +649,9 @@ export default function AuditInstrument({ initialScopeId }: { initialScopeId?: s
       // carry the field out from under the thing just clicked.
       stopTween();
       setSelectedId(id);
+      setDetailsOpen(false);
+      setOverviewOpen(false);
+      setCopiedReference(false);
       setResult(null);
       if (id === null) {
         if (moveCamera) {
@@ -706,6 +713,12 @@ export default function AuditInstrument({ initialScopeId }: { initialScopeId?: s
   // gone.
   const takeResult = useCallback(
     (id: string) => {
+      setHiddenIds((current) => {
+        if (!current.has(id)) return current;
+        const next = new Set(current);
+        next.delete(id);
+        return next;
+      });
       if (graph) {
         const need = commitFor(graph, id);
         // Written only when it would actually change something, so taking a
@@ -1212,6 +1225,31 @@ export default function AuditInstrument({ initialScopeId }: { initialScopeId?: s
   const expandableClusters = CLUSTER_ORDER.filter((c) =>
     graph.someNode((_n, a) => a.lane === c && a.slice !== "core")
   );
+  const selectedLabel = selectedAttrs
+    ? fieldLabel(selectedAttrs)
+    : selectedAggregate?.label ?? selectedFinding?.title ?? selectedId ?? "";
+  const selectedKind = selectedAttrs
+    ? (KIND_LABEL[selectedAttrs.kind] ?? selectedAttrs.kind)
+    : selectedAggregate
+      ? "Group"
+      : selectedFinding
+        ? "Finding"
+        : "";
+  const selectedSourceUrl = (() => {
+    if (!selectedAttrs) return null;
+    const candidates = [selectedAttrs.url, selectedAttrs.sourceUrl, selectedAttrs.externalUrl];
+    for (const value of candidates) {
+      if (typeof value !== "string") continue;
+      try {
+        const url = new URL(value);
+        if (url.protocol === "https:" || url.protocol === "http:") return url.toString();
+      } catch {
+        // A provider id/path is not a safe browser destination. Keep the
+        // action unavailable rather than guessing how to resolve it.
+      }
+    }
+    return null;
+  })();
 
   return (
     <div
@@ -1238,6 +1276,7 @@ export default function AuditInstrument({ initialScopeId }: { initialScopeId?: s
             setScopeId(e.target.value);
             select(null);
             setExpanded(new Set());
+            setHiddenIds(new Set());
             setCamera(homeCamera);
           }}
           aria-label="Project"
@@ -1268,6 +1307,30 @@ export default function AuditInstrument({ initialScopeId }: { initialScopeId?: s
 
         <div className="flex-1" />
 
+        {hiddenIds.size > 0 && (
+          <button
+            type="button"
+            onClick={() => setHiddenIds(new Set())}
+            className="rounded-md px-2.5 py-1.5 text-[11px] transition-colors hover:bg-white/[0.04]"
+            style={{ border: "1px solid var(--i-border-strong)", color: "var(--i-text-soft)" }}
+          >
+            Restore {hiddenIds.size} hidden
+          </button>
+        )}
+
+        <button
+          type="button"
+          onClick={() => {
+            setOverviewOpen((open) => !open);
+            setDetailsOpen(false);
+          }}
+          className="rounded-md px-2.5 py-1.5 text-[11px] transition-colors hover:bg-white/[0.04]"
+          style={{ border: "1px solid var(--i-border-strong)", color: overviewOpen ? "var(--i-signal)" : "var(--i-text-soft)" }}
+          aria-pressed={overviewOpen}
+        >
+          Project overview
+        </button>
+
         {payload.linearError && (
           <span className="text-[11px]" style={{ color: "var(--i-amber)" }} data-shoot="linear-error">
             Linear unread — execution cluster empty
@@ -1296,11 +1359,12 @@ export default function AuditInstrument({ initialScopeId }: { initialScopeId?: s
       </div>
 
       {/* ── BODY: the graph owns it ──────────────────────────────── */}
-      <div className="grid min-h-0 flex-1" style={{ gridTemplateColumns: "minmax(0,1fr) minmax(340px,376px)" }}>
-        <div className="relative min-h-0" data-shoot="graph-viewport">
+      <div className="relative min-h-0 flex-1">
+        <div className="relative h-full min-h-0" data-shoot="graph-viewport">
           <AuditGraphRenderer
             graph={graph}
             opened={opened}
+            hiddenIds={hiddenIds}
             selectedId={selectedId}
             hoveredId={hoveredId}
             soloNodes={soloNodes}
@@ -1323,7 +1387,10 @@ export default function AuditInstrument({ initialScopeId }: { initialScopeId?: s
 
           {/* SEARCH + CAMERA, floating over the field — the reference keeps
               its controls on the canvas rather than stealing a column. */}
-          <div className="pointer-events-none absolute right-3 top-3 w-[266px]">
+          <div
+            className="pointer-events-none absolute top-3 w-[266px] transition-[right] duration-200"
+            style={{ right: selectedId || overviewOpen ? 400 : 12 }}
+          >
             <div
               className="pointer-events-auto rounded-lg p-2.5"
               style={{ background: "color-mix(in srgb, var(--i-panel) 92%, transparent)", border: "1px solid var(--i-border-strong)" }}
@@ -1570,18 +1637,90 @@ export default function AuditInstrument({ initialScopeId }: { initialScopeId?: s
               inferred
             </span>
             <span className="text-[10px]" style={{ color: "var(--i-text-faint)" }}>
-              distance from centre = disagreement
+              rings = relationship to Reality · rim = sources
             </span>
           </div>
         </div>
 
-        {/* ── INSPECTOR ────────────────────────────────────────────── */}
-        <div
-          className="flex min-h-0 flex-col"
-          style={{ background: "var(--i-panel)", borderLeft: "1px solid var(--i-border)" }}
-          data-shoot="inspector"
-        >
-          {selectedFinding && truth ? (
+        {/* ── CONTEXTUAL OBJECT CARD ────────────────────────────────
+            The world remains full-canvas. Selection opens a Rubric-style
+            utility card over it; detailed Audit meaning is one explicit
+            step deeper and never replaces the map. */}
+        {(selectedId || overviewOpen) && (
+          <div
+            className={`absolute right-4 top-4 z-20 flex w-[min(376px,calc(100%-32px))] min-h-0 flex-col overflow-hidden rounded-2xl shadow-[0_24px_70px_rgba(0,0,0,0.48)] ${overviewOpen || detailsOpen ? "bottom-4" : ""}`}
+            style={{ background: "color-mix(in srgb, var(--i-panel) 96%, transparent)", border: "1px solid var(--i-border-strong)" }}
+            data-shoot="inspector"
+          >
+            {selectedId && (
+              <div className="shrink-0 border-b px-4 py-3" style={{ borderColor: "var(--i-border)" }}>
+                <div className="flex items-start gap-3">
+                  <div className="min-w-0 flex-1">
+                    <div className="i-label" style={{ color: "var(--i-text-faint)" }}>{selectedKind}</div>
+                    <div className="mt-1 line-clamp-2 text-[15px] font-medium leading-snug text-[var(--i-text)]">{selectedLabel}</div>
+                    <div className="mt-1 truncate text-[10px] text-[var(--i-text-faint)]">{selectedId}</div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => select(null, false)}
+                    className="rounded-md px-2 py-1 text-[18px] leading-none hover:bg-white/[0.05]"
+                    style={{ color: "var(--i-text-faint)" }}
+                    aria-label="Close object card"
+                  >
+                    ×
+                  </button>
+                </div>
+                <div className="mt-3 flex flex-wrap gap-1.5">
+                  <button type="button" onClick={() => setDetailsOpen((open) => !open)} className="rounded-md px-2.5 py-1.5 text-[10.5px] font-medium hover:bg-white/[0.05]" style={{ border: "1px solid var(--i-border-strong)", color: "var(--i-text)" }}>
+                    {detailsOpen ? "Hide details" : "View here"}
+                  </button>
+                  <button type="button" onClick={() => frameNode(selectedId)} className="rounded-md px-2.5 py-1.5 text-[10.5px] font-medium hover:bg-white/[0.05]" style={{ border: "1px solid var(--i-border-strong)", color: "var(--i-text)" }}>
+                    Fly to
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      void navigator.clipboard.writeText(selectedId).then(() => {
+                        setCopiedReference(true);
+                        window.setTimeout(() => setCopiedReference(false), 1400);
+                      });
+                    }}
+                    className="rounded-md px-2.5 py-1.5 text-[10.5px] font-medium hover:bg-white/[0.05]"
+                    style={{ border: "1px solid var(--i-border-strong)", color: "var(--i-text)" }}
+                  >
+                    {copiedReference ? "Copied" : "Copy reference"}
+                  </button>
+                  {selectedSourceUrl && (
+                    <button type="button" onClick={() => window.open(selectedSourceUrl, "_blank", "noopener,noreferrer")} className="rounded-md px-2.5 py-1.5 text-[10.5px] font-medium hover:bg-white/[0.05]" style={{ border: "1px solid var(--i-border-strong)", color: "var(--i-text)" }}>
+                      Open source
+                    </button>
+                  )}
+                  {soloable && (
+                    <button type="button" onClick={() => setTrace(!solo)} className="rounded-md px-2.5 py-1.5 text-[10.5px] font-medium hover:bg-white/[0.05]" style={{ border: "1px solid var(--i-source)", color: "var(--i-source)" }}>
+                      {solo ? "Exit trace" : "Trace provenance"}
+                    </button>
+                  )}
+                  {selectedAttrs && selectedAttrs.kind !== "reality" && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setHiddenIds((current) => new Set([...current, selectedId]));
+                        select(null, false);
+                      }}
+                      className="rounded-md px-2.5 py-1.5 text-[10.5px] font-medium hover:bg-white/[0.05]"
+                      style={{ border: "1px solid var(--i-border-strong)", color: "var(--i-text-soft)" }}
+                      title="Presentation only. This does not delete or change canonical data."
+                    >
+                      Hide from view
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
+
+          {overviewOpen && !selectedId ? (
+            <GraphOverview graph={graph} truth={truth} counts={counts} onSelect={select} />
+          ) : detailsOpen && selectedFinding && truth ? (
             <FindingInspector
               model={truth.model}
               finding={selectedFinding}
@@ -1589,7 +1728,7 @@ export default function AuditInstrument({ initialScopeId }: { initialScopeId?: s
               onSelect={(id) => select(gid.finding(id))}
               onEvidenceSolo={soloable ? () => setTrace(true) : null}
             />
-          ) : selectedAggregate ? (
+          ) : detailsOpen && selectedAggregate ? (
             <AggregateInspector
               graph={graph}
               aggregate={selectedAggregate}
@@ -1603,7 +1742,7 @@ export default function AuditInstrument({ initialScopeId }: { initialScopeId?: s
               // itself.
               onExpand={() => toggleNode(selectedAggregate.hub ?? selectedAggregate.id)}
             />
-          ) : selectedId && graph.hasNode(selectedId) ? (
+          ) : detailsOpen && selectedId && graph.hasNode(selectedId) ? (
             <GraphInspector
               graph={graph}
               nodeId={selectedId}
@@ -1615,15 +1754,9 @@ export default function AuditInstrument({ initialScopeId }: { initialScopeId?: s
               onEvidenceSolo={soloable ? setTrace : null}
               onExpandCluster={toggleCluster}
             />
-          ) : (
-            <GraphOverview
-              graph={graph}
-              truth={truth}
-              counts={counts}
-              onSelect={select}
-            />
-          )}
-        </div>
+          ) : null}
+          </div>
+        )}
       </div>
 
       {/* ── REVIEW CONSOLE — only for a Finding ───────────────────────
