@@ -40,3 +40,8 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# Local read-only production captures. Only the redacted topology mirror is
+# durable; canonical ids and free text must never enter this public repo.
+/artifacts/rubric-production-parity/production-jsa-graph.json
+/artifacts/rubric-production-parity/production-jsa-truth.json

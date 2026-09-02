@@ -1,0 +1,772 @@
+{
+  "source": "/tmp/signal-local-acceptance-fixture.json",
+  "graph": {
+    "nodes": 427,
+    "edges": 439,
+    "nodesByKind": {
+      "passage": 194,
+      "intel": 192,
+      "lane": 8,
+      "transcript": 5,
+      "finding": 4,
+      "requirement": 4,
+      "work": 4,
+      "person": 3,
+      "decision": 2,
+      "feature": 2,
+      "notion_page": 2,
+      "checkpoint": 1,
+      "decisionGate": 1,
+      "dependency": 1,
+      "figma_artifact": 1,
+      "intelligence": 1,
+      "reality": 1,
+      "scope": 1
+    },
+    "edgesByRel": {
+      "extracted_from": 194,
+      "cites": 192,
+      "evidenced_by": 12,
+      "attests": 11,
+      "supports": 7,
+      "concerns": 5,
+      "belongs_to": 4,
+      "allocated_to": 3,
+      "blocks": 2,
+      "implements": 2,
+      "intel_relation": 2,
+      "linked_to": 2,
+      "depends_on": 1,
+      "missing_from": 1,
+      "resolves": 1
+    },
+    "sourceArtifacts": 8,
+    "sourceMembership": {
+      "groups": 6,
+      "members": 194,
+      "groupSizes": [
+        95,
+        92,
+        4,
+        1,
+        1,
+        1
+      ]
+    },
+    "externalSubtypeMembership": {
+      "risk|current": 40,
+      "commitment|current": 39,
+      "decision|current": 38,
+      "availability_observation|current": 37,
+      "unknown|current": 37,
+      "decision|previous": 1
+    }
+  },
+  "disclosure": {
+    "opened": 27,
+    "selected": null,
+    "search": null,
+    "trace": null,
+    "expanded": 0,
+    "revealed": 0
+  },
+  "viewport": {
+    "width": 812,
+    "height": 628.75,
+    "devicePixelRatio": 2,
+    "zoomTier": "far"
+  },
+  "projection": {
+    "canonical": 55,
+    "aggregateRegions": 8,
+    "population": 63,
+    "aggregatesByKind": {
+      "type": 5,
+      "source": 3
+    },
+    "aggregateMembersByKind": {
+      "source": 191,
+      "type": 191
+    },
+    "byRole": {
+      "leaf": 36,
+      "aggregate": 10,
+      "artifact": 8,
+      "hub": 8,
+      "router": 1
+    },
+    "byTerritory": {
+      "delivery": 20,
+      "evidence": 19,
+      "external": 18,
+      "model": 6
+    },
+    "membersByTerritory": {
+      "delivery": 16,
+      "external": 12,
+      "evidence": 8
+    },
+    "parentGroups": 14,
+    "parentGroupSizes": [
+      8,
+      5,
+      4,
+      3,
+      2,
+      2,
+      2,
+      2,
+      2,
+      2,
+      1,
+      1,
+      1,
+      1
+    ]
+  },
+  "tuning": {
+    "groupPull": 0.22,
+    "groupPullFloor": 0.085,
+    "cellOwnershipFactor": 0.55
+  },
+  "direct": [
+    {
+      "steps": 0,
+      "pct": 44.44444444444444,
+      "byTerritory": {
+        "model": {
+          "members": 0,
+          "nearest": 0,
+          "pct": 100
+        },
+        "delivery": {
+          "members": 16,
+          "nearest": 8,
+          "pct": 50
+        },
+        "evidence": {
+          "members": 8,
+          "nearest": 2,
+          "pct": 25
+        },
+        "external": {
+          "members": 12,
+          "nearest": 6,
+          "pct": 50
+        }
+      }
+    },
+    {
+      "steps": 6,
+      "pct": 83.33333333333334,
+      "byTerritory": {
+        "model": {
+          "members": 0,
+          "nearest": 0,
+          "pct": 100
+        },
+        "delivery": {
+          "members": 16,
+          "nearest": 14,
+          "pct": 87.5
+        },
+        "evidence": {
+          "members": 8,
+          "nearest": 7,
+          "pct": 87.5
+        },
+        "external": {
+          "members": 12,
+          "nearest": 9,
+          "pct": 75
+        }
+      }
+    },
+    {
+      "steps": 15,
+      "pct": 91.66666666666666,
+      "byTerritory": {
+        "model": {
+          "members": 0,
+          "nearest": 0,
+          "pct": 100
+        },
+        "delivery": {
+          "members": 16,
+          "nearest": 14,
+          "pct": 87.5
+        },
+        "evidence": {
+          "members": 8,
+          "nearest": 8,
+          "pct": 100
+        },
+        "external": {
+          "members": 12,
+          "nearest": 11,
+          "pct": 91.66666666666666
+        }
+      }
+    },
+    {
+      "steps": 30,
+      "pct": 100,
+      "byTerritory": {
+        "model": {
+          "members": 0,
+          "nearest": 0,
+          "pct": 100
+        },
+        "delivery": {
+          "members": 16,
+          "nearest": 16,
+          "pct": 100
+        },
+        "evidence": {
+          "members": 8,
+          "nearest": 8,
+          "pct": 100
+        },
+        "external": {
+          "members": 12,
+          "nearest": 12,
+          "pct": 100
+        }
+      }
+    },
+    {
+      "steps": 60,
+      "pct": 100,
+      "byTerritory": {
+        "model": {
+          "members": 0,
+          "nearest": 0,
+          "pct": 100
+        },
+        "delivery": {
+          "members": 16,
+          "nearest": 16,
+          "pct": 100
+        },
+        "evidence": {
+          "members": 8,
+          "nearest": 8,
+          "pct": 100
+        },
+        "external": {
+          "members": 12,
+          "nearest": 12,
+          "pct": 100
+        }
+      }
+    },
+    {
+      "steps": 120,
+      "pct": 97.22222222222221,
+      "byTerritory": {
+        "model": {
+          "members": 0,
+          "nearest": 0,
+          "pct": 100
+        },
+        "delivery": {
+          "members": 16,
+          "nearest": 16,
+          "pct": 100
+        },
+        "evidence": {
+          "members": 8,
+          "nearest": 8,
+          "pct": 100
+        },
+        "external": {
+          "members": 12,
+          "nearest": 11,
+          "pct": 91.66666666666666
+        }
+      }
+    },
+    {
+      "steps": 240,
+      "pct": 94.44444444444444,
+      "byTerritory": {
+        "model": {
+          "members": 0,
+          "nearest": 0,
+          "pct": 100
+        },
+        "delivery": {
+          "members": 16,
+          "nearest": 15,
+          "pct": 93.75
+        },
+        "evidence": {
+          "members": 8,
+          "nearest": 7,
+          "pct": 87.5
+        },
+        "external": {
+          "members": 12,
+          "nearest": 12,
+          "pct": 100
+        }
+      }
+    },
+    {
+      "steps": 300,
+      "pct": 91.66666666666666,
+      "byTerritory": {
+        "model": {
+          "members": 0,
+          "nearest": 0,
+          "pct": 100
+        },
+        "delivery": {
+          "members": 16,
+          "nearest": 15,
+          "pct": 93.75
+        },
+        "evidence": {
+          "members": 8,
+          "nearest": 6,
+          "pct": 75
+        },
+        "external": {
+          "members": 12,
+          "nearest": 12,
+          "pct": 100
+        }
+      }
+    },
+    {
+      "steps": 360,
+      "pct": 91.66666666666666,
+      "byTerritory": {
+        "model": {
+          "members": 0,
+          "nearest": 0,
+          "pct": 100
+        },
+        "delivery": {
+          "members": 16,
+          "nearest": 15,
+          "pct": 93.75
+        },
+        "evidence": {
+          "members": 8,
+          "nearest": 6,
+          "pct": 75
+        },
+        "external": {
+          "members": 12,
+          "nearest": 12,
+          "pct": 100
+        }
+      }
+    },
+    {
+      "steps": 480,
+      "pct": 91.66666666666666,
+      "byTerritory": {
+        "model": {
+          "members": 0,
+          "nearest": 0,
+          "pct": 100
+        },
+        "delivery": {
+          "members": 16,
+          "nearest": 15,
+          "pct": 93.75
+        },
+        "evidence": {
+          "members": 8,
+          "nearest": 6,
+          "pct": 75
+        },
+        "external": {
+          "members": 12,
+          "nearest": 12,
+          "pct": 100
+        }
+      }
+    }
+  ],
+  "directSettled": {
+    "steps": 306,
+    "membersWithHub": 36,
+    "nearestOwnHub": 33,
+    "nearestOwnHubPct": 91.66666666666666,
+    "largestTerritoryAreaShare": 0.2796807449285002,
+    "byTerritory": {
+      "model": {
+        "members": 0,
+        "nearest": 0,
+        "pct": 100
+      },
+      "delivery": {
+        "members": 16,
+        "nearest": 15,
+        "pct": 93.75
+      },
+      "evidence": {
+        "members": 8,
+        "nearest": 6,
+        "pct": 75
+      },
+      "external": {
+        "members": 12,
+        "nearest": 12,
+        "pct": 100
+      }
+    }
+  },
+  "morph": [
+    {
+      "steps": 0,
+      "pct": 58.333333333333336,
+      "byTerritory": {
+        "model": {
+          "members": 0,
+          "nearest": 0,
+          "pct": 100
+        },
+        "delivery": {
+          "members": 16,
+          "nearest": 10,
+          "pct": 62.5
+        },
+        "evidence": {
+          "members": 8,
+          "nearest": 5,
+          "pct": 62.5
+        },
+        "external": {
+          "members": 12,
+          "nearest": 6,
+          "pct": 50
+        }
+      }
+    },
+    {
+      "steps": 6,
+      "pct": 88.88888888888889,
+      "byTerritory": {
+        "model": {
+          "members": 0,
+          "nearest": 0,
+          "pct": 100
+        },
+        "delivery": {
+          "members": 16,
+          "nearest": 14,
+          "pct": 87.5
+        },
+        "evidence": {
+          "members": 8,
+          "nearest": 7,
+          "pct": 87.5
+        },
+        "external": {
+          "members": 12,
+          "nearest": 11,
+          "pct": 91.66666666666666
+        }
+      }
+    },
+    {
+      "steps": 15,
+      "pct": 94.44444444444444,
+      "byTerritory": {
+        "model": {
+          "members": 0,
+          "nearest": 0,
+          "pct": 100
+        },
+        "delivery": {
+          "members": 16,
+          "nearest": 14,
+          "pct": 87.5
+        },
+        "evidence": {
+          "members": 8,
+          "nearest": 8,
+          "pct": 100
+        },
+        "external": {
+          "members": 12,
+          "nearest": 12,
+          "pct": 100
+        }
+      }
+    },
+    {
+      "steps": 30,
+      "pct": 100,
+      "byTerritory": {
+        "model": {
+          "members": 0,
+          "nearest": 0,
+          "pct": 100
+        },
+        "delivery": {
+          "members": 16,
+          "nearest": 16,
+          "pct": 100
+        },
+        "evidence": {
+          "members": 8,
+          "nearest": 8,
+          "pct": 100
+        },
+        "external": {
+          "members": 12,
+          "nearest": 12,
+          "pct": 100
+        }
+      }
+    },
+    {
+      "steps": 60,
+      "pct": 97.22222222222221,
+      "byTerritory": {
+        "model": {
+          "members": 0,
+          "nearest": 0,
+          "pct": 100
+        },
+        "delivery": {
+          "members": 16,
+          "nearest": 16,
+          "pct": 100
+        },
+        "evidence": {
+          "members": 8,
+          "nearest": 8,
+          "pct": 100
+        },
+        "external": {
+          "members": 12,
+          "nearest": 11,
+          "pct": 91.66666666666666
+        }
+      }
+    },
+    {
+      "steps": 120,
+      "pct": 100,
+      "byTerritory": {
+        "model": {
+          "members": 0,
+          "nearest": 0,
+          "pct": 100
+        },
+        "delivery": {
+          "members": 16,
+          "nearest": 16,
+          "pct": 100
+        },
+        "evidence": {
+          "members": 8,
+          "nearest": 8,
+          "pct": 100
+        },
+        "external": {
+          "members": 12,
+          "nearest": 12,
+          "pct": 100
+        }
+      }
+    },
+    {
+      "steps": 240,
+      "pct": 97.22222222222221,
+      "byTerritory": {
+        "model": {
+          "members": 0,
+          "nearest": 0,
+          "pct": 100
+        },
+        "delivery": {
+          "members": 16,
+          "nearest": 15,
+          "pct": 93.75
+        },
+        "evidence": {
+          "members": 8,
+          "nearest": 8,
+          "pct": 100
+        },
+        "external": {
+          "members": 12,
+          "nearest": 12,
+          "pct": 100
+        }
+      }
+    },
+    {
+      "steps": 300,
+      "pct": 100,
+      "byTerritory": {
+        "model": {
+          "members": 0,
+          "nearest": 0,
+          "pct": 100
+        },
+        "delivery": {
+          "members": 16,
+          "nearest": 16,
+          "pct": 100
+        },
+        "evidence": {
+          "members": 8,
+          "nearest": 8,
+          "pct": 100
+        },
+        "external": {
+          "members": 12,
+          "nearest": 12,
+          "pct": 100
+        }
+      }
+    },
+    {
+      "steps": 360,
+      "pct": 100,
+      "byTerritory": {
+        "model": {
+          "members": 0,
+          "nearest": 0,
+          "pct": 100
+        },
+        "delivery": {
+          "members": 16,
+          "nearest": 16,
+          "pct": 100
+        },
+        "evidence": {
+          "members": 8,
+          "nearest": 8,
+          "pct": 100
+        },
+        "external": {
+          "members": 12,
+          "nearest": 12,
+          "pct": 100
+        }
+      }
+    },
+    {
+      "steps": 480,
+      "pct": 100,
+      "byTerritory": {
+        "model": {
+          "members": 0,
+          "nearest": 0,
+          "pct": 100
+        },
+        "delivery": {
+          "members": 16,
+          "nearest": 16,
+          "pct": 100
+        },
+        "evidence": {
+          "members": 8,
+          "nearest": 8,
+          "pct": 100
+        },
+        "external": {
+          "members": 12,
+          "nearest": 12,
+          "pct": 100
+        }
+      }
+    }
+  ],
+  "morphSettled": {
+    "steps": 284,
+    "membersWithHub": 36,
+    "nearestOwnHub": 36,
+    "nearestOwnHubPct": 100,
+    "largestTerritoryAreaShare": 0.2796807449285002,
+    "byTerritory": {
+      "model": {
+        "members": 0,
+        "nearest": 0,
+        "pct": 100
+      },
+      "delivery": {
+        "members": 16,
+        "nearest": 16,
+        "pct": 100
+      },
+      "evidence": {
+        "members": 8,
+        "nearest": 8,
+        "pct": 100
+      },
+      "external": {
+        "members": 12,
+        "nearest": 12,
+        "pct": 100
+      }
+    }
+  },
+  "cadences": [
+    {
+      "name": "hz120",
+      "calls": 284,
+      "elapsed": 2365.7199999999907,
+      "pct": 100,
+      "positionDigest": "9a329bfed69a92ebcce98559e2978420deda1bd03eab567cfece34ce3ea97a86"
+    },
+    {
+      "name": "hz60",
+      "calls": 284,
+      "elapsed": 4734.280000000015,
+      "pct": 100,
+      "positionDigest": "9a329bfed69a92ebcce98559e2978420deda1bd03eab567cfece34ce3ea97a86"
+    },
+    {
+      "name": "hz30",
+      "calls": 142,
+      "elapsed": 4732.859999999992,
+      "pct": 100,
+      "positionDigest": "9a329bfed69a92ebcce98559e2978420deda1bd03eab567cfece34ce3ea97a86"
+    },
+    {
+      "name": "jitter",
+      "calls": 284,
+      "elapsed": 4757,
+      "pct": 100,
+      "positionDigest": "9a329bfed69a92ebcce98559e2978420deda1bd03eab567cfece34ce3ea97a86"
+    }
+  ],
+  "uniqueCadencePositionDigests": 1,
+  "tenRuns": {
+    "percentages": [
+      100,
+      100,
+      100,
+      100,
+      100,
+      100,
+      100,
+      100,
+      100,
+      100
+    ],
+    "uniquePositionDigests": 1,
+    "largestTerritoryAreaShares": [
+      0.2796807449285002,
+      0.2796807449285002,
+      0.2796807449285002,
+      0.2796807449285002,
+      0.2796807449285002,
+      0.2796807449285002,
+      0.2796807449285002,
+      0.2796807449285002,
+      0.2796807449285002,
+      0.2796807449285002
+    ]
+  }
+}

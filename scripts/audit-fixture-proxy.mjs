@@ -13,7 +13,12 @@ const graphPath = process.env.RENDERER_GRAPH ?? "/tmp/signal-renderer-graph.json
 const fixture = JSON.parse(readFileSync(graphPath, "utf8"));
 const { truth, ...graphPayload } = fixture;
 const graph = Buffer.from(JSON.stringify(graphPayload));
-const truthPayload = truth ? Buffer.from(JSON.stringify(truth)) : null;
+const truthPath = process.env.RENDERER_TRUTH;
+const truthPayload = truthPath
+  ? Buffer.from(readFileSync(truthPath, "utf8"))
+  : truth
+    ? Buffer.from(JSON.stringify(truth))
+    : null;
 const hopByHop = new Set([
   "connection",
   "content-length",
