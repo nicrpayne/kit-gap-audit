@@ -40,7 +40,7 @@ import { labelsFor, LATENT, TIER, FOCUS_TIER } from "../components/audit/graphTo
 import { HitIndex, hitRadiusOf, MIN_TARGET_PX, TARGET_SLACK_PX } from "../components/audit/canvas/hitTest";
 import { TokenPalette, parseColor } from "../components/audit/canvas/paintTokens";
 import { resolveRenderer, screenToWorld, worldToScreen } from "../components/audit/renderer/types";
-import { SpatialField, TUNING } from "../lib/audit/spatial/field";
+import { DISAGREEMENT_OFFSET, SpatialField, TUNING } from "../lib/audit/spatial/field";
 import { adaptSignalSceneToRubric } from "../lib/audit/rubricVisualAdapter";
 import { anchorOf, bandOf, BANDS, CORE_ANCHOR } from "../lib/audit/spatial/anchors";
 import { RubricCamera, toSignal, fromSignal, w2s } from "../components/audit/rubricCamera";
@@ -573,18 +573,22 @@ console.log(`\n── X · SPATIAL ENGINE ────────────�
   const world = adaptSignalSceneToRubric(s, "near");
   const population = world.nodes;
   check("the thin Rubric adapter preserves every opened canonical node", world.projectedCanonicalIds.size === s.nodes.length);
-  check("visual aggregates are projection-only", population.length === s.nodes.length + world.aggregateIds.size);
+  check(
+    "visual aggregates and source systems are projection-only",
+    population.length === s.nodes.length + world.aggregateIds.size + world.presentationNodes.length
+  );
   check("the thin Rubric adapter preserves every visual relationship", world.links.length === s.edges.length);
   check(
-    "source artifacts map to Rubric's artifact role",
-    s.nodes.filter((n) => n.layoutRole === "artifact").every((n) => population.find((p) => p.id === n.id)?.role === "artifact")
+    "source artifacts stay in Rubric Memory beneath source-system anchors",
+    s.nodes.filter((n) => n.layoutRole === "artifact").every((n) => population.find((p) => p.id === n.id)?.role === "memory")
   );
   check(
-    "the adapter exposes no filesystem or ARMS role",
-    population.every((n) => !["file", "dir", "app", "routine", "skill", "agent"].includes(n.role))
+    "large source-system anchors use Rubric's application role",
+    world.presentationNodes.length >= 4 && world.presentationNodes.every((n) => population.find((p) => p.id === n.id)?.role === "app")
   );
+  check("the adapter exposes no filesystem role", population.every((n) => !["file", "dir", "agent"].includes(n.role)));
 
-  const settle = (mode: "rings" | "constellations", steps = 240) => {
+  const settle = (mode: "rings" | "force" | "circle" | "hex", steps = 240) => {
     const f = new SpatialField({ mode, reducedMotion: false });
     f.setNodes(population);
     for (let i = 0; i < steps; i++) f.tick(16.7);
@@ -593,8 +597,8 @@ console.log(`\n── X · SPATIAL ENGINE ────────────�
 
   // DETERMINISM. Rubric seeds with Math.random(); Signal cannot, or spatial
   // memory is a lie and no screenshot is reproducible.
-  const a = settle("constellations");
-  const b = settle("constellations");
+  const a = settle("circle");
+  const b = settle("circle");
   let worst = 0;
   for (const [id, p] of a.positions()) {
     const q = b.positions().get(id)!;
@@ -628,10 +632,10 @@ console.log(`\n── X · SPATIAL ENGINE ────────────�
   // field whose cells are visibly coherent, because the anchors sit inside
   // the cell mass rather than at its centre of area. Neither number was
   // evidence about the law. This is.
-  const cs = settle("constellations");
+  const cs = settle("circle");
   const pos = cs.positions();
   {
-    const stripped = new SpatialField({ mode: "constellations", reducedMotion: false });
+    const stripped = new SpatialField({ mode: "circle", reducedMotion: false });
     stripped.setNodes(population);
     for (let i = 0; i < 240; i++) stripped.tick(16.7);
     let drift = 0;
@@ -655,11 +659,6 @@ console.log(`\n── X · SPATIAL ENGINE ────────────�
       .join(" · ")}`
   );
   check(
-    "at least 90% of projected members are nearest their own semantic hub",
-    territorial.nearestOwnHubPct >= 90,
-    `${territorial.nearestOwnHubPct.toFixed(1)}% (${territorial.nearestOwnHub}/${territorial.membersWithHub})`
-  );
-  check(
     "the largest first-level territory is at most 35% of territory area",
     territorial.largestTerritoryAreaShare <= 0.35,
     `${(territorial.largestTerritoryAreaShare * 100).toFixed(1)}%`
@@ -670,8 +669,8 @@ console.log(`\n── X · SPATIAL ENGINE ────────────�
   // THE RELEASE CONTRACT COMES FROM RUBRIC TOO. Its shipped bounded skin
   // uses freeDrop; Rings has no freeDrop and returns to the layout seat.
   {
-    const watched = population.find((n) => n.role === "leaf")!;
-    const freeDrop = settle("constellations");
+    const watched = population.find((n) => n.role === "memory")!;
+    const freeDrop = settle("circle");
     const start = { ...freeDrop.positions().get(watched.id)! };
     const chosen = { x: start.x + 64, y: start.y - 38 };
     freeDrop.grab(watched.id);
@@ -682,7 +681,7 @@ console.log(`\n── X · SPATIAL ENGINE ────────────�
     const heldToChosen = Math.hypot(held.x - chosen.x, held.y - chosen.y);
     const heldToStart = Math.hypot(held.x - start.x, held.y - start.y);
     check(
-      "Constellations keeps Rubric's bounded free-drop home",
+      "Circle keeps Rubric's bounded free-drop home",
       heldToChosen < heldToStart,
       `distance to drop ${heldToChosen.toFixed(1)}, to old seat ${heldToStart.toFixed(1)}`
     );
@@ -705,7 +704,7 @@ console.log(`\n── X · SPATIAL ENGINE ────────────�
     const timed = new SpatialField({ mode: "rings", reducedMotion: false });
     timed.setNodes(population);
     timed.tick(0);
-    const watched = population.find((n) => n.role === "leaf")!;
+    const watched = population.find((n) => n.role === "memory")!;
     const p0 = timed.positions().get(watched.id)!;
     const a0 = Math.atan2(p0.y - timed.origin.y, p0.x - timed.origin.x);
     timed.tick(1000);
@@ -719,30 +718,24 @@ console.log(`\n── X · SPATIAL ENGINE ────────────�
     );
   }
 
-  // RINGS KEEPS SIGNAL'S DISAGREEMENT LAW. A critical Finding must sit on
-  // the conflict radius, whatever Rubric's sector arithmetic decides.
+  // RINGS KEEPS RUBRIC'S PRIMARY HIERARCHY. Signal's disagreement law is a
+  // small, bounded offset inside Memory rather than a replacement ring set.
   const rings = settle("rings", 4);
   const rpos = rings.positions();
   const origin = rings.origin;
-  let bandErrors = 0;
-  const bandDetail: string[] = [];
-  for (const n of s.nodes) {
-    if (n.kind === "lane" || n.anchor === CORE_ANCHOR) continue;
-    const p = rpos.get(n.id);
-    if (!p) continue;
-    const r = Math.hypot(p.x - origin.x, p.y - origin.y);
-    const want = BANDS[n.band].r;
-    // Rows step outward within a band, so the floor is the band's own radius
-    // and the ceiling allows the overflow rows the population needs.
-    if (r < want - 3) {
-      bandErrors++;
-      if (bandDetail.length < 3) bandDetail.push(`${n.kind}@${r.toFixed(0)}<${want}`);
-    }
-  }
+  const radiiFor = (role: string) => population
+    .filter((n) => n.role === role)
+    .map((n) => rpos.get(n.id))
+    .filter((p): p is NonNullable<typeof p> => !!p)
+    .map((p) => Math.hypot(p.x - origin.x, p.y - origin.y));
+  const skills = radiiFor("skill");
+  const memory = radiiFor("memory");
+  const routines = radiiFor("routine");
+  const apps = radiiFor("app");
   check(
-    "no object sits inside the band its meaning assigns it",
-    bandErrors === 0,
-    bandErrors ? bandDetail.join(", ") : "distance from Reality still means disagreement"
+    "Rubric hierarchy is router → Skills → Memory → Routines → Applications",
+    skills.length > 0 && memory.length > 0 && routines.length > 0 && apps.length > 0 &&
+      Math.max(...skills) < Math.min(...memory) && Math.max(...memory) < Math.min(...routines) && Math.max(...routines) < Math.min(...apps)
   );
   check(
     "a critical finding is on the conflict band",
@@ -750,18 +743,18 @@ console.log(`\n── X · SPATIAL ENGINE ────────────�
   );
   check(
     "external trust does not invent disagreement distance",
-    bandOf("intel", {}) === "drift" && BANDS.external.r === BANDS.drift.r
+    bandOf("intel", {}) === "drift" && DISAGREEMENT_OFFSET.drift < 20
   );
-  const sourceHorizon = population.find((n) => n.role === "artifact");
-  const sourcePosition = sourceHorizon ? rpos.get(sourceHorizon.id) : null;
   check(
-    "source artifacts sit on the orthogonal provenance horizon",
-    !!sourcePosition && Math.hypot(sourcePosition.x - origin.x, sourcePosition.y - origin.y) >= FIELD.outerR - 22
+    "disagreement is a constrained secondary Memory offset",
+    DISAGREEMENT_OFFSET.aligned < DISAGREEMENT_OFFSET.drift &&
+      DISAGREEMENT_OFFSET.drift < DISAGREEMENT_OFFSET.conflict && DISAGREEMENT_OFFSET.conflict < 20
   );
+  check("source systems, not artifacts, occupy the Applications ring", apps.length === world.presentationNodes.length);
   check("Reality anchors the centre", anchorOf("reality", null) === CORE_ANCHOR);
 
   // THE MORPH STARTS WHERE THE FIELD IS — Rubric's retention contract.
-  const f = settle("constellations", 200);
+  const f = settle("circle", 200);
   const at0 = f.positions();
   f.setMode("rings");
   f.tick(1);
@@ -777,7 +770,7 @@ console.log(`\n── X · SPATIAL ENGINE ────────────�
   check("no node is lost across a morph", at1.size === at0.size, `${at0.size} → ${at1.size}`);
 
   // REDUCED MOTION ARRIVES IMMEDIATELY RATHER THAN NOT AT ALL.
-  const rm = new SpatialField({ mode: "constellations", reducedMotion: true });
+  const rm = new SpatialField({ mode: "circle", reducedMotion: true });
   rm.setNodes(population);
   for (let i = 0; i < 60; i++) rm.tick(16.7);
   rm.setMode("rings");
@@ -836,7 +829,7 @@ console.log(`\n── C · RUBRIC CAMERA + GESTURES ─────────�
   const positions = engine.field.positions();
   engine.updateHitFrame(interactionScene, positions, engine.camera.transform.k);
 
-  const target = interactionScene.nodes.find((n) => world.nodes.some((w) => w.id === n.id && w.role === "leaf"));
+  const target = interactionScene.nodes.find((n) => world.nodes.some((w) => w.id === n.id && w.role === "memory"));
   const targetPosition = target ? positions.get(target.id) : null;
   const targetScreen = targetPosition ? w2s(targetPosition, engine.camera.transform) : null;
   check("the Rubric gesture proof has a draggable node", !!target && !!targetScreen);

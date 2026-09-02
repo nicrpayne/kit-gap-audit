@@ -36,6 +36,8 @@ import {
   forceCollide,
   forceX,
   forceY,
+  forceRadial,
+  forceCenter,
   type Simulation,
 } from "d3-force";
 import { FIELD } from "../graphLayout";
@@ -203,6 +205,13 @@ export const TUNING = {
   returnMs: 600,
 } as const;
 
+/** Signal's sole semantic addition to Rubric Memory geometry. */
+export const DISAGREEMENT_OFFSET = {
+  aligned: 0,
+  drift: 6,
+  conflict: 12,
+} as const;
+
 /** Deterministic, id-derived, in [0,1). Replaces Rubric's `Math.random()`. */
 function hash01(id: string, salt: number): number {
   let h = 2166136261 ^ salt;
@@ -287,9 +296,12 @@ export class SpatialField {
       for (const node of this.order) occupied = Math.max(occupied, Math.hypot(node.x, node.y) + node.r);
       return Math.max(180, Math.min(this.boundR || 300, occupied + 28));
     }
-    let r: number = FIELD.outerR;
+    // Fit the geometry Rubric actually produced.  The old Signal field's
+    // fixed 706-unit extent made a faithful 320-unit Rubric world occupy less
+    // than half the browser and was itself a parallel coordinate authority.
+    let r = 0;
     for (const node of this.order) r = Math.max(r, node.rR + node.r + 18);
-    return r;
+    return Math.max(180, r);
   }
 
   /** The exact guides produced by Rubric's ring geometry this epoch. */
@@ -437,6 +449,13 @@ export class SpatialField {
     this.order = [...this.nodes.values()];
     this.ringsKey = "";
     if (this.mode !== "rings") this.buildSim(0.9);
+    else {
+      // Camera Fit may run before the first animation frame. Rubric's target
+      // cache is therefore populated at ingest so Fit reads the real world,
+      // never zeroed placeholder radii or Signal's retired extent.
+      this.computeRingTargets();
+      this.ringsKey = this.ringsCacheKey();
+    }
   }
 
   /**
@@ -552,7 +571,12 @@ export class SpatialField {
         for (let j = 0; j < count; j++) {
           const n = pool[idx + j];
           const frac = count === 1 ? 0.5 : j / (count - 1);
-          const disagreement = n.band === "conflict" ? 12 : n.band === "drift" || n.band === "external" ? 6 : 0;
+          const disagreement =
+            n.band === "conflict"
+              ? DISAGREEMENT_OFFSET.conflict
+              : n.band === "drift" || n.band === "external"
+                ? DISAGREEMENT_OFFSET.drift
+                : DISAGREEMENT_OFFSET.aligned;
           n.rA = a0 - span + frac * 2 * span;
           n.rR = r + disagreement;
           n.rSpin = 1;
@@ -686,6 +710,12 @@ export class SpatialField {
     // shrink the whole instrument into a thumbnail.
     const R = Math.max(FIELD.outerR * 0.9, 68 * Math.sqrt(nodes.length / Math.PI));
     this.boundR = R;
+    const bounded = this.mode === "circle" || this.mode === "hex" || this.mode === "constellations";
+    const apothem = R * Math.cos(Math.PI / 6);
+    const hexMaxR = (angle: number) => {
+      const t = ((angle % (Math.PI / 3)) + Math.PI / 3) % (Math.PI / 3);
+      return apothem / Math.cos(t - Math.PI / 6);
+    };
 
     const territoryCentre: Record<AuditTerritory, { x: number; y: number; r: number }> = {
       model: { x: 0, y: 0, r: R * 0.22 },
@@ -735,6 +765,17 @@ export class SpatialField {
       n.bTy = target.y + Math.sin(angle) * jitter;
     }
 
+    // Rubric Circle/Hex: applications form the silhouette itself. Their
+    // stable, large anchors are not pulled around by their canonical links.
+    const applications = nodes.filter((n) => n.role === "app").sort((a, b) => a.id.localeCompare(b.id));
+    applications.forEach((n, i) => {
+      if (n.userHome) return;
+      const angle = -Math.PI / 2 + (i / Math.max(1, applications.length)) * Math.PI * 2;
+      const edge = (this.mode === "hex" ? hexMaxR(angle) : R) - n.r - 8;
+      n.bTx = Math.cos(angle) * edge;
+      n.bTy = Math.sin(angle) * edge;
+    });
+
     // Reality is the sole router and the sole fixed node.
     const reality = nodes.find((n) => n.role === "router");
     if (reality) {
@@ -773,6 +814,18 @@ export class SpatialField {
       .alphaDecay(TUNING.alphaDecay)
       .velocityDecay(TUNING.velocityDecay);
 
+    if (this.mode === "force") {
+      // Direct Rubric Force hierarchy (`_core.js` 693-706), with Signal roles
+      // substituted at the adapter boundary and no unsupported edge spring.
+      sim.force(
+        "rubricRadial",
+        forceRadial<FieldNode>((d) =>
+          d.role === "router" ? 0 : d.role === "skill" ? 150 : d.role === "hub" ? 330 : d.role === "routine" ? 440 : d.role === "app" ? 560 : 300
+        ).strength((d) => d.fx != null ? 0 : d.role === "app" ? 0.68 : d.role === "routine" ? 0.6 : d.role === "skill" ? 0.28 : 0.08)
+      );
+      sim.force("center", forceCenter(0, 0));
+    }
+
     // Nested group pull. Passages pull to their own artifact; external claims
     // pull to their subtype/currentness aggregate; ordinary delivery objects
     // pull to their semantic lane hub. No generic relationship is consulted.
@@ -790,7 +843,7 @@ export class SpatialField {
     // First-level territory bounds keep any one cloud from consuming the
     // field. Equal maximum radii cap the largest territory below 35% of the
     // four-territory area while preserving organic motion inside each cell.
-    sim.force("territories", () => {
+    if (bounded) sim.force("territories", () => {
       for (const d of nodes) {
         if (d.fx != null || d.pin || d.userHome) continue;
         const t = territoryCentre[d.territory];
@@ -806,11 +859,11 @@ export class SpatialField {
       }
     });
 
-    sim.force("bound", () => {
+    if (bounded) sim.force("bound", () => {
       for (const d of nodes) {
         if (d.fx != null || d.pin) continue;
         const distance = Math.hypot(d.x, d.y);
-        const limit = R - d.r - 6;
+        const limit = (this.mode === "hex" ? hexMaxR(Math.atan2(d.y, d.x)) : R) - d.r - 6;
         if (distance > limit && distance > 0) {
           const f = (limit / distance - 1) * TUNING.boundStrength;
           d.vx += d.x * f;
@@ -909,9 +962,9 @@ export class SpatialField {
   /**
    * Release.
    *
-   * Rubric's shipped skin enables `freeDrop` in bounded Circle/Hex layouts,
-   * which is the source of Constellations. Rings still pulls a released node
-   * back because radial position carries Signal's disagreement meaning.
+   * Rubric's shipped skin enables `freeDrop` only in bounded Circle/Hex
+   * layouts. Rings and Force pull a released node back into their structural
+   * fields; Rings additionally protects Signal's disagreement coordinate.
    */
   release(id: string): void {
     const n = this.nodes.get(id);
@@ -919,7 +972,8 @@ export class SpatialField {
     n.pin = null;
     n.fx = null;
     n.fy = null;
-    if (this.mode !== "rings" && n.role !== "router") {
+    const freeDrop = this.mode === "circle" || this.mode === "hex" || this.mode === "constellations";
+    if (freeDrop && n.role !== "router") {
       n.bTx = n.x;
       n.bTy = n.y;
       n.userHome = true;
