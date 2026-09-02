@@ -521,9 +521,9 @@ function paintFog(
   ctx.globalAlpha = 1;
 }
 
-/** Signal's structural guides — the disagreement rings, or the bounded
-    silhouette the constellation physics is using. Rubric's `drawArmsGuides`
-    and `drawBoundGuide` occupy the same slot in `underLayer()`. */
+/** Rubric's structural guides, translated to Signal names. The two outer
+    circles deliberately retain Rubric's vivid Routines/Applications
+    treatment; they are world structure, not low-contrast decoration. */
 function paintGuides(
   ctx: CanvasRenderingContext2D,
   scene: AuditScene,
@@ -551,8 +551,24 @@ function paintGuides(
     return;
   }
 
+  const outerGuides = input.ringGuides.filter((ring) => ring.id === "attention" || ring.id === "source-systems");
+  for (const ring of outerGuides) {
+    const sourceRing = ring.id === "source-systems";
+    ctx.strokeStyle = palette.css(sourceRing ? "var(--i-source)" : "var(--i-violet)");
+    // Rubric keeps these at roughly two screen pixels at Fit. The /k term
+    // preserves that weight through zoom without letting the circle become a
+    // hairline, while the small world-space term keeps close zoom natural.
+    ctx.lineWidth = (sourceRing ? 2.15 : 1.8) / k + 0.2;
+    ctx.globalAlpha = Math.max(sourceRing ? 0.58 : 0.5, s.opacity * (sourceRing ? 0.82 : 0.72));
+    ctx.beginPath();
+    ctx.arc(FIELD.cx, FIELD.cy, ring.r, 0, Math.PI * 2);
+    ctx.stroke();
+    stats.calls++;
+  }
+
   const byMaterial = new Map<string, { path: Path2D; dash: number[]; opacity: number }>();
   for (const ring of input.ringGuides) {
+    if (ring.id === "attention" || ring.id === "source-systems") continue;
     const dash = ring.id === "project-world" ? [2 / k, 5 / k] : [];
     const opacity = ring.id === "project-world" ? 0.32 : 0.58;
     const key = `${dash.join(",")}|${opacity}`;
