@@ -224,6 +224,16 @@ export default function AuditInstrument({ initialScopeId }: { initialScopeId?: s
       rather than off the last render. */
   const getCamera = useCallback(() => cameraRef.current, []);
 
+  // Canvas camera flights are owned and advanced by Rubric. Publishing one
+  // reached frame back into React is observation, not a new hand gesture.
+  // Sending those frames through `setCamera` called `stopTween`, which in
+  // turn cancelled Rubric's flight after its first frame. Keep the product
+  // mirror current without reaching back into the spatial authority.
+  const publishSpatialCamera = useCallback((next: Camera) => {
+    cameraRef.current = next;
+    setCameraState(next);
+  }, []);
+
   const flyCamera = useCallback(
     (to: Camera) => {
       stopTween();
@@ -1299,6 +1309,7 @@ export default function AuditInstrument({ initialScopeId }: { initialScopeId?: s
             level={level}
             getCamera={getCamera}
             onCamera={setCamera}
+            onCameraPublished={publishSpatialCamera}
             onSelect={select}
             onPointerSelect={selectInPlace}
             onHover={setHoveredId}

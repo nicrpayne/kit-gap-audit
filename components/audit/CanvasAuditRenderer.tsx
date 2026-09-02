@@ -51,6 +51,8 @@ declare global {
       ambient: boolean;
       layout: LayoutMode;
       camera: "rubric";
+      cameraFlying?: boolean;
+      cameraScale?: number;
       geometry?: {
         projectedCanonical: number;
         aggregateRegions: number;
@@ -84,6 +86,7 @@ export default function CanvasAuditRenderer(props: AuditRendererProps) {
     level,
     getCamera,
     onCamera,
+    onCameraPublished,
     onSelect,
     onPointerSelect,
     onHover,
@@ -94,6 +97,10 @@ export default function CanvasAuditRenderer(props: AuditRendererProps) {
     onViewport,
     onSpatialAuthority,
   } = props;
+  // Rubric owns Canvas flights. Each reached frame is mirrored into Signal
+  // without being mistaken for a new direct camera write (which would cancel
+  // the very flight being reported).
+  const publishReachedCamera = onCameraPublished ?? onCamera;
 
   const hostRef = useRef<HTMLDivElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -190,7 +197,12 @@ export default function CanvasAuditRenderer(props: AuditRendererProps) {
   // ── PAINT MACHINERY ──────────────────────────────────────────────────
   const palette = useRef(new TokenPalette(null));
   const fontFamily = useRef("system-ui, sans-serif");
-  const lastPublishedCamera = useRef<Camera | null>(null);
+  const publishCameraReached = useCallback(
+    (next: Camera) => {
+      publishReachedCamera(next);
+    },
+    [publishReachedCamera]
+  );
   const livePositions = useRef<Map<string, { x: number; y: number }>>(new Map());
 
   useEffect(() => {
@@ -232,25 +244,16 @@ export default function CanvasAuditRenderer(props: AuditRendererProps) {
     const field = engine.field;
     if (field) cam.fitWorld(field.origin, field.viewRadius, vp, 0);
     const fitted = toSignal(cam.transform, vp);
-    lastPublishedCamera.current = fitted;
-    onCamera(fitted);
+    publishCameraReached(fitted);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [size.w, size.h, reducedMotion, getCamera, onCamera]);
+  }, [size.w, size.h, reducedMotion, getCamera, publishCameraReached]);
 
-  // Camera controls outside the canvas (Fit / +/- / Back / Forward) still
-  // own product intent. Mirror their direct writes into Rubric's affine
-  // transform, while ignoring the values this camera just published itself.
-  useEffect(() => {
-    const rc = engineRef.current?.camera;
-    if (!rc) return;
-    const own = lastPublishedCamera.current;
-    const same =
-      own &&
-      Math.abs(own.x - camera.x) < 1e-5 &&
-      Math.abs(own.y - camera.y) < 1e-5 &&
-      Math.abs(own.k - camera.k) < 1e-7;
-    if (!same) rc.set(fromSignal(camera, size));
-  }, [camera, size]);
+  // There is intentionally no camera-prop -> Rubric feedback effect here.
+  // Every Canvas camera intent (Fit, +/- , Search/Trace framing, history,
+  // wheel and pan) already enters through `AuditSpatialAuthority`; the prop
+  // is the product-facing mirror that Rubric publishes. Feeding that mirror
+  // back into Rubric one React commit later recreated a stale second camera
+  // and cancelled eased flights after their first frame.
 
   useEffect(() => {
     const engine = engineRef.current;
@@ -369,8 +372,7 @@ export default function CanvasAuditRenderer(props: AuditRendererProps) {
       const camMoving = engine.camera.advance(dt);
       const cam = toSignal(engine.camera.transform, vp);
       if (camMoving) {
-        lastPublishedCamera.current = cam;
-        onCamera(cam);
+        publishCameraReached(cam);
       }
 
       const t0 = performance.now();
@@ -413,6 +415,8 @@ export default function CanvasAuditRenderer(props: AuditRendererProps) {
       probe.ambient = f.ambientOn;
       probe.layout = f.layout;
       probe.camera = "rubric";
+      probe.cameraFlying = engine.camera.flying;
+      probe.cameraScale = cam.k;
       const visible = (id: string) => {
         const p = livePositions.current.get(id);
         if (!p) return false;
@@ -441,10 +445,32 @@ export default function CanvasAuditRenderer(props: AuditRendererProps) {
         host.dataset.largestTerritoryShare = probe.geometry.largestTerritoryAreaShare.toFixed(3);
         host.dataset.selectedOffscreen = String(probe.geometry.selectedOffscreen);
         host.dataset.traceEndpointsOffscreen = String(probe.geometry.traceEndpointsOffscreen);
+        host.dataset.cameraFlying = String(engine.camera.flying);
+        host.dataset.cameraScale = cam.k.toFixed(4);
       }
       probe.repaints++;
       probe.frames.push(paintMs);
       if (probe.frames.length > 400) probe.frames.shift();
+      if (host) {
+        host.dataset.repaintCount = String(probe.repaints);
+        host.dataset.paintSamples = String(probe.frames.length);
+        host.dataset.hitSamples = String(probe.hitTests.length);
+        host.dataset.ambient = String(probe.ambient);
+        // A lightweight, DOM-visible real-hardware probe. Recompute the
+        // percentiles only every thirty paints so measuring the renderer does
+        // not become part of the renderer's steady-state cost.
+        if (probe.repaints % 30 === 0 || probe.frames.length === 1) {
+          const quantile = (values: readonly number[], p: number) => {
+            if (values.length === 0) return 0;
+            const sorted = [...values].sort((a, b) => a - b);
+            return sorted[Math.min(sorted.length - 1, Math.floor((sorted.length - 1) * p))];
+          };
+          host.dataset.paintP50Ms = quantile(probe.frames, 0.5).toFixed(3);
+          host.dataset.paintP95Ms = quantile(probe.frames, 0.95).toFixed(3);
+          host.dataset.paintMaxMs = Math.max(...probe.frames).toFixed(3);
+          host.dataset.hitP95Ms = quantile(probe.hitTests, 0.95).toFixed(3);
+        }
+      }
 
       // Judge only frames where ambient motion is the ONLY thing running:
       // a morph or a drag is supposed to be expensive, and counting those
@@ -476,7 +502,7 @@ export default function CanvasAuditRenderer(props: AuditRendererProps) {
         running.current = false;
       }
     },
-    [onCamera]
+    [publishCameraReached]
   );
 
   const invalidate = useCallback(() => {
@@ -521,10 +547,9 @@ export default function CanvasAuditRenderer(props: AuditRendererProps) {
     const engine = engineRef.current;
     if (!engine) return;
     const next = toSignal(engine.camera.transform, sizeRef.current);
-    lastPublishedCamera.current = next;
-    onCamera(next);
+    publishCameraReached(next);
     invalidateRef.current?.();
-  }, [onCamera]);
+  }, [publishCameraReached]);
 
   useEffect(() => {
     if (!onSpatialAuthority) return;

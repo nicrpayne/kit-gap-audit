@@ -96,6 +96,13 @@ export interface AuditRendererProps {
       faster than React commits and each must chain off the previous result. */
   getCamera: () => Camera;
   onCamera: (c: Camera) => void;
+  /**
+   * Mirror a camera position that the renderer's own spatial authority has
+   * already reached. Unlike `onCamera`, this must not cancel that authority's
+   * in-flight move. Canvas uses it while Rubric publishes each flight frame;
+   * SVG does not need it because Signal owns that renderer's camera.
+   */
+  onCameraPublished?: (c: Camera) => void;
   onSelect: (id: string | null) => void;
   /** Direct surface selection. Rubric clicks select in place; product
       navigation such as Search may still use `onSelect` to frame a result. */
