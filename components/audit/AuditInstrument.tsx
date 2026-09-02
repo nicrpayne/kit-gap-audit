@@ -60,11 +60,11 @@ import {
   type Camera,
   type Viewport,
 } from "./cameraMotion";
-import GraphInspector from "./GraphInspector";
+import GraphInspector, { connectionsOf } from "./GraphInspector";
 import AggregateInspector from "./AggregateInspector";
 import FindingInspector from "./FindingInspector";
 import AuditReviewConsole, { type ConsoleMode } from "./AuditReviewConsole";
-import { zoomLevel, nextZoomLevel, nodeColor, fieldLabel, KIND_LABEL, type ZoomLevel } from "./graphTokens";
+import { zoomLevel, nextZoomLevel, nodeColor, fieldLabel, KIND_LABEL, REL_LABEL, type ZoomLevel } from "./graphTokens";
 import { SignalSearchIndex, SEARCH_MATURITY, type SearchHit } from "@/lib/audit/searchIndex";
 import { revealFor, commitFor, disclosedSet } from "@/lib/audit/searchLens";
 import type { SearchFamily, SearchFieldName } from "@/lib/audit/searchDocument";
@@ -514,6 +514,10 @@ export default function AuditInstrument({ initialScopeId }: { initialScopeId?: s
     const id = selectedId!.replace("finding:", "");
     return truth.model.findings.find((f) => f.id === id) ?? null;
   }, [selectedAttrs, selectedId, truth]);
+  const selectedConnections = useMemo(
+    () => (graph && selectedId && graph.hasNode(selectedId) ? connectionsOf(graph, selectedId).slice(0, 7) : []),
+    [graph, selectedId]
+  );
 
   // ── EVIDENCE SOLO — a guarded traversal, not a neighbourhood walk ─────
   //
@@ -1637,7 +1641,7 @@ export default function AuditInstrument({ initialScopeId }: { initialScopeId?: s
               inferred
             </span>
             <span className="text-[10px]" style={{ color: "var(--i-text-faint)" }}>
-              rings = relationship to Reality · rim = sources
+              Project World radius = disagreement · outer anchors = source systems
             </span>
           </div>
         </div>
@@ -1715,6 +1719,31 @@ export default function AuditInstrument({ initialScopeId }: { initialScopeId?: s
                     </button>
                   )}
                 </div>
+                {selectedConnections.length > 0 && !detailsOpen && (
+                  <div className="mt-3 border-t pt-2.5" style={{ borderColor: "var(--i-border)" }}>
+                    <div className="i-label mb-1.5" style={{ color: "var(--i-text-faint)" }}>Connections</div>
+                    <div className="space-y-0.5">
+                      {selectedConnections.map((connection) => (
+                        <button
+                          key={connection.edgeId}
+                          type="button"
+                          onClick={() => {
+                            select(connection.otherId, false);
+                            requestAnimationFrame(() => frameNode(connection.otherId));
+                          }}
+                          className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left hover:bg-white/[0.05]"
+                          title={`${connection.outbound ? "Outgoing" : "Incoming"} ${connection.rel} · ${connection.basis}`}
+                        >
+                          <span className="w-[88px] shrink-0 truncate text-[9.5px] uppercase tracking-[0.08em]" style={{ color: connection.basis === "attested" ? "var(--i-text-soft)" : "var(--i-text-faint)" }}>
+                            {connection.outbound ? "→ " : "← "}{REL_LABEL[connection.rel] ?? connection.rel.replaceAll("_", " ")}
+                          </span>
+                          <span className="min-w-0 flex-1 truncate text-[11px]" style={{ color: "var(--i-text)" }}>{connection.otherLabel}</span>
+                          <span aria-hidden="true" className="text-[11px]" style={{ color: "var(--i-text-faint)" }}>›</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
             )}
 

@@ -920,6 +920,37 @@ function paintNode(
     }
   }
 
+  // Rubric application painter: a large hex/crystal anchor with a luminous
+  // core. Signal uses it only for adapter-derived source-system hubs; the
+  // individual artifacts remain ordinary canonical nodes in Memory.
+  if (n.layoutRole === "rim") {
+    const hex = new Path2D();
+    for (let i = 0; i < 6; i++) {
+      const a = Math.PI / 3 * i - Math.PI / 6;
+      const x = p.x + Math.cos(a) * grown;
+      const y = p.y + Math.sin(a) * grown;
+      if (i === 0) hex.moveTo(x, y); else hex.lineTo(x, y);
+    }
+    hex.closePath();
+    const orb = sprites.orb(color, 0.58);
+    ctx.save();
+    ctx.clip(hex);
+    if (orb) ctx.drawImage(orb, p.x - grown, p.y - grown, grown * 2, grown * 2);
+    else { ctx.fillStyle = color; ctx.fill(hex); }
+    ctx.restore();
+    ctx.strokeStyle = mix(color, "#ffffff", 0.38);
+    ctx.lineWidth = 1.8 / k;
+    ctx.stroke(hex);
+    ctx.globalAlpha = Math.max(0.48, n.opacity * 0.72);
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, grown * 0.32, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+    stats.calls += 4;
+    stats.nodesPainted++;
+    return;
+  }
+
   const geo = nodeShapePath(n.shape, p.x, p.y, grown);
   const stroke = 1.4 / k;
 

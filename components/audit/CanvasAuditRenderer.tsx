@@ -782,7 +782,7 @@ export default function CanvasAuditRenderer(props: AuditRendererProps) {
               background: layoutMode === m ? "var(--i-signal-soft)" : "transparent",
             }}
           >
-            {m === "rings" ? "Rings" : m === "circle" ? "World" : m === "hex" ? "Territories" : "Relations"}
+            {m === "rings" ? "Rings" : m === "circle" ? "World" : m === "hex" ? "Territories" : "Force"}
           </button>
         ))}
       </div>
