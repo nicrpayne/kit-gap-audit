@@ -751,6 +751,33 @@ console.log(`\n── X · SPATIAL ENGINE ────────────�
       DISAGREEMENT_OFFSET.drift < DISAGREEMENT_OFFSET.conflict && DISAGREEMENT_OFFSET.conflict < 20
   );
   check("source systems, not artifacts, occupy the Applications ring", apps.length === world.presentationNodes.length);
+  const sourceOwnedMemory = population.filter((n) => n.role === "memory" && n.sourceSystemId);
+  check(
+    "source-system ownership reaches artifacts and their projected children",
+    sourceOwnedMemory.length > s.nodes.filter((n) => n.layoutRole === "artifact").length
+  );
+  let worstSourceBearing = 0;
+  for (const app of population.filter((n) => n.role === "app")) {
+    const appPosition = rpos.get(app.id);
+    const owned = population
+      .filter((n) => n.role === "memory" && n.sourceSystemId === app.id)
+      .map((n) => rpos.get(n.id))
+      .filter((p): p is NonNullable<typeof p> => !!p);
+    if (!appPosition || !owned.length) continue;
+    const appAngle = Math.atan2(appPosition.y - origin.y, appPosition.x - origin.x);
+    const meanAngle = Math.atan2(
+      owned.reduce((sum, p) => sum + Math.sin(Math.atan2(p.y - origin.y, p.x - origin.x)), 0),
+      owned.reduce((sum, p) => sum + Math.cos(Math.atan2(p.y - origin.y, p.x - origin.x)), 0)
+    );
+    let delta = Math.abs(appAngle - meanAngle);
+    if (delta > Math.PI) delta = Math.PI * 2 - delta;
+    worstSourceBearing = Math.max(worstSourceBearing, delta);
+  }
+  check(
+    "each source-system anchor sits over the canonical source territory it owns",
+    worstSourceBearing < 0.03,
+    `${(worstSourceBearing * 180 / Math.PI).toFixed(2)}° worst bearing offset`
+  );
   check("Reality anchors the centre", anchorOf("reality", null) === CORE_ANCHOR);
 
   // THE MORPH STARTS WHERE THE FIELD IS — Rubric's retention contract.

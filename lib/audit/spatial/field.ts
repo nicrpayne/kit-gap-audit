@@ -1,4 +1,4 @@
-// THE SPATIAL FIELD — RINGS AND CONSTELLATIONS, AND THE MORPH BETWEEN THEM.
+// THE AUDIT-LOCAL RUBRIC SPATIAL RUNTIME — RINGS, FORCE, CIRCLE AND HEX.
 //
 // ADAPTED FROM RUBRIC SECOND BRAIN — `public/_core.js`:
 //   Rings subsystem              lines 339-545
@@ -599,7 +599,14 @@ export class SpatialField {
     const apps = this.order.filter((n) => n.role === "app").sort((a, b) => a.id.localeCompare(b.id));
     const appR = routineR + 62;
     apps.forEach((n, i) => {
-      n.rA = 0.52 + ((i + 0.5) / Math.max(1, apps.length) - 0.5) * Math.PI * 2;
+      const members = this.order.filter((member) => member.role === "memory" && member.sourceSystemId === n.id);
+      if (members.length) {
+        const sx = members.reduce((sum, member) => sum + Math.cos(member.rA), 0);
+        const sy = members.reduce((sum, member) => sum + Math.sin(member.rA), 0);
+        n.rA = Math.atan2(sy, sx);
+      } else {
+        n.rA = 0.52 + ((i + 0.5) / Math.max(1, apps.length) - 0.5) * Math.PI * 2;
+      }
       n.rR = appR;
       n.rSpin = 0;
     });

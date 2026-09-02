@@ -1269,8 +1269,8 @@ function paintLabels(
 
   // Rubric's rings are named as part of the world, not explained in a side
   // legend. Signal keeps that spatial reading while replacing Rubric's
-  // Applications/Routines/Memory vocabulary with the only radial meanings
-  // Audit actually encodes. Sources name the separate provenance horizon.
+  // Applications/Routines/Memory vocabulary with the one-to-one Signal
+  // meanings supplied at the adapter boundary.
   if (input.boundR <= 0) {
     for (const band of [...input.ringGuides].reverse()) {
       const p = toScreen(FIELD.cx, FIELD.cy - band.r);
@@ -1285,6 +1285,14 @@ function paintLabels(
       ctx.globalAlpha = 1;
       stats.labelsPainted++;
     }
+  }
+
+  // Rubric's application anchors are the outer-world legend. Their names
+  // cannot disappear because an interior cluster happened to reserve the
+  // same screen rectangle first; source identity is part of the silhouette.
+  const sourceAnchors = scene.nodes.filter((n) => n.layoutRole === "rim" && placed.has(n.id));
+  for (const source of sourceAnchors) {
+    paintNodeName(ctx, placed.get(source.id)!, camera, vp, fontFamily, palette, stats, reserve, true);
   }
 
   // Cluster names, and the counts that expand them.
@@ -1380,7 +1388,7 @@ function paintLabels(
   // MANDATORY FIRST: the selection, whatever is under the cursor, and any
   // search match. Those are what the reader asked for and they may overlap
   // anything. Everything else takes what is left, in the plan's own order.
-  const named = scene.nodes.filter((n) => n.labelled && n.kind !== "reality" && n.depth === 0 && placed.has(n.id));
+  const named = scene.nodes.filter((n) => n.labelled && n.kind !== "reality" && n.layoutRole !== "rim" && n.depth === 0 && placed.has(n.id));
   const mandatory = named.filter((n) => n.selected || n.hovered || n.matched);
   const optional = named.filter((n) => !(n.selected || n.hovered || n.matched));
   for (const n of mandatory) {

@@ -159,6 +159,24 @@ export function adaptSignalSceneToRubric(scene: AuditScene, level: ZoomLevel): R
     });
   }
 
+  // A passage normally points at its canonical transcript/source through a
+  // projected local parent. Carry that parent's provider upward into the
+  // presentation projection so Rubric can place the outer Application over
+  // the source territory it actually owns. This is lineage propagation, not
+  // an invented graph edge, and it never writes back to Graphology.
+  const fieldById = new Map(nodes.map((node) => [node.id, node]));
+  for (let pass = 0; pass < 4; pass++) {
+    let changed = false;
+    for (const node of nodes) {
+      if (node.sourceSystemId || !node.parentId) continue;
+      const inherited = fieldById.get(node.parentId)?.sourceSystemId;
+      if (!inherited) continue;
+      node.sourceSystemId = inherited;
+      changed = true;
+    }
+    if (!changed) break;
+  }
+
   const presentationNodes: AuditVisualNode[] = [];
   const interactionTarget = new Map<string, string>();
   for (const [key, group] of [...systemMembers].sort(([a], [b]) => a.localeCompare(b))) {
