@@ -145,9 +145,10 @@ export const TUNING = {
    */
   anchorBearing: 0.35,
   /** Rubric deptPull: `v*v * .34 * (.4 + g_pull*1.2) * alpha`. Shipped
-      `g_pull: 0` → .4 multiplier; v is the per-department gravity, shipped
-      ~.85 → .85² * .34 * .4 ≈ .098. */
-  groupPull: 0.098,
+      `g_pull: 0` yields ≈.098. Signal's nested source/type cells need .22;
+      this was already the live coefficient and is centralized here so the
+      proof can state and sweep it rather than leaving a hidden literal. */
+  groupPull: 0.22,
   /**
    * And how hard a cell holds together once the simulation has cooled.
    *
@@ -158,7 +159,9 @@ export const TUNING = {
    * big apart faster than a decaying pull can gather it. A small residual
    * keeps the cell coherent at rest without freezing it.
    */
-  groupPullFloor: 0.08,
+  groupPullFloor: 0.085,
+  /** A member stays within this fraction of its parent hub's nearest-hub gap. */
+  cellOwnershipFactor: 0.55,
   /** Rubric bound force: `(lim/r - 1) * .22` applied to velocity. */
   boundStrength: 0.22,
   /** GENERIC RELATIONSHIP SPRINGS. Zero, and not a dial. */
@@ -224,6 +227,8 @@ export class SpatialField {
   private ringRot = 0;
   private clock = 0;
   private morph: { t0: number } | null = null;
+  /** Paint-only progress when entering Constellations; never feeds physics. */
+  private morphK = 1;
   private ringsKey = "";
   /** Reported upward so the painter can draw the boundary the physics uses. */
   boundR = 0;
@@ -438,6 +443,7 @@ export class SpatialField {
     // Reduced motion still SWITCHES — it simply arrives immediately, because
     // a morph is motion and someone has asked for less of it.
     this.morph = this.reduced ? null : { t0: this.clock };
+    this.morphK = this.reduced ? 1 : 0;
   }
 
   // ── RINGS ────────────────────────────────────────────────────────────
@@ -723,7 +729,7 @@ export class SpatialField {
         if (d.fx != null || d.pin || d.userHome || !d.parentId) continue;
         const hub = byId.get(d.parentId);
         if (!hub) continue;
-        const g = 0.22 * a2 + 0.085;
+        const g = TUNING.groupPull * a2 + TUNING.groupPullFloor;
         d.vx += (hub.x - d.x) * g;
         d.vy += (hub.y - d.y) * g;
       }
@@ -764,6 +770,54 @@ export class SpatialField {
     sim.alpha(Math.max(0.35, alpha));
     sim.stop();
     this.sim = sim;
+  }
+
+  /**
+   * Keep a semantic subcell inside its own hub's local territory.
+   *
+   * Rubric's bounded field constrains first-level territories. Signal has a
+   * second level Rubric does not: source artifacts own passages and external
+   * subtype/currentness cells own claims. A spring alone cannot state that
+   * ownership at high cell counts; after alpha cools, collision can leave a
+   * member just across a neighbouring hub's bisector. Constraining the member
+   * near the bisector between its parent and the nearest competing hub makes
+   * the ownership law geometric and independent of settlement time. The
+   * constraint acts on the hidden live solution from its first fixed tick;
+   * the painter's morph eases that solution in without feeding paint
+   * interpolation back into physics.
+   */
+  private enforceCellOwnership(): void {
+    const hubs = this.order.filter(
+      (n) => n.role === "hub" || n.role === "artifact" || (n.role === "aggregate" && n.parentId == null)
+    );
+    if (hubs.length < 2) return;
+    const factor = TUNING.cellOwnershipFactor;
+    for (const node of this.order) {
+      if (!node.parentId || node.pin || node.userHome) continue;
+      const own = this.nodes.get(node.parentId);
+      if (!own) continue;
+      let nearestHubGap = Infinity;
+      for (const hub of hubs) {
+        if (hub.id === own.id) continue;
+        nearestHubGap = Math.min(nearestHubGap, Math.hypot(hub.x - own.x, hub.y - own.y));
+      }
+      if (!Number.isFinite(nearestHubGap)) continue;
+      let dx = node.x - own.x;
+      let dy = node.y - own.y;
+      let distance = Math.hypot(dx, dy);
+      const limit = nearestHubGap * factor;
+      if (distance <= limit) continue;
+      if (distance < 1e-6) {
+        const angle = hash01(node.id, 23) * Math.PI * 2;
+        dx = Math.cos(angle);
+        dy = Math.sin(angle);
+        distance = 1;
+      }
+      node.x = own.x + (dx / distance) * limit;
+      node.y = own.y + (dy / distance) * limit;
+      node.vx *= 0.35;
+      node.vy *= 0.35;
+    }
   }
 
   // ── THE HAND ─────────────────────────────────────────────────────────
@@ -856,18 +910,19 @@ export class SpatialField {
     if (!sim) return false;
     // Fixed-step, so physics does not change speed with frame rate.
     const steps = Math.min(3, Math.max(1, Math.round(dt / 16.67)));
-    for (let i = 0; i < steps; i++) sim.tick();
-    const k = this.morphProgress();
-    if (k < 1) {
-      // Morphing INTO constellations: physics proposes, the blend disposes,
-      // so the field arrives from where it was rather than snapping.
-      for (const n of this.order) {
-        if (n.pin) continue;
-        const e = smoothstep(k);
-        n.x = n.trX + (n.x - n.trX) * e;
-        n.y = n.trY + (n.y - n.trY) * e;
-      }
+    for (let i = 0; i < steps; i++) {
+      if (sim.alpha() <= sim.alphaMin()) break;
+      sim.tick();
+      // Run once per FIXED physics step, not once per browser frame. A 30Hz
+      // frame may contain two fixed steps and a 120Hz frame one; applying a
+      // spatial law at frame cadence made the final field machine-dependent.
+      this.enforceCellOwnership();
     }
+    const k = this.morphProgress();
+    // This is PAINT progress only. Mutating the D3 nodes with interpolated
+    // positions here made the final solution depend on how many animation
+    // frames occurred during the 620ms morph.
+    this.morphK = k;
     return sim.alpha() > sim.alphaMin() || k < 1 || blooming;
   }
 
@@ -901,12 +956,15 @@ export class SpatialField {
         ox = (dx / distance) * push;
         oy = (dy / distance) * push;
       }
+      const [baseX, baseY] = this.mode === "constellations" && this.morphK < 1
+        ? this.blend(n, n.x, n.y, this.morphK)
+        : [n.x, n.y];
       const held = this.out.get(n.id);
       if (held) {
-        held.x = n.x + this.ox + ox;
-        held.y = n.y + this.oy + oy;
+        held.x = baseX + this.ox + ox;
+        held.y = baseY + this.oy + oy;
       } else {
-        this.out.set(n.id, { x: n.x + this.ox + ox, y: n.y + this.oy + oy });
+        this.out.set(n.id, { x: baseX + this.ox + ox, y: baseY + this.oy + oy });
       }
     }
     if (this.out.size !== this.order.length) {

@@ -1,0 +1,19 @@
+{
+  "samples": 400,
+  "p50": 0.5,
+  "p95": 1.2000000476837158,
+  "max": 1.5999999046325684,
+  "stats": {
+    "calls": 176,
+    "nodesPainted": 10,
+    "nodesCulled": 0,
+    "nodesBatched": 180,
+    "edgesPainted": 133,
+    "edgeBatches": 6,
+    "labelsPainted": 25,
+    "spritesHeld": 20,
+    "softLayer": false,
+    "softBuilds": 0
+  },
+  "repaints": 1211
+}
