@@ -153,6 +153,18 @@ export function semanticFocus(graph: AuditGraph, anchorId: string | null): Focus
     nodes.set(other, prev ? louderRank(prev, cls) : cls);
   });
 
+  // Rubric wakes the section represented by a grabbed hub. Signal's lane
+  // membership is intentionally not drawn as edges, but it is still the
+  // semantic content of that hub and should participate in the optical/local
+  // wake. Keep it out of `frame`: clicking a hub must not trigger a global
+  // refit merely because the lane is large.
+  const anchor = graph.getNodeAttributes(anchorId);
+  if (anchor.kind === "lane" && typeof anchor.lane === "string") {
+    graph.forEachNode((id, attrs) => {
+      if (id !== anchorId && attrs.lane === anchor.lane && !nodes.has(id)) nodes.set(id, "semantic");
+    });
+  }
+
   const frame: string[] = [anchorId];
   for (const [id, rank] of nodes) {
     if (id === anchorId) continue;

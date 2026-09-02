@@ -123,6 +123,7 @@ export interface SignalGraphProps {
   /** Node ids whose cluster is open — the core slice, plus expanded clusters.
       Everything else is still DRAWN, as a latent mark. */
   opened: Set<string>;
+  hiddenIds?: ReadonlySet<string>;
   selectedId: string | null;
   hoveredId: string | null;
   /** Evidence Solo result, or null when off. */
@@ -164,6 +165,7 @@ export interface SignalGraphProps {
 export default function SignalGraph({
   graph,
   opened,
+  hiddenIds,
   selectedId,
   hoveredId,
   soloNodes,
@@ -386,7 +388,10 @@ export default function SignalGraph({
   // means "not yet itself" — the difference between a field that admits how
   // big the project is and one that pretends 41 of its 65 things do not
   // exist.
-  const drawnNodes = useMemo(() => graph.nodes().filter((n) => layout.has(n)), [graph, layout]);
+  const drawnNodes = useMemo(
+    () => graph.nodes().filter((n) => layout.has(n) && !hiddenIds?.has(n)),
+    [graph, layout, hiddenIds]
+  );
 
   /**
    * WHAT IS ON SCREEN, QUANTISED.
@@ -659,6 +664,7 @@ export default function SignalGraph({
       const cls = edgeFocusClass(a as { rel: string; relClass?: string | null });
       if (!cls) return;
       if (!openedNow.has(s) || !openedNow.has(t)) return;
+      if (hiddenIds?.has(s) || hiddenIds?.has(t)) return;
       if (!layout.has(s) || !layout.has(t)) return;
       if (a.basis === "external" && (cls === "contextual" || cls === "provenance")) {
         const reached =
@@ -693,7 +699,7 @@ export default function SignalGraph({
       });
     });
     return out;
-  }, [graph, openedNow, layout, anchorId, soloNodes]);
+  }, [graph, openedNow, layout, anchorId, soloNodes, hiddenIds]);
 
   // ── LABEL AUTHORITY ──────────────────────────────────────────────────
   //

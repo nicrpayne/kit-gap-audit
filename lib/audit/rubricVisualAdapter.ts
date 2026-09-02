@@ -44,39 +44,26 @@ function territoryOf(node: AuditVisualNode): AuditTerritory {
   return "delivery";
 }
 
-const representativeLimit = (level: ZoomLevel, sourceGroup: boolean) =>
-  level === "far" ? (sourceGroup ? 0 : 2) : level === "medium" ? (sourceGroup ? 2 : 4) : Infinity;
-
 /**
  * Canonical graph → zoom-tier Rubric population.
  *
- * Heavy members are never deleted from Audit; at far/medium they are
- * represented by a projected aggregate plus a bounded deterministic sample.
- * A formed/matched/selected member is always promoted back into the live
- * field at its canonical id.
+ * Every canonical object has a physical seat at every zoom. Zoom changes
+ * identity disclosure, not existence: a far-away passage may be a quiet dot,
+ * but it must still contribute to the mass and geography of the world. This
+ * is the essential Rubric behaviour the earlier aggregate-only projection
+ * lost — it made a 438-object project look like a sparse 191-object diagram.
+ *
+ * Aggregates remain as truthful group handles/counts. They no longer stand in
+ * for missing physical population.
  */
 export function adaptSignalSceneToRubric(scene: AuditScene, level: ZoomLevel): RubricVisualWorld {
   const byId = new Map(scene.nodes.map((node) => [node.id, node]));
-  const aggregateOf = new Map<string, AuditScene["aggregates"][number]>();
-  for (const aggregate of scene.aggregates) for (const id of aggregate.members) aggregateOf.set(id, aggregate);
+  void level; // zoom changes disclosure in the scene, never physical presence here
 
   const projectedCanonicalIds = new Set<string>();
   const aggregateIds = new Set<string>();
-  const include = new Set<string>();
-  for (const node of scene.nodes) {
-    const aggregate = aggregateOf.get(node.id);
-    if (!aggregate) {
-      include.add(node.id);
-      continue;
-    }
-    const explicit = node.identity !== "latent" || node.selected || node.matched || node.hovered;
-    if (explicit || level === "close" || (level === "near" && node.kind !== "passage")) include.add(node.id);
-  }
   for (const aggregate of scene.aggregates) {
     aggregateIds.add(aggregate.id);
-    if (aggregate.hub) include.add(aggregate.hub);
-    const limit = representativeLimit(level, aggregate.kind === "source");
-    if (Number.isFinite(limit)) for (const id of aggregate.members.slice(0, limit)) include.add(id);
   }
 
   const parentOf = new Map<string, string>();
@@ -85,7 +72,7 @@ export function adaptSignalSceneToRubric(scene: AuditScene, level: ZoomLevel): R
     for (const id of aggregate.members) parentOf.set(id, parent);
   }
 
-  const nodes: FieldNodeInput[] = scene.nodes.filter((node) => include.has(node.id)).map((node) => {
+  const nodes: FieldNodeInput[] = scene.nodes.map((node) => {
     projectedCanonicalIds.add(node.id);
     const aggregateParent = parentOf.get(node.id) ?? null;
     const laneParent = byId.has(`lane:${node.anchor}`) ? `lane:${node.anchor}` : null;
@@ -114,7 +101,7 @@ export function adaptSignalSceneToRubric(scene: AuditScene, level: ZoomLevel): R
       id: aggregate.id,
       r: Math.max(9, Math.min(18, 7 + Math.sqrt(aggregate.count) * 0.8)),
       anchor: aggregate.cluster,
-      band: aggregate.kind === "source" ? "evidence" : "external",
+      band: aggregate.kind === "source" ? "evidence" : "drift",
       order: first.order - 1,
       role: "aggregate",
       isAnchorNode: false,

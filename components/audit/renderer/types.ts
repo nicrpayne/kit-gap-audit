@@ -83,6 +83,8 @@ export interface AuditRendererProps {
   /** Node ids whose cluster is open — the core slice, plus expanded clusters.
       Everything else is still DRAWN, as a latent mark. */
   opened: Set<string>;
+  /** Presentation-only exclusions. Canonical graph truth is untouched. */
+  hiddenIds?: ReadonlySet<string>;
   selectedId: string | null;
   hoveredId: string | null;
   /** Evidence Solo result, or null when off. */

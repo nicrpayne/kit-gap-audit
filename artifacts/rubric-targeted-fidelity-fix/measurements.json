@@ -1,0 +1,32 @@
+{
+  "baseline": {
+    "productionShaFromPriorAudit": "edf3dfff8e952ac9c12f0c8151779f0963477292",
+    "experimentalBaseSha": "68d5b3c4385dad6f04ea17d2963f23b483d155b8",
+    "priorFidelityScore": 2.4
+  },
+  "localFixture": {
+    "nodes": 427,
+    "edges": 439,
+    "projectedCanonicalNodes": 427,
+    "openedAtBaseline": 27,
+    "aggregateRegions": 8
+  },
+  "spatial": {
+    "intendedHubPlacementPercent": 98.0,
+    "intendedHubPlacementNumerator": 400,
+    "intendedHubPlacementDenominator": 408,
+    "largestTerritoryPercent": 28.0,
+    "deterministicWorstDriftWorldUnits": 0.0,
+    "layoutSwitchFirstFrameMaxJumpWorldUnits": 0.0
+  },
+  "proofs": {
+    "rendererPassed": 125,
+    "rendererFailed": 0,
+    "searchStatus": "all checks pass",
+    "browserConsoleErrorsOnCleanReload": 0,
+    "productionBuild": "pass",
+    "typescript": "pass",
+    "targetedEslint": "pass"
+  },
+  "postBuildWeightedFidelityScore": 4.1
+}

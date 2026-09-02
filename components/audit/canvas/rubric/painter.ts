@@ -1241,6 +1241,32 @@ function paintLabels(
     stats.calls += 2;
   };
 
+  // Rubric's rings are named as part of the world, not explained in a side
+  // legend. Signal keeps that spatial reading while replacing Rubric's
+  // Applications/Routines/Memory vocabulary with the only radial meanings
+  // Audit actually encodes. Sources name the separate provenance horizon.
+  if (input.boundR <= 0 && scene.structure.showBandNames) {
+    const bandColor: Record<string, string> = {
+      aligned: "var(--i-signal)",
+      drift: "var(--i-amber)",
+      conflict: "var(--i-red)",
+      sources: "var(--i-source)",
+    };
+    for (const band of [...scene.structure.bands].reverse()) {
+      const p = toScreen(scene.structure.cx, scene.structure.cy - band.r);
+      if (p.y < 8 || p.y > vp.h - 8) continue;
+      const label = band.label.toUpperCase();
+      ctx.textAlign = "center";
+      ctx.font = `650 ${band.id === "sources" ? 17 : 14}px ${fontFamily}`;
+      const width = ctx.measureText(label).width + 14;
+      if (!reserve(p.x, p.y, width, 24)) continue;
+      ctx.globalAlpha = scene.structure.bandLabelOpacity;
+      write(label, p.x, p.y, palette.css(bandColor[band.id] ?? "var(--i-text-soft)"));
+      ctx.globalAlpha = 1;
+      stats.labelsPainted++;
+    }
+  }
+
   // Cluster names, and the counts that expand them.
   //
   // BIGGEST LANE FIRST, AND THEY COLLIDE LIKE ANYTHING ELSE. The previous
