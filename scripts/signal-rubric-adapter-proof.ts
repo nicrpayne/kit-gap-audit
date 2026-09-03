@@ -61,6 +61,9 @@ function verify(name: string, graph: ExportedSignalGraph, scope: { id: string; n
       && payload.nodes.some((node) => node.layer === "S" && !node.presentationOnly)
       && payload.nodes.some((node) => node.layer === "M" && !node.presentationOnly && node.canonicalId !== "reality")
       && payload.nodes.some((node) => node.layer === "R" && node.presentationOnly));
+  const traceableAttention = presentation.filter((node) => node.type === "routine" && node.canonicalId && payload.meta.traceByNode[byCanonical.get(node.canonicalId)?.id ?? ""]);
+  check(`${name} gives traceable Attention echoes their exact canonical Trace`, traceableAttention.length > 0 && traceableAttention.every((node) =>
+    JSON.stringify(payload.meta.traceByNode[node.id]) === JSON.stringify(payload.meta.traceByNode[byCanonical.get(node.canonicalId!)!.id])));
 
   const unsupported = payload.links.filter((link) => link.canonical).filter((link) => !graph.edges.some((edge) =>
     (edge.source === "reality" ? "CLAUDE.md" : edge.source) === link.s

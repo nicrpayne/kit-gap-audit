@@ -42,10 +42,18 @@ check("old and new Audit surfaces share one Finding action dispatcher",
 check("detail close cannot replace or reframe the Rubric world",
   world.includes("onClose={() => setFindingReviewId(null)}")
     && !overlay.includes("frameRef") && !overlay.includes("fitToView") && !overlay.includes("resetView"));
-check("canonical refresh preserves camera and selected transport identity",
+check("canonical refresh preserves selection across presentation-role changes",
   host.includes("const selectedId = window.BrainCore.S.sel")
+    && host.includes("const selectedCanonicalId = window.BrainCore.S.sel")
+    && host.includes("n.canonicalId === selectedCanonicalId")
     && host.includes("window.BrainCore.S.byId.get(selectedId)")
     && !host.includes("fitToView") && !host.includes("resetView"));
+check("starting Search clears a stale Trace before navigation",
+  host.includes("if (!input.value.trim()) return;")
+    && host.includes("trace = null;\n      remember();"));
+check("presentation echoes inherit only their canonical Trace path",
+  adapter.includes("if (!node.presentationOnly || !node.canonicalId) continue;")
+    && adapter.includes("traceByNode[node.id] = traceByNode[canonicalTransportId]"));
 
 if (failures) throw new Error(`${failures} Phase 3B proof failure${failures === 1 ? "" : "s"}`);
 console.log("\nSignal Rubric Phase 3B bridge-hardening proof passed.");
