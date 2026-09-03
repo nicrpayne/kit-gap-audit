@@ -53,9 +53,18 @@ export interface SignalRubricNode {
   schedule?: string;
   runner?: string;
   sourceProvider?: string;
+  sourceSystemId?: string;
+  sourceDepth?: "system" | "artifact" | "passage" | "claim" | "object";
+  sourceCounts?: { artifacts: number; passages: number; claims: number; total: number };
+  worldLabel?: string;
   sourceRef?: string;
   sourceResolver?: string;
   disagreement?: string;
+  realityRelationship?: "aligned" | "drift" | "conflict" | "unassessed";
+  /** Semantic 0..1 score consumed only by the protected Rubric Rings hook. */
+  realityDistance?: number;
+  trustMaterial?: "attested" | "inferred" | "external";
+  identityMinZoom?: number;
   currentness?: string;
   basisSummary?: string;
   attributes?: Record<string, unknown>;
@@ -70,6 +79,8 @@ export interface SignalRubricLink {
   canonical?: boolean;
   basis?: string;
   rule?: string;
+  intelRel?: string;
+  current?: boolean;
 }
 
 export interface SignalRubricPayload {
@@ -161,15 +172,16 @@ function labelOf(attrs: AuditNodeAttributes): string {
   return String(attrs.label ?? attrs.ref ?? "Untitled");
 }
 
-function sourceProviderOf(attrs: AuditNodeAttributes): string | null {
+export function sourceProviderOf(attrs: AuditNodeAttributes): string | null {
   const lane = String(attrs.lane ?? "").toLowerCase();
   const sourceType = String(attrs.sourceType ?? "").toLowerCase();
-  const haystack = `${lane} ${sourceType} ${String(attrs.label ?? "")} ${String(attrs.sourceRef ?? "")}`.toLowerCase();
-  if (haystack.includes("linear")) return "Linear";
-  if (haystack.includes("notion")) return "Notion";
-  if (haystack.includes("figma")) return "Figma";
-  if (attrs.kind === "intelligence" || attrs.kind === "intel" || lane === "hermes") return "Hermes";
-  if (attrs.kind === "transcript" || haystack.includes("transcript") || haystack.includes("meeting")) return "Meetings / Transcripts";
+  // Provider identity comes only from canonical typed fields. Labels,
+  // excerpts, source refs, and URL prose are deliberately absent here.
+  if (attrs.kind === "work" || attrs.kind === "feature" || lane === "linear" || sourceType.includes("linear")) return "Linear";
+  if (attrs.kind === "notion_page" || sourceType.includes("notion")) return "Notion";
+  if (attrs.kind === "figma_artifact" || sourceType.includes("figma")) return "Figma";
+  if (attrs.kind === "intelligence" || attrs.kind === "intel" || lane === "hermes" || String(attrs.producer ?? "").toLowerCase() === "hermes") return "Hermes";
+  if (attrs.kind === "transcript" || sourceType === "transcript" || sourceType === "meeting") return "Meetings / Transcripts";
   if (SOURCE_KINDS.has(attrs.kind)) return "Documents";
   return null;
 }
@@ -196,11 +208,43 @@ function qualifiesForAttention(attrs: AuditNodeAttributes): boolean {
   return false;
 }
 
-function disagreementOf(attrs: AuditNodeAttributes): string | undefined {
+export function realityRelationshipOf(attrs: AuditNodeAttributes): "aligned" | "drift" | "conflict" | "unassessed" {
   const state = String(attrs.state ?? "").toLowerCase();
-  if (["conflict", "missing", "drift", "unknown"].includes(state)) return state;
-  if (attrs.kind === "finding" && attrs.handled !== true) return "open";
-  return undefined;
+  if (attrs.blocking === true || attrs.kind === "decisionGate" || ["conflict", "missing", "blocked", "blocking"].includes(state)) return "conflict";
+  if (["drift", "unresolved", "unknown", "open", "pending"].includes(state)) return "drift";
+  if (["aligned", "supporting", "supported", "resolved", "complete", "completed"].includes(state)) return "aligned";
+  if (attrs.kind === "finding" && attrs.handled !== true) return "drift";
+  if (attrs.kind === "decision") {
+    const status = String(attrs.status ?? "").toLowerCase();
+    if (["open", "pending", "unresolved"].includes(status)) return "drift";
+    if (["accepted", "committed", "resolved", "closed", "decided"].includes(status)) return "aligned";
+  }
+  return "unassessed";
+}
+
+function realityDistanceOf(relationship: ReturnType<typeof realityRelationshipOf>): number {
+  if (relationship === "aligned") return 0;
+  if (relationship === "conflict") return 1;
+  // Unassessed is intentionally the neutral midpoint. It is not derived
+  // from trust, producer, currentness, or external-vs-accepted status.
+  return 0.5;
+}
+
+export function trustMaterialOf(
+  attrs: AuditNodeAttributes,
+  connections: SignalRubricConnection[] = []
+): "attested" | "inferred" | "external" {
+  if (attrs.kind === "intel" || String(attrs.trust ?? "").toLowerCase() === "external") return "external";
+  if (attrs.kind === "passage" || SOURCE_KINDS.has(attrs.kind)) return "attested";
+  if (connections.some((connection) => connection.basis === "attested")) return "attested";
+  if (connections.some((connection) => connection.basis === "external")) return "external";
+  return "inferred";
+}
+
+function identityMinZoomOf(attrs: AuditNodeAttributes): number {
+  if (attrs.kind === "passage") return 1.35;
+  if (SOURCE_KINDS.has(attrs.kind) || attrs.kind === "intelligence") return 0.72;
+  return 1.05;
 }
 
 function nodeSize(attrs: AuditNodeAttributes): number {
@@ -268,6 +312,21 @@ export function adaptSignalGraphToRubric(
   const aliases = new Map(graph.nodes.map((node) => [node.key, transportId(node.key)]));
   const connections = new Map<string, SignalRubricConnection[]>();
 
+  // Resolve the provenance horizon from typed canonical fields first, then
+  // let passages inherit the provider of their exact extracted_from target.
+  // No title, source-ref prose, or guessed hostname participates.
+  const providerByCanonical = new Map<string, string>();
+  for (const { key, attributes } of graph.nodes) {
+    const provider = sourceProviderOf(attributes);
+    if (provider) providerByCanonical.set(key, provider);
+  }
+  for (const edge of graph.edges) {
+    if (edge.attributes.rel !== "extracted_from") continue;
+    const source = canonicalById.get(edge.source);
+    const provider = providerByCanonical.get(edge.target);
+    if (source?.kind === "passage" && provider) providerByCanonical.set(edge.source, provider);
+  }
+
   for (const edge of graph.edges) {
     const source = canonicalById.get(edge.source);
     const target = canonicalById.get(edge.target);
@@ -293,8 +352,9 @@ export function adaptSignalGraphToRubric(
     const acceptedModel = MODEL_KINDS.has(attributes.kind)
       || (attributes.kind === "lane" && attributes.supplied === true)
       || isAcceptedDecision(attributes);
-    const provider = sourceProviderOf(attributes);
+    const provider = providerByCanonical.get(key) ?? null;
     const id = aliases.get(key)!;
+    const realityRelationship = realityRelationshipOf(attributes);
     nodes.push({
       id,
       canonicalId: key,
@@ -314,9 +374,19 @@ export function adaptSignalGraphToRubric(
           : typeof attributes.excerpt === "string" ? attributes.excerpt
             : undefined,
       sourceProvider: provider ?? undefined,
+      sourceSystemId: provider ? `${PRESENTATION_PREFIX}source:${provider.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "")}` : undefined,
+      sourceDepth: SOURCE_KINDS.has(attributes.kind) || attributes.kind === "intelligence" || attributes.kind === "work" || attributes.kind === "feature"
+        ? "artifact"
+        : attributes.kind === "passage" ? "passage"
+          : attributes.kind === "finding" || attributes.kind === "intel" ? "claim"
+            : "object",
       sourceRef: typeof attributes.sourceRef === "string" ? attributes.sourceRef : undefined,
       sourceResolver: resolverOf(attributes),
-      disagreement: disagreementOf(attributes),
+      disagreement: realityRelationship,
+      realityRelationship,
+      realityDistance: realityDistanceOf(realityRelationship),
+      trustMaterial: trustMaterialOf(attributes, nodeConnections),
+      identityMinZoom: identityMinZoomOf(attributes),
       currentness: typeof attributes.isCurrent === "boolean" ? (attributes.isCurrent ? "current" : "superseded") : undefined,
       basisSummary: basisSummaryOf(nodeConnections),
       attributes: { ...attributes },
@@ -341,36 +411,67 @@ export function adaptSignalGraphToRubric(
   }
 
   const providerMembers = new Map<string, Set<string>>();
+  const providerArtifacts = new Map<string, Set<string>>();
+  const providerPassages = new Map<string, Set<string>>();
+  const providerClaims = new Map<string, Set<string>>();
   for (const { key, attributes } of graph.nodes) {
-    const provider = sourceProviderOf(attributes);
+    const provider = providerByCanonical.get(key);
     if (provider && (SOURCE_KINDS.has(attributes.kind) || attributes.kind === "intelligence" || attributes.kind === "intel" || attributes.kind === "work" || attributes.kind === "feature")) {
       const members = providerMembers.get(provider) ?? new Set<string>();
       members.add(key);
       providerMembers.set(provider, members);
-    }
-    if (attributes.kind === "lane" && attributes.supplied === true) {
-      const laneProvider = sourceProviderOf({ ...attributes, kind: "source", sourceType: attributes.lane });
-      if (laneProvider) {
-        const members = providerMembers.get(laneProvider) ?? new Set<string>();
-        members.add(key);
-        providerMembers.set(laneProvider, members);
+      if (attributes.kind === "intel") {
+        const claims = providerClaims.get(provider) ?? new Set<string>();
+        claims.add(key);
+        providerClaims.set(provider, claims);
+      } else {
+        const artifacts = providerArtifacts.get(provider) ?? new Set<string>();
+        artifacts.add(key);
+        providerArtifacts.set(provider, artifacts);
       }
     }
+    if (provider && attributes.kind === "passage") {
+      const passages = providerPassages.get(provider) ?? new Set<string>();
+      passages.add(key);
+      providerPassages.set(provider, passages);
+    }
+  }
+
+  for (const edge of graph.edges) {
+    if (!PROVENANCE_RELS.has(edge.attributes.rel)) continue;
+    const source = canonicalById.get(edge.source);
+    if (!source || (source.kind !== "finding" && source.kind !== "intel")) continue;
+    const provider = providerByCanonical.get(edge.target);
+    if (!provider) continue;
+    const claims = providerClaims.get(provider) ?? new Set<string>();
+    claims.add(edge.source);
+    providerClaims.set(provider, claims);
   }
 
   const providerId = (provider: string) => `${PRESENTATION_PREFIX}source:${provider.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "")}`;
   for (const [provider, members] of [...providerMembers].sort(([a], [b]) => a.localeCompare(b))) {
+    const artifacts = providerArtifacts.get(provider) ?? new Set<string>();
+    const passages = providerPassages.get(provider) ?? new Set<string>();
+    const claims = providerClaims.get(provider) ?? new Set<string>();
+    const allMembers = new Set([...members, ...passages, ...claims]);
+    const sourceCounts = { artifacts: artifacts.size, passages: passages.size, claims: claims.size, total: allMembers.size };
     nodes.push({
       id: providerId(provider),
       type: "app",
       layer: "A",
       label: provider,
+      worldLabel: `${provider} · ${sourceCounts.total}`,
       kind: "source system",
       status: "read-only",
-      desc: `${members.size} canonical object${members.size === 1 ? "" : "s"} represented`,
+      desc: `${sourceCounts.artifacts} artifact${sourceCounts.artifacts === 1 ? "" : "s"} · ${sourceCounts.passages} passage${sourceCounts.passages === 1 ? "" : "s"} · ${sourceCounts.claims} claim${sourceCounts.claims === 1 ? "" : "s"}`,
       access: "both",
       presentationOnly: true,
-      memberIds: [...members].sort(),
+      memberIds: [...allMembers].sort(),
+      sourceProvider: provider,
+      sourceSystemId: providerId(provider),
+      sourceDepth: "system",
+      sourceCounts,
+      identityMinZoom: 0,
     });
   }
 
@@ -393,6 +494,10 @@ export function adaptSignalGraphToRubric(
       runner: "Signal",
       access: "both",
       disagreement: canonical.disagreement,
+      realityRelationship: canonical.realityRelationship,
+      realityDistance: canonical.realityDistance,
+      trustMaterial: canonical.trustMaterial,
+      identityMinZoom: 0.82,
       currentness: canonical.currentness,
       basisSummary: canonical.basisSummary,
       attributes: { ...attributes },
@@ -421,6 +526,8 @@ export function adaptSignalGraphToRubric(
       canonical: true,
       basis: edge.attributes.basis,
       rule: edge.attributes.rule,
+      ...(typeof edge.attributes.intelRel === "string" ? { intelRel: edge.attributes.intelRel } : {}),
+      ...(typeof edge.attributes.current === "boolean" ? { current: edge.attributes.current } : {}),
     });
   }
 
@@ -477,5 +584,18 @@ export function validateSignalRubricPayload(payload: SignalRubricPayload): strin
   if (canonicalNodes.length !== payload.meta.canonicalNodes) errors.push("canonical node count does not reconcile");
   if (payload.links.filter((link) => link.canonical).length !== payload.meta.canonicalEdges) errors.push("canonical edge count does not reconcile");
   if (payload.nodes.find((node) => node.type === "router")?.canonicalId !== "reality") errors.push("Reality router alias is invalid");
+  for (const node of canonicalNodes) {
+    if (node.layer === "M" && node.type !== "router" && ![0, 0.5, 1].includes(node.realityDistance ?? -1)) {
+      errors.push(`Project World node ${node.id} has invalid Reality-distance semantics`);
+    }
+    if (node.type !== "router" && !["attested", "inferred", "external"].includes(node.trustMaterial ?? "")) {
+      errors.push(`canonical node ${node.id} has no trust material`);
+    }
+  }
+  for (const source of payload.nodes.filter((node) => node.type === "app")) {
+    if (!source.presentationOnly || source.sourceDepth !== "system" || !source.sourceCounts) {
+      errors.push(`Source System anchor ${source.id} is missing provenance-horizon metadata`);
+    }
+  }
   return errors;
 }

@@ -71,7 +71,6 @@ and returns canonical hits translated to their Rubric transport IDs. Trace is
 an Audit-local overlay drawn from canonical supported provenance paths using
 Rubric's live node positions. It does not alter target generation or physics.
 
-Disagreement is carried as bounded semantic metadata only in Phase 2. The
-unmodified runtime has no secondary radial-offset channel; adding one would
-require changing core target generation, so spatial disagreement is deferred
-to Phase 3.
+Phase 2 carries disagreement as semantic metadata only. Phase 3 consumes the
+same presentation-only value through the guarded extension documented in
+`SIGNAL-RUBRIC-PHASE3.md`; the adapter still emits no spatial fields.
