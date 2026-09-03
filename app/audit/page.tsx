@@ -1,5 +1,6 @@
 import InstrumentShell from "@/components/instrument/InstrumentShell";
 import AuditInstrument from "@/components/audit/AuditInstrument";
+import { redirect } from "next/navigation";
 
 export const dynamic = "force-dynamic";
 
@@ -19,9 +20,14 @@ export const dynamic = "force-dynamic";
 export default async function AuditPage({
   searchParams,
 }: {
-  searchParams: Promise<{ scope?: string }>;
+  searchParams: Promise<{ scope?: string; rubric?: string }>;
 }) {
-  const { scope } = await searchParams;
+  const { scope, rubric } = await searchParams;
+  // Phase 1 is intentionally a literal Rubric transplant, not another
+  // renderer option inside AuditInstrument. Serve it as its own full-page
+  // Audit subroute so no Signal shell, canvas, or iframe can alter Rubric's
+  // viewport. The normal Audit route remains exactly as it was.
+  if (rubric === "phase1") redirect("/audit/rubric-phase1");
   return (
     <InstrumentShell
       stateBar={
