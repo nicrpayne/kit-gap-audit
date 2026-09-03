@@ -36,8 +36,26 @@ function main() {
     host.includes("refreshPreservingSelection('Updating Audit context')")
       && host.includes("window.BrainCore.S.refreshData(message)")
       && !host.includes("fitToView") && !host.includes("resetView"));
+  check("visible Run Audit control opens the Audit-local overlay",
+    world.includes('onClick={() => { setRunOpen(true); setRunError(null); }}')
+      && world.includes('{runOpen && !fixture && (')
+      && world.includes('aria-label="Run Audit"')
+      && world.includes('absolute inset-0 z-50'));
+  check("Run Audit close and cancel do not navigate or remount the world",
+    world.match(/type="button" onClick=\{\(\) => setRunOpen\(false\)\}/g)?.length === 2
+      && !world.includes("key={scopeId")
+      && !world.includes("key={auditId"));
   check("Run Audit uses the existing canonical pipeline",
-    world.includes('fetch("/api/audit"') && world.includes('method: "POST"') && world.includes("sendContext(updated.scope.id, \"\")"));
+    world.includes("event.preventDefault()")
+      && world.includes('fetch("/api/audit"')
+      && world.includes('method: "POST"')
+      && world.includes('body: JSON.stringify({ scopeId, title: runTitle, kind: runKind, content: runContent })')
+      && world.includes("sendContext(updated.scope.id, \"\")"));
+  check("Run Audit preserves validation, visible errors, and single-submit protection",
+    world.includes('setRunError("Choose a project and provide evidence to compare.")')
+      && world.includes('{runError && <p')
+      && world.includes('<button disabled={running} type="submit"')
+      && world.includes('{running ? "Running…" : "Run Audit"}'));
   check("Run Audit copy protects Reality",
     world.includes("New Findings enter review. Reality does not change automatically."));
   check("history/current context is exposed and forwarded to the adapter",
