@@ -16,6 +16,7 @@
     inferred: '#f5a623',
     external: '#58abf5',
   };
+  const counted = (value, singular) => `${value} ${singular}${value === 1 ? '' : 's'}`;
 
   function installMaterialChannels() {
     const core = window.BrainCore;
@@ -102,7 +103,8 @@
     const n = core && core.S && core.S.sel;
     const card = document.getElementById('brain-card');
     if (!n || !card || card.style.display === 'none') return;
-    if (card.dataset.signalPhase3Id === n.id) return;
+    const actions = card.querySelector('.card-actions');
+    if (card.dataset.signalPhase3Id === n.id && actions && actions.dataset.signalPhase3Patched === 'true') return;
     card.dataset.signalPhase3Id = n.id;
 
     const badges = card.querySelector('.card-badges');
@@ -117,7 +119,12 @@
 
     const stats = card.querySelector('.card-stats');
     if (stats && n.sourceDepth === 'system' && n.sourceCounts) {
-      stats.textContent = `${n.sourceCounts.artifacts} artifacts · ${n.sourceCounts.passages} passages · ${n.sourceCounts.claims} claims`;
+      stats.textContent = [
+        counted(n.sourceCounts.linkedObjects, 'linked object'),
+        counted(n.sourceCounts.artifacts, 'artifact'),
+        counted(n.sourceCounts.passages, 'passage'),
+        counted(n.sourceCounts.claims, 'claim'),
+      ].join(' · ');
     }
 
     const line = document.createElement('div');
@@ -130,6 +137,7 @@
       line.innerHTML = '<strong>Project Model</strong> · accepted model structure; not a disagreement band.';
     }
     if (line.textContent) card.appendChild(line);
+    if (actions) actions.dataset.signalPhase3Patched = 'true';
   }
 
   function patchShell() {

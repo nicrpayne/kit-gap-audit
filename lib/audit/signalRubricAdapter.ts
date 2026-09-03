@@ -55,7 +55,7 @@ export interface SignalRubricNode {
   sourceProvider?: string;
   sourceSystemId?: string;
   sourceDepth?: "system" | "artifact" | "passage" | "claim" | "object";
-  sourceCounts?: { artifacts: number; passages: number; claims: number; total: number };
+  sourceCounts?: { linkedObjects: number; artifacts: number; passages: number; claims: number };
   worldLabel?: string;
   sourceRef?: string;
   sourceResolver?: string;
@@ -175,17 +175,52 @@ function labelOf(attrs: AuditNodeAttributes): string {
   return String(attrs.label ?? attrs.ref ?? "Untitled");
 }
 
+const SOURCE_PROVIDER_ALIASES = new Map<string, string>([
+  ["linear", "Linear"],
+  ["notion", "Notion"],
+  ["figma", "Figma"],
+  ["hermes", "Hermes"],
+  ["meeting", "Meetings / Transcripts"],
+  ["meetings", "Meetings / Transcripts"],
+  ["transcript", "Meetings / Transcripts"],
+  ["transcripts", "Meetings / Transcripts"],
+  ["meetings transcripts", "Meetings / Transcripts"],
+  ["document", "Documents"],
+  ["documents", "Documents"],
+  ["source", "Documents"],
+  ["contextdoc", "Documents"],
+  ["notes", "Documents"],
+  ["spreadsheet", "Documents"],
+]);
+
+/** Normalize only typed provider fields. Arbitrary labels, excerpts, refs and
+ * URLs never participate in provider identity. */
+export function normalizeSourceProvider(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  const key = trimmed.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+  const known = SOURCE_PROVIDER_ALIASES.get(key);
+  if (known) return known;
+  // An explicit canonical provider field may name a provider Signal has not
+  // seen before. Preserve that typed identity while deterministically folding
+  // case/separator variants into one anchor.
+  return key.split(" ").filter(Boolean).map((part) => part[0].toUpperCase() + part.slice(1)).join(" ") || null;
+}
+
 export function sourceProviderOf(attrs: AuditNodeAttributes): string | null {
   const lane = String(attrs.lane ?? "").toLowerCase();
   const sourceType = String(attrs.sourceType ?? "").toLowerCase();
   // Provider identity comes only from canonical typed fields. Labels,
   // excerpts, source refs, and URL prose are deliberately absent here.
+  const explicit = normalizeSourceProvider(attrs.sourceProvider ?? attrs.provider);
+  if (explicit) return explicit;
   if (attrs.kind === "work" || attrs.kind === "feature" || lane === "linear" || sourceType.includes("linear")) return "Linear";
-  if (attrs.kind === "notion_page" || sourceType.includes("notion")) return "Notion";
-  if (attrs.kind === "figma_artifact" || sourceType.includes("figma")) return "Figma";
-  if (attrs.kind === "intelligence" || attrs.kind === "intel" || lane === "hermes" || String(attrs.producer ?? "").toLowerCase() === "hermes") return "Hermes";
+  if (attrs.kind === "notion_page" || sourceType.includes("notion") || lane === "notion") return "Notion";
+  if (attrs.kind === "figma_artifact" || sourceType.includes("figma") || lane === "figma") return "Figma";
+  if (lane === "hermes" || normalizeSourceProvider(attrs.producer) === "Hermes" || sourceType.includes("hermes")) return "Hermes";
   if (attrs.kind === "transcript" || sourceType === "transcript" || sourceType === "meeting") return "Meetings / Transcripts";
-  if (SOURCE_KINDS.has(attrs.kind)) return "Documents";
+  if (attrs.kind === "source") return normalizeSourceProvider(sourceType) ?? "Documents";
   return null;
 }
 
@@ -419,15 +454,15 @@ export function adaptSignalGraphToRubric(
   const providerClaims = new Map<string, Set<string>>();
   for (const { key, attributes } of graph.nodes) {
     const provider = providerByCanonical.get(key);
-    if (provider && (SOURCE_KINDS.has(attributes.kind) || attributes.kind === "intelligence" || attributes.kind === "intel" || attributes.kind === "work" || attributes.kind === "feature")) {
+    if (provider) {
       const members = providerMembers.get(provider) ?? new Set<string>();
       members.add(key);
       providerMembers.set(provider, members);
-      if (attributes.kind === "intel") {
+      if (attributes.kind === "finding" || attributes.kind === "intel") {
         const claims = providerClaims.get(provider) ?? new Set<string>();
         claims.add(key);
         providerClaims.set(provider, claims);
-      } else {
+      } else if (SOURCE_KINDS.has(attributes.kind) || attributes.kind === "intelligence" || attributes.kind === "work" || attributes.kind === "feature") {
         const artifacts = providerArtifacts.get(provider) ?? new Set<string>();
         artifacts.add(key);
         providerArtifacts.set(provider, artifacts);
@@ -449,6 +484,9 @@ export function adaptSignalGraphToRubric(
     const claims = providerClaims.get(provider) ?? new Set<string>();
     claims.add(edge.source);
     providerClaims.set(provider, claims);
+    const members = providerMembers.get(provider) ?? new Set<string>();
+    members.add(edge.source);
+    providerMembers.set(provider, members);
   }
 
   const providerId = (provider: string) => `${PRESENTATION_PREFIX}source:${provider.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "")}`;
@@ -457,16 +495,16 @@ export function adaptSignalGraphToRubric(
     const passages = providerPassages.get(provider) ?? new Set<string>();
     const claims = providerClaims.get(provider) ?? new Set<string>();
     const allMembers = new Set([...members, ...passages, ...claims]);
-    const sourceCounts = { artifacts: artifacts.size, passages: passages.size, claims: claims.size, total: allMembers.size };
+    const sourceCounts = { linkedObjects: allMembers.size, artifacts: artifacts.size, passages: passages.size, claims: claims.size };
     nodes.push({
       id: providerId(provider),
       type: "app",
       layer: "A",
       label: provider,
-      worldLabel: `${provider} · ${sourceCounts.total}`,
+      worldLabel: `${provider} · ${sourceCounts.linkedObjects} linked`,
       kind: "source system",
       status: "read-only",
-      desc: `${sourceCounts.artifacts} artifact${sourceCounts.artifacts === 1 ? "" : "s"} · ${sourceCounts.passages} passage${sourceCounts.passages === 1 ? "" : "s"} · ${sourceCounts.claims} claim${sourceCounts.claims === 1 ? "" : "s"}`,
+      desc: `${sourceCounts.linkedObjects} linked object${sourceCounts.linkedObjects === 1 ? "" : "s"} · ${sourceCounts.artifacts} artifact${sourceCounts.artifacts === 1 ? "" : "s"} · ${sourceCounts.passages} passage${sourceCounts.passages === 1 ? "" : "s"} · ${sourceCounts.claims} claim${sourceCounts.claims === 1 ? "" : "s"}`,
       access: "both",
       presentationOnly: true,
       memberIds: [...allMembers].sort(),
@@ -582,6 +620,7 @@ export function validateSignalRubricPayload(payload: SignalRubricPayload): strin
   }
   const canonicalNodes = payload.nodes.filter((node) => !node.presentationOnly);
   const canonicalIds = canonicalNodes.map((node) => node.canonicalId);
+  const canonicalIdSet = new Set(canonicalIds);
   if (canonicalIds.some((id) => !id)) errors.push("canonical projection missing canonicalId");
   if (new Set(canonicalIds).size !== canonicalIds.length) errors.push("duplicate canonical projection");
   if (canonicalNodes.length !== payload.meta.canonicalNodes) errors.push("canonical node count does not reconcile");
@@ -595,9 +634,33 @@ export function validateSignalRubricPayload(payload: SignalRubricPayload): strin
       errors.push(`canonical node ${node.id} has no trust material`);
     }
   }
-  for (const source of payload.nodes.filter((node) => node.type === "app")) {
+  const sourceAnchors = payload.nodes.filter((node) => node.type === "app");
+  if (new Set(sourceAnchors.map((source) => source.sourceProvider)).size !== sourceAnchors.length) {
+    errors.push("duplicate normalized Source System anchor");
+  }
+  for (const source of sourceAnchors) {
     if (!source.presentationOnly || source.sourceDepth !== "system" || !source.sourceCounts) {
       errors.push(`Source System anchor ${source.id} is missing provenance-horizon metadata`);
+      continue;
+    }
+    const members = new Set(source.memberIds ?? []);
+    if (members.size !== source.sourceCounts.linkedObjects) {
+      errors.push(`Source System anchor ${source.id} linked-object count does not reconcile`);
+    }
+    if ([...members].some((id) => !canonicalIdSet.has(id))) {
+      errors.push(`Source System anchor ${source.id} contains a non-canonical member`);
+    }
+    if (![source.sourceCounts.artifacts, source.sourceCounts.passages, source.sourceCounts.claims].every((count) => count <= source.sourceCounts!.linkedObjects)) {
+      errors.push(`Source System anchor ${source.id} category count exceeds linked objects`);
+    }
+    if (!source.worldLabel?.includes(" linked")) {
+      errors.push(`Source System anchor ${source.id} presents an ambiguous population count`);
+    }
+  }
+  for (const node of canonicalNodes.filter((candidate) => candidate.sourceProvider)) {
+    const anchor = sourceAnchors.find((source) => source.sourceProvider === node.sourceProvider);
+    if (!anchor || !anchor.memberIds?.includes(node.canonicalId!)) {
+      errors.push(`canonical node ${node.id} is missing its normalized Source System membership`);
     }
   }
   return errors;
