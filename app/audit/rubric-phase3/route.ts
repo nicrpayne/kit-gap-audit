@@ -4,11 +4,13 @@
 
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
+import { NextRequest } from "next/server";
 
 export const dynamic = "force-dynamic";
 
-export async function GET() {
+export async function GET(req: NextRequest) {
   const source = await readFile(join(process.cwd(), "public/audit-rubric-phase1/index.html"), "utf8");
+  const embedded = req.nextUrl.searchParams.get("embedded") === "1";
   const phaseThreeStyle = `
 <style id="signal-phase3-style">
   [data-sec="view"], .p-actions #btn-expand, .p-actions #btn-collapse, .p-actions #btn-rescan, .p-actions #btn-bake,
@@ -29,12 +31,19 @@ export async function GET() {
   .signal-material-key { margin-top: 12px; border-top: 1px solid rgba(160,175,215,.16); padding-top: 10px; color: #8b93ad; font: 500 10px/1.65 Outfit,sans-serif; }
   .signal-material-key b { color: #dfe4f2; }
   .signal-swatch { display: inline-block; width: 13px; height: 7px; margin-right: 6px; border-radius: 8px; vertical-align: middle; }
+  body.signal-audit-embedded #signal-audit-nav,
+  body.signal-audit-embedded #brain-hud { display: none !important; }
+  body.signal-audit-embedded #fab-menu { top: 12px; right: 12px; }
+  body.signal-audit-embedded #fab-legend { bottom: 12px; left: 12px; }
+  body.signal-audit-embedded:has(#brain-viewer.open) #fab-menu { display: none !important; }
+  body.signal-audit-embedded #brain-viewer .v-close { margin-right: 32px; }
 </style>`;
   const html = source
     .replace("<head>", '<head>\n<base href="/audit-rubric-phase1/">')
     .replace("<title>Your Second Brain</title>", "<title>Signal Audit World · Phase 3</title>")
     .replace('<script src="phase1-host.js"></script>', '<script src="/audit-rubric-phase2/phase2-host.js"></script>\n<script src="/audit-rubric-phase3/phase3-host.js"></script>')
     .replace('<script src="_core.js"></script>', '<script src="/audit/rubric-phase3/core"></script>')
+    .replace("<body>", embedded ? '<body class="signal-audit-embedded">' : "<body>")
     .replace("</head>", `${phaseThreeStyle}\n</head>`);
   return new Response(html, {
     headers: {
