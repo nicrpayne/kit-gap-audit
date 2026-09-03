@@ -32,11 +32,10 @@ The Finding `JSA/iTrack design ownership split unresolved` was opened from Rubri
 
 ## Remaining credential command
 
-Start the already-created disposable test database, then inject the key into only the local server process:
+Recreate/start the disposable test database, apply the existing migrations and seed, then inject the key into only the local server process. The acceptance container was removed after testing.
 
 ```sh
 DATABASE_URL='postgresql://signal_p3b:signal_p3b_local_only@127.0.0.1:55432/signal_audit_p3b?schema=public' KIT_DEV_FIXTURES=1 ANTHROPIC_API_KEY='<set locally, do not paste into chat>' npm run dev -- -p 3001
 ```
 
 Then run the existing JSA Run Audit form. A complete credential-gate proof must capture pre/post graph census, the new AuditRun, Findings, current/prior/History, same-frame `timeOrigin`, camera and Reality census.
-
