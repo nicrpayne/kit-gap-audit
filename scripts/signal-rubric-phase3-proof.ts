@@ -79,7 +79,7 @@ function main() {
   const suppliedCore = readFileSync("lab/rubric-reference/second-brain/public/_core.js", "utf8");
   const phaseThreeCore = buildPhase3RubricCore(phaseOneCore);
   check("accepted Phase 1 core remains byte-identical", sha(phaseOneCore) === sha(suppliedCore), sha(phaseOneCore));
-  check("Phase 3 applies exactly four guarded core extensions", PHASE_3_CORE_PATCHES.length === 4 && phaseThreeCore !== phaseOneCore);
+  check("Phase 3 applies exactly five guarded core extensions", PHASE_3_CORE_PATCHES.length === 5 && phaseThreeCore !== phaseOneCore);
   check("bounded modifier is exactly 0..12 world units", phaseThreeCore.includes("Math.max(0, Math.min(1, value)) * 12"));
   check("Phase 3 core still contains native Rings/Force/Circle/Hex/camera/drag machinery",
     ["computeRingTargets", "forceSimulation", "kind === 'circle'", "kind === 'hex'", "flyToNode", "S.drag"].every((token) => phaseThreeCore.includes(token)));

@@ -2,6 +2,7 @@
 
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
+import { buildPhase3RubricCore } from "../lib/audit/rubricPhase3Core";
 
 let failures = 0;
 const check = (name: string, ok: boolean) => {
@@ -22,11 +23,19 @@ const adapter = read("lib/audit/signalRubricAdapter.ts");
 const world = read("components/audit/AuditWorld.tsx");
 const overlay = read("components/audit/AuditFindingOverlay.tsx");
 const retiredInstrument = read("components/audit/AuditInstrument.tsx");
+const phaseThreeCore = buildPhase3RubricCore(read("public/audit-rubric-phase1/_core.js"));
 
 check("source cards use explicit idempotence markers",
   host.includes("actions.dataset.signalPatched === 'true'")
     && host.includes("actions.dataset.signalPatched = 'true'")
     && !host.includes("['Open on device', 'Copy path', 'Remove', 'Edit']"));
+check("Signal tooltip translation uses the idempotent skin boundary",
+  host.includes("function signalTooltipHTML(n)")
+    && host.includes("skin.tipHTML = signalTooltipHTML")
+    && !host.includes("tip.innerHTML = expected")
+    && phaseThreeCore.includes("if (tip.innerHTML !== html) tip.innerHTML = html;"));
+check("document-wide host observers ignore tooltip-only mutations",
+  [host, phase3Host].every(source => source.includes("records.every(record => record.target === document.getElementById('brain-tip')")));
 check("source counts state linked-object semantics",
   adapter.includes("linkedObjects") && adapter.includes("worldLabel: `${provider} · ${sourceCounts.linkedObjects} linked`")
     && phase3Host.includes("counted(n.sourceCounts.linkedObjects, 'linked object')"));

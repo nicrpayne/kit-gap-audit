@@ -193,7 +193,9 @@
     }
   }
 
-  const observer = new MutationObserver(() => {
+  const observer = new MutationObserver(records => {
+    if (records.every(record => record.target === document.getElementById('brain-tip')
+      || (record.target.closest && record.target.closest('#brain-tip')))) return;
     installMaterialChannels();
     patchShell();
     patchPhase3Card();
