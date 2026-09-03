@@ -16,13 +16,23 @@ const KIND_OPTIONS: { value: string; label: string }[] = [
   { value: "spreadsheet", label: "Spreadsheet / task list" },
 ];
 
-export default function AuditNewForm({ scopes }: { scopes: ScopeOption[] }) {
+export default function AuditNewForm({
+  scopes,
+  initialScopeId,
+}: {
+  scopes: ScopeOption[];
+  initialScopeId?: string;
+}) {
   const router = useRouter();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [title, setTitle] = useState("");
   const [kind, setKind] = useState("transcript");
-  const [scopeId, setScopeId] = useState(scopes[0]?.id ?? "");
+  const [scopeId, setScopeId] = useState(
+    initialScopeId && scopes.some((scope) => scope.id === initialScopeId)
+      ? initialScopeId
+      : scopes[0]?.id ?? ""
+  );
   const [content, setContent] = useState("");
   const [running, setRunning] = useState(false);
   const [error, setError] = useState<string | null>(null);

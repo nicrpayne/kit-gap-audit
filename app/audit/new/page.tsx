@@ -8,7 +8,12 @@ export const dynamic = "force-dynamic";
 // The form itself is untouched: it was written against the light palette,
 // and SignalSurface's `.i-legacy` scope resolves those tokens to instrument
 // values, so it renders in Signal without a rewrite. See app/globals.css.
-export default async function NewAuditPage() {
+export default async function NewAuditPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ scope?: string }>;
+}) {
+  const { scope } = await searchParams;
   const scopes = await prisma.scope.findMany({
     orderBy: { createdAt: "asc" },
     select: { id: true, name: true },
@@ -30,7 +35,7 @@ export default async function NewAuditPage() {
           to point Signal at a Linear team before running an audit.
         </SurfaceEmpty>
       ) : (
-        <AuditNewForm scopes={scopes} />
+        <AuditNewForm scopes={scopes} initialScopeId={scope} />
       )}
     </SignalSurface>
   );

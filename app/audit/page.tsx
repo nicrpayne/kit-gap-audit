@@ -34,6 +34,12 @@ export default async function AuditPage({
     if (fixture) params.set("fixture", fixture);
     redirect(`/audit/rubric-phase2${params.size > 0 ? `?${params}` : ""}`);
   }
+  if (rubric === "phase3") {
+    const params = new URLSearchParams();
+    if (scope) params.set("scope", scope);
+    if (fixture) params.set("fixture", fixture);
+    redirect(`/audit/rubric-phase3${params.size > 0 ? `?${params}` : ""}`);
+  }
   return (
     <InstrumentShell
       stateBar={
