@@ -574,6 +574,14 @@ export function adaptSignalGraphToRubric(
 
   const presentationNodes = nodes.filter((node) => node.presentationOnly).length;
   const sourceSystems = [...providerMembers.keys()].sort();
+  const traceByNode = tracesFor(graph, aliases);
+  for (const node of nodes) {
+    if (!node.presentationOnly || !node.canonicalId) continue;
+    const canonicalTransportId = aliases.get(node.canonicalId);
+    if (canonicalTransportId && traceByNode[canonicalTransportId]) {
+      traceByNode[node.id] = traceByNode[canonicalTransportId];
+    }
+  }
   return {
     meta: {
       adapter: "SignalRubricAdapter",
@@ -584,7 +592,7 @@ export function adaptSignalGraphToRubric(
       presentationNodes,
       sourceSystems,
       transportAliases: { reality: REALITY_TRANSPORT_ID },
-      traceByNode: tracesFor(graph, aliases),
+      traceByNode,
       scannedAt: generatedAt,
       scanMs: 0,
       totalFiles: graph.nodes.length,

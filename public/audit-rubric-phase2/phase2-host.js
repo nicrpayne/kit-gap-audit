@@ -277,7 +277,11 @@
       if (!searchRestore) searchRestore = { cam: { ...window.BrainCore.S.cam }, selected: window.BrainCore.S.sel && window.BrainCore.S.sel.id };
       clear.style.display = 'block';
     };
-    input.addEventListener('input', () => { if (input.value.trim()) remember(); });
+    input.addEventListener('input', () => {
+      if (!input.value.trim()) return;
+      trace = null;
+      remember();
+    });
     document.getElementById('brain-results').addEventListener('mousedown', remember, true);
     clear.onclick = () => restoreSearch();
   }
@@ -338,9 +342,12 @@
 
   async function refreshPreservingSelection(message) {
     const selectedId = window.BrainCore.S.sel && window.BrainCore.S.sel.id;
+    const selectedCanonicalId = window.BrainCore.S.sel && window.BrainCore.S.sel.canonicalId;
     await window.BrainCore.S.refreshData(message);
-    if (!selectedId) return;
-    const selected = window.BrainCore.S.byId.get(selectedId) || null;
+    if (!selectedId && !selectedCanonicalId) return;
+    const selected = window.BrainCore.S.byId.get(selectedId)
+      || (selectedCanonicalId && window.BrainCore.S.nodes.find(n => n.canonicalId === selectedCanonicalId))
+      || null;
     window.BrainCore.select(selected);
   }
 
