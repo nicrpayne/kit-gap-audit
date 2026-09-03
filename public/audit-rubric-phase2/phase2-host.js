@@ -157,8 +157,9 @@
   function patchCard() {
     const card = document.getElementById('brain-card');
     const n = signalNode();
+    const actions = card && card.querySelector('.card-actions');
     const alreadyPatched = card && card.dataset.signalId === (n && n.id)
-      && ![...card.querySelectorAll('.act')].some(button => ['Open on device', 'Copy path', 'Remove', 'Edit'].includes(button.textContent));
+      && actions && actions.dataset.signalPatched === 'true';
     if (!card || !n || card.style.display === 'none' || alreadyPatched) return;
     card.dataset.signalId = n.id;
     const title = card.querySelector('.card-title');
@@ -179,7 +180,6 @@
       if (button.dataset.act === 'open' && !n.sourceResolver) button.style.display = 'none';
       if (button.dataset.act === 'edit' || button.dataset.act === 'toggle') button.style.display = 'none';
     });
-    const actions = card.querySelector('.card-actions');
     if (actions && n.canonicalId && !actions.querySelector('[data-act="view"]')) {
       actions.insertAdjacentHTML('afterbegin', '<button class="act" data-act="view">View here</button>');
     }
@@ -194,6 +194,7 @@
     if (!n.connections || !n.connections.length) {
       if (oldRows) oldRows.remove();
       if (sub) sub.remove();
+      if (actions) actions.dataset.signalPatched = 'true';
       return;
     }
     if (sub) sub.textContent = 'Canonical connections';
@@ -209,6 +210,7 @@
         if (target) { window.BrainCore.select(target); window.BrainCore.flyToNode(target); }
       });
     }
+    if (actions) actions.dataset.signalPatched = 'true';
   }
 
   function patchViewer() {
