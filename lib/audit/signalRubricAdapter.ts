@@ -94,6 +94,9 @@ export interface SignalRubricPayload {
     sourceSystems: string[];
     transportAliases: Record<string, string>;
     traceByNode: Record<string, Array<{ s: string; t: string; rel: string; basis: string }>>;
+    auditContext?:
+      | { mode: "current" }
+      | { mode: "audit"; id: string; title: string; kind: string; createdAt: string };
     scannedAt: string;
     scanMs: number;
     totalFiles: number;

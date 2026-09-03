@@ -1,22 +1,14 @@
 import InstrumentShell from "@/components/instrument/InstrumentShell";
-import AuditInstrument from "@/components/audit/AuditInstrument";
+import AuditWorld from "@/components/audit/AuditWorld";
 import { redirect } from "next/navigation";
 
 export const dynamic = "force-dynamic";
 
-// AUDIT IS AN INSTRUMENT NOW.
+// THE RUBRIC WORLD IS THE AUDIT COMPONENT.
 //
-// It used to render through SignalSurface as a reading surface — a list of
-// past runs in a centred measure — on the reasoning that "there is nothing
-// here to play". That stopped being true: the Project Truth Map is a control
-// surface you select on, focus, solo and preview against, which is exactly
-// what the design north star means by an instrument. It owns the viewport,
-// carries its own state bar, and its rail can be hidden with ⌘\ like every
-// other instrument's.
-//
-// The audit-run list it replaced is not gone — /audit/history keeps it, and
-// the header links to it. A per-source drill-down at /audit/<sourceId> is
-// untouched.
+// Signal keeps its instrument rail and Audit context bar; AuditWorld owns all
+// remaining space. The former graph/inspector implementation stays available
+// in source for comparison but is no longer mounted at Audit's real route.
 export default async function AuditPage({
   searchParams,
 }: {
@@ -42,14 +34,12 @@ export default async function AuditPage({
   }
   return (
     <InstrumentShell
-      stateBar={
-        // The instrument draws its own header (scope, current-vs-prior, Run
-        // audit), so the shell's default identity strip would be a second,
-        // quieter copy of the same thing.
-        <></>
-      }
+      // AuditWorld owns the one thin context bar. A concrete hidden node is
+      // used instead of an empty fragment so the client-shell boundary never
+      // coalesces it back to InstrumentShell's default identity strip.
+      stateBar={<div className="hidden" />}
     >
-      <AuditInstrument initialScopeId={scope} />
+      <AuditWorld initialScopeId={scope} fixture={fixture} />
     </InstrumentShell>
   );
 }

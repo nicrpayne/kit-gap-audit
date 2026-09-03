@@ -10,7 +10,8 @@
 
   const nativeFetch = window.fetch.bind(window);
   const query = new URLSearchParams(window.location.search);
-  const scope = query.get('scope') || '';
+  let scope = query.get('scope') || '';
+  let audit = query.get('audit') || '';
   const fixture = query.get('fixture') || '';
   const hidden = new Set();
   let graphPromise = null;
@@ -37,6 +38,7 @@
   const endpoint = (mode, q) => {
     const p = new URLSearchParams({ mode });
     if (scope) p.set('scope', scope);
+    if (audit) p.set('audit', audit);
     if (fixture) p.set('fixture', fixture);
     if (q) p.set('q', q);
     return '/api/audit/rubric?' + p.toString();
@@ -156,7 +158,7 @@
     const card = document.getElementById('brain-card');
     const n = signalNode();
     const alreadyPatched = card && card.dataset.signalId === (n && n.id)
-      && ![...card.querySelectorAll('.act')].some(button => ['View here', 'Open on device', 'Copy path', 'Remove', 'Edit'].includes(button.textContent));
+      && ![...card.querySelectorAll('.act')].some(button => ['Open on device', 'Copy path', 'Remove', 'Edit'].includes(button.textContent));
     if (!card || !n || card.style.display === 'none' || alreadyPatched) return;
     card.dataset.signalId = n.id;
     const title = card.querySelector('.card-title');
@@ -172,14 +174,14 @@
       n.basisSummary ? `<span class="badge signal-basis">${escape(n.basisSummary)}</span>` : '',
     ].join('');
     card.querySelectorAll('.act').forEach(button => {
-      const labels = { view: 'Open detail', open: 'Open source', copy: 'Copy reference', remove: 'Hide from view', fly: 'Fly to' };
+      const labels = { view: 'View here', open: 'Open source', copy: 'Copy reference', remove: 'Hide from view', fly: 'Fly to' };
       if (labels[button.dataset.act]) button.textContent = labels[button.dataset.act];
       if (button.dataset.act === 'open' && !n.sourceResolver) button.style.display = 'none';
       if (button.dataset.act === 'edit' || button.dataset.act === 'toggle') button.style.display = 'none';
     });
     const actions = card.querySelector('.card-actions');
     if (actions && n.canonicalId && !actions.querySelector('[data-act="view"]')) {
-      actions.insertAdjacentHTML('afterbegin', '<button class="act" data-act="view">Open detail</button>');
+      actions.insertAdjacentHTML('afterbegin', '<button class="act" data-act="view">View here</button>');
     }
     if (actions && n.canonicalId && !actions.querySelector('[data-act="copy"]')) {
       actions.insertAdjacentHTML('beforeend', '<button class="act" data-act="copy">Copy reference</button>');
@@ -347,9 +349,37 @@
     }, true);
   }
 
+  function installSignalAuditBridge() {
+    // buildPanels installs refreshData after the graph and controls exist.
+    // Do not announce readiness earlier: the parent would legitimately send
+    // its context straight back and hit a bridge with nothing to refresh yet.
+    if (window.__signalAuditBridgeInstalled || typeof window.BrainCore.S.refreshData !== 'function') return;
+    window.__signalAuditBridgeInstalled = true;
+    const announce = type => {
+      if (window.parent === window) return;
+      window.parent.postMessage({
+        type,
+        scope: window.BrainCore.S.meta.scopeId || scope,
+        auditContext: window.BrainCore.S.meta.auditContext || { mode: 'current' },
+      }, window.location.origin);
+    };
+    window.addEventListener('message', async event => {
+      if (event.origin !== window.location.origin || event.source !== window.parent) return;
+      const message = event.data;
+      if (!message || message.type !== 'signal-audit-set-context') return;
+      scope = typeof message.scope === 'string' ? message.scope : scope;
+      audit = typeof message.audit === 'string' ? message.audit : '';
+      graphPromise = null;
+      hidden.clear();
+      await window.BrainCore.S.refreshData('Updating Audit context');
+      announce('signal-audit-world-updated');
+    });
+    announce('signal-audit-world-ready');
+  }
+
   const observer = new MutationObserver(() => {
     if (!window.BrainCore || !window.BrainCore.S || !window.BrainCore.S.meta) return;
-    patchWords(); patchCard(); patchViewer(); installShell();
+    patchWords(); patchCard(); patchViewer(); installShell(); installSignalAuditBridge();
   });
   observer.observe(document.documentElement, { childList: true, subtree: true });
 })();

@@ -53,7 +53,7 @@ async function fixtureGraph(kind: string): Promise<{ graph: AuditGraph; scope: {
 async function canonicalGraph(req: NextRequest) {
   const fixture = req.nextUrl.searchParams.get("fixture") ?? "";
   const fixtureResult = await fixtureGraph(fixture);
-  if (fixtureResult) return fixtureResult;
+  if (fixtureResult) return { ...fixtureResult, selectedAudit: null };
 
   const requested = req.nextUrl.searchParams.get("scope");
   const scopes = await prisma.scope.findMany({
@@ -64,22 +64,89 @@ async function canonicalGraph(req: NextRequest) {
   const scope = requested && scopes.some((candidate) => candidate.id === requested)
     ? scopes.find((candidate) => candidate.id === requested)!
     : scopes[0];
-  const inputs = await loadAuditGraphInputs(scope.id);
+  const requestedAudit = req.nextUrl.searchParams.get("audit");
+  const selectedAudit = requestedAudit
+    ? await prisma.source.findFirst({
+        where: { id: requestedAudit, scopeId: scope.id },
+        select: { id: true, title: true, kind: true, createdAt: true },
+      })
+    : null;
+  if (requestedAudit && !selectedAudit) throw new Error("Unknown Audit for this Scope");
+  const inputs = await loadAuditGraphInputs(
+    scope.id,
+    selectedAudit ? { auditSourceId: selectedAudit.id } : undefined
+  );
   if (!inputs) throw new Error("Unknown Scope");
-  return { graph: buildAuditGraph(inputs), scope, generatedAt: "current-read-only-audit-graph" };
+  return {
+    graph: buildAuditGraph(inputs),
+    scope,
+    generatedAt: selectedAudit
+      ? `audit-lens:${selectedAudit.id}:${selectedAudit.createdAt.toISOString()}`
+      : "current-read-only-audit-graph",
+    selectedAudit,
+  };
+}
+
+async function auditContext(req: NextRequest) {
+  const fixture = req.nextUrl.searchParams.get("fixture") ?? "";
+  const fixtureResult = await fixtureGraph(fixture);
+  if (fixtureResult) {
+    return { scopes: [fixtureResult.scope], scope: fixtureResult.scope, audits: [] };
+  }
+  const requested = req.nextUrl.searchParams.get("scope");
+  const scopes = await prisma.scope.findMany({
+    select: { id: true, name: true },
+    orderBy: { createdAt: "asc" },
+  });
+  if (scopes.length === 0) throw new Error("No Scopes are configured.");
+  const scope = requested && scopes.some((candidate) => candidate.id === requested)
+    ? scopes.find((candidate) => candidate.id === requested)!
+    : scopes[0];
+  const sources = await prisma.source.findMany({
+    where: { scopeId: scope.id },
+    orderBy: { createdAt: "desc" },
+    take: 20,
+    include: { findings: { select: { status: true } } },
+  });
+  return {
+    scopes,
+    scope,
+    audits: sources.map((source, index) => ({
+      id: source.id,
+      title: source.title,
+      kind: source.kind,
+      createdAt: source.createdAt.toISOString(),
+      findingCount: source.findings.length,
+      openFindingCount: source.findings.filter((finding) => finding.status === "open").length,
+      position: index === 0 ? "current" : index === 1 ? "prior" : "earlier",
+    })),
+  };
 }
 
 export async function GET(req: NextRequest) {
   try {
-    const { graph, scope, generatedAt } = await canonicalGraph(req);
+    const mode = req.nextUrl.searchParams.get("mode") ?? "graph";
+    if (mode === "context") {
+      return NextResponse.json(await auditContext(req), { headers: { "cache-control": "no-store" } });
+    }
+
+    const { graph, scope, generatedAt, selectedAudit } = await canonicalGraph(req);
     const exported = exportAuditGraph(graph);
     const payload = adaptSignalGraphToRubric(exported, scope, generatedAt);
+    payload.meta.auditContext = selectedAudit
+      ? {
+          mode: "audit",
+          id: selectedAudit.id,
+          title: selectedAudit.title,
+          kind: selectedAudit.kind,
+          createdAt: selectedAudit.createdAt.toISOString(),
+        }
+      : { mode: "current" };
     const errors = validateSignalRubricPayload(payload);
     if (errors.length > 0) {
       return NextResponse.json({ error: "SignalRubricAdapter rejected its output", details: errors }, { status: 500 });
     }
 
-    const mode = req.nextUrl.searchParams.get("mode") ?? "graph";
     if (mode === "search") {
       const query = req.nextUrl.searchParams.get("q") ?? "";
       const outcome = SignalSearchIndex.build(graph).search(query);

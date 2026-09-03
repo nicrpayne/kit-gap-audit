@@ -15,13 +15,15 @@ const PAGE_SIZE = 20;
 export default async function AuditHistoryPage({
   searchParams,
 }: {
-  searchParams: Promise<{ page?: string }>;
+  searchParams: Promise<{ page?: string; scope?: string }>;
 }) {
-  const { page: pageParam } = await searchParams;
+  const { page: pageParam, scope } = await searchParams;
   const page = Math.max(1, parseInt(pageParam ?? "1", 10) || 1);
+  const where = scope ? { scopeId: scope } : undefined;
 
   const [sources, total] = await Promise.all([
     prisma.source.findMany({
+      where,
       orderBy: { createdAt: "desc" },
       skip: (page - 1) * PAGE_SIZE,
       take: PAGE_SIZE,
@@ -31,7 +33,7 @@ export default async function AuditHistoryPage({
         findings: { select: { status: true } },
       },
     }),
-    prisma.source.count(),
+    prisma.source.count({ where }),
   ]);
 
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
@@ -41,7 +43,7 @@ export default async function AuditHistoryPage({
       eyebrow="Audit · history"
       title="Every audit you've run"
       lede="Each one compared a source — a transcript, a note, a list of estimates — against the work already tracked, and kept what was missing."
-      actions={<SurfaceAction href="/audit">← Truth map</SurfaceAction>}
+      actions={<SurfaceAction href={`/audit${scope ? `?scope=${encodeURIComponent(scope)}` : ""}`}>← Audit World</SurfaceAction>}
     >
       {sources.length === 0 ? (
         <SurfaceEmpty>
@@ -88,7 +90,7 @@ export default async function AuditHistoryPage({
       {totalPages > 1 && (
         <div className="mt-6 flex items-center justify-between text-[12px]">
           <Link
-            href={`/audit/history?page=${page - 1}`}
+            href={`/audit/history?page=${page - 1}${scope ? `&scope=${encodeURIComponent(scope)}` : ""}`}
             aria-disabled={page <= 1}
             className={`i-control px-3 py-1.5 text-[var(--i-text-soft)] transition-colors hover:text-[var(--i-text)] ${
               page <= 1 ? "pointer-events-none opacity-35" : ""
@@ -100,7 +102,7 @@ export default async function AuditHistoryPage({
             Page {page} of {totalPages}
           </span>
           <Link
-            href={`/audit/history?page=${page + 1}`}
+            href={`/audit/history?page=${page + 1}${scope ? `&scope=${encodeURIComponent(scope)}` : ""}`}
             aria-disabled={page >= totalPages}
             className={`i-control px-3 py-1.5 text-[var(--i-text-soft)] transition-colors hover:text-[var(--i-text)] ${
               page >= totalPages ? "pointer-events-none opacity-35" : ""

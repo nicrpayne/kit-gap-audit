@@ -32,18 +32,35 @@ export interface AuditGraphInputs {
  * work items, registrations). The map needs "3 decisions"; the graph needs
  * the three decisions.
  */
-export async function loadAuditGraphInputs(scopeId: string): Promise<AuditGraphInputs | null> {
+export async function loadAuditGraphInputs(
+  scopeId: string,
+  options: { auditSourceId?: string } = {}
+): Promise<AuditGraphInputs | null> {
   const scope = await prisma.scope.findUnique({ where: { id: scopeId } });
   if (!scope) return null;
+
+  // An Audit-history lens narrows only the evidence run and its Findings.
+  // Reality, accepted project structure, work, capacity and external
+  // intelligence stay canonical/current: the database does not contain a
+  // historical snapshot of those systems, so pretending it does would be a
+  // false reconstruction. With no lens this is byte-for-byte the existing
+  // current-world query.
+  const auditSourceId = options.auditSourceId;
+  const findingScopeWhere = { OR: [{ source: { scopeId } }, { contextSnapshot: { scopeId } }] };
 
   const [findings, decisions, sources, contextDocs, snapshots, allocations, dependsOn, runs, registrations] =
     await Promise.all([
       prisma.finding.findMany({
-        where: { OR: [{ source: { scopeId } }, { contextSnapshot: { scopeId } }] },
+        where: auditSourceId
+          ? { AND: [findingScopeWhere, { sourceId: auditSourceId }] }
+          : findingScopeWhere,
         orderBy: { createdAt: "desc" },
       }),
       prisma.decision.findMany({ where: { scopeId }, include: { gate: true }, orderBy: { createdAt: "asc" } }),
-      prisma.source.findMany({ where: { scopeId }, orderBy: { createdAt: "desc" } }),
+      prisma.source.findMany({
+        where: auditSourceId ? { scopeId, id: auditSourceId } : { scopeId },
+        orderBy: { createdAt: "desc" },
+      }),
       prisma.contextDoc.findMany({ where: { scopeId }, orderBy: { createdAt: "desc" } }),
       prisma.contextSnapshot.findMany({ where: { scopeId }, orderBy: { createdAt: "desc" } }),
       // THIS SCOPE'S ROWS, for the Truth Map's capacity checkpoint.
