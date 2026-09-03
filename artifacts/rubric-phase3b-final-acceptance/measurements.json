@@ -1,0 +1,56 @@
+{
+  "sha": "515bcfaef6e15df2e509eaa4628247d163af7ff4",
+  "featureParity": {
+    "pass": 44,
+    "partial": 5,
+    "fail": 0,
+    "externalPrerequisiteBlocked": 1,
+    "weightedUnblockedPercent": 94.9
+  },
+  "rubricFidelityOutOf5": 4.4,
+  "productionShaped": {
+    "canonicalObjects": 438,
+    "canonicalRelationships": 543,
+    "presentationNodes": 75,
+    "visualNodes": 513,
+    "paintedAtFit": 513,
+    "projectWorldCanonical": 431,
+    "projectModelCanonical": 6,
+    "attentionEchoes": 60,
+    "sourceAnchors": 6,
+    "traceableTransportNodes": 92,
+    "duplicateCanonicalIds": 0,
+    "missingEndpoints": 0,
+    "unsupportedCanonicalEdges": 0
+  },
+  "camera": {
+    "ringsFit": { "k": 0.48, "x": 640, "y": 360 },
+    "zoomInK": 1.2160778768066447,
+    "extremeZoomOutK": 0.21132264819553526,
+    "blankPanDelta": { "x": 100, "y": -50 }
+  },
+  "performance": {
+    "rubricFps": 120,
+    "jsHeapBytes": 18563028,
+    "domNodes": 844,
+    "longTasks": 0,
+    "searchDocuments": 429,
+    "searchBuildAndIndexMs": 10.59,
+    "searchP50Ms": 0.239,
+    "searchP95Ms": 1.338,
+    "productionConsoleErrors": 0,
+    "productionConsoleWarnings": 0
+  },
+  "stress": {
+    "sourceAnchorSelections": 10,
+    "findingOverlayCycles": 5,
+    "currentPriorSwitches": 6
+  },
+  "runAudit": {
+    "credentialAvailable": false,
+    "httpStatus": 502,
+    "error": "Audit model call failed: ANTHROPIC_API_KEY is not set",
+    "databaseBefore": { "sources": 2, "findings": 4, "auditRuns": 0, "decisions": 1 },
+    "databaseAfter": { "sources": 2, "findings": 4, "auditRuns": 0, "decisions": 1 }
+  }
+}
