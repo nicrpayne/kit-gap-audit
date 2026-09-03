@@ -50,6 +50,12 @@ function verify(name: string, graph: ExportedSignalGraph, scope: { id: string; n
   }));
 
   check(`${name} uses Source System anchors`, payload.nodes.some((node) => node.type === "app") && payload.meta.sourceSystems.length === payload.nodes.filter((node) => node.type === "app").length, payload.meta.sourceSystems.join(", "));
+  const sourceAnchors = payload.nodes.filter((node) => node.type === "app");
+  check(`${name} uses unique normalized Source System anchors`, new Set(sourceAnchors.map((node) => node.sourceProvider)).size === sourceAnchors.length);
+  check(`${name} presents truthful linked-object counts`, sourceAnchors.every((node) =>
+    node.sourceCounts?.linkedObjects === new Set(node.memberIds).size
+      && node.worldLabel?.includes(" linked")
+      && !/\s·\s\d+$/.test(node.worldLabel)));
   check(`${name} maps Reality / Project Model / Project World / Attention`,
     byCanonical.get("reality")?.type === "router"
       && payload.nodes.some((node) => node.layer === "S" && !node.presentationOnly)
@@ -91,6 +97,9 @@ function main() {
   const mirror = loadCapture("artifacts/rubric-production-parity/jsa-production-mirror.json");
   const mirrorPayload = verify("redacted production-shaped JSA mirror", mirror.graph, mirror.scope);
   check("production-shaped mirror has the captured 438/543 census", mirrorPayload.meta.canonicalNodes === 438 && mirrorPayload.meta.canonicalEdges === 543);
+  check("production-shaped mirror exposes every typed provider including Linear",
+    ["Documents", "Figma", "Hermes", "Linear", "Meetings / Transcripts", "Notion"].every((provider) => mirrorPayload.meta.sourceSystems.includes(provider)),
+    mirrorPayload.meta.sourceSystems.join(", "));
 
   const liveCapturePath = "artifacts/rubric-production-parity/production-jsa-graph.json";
   try {

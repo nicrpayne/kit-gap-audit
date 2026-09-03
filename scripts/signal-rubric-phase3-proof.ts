@@ -5,6 +5,7 @@ import { readFileSync } from "node:fs";
 import { exportAuditGraph, type AuditNodeAttributes } from "../lib/audit/graph";
 import {
   adaptSignalGraphToRubric,
+  normalizeSourceProvider,
   realityRelationshipOf,
   sourceProviderOf,
   trustMaterialOf,
@@ -95,6 +96,12 @@ function main() {
   check("provider identity accepts typed canonical fields",
     sourceProviderOf({ kind: "source", label: "opaque", slice: "evidence", ref: "Source:notion", sourceType: "notion" }) === "Notion"
       && sourceProviderOf({ kind: "work", label: "opaque", slice: "execution", ref: "LinearIssue:X", lane: "linear" }) === "Linear");
+  check("provider aliases normalize deterministically",
+    normalizeSourceProvider("meetings/transcripts") === "Meetings / Transcripts"
+      && normalizeSourceProvider("LINEAR") === "Linear"
+      && normalizeSourceProvider("Acme source cloud") === "Acme Source Cloud");
+  check("external intelligence without typed producer does not fabricate Hermes",
+    sourceProviderOf({ kind: "intel", label: "opaque", slice: "evidence", ref: "Intelligence:test", lane: "decisions" }) === null);
 
   verifyGraph("deterministic JSA fixture", exportAuditGraph(jsaShapedGraph()), { id: "jsa", name: "JSA" });
   const mirror = loadCapture("artifacts/rubric-production-parity/jsa-production-mirror.json");
@@ -111,4 +118,3 @@ function main() {
 }
 
 main();
-
