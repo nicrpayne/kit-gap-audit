@@ -14,7 +14,7 @@ DB_USER=signal_p3b
 DB_PASSWORD=signal_p3b_local_only
 CONTAINER_NAME="signal-audit-p3b-postgres-$$"
 APP_HOST=127.0.0.1
-AUDIT_URL="http://localhost:${APP_PORT}/audit?scope=jsa"
+AUDIT_URL=""
 EXPECTED_BRANCH=claude/signal-rubric-engine-audit-jvax0e
 PHASE3B_GATE_SHA=0936c61855573b44c9812d54a913997f85e99597
 
@@ -85,7 +85,9 @@ git merge-base --is-ancestor "$PHASE3B_GATE_SHA" HEAD || fail "the accepted Phas
 [ -x node_modules/.bin/prisma ] || fail "dependencies are missing; run 'npm install' in $REPO_DIR, then retry."
 [ -x node_modules/.bin/tsx ] || fail "dependencies are missing; run 'npm install' in $REPO_DIR, then retry."
 [ -x node_modules/.bin/next ] || fail "dependencies are missing; run 'npm install' in $REPO_DIR, then retry."
-[ -f prisma/seed-dev.ts ] || fail "the disposable development seed prisma/seed-dev.ts is missing."
+[ -f scripts/seed-phase3b-production-capture.ts ] || fail "the Phase 3B production-shaped seed is missing."
+[ -f artifacts/rubric-production-parity/production-jsa-graph.json ] || fail "the gitignored read-only production graph capture is missing."
+[ -f artifacts/rubric-production-parity/production-jsa-truth.json ] || fail "the gitignored read-only production truth capture is missing."
 
 if lsof -nP -iTCP:"$DB_PORT" -sTCP:LISTEN >/dev/null 2>&1; then
   fail "port $DB_PORT is occupied. Stop the process using it, then retry."
@@ -127,10 +129,15 @@ if ! DATABASE_URL="$DATABASE_URL_VALUE" ./node_modules/.bin/prisma migrate deplo
   fail "database migration failed; the disposable container will be destroyed."
 fi
 
-printf 'Loading the existing disposable development seed...\n'
-if ! DATABASE_URL="$DATABASE_URL_VALUE" ./node_modules/.bin/tsx prisma/seed-dev.ts; then
-  fail "database seed failed; the disposable container will be destroyed."
+printf 'Reconstructing the production-shaped JSA state through Signal loaders...\n'
+if ! SEED_OUTPUT=$(DATABASE_URL="$DATABASE_URL_VALUE" KIT_DEV_FIXTURES=1 \
+  ./node_modules/.bin/tsx scripts/seed-phase3b-production-capture.ts); then
+  fail "production-shaped database seed failed; the disposable container will be destroyed."
 fi
+printf '%s\n' "$SEED_OUTPUT"
+PHASE3B_SCOPE_ID=$(printf '%s\n' "$SEED_OUTPUT" | sed -n 's/^PHASE3B_SCOPE_ID=//p' | tail -n 1)
+[ -n "$PHASE3B_SCOPE_ID" ] || fail "production-shaped seed did not report its Scope id."
+AUDIT_URL="http://localhost:${APP_PORT}/audit?scope=${PHASE3B_SCOPE_ID}"
 
 [ -r /dev/tty ] || fail "an interactive terminal is required for hidden credential input."
 printf '\nANTHROPIC_API_KEY (input hidden): ' >/dev/tty
