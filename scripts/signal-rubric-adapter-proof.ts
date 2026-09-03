@@ -6,7 +6,6 @@ import {
   adaptSignalGraphToRubric,
   validateSignalRubricPayload,
   type ExportedSignalGraph,
-  type SignalRubricPayload,
 } from "../lib/audit/signalRubricAdapter";
 import { jsaShapedGraph } from "./lib/jsa-shaped-fixture";
 
@@ -80,6 +79,12 @@ function verify(name: string, graph: ExportedSignalGraph, scope: { id: string; n
 }
 
 function main() {
+  for (const file of ["_core.js", "_flows2.js", "_core.css", "_icons.js"]) {
+    const transplanted = readFileSync(`public/audit-rubric-phase1/${file}`);
+    const supplied = readFileSync(`lab/rubric-reference/second-brain/public/${file}`);
+    check(`${file} remains byte-identical to supplied Rubric`, transplanted.equals(supplied));
+  }
+
   const fixtureGraph = exportAuditGraph(jsaShapedGraph()) as { nodes: Array<{ key: string; attributes: AuditNodeAttributes }>; edges: Array<{ source: string; target: string; attributes: AuditEdgeAttributes }> };
   verify("deterministic JSA fixture", fixtureGraph, { id: "jsa", name: "JSA" });
 
