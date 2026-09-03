@@ -124,6 +124,18 @@
     .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
   const signalNode = () => window.BrainCore && window.BrainCore.S.sel;
 
+  function signalTooltipHTML(n) {
+    const identity = n.presentationOnly && !n.canonicalId
+      ? `${(n.memberIds || []).length} canonical objects represented · presentation only`
+      : n.canonicalRef || n.canonicalId || n.id;
+    return `<b>${escape(n.label)}</b><div class="tmut">${escape(n.kind || (n.type === 'hub' ? 'Signal territory' : 'Signal object'))}${n.currentness ? ' · ' + escape(n.currentness) : ''}</div><div class="tmut">${escape(identity)}</div><div class="tfaint">click to inspect · double-click to fly</div>`;
+  }
+
+  function installSignalTooltip() {
+    const skin = window.BrainCore && window.BrainCore.S && window.BrainCore.S.skin;
+    if (skin && skin.tipHTML !== signalTooltipHTML) skin.tipHTML = signalTooltipHTML;
+  }
+
   function action(event) {
     const button = event.target.closest && event.target.closest('#brain-card .act');
     if (!button) return;
@@ -229,6 +241,7 @@
   const setText = (element, value) => { if (element && element.textContent !== value) element.textContent = value; };
 
   function patchWords() {
+    installSignalTooltip();
     const hud = document.getElementById('brain-hud');
     if (hud) {
       const brand = hud.querySelector('.hud-rubric');
@@ -252,18 +265,6 @@
       fileNames.childNodes.forEach(node => {
         if (node.nodeType === 3 && node.textContent.includes('File names')) node.textContent = node.textContent.replace('File names', 'Object names');
       });
-    }
-    const tip = document.getElementById('brain-tip');
-    const hover = window.BrainCore.S.hover;
-    if (tip && hover && (hover.canonicalId || hover.presentationOnly)) {
-      const identity = hover.presentationOnly && !hover.canonicalId
-        ? `${(hover.memberIds || []).length} canonical objects represented · presentation only`
-        : hover.canonicalRef || hover.canonicalId;
-      const expected = `<b>${escape(hover.label)}</b><div class="tmut">${escape(hover.kind || (hover.type === 'hub' ? 'Signal territory' : 'Signal object'))}${hover.currentness ? ' · ' + escape(hover.currentness) : ''}</div><div class="tmut">${escape(identity)}</div><div class="tfaint">click to inspect · double-click to fly</div>`;
-      tip.dataset.signalId = hover.id;
-      if (tip.innerHTML !== expected) tip.innerHTML = expected;
-    } else if (tip && (!hover || !hover.canonicalId)) {
-      delete tip.dataset.signalId;
     }
   }
 
@@ -403,7 +404,9 @@
     announce('signal-audit-world-ready');
   }
 
-  const observer = new MutationObserver(() => {
+  const observer = new MutationObserver(records => {
+    if (records.every(record => record.target === document.getElementById('brain-tip')
+      || (record.target.closest && record.target.closest('#brain-tip')))) return;
     if (!window.BrainCore || !window.BrainCore.S || !window.BrainCore.S.meta) return;
     patchWords(); patchCard(); patchViewer(); installShell(); installSignalAuditBridge();
   });

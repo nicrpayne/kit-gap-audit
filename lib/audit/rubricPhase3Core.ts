@@ -1,5 +1,5 @@
 /**
- * The Phase 3 Rubric extension is deliberately expressed as four guarded
+ * The Phase 3 Rubric extension is deliberately expressed as five guarded
  * textual patches over the accepted, byte-identical Phase 1 `_core.js`.
  *
  * This keeps the actual Rubric chassis reviewable: if upstream source moves,
@@ -60,6 +60,15 @@ export const PHASE_3_CORE_PATCHES: RubricCorePatch[] = [
       "      // the names kill switch covers files, folders, routines and apps (Jay)",
       "      if ((n.type === 'file' || n.type === 'dir' || n.type === 'app' || n.type === 'routine') && st.fileLabels === false && !isFocus) continue;",
       "      const show = isFocus || big || (identityMinZoom !== null && S.cam.k >= identityMinZoom) || (S.focusSet && S.focusSet.has(n.id) && S.cam.k > 0.85 && S.focusSet.size < 160) || r * S.cam.k > 9.6 - st.labels * 3;",
+    ].join("\r\n"),
+  },
+  {
+    id: "stable-tooltip-render-boundary",
+    purpose: "Let the Audit skin translate tooltip content once per identity without a MutationObserver rewrite loop.",
+    before: "tip.innerHTML = tipHTML(n);",
+    after: [
+      "const html = S.skin.tipHTML ? S.skin.tipHTML(n) : tipHTML(n);",
+      "    if (tip.innerHTML !== html) tip.innerHTML = html;",
     ].join("\r\n"),
   },
 ];
