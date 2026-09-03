@@ -155,7 +155,7 @@
       const refresh = document.createElement('button');
       refresh.type = 'button'; refresh.textContent = 'Refresh world';
       refresh.title = 'Rebuild the read-only adapter projection from current canonical Signal data';
-      refresh.onclick = () => core.S.refreshData('Rebuilding the Signal world');
+      refresh.onclick = () => (window.__signalAuditRefresh || core.S.refreshData)('Rebuilding the Signal world');
       nav.append(fresh, refresh);
     }
 

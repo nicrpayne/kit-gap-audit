@@ -37,7 +37,7 @@ import {
   CLUSTER_ORDER,
   FIELD,
 } from "@/lib/audit/graphLayout";
-import { mutateReality } from "@/lib/instrument/reality";
+import { dispatchFindingAction } from "@/lib/audit/reviewActions";
 import { fitCamera, type GraphLayout } from "./SignalGraph";
 // THE RENDERER BOUNDARY. The instrument mounts a painter without knowing
 // which one it got — `?renderer=canvas` picks the experimental Canvas
@@ -1187,7 +1187,7 @@ export default function AuditInstrument({ initialScopeId }: { initialScopeId?: s
       }
       setBusy(action.id);
       try {
-        const done = await dispatchAction(action.id, selectedFinding.id, text);
+        const done = await dispatchFindingAction(action.id, selectedFinding.id, text);
         setResult(done);
         if (done.ok) {
           await load(scopeId);
@@ -2146,57 +2146,6 @@ function countKinds(graph: AuditGraph): Record<string, number> {
 
 function fmt(iso: string): string {
   return new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric" });
-}
-
-async function dispatchAction(
-  id: ActionId,
-  findingId: string,
-  text: string
-): Promise<{ ok: boolean; message: string }> {
-  switch (id) {
-    case "open_decision": {
-      const res = await mutateReality(`/api/findings/${findingId}/open-decision`, { method: "POST" });
-      const body = (await res.json().catch(() => ({}))) as { error?: string; note?: string };
-      return res.ok
-        ? { ok: true, message: body.note ?? "Decision opened." }
-        : { ok: false, message: body.error ?? "The decision could not be opened." };
-    }
-    case "add_missing_work": {
-      const res = await fetch(`/api/findings/${findingId}/ticket`, { method: "POST" });
-      const body = (await res.json().catch(() => ({}))) as { error?: string; preview?: { title?: string } };
-      if (body.preview) {
-        return {
-          ok: false,
-          message: `Preview ready — "${body.preview.title}". Filing to Linear needs explicit confirmation, which lands with the ticket-confirmation tranche.`,
-        };
-      }
-      return { ok: false, message: body.error ?? "The ticket preview could not be composed." };
-    }
-    case "record_resolution": {
-      const res = await mutateReality(`/api/findings/${findingId}/resolve`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ resolution: text }),
-      });
-      const body = (await res.json().catch(() => ({}))) as { error?: string };
-      return res.ok
-        ? { ok: true, message: "Recorded. The finding is resolved." }
-        : { ok: false, message: body.error ?? "That could not be recorded." };
-    }
-    case "reject": {
-      const res = await mutateReality(`/api/findings/${findingId}/dismiss`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ reason: text }),
-      });
-      const body = (await res.json().catch(() => ({}))) as { error?: string };
-      return res.ok
-        ? { ok: true, message: "Dismissed with your reason." }
-        : { ok: false, message: body.error ?? "A reason is required to dismiss a finding." };
-    }
-    default:
-      return { ok: false, message: "That action is not wired up." };
-  }
 }
 
 export { FIELD };
