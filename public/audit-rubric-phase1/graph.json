@@ -1,0 +1,5084 @@
+{
+  "meta": {
+    "scannedAt": "phase-1-reference-fixture",
+    "scanMs": 0,
+    "totalFiles": 617,
+    "totalDirs": 161,
+    "mdParsed": 50,
+    "mdRead": 50,
+    "mdCached": 0,
+    "visibleNodes": 279,
+    "mdLinks": 4,
+    "hiddenCount": 0
+  },
+  "departments": [
+    {
+      "key": "work",
+      "label": "Work",
+      "color": "#e040fb",
+      "icon": "build"
+    },
+    {
+      "key": "content",
+      "label": "Content",
+      "color": "#2196f3",
+      "icon": "pen"
+    },
+    {
+      "key": "personal",
+      "label": "Personal",
+      "color": "#fdd835",
+      "icon": "people"
+    },
+    {
+      "key": "operations",
+      "label": "Operations",
+      "color": "#b47aff",
+      "icon": "coin"
+    }
+  ],
+  "layers": [
+    {
+      "key": "A",
+      "label": "Applications",
+      "color": "#3f8fd4",
+      "shape": "hex",
+      "blurb": "MCP servers, CLIs and APIs the agents can reach"
+    },
+    {
+      "key": "R",
+      "label": "Routines",
+      "color": "#d99a1f",
+      "shape": "ringdot",
+      "blurb": "Scheduled automations that run without being asked"
+    },
+    {
+      "key": "M",
+      "label": "Memory",
+      "color": "#9a66e0",
+      "shape": "chip",
+      "blurb": "Every file of context, clustered by department"
+    },
+    {
+      "key": "S",
+      "label": "Skills",
+      "color": "#ff6b1a",
+      "shape": "diamond",
+      "blurb": "Capabilities the agents can run on demand"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "CLAUDE.md",
+      "type": "router",
+      "layer": "M",
+      "label": "CLAUDE.md",
+      "dept": "business",
+      "access": "both",
+      "size": 11,
+      "path": "CLAUDE.md"
+    },
+    {
+      "id": "hub:work",
+      "type": "hub",
+      "hubKind": "dept",
+      "layer": "M",
+      "label": "Work",
+      "dept": "work",
+      "access": "both"
+    },
+    {
+      "id": "hub:content",
+      "type": "hub",
+      "hubKind": "dept",
+      "layer": "M",
+      "label": "Content",
+      "dept": "content",
+      "access": "both"
+    },
+    {
+      "id": "hub:personal",
+      "type": "hub",
+      "hubKind": "dept",
+      "layer": "M",
+      "label": "Personal",
+      "dept": "personal",
+      "access": "both"
+    },
+    {
+      "id": "hub:operations",
+      "type": "hub",
+      "hubKind": "dept",
+      "layer": "M",
+      "label": "Operations",
+      "dept": "operations",
+      "access": "both"
+    },
+    {
+      "id": "lhub:A",
+      "type": "hub",
+      "hubKind": "layer",
+      "layer": "A",
+      "label": "Applications",
+      "dept": null,
+      "access": "both"
+    },
+    {
+      "id": "lhub:R",
+      "type": "hub",
+      "hubKind": "layer",
+      "layer": "R",
+      "label": "Routines",
+      "dept": null,
+      "access": "both"
+    },
+    {
+      "id": "lhub:S",
+      "type": "hub",
+      "hubKind": "layer",
+      "layer": "S",
+      "label": "Skills",
+      "dept": null,
+      "access": "both"
+    },
+    {
+      "id": ".env.example",
+      "type": "file",
+      "layer": "M",
+      "label": ".env.example",
+      "dept": "work",
+      "access": "claude",
+      "size": 1173,
+      "mtime": 1788215576717.502,
+      "ext": ".example",
+      "path": ".env.example",
+      "top": "(root)",
+      "secret": true
+    },
+    {
+      "id": ".git",
+      "type": "file",
+      "layer": "M",
+      "label": ".git",
+      "dept": "work",
+      "access": "claude",
+      "size": 156,
+      "mtime": 1788215576709.403,
+      "ext": "",
+      "path": ".git",
+      "top": "(root)"
+    },
+    {
+      "id": ".gitignore",
+      "type": "file",
+      "layer": "M",
+      "label": ".gitignore",
+      "dept": "work",
+      "access": "claude",
+      "size": 769,
+      "mtime": 1788315943651.7705,
+      "ext": "",
+      "path": ".gitignore",
+      "top": "(root)"
+    },
+    {
+      "id": "AGENTS.md",
+      "type": "file",
+      "layer": "M",
+      "label": "AGENTS.md",
+      "dept": "work",
+      "access": "claude",
+      "size": 327,
+      "mtime": 1788215576717.6619,
+      "ext": ".md",
+      "path": "AGENTS.md",
+      "top": "(root)"
+    },
+    {
+      "id": "ATTRIBUTION.md",
+      "type": "file",
+      "layer": "M",
+      "label": "ATTRIBUTION.md",
+      "dept": "work",
+      "access": "claude",
+      "size": 4649,
+      "mtime": 1788389773549.9863,
+      "ext": ".md",
+      "path": "ATTRIBUTION.md",
+      "top": "(root)"
+    },
+    {
+      "id": "BUILDPACK.md",
+      "type": "file",
+      "layer": "M",
+      "label": "BUILDPACK.md",
+      "dept": "work",
+      "access": "claude",
+      "size": 11252,
+      "mtime": 1788215576717.833,
+      "ext": ".md",
+      "path": "BUILDPACK.md",
+      "top": "(root)"
+    },
+    {
+      "id": "DESIGN_LANGUAGE_AND_MOMENTUM_BUILD_BRIEF.md",
+      "type": "file",
+      "layer": "M",
+      "label": "DESIGN_LANGUAGE_AND_MOMENTUM_BUILD_BRIEF.md",
+      "dept": "work",
+      "access": "claude",
+      "size": 9112,
+      "mtime": 1788215576718.0813,
+      "ext": ".md",
+      "path": "DESIGN_LANGUAGE_AND_MOMENTUM_BUILD_BRIEF.md",
+      "top": "(root)"
+    },
+    {
+      "id": "HANDOFF.md",
+      "type": "file",
+      "layer": "M",
+      "label": "HANDOFF.md",
+      "dept": "work",
+      "access": "claude",
+      "size": 52685,
+      "mtime": 1788215576718.2473,
+      "ext": ".md",
+      "path": "HANDOFF.md",
+      "top": "(root)"
+    },
+    {
+      "id": "PORTFOLIO_SCENARIO_LEVERS_BUILD_BRIEF",
+      "type": "file",
+      "layer": "M",
+      "label": "PORTFOLIO_SCENARIO_LEVERS_BUILD_BRIEF",
+      "dept": "work",
+      "access": "claude",
+      "size": 7023,
+      "mtime": 1788215576718.3752,
+      "ext": "",
+      "path": "PORTFOLIO_SCENARIO_LEVERS_BUILD_BRIEF",
+      "top": "(root)"
+    },
+    {
+      "id": "README.md",
+      "type": "file",
+      "layer": "M",
+      "label": "README.md",
+      "dept": "work",
+      "access": "claude",
+      "size": 12810,
+      "mtime": 1788215576718.546,
+      "ext": ".md",
+      "path": "README.md",
+      "top": "(root)"
+    },
+    {
+      "id": "ROADMAP.md",
+      "type": "file",
+      "layer": "M",
+      "label": "ROADMAP.md",
+      "dept": "work",
+      "access": "claude",
+      "size": 115423,
+      "mtime": 1788215576719.0032,
+      "ext": ".md",
+      "path": "ROADMAP.md",
+      "top": "(root)"
+    },
+    {
+      "id": "eslint.config.mjs",
+      "type": "file",
+      "layer": "M",
+      "label": "eslint.config.mjs",
+      "dept": "work",
+      "access": "claude",
+      "size": 532,
+      "mtime": 1788215707480.3142,
+      "ext": ".mjs",
+      "path": "eslint.config.mjs",
+      "top": "(root)"
+    },
+    {
+      "id": "middleware.ts",
+      "type": "file",
+      "layer": "M",
+      "label": "middleware.ts",
+      "dept": "work",
+      "access": "claude",
+      "size": 1966,
+      "mtime": 1788215576760.6174,
+      "ext": ".ts",
+      "path": "middleware.ts",
+      "top": "(root)"
+    },
+    {
+      "id": "next-env.d.ts",
+      "type": "file",
+      "layer": "M",
+      "label": "next-env.d.ts",
+      "dept": "work",
+      "access": "claude",
+      "size": 262,
+      "mtime": 1788225967748.8167,
+      "ext": ".ts",
+      "path": "next-env.d.ts",
+      "top": "(root)"
+    },
+    {
+      "id": "next.config.ts",
+      "type": "file",
+      "layer": "M",
+      "label": "next.config.ts",
+      "dept": "work",
+      "access": "claude",
+      "size": 133,
+      "mtime": 1788215576760.689,
+      "ext": ".ts",
+      "path": "next.config.ts",
+      "top": "(root)"
+    },
+    {
+      "id": "package-lock.json",
+      "type": "file",
+      "layer": "M",
+      "label": "package-lock.json",
+      "dept": "work",
+      "access": "claude",
+      "size": 307408,
+      "mtime": 1788386553870.2017,
+      "ext": ".json",
+      "path": "package-lock.json",
+      "top": "(root)"
+    },
+    {
+      "id": "package.json",
+      "type": "file",
+      "layer": "M",
+      "label": "package.json",
+      "dept": "work",
+      "access": "claude",
+      "size": 1045,
+      "mtime": 1788225730553.822,
+      "ext": ".json",
+      "path": "package.json",
+      "top": "(root)"
+    },
+    {
+      "id": "postcss.config.mjs",
+      "type": "file",
+      "layer": "M",
+      "label": "postcss.config.mjs",
+      "dept": "work",
+      "access": "claude",
+      "size": 105,
+      "mtime": 1788215576761.5164,
+      "ext": ".mjs",
+      "path": "postcss.config.mjs",
+      "top": "(root)"
+    },
+    {
+      "id": "railway.json",
+      "type": "file",
+      "layer": "M",
+      "label": "railway.json",
+      "dept": "work",
+      "access": "claude",
+      "size": 260,
+      "mtime": 1788215576764.244,
+      "ext": ".json",
+      "path": "railway.json",
+      "top": "(root)"
+    },
+    {
+      "id": "tailwind.config.ts",
+      "type": "file",
+      "layer": "M",
+      "label": "tailwind.config.ts",
+      "dept": "work",
+      "access": "claude",
+      "size": 847,
+      "mtime": 1788215576776.2744,
+      "ext": ".ts",
+      "path": "tailwind.config.ts",
+      "top": "(root)"
+    },
+    {
+      "id": "tsconfig.json",
+      "type": "file",
+      "layer": "M",
+      "label": "tsconfig.json",
+      "dept": "work",
+      "access": "claude",
+      "size": 713,
+      "mtime": 1788215576776.3528,
+      "ext": ".json",
+      "path": "tsconfig.json",
+      "top": "(root)"
+    },
+    {
+      "id": "tsconfig.tsbuildinfo",
+      "type": "file",
+      "layer": "M",
+      "label": "tsconfig.tsbuildinfo",
+      "dept": "work",
+      "access": "claude",
+      "size": 205077,
+      "mtime": 1788391549265.7358,
+      "ext": ".tsbuildinfo",
+      "path": "tsconfig.tsbuildinfo",
+      "top": "(root)"
+    },
+    {
+      "id": ".claude",
+      "type": "dir",
+      "layer": "M",
+      "label": ".claude",
+      "folded": true,
+      "dept": "work",
+      "access": "claude",
+      "size": 263,
+      "files": 1,
+      "mdFiles": 0,
+      "path": ".claude",
+      "top": "(root)"
+    },
+    {
+      "id": "app",
+      "type": "dir",
+      "layer": "M",
+      "label": "app",
+      "folded": true,
+      "dept": "work",
+      "access": "claude",
+      "size": 222143,
+      "files": 70,
+      "mdFiles": 0,
+      "path": "app",
+      "top": "(root)"
+    },
+    {
+      "id": "artifacts",
+      "type": "dir",
+      "layer": "M",
+      "label": "artifacts",
+      "folded": true,
+      "dept": "work",
+      "access": "claude",
+      "size": 29425462,
+      "files": 179,
+      "mdFiles": 26,
+      "path": "artifacts",
+      "top": "(root)"
+    },
+    {
+      "id": "components",
+      "type": "dir",
+      "layer": "M",
+      "label": "components",
+      "folded": true,
+      "dept": "content",
+      "access": "claude",
+      "size": 1837964,
+      "files": 99,
+      "mdFiles": 0,
+      "path": "components",
+      "top": "(root)"
+    },
+    {
+      "id": "docs",
+      "type": "dir",
+      "layer": "M",
+      "label": "docs",
+      "folded": true,
+      "dept": "operations",
+      "access": "claude",
+      "size": 314041,
+      "files": 14,
+      "mdFiles": 14,
+      "path": "docs",
+      "top": "(root)"
+    },
+    {
+      "id": "lab",
+      "type": "dir",
+      "layer": "M",
+      "label": "lab",
+      "folded": true,
+      "dept": "operations",
+      "access": "claude",
+      "size": 243045,
+      "files": 8,
+      "mdFiles": 2,
+      "path": "lab",
+      "top": "(root)"
+    },
+    {
+      "id": "lib",
+      "type": "dir",
+      "layer": "M",
+      "label": "lib",
+      "folded": true,
+      "dept": "personal",
+      "access": "claude",
+      "size": 900448,
+      "files": 90,
+      "mdFiles": 0,
+      "path": "lib",
+      "top": "(root)"
+    },
+    {
+      "id": "prisma",
+      "type": "dir",
+      "layer": "M",
+      "label": "prisma",
+      "folded": true,
+      "dept": "work",
+      "access": "claude",
+      "size": 52043,
+      "files": 22,
+      "mdFiles": 0,
+      "path": "prisma",
+      "top": "(root)"
+    },
+    {
+      "id": "public",
+      "type": "dir",
+      "layer": "M",
+      "label": "public",
+      "folded": true,
+      "dept": "work",
+      "access": "claude",
+      "size": 194648,
+      "files": 12,
+      "mdFiles": 0,
+      "path": "public",
+      "top": "(root)"
+    },
+    {
+      "id": "scripts",
+      "type": "dir",
+      "layer": "M",
+      "label": "scripts",
+      "folded": true,
+      "dept": "operations",
+      "access": "claude",
+      "size": 1482025,
+      "files": 99,
+      "mdFiles": 0,
+      "path": "scripts",
+      "top": "(root)"
+    },
+    {
+      "id": "app/api/allocations/route.ts",
+      "type": "file",
+      "layer": "M",
+      "label": "route.ts",
+      "dept": "work",
+      "access": "claude",
+      "size": 7290,
+      "mtime": 1788215576719.5625,
+      "ext": ".ts",
+      "path": "app/api/allocations/route.ts",
+      "top": "app"
+    },
+    {
+      "id": "app/api/audit/route.ts",
+      "type": "file",
+      "layer": "M",
+      "label": "route.ts",
+      "dept": "work",
+      "access": "claude",
+      "size": 1344,
+      "mtime": 1788215576719.793,
+      "ext": ".ts",
+      "path": "app/api/audit/route.ts",
+      "top": "app"
+    },
+    {
+      "id": "app/api/audit/graph/route.ts",
+      "type": "file",
+      "layer": "M",
+      "label": "route.ts",
+      "dept": "work",
+      "access": "claude",
+      "size": 2426,
+      "mtime": 1788215576719.7195,
+      "ext": ".ts",
+      "path": "app/api/audit/graph/route.ts",
+      "top": "app"
+    },
+    {
+      "id": "app/api/audit/truth/route.ts",
+      "type": "file",
+      "layer": "M",
+      "label": "route.ts",
+      "dept": "work",
+      "access": "claude",
+      "size": 5731,
+      "mtime": 1788215576719.9314,
+      "ext": ".ts",
+      "path": "app/api/audit/truth/route.ts",
+      "top": "app"
+    },
+    {
+      "id": "app/api/context/envelope/route.ts",
+      "type": "file",
+      "layer": "M",
+      "label": "route.ts",
+      "dept": "work",
+      "access": "claude",
+      "size": 1369,
+      "mtime": 1788215576720.373,
+      "ext": ".ts",
+      "path": "app/api/context/envelope/route.ts",
+      "top": "app"
+    },
+    {
+      "id": "app/api/context-docs/route.ts",
+      "type": "file",
+      "layer": "M",
+      "label": "route.ts",
+      "dept": "work",
+      "access": "claude",
+      "size": 1692,
+      "mtime": 1788215576720.2114,
+      "ext": ".ts",
+      "path": "app/api/context-docs/route.ts",
+      "top": "app"
+    },
+    {
+      "id": "app/api/context-docs/[id]/route.ts",
+      "type": "file",
+      "layer": "M",
+      "label": "route.ts",
+      "dept": "work",
+      "access": "claude",
+      "size": 432,
+      "mtime": 1788215576720.1272,
+      "ext": ".ts",
+      "path": "app/api/context-docs/[id]/route.ts",
+      "top": "app"
+    },
+    {
+      "id": "app/api/debug/linear/route.ts",
+      "type": "file",
+      "layer": "M",
+      "label": "route.ts",
+      "dept": "work",
+      "access": "claude",
+      "size": 1040,
+      "mtime": 1788215576720.5703,
+      "ext": ".ts",
+      "path": "app/api/debug/linear/route.ts",
+      "top": "app"
+    },
+    {
+      "id": "app/api/decision-candidates/route.ts",
+      "type": "file",
+      "layer": "M",
+      "label": "route.ts",
+      "dept": "work",
+      "access": "claude",
+      "size": 1501,
+      "mtime": 1788215576720.9675,
+      "ext": ".ts",
+      "path": "app/api/decision-candidates/route.ts",
+      "top": "app"
+    },
+    {
+      "id": "app/api/decision-candidates/[id]/accept/route.ts",
+      "type": "file",
+      "layer": "M",
+      "label": "route.ts",
+      "dept": "work",
+      "access": "claude",
+      "size": 3014,
+      "mtime": 1788215576720.7773,
+      "ext": ".ts",
+      "path": "app/api/decision-candidates/[id]/accept/route.ts",
+      "top": "app"
+    },
+    {
+      "id": "app/api/decision-candidates/[id]/dismiss/route.ts",
+      "type": "file",
+      "layer": "M",
+      "label": "route.ts",
+      "dept": "work",
+      "access": "claude",
+      "size": 990,
+      "mtime": 1788215576720.8916,
+      "ext": ".ts",
+      "path": "app/api/decision-candidates/[id]/dismiss/route.ts",
+      "top": "app"
+    },
+    {
+      "id": "app/api/decisions/route.ts",
+      "type": "file",
+      "layer": "M",
+      "label": "route.ts",
+      "dept": "work",
+      "access": "claude",
+      "size": 3382,
+      "mtime": 1788215576721.7537,
+      "ext": ".ts",
+      "path": "app/api/decisions/route.ts",
+      "top": "app"
+    },
+    {
+      "id": "app/api/decisions/[id]/route.ts",
+      "type": "file",
+      "layer": "M",
+      "label": "route.ts",
+      "dept": "work",
+      "access": "claude",
+      "size": 2591,
+      "mtime": 1788215576721.478,
+      "ext": ".ts",
+      "path": "app/api/decisions/[id]/route.ts",
+      "top": "app"
+    },
+    {
+      "id": "app/api/decisions/[id]/evidence/route.ts",
+      "type": "file",
+      "layer": "M",
+      "label": "route.ts",
+      "dept": "work",
+      "access": "claude",
+      "size": 3416,
+      "mtime": 1788215576721.2178,
+      "ext": ".ts",
+      "path": "app/api/decisions/[id]/evidence/route.ts",
+      "top": "app"
+    },
+    {
+      "id": "app/api/decisions/[id]/gate/route.ts",
+      "type": "file",
+      "layer": "M",
+      "label": "route.ts",
+      "dept": "work",
+      "access": "claude",
+      "size": 5176,
+      "mtime": 1788215576721.3806,
+      "ext": ".ts",
+      "path": "app/api/decisions/[id]/gate/route.ts",
+      "top": "app"
+    },
+    {
+      "id": "app/api/decisions/import/route.ts",
+      "type": "file",
+      "layer": "M",
+      "label": "route.ts",
+      "dept": "work",
+      "access": "claude",
+      "size": 5636,
+      "mtime": 1788215576721.6553,
+      "ext": ".ts",
+      "path": "app/api/decisions/import/route.ts",
+      "top": "app"
+    },
+    {
+      "id": "app/api/estimate/route.ts",
+      "type": "file",
+      "layer": "M",
+      "label": "route.ts",
+      "dept": "work",
+      "access": "claude",
+      "size": 1393,
+      "mtime": 1788215576721.9053,
+      "ext": ".ts",
+      "path": "app/api/estimate/route.ts",
+      "top": "app"
+    },
+    {
+      "id": "app/api/findings/[id]/dismiss/route.ts",
+      "type": "file",
+      "layer": "M",
+      "label": "route.ts",
+      "dept": "work",
+      "access": "claude",
+      "size": 618,
+      "mtime": 1788215576722.1572,
+      "ext": ".ts",
+      "path": "app/api/findings/[id]/dismiss/route.ts",
+      "top": "app"
+    },
+    {
+      "id": "app/api/findings/[id]/open-decision/route.ts",
+      "type": "file",
+      "layer": "M",
+      "label": "route.ts",
+      "dept": "work",
+      "access": "claude",
+      "size": 4561,
+      "mtime": 1788215576722.3125,
+      "ext": ".ts",
+      "path": "app/api/findings/[id]/open-decision/route.ts",
+      "top": "app"
+    },
+    {
+      "id": "app/api/findings/[id]/resolve/route.ts",
+      "type": "file",
+      "layer": "M",
+      "label": "route.ts",
+      "dept": "work",
+      "access": "claude",
+      "size": 658,
+      "mtime": 1788215576722.4314,
+      "ext": ".ts",
+      "path": "app/api/findings/[id]/resolve/route.ts",
+      "top": "app"
+    },
+    {
+      "id": "app/api/findings/[id]/ticket/route.ts",
+      "type": "file",
+      "layer": "M",
+      "label": "route.ts",
+      "dept": "work",
+      "access": "claude",
+      "size": 2807,
+      "mtime": 1788215576722.7,
+      "ext": ".ts",
+      "path": "app/api/findings/[id]/ticket/route.ts",
+      "top": "app"
+    },
+    {
+      "id": "app/api/findings/[id]/ticket/preview/route.ts",
+      "type": "file",
+      "layer": "M",
+      "label": "route.ts",
+      "dept": "work",
+      "access": "claude",
+      "size": 843,
+      "mtime": 1788215576722.6108,
+      "ext": ".ts",
+      "path": "app/api/findings/[id]/ticket/preview/route.ts",
+      "top": "app"
+    },
+    {
+      "id": "app/api/findings/[id]/unlink/route.ts",
+      "type": "file",
+      "layer": "M",
+      "label": "route.ts",
+      "dept": "work",
+      "access": "claude",
+      "size": 1876,
+      "mtime": 1788215576722.8196,
+      "ext": ".ts",
+      "path": "app/api/findings/[id]/unlink/route.ts",
+      "top": "app"
+    },
+    {
+      "id": "app/api/forecast/route.ts",
+      "type": "file",
+      "layer": "M",
+      "label": "route.ts",
+      "dept": "work",
+      "access": "claude",
+      "size": 4152,
+      "mtime": 1788215576723.0898,
+      "ext": ".ts",
+      "path": "app/api/forecast/route.ts",
+      "top": "app"
+    },
+    {
+      "id": "app/api/forecast/ask/route.ts",
+      "type": "file",
+      "layer": "M",
+      "label": "route.ts",
+      "dept": "work",
+      "access": "claude",
+      "size": 3911,
+      "mtime": 1788215576722.9885,
+      "ext": ".ts",
+      "path": "app/api/forecast/ask/route.ts",
+      "top": "app"
+    },
+    {
+      "id": "app/api/instrument/project/route.ts",
+      "type": "file",
+      "layer": "M",
+      "label": "route.ts",
+      "dept": "work",
+      "access": "claude",
+      "size": 3139,
+      "mtime": 1788215576723.2742,
+      "ext": ".ts",
+      "path": "app/api/instrument/project/route.ts",
+      "top": "app"
+    },
+    {
+      "id": "app/api/linear/teams/route.ts",
+      "type": "file",
+      "layer": "M",
+      "label": "route.ts",
+      "dept": "work",
+      "access": "claude",
+      "size": 377,
+      "mtime": 1788215576723.5576,
+      "ext": ".ts",
+      "path": "app/api/linear/teams/route.ts",
+      "top": "app"
+    },
+    {
+      "id": "app/api/linear/teams/[teamKey]/projects/route.ts",
+      "type": "file",
+      "layer": "M",
+      "label": "route.ts",
+      "dept": "work",
+      "access": "claude",
+      "size": 527,
+      "mtime": 1788215576723.4817,
+      "ext": ".ts",
+      "path": "app/api/linear/teams/[teamKey]/projects/route.ts",
+      "top": "app"
+    },
+    {
+      "id": "app/api/login/route.ts",
+      "type": "file",
+      "layer": "M",
+      "label": "route.ts",
+      "dept": "work",
+      "access": "claude",
+      "size": 858,
+      "mtime": 1788215576723.6853,
+      "ext": ".ts",
+      "path": "app/api/login/route.ts",
+      "top": "app"
+    },
+    {
+      "id": "app/api/parse-spreadsheet/route.ts",
+      "type": "file",
+      "layer": "M",
+      "label": "route.ts",
+      "dept": "work",
+      "access": "claude",
+      "size": 4787,
+      "mtime": 1788215576723.9165,
+      "ext": ".ts",
+      "path": "app/api/parse-spreadsheet/route.ts",
+      "top": "app"
+    },
+    {
+      "id": "app/api/people/route.ts",
+      "type": "file",
+      "layer": "M",
+      "label": "route.ts",
+      "dept": "work",
+      "access": "claude",
+      "size": 1038,
+      "mtime": 1788215576724.2332,
+      "ext": ".ts",
+      "path": "app/api/people/route.ts",
+      "top": "app"
+    },
+    {
+      "id": "app/api/people/[id]/route.ts",
+      "type": "file",
+      "layer": "M",
+      "label": "route.ts",
+      "dept": "work",
+      "access": "claude",
+      "size": 1780,
+      "mtime": 1788215576724.153,
+      "ext": ".ts",
+      "path": "app/api/people/[id]/route.ts",
+      "top": "app"
+    },
+    {
+      "id": "app/api/portfolio/inputs/route.ts",
+      "type": "file",
+      "layer": "M",
+      "label": "route.ts",
+      "dept": "work",
+      "access": "claude",
+      "size": 1173,
+      "mtime": 1788215576724.544,
+      "ext": ".ts",
+      "path": "app/api/portfolio/inputs/route.ts",
+      "top": "app"
+    },
+    {
+      "id": "app/api/portfolio/preview/route.ts",
+      "type": "file",
+      "layer": "M",
+      "label": "route.ts",
+      "dept": "work",
+      "access": "claude",
+      "size": 9196,
+      "mtime": 1788215576724.7234,
+      "ext": ".ts",
+      "path": "app/api/portfolio/preview/route.ts",
+      "top": "app"
+    },
+    {
+      "id": "app/api/portfolio-settings/route.ts",
+      "type": "file",
+      "layer": "M",
+      "label": "route.ts",
+      "dept": "work",
+      "access": "claude",
+      "size": 1428,
+      "mtime": 1788215576724.3552,
+      "ext": ".ts",
+      "path": "app/api/portfolio-settings/route.ts",
+      "top": "app"
+    },
+    {
+      "id": "app/api/refresh/route.ts",
+      "type": "file",
+      "layer": "M",
+      "label": "route.ts",
+      "dept": "work",
+      "access": "claude",
+      "size": 12328,
+      "mtime": 1788215576725.0908,
+      "ext": ".ts",
+      "path": "app/api/refresh/route.ts",
+      "top": "app"
+    },
+    {
+      "id": "app/api/reports/route.ts",
+      "type": "file",
+      "layer": "M",
+      "label": "route.ts",
+      "dept": "work",
+      "access": "claude",
+      "size": 1649,
+      "mtime": 1788215576725.2075,
+      "ext": ".ts",
+      "path": "app/api/reports/route.ts",
+      "top": "app"
+    },
+    {
+      "id": "app/api/scopes/route.ts",
+      "type": "file",
+      "layer": "M",
+      "label": "route.ts",
+      "dept": "work",
+      "access": "claude",
+      "size": 1532,
+      "mtime": 1788215576725.499,
+      "ext": ".ts",
+      "path": "app/api/scopes/route.ts",
+      "top": "app"
+    },
+    {
+      "id": "app/api/scopes/[id]/route.ts",
+      "type": "file",
+      "layer": "M",
+      "label": "route.ts",
+      "dept": "work",
+      "access": "claude",
+      "size": 9417,
+      "mtime": 1788215576725.4006,
+      "ext": ".ts",
+      "path": "app/api/scopes/[id]/route.ts",
+      "top": "app"
+    },
+    {
+      "id": "app/api/source-registrations/route.ts",
+      "type": "file",
+      "layer": "M",
+      "label": "route.ts",
+      "dept": "work",
+      "access": "claude",
+      "size": 2460,
+      "mtime": 1788215576725.8164,
+      "ext": ".ts",
+      "path": "app/api/source-registrations/route.ts",
+      "top": "app"
+    },
+    {
+      "id": "app/api/source-registrations/[id]/route.ts",
+      "type": "file",
+      "layer": "M",
+      "label": "route.ts",
+      "dept": "work",
+      "access": "claude",
+      "size": 3457,
+      "mtime": 1788215576725.6912,
+      "ext": ".ts",
+      "path": "app/api/source-registrations/[id]/route.ts",
+      "top": "app"
+    },
+    {
+      "id": "app/api/timeline/route.ts",
+      "type": "file",
+      "layer": "M",
+      "label": "route.ts",
+      "dept": "work",
+      "access": "claude",
+      "size": 652,
+      "mtime": 1788215576726.842,
+      "ext": ".ts",
+      "path": "app/api/timeline/route.ts",
+      "top": "app"
+    },
+    {
+      "id": "app/api/timeline-candidates/route.ts",
+      "type": "file",
+      "layer": "M",
+      "label": "route.ts",
+      "dept": "work",
+      "access": "claude",
+      "size": 818,
+      "mtime": 1788215576726.3608,
+      "ext": ".ts",
+      "path": "app/api/timeline-candidates/route.ts",
+      "top": "app"
+    },
+    {
+      "id": "app/api/timeline-candidates/[id]/accept/route.ts",
+      "type": "file",
+      "layer": "M",
+      "label": "route.ts",
+      "dept": "work",
+      "access": "claude",
+      "size": 5693,
+      "mtime": 1788215576726.1191,
+      "ext": ".ts",
+      "path": "app/api/timeline-candidates/[id]/accept/route.ts",
+      "top": "app"
+    },
+    {
+      "id": "app/api/timeline-candidates/[id]/dismiss/route.ts",
+      "type": "file",
+      "layer": "M",
+      "label": "route.ts",
+      "dept": "work",
+      "access": "claude",
+      "size": 911,
+      "mtime": 1788215576726.2393,
+      "ext": ".ts",
+      "path": "app/api/timeline-candidates/[id]/dismiss/route.ts",
+      "top": "app"
+    },
+    {
+      "id": "app/api/timeline-events/route.ts",
+      "type": "file",
+      "layer": "M",
+      "label": "route.ts",
+      "dept": "work",
+      "access": "claude",
+      "size": 2780,
+      "mtime": 1788215576726.6992,
+      "ext": ".ts",
+      "path": "app/api/timeline-events/route.ts",
+      "top": "app"
+    },
+    {
+      "id": "app/api/timeline-events/[id]/route.ts",
+      "type": "file",
+      "layer": "M",
+      "label": "route.ts",
+      "dept": "work",
+      "access": "claude",
+      "size": 5849,
+      "mtime": 1788215576726.5952,
+      "ext": ".ts",
+      "path": "app/api/timeline-events/[id]/route.ts",
+      "top": "app"
+    },
+    {
+      "id": "app/api/version/route.ts",
+      "type": "file",
+      "layer": "M",
+      "label": "route.ts",
+      "dept": "work",
+      "access": "claude",
+      "size": 1603,
+      "mtime": 1788215576726.975,
+      "ext": ".ts",
+      "path": "app/api/version/route.ts",
+      "top": "app"
+    },
+    {
+      "id": "app/audit/page.tsx",
+      "type": "file",
+      "layer": "M",
+      "label": "page.tsx",
+      "dept": "work",
+      "access": "claude",
+      "size": 1376,
+      "mtime": 1788215576727.4365,
+      "ext": ".tsx",
+      "path": "app/audit/page.tsx",
+      "top": "app"
+    },
+    {
+      "id": "app/audit/[sourceId]/page.tsx",
+      "type": "file",
+      "layer": "M",
+      "label": "page.tsx",
+      "dept": "work",
+      "access": "claude",
+      "size": 2151,
+      "mtime": 1788215576727.1233,
+      "ext": ".tsx",
+      "path": "app/audit/[sourceId]/page.tsx",
+      "top": "app"
+    },
+    {
+      "id": "app/audit/history/page.tsx",
+      "type": "file",
+      "layer": "M",
+      "label": "page.tsx",
+      "dept": "work",
+      "access": "claude",
+      "size": 4468,
+      "mtime": 1788215576727.2502,
+      "ext": ".tsx",
+      "path": "app/audit/history/page.tsx",
+      "top": "app"
+    },
+    {
+      "id": "app/audit/new/page.tsx",
+      "type": "file",
+      "layer": "M",
+      "label": "page.tsx",
+      "dept": "work",
+      "access": "claude",
+      "size": 1420,
+      "mtime": 1788215576727.363,
+      "ext": ".tsx",
+      "path": "app/audit/new/page.tsx",
+      "top": "app"
+    },
+    {
+      "id": "app/control-room/page.tsx",
+      "type": "file",
+      "layer": "M",
+      "label": "page.tsx",
+      "dept": "work",
+      "access": "claude",
+      "size": 264,
+      "mtime": 1788215576727.554,
+      "ext": ".tsx",
+      "path": "app/control-room/page.tsx",
+      "top": "app"
+    },
+    {
+      "id": "app/dashboard/page.tsx",
+      "type": "file",
+      "layer": "M",
+      "label": "page.tsx",
+      "dept": "work",
+      "access": "claude",
+      "size": 4694,
+      "mtime": 1788215576727.702,
+      "ext": ".tsx",
+      "path": "app/dashboard/page.tsx",
+      "top": "app"
+    },
+    {
+      "id": "app/decisions/page.tsx",
+      "type": "file",
+      "layer": "M",
+      "label": "page.tsx",
+      "dept": "work",
+      "access": "claude",
+      "size": 547,
+      "mtime": 1788215576727.8281,
+      "ext": ".tsx",
+      "path": "app/decisions/page.tsx",
+      "top": "app"
+    },
+    {
+      "id": "app/forecast/page.tsx",
+      "type": "file",
+      "layer": "M",
+      "label": "page.tsx",
+      "dept": "work",
+      "access": "claude",
+      "size": 143,
+      "mtime": 1788215576728.1394,
+      "ext": ".tsx",
+      "path": "app/forecast/page.tsx",
+      "top": "app"
+    },
+    {
+      "id": "app/login/page.tsx",
+      "type": "file",
+      "layer": "M",
+      "label": "page.tsx",
+      "dept": "work",
+      "access": "claude",
+      "size": 2917,
+      "mtime": 1788215576728.5205,
+      "ext": ".tsx",
+      "path": "app/login/page.tsx",
+      "top": "app"
+    },
+    {
+      "id": "app/orbit/page.tsx",
+      "type": "file",
+      "layer": "M",
+      "label": "page.tsx",
+      "dept": "work",
+      "access": "claude",
+      "size": 431,
+      "mtime": 1788215576728.733,
+      "ext": ".tsx",
+      "path": "app/orbit/page.tsx",
+      "top": "app"
+    },
+    {
+      "id": "app/portfolio/page.tsx",
+      "type": "file",
+      "layer": "M",
+      "label": "page.tsx",
+      "dept": "work",
+      "access": "claude",
+      "size": 516,
+      "mtime": 1788215576728.932,
+      "ext": ".tsx",
+      "path": "app/portfolio/page.tsx",
+      "top": "app"
+    },
+    {
+      "id": "app/reports/page.tsx",
+      "type": "file",
+      "layer": "M",
+      "label": "page.tsx",
+      "dept": "work",
+      "access": "claude",
+      "size": 468,
+      "mtime": 1788215576729.0413,
+      "ext": ".tsx",
+      "path": "app/reports/page.tsx",
+      "top": "app"
+    },
+    {
+      "id": "app/scope/page.tsx",
+      "type": "file",
+      "layer": "M",
+      "label": "page.tsx",
+      "dept": "work",
+      "access": "claude",
+      "size": 134,
+      "mtime": 1788215576729.1865,
+      "ext": ".tsx",
+      "path": "app/scope/page.tsx",
+      "top": "app"
+    },
+    {
+      "id": "app/scopes/page.tsx",
+      "type": "file",
+      "layer": "M",
+      "label": "page.tsx",
+      "dept": "work",
+      "access": "claude",
+      "size": 976,
+      "mtime": 1788215576729.296,
+      "ext": ".tsx",
+      "path": "app/scopes/page.tsx",
+      "top": "app"
+    },
+    {
+      "id": "app/timeline/page.tsx",
+      "type": "file",
+      "layer": "M",
+      "label": "page.tsx",
+      "dept": "work",
+      "access": "claude",
+      "size": 463,
+      "mtime": 1788215576729.432,
+      "ext": ".tsx",
+      "path": "app/timeline/page.tsx",
+      "top": "app"
+    },
+    {
+      "id": "components/audit/AggregateInspector.tsx",
+      "type": "file",
+      "layer": "M",
+      "label": "AggregateInspector.tsx",
+      "dept": "content",
+      "access": "claude",
+      "size": 18774,
+      "mtime": 1788215576736.3403,
+      "ext": ".tsx",
+      "path": "components/audit/AggregateInspector.tsx",
+      "top": "components"
+    },
+    {
+      "id": "components/audit/AuditInstrument.tsx",
+      "type": "file",
+      "layer": "M",
+      "label": "AuditInstrument.tsx",
+      "dept": "content",
+      "access": "claude",
+      "size": 99121,
+      "mtime": 1788390425618.1675,
+      "ext": ".tsx",
+      "path": "components/audit/AuditInstrument.tsx",
+      "top": "components"
+    },
+    {
+      "id": "components/audit/AuditReviewConsole.tsx",
+      "type": "file",
+      "layer": "M",
+      "label": "AuditReviewConsole.tsx",
+      "dept": "content",
+      "access": "claude",
+      "size": 15355,
+      "mtime": 1788215576736.7622,
+      "ext": ".tsx",
+      "path": "components/audit/AuditReviewConsole.tsx",
+      "top": "components"
+    },
+    {
+      "id": "components/audit/CanvasAuditRenderer.tsx",
+      "type": "file",
+      "layer": "M",
+      "label": "CanvasAuditRenderer.tsx",
+      "dept": "content",
+      "access": "claude",
+      "size": 33906,
+      "mtime": 1788390160013.2014,
+      "ext": ".tsx",
+      "path": "components/audit/CanvasAuditRenderer.tsx",
+      "top": "components"
+    },
+    {
+      "id": "components/audit/FindingInspector.tsx",
+      "type": "file",
+      "layer": "M",
+      "label": "FindingInspector.tsx",
+      "dept": "content",
+      "access": "claude",
+      "size": 20930,
+      "mtime": 1788215576737.0142,
+      "ext": ".tsx",
+      "path": "components/audit/FindingInspector.tsx",
+      "top": "components"
+    },
+    {
+      "id": "components/audit/GraphInspector.tsx",
+      "type": "file",
+      "layer": "M",
+      "label": "GraphInspector.tsx",
+      "dept": "content",
+      "access": "claude",
+      "size": 44544,
+      "mtime": 1788215576737.1716,
+      "ext": ".tsx",
+      "path": "components/audit/GraphInspector.tsx",
+      "top": "components"
+    },
+    {
+      "id": "components/audit/SignalGraph.tsx",
+      "type": "file",
+      "layer": "M",
+      "label": "SignalGraph.tsx",
+      "dept": "content",
+      "access": "claude",
+      "size": 106954,
+      "mtime": 1788387182879.207,
+      "ext": ".tsx",
+      "path": "components/audit/SignalGraph.tsx",
+      "top": "components"
+    },
+    {
+      "id": "components/audit/cameraMotion.ts",
+      "type": "file",
+      "layer": "M",
+      "label": "cameraMotion.ts",
+      "dept": "content",
+      "access": "claude",
+      "size": 17807,
+      "mtime": 1788215576737.564,
+      "ext": ".ts",
+      "path": "components/audit/cameraMotion.ts",
+      "top": "components"
+    },
+    {
+      "id": "components/audit/graphTokens.ts",
+      "type": "file",
+      "layer": "M",
+      "label": "graphTokens.ts",
+      "dept": "content",
+      "access": "claude",
+      "size": 35247,
+      "mtime": 1788215576738.526,
+      "ext": ".ts",
+      "path": "components/audit/graphTokens.ts",
+      "top": "components"
+    },
+    {
+      "id": "components/audit/icons.tsx",
+      "type": "file",
+      "layer": "M",
+      "label": "icons.tsx",
+      "dept": "content",
+      "access": "claude",
+      "size": 8723,
+      "mtime": 1788215576738.6614,
+      "ext": ".tsx",
+      "path": "components/audit/icons.tsx",
+      "top": "components"
+    },
+    {
+      "id": "components/audit/rubricCamera.ts",
+      "type": "file",
+      "layer": "M",
+      "label": "rubricCamera.ts",
+      "dept": "content",
+      "access": "claude",
+      "size": 7844,
+      "mtime": 1788301144864.9895,
+      "ext": ".ts",
+      "path": "components/audit/rubricCamera.ts",
+      "top": "components"
+    },
+    {
+      "id": "components/audit/tokens.ts",
+      "type": "file",
+      "layer": "M",
+      "label": "tokens.ts",
+      "dept": "content",
+      "access": "claude",
+      "size": 3089,
+      "mtime": 1788215576738.9824,
+      "ext": ".ts",
+      "path": "components/audit/tokens.ts",
+      "top": "components"
+    },
+    {
+      "id": "components/audit/canvas/hitTest.ts",
+      "type": "file",
+      "layer": "M",
+      "label": "hitTest.ts",
+      "dept": "content",
+      "access": "claude",
+      "size": 7326,
+      "mtime": 1788225730551.2031,
+      "ext": ".ts",
+      "path": "components/audit/canvas/hitTest.ts",
+      "top": "components"
+    },
+    {
+      "id": "components/audit/canvas/paintTokens.ts",
+      "type": "file",
+      "layer": "M",
+      "label": "paintTokens.ts",
+      "dept": "content",
+      "access": "claude",
+      "size": 4748,
+      "mtime": 1788215576737.9504,
+      "ext": ".ts",
+      "path": "components/audit/canvas/paintTokens.ts",
+      "top": "components"
+    },
+    {
+      "id": "components/audit/canvas/shapes.ts",
+      "type": "file",
+      "layer": "M",
+      "label": "shapes.ts",
+      "dept": "content",
+      "access": "claude",
+      "size": 7672,
+      "mtime": 1788215576738.2405,
+      "ext": ".ts",
+      "path": "components/audit/canvas/shapes.ts",
+      "top": "components"
+    },
+    {
+      "id": "components/audit/canvas/sprites.ts",
+      "type": "file",
+      "layer": "M",
+      "label": "sprites.ts",
+      "dept": "content",
+      "access": "claude",
+      "size": 6549,
+      "mtime": 1788215576738.362,
+      "ext": ".ts",
+      "path": "components/audit/canvas/sprites.ts",
+      "top": "components"
+    },
+    {
+      "id": "components/audit/canvas/rubric/backdrop.ts",
+      "type": "file",
+      "layer": "M",
+      "label": "backdrop.ts",
+      "dept": "content",
+      "access": "claude",
+      "size": 4958,
+      "mtime": 1788225730551.421,
+      "ext": ".ts",
+      "path": "components/audit/canvas/rubric/backdrop.ts",
+      "top": "components"
+    },
+    {
+      "id": "components/audit/canvas/rubric/engine.ts",
+      "type": "file",
+      "layer": "M",
+      "label": "engine.ts",
+      "dept": "content",
+      "access": "claude",
+      "size": 13117,
+      "mtime": 1788301662948.055,
+      "ext": ".ts",
+      "path": "components/audit/canvas/rubric/engine.ts",
+      "top": "components"
+    },
+    {
+      "id": "components/audit/canvas/rubric/painter.ts",
+      "type": "file",
+      "layer": "M",
+      "label": "painter.ts",
+      "dept": "content",
+      "access": "claude",
+      "size": 55808,
+      "mtime": 1788392592772.3215,
+      "ext": ".ts",
+      "path": "components/audit/canvas/rubric/painter.ts",
+      "top": "components"
+    },
+    {
+      "id": "components/audit/canvas/rubric/sprites2.ts",
+      "type": "file",
+      "layer": "M",
+      "label": "sprites2.ts",
+      "dept": "content",
+      "access": "claude",
+      "size": 8538,
+      "mtime": 1788225730551.861,
+      "ext": ".ts",
+      "path": "components/audit/canvas/rubric/sprites2.ts",
+      "top": "components"
+    },
+    {
+      "id": "components/audit/renderer/AuditGraphRenderer.tsx",
+      "type": "file",
+      "layer": "M",
+      "label": "AuditGraphRenderer.tsx",
+      "dept": "content",
+      "access": "claude",
+      "size": 2310,
+      "mtime": 1788215576738.7778,
+      "ext": ".tsx",
+      "path": "components/audit/renderer/AuditGraphRenderer.tsx",
+      "top": "components"
+    },
+    {
+      "id": "components/audit/renderer/types.ts",
+      "type": "file",
+      "layer": "M",
+      "label": "types.ts",
+      "dept": "content",
+      "access": "claude",
+      "size": 7932,
+      "mtime": 1788387173903.866,
+      "ext": ".ts",
+      "path": "components/audit/renderer/types.ts",
+      "top": "components"
+    },
+    {
+      "id": "components/control-room/CommandWorkspace.tsx",
+      "type": "file",
+      "layer": "M",
+      "label": "CommandWorkspace.tsx",
+      "dept": "content",
+      "access": "claude",
+      "size": 65971,
+      "mtime": 1788215576739.1968,
+      "ext": ".tsx",
+      "path": "components/control-room/CommandWorkspace.tsx",
+      "top": "components"
+    },
+    {
+      "id": "components/control-room/ConfidenceChart.tsx",
+      "type": "file",
+      "layer": "M",
+      "label": "ConfidenceChart.tsx",
+      "dept": "content",
+      "access": "claude",
+      "size": 6846,
+      "mtime": 1788215576739.315,
+      "ext": ".tsx",
+      "path": "components/control-room/ConfidenceChart.tsx",
+      "top": "components"
+    },
+    {
+      "id": "components/control-room/Inspector.tsx",
+      "type": "file",
+      "layer": "M",
+      "label": "Inspector.tsx",
+      "dept": "content",
+      "access": "claude",
+      "size": 15241,
+      "mtime": 1788215576739.6077,
+      "ext": ".tsx",
+      "path": "components/control-room/Inspector.tsx",
+      "top": "components"
+    },
+    {
+      "id": "components/control-room/LensEditor.tsx",
+      "type": "file",
+      "layer": "M",
+      "label": "LensEditor.tsx",
+      "dept": "content",
+      "access": "claude",
+      "size": 6843,
+      "mtime": 1788215576739.7842,
+      "ext": ".tsx",
+      "path": "components/control-room/LensEditor.tsx",
+      "top": "components"
+    },
+    {
+      "id": "components/control-room/Panels.tsx",
+      "type": "file",
+      "layer": "M",
+      "label": "Panels.tsx",
+      "dept": "content",
+      "access": "claude",
+      "size": 7095,
+      "mtime": 1788215576739.9153,
+      "ext": ".tsx",
+      "path": "components/control-room/Panels.tsx",
+      "top": "components"
+    },
+    {
+      "id": "components/control-room/ProjectField.tsx",
+      "type": "file",
+      "layer": "M",
+      "label": "ProjectField.tsx",
+      "dept": "content",
+      "access": "claude",
+      "size": 23963,
+      "mtime": 1788215576740.028,
+      "ext": ".tsx",
+      "path": "components/control-room/ProjectField.tsx",
+      "top": "components"
+    },
+    {
+      "id": "components/control-room/Reading.tsx",
+      "type": "file",
+      "layer": "M",
+      "label": "Reading.tsx",
+      "dept": "content",
+      "access": "claude",
+      "size": 3883,
+      "mtime": 1788215576740.1223,
+      "ext": ".tsx",
+      "path": "components/control-room/Reading.tsx",
+      "top": "components"
+    },
+    {
+      "id": "components/control-room/StatusBar.tsx",
+      "type": "file",
+      "layer": "M",
+      "label": "StatusBar.tsx",
+      "dept": "content",
+      "access": "claude",
+      "size": 1997,
+      "mtime": 1788215576740.1863,
+      "ext": ".tsx",
+      "path": "components/control-room/StatusBar.tsx",
+      "top": "components"
+    },
+    {
+      "id": "components/control-room/Telemetry.tsx",
+      "type": "file",
+      "layer": "M",
+      "label": "Telemetry.tsx",
+      "dept": "content",
+      "access": "claude",
+      "size": 7845,
+      "mtime": 1788215576740.313,
+      "ext": ".tsx",
+      "path": "components/control-room/Telemetry.tsx",
+      "top": "components"
+    },
+    {
+      "id": "components/decisions/DecisionCircuit.tsx",
+      "type": "file",
+      "layer": "M",
+      "label": "DecisionCircuit.tsx",
+      "dept": "content",
+      "access": "claude",
+      "size": 22117,
+      "mtime": 1788215576740.6914,
+      "ext": ".tsx",
+      "path": "components/decisions/DecisionCircuit.tsx",
+      "top": "components"
+    },
+    {
+      "id": "components/decisions/DecisionInspector.tsx",
+      "type": "file",
+      "layer": "M",
+      "label": "DecisionInspector.tsx",
+      "dept": "content",
+      "access": "claude",
+      "size": 29499,
+      "mtime": 1788215576740.8577,
+      "ext": ".tsx",
+      "path": "components/decisions/DecisionInspector.tsx",
+      "top": "components"
+    },
+    {
+      "id": "components/decisions/DecisionLanes.tsx",
+      "type": "file",
+      "layer": "M",
+      "label": "DecisionLanes.tsx",
+      "dept": "content",
+      "access": "claude",
+      "size": 10181,
+      "mtime": 1788215576741.0227,
+      "ext": ".tsx",
+      "path": "components/decisions/DecisionLanes.tsx",
+      "top": "components"
+    },
+    {
+      "id": "components/decisions/DecisionModule.tsx",
+      "type": "file",
+      "layer": "M",
+      "label": "DecisionModule.tsx",
+      "dept": "content",
+      "access": "claude",
+      "size": 6489,
+      "mtime": 1788215576741.1362,
+      "ext": ".tsx",
+      "path": "components/decisions/DecisionModule.tsx",
+      "top": "components"
+    },
+    {
+      "id": "components/decisions/DecisionTools.tsx",
+      "type": "file",
+      "layer": "M",
+      "label": "DecisionTools.tsx",
+      "dept": "content",
+      "access": "claude",
+      "size": 22324,
+      "mtime": 1788215576741.2627,
+      "ext": ".tsx",
+      "path": "components/decisions/DecisionTools.tsx",
+      "top": "components"
+    },
+    {
+      "id": "components/instrument/BuildId.tsx",
+      "type": "file",
+      "layer": "M",
+      "label": "BuildId.tsx",
+      "dept": "content",
+      "access": "claude",
+      "size": 4089,
+      "mtime": 1788215576741.4731,
+      "ext": ".tsx",
+      "path": "components/instrument/BuildId.tsx",
+      "top": "components"
+    },
+    {
+      "id": "components/instrument/CapabilityTile.tsx",
+      "type": "file",
+      "layer": "M",
+      "label": "CapabilityTile.tsx",
+      "dept": "content",
+      "access": "claude",
+      "size": 27998,
+      "mtime": 1788215576741.6177,
+      "ext": ".tsx",
+      "path": "components/instrument/CapabilityTile.tsx",
+      "top": "components"
+    },
+    {
+      "id": "components/instrument/CommandMenu.tsx",
+      "type": "file",
+      "layer": "M",
+      "label": "CommandMenu.tsx",
+      "dept": "content",
+      "access": "claude",
+      "size": 5079,
+      "mtime": 1788215576741.7415,
+      "ext": ".tsx",
+      "path": "components/instrument/CommandMenu.tsx",
+      "top": "components"
+    },
+    {
+      "id": "components/instrument/DecisionsInstrument.tsx",
+      "type": "file",
+      "layer": "M",
+      "label": "DecisionsInstrument.tsx",
+      "dept": "content",
+      "access": "claude",
+      "size": 12349,
+      "mtime": 1788215576741.8909,
+      "ext": ".tsx",
+      "path": "components/instrument/DecisionsInstrument.tsx",
+      "top": "components"
+    },
+    {
+      "id": "components/instrument/Fader.tsx",
+      "type": "file",
+      "layer": "M",
+      "label": "Fader.tsx",
+      "dept": "content",
+      "access": "claude",
+      "size": 14149,
+      "mtime": 1788215576742.0476,
+      "ext": ".tsx",
+      "path": "components/instrument/Fader.tsx",
+      "top": "components"
+    },
+    {
+      "id": "components/instrument/FeatureDetail.tsx",
+      "type": "file",
+      "layer": "M",
+      "label": "FeatureDetail.tsx",
+      "dept": "content",
+      "access": "claude",
+      "size": 34675,
+      "mtime": 1788215576742.167,
+      "ext": ".tsx",
+      "path": "components/instrument/FeatureDetail.tsx",
+      "top": "components"
+    },
+    {
+      "id": "components/instrument/ForecastDetail.tsx",
+      "type": "file",
+      "layer": "M",
+      "label": "ForecastDetail.tsx",
+      "dept": "content",
+      "access": "claude",
+      "size": 31162,
+      "mtime": 1788215576742.2825,
+      "ext": ".tsx",
+      "path": "components/instrument/ForecastDetail.tsx",
+      "top": "components"
+    },
+    {
+      "id": "components/instrument/ForecastInstrument.tsx",
+      "type": "file",
+      "layer": "M",
+      "label": "ForecastInstrument.tsx",
+      "dept": "content",
+      "access": "claude",
+      "size": 21561,
+      "mtime": 1788215576742.407,
+      "ext": ".tsx",
+      "path": "components/instrument/ForecastInstrument.tsx",
+      "top": "components"
+    },
+    {
+      "id": "components/instrument/ForecastTools.tsx",
+      "type": "file",
+      "layer": "M",
+      "label": "ForecastTools.tsx",
+      "dept": "content",
+      "access": "claude",
+      "size": 14085,
+      "mtime": 1788215576742.5793,
+      "ext": ".tsx",
+      "path": "components/instrument/ForecastTools.tsx",
+      "top": "components"
+    },
+    {
+      "id": "components/instrument/InstrumentRail.tsx",
+      "type": "file",
+      "layer": "M",
+      "label": "InstrumentRail.tsx",
+      "dept": "content",
+      "access": "claude",
+      "size": 23281,
+      "mtime": 1788215576742.693,
+      "ext": ".tsx",
+      "path": "components/instrument/InstrumentRail.tsx",
+      "top": "components"
+    },
+    {
+      "id": "components/instrument/InstrumentShell.tsx",
+      "type": "file",
+      "layer": "M",
+      "label": "InstrumentShell.tsx",
+      "dept": "content",
+      "access": "claude",
+      "size": 5743,
+      "mtime": 1788215576742.8113,
+      "ext": ".tsx",
+      "path": "components/instrument/InstrumentShell.tsx",
+      "top": "components"
+    },
+    {
+      "id": "components/instrument/IntelligenceInstrument.tsx",
+      "type": "file",
+      "layer": "M",
+      "label": "IntelligenceInstrument.tsx",
+      "dept": "content",
+      "access": "claude",
+      "size": 13041,
+      "mtime": 1788215576742.9546,
+      "ext": ".tsx",
+      "path": "components/instrument/IntelligenceInstrument.tsx",
+      "top": "components"
+    },
+    {
+      "id": "components/instrument/Knob.tsx",
+      "type": "file",
+      "layer": "M",
+      "label": "Knob.tsx",
+      "dept": "content",
+      "access": "claude",
+      "size": 8668,
+      "mtime": 1788215576743.0874,
+      "ext": ".tsx",
+      "path": "components/instrument/Knob.tsx",
+      "top": "components"
+    },
+    {
+      "id": "components/instrument/LivingForecast.tsx",
+      "type": "file",
+      "layer": "M",
+      "label": "LivingForecast.tsx",
+      "dept": "content",
+      "access": "claude",
+      "size": 33394,
+      "mtime": 1788215576743.2068,
+      "ext": ".tsx",
+      "path": "components/instrument/LivingForecast.tsx",
+      "top": "components"
+    },
+    {
+      "id": "components/instrument/Meter.tsx",
+      "type": "file",
+      "layer": "M",
+      "label": "Meter.tsx",
+      "dept": "content",
+      "access": "claude",
+      "size": 5923,
+      "mtime": 1788215576743.3296,
+      "ext": ".tsx",
+      "path": "components/instrument/Meter.tsx",
+      "top": "components"
+    },
+    {
+      "id": "components/instrument/OverviewWorkspace.tsx",
+      "type": "file",
+      "layer": "M",
+      "label": "OverviewWorkspace.tsx",
+      "dept": "content",
+      "access": "claude",
+      "size": 21302,
+      "mtime": 1788215576743.485,
+      "ext": ".tsx",
+      "path": "components/instrument/OverviewWorkspace.tsx",
+      "top": "components"
+    },
+    {
+      "id": "components/instrument/Panel.tsx",
+      "type": "file",
+      "layer": "M",
+      "label": "Panel.tsx",
+      "dept": "content",
+      "access": "claude",
+      "size": 6089,
+      "mtime": 1788215576743.6338,
+      "ext": ".tsx",
+      "path": "components/instrument/Panel.tsx",
+      "top": "components"
+    },
+    {
+      "id": "components/instrument/ReportsInstrument.tsx",
+      "type": "file",
+      "layer": "M",
+      "label": "ReportsInstrument.tsx",
+      "dept": "content",
+      "access": "claude",
+      "size": 7239,
+      "mtime": 1788215576743.752,
+      "ext": ".tsx",
+      "path": "components/instrument/ReportsInstrument.tsx",
+      "top": "components"
+    },
+    {
+      "id": "components/instrument/ScenarioStrip.tsx",
+      "type": "file",
+      "layer": "M",
+      "label": "ScenarioStrip.tsx",
+      "dept": "content",
+      "access": "claude",
+      "size": 5033,
+      "mtime": 1788215576743.881,
+      "ext": ".tsx",
+      "path": "components/instrument/ScenarioStrip.tsx",
+      "top": "components"
+    },
+    {
+      "id": "components/instrument/ScopeInstrument.tsx",
+      "type": "file",
+      "layer": "M",
+      "label": "ScopeInstrument.tsx",
+      "dept": "content",
+      "access": "claude",
+      "size": 55379,
+      "mtime": 1788215576744.0552,
+      "ext": ".tsx",
+      "path": "components/instrument/ScopeInstrument.tsx",
+      "top": "components"
+    },
+    {
+      "id": "components/instrument/SignalSurface.tsx",
+      "type": "file",
+      "layer": "M",
+      "label": "SignalSurface.tsx",
+      "dept": "content",
+      "access": "claude",
+      "size": 4528,
+      "mtime": 1788215576744.1785,
+      "ext": ".tsx",
+      "path": "components/instrument/SignalSurface.tsx",
+      "top": "components"
+    },
+    {
+      "id": "components/instrument/TimelineInstrument.tsx",
+      "type": "file",
+      "layer": "M",
+      "label": "TimelineInstrument.tsx",
+      "dept": "content",
+      "access": "claude",
+      "size": 14654,
+      "mtime": 1788215576744.4717,
+      "ext": ".tsx",
+      "path": "components/instrument/TimelineInstrument.tsx",
+      "top": "components"
+    },
+    {
+      "id": "components/instrument/ToolWindow.tsx",
+      "type": "file",
+      "layer": "M",
+      "label": "ToolWindow.tsx",
+      "dept": "content",
+      "access": "claude",
+      "size": 7654,
+      "mtime": 1788215576744.6306,
+      "ext": ".tsx",
+      "path": "components/instrument/ToolWindow.tsx",
+      "top": "components"
+    },
+    {
+      "id": "components/portfolio/AllocationDrawer.tsx",
+      "type": "file",
+      "layer": "M",
+      "label": "AllocationDrawer.tsx",
+      "dept": "content",
+      "access": "claude",
+      "size": 7790,
+      "mtime": 1788215576744.8948,
+      "ext": ".tsx",
+      "path": "components/portfolio/AllocationDrawer.tsx",
+      "top": "components"
+    },
+    {
+      "id": "components/portfolio/ChannelFader.tsx",
+      "type": "file",
+      "layer": "M",
+      "label": "ChannelFader.tsx",
+      "dept": "content",
+      "access": "claude",
+      "size": 13126,
+      "mtime": 1788215576745.1758,
+      "ext": ".tsx",
+      "path": "components/portfolio/ChannelFader.tsx",
+      "top": "components"
+    },
+    {
+      "id": "components/portfolio/ForecastField.tsx",
+      "type": "file",
+      "layer": "M",
+      "label": "ForecastField.tsx",
+      "dept": "content",
+      "access": "claude",
+      "size": 26663,
+      "mtime": 1788215576745.5417,
+      "ext": ".tsx",
+      "path": "components/portfolio/ForecastField.tsx",
+      "top": "components"
+    },
+    {
+      "id": "components/portfolio/InstrumentBay.tsx",
+      "type": "file",
+      "layer": "M",
+      "label": "InstrumentBay.tsx",
+      "dept": "content",
+      "access": "claude",
+      "size": 13023,
+      "mtime": 1788215576745.8662,
+      "ext": ".tsx",
+      "path": "components/portfolio/InstrumentBay.tsx",
+      "top": "components"
+    },
+    {
+      "id": "components/portfolio/MasterBus.tsx",
+      "type": "file",
+      "layer": "M",
+      "label": "MasterBus.tsx",
+      "dept": "content",
+      "access": "claude",
+      "size": 10391,
+      "mtime": 1788215576746.142,
+      "ext": ".tsx",
+      "path": "components/portfolio/MasterBus.tsx",
+      "top": "components"
+    },
+    {
+      "id": "components/portfolio/MixerChannel.tsx",
+      "type": "file",
+      "layer": "M",
+      "label": "MixerChannel.tsx",
+      "dept": "content",
+      "access": "claude",
+      "size": 12723,
+      "mtime": 1788215576746.4502,
+      "ext": ".tsx",
+      "path": "components/portfolio/MixerChannel.tsx",
+      "top": "components"
+    },
+    {
+      "id": "components/portfolio/PortfolioMixer.tsx",
+      "type": "file",
+      "layer": "M",
+      "label": "PortfolioMixer.tsx",
+      "dept": "content",
+      "access": "claude",
+      "size": 13574,
+      "mtime": 1788215576746.6106,
+      "ext": ".tsx",
+      "path": "components/portfolio/PortfolioMixer.tsx",
+      "top": "components"
+    },
+    {
+      "id": "components/portfolio/RotaryKnob.tsx",
+      "type": "file",
+      "layer": "M",
+      "label": "RotaryKnob.tsx",
+      "dept": "content",
+      "access": "claude",
+      "size": 5745,
+      "mtime": 1788215576746.7136,
+      "ext": ".tsx",
+      "path": "components/portfolio/RotaryKnob.tsx",
+      "top": "components"
+    },
+    {
+      "id": "components/portfolio/ScenarioBar.tsx",
+      "type": "file",
+      "layer": "M",
+      "label": "ScenarioBar.tsx",
+      "dept": "content",
+      "access": "claude",
+      "size": 8445,
+      "mtime": 1788215576746.832,
+      "ext": ".tsx",
+      "path": "components/portfolio/ScenarioBar.tsx",
+      "top": "components"
+    },
+    {
+      "id": "components/portfolio/ScenarioInspector.tsx",
+      "type": "file",
+      "layer": "M",
+      "label": "ScenarioInspector.tsx",
+      "dept": "content",
+      "access": "claude",
+      "size": 22494,
+      "mtime": 1788215576746.9277,
+      "ext": ".tsx",
+      "path": "components/portfolio/ScenarioInspector.tsx",
+      "top": "components"
+    },
+    {
+      "id": "components/portfolio/SplitPatchbay.tsx",
+      "type": "file",
+      "layer": "M",
+      "label": "SplitPatchbay.tsx",
+      "dept": "content",
+      "access": "claude",
+      "size": 10619,
+      "mtime": 1788215576747.0708,
+      "ext": ".tsx",
+      "path": "components/portfolio/SplitPatchbay.tsx",
+      "top": "components"
+    },
+    {
+      "id": "components/timeline/AddEventTool.tsx",
+      "type": "file",
+      "layer": "M",
+      "label": "AddEventTool.tsx",
+      "dept": "content",
+      "access": "claude",
+      "size": 11878,
+      "mtime": 1788215576747.2395,
+      "ext": ".tsx",
+      "path": "components/timeline/AddEventTool.tsx",
+      "top": "components"
+    },
+    {
+      "id": "components/timeline/EventModule.tsx",
+      "type": "file",
+      "layer": "M",
+      "label": "EventModule.tsx",
+      "dept": "content",
+      "access": "claude",
+      "size": 8102,
+      "mtime": 1788215576747.357,
+      "ext": ".tsx",
+      "path": "components/timeline/EventModule.tsx",
+      "top": "components"
+    },
+    {
+      "id": "components/timeline/LanesControl.tsx",
+      "type": "file",
+      "layer": "M",
+      "label": "LanesControl.tsx",
+      "dept": "content",
+      "access": "claude",
+      "size": 9083,
+      "mtime": 1788215576747.474,
+      "ext": ".tsx",
+      "path": "components/timeline/LanesControl.tsx",
+      "top": "components"
+    },
+    {
+      "id": "components/timeline/LayersControl.tsx",
+      "type": "file",
+      "layer": "M",
+      "label": "LayersControl.tsx",
+      "dept": "content",
+      "access": "claude",
+      "size": 5620,
+      "mtime": 1788215576747.5684,
+      "ext": ".tsx",
+      "path": "components/timeline/LayersControl.tsx",
+      "top": "components"
+    },
+    {
+      "id": "components/timeline/NowPlaying.tsx",
+      "type": "file",
+      "layer": "M",
+      "label": "NowPlaying.tsx",
+      "dept": "content",
+      "access": "claude",
+      "size": 7863,
+      "mtime": 1788215576747.664,
+      "ext": ".tsx",
+      "path": "components/timeline/NowPlaying.tsx",
+      "top": "components"
+    },
+    {
+      "id": "components/timeline/PlanObject.tsx",
+      "type": "file",
+      "layer": "M",
+      "label": "PlanObject.tsx",
+      "dept": "content",
+      "access": "claude",
+      "size": 15220,
+      "mtime": 1788215576747.8088,
+      "ext": ".tsx",
+      "path": "components/timeline/PlanObject.tsx",
+      "top": "components"
+    },
+    {
+      "id": "components/timeline/TimeField.tsx",
+      "type": "file",
+      "layer": "M",
+      "label": "TimeField.tsx",
+      "dept": "content",
+      "access": "claude",
+      "size": 114497,
+      "mtime": 1788215576748.0728,
+      "ext": ".tsx",
+      "path": "components/timeline/TimeField.tsx",
+      "top": "components"
+    },
+    {
+      "id": "components/timeline/TimelineInspector.tsx",
+      "type": "file",
+      "layer": "M",
+      "label": "TimelineInspector.tsx",
+      "dept": "content",
+      "access": "claude",
+      "size": 28149,
+      "mtime": 1788215576748.208,
+      "ext": ".tsx",
+      "path": "components/timeline/TimelineInspector.tsx",
+      "top": "components"
+    },
+    {
+      "id": "components/timeline/Transport.tsx",
+      "type": "file",
+      "layer": "M",
+      "label": "Transport.tsx",
+      "dept": "content",
+      "access": "claude",
+      "size": 12686,
+      "mtime": 1788215576748.3652,
+      "ext": ".tsx",
+      "path": "components/timeline/Transport.tsx",
+      "top": "components"
+    },
+    {
+      "id": "components/timeline/familyColor.ts",
+      "type": "file",
+      "layer": "M",
+      "label": "familyColor.ts",
+      "dept": "content",
+      "access": "claude",
+      "size": 556,
+      "mtime": 1788215576748.4397,
+      "ext": ".ts",
+      "path": "components/timeline/familyColor.ts",
+      "top": "components"
+    },
+    {
+      "id": "lib/audit/actions.ts",
+      "type": "file",
+      "layer": "M",
+      "label": "actions.ts",
+      "dept": "personal",
+      "access": "claude",
+      "size": 8975,
+      "mtime": 1788215576750.9365,
+      "ext": ".ts",
+      "path": "lib/audit/actions.ts",
+      "top": "lib"
+    },
+    {
+      "id": "lib/audit/capacity.ts",
+      "type": "file",
+      "layer": "M",
+      "label": "capacity.ts",
+      "dept": "personal",
+      "access": "claude",
+      "size": 5615,
+      "mtime": 1788215576751.0342,
+      "ext": ".ts",
+      "path": "lib/audit/capacity.ts",
+      "top": "lib"
+    },
+    {
+      "id": "lib/audit/constellations.ts",
+      "type": "file",
+      "layer": "M",
+      "label": "constellations.ts",
+      "dept": "personal",
+      "access": "claude",
+      "size": 11092,
+      "mtime": 1788301615016.2615,
+      "ext": ".ts",
+      "path": "lib/audit/constellations.ts",
+      "top": "lib"
+    },
+    {
+      "id": "lib/audit/focus.ts",
+      "type": "file",
+      "layer": "M",
+      "label": "focus.ts",
+      "dept": "personal",
+      "access": "claude",
+      "size": 12119,
+      "mtime": 1788386410654.1746,
+      "ext": ".ts",
+      "path": "lib/audit/focus.ts",
+      "top": "lib"
+    },
+    {
+      "id": "lib/audit/graph.ts",
+      "type": "file",
+      "layer": "M",
+      "label": "graph.ts",
+      "dept": "personal",
+      "access": "claude",
+      "size": 58215,
+      "mtime": 1788215576751.407,
+      "ext": ".ts",
+      "path": "lib/audit/graph.ts",
+      "top": "lib"
+    },
+    {
+      "id": "lib/audit/graphInputs.ts",
+      "type": "file",
+      "layer": "M",
+      "label": "graphInputs.ts",
+      "dept": "personal",
+      "access": "claude",
+      "size": 7989,
+      "mtime": 1788215576751.5085,
+      "ext": ".ts",
+      "path": "lib/audit/graphInputs.ts",
+      "top": "lib"
+    },
+    {
+      "id": "lib/audit/graphLayout.ts",
+      "type": "file",
+      "layer": "M",
+      "label": "graphLayout.ts",
+      "dept": "personal",
+      "access": "claude",
+      "size": 36357,
+      "mtime": 1788215576751.624,
+      "ext": ".ts",
+      "path": "lib/audit/graphLayout.ts",
+      "top": "lib"
+    },
+    {
+      "id": "lib/audit/intelligence.ts",
+      "type": "file",
+      "layer": "M",
+      "label": "intelligence.ts",
+      "dept": "personal",
+      "access": "claude",
+      "size": 19958,
+      "mtime": 1788215576751.731,
+      "ext": ".ts",
+      "path": "lib/audit/intelligence.ts",
+      "top": "lib"
+    },
+    {
+      "id": "lib/audit/normalize.ts",
+      "type": "file",
+      "layer": "M",
+      "label": "normalize.ts",
+      "dept": "personal",
+      "access": "claude",
+      "size": 2634,
+      "mtime": 1788215576751.8296,
+      "ext": ".ts",
+      "path": "lib/audit/normalize.ts",
+      "top": "lib"
+    },
+    {
+      "id": "lib/audit/provenance.ts",
+      "type": "file",
+      "layer": "M",
+      "label": "provenance.ts",
+      "dept": "personal",
+      "access": "claude",
+      "size": 7538,
+      "mtime": 1788215576752.0786,
+      "ext": ".ts",
+      "path": "lib/audit/provenance.ts",
+      "top": "lib"
+    },
+    {
+      "id": "lib/audit/requirements.ts",
+      "type": "file",
+      "layer": "M",
+      "label": "requirements.ts",
+      "dept": "personal",
+      "access": "claude",
+      "size": 7367,
+      "mtime": 1788215576752.172,
+      "ext": ".ts",
+      "path": "lib/audit/requirements.ts",
+      "top": "lib"
+    },
+    {
+      "id": "lib/audit/rubricVisualAdapter.ts",
+      "type": "file",
+      "layer": "M",
+      "label": "rubricVisualAdapter.ts",
+      "dept": "personal",
+      "access": "claude",
+      "size": 9717,
+      "mtime": 1788390938050.6768,
+      "ext": ".ts",
+      "path": "lib/audit/rubricVisualAdapter.ts",
+      "top": "lib"
+    },
+    {
+      "id": "lib/audit/run.ts",
+      "type": "file",
+      "layer": "M",
+      "label": "run.ts",
+      "dept": "personal",
+      "access": "claude",
+      "size": 8618,
+      "mtime": 1788215576752.3167,
+      "ext": ".ts",
+      "path": "lib/audit/run.ts",
+      "top": "lib"
+    },
+    {
+      "id": "lib/audit/searchDocument.ts",
+      "type": "file",
+      "layer": "M",
+      "label": "searchDocument.ts",
+      "dept": "personal",
+      "access": "claude",
+      "size": 19256,
+      "mtime": 1788215576752.419,
+      "ext": ".ts",
+      "path": "lib/audit/searchDocument.ts",
+      "top": "lib"
+    },
+    {
+      "id": "lib/audit/searchIndex.ts",
+      "type": "file",
+      "layer": "M",
+      "label": "searchIndex.ts",
+      "dept": "personal",
+      "access": "claude",
+      "size": 18244,
+      "mtime": 1788387004536.6538,
+      "ext": ".ts",
+      "path": "lib/audit/searchIndex.ts",
+      "top": "lib"
+    },
+    {
+      "id": "lib/audit/searchLens.ts",
+      "type": "file",
+      "layer": "M",
+      "label": "searchLens.ts",
+      "dept": "personal",
+      "access": "claude",
+      "size": 4462,
+      "mtime": 1788301338738.81,
+      "ext": ".ts",
+      "path": "lib/audit/searchLens.ts",
+      "top": "lib"
+    },
+    {
+      "id": "lib/audit/searchText.ts",
+      "type": "file",
+      "layer": "M",
+      "label": "searchText.ts",
+      "dept": "personal",
+      "access": "claude",
+      "size": 6286,
+      "mtime": 1788215576752.7053,
+      "ext": ".ts",
+      "path": "lib/audit/searchText.ts",
+      "top": "lib"
+    },
+    {
+      "id": "lib/audit/sources.ts",
+      "type": "file",
+      "layer": "M",
+      "label": "sources.ts",
+      "dept": "personal",
+      "access": "claude",
+      "size": 4969,
+      "mtime": 1788215576752.8086,
+      "ext": ".ts",
+      "path": "lib/audit/sources.ts",
+      "top": "lib"
+    },
+    {
+      "id": "lib/audit/structuralWeb.ts",
+      "type": "file",
+      "layer": "M",
+      "label": "structuralWeb.ts",
+      "dept": "personal",
+      "access": "claude",
+      "size": 16574,
+      "mtime": 1788215576752.8955,
+      "ext": ".ts",
+      "path": "lib/audit/structuralWeb.ts",
+      "top": "lib"
+    },
+    {
+      "id": "lib/audit/truth.ts",
+      "type": "file",
+      "layer": "M",
+      "label": "truth.ts",
+      "dept": "personal",
+      "access": "claude",
+      "size": 29281,
+      "mtime": 1788215576752.9907,
+      "ext": ".ts",
+      "path": "lib/audit/truth.ts",
+      "top": "lib"
+    },
+    {
+      "id": "lib/audit/visualScene.ts",
+      "type": "file",
+      "layer": "M",
+      "label": "visualScene.ts",
+      "dept": "personal",
+      "access": "claude",
+      "size": 43615,
+      "mtime": 1788387173951.78,
+      "ext": ".ts",
+      "path": "lib/audit/visualScene.ts",
+      "top": "lib"
+    },
+    {
+      "id": "lib/audit/prompts/audit-v1.ts",
+      "type": "file",
+      "layer": "M",
+      "label": "audit-v1.ts",
+      "dept": "personal",
+      "access": "claude",
+      "size": 5506,
+      "mtime": 1788215576751.9854,
+      "ext": ".ts",
+      "path": "lib/audit/prompts/audit-v1.ts",
+      "top": "lib"
+    },
+    {
+      "id": "lib/audit/spatial/anchors.ts",
+      "type": "file",
+      "layer": "M",
+      "label": "anchors.ts",
+      "dept": "personal",
+      "access": "claude",
+      "size": 7600,
+      "mtime": 1788386410520.1147,
+      "ext": ".ts",
+      "path": "lib/audit/spatial/anchors.ts",
+      "top": "lib"
+    },
+    {
+      "id": "lib/audit/spatial/field.ts",
+      "type": "file",
+      "layer": "M",
+      "label": "field.ts",
+      "dept": "personal",
+      "access": "claude",
+      "size": 45777,
+      "mtime": 1788392592724.9402,
+      "ext": ".ts",
+      "path": "lib/audit/spatial/field.ts",
+      "top": "lib"
+    },
+    {
+      "id": "lib/capacity/limits.ts",
+      "type": "file",
+      "layer": "M",
+      "label": "limits.ts",
+      "dept": "personal",
+      "access": "claude",
+      "size": 4221,
+      "mtime": 1788215576753.291,
+      "ext": ".ts",
+      "path": "lib/capacity/limits.ts",
+      "top": "lib"
+    },
+    {
+      "id": "lib/capacity/resolve.ts",
+      "type": "file",
+      "layer": "M",
+      "label": "resolve.ts",
+      "dept": "personal",
+      "access": "claude",
+      "size": 7315,
+      "mtime": 1788215576753.3948,
+      "ext": ".ts",
+      "path": "lib/capacity/resolve.ts",
+      "top": "lib"
+    },
+    {
+      "id": "lib/capacity/workforce.ts",
+      "type": "file",
+      "layer": "M",
+      "label": "workforce.ts",
+      "dept": "personal",
+      "access": "claude",
+      "size": 19515,
+      "mtime": 1788215576753.491,
+      "ext": ".ts",
+      "path": "lib/capacity/workforce.ts",
+      "top": "lib"
+    },
+    {
+      "id": "lib/client/uploadFile.ts",
+      "type": "file",
+      "layer": "M",
+      "label": "uploadFile.ts",
+      "dept": "personal",
+      "access": "claude",
+      "size": 1423,
+      "mtime": 1788215576753.598,
+      "ext": ".ts",
+      "path": "lib/client/uploadFile.ts",
+      "top": "lib"
+    },
+    {
+      "id": "lib/context/envelope.ts",
+      "type": "file",
+      "layer": "M",
+      "label": "envelope.ts",
+      "dept": "personal",
+      "access": "claude",
+      "size": 7248,
+      "mtime": 1788215576753.719,
+      "ext": ".ts",
+      "path": "lib/context/envelope.ts",
+      "top": "lib"
+    },
+    {
+      "id": "lib/context/hash.ts",
+      "type": "file",
+      "layer": "M",
+      "label": "hash.ts",
+      "dept": "personal",
+      "access": "claude",
+      "size": 1117,
+      "mtime": 1788215576753.7932,
+      "ext": ".ts",
+      "path": "lib/context/hash.ts",
+      "top": "lib"
+    },
+    {
+      "id": "lib/context/package.ts",
+      "type": "file",
+      "layer": "M",
+      "label": "package.ts",
+      "dept": "personal",
+      "access": "claude",
+      "size": 16659,
+      "mtime": 1788215576753.9175,
+      "ext": ".ts",
+      "path": "lib/context/package.ts",
+      "top": "lib"
+    },
+    {
+      "id": "lib/context/snapshot.ts",
+      "type": "file",
+      "layer": "M",
+      "label": "snapshot.ts",
+      "dept": "personal",
+      "access": "claude",
+      "size": 7029,
+      "mtime": 1788215576754.0708,
+      "ext": ".ts",
+      "path": "lib/context/snapshot.ts",
+      "top": "lib"
+    },
+    {
+      "id": "lib/context/sourcePolicy.ts",
+      "type": "file",
+      "layer": "M",
+      "label": "sourcePolicy.ts",
+      "dept": "personal",
+      "access": "claude",
+      "size": 6461,
+      "mtime": 1788215576754.169,
+      "ext": ".ts",
+      "path": "lib/context/sourcePolicy.ts",
+      "top": "lib"
+    },
+    {
+      "id": "lib/context/validate.ts",
+      "type": "file",
+      "layer": "M",
+      "label": "validate.ts",
+      "dept": "personal",
+      "access": "claude",
+      "size": 29291,
+      "mtime": 1788215576754.295,
+      "ext": ".ts",
+      "path": "lib/context/validate.ts",
+      "top": "lib"
+    },
+    {
+      "id": "lib/control-room/field.ts",
+      "type": "file",
+      "layer": "M",
+      "label": "field.ts",
+      "dept": "personal",
+      "access": "claude",
+      "size": 15379,
+      "mtime": 1788215576754.6646,
+      "ext": ".ts",
+      "path": "lib/control-room/field.ts",
+      "top": "lib"
+    },
+    {
+      "id": "lib/control-room/lenses.ts",
+      "type": "file",
+      "layer": "M",
+      "label": "lenses.ts",
+      "dept": "personal",
+      "access": "claude",
+      "size": 9673,
+      "mtime": 1788215576754.8184,
+      "ext": ".ts",
+      "path": "lib/control-room/lenses.ts",
+      "top": "lib"
+    },
+    {
+      "id": "lib/control-room/read.ts",
+      "type": "file",
+      "layer": "M",
+      "label": "read.ts",
+      "dept": "personal",
+      "access": "claude",
+      "size": 39804,
+      "mtime": 1788215576754.9453,
+      "ext": ".ts",
+      "path": "lib/control-room/read.ts",
+      "top": "lib"
+    },
+    {
+      "id": "lib/decisions/candidates.ts",
+      "type": "file",
+      "layer": "M",
+      "label": "candidates.ts",
+      "dept": "personal",
+      "access": "claude",
+      "size": 3584,
+      "mtime": 1788215576755.0647,
+      "ext": ".ts",
+      "path": "lib/decisions/candidates.ts",
+      "top": "lib"
+    },
+    {
+      "id": "lib/decisions/model.ts",
+      "type": "file",
+      "layer": "M",
+      "label": "model.ts",
+      "dept": "personal",
+      "access": "claude",
+      "size": 3981,
+      "mtime": 1788215576755.131,
+      "ext": ".ts",
+      "path": "lib/decisions/model.ts",
+      "top": "lib"
+    },
+    {
+      "id": "lib/decisions/useDecisions.ts",
+      "type": "file",
+      "layer": "M",
+      "label": "useDecisions.ts",
+      "dept": "personal",
+      "access": "claude",
+      "size": 3294,
+      "mtime": 1788215576755.1995,
+      "ext": ".ts",
+      "path": "lib/decisions/useDecisions.ts",
+      "top": "lib"
+    },
+    {
+      "id": "lib/decisions/useFlip.ts",
+      "type": "file",
+      "layer": "M",
+      "label": "useFlip.ts",
+      "dept": "personal",
+      "access": "claude",
+      "size": 2380,
+      "mtime": 1788215576755.2656,
+      "ext": ".ts",
+      "path": "lib/decisions/useFlip.ts",
+      "top": "lib"
+    },
+    {
+      "id": "lib/dev/fixtures.ts",
+      "type": "file",
+      "layer": "M",
+      "label": "fixtures.ts",
+      "dept": "personal",
+      "access": "claude",
+      "size": 11950,
+      "mtime": 1788215576755.4285,
+      "ext": ".ts",
+      "path": "lib/dev/fixtures.ts",
+      "top": "lib"
+    },
+    {
+      "id": "lib/estimate/context.ts",
+      "type": "file",
+      "layer": "M",
+      "label": "context.ts",
+      "dept": "personal",
+      "access": "claude",
+      "size": 4204,
+      "mtime": 1788215576755.575,
+      "ext": ".ts",
+      "path": "lib/estimate/context.ts",
+      "top": "lib"
+    },
+    {
+      "id": "lib/estimate/run.ts",
+      "type": "file",
+      "layer": "M",
+      "label": "run.ts",
+      "dept": "personal",
+      "access": "claude",
+      "size": 6625,
+      "mtime": 1788215576755.8152,
+      "ext": ".ts",
+      "path": "lib/estimate/run.ts",
+      "top": "lib"
+    },
+    {
+      "id": "lib/estimate/runForScope.ts",
+      "type": "file",
+      "layer": "M",
+      "label": "runForScope.ts",
+      "dept": "personal",
+      "access": "claude",
+      "size": 2494,
+      "mtime": 1788215576755.8965,
+      "ext": ".ts",
+      "path": "lib/estimate/runForScope.ts",
+      "top": "lib"
+    },
+    {
+      "id": "lib/estimate/prompts/estimates-v1.ts",
+      "type": "file",
+      "layer": "M",
+      "label": "estimates-v1.ts",
+      "dept": "personal",
+      "access": "claude",
+      "size": 3206,
+      "mtime": 1788215576755.6824,
+      "ext": ".ts",
+      "path": "lib/estimate/prompts/estimates-v1.ts",
+      "top": "lib"
+    },
+    {
+      "id": "lib/findings/ticketPayload.ts",
+      "type": "file",
+      "layer": "M",
+      "label": "ticketPayload.ts",
+      "dept": "personal",
+      "access": "claude",
+      "size": 3172,
+      "mtime": 1788215576756.0847,
+      "ext": ".ts",
+      "path": "lib/findings/ticketPayload.ts",
+      "top": "lib"
+    },
+    {
+      "id": "lib/forecast/build.ts",
+      "type": "file",
+      "layer": "M",
+      "label": "build.ts",
+      "dept": "personal",
+      "access": "claude",
+      "size": 14923,
+      "mtime": 1788215576756.274,
+      "ext": ".ts",
+      "path": "lib/forecast/build.ts",
+      "top": "lib"
+    },
+    {
+      "id": "lib/forecast/compute.ts",
+      "type": "file",
+      "layer": "M",
+      "label": "compute.ts",
+      "dept": "personal",
+      "access": "claude",
+      "size": 24112,
+      "mtime": 1788215576756.3992,
+      "ext": ".ts",
+      "path": "lib/forecast/compute.ts",
+      "top": "lib"
+    },
+    {
+      "id": "lib/forecast/portfolio.ts",
+      "type": "file",
+      "layer": "M",
+      "label": "portfolio.ts",
+      "dept": "personal",
+      "access": "claude",
+      "size": 5759,
+      "mtime": 1788215576756.5037,
+      "ext": ".ts",
+      "path": "lib/forecast/portfolio.ts",
+      "top": "lib"
+    },
+    {
+      "id": "lib/forecast/scenarios.ts",
+      "type": "file",
+      "layer": "M",
+      "label": "scenarios.ts",
+      "dept": "personal",
+      "access": "claude",
+      "size": 3871,
+      "mtime": 1788215576756.573,
+      "ext": ".ts",
+      "path": "lib/forecast/scenarios.ts",
+      "top": "lib"
+    },
+    {
+      "id": "lib/forecast/simulate.ts",
+      "type": "file",
+      "layer": "M",
+      "label": "simulate.ts",
+      "dept": "personal",
+      "access": "claude",
+      "size": 6854,
+      "mtime": 1788215576756.6743,
+      "ext": ".ts",
+      "path": "lib/forecast/simulate.ts",
+      "top": "lib"
+    },
+    {
+      "id": "lib/instrument/reality.ts",
+      "type": "file",
+      "layer": "M",
+      "label": "reality.ts",
+      "dept": "personal",
+      "access": "claude",
+      "size": 2777,
+      "mtime": 1788215576756.7783,
+      "ext": ".ts",
+      "path": "lib/instrument/reality.ts",
+      "top": "lib"
+    },
+    {
+      "id": "lib/instrument/useProject.ts",
+      "type": "file",
+      "layer": "M",
+      "label": "useProject.ts",
+      "dept": "personal",
+      "access": "claude",
+      "size": 24274,
+      "mtime": 1788215576756.8657,
+      "ext": ".ts",
+      "path": "lib/instrument/useProject.ts",
+      "top": "lib"
+    },
+    {
+      "id": "lib/momentum/askPrompt.ts",
+      "type": "file",
+      "layer": "M",
+      "label": "askPrompt.ts",
+      "dept": "personal",
+      "access": "claude",
+      "size": 4800,
+      "mtime": 1788215576757.1985,
+      "ext": ".ts",
+      "path": "lib/momentum/askPrompt.ts",
+      "top": "lib"
+    },
+    {
+      "id": "lib/momentum/attribution.ts",
+      "type": "file",
+      "layer": "M",
+      "label": "attribution.ts",
+      "dept": "personal",
+      "access": "claude",
+      "size": 2139,
+      "mtime": 1788215576757.2617,
+      "ext": ".ts",
+      "path": "lib/momentum/attribution.ts",
+      "top": "lib"
+    },
+    {
+      "id": "lib/momentum/compute.ts",
+      "type": "file",
+      "layer": "M",
+      "label": "compute.ts",
+      "dept": "personal",
+      "access": "claude",
+      "size": 2365,
+      "mtime": 1788215576757.3264,
+      "ext": ".ts",
+      "path": "lib/momentum/compute.ts",
+      "top": "lib"
+    },
+    {
+      "id": "lib/momentum/trend.ts",
+      "type": "file",
+      "layer": "M",
+      "label": "trend.ts",
+      "dept": "personal",
+      "access": "claude",
+      "size": 5496,
+      "mtime": 1788215576757.4282,
+      "ext": ".ts",
+      "path": "lib/momentum/trend.ts",
+      "top": "lib"
+    },
+    {
+      "id": "lib/orbit/adapt.ts",
+      "type": "file",
+      "layer": "M",
+      "label": "adapt.ts",
+      "dept": "personal",
+      "access": "claude",
+      "size": 5480,
+      "mtime": 1788215576757.7927,
+      "ext": ".ts",
+      "path": "lib/orbit/adapt.ts",
+      "top": "lib"
+    },
+    {
+      "id": "lib/orbit/graph.ts",
+      "type": "file",
+      "layer": "M",
+      "label": "graph.ts",
+      "dept": "personal",
+      "access": "claude",
+      "size": 20540,
+      "mtime": 1788215576757.903,
+      "ext": ".ts",
+      "path": "lib/orbit/graph.ts",
+      "top": "lib"
+    },
+    {
+      "id": "lib/orbit/layout.ts",
+      "type": "file",
+      "layer": "M",
+      "label": "layout.ts",
+      "dept": "personal",
+      "access": "claude",
+      "size": 2873,
+      "mtime": 1788215576757.9805,
+      "ext": ".ts",
+      "path": "lib/orbit/layout.ts",
+      "top": "lib"
+    },
+    {
+      "id": "lib/portfolio/explain.ts",
+      "type": "file",
+      "layer": "M",
+      "label": "explain.ts",
+      "dept": "personal",
+      "access": "claude",
+      "size": 4691,
+      "mtime": 1788215576758.1084,
+      "ext": ".ts",
+      "path": "lib/portfolio/explain.ts",
+      "top": "lib"
+    },
+    {
+      "id": "lib/portfolio/insights.ts",
+      "type": "file",
+      "layer": "M",
+      "label": "insights.ts",
+      "dept": "personal",
+      "access": "claude",
+      "size": 3308,
+      "mtime": 1788215576758.1772,
+      "ext": ".ts",
+      "path": "lib/portfolio/insights.ts",
+      "top": "lib"
+    },
+    {
+      "id": "lib/reports/changes.ts",
+      "type": "file",
+      "layer": "M",
+      "label": "changes.ts",
+      "dept": "personal",
+      "access": "claude",
+      "size": 1988,
+      "mtime": 1788215576758.3372,
+      "ext": ".ts",
+      "path": "lib/reports/changes.ts",
+      "top": "lib"
+    },
+    {
+      "id": "lib/reports/generate.ts",
+      "type": "file",
+      "layer": "M",
+      "label": "generate.ts",
+      "dept": "personal",
+      "access": "claude",
+      "size": 3704,
+      "mtime": 1788215576758.4194,
+      "ext": ".ts",
+      "path": "lib/reports/generate.ts",
+      "top": "lib"
+    },
+    {
+      "id": "lib/reports/render.ts",
+      "type": "file",
+      "layer": "M",
+      "label": "render.ts",
+      "dept": "personal",
+      "access": "claude",
+      "size": 4057,
+      "mtime": 1788215576758.495,
+      "ext": ".ts",
+      "path": "lib/reports/render.ts",
+      "top": "lib"
+    },
+    {
+      "id": "lib/reports/snapshot.ts",
+      "type": "file",
+      "layer": "M",
+      "label": "snapshot.ts",
+      "dept": "personal",
+      "access": "claude",
+      "size": 3638,
+      "mtime": 1788215576758.5593,
+      "ext": ".ts",
+      "path": "lib/reports/snapshot.ts",
+      "top": "lib"
+    },
+    {
+      "id": "lib/scenario/compare.ts",
+      "type": "file",
+      "layer": "M",
+      "label": "compare.ts",
+      "dept": "personal",
+      "access": "claude",
+      "size": 1443,
+      "mtime": 1788215576758.6553,
+      "ext": ".ts",
+      "path": "lib/scenario/compare.ts",
+      "top": "lib"
+    },
+    {
+      "id": "lib/scenario/inputDelta.ts",
+      "type": "file",
+      "layer": "M",
+      "label": "inputDelta.ts",
+      "dept": "personal",
+      "access": "claude",
+      "size": 8096,
+      "mtime": 1788215576758.7676,
+      "ext": ".ts",
+      "path": "lib/scenario/inputDelta.ts",
+      "top": "lib"
+    },
+    {
+      "id": "lib/scenario/namedTransfer.ts",
+      "type": "file",
+      "layer": "M",
+      "label": "namedTransfer.ts",
+      "dept": "personal",
+      "access": "claude",
+      "size": 4474,
+      "mtime": 1788215576758.8696,
+      "ext": ".ts",
+      "path": "lib/scenario/namedTransfer.ts",
+      "top": "lib"
+    },
+    {
+      "id": "lib/scope/constraint.ts",
+      "type": "file",
+      "layer": "M",
+      "label": "constraint.ts",
+      "dept": "personal",
+      "access": "claude",
+      "size": 3303,
+      "mtime": 1788215576758.9746,
+      "ext": ".ts",
+      "path": "lib/scope/constraint.ts",
+      "top": "lib"
+    },
+    {
+      "id": "lib/scope/features.ts",
+      "type": "file",
+      "layer": "M",
+      "label": "features.ts",
+      "dept": "personal",
+      "access": "claude",
+      "size": 10672,
+      "mtime": 1788215576759.0881,
+      "ext": ".ts",
+      "path": "lib/scope/features.ts",
+      "top": "lib"
+    },
+    {
+      "id": "lib/shell/mode.ts",
+      "type": "file",
+      "layer": "M",
+      "label": "mode.ts",
+      "dept": "personal",
+      "access": "claude",
+      "size": 7236,
+      "mtime": 1788215576759.24,
+      "ext": ".ts",
+      "path": "lib/shell/mode.ts",
+      "top": "lib"
+    },
+    {
+      "id": "lib/shell/useProjectParam.ts",
+      "type": "file",
+      "layer": "M",
+      "label": "useProjectParam.ts",
+      "dept": "personal",
+      "access": "claude",
+      "size": 4561,
+      "mtime": 1788215576759.3296,
+      "ext": ".ts",
+      "path": "lib/shell/useProjectParam.ts",
+      "top": "lib"
+    },
+    {
+      "id": "lib/timeline/candidates.ts",
+      "type": "file",
+      "layer": "M",
+      "label": "candidates.ts",
+      "dept": "personal",
+      "access": "claude",
+      "size": 5931,
+      "mtime": 1788215576759.475,
+      "ext": ".ts",
+      "path": "lib/timeline/candidates.ts",
+      "top": "lib"
+    },
+    {
+      "id": "lib/timeline/entries.ts",
+      "type": "file",
+      "layer": "M",
+      "label": "entries.ts",
+      "dept": "personal",
+      "access": "claude",
+      "size": 20403,
+      "mtime": 1788215576759.5754,
+      "ext": ".ts",
+      "path": "lib/timeline/entries.ts",
+      "top": "lib"
+    },
+    {
+      "id": "lib/timeline/geometry.ts",
+      "type": "file",
+      "layer": "M",
+      "label": "geometry.ts",
+      "dept": "personal",
+      "access": "claude",
+      "size": 6180,
+      "mtime": 1788215576759.8054,
+      "ext": ".ts",
+      "path": "lib/timeline/geometry.ts",
+      "top": "lib"
+    },
+    {
+      "id": "lib/timeline/moment.ts",
+      "type": "file",
+      "layer": "M",
+      "label": "moment.ts",
+      "dept": "personal",
+      "access": "claude",
+      "size": 9976,
+      "mtime": 1788215576759.9712,
+      "ext": ".ts",
+      "path": "lib/timeline/moment.ts",
+      "top": "lib"
+    },
+    {
+      "id": "lib/timeline/plan.ts",
+      "type": "file",
+      "layer": "M",
+      "label": "plan.ts",
+      "dept": "personal",
+      "access": "claude",
+      "size": 17475,
+      "mtime": 1788215576760.0781,
+      "ext": ".ts",
+      "path": "lib/timeline/plan.ts",
+      "top": "lib"
+    },
+    {
+      "id": "lib/timeline/playback.ts",
+      "type": "file",
+      "layer": "M",
+      "label": "playback.ts",
+      "dept": "personal",
+      "access": "claude",
+      "size": 5971,
+      "mtime": 1788215576760.1868,
+      "ext": ".ts",
+      "path": "lib/timeline/playback.ts",
+      "top": "lib"
+    },
+    {
+      "id": "lib/timeline/producer.ts",
+      "type": "file",
+      "layer": "M",
+      "label": "producer.ts",
+      "dept": "personal",
+      "access": "claude",
+      "size": 2021,
+      "mtime": 1788215576760.2524,
+      "ext": ".ts",
+      "path": "lib/timeline/producer.ts",
+      "top": "lib"
+    },
+    {
+      "id": "lib/timeline/story.ts",
+      "type": "file",
+      "layer": "M",
+      "label": "story.ts",
+      "dept": "personal",
+      "access": "claude",
+      "size": 5121,
+      "mtime": 1788215576760.3464,
+      "ext": ".ts",
+      "path": "lib/timeline/story.ts",
+      "top": "lib"
+    },
+    {
+      "id": "lib/timeline/undo.ts",
+      "type": "file",
+      "layer": "M",
+      "label": "undo.ts",
+      "dept": "personal",
+      "access": "claude",
+      "size": 4907,
+      "mtime": 1788215576760.45,
+      "ext": ".ts",
+      "path": "lib/timeline/undo.ts",
+      "top": "lib"
+    },
+    {
+      "id": "scripts/lib/jsa-shaped-fixture.ts",
+      "type": "file",
+      "layer": "S",
+      "label": "jsa-shaped-fixture.ts",
+      "dept": "operations",
+      "access": "claude",
+      "size": 22855,
+      "mtime": 1788302738929.4937,
+      "ext": ".ts",
+      "path": "scripts/lib/jsa-shaped-fixture.ts",
+      "top": "scripts"
+    },
+    {
+      "id": "scripts/lib/real-package.ts",
+      "type": "file",
+      "layer": "S",
+      "label": "real-package.ts",
+      "dept": "operations",
+      "access": "claude",
+      "size": 2566,
+      "mtime": 1788215576770.2058,
+      "ext": ".ts",
+      "path": "scripts/lib/real-package.ts",
+      "top": "scripts"
+    },
+    {
+      "id": "lab/rubric-reference/second-brain/LICENSE",
+      "type": "file",
+      "layer": "M",
+      "label": "LICENSE",
+      "dept": "operations",
+      "access": "claude",
+      "size": 942,
+      "mtime": 1788215691896.695,
+      "ext": "",
+      "path": "lab/rubric-reference/second-brain/LICENSE",
+      "top": "lab"
+    },
+    {
+      "id": "lab/rubric-reference/second-brain/public/_core.css",
+      "type": "file",
+      "layer": "M",
+      "label": "_core.css",
+      "dept": "operations",
+      "access": "claude",
+      "size": 12018,
+      "mtime": 1788215691877.2927,
+      "ext": ".css",
+      "path": "lab/rubric-reference/second-brain/public/_core.css",
+      "top": "lab"
+    },
+    {
+      "id": "lab/rubric-reference/second-brain/public/_core.js",
+      "type": "file",
+      "layer": "M",
+      "label": "_core.js",
+      "dept": "operations",
+      "access": "claude",
+      "size": 92776,
+      "mtime": 1788215691868.7454,
+      "ext": ".js",
+      "path": "lab/rubric-reference/second-brain/public/_core.js",
+      "top": "lab"
+    },
+    {
+      "id": "lab/rubric-reference/second-brain/public/_flows2.js",
+      "type": "file",
+      "layer": "M",
+      "label": "_flows2.js",
+      "dept": "operations",
+      "access": "claude",
+      "size": 8956,
+      "mtime": 1788215691871.4143,
+      "ext": ".js",
+      "path": "lab/rubric-reference/second-brain/public/_flows2.js",
+      "top": "lab"
+    },
+    {
+      "id": "lab/rubric-reference/second-brain/public/_icons.js",
+      "type": "file",
+      "layer": "M",
+      "label": "_icons.js",
+      "dept": "operations",
+      "access": "claude",
+      "size": 32793,
+      "mtime": 1788215691893.884,
+      "ext": ".js",
+      "path": "lab/rubric-reference/second-brain/public/_icons.js",
+      "top": "lab"
+    },
+    {
+      "id": "lab/rubric-reference/second-brain/public/index.html",
+      "type": "file",
+      "layer": "M",
+      "label": "index.html",
+      "dept": "operations",
+      "access": "claude",
+      "size": 30640,
+      "mtime": 1788215691873.9285,
+      "ext": ".html",
+      "path": "lab/rubric-reference/second-brain/public/index.html",
+      "top": "lab"
+    },
+    {
+      "id": "app:gh",
+      "type": "app",
+      "layer": "A",
+      "label": "GitHub CLI",
+      "dept": null,
+      "access": "claude",
+      "status": "live",
+      "kind": "cli",
+      "desc": "gh - repos, PRs, issues",
+      "links": []
+    },
+    {
+      "id": "app:gmail-connector",
+      "type": "app",
+      "layer": "A",
+      "label": "Gmail",
+      "dept": null,
+      "access": "claude",
+      "status": "live",
+      "kind": "mcp",
+      "desc": "Mail search + drafts",
+      "links": []
+    },
+    {
+      "id": "app:telegram",
+      "type": "app",
+      "layer": "A",
+      "label": "Telegram",
+      "dept": null,
+      "access": "claude",
+      "status": "live",
+      "kind": "mcp",
+      "desc": "Messages to your phone",
+      "links": []
+    },
+    {
+      "id": "rt:daily-log",
+      "type": "routine",
+      "layer": "R",
+      "label": "Daily log",
+      "dept": null,
+      "access": "claude",
+      "schedule": "daily 21:00",
+      "runner": "local",
+      "desc": "End-of-day log entry",
+      "links": []
+    },
+    {
+      "id": "rt:newsletter",
+      "type": "routine",
+      "layer": "R",
+      "label": "Weekly review",
+      "dept": null,
+      "access": "claude",
+      "schedule": "weekly",
+      "runner": "skill",
+      "desc": "Week in review draft",
+      "links": []
+    }
+  ],
+  "links": [
+    {
+      "s": "CLAUDE.md",
+      "t": "hub:work",
+      "k": "route"
+    },
+    {
+      "s": "CLAUDE.md",
+      "t": "hub:content",
+      "k": "route"
+    },
+    {
+      "s": "CLAUDE.md",
+      "t": "hub:personal",
+      "k": "route"
+    },
+    {
+      "s": "CLAUDE.md",
+      "t": "hub:operations",
+      "k": "route"
+    },
+    {
+      "s": "CLAUDE.md",
+      "t": "lhub:A",
+      "k": "route"
+    },
+    {
+      "s": "CLAUDE.md",
+      "t": "lhub:R",
+      "k": "route"
+    },
+    {
+      "s": "CLAUDE.md",
+      "t": "lhub:S",
+      "k": "route"
+    },
+    {
+      "s": ".env.example",
+      "t": "hub:work",
+      "k": "spoke"
+    },
+    {
+      "s": ".git",
+      "t": "hub:work",
+      "k": "spoke"
+    },
+    {
+      "s": ".gitignore",
+      "t": "hub:work",
+      "k": "spoke"
+    },
+    {
+      "s": "AGENTS.md",
+      "t": "hub:work",
+      "k": "spoke"
+    },
+    {
+      "s": "ATTRIBUTION.md",
+      "t": "hub:work",
+      "k": "spoke"
+    },
+    {
+      "s": "BUILDPACK.md",
+      "t": "hub:work",
+      "k": "spoke"
+    },
+    {
+      "s": "DESIGN_LANGUAGE_AND_MOMENTUM_BUILD_BRIEF.md",
+      "t": "hub:work",
+      "k": "spoke"
+    },
+    {
+      "s": "HANDOFF.md",
+      "t": "hub:work",
+      "k": "spoke"
+    },
+    {
+      "s": "PORTFOLIO_SCENARIO_LEVERS_BUILD_BRIEF",
+      "t": "hub:work",
+      "k": "spoke"
+    },
+    {
+      "s": "README.md",
+      "t": "hub:work",
+      "k": "spoke"
+    },
+    {
+      "s": "ROADMAP.md",
+      "t": "hub:work",
+      "k": "spoke"
+    },
+    {
+      "s": "eslint.config.mjs",
+      "t": "hub:work",
+      "k": "spoke"
+    },
+    {
+      "s": "middleware.ts",
+      "t": "hub:work",
+      "k": "spoke"
+    },
+    {
+      "s": "next-env.d.ts",
+      "t": "hub:work",
+      "k": "spoke"
+    },
+    {
+      "s": "next.config.ts",
+      "t": "hub:work",
+      "k": "spoke"
+    },
+    {
+      "s": "package-lock.json",
+      "t": "hub:work",
+      "k": "spoke"
+    },
+    {
+      "s": "package.json",
+      "t": "hub:work",
+      "k": "spoke"
+    },
+    {
+      "s": "postcss.config.mjs",
+      "t": "hub:work",
+      "k": "spoke"
+    },
+    {
+      "s": "railway.json",
+      "t": "hub:work",
+      "k": "spoke"
+    },
+    {
+      "s": "tailwind.config.ts",
+      "t": "hub:work",
+      "k": "spoke"
+    },
+    {
+      "s": "tsconfig.json",
+      "t": "hub:work",
+      "k": "spoke"
+    },
+    {
+      "s": "tsconfig.tsbuildinfo",
+      "t": "hub:work",
+      "k": "spoke"
+    },
+    {
+      "s": ".claude",
+      "t": "hub:work",
+      "k": "spoke"
+    },
+    {
+      "s": "app",
+      "t": "hub:work",
+      "k": "spoke"
+    },
+    {
+      "s": "artifacts",
+      "t": "hub:work",
+      "k": "spoke"
+    },
+    {
+      "s": "components",
+      "t": "hub:content",
+      "k": "spoke"
+    },
+    {
+      "s": "docs",
+      "t": "hub:operations",
+      "k": "spoke"
+    },
+    {
+      "s": "lab",
+      "t": "hub:operations",
+      "k": "spoke"
+    },
+    {
+      "s": "lib",
+      "t": "hub:personal",
+      "k": "spoke"
+    },
+    {
+      "s": "prisma",
+      "t": "hub:work",
+      "k": "spoke"
+    },
+    {
+      "s": "public",
+      "t": "hub:work",
+      "k": "spoke"
+    },
+    {
+      "s": "scripts",
+      "t": "hub:operations",
+      "k": "spoke"
+    },
+    {
+      "s": "app/api/allocations/route.ts",
+      "t": "hub:work",
+      "k": "spoke"
+    },
+    {
+      "s": "app/api/audit/route.ts",
+      "t": "hub:work",
+      "k": "spoke"
+    },
+    {
+      "s": "app/api/audit/graph/route.ts",
+      "t": "hub:work",
+      "k": "spoke"
+    },
+    {
+      "s": "app/api/audit/truth/route.ts",
+      "t": "hub:work",
+      "k": "spoke"
+    },
+    {
+      "s": "app/api/context/envelope/route.ts",
+      "t": "hub:work",
+      "k": "spoke"
+    },
+    {
+      "s": "app/api/context-docs/route.ts",
+      "t": "hub:work",
+      "k": "spoke"
+    },
+    {
+      "s": "app/api/context-docs/[id]/route.ts",
+      "t": "hub:work",
+      "k": "spoke"
+    },
+    {
+      "s": "app/api/debug/linear/route.ts",
+      "t": "hub:work",
+      "k": "spoke"
+    },
+    {
+      "s": "app/api/decision-candidates/route.ts",
+      "t": "hub:work",
+      "k": "spoke"
+    },
+    {
+      "s": "app/api/decision-candidates/[id]/accept/route.ts",
+      "t": "hub:work",
+      "k": "spoke"
+    },
+    {
+      "s": "app/api/decision-candidates/[id]/dismiss/route.ts",
+      "t": "hub:work",
+      "k": "spoke"
+    },
+    {
+      "s": "app/api/decisions/route.ts",
+      "t": "hub:work",
+      "k": "spoke"
+    },
+    {
+      "s": "app/api/decisions/[id]/route.ts",
+      "t": "hub:work",
+      "k": "spoke"
+    },
+    {
+      "s": "app/api/decisions/[id]/evidence/route.ts",
+      "t": "hub:work",
+      "k": "spoke"
+    },
+    {
+      "s": "app/api/decisions/[id]/gate/route.ts",
+      "t": "hub:work",
+      "k": "spoke"
+    },
+    {
+      "s": "app/api/decisions/import/route.ts",
+      "t": "hub:work",
+      "k": "spoke"
+    },
+    {
+      "s": "app/api/estimate/route.ts",
+      "t": "hub:work",
+      "k": "spoke"
+    },
+    {
+      "s": "app/api/findings/[id]/dismiss/route.ts",
+      "t": "hub:work",
+      "k": "spoke"
+    },
+    {
+      "s": "app/api/findings/[id]/open-decision/route.ts",
+      "t": "hub:work",
+      "k": "spoke"
+    },
+    {
+      "s": "app/api/findings/[id]/resolve/route.ts",
+      "t": "hub:work",
+      "k": "spoke"
+    },
+    {
+      "s": "app/api/findings/[id]/ticket/route.ts",
+      "t": "hub:work",
+      "k": "spoke"
+    },
+    {
+      "s": "app/api/findings/[id]/ticket/preview/route.ts",
+      "t": "hub:work",
+      "k": "spoke"
+    },
+    {
+      "s": "app/api/findings/[id]/unlink/route.ts",
+      "t": "hub:work",
+      "k": "spoke"
+    },
+    {
+      "s": "app/api/forecast/route.ts",
+      "t": "hub:work",
+      "k": "spoke"
+    },
+    {
+      "s": "app/api/forecast/ask/route.ts",
+      "t": "hub:work",
+      "k": "spoke"
+    },
+    {
+      "s": "app/api/instrument/project/route.ts",
+      "t": "hub:work",
+      "k": "spoke"
+    },
+    {
+      "s": "app/api/linear/teams/route.ts",
+      "t": "hub:work",
+      "k": "spoke"
+    },
+    {
+      "s": "app/api/linear/teams/[teamKey]/projects/route.ts",
+      "t": "hub:work",
+      "k": "spoke"
+    },
+    {
+      "s": "app/api/login/route.ts",
+      "t": "hub:work",
+      "k": "spoke"
+    },
+    {
+      "s": "app/api/parse-spreadsheet/route.ts",
+      "t": "hub:work",
+      "k": "spoke"
+    },
+    {
+      "s": "app/api/people/route.ts",
+      "t": "hub:work",
+      "k": "spoke"
+    },
+    {
+      "s": "app/api/people/[id]/route.ts",
+      "t": "hub:work",
+      "k": "spoke"
+    },
+    {
+      "s": "app/api/portfolio/inputs/route.ts",
+      "t": "hub:work",
+      "k": "spoke"
+    },
+    {
+      "s": "app/api/portfolio/preview/route.ts",
+      "t": "hub:work",
+      "k": "spoke"
+    },
+    {
+      "s": "app/api/portfolio-settings/route.ts",
+      "t": "hub:work",
+      "k": "spoke"
+    },
+    {
+      "s": "app/api/refresh/route.ts",
+      "t": "hub:work",
+      "k": "spoke"
+    },
+    {
+      "s": "app/api/reports/route.ts",
+      "t": "hub:work",
+      "k": "spoke"
+    },
+    {
+      "s": "app/api/scopes/route.ts",
+      "t": "hub:work",
+      "k": "spoke"
+    },
+    {
+      "s": "app/api/scopes/[id]/route.ts",
+      "t": "hub:work",
+      "k": "spoke"
+    },
+    {
+      "s": "app/api/source-registrations/route.ts",
+      "t": "hub:work",
+      "k": "spoke"
+    },
+    {
+      "s": "app/api/source-registrations/[id]/route.ts",
+      "t": "hub:work",
+      "k": "spoke"
+    },
+    {
+      "s": "app/api/timeline/route.ts",
+      "t": "hub:work",
+      "k": "spoke"
+    },
+    {
+      "s": "app/api/timeline-candidates/route.ts",
+      "t": "hub:work",
+      "k": "spoke"
+    },
+    {
+      "s": "app/api/timeline-candidates/[id]/accept/route.ts",
+      "t": "hub:work",
+      "k": "spoke"
+    },
+    {
+      "s": "app/api/timeline-candidates/[id]/dismiss/route.ts",
+      "t": "hub:work",
+      "k": "spoke"
+    },
+    {
+      "s": "app/api/timeline-events/route.ts",
+      "t": "hub:work",
+      "k": "spoke"
+    },
+    {
+      "s": "app/api/timeline-events/[id]/route.ts",
+      "t": "hub:work",
+      "k": "spoke"
+    },
+    {
+      "s": "app/api/version/route.ts",
+      "t": "hub:work",
+      "k": "spoke"
+    },
+    {
+      "s": "app/audit/page.tsx",
+      "t": "hub:work",
+      "k": "spoke"
+    },
+    {
+      "s": "app/audit/[sourceId]/page.tsx",
+      "t": "hub:work",
+      "k": "spoke"
+    },
+    {
+      "s": "app/audit/history/page.tsx",
+      "t": "hub:work",
+      "k": "spoke"
+    },
+    {
+      "s": "app/audit/new/page.tsx",
+      "t": "hub:work",
+      "k": "spoke"
+    },
+    {
+      "s": "app/control-room/page.tsx",
+      "t": "hub:work",
+      "k": "spoke"
+    },
+    {
+      "s": "app/dashboard/page.tsx",
+      "t": "hub:work",
+      "k": "spoke"
+    },
+    {
+      "s": "app/decisions/page.tsx",
+      "t": "hub:work",
+      "k": "spoke"
+    },
+    {
+      "s": "app/forecast/page.tsx",
+      "t": "hub:work",
+      "k": "spoke"
+    },
+    {
+      "s": "app/login/page.tsx",
+      "t": "hub:work",
+      "k": "spoke"
+    },
+    {
+      "s": "app/orbit/page.tsx",
+      "t": "hub:work",
+      "k": "spoke"
+    },
+    {
+      "s": "app/portfolio/page.tsx",
+      "t": "hub:work",
+      "k": "spoke"
+    },
+    {
+      "s": "app/reports/page.tsx",
+      "t": "hub:work",
+      "k": "spoke"
+    },
+    {
+      "s": "app/scope/page.tsx",
+      "t": "hub:work",
+      "k": "spoke"
+    },
+    {
+      "s": "app/scopes/page.tsx",
+      "t": "hub:work",
+      "k": "spoke"
+    },
+    {
+      "s": "app/timeline/page.tsx",
+      "t": "hub:work",
+      "k": "spoke"
+    },
+    {
+      "s": "components/audit/AggregateInspector.tsx",
+      "t": "hub:content",
+      "k": "spoke"
+    },
+    {
+      "s": "components/audit/AuditInstrument.tsx",
+      "t": "hub:content",
+      "k": "spoke"
+    },
+    {
+      "s": "components/audit/AuditReviewConsole.tsx",
+      "t": "hub:content",
+      "k": "spoke"
+    },
+    {
+      "s": "components/audit/CanvasAuditRenderer.tsx",
+      "t": "hub:content",
+      "k": "spoke"
+    },
+    {
+      "s": "components/audit/FindingInspector.tsx",
+      "t": "hub:content",
+      "k": "spoke"
+    },
+    {
+      "s": "components/audit/GraphInspector.tsx",
+      "t": "hub:content",
+      "k": "spoke"
+    },
+    {
+      "s": "components/audit/SignalGraph.tsx",
+      "t": "hub:content",
+      "k": "spoke"
+    },
+    {
+      "s": "components/audit/cameraMotion.ts",
+      "t": "hub:content",
+      "k": "spoke"
+    },
+    {
+      "s": "components/audit/graphTokens.ts",
+      "t": "hub:content",
+      "k": "spoke"
+    },
+    {
+      "s": "components/audit/icons.tsx",
+      "t": "hub:content",
+      "k": "spoke"
+    },
+    {
+      "s": "components/audit/rubricCamera.ts",
+      "t": "hub:content",
+      "k": "spoke"
+    },
+    {
+      "s": "components/audit/tokens.ts",
+      "t": "hub:content",
+      "k": "spoke"
+    },
+    {
+      "s": "components/audit/canvas/hitTest.ts",
+      "t": "hub:content",
+      "k": "spoke"
+    },
+    {
+      "s": "components/audit/canvas/paintTokens.ts",
+      "t": "hub:content",
+      "k": "spoke"
+    },
+    {
+      "s": "components/audit/canvas/shapes.ts",
+      "t": "hub:content",
+      "k": "spoke"
+    },
+    {
+      "s": "components/audit/canvas/sprites.ts",
+      "t": "hub:content",
+      "k": "spoke"
+    },
+    {
+      "s": "components/audit/canvas/rubric/backdrop.ts",
+      "t": "hub:content",
+      "k": "spoke"
+    },
+    {
+      "s": "components/audit/canvas/rubric/engine.ts",
+      "t": "hub:content",
+      "k": "spoke"
+    },
+    {
+      "s": "components/audit/canvas/rubric/painter.ts",
+      "t": "hub:content",
+      "k": "spoke"
+    },
+    {
+      "s": "components/audit/canvas/rubric/sprites2.ts",
+      "t": "hub:content",
+      "k": "spoke"
+    },
+    {
+      "s": "components/audit/renderer/AuditGraphRenderer.tsx",
+      "t": "hub:content",
+      "k": "spoke"
+    },
+    {
+      "s": "components/audit/renderer/types.ts",
+      "t": "hub:content",
+      "k": "spoke"
+    },
+    {
+      "s": "components/control-room/CommandWorkspace.tsx",
+      "t": "hub:content",
+      "k": "spoke"
+    },
+    {
+      "s": "components/control-room/ConfidenceChart.tsx",
+      "t": "hub:content",
+      "k": "spoke"
+    },
+    {
+      "s": "components/control-room/Inspector.tsx",
+      "t": "hub:content",
+      "k": "spoke"
+    },
+    {
+      "s": "components/control-room/LensEditor.tsx",
+      "t": "hub:content",
+      "k": "spoke"
+    },
+    {
+      "s": "components/control-room/Panels.tsx",
+      "t": "hub:content",
+      "k": "spoke"
+    },
+    {
+      "s": "components/control-room/ProjectField.tsx",
+      "t": "hub:content",
+      "k": "spoke"
+    },
+    {
+      "s": "components/control-room/Reading.tsx",
+      "t": "hub:content",
+      "k": "spoke"
+    },
+    {
+      "s": "components/control-room/StatusBar.tsx",
+      "t": "hub:content",
+      "k": "spoke"
+    },
+    {
+      "s": "components/control-room/Telemetry.tsx",
+      "t": "hub:content",
+      "k": "spoke"
+    },
+    {
+      "s": "components/decisions/DecisionCircuit.tsx",
+      "t": "hub:content",
+      "k": "spoke"
+    },
+    {
+      "s": "components/decisions/DecisionInspector.tsx",
+      "t": "hub:content",
+      "k": "spoke"
+    },
+    {
+      "s": "components/decisions/DecisionLanes.tsx",
+      "t": "hub:content",
+      "k": "spoke"
+    },
+    {
+      "s": "components/decisions/DecisionModule.tsx",
+      "t": "hub:content",
+      "k": "spoke"
+    },
+    {
+      "s": "components/decisions/DecisionTools.tsx",
+      "t": "hub:content",
+      "k": "spoke"
+    },
+    {
+      "s": "components/instrument/BuildId.tsx",
+      "t": "hub:content",
+      "k": "spoke"
+    },
+    {
+      "s": "components/instrument/CapabilityTile.tsx",
+      "t": "hub:content",
+      "k": "spoke"
+    },
+    {
+      "s": "components/instrument/CommandMenu.tsx",
+      "t": "hub:content",
+      "k": "spoke"
+    },
+    {
+      "s": "components/instrument/DecisionsInstrument.tsx",
+      "t": "hub:content",
+      "k": "spoke"
+    },
+    {
+      "s": "components/instrument/Fader.tsx",
+      "t": "hub:content",
+      "k": "spoke"
+    },
+    {
+      "s": "components/instrument/FeatureDetail.tsx",
+      "t": "hub:content",
+      "k": "spoke"
+    },
+    {
+      "s": "components/instrument/ForecastDetail.tsx",
+      "t": "hub:content",
+      "k": "spoke"
+    },
+    {
+      "s": "components/instrument/ForecastInstrument.tsx",
+      "t": "hub:content",
+      "k": "spoke"
+    },
+    {
+      "s": "components/instrument/ForecastTools.tsx",
+      "t": "hub:content",
+      "k": "spoke"
+    },
+    {
+      "s": "components/instrument/InstrumentRail.tsx",
+      "t": "hub:content",
+      "k": "spoke"
+    },
+    {
+      "s": "components/instrument/InstrumentShell.tsx",
+      "t": "hub:content",
+      "k": "spoke"
+    },
+    {
+      "s": "components/instrument/IntelligenceInstrument.tsx",
+      "t": "hub:content",
+      "k": "spoke"
+    },
+    {
+      "s": "components/instrument/Knob.tsx",
+      "t": "hub:content",
+      "k": "spoke"
+    },
+    {
+      "s": "components/instrument/LivingForecast.tsx",
+      "t": "hub:content",
+      "k": "spoke"
+    },
+    {
+      "s": "components/instrument/Meter.tsx",
+      "t": "hub:content",
+      "k": "spoke"
+    },
+    {
+      "s": "components/instrument/OverviewWorkspace.tsx",
+      "t": "hub:content",
+      "k": "spoke"
+    },
+    {
+      "s": "components/instrument/Panel.tsx",
+      "t": "hub:content",
+      "k": "spoke"
+    },
+    {
+      "s": "components/instrument/ReportsInstrument.tsx",
+      "t": "hub:content",
+      "k": "spoke"
+    },
+    {
+      "s": "components/instrument/ScenarioStrip.tsx",
+      "t": "hub:content",
+      "k": "spoke"
+    },
+    {
+      "s": "components/instrument/ScopeInstrument.tsx",
+      "t": "hub:content",
+      "k": "spoke"
+    },
+    {
+      "s": "components/instrument/SignalSurface.tsx",
+      "t": "hub:content",
+      "k": "spoke"
+    },
+    {
+      "s": "components/instrument/TimelineInstrument.tsx",
+      "t": "hub:content",
+      "k": "spoke"
+    },
+    {
+      "s": "components/instrument/ToolWindow.tsx",
+      "t": "hub:content",
+      "k": "spoke"
+    },
+    {
+      "s": "components/portfolio/AllocationDrawer.tsx",
+      "t": "hub:content",
+      "k": "spoke"
+    },
+    {
+      "s": "components/portfolio/ChannelFader.tsx",
+      "t": "hub:content",
+      "k": "spoke"
+    },
+    {
+      "s": "components/portfolio/ForecastField.tsx",
+      "t": "hub:content",
+      "k": "spoke"
+    },
+    {
+      "s": "components/portfolio/InstrumentBay.tsx",
+      "t": "hub:content",
+      "k": "spoke"
+    },
+    {
+      "s": "components/portfolio/MasterBus.tsx",
+      "t": "hub:content",
+      "k": "spoke"
+    },
+    {
+      "s": "components/portfolio/MixerChannel.tsx",
+      "t": "hub:content",
+      "k": "spoke"
+    },
+    {
+      "s": "components/portfolio/PortfolioMixer.tsx",
+      "t": "hub:content",
+      "k": "spoke"
+    },
+    {
+      "s": "components/portfolio/RotaryKnob.tsx",
+      "t": "hub:content",
+      "k": "spoke"
+    },
+    {
+      "s": "components/portfolio/ScenarioBar.tsx",
+      "t": "hub:content",
+      "k": "spoke"
+    },
+    {
+      "s": "components/portfolio/ScenarioInspector.tsx",
+      "t": "hub:content",
+      "k": "spoke"
+    },
+    {
+      "s": "components/portfolio/SplitPatchbay.tsx",
+      "t": "hub:content",
+      "k": "spoke"
+    },
+    {
+      "s": "components/timeline/AddEventTool.tsx",
+      "t": "hub:content",
+      "k": "spoke"
+    },
+    {
+      "s": "components/timeline/EventModule.tsx",
+      "t": "hub:content",
+      "k": "spoke"
+    },
+    {
+      "s": "components/timeline/LanesControl.tsx",
+      "t": "hub:content",
+      "k": "spoke"
+    },
+    {
+      "s": "components/timeline/LayersControl.tsx",
+      "t": "hub:content",
+      "k": "spoke"
+    },
+    {
+      "s": "components/timeline/NowPlaying.tsx",
+      "t": "hub:content",
+      "k": "spoke"
+    },
+    {
+      "s": "components/timeline/PlanObject.tsx",
+      "t": "hub:content",
+      "k": "spoke"
+    },
+    {
+      "s": "components/timeline/TimeField.tsx",
+      "t": "hub:content",
+      "k": "spoke"
+    },
+    {
+      "s": "components/timeline/TimelineInspector.tsx",
+      "t": "hub:content",
+      "k": "spoke"
+    },
+    {
+      "s": "components/timeline/Transport.tsx",
+      "t": "hub:content",
+      "k": "spoke"
+    },
+    {
+      "s": "components/timeline/familyColor.ts",
+      "t": "hub:content",
+      "k": "spoke"
+    },
+    {
+      "s": "lib/audit/actions.ts",
+      "t": "hub:personal",
+      "k": "spoke"
+    },
+    {
+      "s": "lib/audit/capacity.ts",
+      "t": "hub:personal",
+      "k": "spoke"
+    },
+    {
+      "s": "lib/audit/constellations.ts",
+      "t": "hub:personal",
+      "k": "spoke"
+    },
+    {
+      "s": "lib/audit/focus.ts",
+      "t": "hub:personal",
+      "k": "spoke"
+    },
+    {
+      "s": "lib/audit/graph.ts",
+      "t": "hub:personal",
+      "k": "spoke"
+    },
+    {
+      "s": "lib/audit/graphInputs.ts",
+      "t": "hub:personal",
+      "k": "spoke"
+    },
+    {
+      "s": "lib/audit/graphLayout.ts",
+      "t": "hub:personal",
+      "k": "spoke"
+    },
+    {
+      "s": "lib/audit/intelligence.ts",
+      "t": "hub:personal",
+      "k": "spoke"
+    },
+    {
+      "s": "lib/audit/normalize.ts",
+      "t": "hub:personal",
+      "k": "spoke"
+    },
+    {
+      "s": "lib/audit/provenance.ts",
+      "t": "hub:personal",
+      "k": "spoke"
+    },
+    {
+      "s": "lib/audit/requirements.ts",
+      "t": "hub:personal",
+      "k": "spoke"
+    },
+    {
+      "s": "lib/audit/rubricVisualAdapter.ts",
+      "t": "hub:personal",
+      "k": "spoke"
+    },
+    {
+      "s": "lib/audit/run.ts",
+      "t": "hub:personal",
+      "k": "spoke"
+    },
+    {
+      "s": "lib/audit/searchDocument.ts",
+      "t": "hub:personal",
+      "k": "spoke"
+    },
+    {
+      "s": "lib/audit/searchIndex.ts",
+      "t": "hub:personal",
+      "k": "spoke"
+    },
+    {
+      "s": "lib/audit/searchLens.ts",
+      "t": "hub:personal",
+      "k": "spoke"
+    },
+    {
+      "s": "lib/audit/searchText.ts",
+      "t": "hub:personal",
+      "k": "spoke"
+    },
+    {
+      "s": "lib/audit/sources.ts",
+      "t": "hub:personal",
+      "k": "spoke"
+    },
+    {
+      "s": "lib/audit/structuralWeb.ts",
+      "t": "hub:personal",
+      "k": "spoke"
+    },
+    {
+      "s": "lib/audit/truth.ts",
+      "t": "hub:personal",
+      "k": "spoke"
+    },
+    {
+      "s": "lib/audit/visualScene.ts",
+      "t": "hub:personal",
+      "k": "spoke"
+    },
+    {
+      "s": "lib/audit/prompts/audit-v1.ts",
+      "t": "hub:personal",
+      "k": "spoke"
+    },
+    {
+      "s": "lib/audit/spatial/anchors.ts",
+      "t": "hub:personal",
+      "k": "spoke"
+    },
+    {
+      "s": "lib/audit/spatial/field.ts",
+      "t": "hub:personal",
+      "k": "spoke"
+    },
+    {
+      "s": "lib/capacity/limits.ts",
+      "t": "hub:personal",
+      "k": "spoke"
+    },
+    {
+      "s": "lib/capacity/resolve.ts",
+      "t": "hub:personal",
+      "k": "spoke"
+    },
+    {
+      "s": "lib/capacity/workforce.ts",
+      "t": "hub:personal",
+      "k": "spoke"
+    },
+    {
+      "s": "lib/client/uploadFile.ts",
+      "t": "hub:personal",
+      "k": "spoke"
+    },
+    {
+      "s": "lib/context/envelope.ts",
+      "t": "hub:personal",
+      "k": "spoke"
+    },
+    {
+      "s": "lib/context/hash.ts",
+      "t": "hub:personal",
+      "k": "spoke"
+    },
+    {
+      "s": "lib/context/package.ts",
+      "t": "hub:personal",
+      "k": "spoke"
+    },
+    {
+      "s": "lib/context/snapshot.ts",
+      "t": "hub:personal",
+      "k": "spoke"
+    },
+    {
+      "s": "lib/context/sourcePolicy.ts",
+      "t": "hub:personal",
+      "k": "spoke"
+    },
+    {
+      "s": "lib/context/validate.ts",
+      "t": "hub:personal",
+      "k": "spoke"
+    },
+    {
+      "s": "lib/control-room/field.ts",
+      "t": "hub:personal",
+      "k": "spoke"
+    },
+    {
+      "s": "lib/control-room/lenses.ts",
+      "t": "hub:personal",
+      "k": "spoke"
+    },
+    {
+      "s": "lib/control-room/read.ts",
+      "t": "hub:personal",
+      "k": "spoke"
+    },
+    {
+      "s": "lib/decisions/candidates.ts",
+      "t": "hub:personal",
+      "k": "spoke"
+    },
+    {
+      "s": "lib/decisions/model.ts",
+      "t": "hub:personal",
+      "k": "spoke"
+    },
+    {
+      "s": "lib/decisions/useDecisions.ts",
+      "t": "hub:personal",
+      "k": "spoke"
+    },
+    {
+      "s": "lib/decisions/useFlip.ts",
+      "t": "hub:personal",
+      "k": "spoke"
+    },
+    {
+      "s": "lib/dev/fixtures.ts",
+      "t": "hub:personal",
+      "k": "spoke"
+    },
+    {
+      "s": "lib/estimate/context.ts",
+      "t": "hub:personal",
+      "k": "spoke"
+    },
+    {
+      "s": "lib/estimate/run.ts",
+      "t": "hub:personal",
+      "k": "spoke"
+    },
+    {
+      "s": "lib/estimate/runForScope.ts",
+      "t": "hub:personal",
+      "k": "spoke"
+    },
+    {
+      "s": "lib/estimate/prompts/estimates-v1.ts",
+      "t": "hub:personal",
+      "k": "spoke"
+    },
+    {
+      "s": "lib/findings/ticketPayload.ts",
+      "t": "hub:personal",
+      "k": "spoke"
+    },
+    {
+      "s": "lib/forecast/build.ts",
+      "t": "hub:personal",
+      "k": "spoke"
+    },
+    {
+      "s": "lib/forecast/compute.ts",
+      "t": "hub:personal",
+      "k": "spoke"
+    },
+    {
+      "s": "lib/forecast/portfolio.ts",
+      "t": "hub:personal",
+      "k": "spoke"
+    },
+    {
+      "s": "lib/forecast/scenarios.ts",
+      "t": "hub:personal",
+      "k": "spoke"
+    },
+    {
+      "s": "lib/forecast/simulate.ts",
+      "t": "hub:personal",
+      "k": "spoke"
+    },
+    {
+      "s": "lib/instrument/reality.ts",
+      "t": "hub:personal",
+      "k": "spoke"
+    },
+    {
+      "s": "lib/instrument/useProject.ts",
+      "t": "hub:personal",
+      "k": "spoke"
+    },
+    {
+      "s": "lib/momentum/askPrompt.ts",
+      "t": "hub:personal",
+      "k": "spoke"
+    },
+    {
+      "s": "lib/momentum/attribution.ts",
+      "t": "hub:personal",
+      "k": "spoke"
+    },
+    {
+      "s": "lib/momentum/compute.ts",
+      "t": "hub:personal",
+      "k": "spoke"
+    },
+    {
+      "s": "lib/momentum/trend.ts",
+      "t": "hub:personal",
+      "k": "spoke"
+    },
+    {
+      "s": "lib/orbit/adapt.ts",
+      "t": "hub:personal",
+      "k": "spoke"
+    },
+    {
+      "s": "lib/orbit/graph.ts",
+      "t": "hub:personal",
+      "k": "spoke"
+    },
+    {
+      "s": "lib/orbit/layout.ts",
+      "t": "hub:personal",
+      "k": "spoke"
+    },
+    {
+      "s": "lib/portfolio/explain.ts",
+      "t": "hub:personal",
+      "k": "spoke"
+    },
+    {
+      "s": "lib/portfolio/insights.ts",
+      "t": "hub:personal",
+      "k": "spoke"
+    },
+    {
+      "s": "lib/reports/changes.ts",
+      "t": "hub:personal",
+      "k": "spoke"
+    },
+    {
+      "s": "lib/reports/generate.ts",
+      "t": "hub:personal",
+      "k": "spoke"
+    },
+    {
+      "s": "lib/reports/render.ts",
+      "t": "hub:personal",
+      "k": "spoke"
+    },
+    {
+      "s": "lib/reports/snapshot.ts",
+      "t": "hub:personal",
+      "k": "spoke"
+    },
+    {
+      "s": "lib/scenario/compare.ts",
+      "t": "hub:personal",
+      "k": "spoke"
+    },
+    {
+      "s": "lib/scenario/inputDelta.ts",
+      "t": "hub:personal",
+      "k": "spoke"
+    },
+    {
+      "s": "lib/scenario/namedTransfer.ts",
+      "t": "hub:personal",
+      "k": "spoke"
+    },
+    {
+      "s": "lib/scope/constraint.ts",
+      "t": "hub:personal",
+      "k": "spoke"
+    },
+    {
+      "s": "lib/scope/features.ts",
+      "t": "hub:personal",
+      "k": "spoke"
+    },
+    {
+      "s": "lib/shell/mode.ts",
+      "t": "hub:personal",
+      "k": "spoke"
+    },
+    {
+      "s": "lib/shell/useProjectParam.ts",
+      "t": "hub:personal",
+      "k": "spoke"
+    },
+    {
+      "s": "lib/timeline/candidates.ts",
+      "t": "hub:personal",
+      "k": "spoke"
+    },
+    {
+      "s": "lib/timeline/entries.ts",
+      "t": "hub:personal",
+      "k": "spoke"
+    },
+    {
+      "s": "lib/timeline/geometry.ts",
+      "t": "hub:personal",
+      "k": "spoke"
+    },
+    {
+      "s": "lib/timeline/moment.ts",
+      "t": "hub:personal",
+      "k": "spoke"
+    },
+    {
+      "s": "lib/timeline/plan.ts",
+      "t": "hub:personal",
+      "k": "spoke"
+    },
+    {
+      "s": "lib/timeline/playback.ts",
+      "t": "hub:personal",
+      "k": "spoke"
+    },
+    {
+      "s": "lib/timeline/producer.ts",
+      "t": "hub:personal",
+      "k": "spoke"
+    },
+    {
+      "s": "lib/timeline/story.ts",
+      "t": "hub:personal",
+      "k": "spoke"
+    },
+    {
+      "s": "lib/timeline/undo.ts",
+      "t": "hub:personal",
+      "k": "spoke"
+    },
+    {
+      "s": "scripts/lib/jsa-shaped-fixture.ts",
+      "t": "lhub:S",
+      "k": "spoke"
+    },
+    {
+      "s": "scripts/lib/real-package.ts",
+      "t": "lhub:S",
+      "k": "spoke"
+    },
+    {
+      "s": "lab/rubric-reference/second-brain/LICENSE",
+      "t": "hub:operations",
+      "k": "spoke"
+    },
+    {
+      "s": "lab/rubric-reference/second-brain/public/_core.css",
+      "t": "hub:operations",
+      "k": "spoke"
+    },
+    {
+      "s": "lab/rubric-reference/second-brain/public/_core.js",
+      "t": "hub:operations",
+      "k": "spoke"
+    },
+    {
+      "s": "lab/rubric-reference/second-brain/public/_flows2.js",
+      "t": "hub:operations",
+      "k": "spoke"
+    },
+    {
+      "s": "lab/rubric-reference/second-brain/public/_icons.js",
+      "t": "hub:operations",
+      "k": "spoke"
+    },
+    {
+      "s": "lab/rubric-reference/second-brain/public/index.html",
+      "t": "hub:operations",
+      "k": "spoke"
+    },
+    {
+      "s": "app:gh",
+      "t": "lhub:A",
+      "k": "spoke"
+    },
+    {
+      "s": "app:gmail-connector",
+      "t": "lhub:A",
+      "k": "spoke"
+    },
+    {
+      "s": "app:telegram",
+      "t": "lhub:A",
+      "k": "spoke"
+    },
+    {
+      "s": "rt:daily-log",
+      "t": "lhub:R",
+      "k": "spoke"
+    },
+    {
+      "s": "rt:newsletter",
+      "t": "lhub:R",
+      "k": "spoke"
+    }
+  ],
+  "mdLinks": [
+    [
+      "artifacts/rubric-fidelity-audit/README.md",
+      "artifacts/rubric-fidelity-audit/ROLE-MAPPING.md"
+    ],
+    [
+      "artifacts/rubric-fidelity-audit/README.md",
+      "artifacts/rubric-fidelity-audit/BUGS.md"
+    ],
+    [
+      "artifacts/rubric-fidelity-audit/README.md",
+      "artifacts/rubric-fidelity-audit/SCORECARD.md"
+    ],
+    [
+      "docs/SIGNAL-RENDERER.md",
+      "ATTRIBUTION.md"
+    ]
+  ]
+}
