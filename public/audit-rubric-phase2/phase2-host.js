@@ -133,7 +133,9 @@
     if (act === 'fly') return;
     if (act === 'view') {
       event.preventDefault(); event.stopImmediatePropagation();
-      window.BrainCore.openViewer(n.id);
+      if (n.kind === 'finding' && n.canonicalId && window.parent !== window) {
+        window.parent.postMessage({ type: 'signal-audit-open-finding', canonicalId: n.canonicalId }, window.location.origin);
+      } else window.BrainCore.openViewer(n.id);
     } else if (act === 'copy') {
       event.preventDefault(); event.stopImmediatePropagation();
       navigator.clipboard.writeText(n.canonicalRef || n.canonicalId || n.id);
@@ -334,6 +336,14 @@
     window.BrainCore.toast(trace && trace.length ? 'Canonical provenance path' : 'No supported provenance path to Reality');
   }
 
+  async function refreshPreservingSelection(message) {
+    const selectedId = window.BrainCore.S.sel && window.BrainCore.S.sel.id;
+    await window.BrainCore.S.refreshData(message);
+    if (!selectedId) return;
+    const selected = window.BrainCore.S.byId.get(selectedId) || null;
+    window.BrainCore.select(selected);
+  }
+
   function installShell() {
     if (!document.getElementById('signal-audit-nav')) {
       const nav = document.createElement('nav'); nav.id = 'signal-audit-nav';
@@ -368,14 +378,21 @@
     window.addEventListener('message', async event => {
       if (event.origin !== window.location.origin || event.source !== window.parent) return;
       const message = event.data;
-      if (!message || message.type !== 'signal-audit-set-context') return;
+      if (!message) return;
+      if (message.type === 'signal-audit-trace-canonical') {
+        if (message.active === false) trace = null;
+        else if (typeof message.canonicalId === 'string') activateTrace(message.canonicalId === 'reality' ? 'CLAUDE.md' : message.canonicalId);
+        return;
+      }
+      if (message.type !== 'signal-audit-set-context') return;
       scope = typeof message.scope === 'string' ? message.scope : scope;
       audit = typeof message.audit === 'string' ? message.audit : '';
       graphPromise = null;
       hidden.clear();
-      await window.BrainCore.S.refreshData('Updating Audit context');
+      await refreshPreservingSelection('Updating Audit context');
       announce('signal-audit-world-updated');
     });
+    window.__signalAuditRefresh = refreshPreservingSelection;
     announce('signal-audit-world-ready');
   }
 

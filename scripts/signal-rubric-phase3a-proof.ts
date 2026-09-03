@@ -33,7 +33,9 @@ function main() {
   check("Rubric iframe source is stable across live context changes",
     world.includes("const frameSrc = useMemo") && world.includes('type: "signal-audit-set-context"') && !world.includes("key={scopeId") && !world.includes("key={auditId"));
   check("live context refresh uses Rubric native refreshData without Fit",
-    host.includes("S.refreshData('Updating Audit context')") && !host.includes("fitToView") && !host.includes("resetView"));
+    host.includes("refreshPreservingSelection('Updating Audit context')")
+      && host.includes("window.BrainCore.S.refreshData(message)")
+      && !host.includes("fitToView") && !host.includes("resetView"));
   check("Run Audit uses the existing canonical pipeline",
     world.includes('fetch("/api/audit"') && world.includes('method: "POST"') && world.includes("sendContext(updated.scope.id, \"\")"));
   check("Run Audit copy protects Reality",

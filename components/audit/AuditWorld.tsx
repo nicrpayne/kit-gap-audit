@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import AuditFindingOverlay from "./AuditFindingOverlay";
 
 interface ScopeOption {
   id: string;
@@ -59,6 +60,7 @@ export default function AuditWorld({
   const [running, setRunning] = useState(false);
   const [runError, setRunError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [findingReviewId, setFindingReviewId] = useState<string | null>(null);
 
   useEffect(() => { scopeRef.current = scopeId; }, [scopeId]);
   useEffect(() => { auditRef.current = auditId; }, [auditId]);
@@ -115,8 +117,13 @@ export default function AuditWorld({
       const message = event.data as {
         type?: string;
         scope?: string;
+        canonicalId?: string;
         auditContext?: { mode?: string; id?: string };
       };
+      if (message.type === "signal-audit-open-finding" && message.canonicalId) {
+        setFindingReviewId(message.canonicalId);
+        return;
+      }
       if (message.type !== "signal-audit-world-ready" && message.type !== "signal-audit-world-updated") return;
       const frameAudit = message.auditContext?.mode === "audit" ? message.auditContext.id ?? "" : "";
       if (message.type === "signal-audit-world-ready" &&
@@ -129,6 +136,18 @@ export default function AuditWorld({
     window.addEventListener("message", onMessage);
     return () => window.removeEventListener("message", onMessage);
   }, [sendContext]);
+
+  const traceFinding = useCallback((canonicalId: string, active: boolean) => {
+    frameRef.current?.contentWindow?.postMessage(
+      { type: "signal-audit-trace-canonical", canonicalId, active },
+      window.location.origin
+    );
+  }, []);
+
+  const refreshAfterFindingAction = useCallback(async () => {
+    const updated = await loadContext(scopeRef.current);
+    sendContext(updated.scope.id, auditRef.current);
+  }, [loadContext, sendContext]);
 
   const selectedAudit = context?.audits.find((audit) => audit.id === auditId) ?? null;
   const currentAudit = context?.audits[0] ?? null;
@@ -348,6 +367,16 @@ export default function AuditWorld({
               </div>
             </form>
           </div>
+        )}
+
+        {findingReviewId && !fixture && (
+          <AuditFindingOverlay
+            scopeId={scopeId}
+            canonicalId={findingReviewId}
+            onClose={() => setFindingReviewId(null)}
+            onTrace={(active) => traceFinding(findingReviewId, active)}
+            onCanonicalChange={refreshAfterFindingAction}
+          />
         )}
       </div>
     </div>
