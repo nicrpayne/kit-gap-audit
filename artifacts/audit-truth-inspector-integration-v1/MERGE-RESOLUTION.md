@@ -22,4 +22,3 @@ The accepted behavior was ported to the active boundaries:
 - `rubric-phase3/route.ts` — embedded widget material only.
 
 The protected Phase 1 files were not edited. No source evidence commit from the stale mount was reused as current acceptance evidence.
-

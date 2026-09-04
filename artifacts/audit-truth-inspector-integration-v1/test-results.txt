@@ -17,4 +17,3 @@ PASS  Optimized production build
 PASS  Protected Rubric base-diff and SHA-256 checks
 
 ENVIRONMENT NOTE  Three older database-backed proof scripts require DATABASE_URL. In this isolated worktree they stopped at Prisma initialization and were excluded from acceptance; no write occurred.
-

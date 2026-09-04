@@ -4,4 +4,3 @@ efa2678c8c62fe2b85fec8826d7778c6dcecb23543f5426501488ba967caa213  public/audit-r
 59dfd3e24f8cf7504c05609eb0063c22898950c33f45facea13b92c2b173f48a  public/audit-rubric-phase1/_icons.js
 
 All four files are byte-identical to truth-hardened base `59678655ae5d8941366e0859c9d3dd0952680035`.
-

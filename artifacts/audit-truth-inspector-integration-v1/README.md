@@ -58,4 +58,3 @@ The controlled before/after comparison uses the same redacted production-shaped 
 - Protected Rubric fingerprint and base diff checks: passed.
 
 The older database-backed `audit-model`, `audit-interaction` and `audit-zoom` scripts were not used as acceptance evidence because this isolated worktree has no `DATABASE_URL`. Their attempted runs stopped at Prisma initialization without executing or mutating data. The read-only current capture, adapter, renderer, truth-contract and browser proofs cover this integration's acceptance surface.
-
