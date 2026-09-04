@@ -1,0 +1,43 @@
+{
+  "baseline": "http://localhost:3018",
+  "integrated": "http://localhost:3017",
+  "passed": true,
+  "before": {
+    "canonicalNodes": 438,
+    "canonicalEdges": 543,
+    "canvas": {
+      "width": 1348,
+      "height": 854
+    },
+    "selected": "finding:mirror:001",
+    "errors": []
+  },
+  "after": {
+    "canonicalNodes": 438,
+    "canonicalEdges": 543,
+    "canvas": {
+      "width": 1348,
+      "height": 854
+    },
+    "selected": "finding:mirror:001",
+    "errors": []
+  },
+  "screenshots": [
+    {
+      "file": "before/01-current-world.png",
+      "sha256": "01e5ee7c9190c8b47b12676b87f6d3da90fbb35518b8a570e111199b82fa77fb"
+    },
+    {
+      "file": "before/02-selected-finding.png",
+      "sha256": "275b6eb6c1226f46cc6be795d8f82d059ba235f138e946e739ca5871adda517f"
+    },
+    {
+      "file": "after/01-current-world.png",
+      "sha256": "aa8d4a6687ce27fb230c06db123b3a8d9c197c2be87c87a4b65552603d61191e"
+    },
+    {
+      "file": "after/02-selected-finding.png",
+      "sha256": "80fb4481b9ed385c5492f208d120f4f60037af69f31a46fdcc8a7f1cfd385b31"
+    }
+  ]
+}
