@@ -15,5 +15,7 @@ PASS  TypeScript
 PASS  ESLint: zero errors (pre-existing warnings only)
 PASS  Optimized production build
 PASS  Protected Rubric base-diff and SHA-256 checks
+PASS  Merge-tree with codex/reports-decision-brief-v1: conflict-free
+PASS  Merge-tree with codex/reports-composer-audience-v1: conflict-free
 
 ENVIRONMENT NOTE  Three older database-backed proof scripts require DATABASE_URL. In this isolated worktree they stopped at Prisma initialization and were excluded from acceptance; no write occurred.
