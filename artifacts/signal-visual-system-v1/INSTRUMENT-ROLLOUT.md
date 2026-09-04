@@ -5,7 +5,7 @@
 | Instrument | Keep | Minimum v1 alignment | Retire |
 |---|---|---|---|
 | Master Control Room | Graphite depth, pipeline/cascade hierarchy, dominant readouts | Replace short color names with semantic aliases; normalize selection/focus and panel recipes | Any hue used as stage decoration without a live state |
-| Audit World | Rubric layout/camera, evidence topology, trust dash patterns, disclosure tiers | Put Search, Legend, layout, Trace, and Inspector into shared widget material; move routine review to right dock; rename generic orange accents to attention only | Retro/orange chrome, page-grid Inspector, centered modal as default detail |
+| Audit World | The complete current production Rubric world: geometry, Rings/Circle/Force/Hex, density, Source Systems horizon, Attention structure, Reality/Project Model composition, fog/haze, placement, camera, drag physics, morphs, progressive identity, and topology | Put Search, Legend, Menu, controls, Trace, and Inspector into shared Signal material; adjust typography, semantic mappings, and non-semantic interaction treatment around the unchanged world | Retro/orange widget chrome and centered modal as default detail; never replace the production world with prototype geometry |
 | Forecast | Dominant distribution, direct target manipulation, Reality ghost, summoned tools | Alias chart/status colors; distinguish stale/context/source states; adopt common widget headers and focus | Legacy `--color-*` settings treatments and ad hoc source/link colors |
 | Portfolio / Capacity | Shared temporal axis, distribution shape, mixer mechanics, persistent inspector | Establish one dominant portfolio outcome, selected-scope rail, raised controls/recessed meters, semantic capacity/risk overlays, stronger type contrast | Per-Scope rainbow identity, equal-weight card wall, decorative channel numbering |
 | Decisions | Circuit metaphor, cartridge/socket physics, Scenario handling | Replace local chassis literals with material recipes; separate Decision identity from unresolved/risk status | Violet as universal selected/inferred/human-required state |
@@ -78,8 +78,12 @@ and ToolWindow without touching instrument bodies.
 ### 3. Audit / Control Room convergence
 
 Apply shared widgets around the protected Audit world. Alias Control Room to
-the new semantic names. Do not change graph renderer, camera, topology, or data
-contracts. Coordinate with the Audit Inspector branch because it may touch
+the new semantic names. Do not change or reinterpret geometry,
+Rings/Circle/Force/Hex, density, Source Systems horizon, Attention structure,
+Reality/Project Model composition, fog/haze, node placement, renderer, camera,
+drag physics, morphs, progressive identity, topology, or data contracts. Do
+not implement a center glyph; that belongs to the Reality Glyph exploration
+branch. Coordinate with the Audit Inspector branch because it may touch
 `AuditInstrument`, Inspector components, and `ToolWindow`.
 
 ### 4. Portfolio / Capacity

@@ -128,6 +128,12 @@ New or modified product UI may use literals only for:
 Canvas/SVG renderers may resolve tokens to concrete values through the existing
 palette resolver. No renderer invents a separate palette.
 
+For Audit, token resolution is the boundary: semantic values may flow into the
+existing painter, but the visual-system migration must not use token work as a
+pretext to alter protected geometry, layouts, density, horizons, attention
+structure, composition, atmosphere, placement, camera, physics, morphs,
+progressive identity, topology, or the center glyph.
+
 ## Migration checks
 
 - Reject new `--color-*` references outside `.i-legacy`.

@@ -9,6 +9,12 @@ control stay near it without replacing or unnecessarily dimming it. This is a
 shared interaction language, not a command to turn every page into floating
 panels.
 
+For Audit, “world first” also means **world preserved**. The production
+Rubric-powered geometry, layouts, density, horizons, attention structure,
+composition, atmosphere, placement, camera, drag physics, morphs, progressive
+identity, and relationship topology are outside this widget system’s authority.
+Prototype world drawings are placement scaffolds, not designs to reproduce.
+
 ## Widget anatomy
 
 Every widget has, in order:

@@ -30,10 +30,10 @@ Hue never carries an entire truth distinction alone. Reality/Scenario,
 current/stale/superseded, attested/inferred/external, and severity all add
 text plus a glyph, shape, or stroke pattern.
 
-The Audit center is the **Signal Core**, not a generic Reality icon: a compact
-concentric signal mark with an asymmetric live notch plus an explicit “Signal
-Reality” accessible name. Final logo work is a separate brand exploration; the
-current `S` monogram is a placeholder, not a locked logo.
+The proposed **Signal Core** is conceptual only. The dedicated Reality Glyph
+exploration branch owns the final center-glyph decision. This visual-system
+track preserves the production Audit center and must not implement a competing
+glyph. The current `S` monogram is also a placeholder, not a locked logo.
 
 ## Material contract
 
@@ -50,6 +50,15 @@ opens a right-side Inspector while the world remains visible and operable.
 Search, Overview, controls, Legend, and Trace use a common compact widget
 family at the edges. Full review is a deliberate promotion from Inspector, not
 the default response to selection.
+
+For Audit, the current real Rubric-powered production world is the spatial
+acceptance reference. The simplified prototype image demonstrates material and
+widget placement only. Visual-system implementation must not modify, simplify,
+redraw, reinterpret, or replace its geometry; Rings/Circle/Force/Hex; Project
+World density; Source Systems horizon; Attention structure; Reality/Project
+Model composition; fog/haze; node placement; camera; drag physics; morphs;
+progressive identity; or relationship topology. The implementation is **same
+Audit World + Signal visual language**.
 
 The pattern is not forced onto every instrument. Portfolio retains dense
 in-flow channels, Timeline retains its anchored temporal controls, Scope keeps

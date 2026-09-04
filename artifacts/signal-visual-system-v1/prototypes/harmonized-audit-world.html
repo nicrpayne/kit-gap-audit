@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Signal Visual System v1 — Harmonized Audit World</title>
+<title>Signal Visual System v1 — Audit widget/material study</title>
 <style>
   *{box-sizing:border-box} html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#090c0f;color:#f3f0e7;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
   button,input{font:inherit;color:inherit} button{cursor:default}
@@ -21,6 +21,7 @@
   .widget{position:absolute;background:rgba(21,27,32,.965);border:1px solid #3a4650;border-radius:8px;box-shadow:0 18px 42px rgba(0,0,0,.42),inset 0 1px rgba(255,255,255,.035);z-index:4}
   .layout{top:14px;left:14px;padding:5px;display:flex;gap:4px}.seg{border:0;border-radius:5px;background:transparent;color:#808c95;padding:7px 10px;font-size:9px;letter-spacing:.09em;text-transform:uppercase}.seg.on{background:#243038;color:#f3f0e7;box-shadow:inset 0 -2px #51c9db}
   .search{top:14px;right:356px;width:292px;padding:8px 10px;display:flex;align-items:center;gap:8px}.search span{color:#63acd0;font-size:13px}.search input{width:100%;border:0;outline:0;background:transparent;font-size:10px;color:#a1abb3}.key{border:1px solid #29323a;border-radius:4px;color:#808c95;font-size:8px;padding:2px 4px}
+  .guardrail{position:absolute;top:60px;right:356px;z-index:3;color:#a1abb3;font-size:7px;letter-spacing:.13em;text-transform:uppercase}.guardrail b{color:#e3b455;font-weight:650}
   .overview{top:62px;left:14px;width:188px;padding:12px}.eyebrow{font-size:8px;text-transform:uppercase;letter-spacing:.16em;color:#808c95}.overview .big{font-size:24px;font-weight:680;margin-top:8px}.overview .sub{font-size:9px;color:#a1abb3;margin-top:4px}.ticks{display:grid;grid-template-columns:repeat(3,1fr);gap:7px;margin-top:10px;border-top:1px solid #29323a;padding-top:9px}.ticks b{display:block;font-size:11px}.ticks span{font-size:7px;letter-spacing:.1em;text-transform:uppercase;color:#808c95}.cyan{color:#51c9db}.amber{color:#e3b455}.coral{color:#f07162}.mint{color:#53d7aa}.violet{color:#a397fa}.blue{color:#63acd0}.silver{color:#bec9d0}
   .legend{left:14px;bottom:14px;width:302px;padding:10px 12px}.legendhead{display:flex;align-items:center;justify-content:space-between}.legendgrid{display:grid;grid-template-columns:1fr 1fr;gap:8px 15px;margin-top:9px;font-size:8px;color:#a1abb3}.sample{display:flex;align-items:center;gap:7px}.line{width:24px;border-top:1px solid #bec9d0}.line.dash{border-top-style:dashed}.line.stitch{border-top:2px dotted #bec9d0}.dot{width:7px;height:7px;border-radius:50%;background:#51c9db}.diamond{width:7px;height:7px;transform:rotate(45deg);border:1px solid #e3b455}
   .trace{left:328px;bottom:14px;padding:9px 12px;display:flex;align-items:center;gap:9px;font-size:9px}.trace strong{color:#51c9db;text-transform:uppercase;letter-spacing:.12em;font-size:8px}.trace .route{color:#a1abb3}.trace .clear{border-left:1px solid #29323a;padding-left:9px;color:#808c95}
@@ -45,7 +46,7 @@
     <header class="top"><span class="title">Audit World</span><span class="own">What the plan does not yet account for, and where it came from</span><span class="scope">JSA ▾</span><span class="current">Current · Aug 26</span><button class="run">Run audit</button></header>
     <section class="world">
       <div class="map">
-        <svg viewBox="0 0 860 676" role="img" aria-label="Audit World with Reality at the center, semantic lanes, evidence, and a selected risk trace">
+        <svg viewBox="0 0 860 676" role="img" aria-label="Non-normative placeholder world used only to demonstrate Signal widget materials and placement">
           <g opacity=".65">
             <circle cx="435" cy="337" r="79" fill="none" stroke="#29323a"/><circle cx="435" cy="337" r="162" fill="none" stroke="#29323a" stroke-dasharray="3 8"/><circle cx="435" cy="337" r="242" fill="none" stroke="#29323a" stroke-dasharray="3 9"/>
             <path class="web" d="M435 337L324 230M435 337L565 247M435 337L609 398M435 337L373 511M435 337L213 386"/><path class="web" d="M324 230L184 178M565 247L699 164M609 398L733 477M373 511L298 615M213 386L84 441"/>
@@ -67,6 +68,7 @@
       </div>
       <div class="widget layout"><button class="seg">Rings</button><button class="seg on">Constellations</button></div>
       <label class="widget search"><span>⌕</span><input value="Search 427 things…" aria-label="Search"><span class="key">/</span></label>
+      <div class="guardrail"><b>Material/widget study</b> · placeholder geometry · production world remains authoritative</div>
       <section class="widget overview"><div class="eyebrow">World overview</div><div class="big">427</div><div class="sub">things in current project truth</div><div class="ticks"><div><b class="coral">17</b><span>Risk</span></div><div><b class="amber">9</b><span>Attention</span></div><div><b class="mint">31</b><span>Accepted</span></div></div></section>
       <section class="widget legend"><div class="legendhead"><div class="eyebrow">Legend</div><span class="key">L</span></div><div class="legendgrid"><div class="sample"><i class="line"></i>Attested</div><div class="sample"><i class="dot"></i>Current</div><div class="sample"><i class="line dash"></i>Inferred</div><div class="sample"><i class="diamond"></i>Attention</div><div class="sample"><i class="line stitch"></i>External</div><div class="sample"><i class="riskmark"></i>Critical</div></div></section>
       <section class="widget trace"><strong>Trace active</strong><span class="route">Risk → passage → source → Reality · 3 hops</span><span class="clear">Clear</span></section>

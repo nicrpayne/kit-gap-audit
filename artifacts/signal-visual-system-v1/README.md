@@ -33,6 +33,8 @@ silver for provenance, and no generic orange chrome.
   compatibility layer.
 - [`ACCESSIBILITY.md`](ACCESSIBILITY.md) — contrast, keyboard, motion, and
   non-color requirements.
+- [`IMPLEMENTATION-GUARDRAIL.md`](IMPLEMENTATION-GUARDRAIL.md) — binding Audit
+  World protection and Reality Glyph ownership boundary.
 - [`prototypes/harmonized-audit-world.html`](prototypes/harmonized-audit-world.html)
   — build-excluded 1280×720 Audit World composition.
 - [`prototypes/signal-system-board.html`](prototypes/signal-system-board.html) —
@@ -45,12 +47,16 @@ silver for provenance, and no generic orange chrome.
 |---|---|---|
 | Master Control Room, current | `screenshots/current-control-room.png` | Graphite depth, restrained semantic light, instrument tone |
 | Audit World, current | `screenshots/current-audit-world.png` | Strong world fidelity, but controls form a heavy page grid and review displaces the world |
-| Audit World, proposed | `screenshots/proposed-harmonized-audit-world.png` | Same world grammar with docked/floating widgets and semantic color |
+| Audit widget/material study | `screenshots/proposed-harmonized-audit-world.png` | Widget placement and Signal material only; its simplified world is explicitly non-normative |
 | Portfolio/Capacity, current | `screenshots/current-portfolio-capacity.png` | Strong density but weak active hierarchy and too much equal-weight graphite |
 | System board, proposed | `screenshots/proposed-signal-system-board.png` | Shared material and state grammar across Control Room, Audit, and Portfolio |
 
-These are design references, not pixel-locked implementation specifications.
-The mockups deliberately do not reproduce or replace Rubric layout code.
+These are material and widget references, not spatial implementation
+specifications. **The simplified Audit imagery is non-normative.** The current
+real Rubric-powered production Audit World—not the prototype—is the acceptance
+reference for geometry, layouts, density, horizons, attention structure,
+composition, atmosphere, placement, camera, physics, morphs, progressive
+identity, and relationship topology. See `IMPLEMENTATION-GUARDRAIL.md`.
 The current-state captures are pre-existing production-audit references: Audit
 is from the branch baseline; Control Room and Portfolio were unchanged by the
 subsequent Rubric parity commit that produced this baseline.
@@ -64,6 +70,8 @@ subsequent Rubric parity commit that produced this baseline.
 - Prototype files live under `artifacts/` and are not imported by the app.
 - The Audit proposal changes the controls around the world, not the world’s
   rendering authority or protected runtime.
+- The conceptual `Signal Core` does not authorize a glyph change. The dedicated
+  Reality Glyph exploration branch owns that decision.
 
 ## Acceptance gate for implementation
 

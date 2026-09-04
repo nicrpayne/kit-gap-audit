@@ -102,12 +102,13 @@ focused, active, or critical.
 ## Icon and center identity
 
 Use simple line glyphs with a common 1.5px optical weight. A glyph communicates
-an object or action; semantic state remains in the adjacent mark/label. The
-Audit center should become a distinctive **Signal Core**—concentric signal
-rings with an asymmetric live notch—rather than a generic “Reality” icon or a
-Rubric-demo emblem. Until a brand-mark exploration is approved, the words
-“Signal Reality” remain inside/alongside the core; do not treat the rail’s `S`
-monogram as the final logo.
+an object or action; semantic state remains in the adjacent mark/label.
+
+The `Signal Core` in this package is a **conceptual direction only**, not an
+implementation decision. Preserve the production Audit center. The dedicated
+Reality Glyph exploration branch owns the final glyph and accessible identity;
+this visual-system branch must not implement a competing center glyph. The
+rail’s `S` monogram is likewise a placeholder, not a locked logo.
 
 ## Interaction
 
