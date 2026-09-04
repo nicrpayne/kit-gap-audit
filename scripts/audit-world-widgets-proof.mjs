@@ -8,7 +8,7 @@
 //   BASE_URL=http://localhost:3017 node scripts/audit-world-widgets-proof.mjs
 
 import { createHash } from "crypto";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
+import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "fs";
 import { chromium } from "playwright";
 
 const BASE = process.env.BASE_URL ?? "http://localhost:3017";
@@ -115,6 +115,7 @@ check("02 world occupies the full host behind the dock", await page.evaluate(() 
   const host = document.querySelector('[data-shoot="audit-world-host"]')?.getBoundingClientRect();
   return Boolean(world && host && Math.abs(world.width - host.width) < 1 && Math.abs(world.height - host.height) < 1);
 }));
+await shot("01-world-overview");
 
 // Close/reopen 100 times. The renderer node is marked above; retaining the
 // mark proves React never remounted it, while the camera data proves the
@@ -251,8 +252,10 @@ await shot("06-final-world-state");
 const video = page.video();
 await page.close();
 await context.close();
-const videoPath = video ? await video.path() : null;
+const capturedVideoPath = video ? await video.path() : null;
 await browser.close();
+const videoPath = capturedVideoPath ? `${VIDEO}/audit-world-interaction-proof.webm` : null;
+if (capturedVideoPath && videoPath) renameSync(capturedVideoPath, videoPath);
 
 const report = {
   baseUrl: BASE,

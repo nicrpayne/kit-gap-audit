@@ -1,0 +1,156 @@
+
+── CORPUS ─────────────────────────────────────────────────
+fixture: 427 nodes, 439 edges
+real bridge package present: no (fixture only)
+
+── A · PROJECTION, NOT MUTATION ───────────────────────────
+PASS  graph order unchanged  — 427
+PASS  graph size unchanged  — 439
+PASS  node attributes unchanged
+PASS  layout map unchanged  — 427
+PASS  no geometry written onto nodes  — x/y stay in the layout side map
+PASS  every drawn node has a seat
+PASS  scene is a fresh structure each call  — no shared mutable state between frames
+
+── R · ROLE MAPPING ───────────────────────────────────────
+PASS  reality → router
+PASS  scope → model aggregate
+PASS  lane → hub
+PASS  intelligence package → cell
+PASS  transcript → artifact
+PASS  notion page → artifact
+PASS  figma artifact → artifact
+PASS  finding → leaf
+PASS  external claim → leaf
+PASS  passage → leaf
+PASS  every node carries a role
+PASS  roles are derived from kind alone  — no path from foreign semantics into role
+PASS  a real node's group count is always zero  — a node is one thing; only a shell has members
+
+── E · EDGE GUARDRAILS ────────────────────────────────────
+PASS  attested is solid  — 219 attested edges
+PASS  inferred is dashed, and more openly than external  — 11 inferred edges
+PASS  external is a finer, distinct broken stitch  — 1 external edges
+PASS  focus never rewrites a trust dash  — 0 edges changed dash under focus
+PASS  no edge carries travelling motion  — a stored relation may not imply live data flow
+PASS  membership is never drawn  — position already states it
+PASS  a woken contextual edge gets no arrowhead  — related_to is most of the producer's corpus
+PASS  provenance is quieter than the meaning it supports
+PASS  every edge suppresses its web understudy, visible or not  — 0 sub-threshold edges still suppress
+
+── L · LABEL AUTHORITY ────────────────────────────────────
+PASS  far: every name is permitted by the tier or a representative  — 1 names
+PASS  far: within the reading budget  — 1 ≤ 60
+PASS  far: a latent mark is never named
+PASS  medium: every name is permitted by the tier or a representative  — 23 names
+PASS  medium: within the reading budget  — 23 ≤ 60
+PASS  medium: a latent mark is never named
+PASS  near: every name is permitted by the tier or a representative  — 39 names
+PASS  near: within the reading budget  — 39 ≤ 60
+PASS  near: a latent mark is never named
+PASS  close: every name is permitted by the tier or a representative  — 43 names
+PASS  close: within the reading budget  — 43 ≤ 60
+PASS  close: a latent mark is never named
+PASS  medium: a constellation names at most two of its own  — 8 groups
+PASS  a cluster puck is never labelled by the node pass  — the cluster layer draws its name once
+PASS  the selection is always named
+
+── S · SCENE COMPLETENESS ─────────────────────────────────
+PASS  every seated node is in the scene  — 427/427
+PASS  nothing is invented
+PASS  stats agree with the node list
+PASS  a latent mark's radius is floored in screen pixels  — dust survives far zoom
+PASS  structure carries its rings
+PASS  the aligned ring is solid and the disagreement bands are not
+PASS  the Hermes boundary is drawn in the external grammar
+PASS  every node carries an accessible name  — a canvas has no DOM to carry it implicitly
+PASS  the keyboard order covers every opened node  — 14 in the tab sequence
+PASS  Reality is uncapped at far zoom  — 1.000
+PASS  Reality is capped at close zoom  — 0.389
+PASS  the cap is applied to the projected radius
+PASS  the anchor is the loudest thing on the field
+PASS  the unrelated field is softened, never extinguished  — dimming to near-black buys attention by destroying orientation
+PASS  unrelated nodes are optically softened
+PASS  Evidence Solo keeps the unrelated field visible
+
+── H · HIT TESTING ────────────────────────────────────────
+PASS  the index holds a target for the field  — 427 targets
+PASS  a selected node stays clickable out to its grown rim  — the selected object must not vanish beneath its own glow
+PASS  the hit radius follows the grown footprint  — 12.15 world units
+PASS  the smallest mark still gets an 11px target  — checkpoint r=3.2 → 15.3 world units
+PASS  a target is never smaller than its own paint plus slack
+PASS  every formed node is selectable at its own centre  — 426 nodes, dense
+PASS  a constellation shell answers a pointer  — agg:src:source:pkg:ke://source/notion/JSA-Delivery-Scope
+PASS  a member inside a shell is still reachable at its own centre  — passage:snap-jsa-1:ke-req-0001
+PASS  the pointer does not oscillate between neighbours  — 0 A→B→A transitions in 121 samples
+
+── T · TOKENS ─────────────────────────────────────────────
+PASS  #rrggbb parses
+PASS  #rgb parses
+PASS  rgb() parses
+PASS  rgba() parses
+PASS  nonsense does not throw
+PASS  an unresolvable token is a neutral, not a hole
+PASS  a literal still resolves with no document
+PASS  alpha composes
+PASS  color-mix mixes  — r=128
+
+── R2 · THE SWITCH ────────────────────────────────────────
+PASS  no parameter means the Rubric Canvas renderer
+PASS  ?renderer=canvas selects Canvas
+PASS  ?renderer=svg selects SVG
+PASS  a typo falls back to the product
+PASS  other parameters are ignored
+PASS  null is safe
+PASS  screen↔world round-trips exactly  — worst error 5.7e-14px
+
+── P · DERIVATION COST ────────────────────────────────────
+PASS  a full scene derivation stays under 12ms  — 1.07ms at 427 nodes
+      corpus cache (once per graph): 0.6ms
+PASS  a hit test costs under 20µs  — 0.4µs per query, 427 targets
+      hit index build: 1.3ms
+
+── X · SPATIAL ENGINE ─────────────────────────────────────
+PASS  the thin Rubric adapter preserves every opened canonical node
+PASS  visual aggregates are projection-only
+PASS  the thin Rubric adapter preserves every visual relationship
+PASS  source artifacts map to Rubric's artifact role
+PASS  the adapter exposes no filesystem or ARMS role
+PASS  two runs of the engine agree exactly  — worst drift 0.0e+0 units
+PASS  physics never mutates the graph
+PASS  physics writes no geometry onto nodes
+PASS  relationships are not an input to the arrangement  — no link force exists to remove
+      own-hub by territory: model 100.0% (0/0) · delivery 100.0% (16/16) · evidence 100.0% (199/199) · external 95.9% (185/193)
+PASS  at least 90% of projected members are nearest their own semantic hub  — 98.0% (400/408)
+PASS  the largest first-level territory is at most 35% of territory area  — 28.0%
+PASS  generic relationship springs are zero
+PASS  Constellations keeps Rubric's bounded free-drop home  — distance to drop 11.4, to old seat 85.6
+PASS  Rings returns a released node to its semantic seat
+PASS  Rings rotate at Rubric's converted real-time rate  — 0.82° per second
+PASS  no object sits inside the band its meaning assigns it  — distance from Reality still means disagreement
+PASS  a critical finding is on the conflict band
+PASS  an external claim sits outside Signal's own record
+PASS  Reality anchors the centre
+PASS  a layout switch begins from the on-screen positions  — largest first-frame jump 0.0 units
+PASS  no node is lost across a morph  — 435 → 435
+PASS  reduced motion still switches layout  — arrives without a morph
+
+── C · RUBRIC CAMERA + GESTURES ───────────────────────────
+PASS  the two camera representations convert exactly
+PASS  Rubric's wheel zooms in on a negative delta  — 1.400 → 1.610
+PASS  the world point under the cursor stays under it
+PASS  the hand cancels a flight in progress  — a camera that ignores the hand is broken
+PASS  the flight had actually moved
+PASS  reduced motion arrives instead of flying
+PASS  the Rubric gesture proof has a draggable node
+PASS  Rubric retains the pointer-down hit through mouseup
+PASS  an ordinary Rubric node click selects without toggling
+PASS  a node drag is owned by Rubric
+PASS  a Rubric drag can never become a click
+PASS  Rubric double-click releases home and starts a camera flight
+PASS  empty-field pan uses Rubric's screen-space camera delta
+PASS  a Rubric pan can never become a click
+PASS  a stationary background click clears selection
+
+───────────────────────────────────────────────────────────
+124/124 checks passed

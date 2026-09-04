@@ -1,0 +1,130 @@
+{
+  "baseUrl": "http://localhost:3017",
+  "fixture": "/tmp/audit-world-widgets-fixture.json",
+  "checks": 24,
+  "failures": 0,
+  "pageErrors": [],
+  "videoPath": "artifacts/audit-world-widgets-inspector-v1/video/audit-world-interaction-proof.webm",
+  "results": [
+    {
+      "name": "01 world and default Project Overview Inspector render",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "02 world occupies the full host behind the dock",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "03 Inspector closes and reopens 100x",
+      "ok": true,
+      "detail": "100 cycles"
+    },
+    {
+      "name": "04 Inspector cycling does not change camera",
+      "ok": true,
+      "detail": "700.000,700.000,0.56578"
+    },
+    {
+      "name": "05 Inspector cycling does not remount the world",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "06 selection opens the canonical Inspector",
+      "ok": true,
+      "detail": "finding:f-offline"
+    },
+    {
+      "name": "07 Search result lands in Inspector",
+      "ok": true,
+      "detail": "passage:snap-jsa-1:ke-ev-0201"
+    },
+    {
+      "name": "08 Trace is visible with Inspector",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "09 Trace route is complete and framed",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "10 Trace exposes a connected passage",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "11 connected-node navigation updates Inspector without ending Trace",
+      "ok": true,
+      "detail": "passage:snap-jsa-1:ke-ev-0088"
+    },
+    {
+      "name": "12 source anchor is inspectable",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "13 passage exposes its source connection",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "14 source navigation keeps Trace live",
+      "ok": true,
+      "detail": "source:pkg:ke://source/transcript/2026-08-14_KE-Field-Pilot-Readiness"
+    },
+    {
+      "name": "15 layout switches with Inspector and Trace intact",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "16 wheel zoom works with Inspector open",
+      "ok": true,
+      "detail": "700.000,700.000,0.56578 → 483.346,659.818,0.90880"
+    },
+    {
+      "name": "17 pan works with Inspector open",
+      "ok": true,
+      "detail": "483.346,659.818,0.90880 → 411.823,610.302,0.90880"
+    },
+    {
+      "name": "18 pan/zoom keep Inspector selection",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "19 deep review is a side sheet, not the default surface",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "20 review close restores the same camera",
+      "ok": true,
+      "detail": "569.001,706.985,0.88401 → 569.001,706.985,0.88401"
+    },
+    {
+      "name": "21 review close restores the same selection",
+      "ok": true,
+      "detail": "finding:f-offline"
+    },
+    {
+      "name": "22 Menu and Legend are collapsible Signal widgets",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "23 hover/observer stress has no browser crash",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "24 ResizeObserver remained live",
+      "ok": true,
+      "detail": "{\"resize\":3,\"long\":0}"
+    }
+  ]
+}

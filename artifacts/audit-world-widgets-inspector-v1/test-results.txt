@@ -1,0 +1,27 @@
+PASS  01 world and default Project Overview Inspector render
+PASS  02 world occupies the full host behind the dock
+PASS  03 Inspector closes and reopens 100x — 100 cycles
+PASS  04 Inspector cycling does not change camera — 700.000,700.000,0.56578
+PASS  05 Inspector cycling does not remount the world
+PASS  06 selection opens the canonical Inspector — finding:f-offline
+PASS  07 Search result lands in Inspector — passage:snap-jsa-1:ke-ev-0201
+PASS  08 Trace is visible with Inspector
+PASS  09 Trace route is complete and framed
+PASS  10 Trace exposes a connected passage
+PASS  11 connected-node navigation updates Inspector without ending Trace — passage:snap-jsa-1:ke-ev-0088
+PASS  12 source anchor is inspectable
+PASS  13 passage exposes its source connection
+PASS  14 source navigation keeps Trace live — source:pkg:ke://source/transcript/2026-08-14_KE-Field-Pilot-Readiness
+PASS  15 layout switches with Inspector and Trace intact
+PASS  16 wheel zoom works with Inspector open — 700.000,700.000,0.56578 → 483.346,659.818,0.90880
+PASS  17 pan works with Inspector open — 483.346,659.818,0.90880 → 411.823,610.302,0.90880
+PASS  18 pan/zoom keep Inspector selection
+PASS  19 deep review is a side sheet, not the default surface
+PASS  20 review close restores the same camera — 569.001,706.985,0.88401 → 569.001,706.985,0.88401
+PASS  21 review close restores the same selection — finding:f-offline
+PASS  22 Menu and Legend are collapsible Signal widgets
+PASS  23 hover/observer stress has no browser crash
+PASS  24 ResizeObserver remained live — {"resize":3,"long":0}
+
+24/24 checks passed
+video artifacts/audit-world-widgets-inspector-v1/video/audit-world-interaction-proof.webm
