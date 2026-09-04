@@ -16,7 +16,7 @@ let mutationDecisionId: string | null = null;
 
 async function main() {
 try {
-  const scope = await prisma.scope.findUnique({ where: { id: "jsa" } });
+  const scope = await prisma.scope.findFirst({ where: { name: "JSA" } });
   assert(scope, "seeded JSA scope exists");
   const unavailableScenario = await fetch(`${base}/api/reports`, {
     method: "POST",

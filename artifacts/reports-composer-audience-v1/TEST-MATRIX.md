@@ -24,5 +24,9 @@
 | Browser composer/finished/Site surfaces | PASS, no console errors |
 | 700px responsive composer | PASS |
 | Browser hide-module fingerprint check | PASS — `dbv1-003f396e` before/after |
+| Disposable PostgreSQL migration (all 20 migrations) | PASS |
+| Snapshot + recipe + presentation version round trip | PASS |
+| Saved Markdown exact re-render after JSONB round trip | PASS |
+| Later in-memory owner change leaves saved snapshot unchanged | PASS |
 
-Database integration proof remains gated by `REPORTS_DB_PROOF=1` and a disposable local fixture database. Its assertions now cover saved recipe/presentation versions and exact audience Markdown re-rendering.
+The dedicated persistence proof ran with `REPORTS_DB_PROOF=1` against disposable PostgreSQL and removed its test Report afterward. The broader live API proof still requires a Linear-backed read environment; the already accepted Reports V1 API boundary was not replaced.
