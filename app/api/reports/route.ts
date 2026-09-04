@@ -25,8 +25,13 @@ export async function POST(req: NextRequest) {
   if (!body.scopeId) {
     return NextResponse.json({ error: "scopeId is required" }, { status: 400 });
   }
-  if (body.mode === "scenario" && (!body.scenarioId || !body.scenarioSnapshot)) {
-    return NextResponse.json({ error: "Scenario briefs require explicit scenarioId and scenarioSnapshot inputs." }, { status: 400 });
+  if (body.mode && body.mode !== "reality" && body.mode !== "scenario") {
+    return NextResponse.json({ error: "mode must be reality or scenario" }, { status: 400 });
+  }
+  if (body.mode === "scenario") {
+    return NextResponse.json({
+      error: "Scenario Decision Brief generation is UNAVAILABLE until a canonical server-owned scenario read model provides the complete window and provenance. Reports will not relabel live Reality as Scenario.",
+    }, { status: 409 });
   }
 
   const scope = await prisma.scope.findUnique({ where: { id: body.scopeId } });

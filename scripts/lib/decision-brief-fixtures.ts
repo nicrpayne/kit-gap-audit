@@ -31,13 +31,15 @@ export function healthyOwnerFixture(): DecisionBriefOwnerInputs {
     },
     previousReport: { id: "report-prior", generatedAt: "2026-08-28T15:00:00.000Z", likelyDate: "2026-11-03T00:00:00.000Z", confidenceAtTarget: 73 },
     audit: {
+      comparisonCurrentness: "current",
+      warnings: [],
       prior: {
         runId: "audit-prior",
         asOf: "2026-08-28T14:00:00.000Z",
         sourceId: null,
         contextSnapshotId: "ctx-prior",
         findings: [
-          { id: "finding-old", type: "risk", title: "Provider timing is unclear", status: "open", severity: "medium", createdAt: "2026-08-28T14:00:00.000Z", sourceId: null, contextSnapshotId: "ctx-prior", evidenceRefs: ["passage-old"], matchedIssues: [] },
+          { id: "finding-old", type: "risk", title: "Provider timing is unclear", status: "open", severity: "medium", createdAt: "2026-08-28T14:00:00.000Z", resolvedAt: null, sourceId: null, contextSnapshotId: "ctx-prior", evidenceRefs: ["passage-old"], matchedIssues: [] },
         ],
       },
       current: {
@@ -46,8 +48,8 @@ export function healthyOwnerFixture(): DecisionBriefOwnerInputs {
         sourceId: null,
         contextSnapshotId: "ctx-current",
         findings: [
-          { id: "finding-old-current", type: "risk", title: "Provider timing is unclear", status: "resolved", severity: "medium", createdAt: "2026-09-04T14:50:00.000Z", sourceId: null, contextSnapshotId: "ctx-current", evidenceRefs: ["passage-old-current"], matchedIssues: [] },
-          { id: "finding-new", type: "missing_work", title: "Migration rehearsal has no ticket", status: "open", severity: "high", createdAt: "2026-09-04T14:50:00.000Z", sourceId: null, contextSnapshotId: "ctx-current", evidenceRefs: ["passage-42"], matchedIssues: [] },
+          { id: "finding-old-current", type: "risk", title: "Provider timing is unclear", status: "resolved", severity: "medium", createdAt: "2026-09-04T14:50:00.000Z", resolvedAt: "2026-09-04T14:55:00.000Z", sourceId: null, contextSnapshotId: "ctx-current", evidenceRefs: ["passage-old-current"], matchedIssues: [] },
+          { id: "finding-new", type: "missing_work", title: "Migration rehearsal has no ticket", status: "open", severity: "high", createdAt: "2026-09-04T14:50:00.000Z", resolvedAt: null, sourceId: null, contextSnapshotId: "ctx-current", evidenceRefs: ["passage-42"], matchedIssues: [] },
         ],
       },
     },

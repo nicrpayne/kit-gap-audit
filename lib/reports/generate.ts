@@ -21,11 +21,20 @@ export async function generateReport(
   contextSnapshotId?: string | null,
   options?: { mode?: BriefMode; scenarioId?: string | null; scenarioSnapshot?: Prisma.InputJsonValue | null }
 ): Promise<GeneratedReport> {
-  const brief = await buildDecisionBriefReadModel(scope, {
+  if (options?.mode === "scenario") {
+    throw new Error("Scenario Decision Brief generation requires a canonical server-owned scenario read model; live Reality cannot be relabeled as Scenario.");
+  }
+  const assembled = await buildDecisionBriefReadModel(scope, {
     contextSnapshotId,
     mode: options?.mode ?? "reality",
     scenarioId: options?.scenarioId ?? null,
   });
+  // JSONB is the immutable source model. Normalize through the same JSON
+  // boundary before rendering so floating-point representations cannot make
+  // stored JSON re-render differently from the Markdown saved beside it.
+  const brief = JSON.parse(JSON.stringify(assembled, (_key, value) =>
+    typeof value === "number" && Number.isFinite(value) ? Math.round(value * 1_000_000_000) / 1_000_000_000 : value
+  )) as DecisionBriefV1;
   const markdown = renderDecisionBriefMarkdown(brief);
   const window = brief.headline.likelyWindow.value;
   const movement = brief.headline.movement.value;

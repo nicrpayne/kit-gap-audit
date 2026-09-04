@@ -7,7 +7,17 @@ const status = (source: SourceStamp) =>
   `${source.owner} · ${source.temporalRole.toUpperCase()} · as of ${date(source.asOf)} · ${source.currentness.toUpperCase()}${source.sourceId ? ` · ${source.sourceId}` : ""}`;
 
 export function briefPayloadFingerprint(brief: DecisionBriefV1): string {
-  const input = JSON.stringify(brief);
+  // PostgreSQL JSONB does not preserve object-key insertion order. Sort keys
+  // recursively so a payload fingerprints identically before and after its
+  // immutable database round trip.
+  const stable = (value: unknown): unknown => {
+    if (Array.isArray(value)) return value.map(stable);
+    if (!value || typeof value !== "object") return value;
+    return Object.fromEntries(Object.entries(value as Record<string, unknown>)
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([key, child]) => [key, stable(child)]));
+  };
+  const input = JSON.stringify(stable(brief));
   let hash = 2166136261;
   for (let i = 0; i < input.length; i += 1) {
     hash ^= input.charCodeAt(i);
@@ -76,6 +86,8 @@ export function renderDecisionBriefMarkdown(brief: DecisionBriefV1): string {
   pushSource(brief.calls.decisions.source);
 
   out.push("## What can move");
+  const scope = brief.movable.scope.value;
+  out.push(`Executable Scope: ${scope.executableItemCount} canonical work item${scope.executableItemCount === 1 ? "" : "s"}; ${n(scope.remainingEffortDays.low)} / ${n(scope.remainingEffortDays.likely)} / ${n(scope.remainingEffortDays.high)} days low / likely / high. [Open Scope](${scope.href})`);
   const capacity = brief.movable.capacity.value;
   if (capacity.availability !== "available") {
     out.push(`**Named Capacity: ${capacity.availability.toUpperCase()}** · ${capacity.status}. Forecast currently uses ${n(capacity.forecastEffectiveFte)} FTE from ${capacity.source}; this is not a named-staffing claim.`);

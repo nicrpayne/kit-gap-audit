@@ -44,6 +44,7 @@ export interface BriefFindingInput {
   status: string;
   severity: string;
   createdAt: string;
+  resolvedAt: string | null;
   sourceId: string | null;
   contextSnapshotId: string | null;
   evidenceRefs: string[];
@@ -129,6 +130,8 @@ export interface DecisionBriefOwnerInputs {
   audit: {
     current: AuditObservationInput | null;
     prior: AuditObservationInput | null;
+    comparisonCurrentness: Currentness;
+    warnings: string[];
   };
   delivery: {
     shipped: { identifier: string; title: string }[];
@@ -204,6 +207,11 @@ export interface DecisionBriefV1 {
     dependencies: Sourced<{ scopeId: string; name: string; likelyDate: string | null; currentness: Currentness; href: string }[]>;
   };
   movable: {
+    scope: Sourced<{
+      executableItemCount: number;
+      remainingEffortDays: { low: number; likely: number; high: number };
+      href: string;
+    }>;
     capacity: Sourced<{
       availability: "available" | "missing" | "unavailable";
       source: DecisionBriefOwnerInputs["capacity"]["source"];
@@ -265,15 +273,11 @@ export function decisionBriefHref(route: string, projectId: string, select?: str
 function auditDelta(current: AuditObservationInput | null, prior: AuditObservationInput | null) {
   if (!current) return { currentRunId: null, priorRunId: prior?.runId ?? null, newFindings: [], resolvedFindings: [] };
   const priorByKey = new Map((prior?.findings ?? []).map((f) => [keyFor(f), f]));
-  const currentByKey = new Map(current.findings.map((f) => [keyFor(f), f]));
   const newFindings = current.findings.filter((f) => !priorByKey.has(keyFor(f)));
   const resolvedFindings = current.findings.filter((f) => {
     const before = priorByKey.get(keyFor(f));
     return !!before && before.status === "open" && f.status !== "open";
   });
-  for (const before of prior?.findings ?? []) {
-    if (before.status === "open" && !currentByKey.has(keyFor(before))) resolvedFindings.push(before);
-  }
   return { currentRunId: current.runId, priorRunId: prior?.runId ?? null, newFindings, resolvedFindings };
 }
 
@@ -291,9 +295,16 @@ function headlineReason(input: DecisionBriefOwnerInputs, delta: ReturnType<typeo
 
 export function assembleDecisionBrief(input: DecisionBriefOwnerInputs): DecisionBriefV1 {
   const forecastSource = source("Forecast", input.forecast.asOf, input.forecast.sourceId);
-  const auditCurrentness: Currentness = input.audit.current ? "current" : "missing";
+  const auditCurrentness: Currentness = input.audit.current ? input.audit.comparisonCurrentness : "missing";
   const auditSource = source("Audit", input.audit.current?.asOf ?? input.generatedAt, input.audit.current?.runId ?? null, auditCurrentness);
-  const delta = auditDelta(input.audit.current, input.audit.prior);
+  const delta = input.audit.comparisonCurrentness === "unavailable"
+    ? {
+        currentRunId: input.audit.current?.runId ?? null,
+        priorRunId: input.audit.prior?.runId ?? null,
+        newFindings: [],
+        resolvedFindings: [],
+      }
+    : auditDelta(input.audit.current, input.audit.prior);
   const openDecisions = input.decisions.filter((decision) => decision.status === "open").map((decision) => {
     const gated = !!decision.gate?.serial;
     return {
@@ -320,7 +331,7 @@ export function assembleDecisionBrief(input: DecisionBriefOwnerInputs): Decision
     findingId: finding.id,
     title: finding.title,
     grounding: finding.evidenceRefs.length > 0 ? "passage" as const : finding.sourceId || finding.contextSnapshotId ? "source_only" as const : "none" as const,
-    currentness: input.context.currentness,
+    currentness: finding.contextSnapshotId ? input.context.currentness : finding.sourceId ? "current" : "missing",
     evidenceRefs: finding.evidenceRefs,
     sourceId: finding.sourceId,
     contextSnapshotId: finding.contextSnapshotId,
@@ -346,6 +357,7 @@ export function assembleDecisionBrief(input: DecisionBriefOwnerInputs): Decision
     ...(weak.length ? [`${weak.length} of ${references.length} current Finding${references.length === 1 ? "" : "s"} lack passage-level grounding.`] : []),
     ...input.context.missingSources.map((name) => `Tracked provider/source not supplied: ${name}.`),
     ...input.context.warnings,
+    ...input.audit.warnings,
     ...suspicious.map((decision) => `Governed test residue requires disposition: Decision “${decision.title}”${decision.gate ? ` / Gate “${decision.gate.dependency}”` : ""}.`),
   ];
   const caveats: { code: string; message: string }[] = [];
@@ -355,6 +367,7 @@ export function assembleDecisionBrief(input: DecisionBriefOwnerInputs): Decision
   if (input.context.missingSources.length) caveats.push({ code: "PROVIDERS_UNSUPPLIED", message: `${input.context.missingSources.length} active provider/source lane${input.context.missingSources.length === 1 ? " is" : "s are"} unsupplied.` });
   if (weak.length) caveats.push({ code: "WEAK_GROUNDING", message: `${weak.length} current Finding${weak.length === 1 ? " is" : "s are"} not grounded to passage-level evidence.` });
   if (suspicious.length) caveats.push({ code: "TEST_RESIDUE", message: `${suspicious.length} suspicious test Decision/Gate record${suspicious.length === 1 ? "" : "s"} remain for governed disposition.` });
+  if (input.audit.comparisonCurrentness === "unavailable") caveats.push({ code: "AUDIT_DELTA_UNAVAILABLE", message: "Exact current/prior Audit membership is unavailable for runs sharing the same source snapshot; no change is inferred from absence." });
 
   const movement = input.previousReport
     ? {
@@ -396,7 +409,7 @@ export function assembleDecisionBrief(input: DecisionBriefOwnerInputs): Decision
         value: { shipped: input.delivery.shipped.map((item) => ({ ...item, href: decisionBriefHref("/scope", input.project.id, `work:${item.identifier}`) })) },
         source: scopeSource,
       },
-      currentness: { value: { missingSources: input.context.missingSources, warnings: input.context.warnings }, source: contextSource },
+      currentness: { value: { missingSources: input.context.missingSources, warnings: [...input.context.warnings, ...input.audit.warnings] }, source: contextSource },
     },
     calls: {
       decisions: { value: openDecisions, source: decisionsSource },
@@ -406,6 +419,14 @@ export function assembleDecisionBrief(input: DecisionBriefOwnerInputs): Decision
       },
     },
     movable: {
+      scope: {
+        value: {
+          executableItemCount: input.forecast.remainingIssueCount,
+          remainingEffortDays: input.forecast.remainingEffortDays,
+          href: decisionBriefHref("/scope", input.project.id),
+        },
+        source: forecastSource,
+      },
       capacity: {
         value: {
           availability: capacityAvailability,

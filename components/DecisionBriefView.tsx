@@ -123,9 +123,25 @@ export default function DecisionBriefView({ brief }: { brief: DecisionBriefV1 })
           ))}
           {!brief.calls.decisions.value.length && <Empty>No first-class open Decisions.</Empty>}
         </div>
+        {brief.calls.dependencies.value.length > 0 && (
+          <div className="mt-5 border-t border-[var(--i-border)] pt-4">
+            <h3 className="mb-2 text-[10px] font-semibold uppercase tracking-wider">Declared dependencies</h3>
+            {brief.calls.dependencies.value.map((dependency) => (
+              <Link key={dependency.scopeId} href={dependency.href} className="mb-2 flex flex-wrap justify-between gap-2 text-xs text-[var(--i-signal)] hover:underline">
+                <span>{dependency.name}</span>
+                <span className="text-[var(--i-text-faint)]">{dependency.likelyDate ? `likely ${date(dependency.likelyDate)}` : "current forecast UNAVAILABLE"}</span>
+              </Link>
+            ))}
+          </div>
+        )}
       </Section>
 
       <Section title="What can move" source={brief.movable.capacity.source}>
+        <div className="mb-4 rounded-lg border border-[var(--i-border)] bg-[var(--i-panel)] p-4 text-sm">
+          <div className="text-[9px] font-semibold uppercase tracking-wider text-[var(--i-text-faint)]">Executable canonical Scope</div>
+          <div className="mt-1">{brief.movable.scope.value.executableItemCount} work item{brief.movable.scope.value.executableItemCount === 1 ? "" : "s"} · {fte(brief.movable.scope.value.remainingEffortDays.low)} / {fte(brief.movable.scope.value.remainingEffortDays.likely)} / {fte(brief.movable.scope.value.remainingEffortDays.high)} days</div>
+          <Link href={brief.movable.scope.value.href} className="mt-2 inline-block text-xs text-[var(--i-signal)] hover:underline">Open Scope →</Link>
+        </div>
         {capacity.availability === "available" ? (
           <div>
             <p className="text-sm">{fte(capacity.namedRawFte!)} raw FTE → {fte(capacity.namedEffectiveFte!)} effective FTE → {fte(capacity.forecastEffectiveFte)} Forecast FTE</p>

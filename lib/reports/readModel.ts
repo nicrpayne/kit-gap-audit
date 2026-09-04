@@ -39,6 +39,7 @@ async function findingsForRun(run: { sourceId: string | null; contextSnapshotId:
       status: true,
       severity: true,
       createdAt: true,
+      resolvedAt: true,
       sourceId: true,
       contextSnapshotId: true,
       evidenceRefs: true,
@@ -47,7 +48,7 @@ async function findingsForRun(run: { sourceId: string | null; contextSnapshotId:
   });
 }
 
-async function auditObservations(scopeId: string): Promise<{ current: AuditObservationInput | null; prior: AuditObservationInput | null; providerChanges: string[] }> {
+async function auditObservations(scopeId: string): Promise<{ current: AuditObservationInput | null; prior: AuditObservationInput | null; providerChanges: string[]; comparisonCurrentness: Currentness; warnings: string[] }> {
   const [sources, snapshots] = await Promise.all([
     prisma.source.findMany({ where: { scopeId }, select: { id: true } }),
     prisma.contextSnapshot.findMany({ where: { scopeId }, select: { id: true, completenessSummary: true } }),
@@ -58,7 +59,7 @@ async function auditObservations(scopeId: string): Promise<{ current: AuditObser
     ...(sourceIds.length ? [{ sourceId: { in: sourceIds } }] : []),
     ...(snapshotIds.length ? [{ contextSnapshotId: { in: snapshotIds } }] : []),
   ];
-  if (!predicates.length) return { current: null, prior: null, providerChanges: [] };
+  if (!predicates.length) return { current: null, prior: null, providerChanges: [], comparisonCurrentness: "missing", warnings: [] };
   const runs = await prisma.auditRun.findMany({
     where: { OR: predicates },
     orderBy: [{ createdAt: "desc" }, { id: "desc" }],
@@ -70,7 +71,7 @@ async function auditObservations(scopeId: string): Promise<{ current: AuditObser
     asOf: run.createdAt.toISOString(),
     sourceId: run.sourceId,
     contextSnapshotId: run.contextSnapshotId,
-    findings: (await findingsForRun(run)).map((finding) => ({ ...finding, createdAt: finding.createdAt.toISOString() })),
+    findings: (await findingsForRun(run)).map((finding) => ({ ...finding, createdAt: finding.createdAt.toISOString(), resolvedAt: finding.resolvedAt?.toISOString() ?? null })),
   })));
 
   const summaryById = new Map(snapshots.map((snapshot) => [snapshot.id, completeness(snapshot.completenessSummary)]));
@@ -80,7 +81,20 @@ async function auditObservations(scopeId: string): Promise<{ current: AuditObser
     ...[...currentMissing].filter((name) => !priorMissing.has(name)).map((name) => `Provider/source became unsupplied since the prior Audit: ${name}.`),
     ...[...priorMissing].filter((name) => !currentMissing.has(name)).map((name) => `Provider/source is supplied again since the prior Audit: ${name}.`),
   ];
-  return { current: mapped[0] ?? null, prior: mapped[1] ?? null, providerChanges };
+  const sharedProvenance = !!runs[0] && !!runs[1] && (
+    (!!runs[0].sourceId && runs[0].sourceId === runs[1].sourceId) ||
+    (!!runs[0].contextSnapshotId && runs[0].contextSnapshotId === runs[1].contextSnapshotId)
+  );
+  const warnings = sharedProvenance
+    ? ["Current/prior Audit runs share one source snapshot, and Findings have no AuditRun membership key; exact run delta is UNAVAILABLE."]
+    : [];
+  return {
+    current: mapped[0] ?? null,
+    prior: mapped[1] ?? null,
+    providerChanges,
+    comparisonCurrentness: !mapped[0] ? "missing" : sharedProvenance ? "unavailable" : "current",
+    warnings,
+  };
 }
 
 export async function loadDecisionBriefOwnerInputs(
@@ -174,7 +188,7 @@ export async function loadDecisionBriefOwnerInputs(
       likelyDate: previousReport.likelyDate.toISOString(),
       confidenceAtTarget: previousReport.confidenceAtTarget,
     } : null,
-    audit: { current: audit.current, prior: audit.prior },
+    audit: { current: audit.current, prior: audit.prior, comparisonCurrentness: audit.comparisonCurrentness, warnings: audit.warnings },
     delivery: { shipped: changes.shipped },
     decisions: decisions.map((decision) => ({
       id: decision.id,
