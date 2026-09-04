@@ -11,6 +11,9 @@ import { describeSnapshot, withSnapshotProvenance } from "@/lib/reports/snapshot
 import { useProjectParam } from "@/lib/shell/useProjectParam";
 import { isDecisionBriefV1, type DecisionBriefV1 } from "@/lib/reports/decisionBrief";
 import { renderDecisionBriefPlainText } from "@/lib/reports/decisionBriefRender";
+import AudienceBriefView from "./reports/AudienceBriefView";
+import { AUDIENCE_LABELS, PURPOSE_LABELS, buildBriefRecipe, isBriefRecipeV1, type AudienceLens, type BriefPurpose, type BriefRecipeV1 } from "@/lib/reports/composer";
+import { renderAudienceBriefPlainText } from "@/lib/reports/audienceBriefRender";
 
 /** The live forecast is a comparison input, not report data. Three states,
     because "we could not resolve it" must be distinguishable from "it
@@ -39,6 +42,9 @@ interface ReportRow {
   briefVersion: string | null;
   briefSnapshot: unknown;
   mode: string | null;
+  recipeVersion: string | null;
+  briefRecipe: unknown;
+  presentationVersion: string | null;
 }
 
 function formatDate(iso: string): string {
@@ -57,8 +63,14 @@ export default function ReportsPageClient() {
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [live, setLive] = useState<LiveForecast | null>(null);
+  const [audience, setAudience] = useState<AudienceLens>("delivery-leadership");
+  const [purpose, setPurpose] = useState<BriefPurpose>("weekly-update");
   const selectedBrief = useMemo<DecisionBriefV1 | null>(
     () => selected && isDecisionBriefV1(selected.briefSnapshot) ? selected.briefSnapshot : null,
+    [selected]
+  );
+  const selectedRecipe = useMemo<BriefRecipeV1 | null>(
+    () => selected && isBriefRecipeV1(selected.briefRecipe) ? selected.briefRecipe : null,
     [selected]
   );
 
@@ -162,7 +174,7 @@ export default function ReportsPageClient() {
       const res = await fetch("/api/reports", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ scopeId }),
+        body: JSON.stringify({ scopeId, recipe: buildBriefRecipe(audience, purpose) }),
       });
       const body = await res.json();
       if (!res.ok) throw new Error(body.error ?? "Couldn't generate report.");
@@ -213,12 +225,19 @@ export default function ReportsPageClient() {
         >
           {generating ? "Generating…" : "Generate report"}
         </button>
+        <select value={audience} onChange={(event) => setAudience(event.target.value as AudienceLens)} className="rounded-md border border-[var(--i-border)] bg-[var(--i-panel)] px-3 py-2 text-xs text-[var(--i-text)]" aria-label="Brief audience">
+          {Object.entries(AUDIENCE_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+        </select>
+        <select value={purpose} onChange={(event) => setPurpose(event.target.value as BriefPurpose)} className="rounded-md border border-[var(--i-border)] bg-[var(--i-panel)] px-3 py-2 text-xs text-[var(--i-text)]" aria-label="Brief purpose">
+          {Object.entries(PURPOSE_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+        </select>
         {/* The copied text carries the snapshot's provenance with it. A
             report leaves Signal through this button and is read somewhere
             Signal cannot annotate, so the warning has to travel inside the
             text rather than live beside it on screen. */}
         {selected && snapshot && <CopyMarkdownButton markdown={withSnapshotProvenance(selected.summaryMarkdown, snapshot)} label="Copy Markdown" />}
-        {selectedBrief && <CopyMarkdownButton markdown={renderDecisionBriefPlainText(selectedBrief)} label="Copy plain text" />}
+        {selectedBrief && <CopyMarkdownButton markdown={selectedRecipe ? renderAudienceBriefPlainText(selectedBrief, selectedRecipe) : renderDecisionBriefPlainText(selectedBrief)} label="Copy plain text" />}
+        {process.env.NODE_ENV !== "production" && <a href="/reports/composer/fixture" className="report-no-print rounded-md border border-[var(--i-border)] px-3 py-1.5 text-xs text-[var(--i-signal)]">Open composer prototype</a>}
         {selected && <a href={`/reports/${encodeURIComponent(selected.id)}/print`} target="_blank" rel="noreferrer" className="report-no-print rounded-md border border-[var(--i-border)] px-3 py-1.5 text-xs text-[var(--i-text-soft)] hover:bg-white/5">Print view</a>}
         {live?.state === "ready" && <span className="report-no-print ml-auto text-[10px] uppercase tracking-wider text-[var(--i-mint)]">Current live comparison · {formatDate(live.likelyDate)}</span>}
       </div>
@@ -257,7 +276,7 @@ export default function ReportsPageClient() {
                 </div>
               )}
               {momentum && <div className="report-no-print"><MomentumChip momentum={momentum} currentConfidence={selected.confidenceAtTarget} /></div>}
-              {selectedBrief ? <DecisionBriefView brief={selectedBrief} /> : (
+              {selectedBrief && selectedRecipe ? <AudienceBriefView brief={selectedBrief} recipe={selectedRecipe} /> : selectedBrief ? <DecisionBriefView brief={selectedBrief} /> : (
                 <>
                   <div className="mb-4 rounded border border-[var(--i-amber)] bg-[var(--i-amber-soft)] px-3 py-2 text-xs text-[var(--i-amber)]">Legacy immutable report · retained exactly as generated. It is not promoted into the DecisionBriefV1 semantic model.</div>
                   <ReportView markdown={selected.summaryMarkdown} />
@@ -288,7 +307,7 @@ export default function ReportsPageClient() {
                   }`}
                 >
                   <div className="font-medium">{formatDate(r.generatedAt)}</div>
-                  <div className="mt-0.5 text-[9px] uppercase tracking-wider">{r.briefVersion ? "Decision Brief V1" : "Legacy snapshot"} · {r.mode ?? "historical"}</div>
+                  <div className="mt-0.5 text-[9px] uppercase tracking-wider">{isBriefRecipeV1(r.briefRecipe) ? `${AUDIENCE_LABELS[r.briefRecipe.audience]} brief` : r.briefVersion ? "Decision Brief V1" : "Legacy snapshot"} · {r.mode ?? "historical"}</div>
                   <div className={selected?.id === r.id ? "text-[var(--color-accent)]" : "text-[var(--color-ink-soft)]"}>
                     {formatDate(r.likelyDate)}
                     {r.confidenceAtTarget !== null && ` · ${r.confidenceAtTarget}%`}

@@ -213,6 +213,11 @@ model Report {
   // from this exact JSON rather than reassembled from newer upstream state.
   briefVersion       String?
   briefSnapshot      Json?
+  // Presentation is a frozen recipe over briefSnapshot. It may hide,
+  // reorder, or change the density of modules, but cannot change facts.
+  recipeVersion      String?
+  briefRecipe        Json?
+  presentationVersion String?
   mode               String? // "reality" | "scenario"; null for legacy rows
   scenarioSnapshot   Json?   // explicit scenario inputs, never implied defaults
 

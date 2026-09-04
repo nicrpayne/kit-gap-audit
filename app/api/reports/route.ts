@@ -16,7 +16,7 @@ export async function GET(req: NextRequest) {
 
 // Generates one immutable DecisionBriefV1 from canonical owner reads.
 export async function POST(req: NextRequest) {
-  let body: { scopeId?: string; mode?: "reality" | "scenario"; scenarioId?: string | null; scenarioSnapshot?: unknown };
+  let body: { scopeId?: string; mode?: "reality" | "scenario"; scenarioId?: string | null; scenarioSnapshot?: unknown; recipe?: unknown };
   try {
     body = await req.json();
   } catch {
@@ -45,6 +45,7 @@ export async function POST(req: NextRequest) {
       mode: body.mode ?? "reality",
       scenarioId: body.scenarioId ?? null,
       scenarioSnapshot: body.scenarioSnapshot as never,
+      recipe: body.recipe,
     });
   } catch (error) {
     return NextResponse.json(
@@ -53,5 +54,5 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  return NextResponse.json({ report: result.report, brief: result.brief });
+  return NextResponse.json({ report: result.report, brief: result.brief, recipe: result.recipe, presentation: result.presentation });
 }
