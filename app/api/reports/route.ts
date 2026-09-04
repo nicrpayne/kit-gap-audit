@@ -14,13 +14,9 @@ export async function GET(req: NextRequest) {
   return NextResponse.json({ reports });
 }
 
-// Generates a new leadership report: current Forecast + Decision Queue +
-// what shipped/resolved since the previous report for this Scope (or
-// "first report" framing if there isn't one). Reuses the same Forecast
-// pipeline as GET /api/forecast so the numbers always agree with what's
-// on that page.
+// Generates one immutable DecisionBriefV1 from canonical owner reads.
 export async function POST(req: NextRequest) {
-  let body: { scopeId?: string };
+  let body: { scopeId?: string; mode?: "reality" | "scenario"; scenarioId?: string | null; scenarioSnapshot?: unknown; recipe?: unknown };
   try {
     body = await req.json();
   } catch {
@@ -28,6 +24,14 @@ export async function POST(req: NextRequest) {
   }
   if (!body.scopeId) {
     return NextResponse.json({ error: "scopeId is required" }, { status: 400 });
+  }
+  if (body.mode && body.mode !== "reality" && body.mode !== "scenario") {
+    return NextResponse.json({ error: "mode must be reality or scenario" }, { status: 400 });
+  }
+  if (body.mode === "scenario") {
+    return NextResponse.json({
+      error: "Scenario Decision Brief generation is UNAVAILABLE until a canonical server-owned scenario read model provides the complete window and provenance. Reports will not relabel live Reality as Scenario.",
+    }, { status: 409 });
   }
 
   const scope = await prisma.scope.findUnique({ where: { id: body.scopeId } });
@@ -37,13 +41,18 @@ export async function POST(req: NextRequest) {
 
   let result;
   try {
-    result = await generateReport(scope);
+    result = await generateReport(scope, null, {
+      mode: body.mode ?? "reality",
+      scenarioId: body.scenarioId ?? null,
+      scenarioSnapshot: body.scenarioSnapshot as never,
+      recipe: body.recipe,
+    });
   } catch (error) {
     return NextResponse.json(
-      { error: `Couldn't read tickets from Linear: ${error instanceof Error ? error.message : "unknown error"}` },
+      { error: `Decision Brief generation failed: ${error instanceof Error ? error.message : "unknown error"}` },
       { status: 502 }
     );
   }
 
-  return NextResponse.json({ report: result.report });
+  return NextResponse.json({ report: result.report, brief: result.brief, recipe: result.recipe, presentation: result.presentation });
 }
