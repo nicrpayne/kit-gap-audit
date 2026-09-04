@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Signal Visual System v1 — Harmonized Audit World</title>
+<style>
+  *{box-sizing:border-box} html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#090c0f;color:#f3f0e7;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+  button,input{font:inherit;color:inherit} button{cursor:default}
+  .app{height:100vh;min-width:1024px;display:grid;grid-template-columns:76px 1fr;background:#090c0f}
+  .rail{border-right:1px solid #29323a;background:#12171b;display:flex;flex-direction:column;align-items:center;padding:18px 8px 12px;gap:8px}
+  .brand{width:42px;height:42px;border:1px solid #3a4650;border-radius:9px;display:grid;place-items:center;color:#51c9db;font-size:18px;font-weight:700;background:linear-gradient(#1c242a,#151b20);box-shadow:inset 0 1px rgba(255,255,255,.05)}
+  .nav{margin-top:16px;width:100%;display:flex;flex-direction:column;gap:4px}
+  .nav div{height:48px;border-radius:7px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;color:#808c95;font-size:8px;letter-spacing:.05em}
+  .nav .active{background:#1a2930;color:#51c9db;box-shadow:inset 2px 0 #51c9db}.nav svg{width:16px;height:16px}.railfoot{margin-top:auto;color:#808c95;font-size:8px;text-align:center;line-height:1.5}
+  .main{min-width:0;display:grid;grid-template-rows:44px 1fr}.top{background:#151b20;border-bottom:1px solid #29323a;display:flex;align-items:center;padding:0 15px;gap:12px}
+  .title{font-size:12px;font-weight:650}.own{font-size:10px;color:#808c95}.scope{margin-left:auto;border:1px solid #3a4650;background:#1c242a;border-radius:6px;padding:6px 10px;font-size:10px}.current{color:#51c9db;font-size:9px;letter-spacing:.11em;text-transform:uppercase}.run{border:1px solid #51c9db;background:#16282d;color:#b9eef4;border-radius:6px;padding:7px 11px;font-size:10px}
+  .world{position:relative;overflow:hidden;background:#0e1317}
+  .world:before{content:"";position:absolute;inset:0;background-image:linear-gradient(30deg,rgba(255,255,255,.024) 12%,transparent 12.5%,transparent 87%,rgba(255,255,255,.024) 87.5%,rgba(255,255,255,.024)),linear-gradient(150deg,rgba(255,255,255,.024) 12%,transparent 12.5%,transparent 87%,rgba(255,255,255,.024) 87.5%,rgba(255,255,255,.024)),linear-gradient(30deg,rgba(255,255,255,.024) 12%,transparent 12.5%,transparent 87%,rgba(255,255,255,.024) 87.5%,rgba(255,255,255,.024));background-size:46px 80px;background-position:0 0,0 0,23px 40px;opacity:.55}
+  .map{position:absolute;inset:0 340px 0 0}.map svg{width:100%;height:100%;display:block}
+  .widget{position:absolute;background:rgba(21,27,32,.965);border:1px solid #3a4650;border-radius:8px;box-shadow:0 18px 42px rgba(0,0,0,.42),inset 0 1px rgba(255,255,255,.035);z-index:4}
+  .layout{top:14px;left:14px;padding:5px;display:flex;gap:4px}.seg{border:0;border-radius:5px;background:transparent;color:#808c95;padding:7px 10px;font-size:9px;letter-spacing:.09em;text-transform:uppercase}.seg.on{background:#243038;color:#f3f0e7;box-shadow:inset 0 -2px #51c9db}
+  .search{top:14px;right:356px;width:292px;padding:8px 10px;display:flex;align-items:center;gap:8px}.search span{color:#63acd0;font-size:13px}.search input{width:100%;border:0;outline:0;background:transparent;font-size:10px;color:#a1abb3}.key{border:1px solid #29323a;border-radius:4px;color:#808c95;font-size:8px;padding:2px 4px}
+  .overview{top:62px;left:14px;width:188px;padding:12px}.eyebrow{font-size:8px;text-transform:uppercase;letter-spacing:.16em;color:#808c95}.overview .big{font-size:24px;font-weight:680;margin-top:8px}.overview .sub{font-size:9px;color:#a1abb3;margin-top:4px}.ticks{display:grid;grid-template-columns:repeat(3,1fr);gap:7px;margin-top:10px;border-top:1px solid #29323a;padding-top:9px}.ticks b{display:block;font-size:11px}.ticks span{font-size:7px;letter-spacing:.1em;text-transform:uppercase;color:#808c95}.cyan{color:#51c9db}.amber{color:#e3b455}.coral{color:#f07162}.mint{color:#53d7aa}.violet{color:#a397fa}.blue{color:#63acd0}.silver{color:#bec9d0}
+  .legend{left:14px;bottom:14px;width:302px;padding:10px 12px}.legendhead{display:flex;align-items:center;justify-content:space-between}.legendgrid{display:grid;grid-template-columns:1fr 1fr;gap:8px 15px;margin-top:9px;font-size:8px;color:#a1abb3}.sample{display:flex;align-items:center;gap:7px}.line{width:24px;border-top:1px solid #bec9d0}.line.dash{border-top-style:dashed}.line.stitch{border-top:2px dotted #bec9d0}.dot{width:7px;height:7px;border-radius:50%;background:#51c9db}.diamond{width:7px;height:7px;transform:rotate(45deg);border:1px solid #e3b455}
+  .trace{left:328px;bottom:14px;padding:9px 12px;display:flex;align-items:center;gap:9px;font-size:9px}.trace strong{color:#51c9db;text-transform:uppercase;letter-spacing:.12em;font-size:8px}.trace .route{color:#a1abb3}.trace .clear{border-left:1px solid #29323a;padding-left:9px;color:#808c95}
+  .inspect{top:14px;right:14px;bottom:14px;width:326px;display:flex;flex-direction:column;overflow:hidden}.accent{height:2px;background:#f07162}.ihead{padding:13px 14px 12px;border-bottom:1px solid #29323a}.irow{display:flex;align-items:center;gap:7px}.riskmark{width:9px;height:9px;background:#f07162;clip-path:polygon(50% 0,100% 100%,0 100%)}.state{font-size:8px;text-transform:uppercase;letter-spacing:.13em;color:#f07162}.close{margin-left:auto;color:#808c95;font-size:12px}.iname{font-size:14px;line-height:1.35;margin-top:9px;font-weight:620}.meta{margin-top:7px;display:flex;gap:7px;font-size:8px;color:#a1abb3}.badge{border:1px solid #3a4650;border-radius:4px;padding:3px 5px}.badge.att{color:#e3b455;border-color:#66542e}.ibody{min-height:0;overflow:auto;padding:13px 14px}.section{padding-bottom:13px;margin-bottom:13px;border-bottom:1px solid #29323a}.section:last-child{border:0}.label{font-size:8px;letter-spacing:.15em;text-transform:uppercase;color:#808c95;margin-bottom:7px}.claim{font-size:11px;line-height:1.52;color:#d6d7d1}.compare{display:grid;grid-template-columns:1fr 18px 1fr;gap:7px;align-items:stretch}.truth{background:#070a0c;border:1px solid #29323a;border-radius:6px;padding:9px}.truth.currenttruth{border-color:#356f78}.truth .cap{font-size:7px;letter-spacing:.12em;text-transform:uppercase;color:#51c9db}.truth p{font-size:9px;line-height:1.4;color:#a1abb3;margin:6px 0 0}.arrow{display:grid;place-items:center;color:#808c95}.source{border:1px solid #29323a;border-radius:6px;padding:9px;margin-top:7px;display:flex;gap:8px;align-items:center}.sourceicon{width:22px;height:22px;border:1px solid #456879;border-radius:5px;display:grid;place-items:center;color:#63acd0;font-size:10px}.source b{display:block;font-size:9px;color:#bec9d0}.source small{font-size:8px;color:#808c95}.iactions{margin-top:auto;padding:11px 14px;border-top:1px solid #29323a;display:grid;grid-template-columns:1fr 1fr;gap:7px}.primary{grid-column:1/-1;background:#173039;border:1px solid #51c9db;color:#b9eef4;border-radius:6px;padding:9px;font-size:9px}.secondary{background:#1c242a;border:1px solid #3a4650;color:#a1abb3;border-radius:6px;padding:8px;font-size:9px}
+  .maplabel{font-size:8px;letter-spacing:.16em;fill:#808c95}.nlabel{font-size:8px;fill:#a1abb3}.smalllabel{font-size:7px;fill:#808c95}.web{stroke:#29323a;stroke-width:1}.prov{stroke:#63acd0;stroke-width:1.25;fill:none}.infer{stroke-dasharray:6 4}.external{stroke-dasharray:2 3}.selectedHalo{fill:none;stroke:#bec9d0;stroke-width:1;opacity:.6}.riskHalo{fill:#f07162;opacity:.08}
+</style>
+</head>
+<body>
+<div class="app">
+  <aside class="rail">
+    <div class="brand">S</div>
+    <div class="nav">
+      <div><svg viewBox="0 0 20 20"><circle cx="10" cy="10" r="6" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M10 10l4-4" stroke="currentColor"/></svg><span>Control</span></div>
+      <div class="active"><svg viewBox="0 0 20 20"><circle cx="9" cy="9" r="5" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M13 13l4 4" stroke="currentColor" stroke-width="1.6"/></svg><span>Audit</span></div>
+      <div><svg viewBox="0 0 20 20"><path d="M4 12l4-4 3 3 5-6" fill="none" stroke="currentColor" stroke-width="1.6"/></svg><span>Forecast</span></div>
+      <div><svg viewBox="0 0 20 20"><path d="M4 6h12M4 10h9M4 14h6" stroke="currentColor" stroke-width="1.6"/></svg><span>Portfolio</span></div>
+      <div><svg viewBox="0 0 20 20"><path d="M4 5h12M4 10h12M4 15h12" stroke="currentColor" stroke-width="1.2"/><circle cx="8" cy="5" r="2" fill="currentColor"/><circle cx="13" cy="10" r="2" fill="currentColor"/><circle cx="6" cy="15" r="2" fill="currentColor"/></svg><span>Timeline</span></div>
+    </div>
+    <div class="railfoot">⌘K<br>Search</div>
+  </aside>
+  <main class="main">
+    <header class="top"><span class="title">Audit World</span><span class="own">What the plan does not yet account for, and where it came from</span><span class="scope">JSA ▾</span><span class="current">Current · Aug 26</span><button class="run">Run audit</button></header>
+    <section class="world">
+      <div class="map">
+        <svg viewBox="0 0 860 676" role="img" aria-label="Audit World with Reality at the center, semantic lanes, evidence, and a selected risk trace">
+          <g opacity=".65">
+            <circle cx="435" cy="337" r="79" fill="none" stroke="#29323a"/><circle cx="435" cy="337" r="162" fill="none" stroke="#29323a" stroke-dasharray="3 8"/><circle cx="435" cy="337" r="242" fill="none" stroke="#29323a" stroke-dasharray="3 9"/>
+            <path class="web" d="M435 337L324 230M435 337L565 247M435 337L609 398M435 337L373 511M435 337L213 386"/><path class="web" d="M324 230L184 178M565 247L699 164M609 398L733 477M373 511L298 615M213 386L84 441"/>
+          </g>
+          <text x="420" y="198" class="maplabel">LINEAR</text><text x="588" y="292" class="maplabel">EVIDENCE</text><text x="544" y="470" class="maplabel">DECISIONS</text><text x="280" y="493" class="maplabel">CAPACITY</text><text x="203" y="311" class="maplabel">EXTERNAL INTELLIGENCE</text>
+          <path class="prov external" d="M188 183C244 217 272 245 326 274S392 315 435 337" opacity=".72"/><path class="prov infer" d="M188 183C226 276 260 352 339 432S409 375 435 337" opacity=".38"/>
+          <g transform="translate(435 337)"><circle r="34" fill="#51c9db" opacity=".08"/><circle r="25" fill="#17363c" stroke="#51c9db"/><circle r="17" fill="#51c9db" opacity=".16"/><text text-anchor="middle" y="-2" font-size="8" fill="#f3f0e7">Signal</text><text text-anchor="middle" y="8" font-size="7" fill="#51c9db">Reality</text></g>
+          <g transform="translate(324 230)"><rect x="-7" y="-7" width="14" height="14" rx="3" fill="#15232a" stroke="#51c9db"/><text x="12" y="3" class="nlabel">SOF-510</text></g>
+          <g transform="translate(565 247)"><rect x="-8" y="-6" width="16" height="12" rx="2" fill="#172229" stroke="#63acd0"/><text x="13" y="3" class="nlabel">Transcript · Aug 19</text></g>
+          <g transform="translate(609 398)"><path d="M0-9L9 0 0 9-9 0Z" fill="#211d37" stroke="#a397fa"/><text x="14" y="3" class="nlabel">Vendor contract</text></g>
+          <g transform="translate(373 511)"><circle r="7" fill="#172921" stroke="#53d7aa"/><path d="M-3 0l2 3 5-7" stroke="#53d7aa" fill="none"/><text x="13" y="3" class="nlabel">Capacity confirmed</text></g>
+          <g transform="translate(188 183)"><circle class="riskHalo" r="24"/><circle class="selectedHalo" r="17"/><path d="M0-8L8 7H-8Z" fill="#2a1718" stroke="#f07162"/><text x="14" y="-2" class="nlabel">Integration date unconfirmed</text><text x="14" y="9" class="smalllabel">Critical · External</text></g>
+          <g transform="translate(266 269)"><circle r="5" fill="#1a242a" stroke="#bec9d0"/><text x="10" y="3" class="smalllabel">“callback contract…”</text></g>
+          <g transform="translate(339 432)"><circle r="5" fill="#1a242a" stroke="#e3b455" stroke-dasharray="2 2"/><text x="10" y="3" class="smalllabel">Needs resolution</text></g>
+          <g opacity=".56">
+            <circle cx="699" cy="164" r="6" fill="#172229" stroke="#63acd0"/><circle cx="733" cy="477" r="6" fill="#211d37" stroke="#a397fa"/><circle cx="298" cy="615" r="6" fill="#172921" stroke="#53d7aa"/><circle cx="84" cy="441" r="6" fill="#22272b" stroke="#808c95"/>
+          </g>
+        </svg>
+      </div>
+      <div class="widget layout"><button class="seg">Rings</button><button class="seg on">Constellations</button></div>
+      <label class="widget search"><span>⌕</span><input value="Search 427 things…" aria-label="Search"><span class="key">/</span></label>
+      <section class="widget overview"><div class="eyebrow">World overview</div><div class="big">427</div><div class="sub">things in current project truth</div><div class="ticks"><div><b class="coral">17</b><span>Risk</span></div><div><b class="amber">9</b><span>Attention</span></div><div><b class="mint">31</b><span>Accepted</span></div></div></section>
+      <section class="widget legend"><div class="legendhead"><div class="eyebrow">Legend</div><span class="key">L</span></div><div class="legendgrid"><div class="sample"><i class="line"></i>Attested</div><div class="sample"><i class="dot"></i>Current</div><div class="sample"><i class="line dash"></i>Inferred</div><div class="sample"><i class="diamond"></i>Attention</div><div class="sample"><i class="line stitch"></i>External</div><div class="sample"><i class="riskmark"></i>Critical</div></div></section>
+      <section class="widget trace"><strong>Trace active</strong><span class="route">Risk → passage → source → Reality · 3 hops</span><span class="clear">Clear</span></section>
+      <aside class="widget inspect">
+        <div class="accent"></div><div class="ihead"><div class="irow"><i class="riskmark"></i><span class="state">Critical risk</span><span class="close">×</span></div><div class="iname">Integration date depends on a contract the vendor has not confirmed.</div><div class="meta"><span class="badge">Current</span><span class="badge att">External claim</span><span class="badge">Human review</span></div></div>
+        <div class="ibody">
+          <div class="section"><div class="label">Why Signal believes this</div><div class="compare"><div class="truth currenttruth"><div class="cap">A · Current Reality</div><p>Docufly is recorded as waiting, with no resolution stored.</p></div><div class="arrow">→</div><div class="truth"><div class="cap violet">B · Candidate</div><p>Resolve with a note documenting the confirmed integration date.</p></div></div></div>
+          <div class="section"><div class="label">Provenance</div><div class="source"><span class="sourceicon">≋</span><div><b>JSA structured intelligence v4</b><small>accepted Aug 26 · external producer</small></div></div><div class="source"><span class="sourceicon">¶</span><div><b>“the callback contract…”</b><small>evidence passage · transcript Aug 19</small></div></div></div>
+          <div class="section"><div class="label">Consequence if confirmed</div><div class="claim">The delivery dependency becomes attested; Forecast may then use the confirmed timing.</div></div>
+        </div>
+        <div class="iactions"><button class="primary">Trace in world · active</button><button class="secondary">Open source</button><button class="secondary">Open full review</button></div>
+      </aside>
+    </section>
+  </main>
+</div>
+</body>
+</html>
