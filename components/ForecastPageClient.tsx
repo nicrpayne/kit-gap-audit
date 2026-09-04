@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import Link from "@/components/instrument/SignalLink";
+import Link from "next/link";
 import ForecastView from "./ForecastView";
 
 interface ScopeOption {

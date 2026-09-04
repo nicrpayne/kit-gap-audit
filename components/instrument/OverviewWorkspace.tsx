@@ -14,7 +14,7 @@
 // workspace preset switch.
 
 import { useMemo, useState } from "react";
-import Link from "@/components/instrument/SignalLink";
+import Link from "next/link";
 import ForecastField from "@/components/portfolio/ForecastField";
 import InstrumentShell from "@/components/instrument/InstrumentShell";
 import ScenarioStrip, { chipsFor } from "@/components/instrument/ScenarioStrip";

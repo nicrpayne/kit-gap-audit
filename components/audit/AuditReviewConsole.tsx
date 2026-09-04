@@ -46,7 +46,6 @@ export default function AuditReviewConsole({
   result,
   awaitingEvidence,
   provenance,
-  variant = "console",
 }: {
   model: TruthMapModel;
   finding: TruthFinding | null;
@@ -59,9 +58,6 @@ export default function AuditReviewConsole({
   busy: ActionId | null;
   result: { ok: boolean; message: string } | null;
   awaitingEvidence: boolean;
-  /** The governed actions are unchanged; only their Audit-local container
-      changes between the historic bottom console and the world side sheet. */
-  variant?: "console" | "sheet";
 }) {
   const [text, setText] = useState("");
 
@@ -99,14 +95,10 @@ export default function AuditReviewConsole({
   return (
     <div
       data-shoot="review-console-open"
-      data-review-variant={variant}
-      className={variant === "sheet" ? "min-h-full" : "shrink-0"}
-      style={{ background: "var(--i-panel)" }}
+      className="shrink-0"
+      style={{ background: "var(--i-panel)", borderTop: "1px solid var(--i-border)" }}
     >
-      <div
-        className={variant === "sheet" ? "grid grid-cols-1 gap-px" : "grid grid-cols-[248px_1fr_minmax(340px,380px)] gap-px"}
-        style={{ background: "var(--i-border)" }}
-      >
+      <div className="grid grid-cols-[248px_1fr_minmax(340px,380px)] gap-px" style={{ background: "var(--i-border)" }}>
         {/* ── EVIDENCE SOLO ────────────────────────────────────────── */}
         <div className="px-4 py-3" style={{ background: "var(--i-panel)" }}>
           <button

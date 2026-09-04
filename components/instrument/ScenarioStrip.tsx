@@ -10,7 +10,7 @@
 // owned by the instrument that owns the underlying value (Portfolio for
 // capacity), and this strip never grows a Commit button of its own.
 
-import Link from "@/components/instrument/SignalLink";
+import Link from "next/link";
 import type { SuiteScenario } from "@/lib/instrument/useProject";
 
 export interface ScenarioChip {

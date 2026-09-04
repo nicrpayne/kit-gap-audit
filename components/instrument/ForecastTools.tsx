@@ -9,7 +9,7 @@ import type { DecisionGate, SimulationResult } from "@/lib/forecast/simulate";
 import type { ProjectScope, ProjectSource } from "@/lib/instrument/useProject";
 import { fmtDay, fmtFull } from "@/lib/instrument/useProject";
 import { confidenceAtDay } from "@/lib/forecast/simulate";
-import Link from "@/components/instrument/SignalLink";
+import Link from "next/link";
 
 // ── GATE ─────────────────────────────────────────────────────────────────
 

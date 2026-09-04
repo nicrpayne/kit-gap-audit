@@ -16,7 +16,6 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { TimelineEntry, TimelineLane, ForecastSnapshot, TimelineCandidate } from "@/lib/timeline/entries";
-import { historicalForecastReading, type TimelineForecastReading } from "@/lib/timeline/forecastTruth";
 import { xFor, tFor, ticksFor, subTicksFor, scaleFor, fmtDay, type TimeView } from "@/lib/timeline/geometry";
 import { FAMILY_COLOR } from "./familyColor";
 import EventModule, { EventGroupModule } from "./EventModule";
@@ -67,7 +66,7 @@ interface Props {
   entries: TimelineEntry[];
   candidates: TimelineCandidate[];
   snapshotsByScope: Record<string, ForecastSnapshot[]>;
-  memoryByScope: Record<string, TimelineForecastReading | null>;
+  memoryByScope: Record<string, ForecastSnapshot | null>;
   view: TimeView;
   nowT: number;
   playheadT: number;
@@ -377,7 +376,7 @@ function HistoryCluster({
 function MemoryBand({
   snap, view, y, ghost, reducedMotion, detailed, measured,
 }: {
-  snap: TimelineForecastReading; view: TimeView; y: number; ghost?: boolean; reducedMotion?: boolean;
+  snap: ForecastSnapshot; view: TimeView; y: number; ghost?: boolean; reducedMotion?: boolean;
   /** The lane is OPENED. Adds the things that are only worth the ink when
       this project is the one being worked on: p10/p90 named as dates, and
       the confidence the Report held. */
@@ -395,8 +394,7 @@ function MemoryBand({
   const tT = snap.targetDate ? new Date(snap.targetDate).getTime() : null;
   const xT = tT !== null ? xFor(view, tT) : null;
   const h = 26;
-  const id = `mem-${snap.id.replace(/[^a-zA-Z0-9_-]/g, "-")}${ghost ? "-g" : ""}`;
-  const accent = snap.temporalRole === "live" ? "var(--i-signal)" : "var(--i-violet)";
+  const id = `mem-${snap.reportId}${ghost ? "-g" : ""}`;
   const op = ghost ? 0.3 : 1;
 
   // ── THE ONE THING A FORECAST AND A TARGET HAVE TO SAY TO EACH OTHER ──
@@ -424,7 +422,6 @@ function MemoryBand({
   return (
     <g
       data-shoot={ghost ? "forecast-memory-ghost" : "forecast-memory"}
-      data-temporal-role={snap.temporalRole}
       opacity={op}
       // A READOUT, NOT A CONTROL. The capsule is computed and cannot be
       // grabbed, and it is drawn above the lane content — so leaving it
@@ -434,11 +431,11 @@ function MemoryBand({
     >
       <defs>
         <linearGradient id={id} x1="0" x2="1">
-          <stop offset="0%" stopColor={accent} stopOpacity={0.05} />
-          <stop offset="26%" stopColor={accent} stopOpacity={0.3} />
-          <stop offset="50%" stopColor={accent} stopOpacity={0.46} />
-          <stop offset="74%" stopColor={accent} stopOpacity={0.3} />
-          <stop offset="100%" stopColor={accent} stopOpacity={0.05} />
+          <stop offset="0%" stopColor="var(--i-violet)" stopOpacity={0.05} />
+          <stop offset="26%" stopColor="var(--i-violet)" stopOpacity={0.3} />
+          <stop offset="50%" stopColor="var(--i-violet)" stopOpacity={0.46} />
+          <stop offset="74%" stopColor="var(--i-violet)" stopOpacity={0.3} />
+          <stop offset="100%" stopColor="var(--i-violet)" stopOpacity={0.05} />
         </linearGradient>
         <linearGradient id={`${id}-d`} x1="0" y1="0" x2="0" y2="1">
           <stop offset="0%" stopColor="#ffffff" stopOpacity={0.1} />
@@ -455,12 +452,12 @@ function MemoryBand({
       <rect x={x10} y={y - h / 2} width={Math.max(2, x90 - x10)} height={h} rx={h / 2} fill={`url(#${id}-d)`} />
       <rect
         x={x10} y={y - h / 2} width={Math.max(2, x90 - x10)} height={h} rx={h / 2}
-        fill="none" stroke={accent} strokeWidth={0.9} opacity={0.4}
+        fill="none" stroke="var(--i-violet)" strokeWidth={0.9} opacity={0.4}
       />
       {/* p10 / p90 terminals — the range has ends, and they are stated */}
       {[x10, x90].map((x, i) => (
         <g key={i}>
-          <rect x={x - 1} y={y - h / 2 + 3} width={2} height={h - 6} rx={1} fill={accent} opacity={0.7} />
+          <rect x={x - 1} y={y - h / 2 + 3} width={2} height={h - 6} rx={1} fill="var(--i-violet)" opacity={0.7} />
         </g>
       ))}
       {/* HOVERED OR OPENED: the ends name themselves. The capsule is the same
@@ -469,19 +466,19 @@ function MemoryBand({
           tells you. */}
       {measured && !ghost && (
         <g style={{ pointerEvents: "none" }} data-shoot="memory-bounds">
-          <text x={x10 - 5} y={y + 3} fontSize={8} textAnchor="end" fill={accent} opacity={0.7}>
+          <text x={x10 - 5} y={y + 3} fontSize={8} textAnchor="end" fill="var(--i-violet)" opacity={0.7}>
             {fmtDay(new Date(snap.earliestDate).getTime())}
           </text>
-          <text x={x90 + 5} y={y + 3} fontSize={8} fill={accent} opacity={0.7}>
+          <text x={x90 + 5} y={y + 3} fontSize={8} fill="var(--i-violet)" opacity={0.7}>
             {fmtDay(new Date(snap.latestDate).getTime())}
           </text>
         </g>
       )}
       {/* p50 — DOMINANT. What we believed the likely landing was. */}
-      <rect x={x50 - 2} y={y - h / 2 - 5} width={4} height={h + 10} rx={1.5} fill={accent} />
+      <rect x={x50 - 2} y={y - h / 2 - 5} width={4} height={h + 10} rx={1.5} fill="var(--i-violet)" />
       <rect x={x50 - 2} y={y - h / 2 - 5} width={4} height={h + 10} rx={1.5} fill="#ffffff" opacity={0.18} />
       {!ghost && (
-        <text x={x50} y={y - h / 2 - 9} fontSize={8.5} textAnchor="middle" fill={accent} style={{ letterSpacing: "0.06em" }}>
+        <text x={x50} y={y - h / 2 - 9} fontSize={8.5} textAnchor="middle" fill="var(--i-violet)" style={{ letterSpacing: "0.06em" }}>
           {fmtDay(new Date(snap.likelyDate).getTime())}
         </text>
       )}
@@ -1150,7 +1147,7 @@ export default function TimeField({
                   repeated down eight rows is noise saying nothing. The master
                   display already carries the em dash for these projects. */}
               {rail ? null : mem ? (
-                <span className="i-readout text-[13px] leading-none mt-1" style={{ color: mem.temporalRole === "live" ? "var(--i-signal)" : "var(--i-violet)" }}>
+                <span className="i-readout text-[13px] leading-none mt-1" style={{ color: "var(--i-violet)" }}>
                   {fmtDay(new Date(mem.likelyDate).getTime())}
                 </span>
               ) : (
@@ -1837,7 +1834,7 @@ export default function TimeField({
             if (!mem && !ghost) return null;
             return (
               <g key={`mem-${box.scopeId}`}>
-                {ghost && <MemoryBand snap={historicalForecastReading(ghost)} view={view} y={yMem} ghost reducedMotion={reducedMotion} />}
+                {ghost && <MemoryBand snap={ghost} view={view} y={yMem} ghost reducedMotion={reducedMotion} />}
                 {mem && (
                   <MemoryBand
                     snap={mem} view={view} y={yMem} reducedMotion={reducedMotion}

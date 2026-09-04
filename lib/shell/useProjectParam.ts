@@ -86,21 +86,12 @@ export function useProjectParam(available: string[] | null): ProjectParam {
   const select = useCallback(
     (id: string) => {
       const next = new URLSearchParams(params.toString());
-      if (raw && raw !== id) {
-        // A selected canonical object belongs to the project it was opened
-        // from. Carrying it into a deliberate project switch produces an
-        // impossible project/object pair, so only the project changes and
-        // object identity returns to the unselected state.
-        next.delete("select");
-        next.delete("decisionId");
-        next.delete("findingId");
-      }
       next.set(PROJECT_PARAM, id);
       // PUSH, so back and forward walk the selections. Replace would make
       // the back button skip past everything the user did on this page.
       router.push(`${pathname}?${next.toString()}`, { scroll: false });
     },
-    [params, pathname, router, raw]
+    [params, pathname, router]
   );
 
   return { projectId, invalid, select };

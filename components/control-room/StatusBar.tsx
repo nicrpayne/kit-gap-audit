@@ -8,7 +8,7 @@
 // the product has no health model and grading a feed needs a threshold
 // nobody set.
 
-import Link from "@/components/instrument/SignalLink";
+import Link from "next/link";
 
 export default function StatusBar({
   cells,

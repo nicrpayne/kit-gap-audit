@@ -103,13 +103,6 @@ interface ScopedIssuesQueryData {
 const ISSUE_CACHE_TTL_MS = 2 * 60 * 1000;
 const issueCache = new Map<string, { at: number; issues: LinearIssueSummary[] }>();
 
-/** A governed Linear write changes the canonical work set immediately.
- * Drop every filtered view so the next Forecast/Scope read cannot retain a
- * pre-write list and temporarily lose the newly represented Finding. */
-export function invalidateIssueCache(): void {
-  issueCache.clear();
-}
-
 // All non-canceled issues matching a Scope: team key, optionally narrowed by
 // one or more Linear project names (union -- e.g. a product Scope pulling
 // its own project plus shared Platform work) and/or a label. Scopes are

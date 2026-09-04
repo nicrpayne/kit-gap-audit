@@ -19,7 +19,7 @@
 // drift apart.
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { createLinearIssue, invalidateIssueCache } from "@/lib/linear";
+import { createLinearIssue } from "@/lib/linear";
 import { composeTicketPayload } from "@/lib/findings/ticketPayload";
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -59,7 +59,6 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       description: payload.description,
       teamKey: payload.teamKey,
     });
-    invalidateIssueCache();
 
     const updated = await prisma.finding.update({
       where: { id },

@@ -29,7 +29,7 @@
 // beside every changed one, and the ghost on the field. Colour says
 // "decision"; the mode says "not real yet". See the truth audit.
 
-import Link from "@/components/instrument/SignalLink";
+import Link from "next/link";
 import type { Point } from "@/lib/control-room/read";
 
 export type Domain = "reality" | "choices" | "capacity" | "outcome" | "time";

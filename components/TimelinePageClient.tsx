@@ -44,13 +44,10 @@ import LanesControl, { applyLaneView, EMPTY_LANE_VIEW, type LaneView } from "@/c
 import { STORY_LAYERS, type LayerState } from "@/lib/timeline/story";
 import { layoutLanes, isDormant } from "@/lib/timeline/plan";
 import { spokenSourceLabel } from "@/lib/timeline/producer";
-import { useProject } from "@/lib/instrument/useProject";
-import { forecastReadingForTime, liveForecastReading } from "@/lib/timeline/forecastTruth";
 import {
   EMPTY_UNDO, record, undoTop, redoTop, describe, remapId,
   type UndoState, type TimelineCommand, type PlanSnapshot,
 } from "@/lib/timeline/undo";
-import { contextualHref } from "@/lib/shell/context";
 
 const MIN_SPAN = 21 * DAY;
 /** How long a crossed event stays articulated before settling back into
@@ -69,8 +66,6 @@ const MIN_CELL_W = 128;
 
 export default function TimelinePageClient({ embedded = false }: { embedded?: boolean } = {}) {
   const router = useRouter();
-  const routeParams = useSearchParams();
-  const project = useProject();
   const [data, setData] = useState<TimelineProjection | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -434,22 +429,6 @@ export default function TimelinePageClient({ embedded = false }: { embedded?: bo
   }, [memoryByScope]);
 
   const atNow = playheadT !== null && Math.abs(playheadT - nowT) < 12 * 3600 * 1000;
-
-  // LIVE and HISTORICAL are different types before they are different
-  // colours. At NOW the value comes only from the current Forecast read
-  // model; away from NOW it comes only from an immutable Report snapshot.
-  const forecastByScope = useMemo(() => {
-    const out: Record<string, ReturnType<typeof forecastReadingForTime>> = {};
-    if (!data) return out;
-    for (const lane of data.lanes) {
-      const sim = project.baseline?.get(lane.scopeId) ?? null;
-      const live = sim
-        ? liveForecastReading(lane.scopeId, data.now, sim, lane.targetDate)
-        : null;
-      out[lane.scopeId] = forecastReadingForTime(atNow, live, memoryByScope[lane.scopeId] ?? null);
-    }
-    return out;
-  }, [data, project.baseline, atNow, memoryByScope]);
 
   // ── WHAT THE INSTRUMENT IS READING ─────────────────────────────────
   //
@@ -958,22 +937,20 @@ export default function TimelinePageClient({ embedded = false }: { embedded?: bo
   // stops drawing its own identity strip, because the Control Room already
   // said where you are. Nothing below this line branches on it again except
   // the outermost wrapper.
-  const frame = "flex h-full w-full items-center justify-center";
+  const frame = embedded ? "flex h-full w-full items-center justify-center" : "instrument fixed inset-0 flex items-center justify-center";
   if (err) {
-    const content = (
+    return (
       <div className={frame}>
         <p className="text-[12px]" style={{ color: "var(--i-red)" }}>{err}</p>
       </div>
     );
-    return embedded ? content : <InstrumentShell>{content}</InstrumentShell>;
   }
   if (!data || !view || playheadT === null) {
-    const content = (
+    return (
       <div className={frame}>
         <p className="i-label">Reading the project&rsquo;s history…</p>
       </div>
     );
-    return embedded ? content : <InstrumentShell>{content}</InstrumentShell>;
   }
 
   // EVERYTHING WAITING OUTSIDE REALITY.
@@ -986,9 +963,9 @@ export default function TimelinePageClient({ embedded = false }: { embedded?: bo
   // ones because they can be placed, the dateless ones because they are still
   // real things the project may need.
   const pending = data.candidates;
-  const memoryLanes = visibleLanes.filter((l) => forecastByScope[l.scopeId]);
+  const memoryLanes = visibleLanes.filter((l) => memoryByScope[l.scopeId]);
 
-  const memoryLead = memoryLanes.length > 0 ? forecastByScope[memoryLanes[0].scopeId]! : null;
+  const memoryLead = memoryLanes.length > 0 ? memoryByScope[memoryLanes[0].scopeId]! : null;
 
   // HOW MANY PROJECTS SHARE THE DISPLAY. Four should feel luxurious and
   // eight should still be readable, so the type steps down once rather than
@@ -1067,9 +1044,9 @@ export default function TimelinePageClient({ embedded = false }: { embedded?: bo
               </div>
               <div className="text-[8.5px] text-[var(--i-text-faint)] mt-1.5">
                 {atNow
-                  ? "Current Forecast"
+                  ? "Current project truth"
                   : memoryLead
-                    ? `Report snapshot · as of ${fmtDay(new Date(memoryLead.asOf).getTime())}`
+                    ? `Last report ${fmtDay(new Date(memoryLead.generatedAt).getTime())}`
                     : "No forecast snapshot yet"}
               </div>
             </div>
@@ -1100,8 +1077,8 @@ export default function TimelinePageClient({ embedded = false }: { embedded?: bo
             data-shoot="memory-readout"
           >
             {visibleLanes.map((lane) => {
-              const m = forecastByScope[lane.scopeId];
-              const stale = m && m.temporalRole === "historical" ? Math.floor((playheadT - new Date(m.asOf).getTime()) / DAY) : null;
+              const m = memoryByScope[lane.scopeId];
+              const stale = m ? Math.floor((playheadT - new Date(m.generatedAt).getTime()) / DAY) : null;
               const live = hoveredLane === lane.scopeId;
               return (
                 <div
@@ -1136,7 +1113,7 @@ export default function TimelinePageClient({ embedded = false }: { embedded?: bo
                       <div
                         className="i-readout leading-none mt-1.5"
                         data-shoot={`memory-likely-${lane.scopeId}`}
-                        style={{ fontSize: dense ? 13.5 : 17, color: m.temporalRole === "live" ? "var(--i-signal)" : "var(--i-violet)" }}
+                        style={{ fontSize: dense ? 13.5 : 17, color: "var(--i-violet)" }}
                       >
                         {fmtDay(new Date(m.likelyDate).getTime())}
                       </div>
@@ -1152,7 +1129,6 @@ export default function TimelinePageClient({ embedded = false }: { embedded?: bo
                       >
                         {fmtDay(new Date(m.earliestDate).getTime())} – {fmtDay(new Date(m.latestDate).getTime())}
                         {m.confidenceAtTarget !== null && ` · ${m.confidenceAtTarget}%`}
-                        {m.temporalRole === "live" ? " · Current Forecast" : ` · Report snapshot · as of ${fmtDay(new Date(m.asOf).getTime())}`}
                         {stale !== null && stale > 0 && ` · held ${stale}d`}
                       </div>
                     </>
@@ -1271,7 +1247,7 @@ export default function TimelinePageClient({ embedded = false }: { embedded?: bo
               entries={data.entries}
               candidates={data.candidates}
               snapshotsByScope={data.snapshotsByScope}
-              memoryByScope={forecastByScope}
+              memoryByScope={memoryByScope}
               view={{ ...view, width: fieldW }}
               nowT={nowT}
               playheadT={playheadT}
@@ -1283,7 +1259,7 @@ export default function TimelinePageClient({ embedded = false }: { embedded?: bo
               onSelect={(id) => { setPlaying(false); setSelectedId(id); }}
               onHoverLane={setHoveredLane}
               onScrub={(t) => { setPlaying(false); setPlayheadT(Math.max(bounds.startT, Math.min(bounds.endT, t))); }}
-              onOpenScope={(scopeId) => router.push(contextualHref(`/scope?project=${encodeURIComponent(scopeId)}`, routeParams))}
+              onOpenScope={(scopeId) => router.push(`/scope?scopeId=${scopeId}`)}
               onViewChange={setView}
               bounds={bounds}
               reducedMotion={reducedMotion}
@@ -1292,7 +1268,7 @@ export default function TimelinePageClient({ embedded = false }: { embedded?: bo
               onPlanRetime={retimePlanObject}
               onPlanCreate={createPlanObject}
               articulating={articulating}
-              ghostByScope={atNow ? {} : ghostByScope}
+              ghostByScope={ghostByScope}
               deltaByScope={deltaByScope}
               layers={layers}
               hoveredId={hoveredId}
@@ -1467,8 +1443,8 @@ export default function TimelinePageClient({ embedded = false }: { embedded?: bo
             entry={selectedEntry}
             candidate={selectedCandidate}
             laneName={laneNameFor(selectedEntry?.scopeId ?? selectedCandidate?.scopeId)}
-            onOpenForecast={(scopeId) => router.push(contextualHref(`/forecast?project=${encodeURIComponent(scopeId)}`, routeParams))}
-            onOpenDecisions={(decisionId) => router.push(contextualHref(`/decisions?select=${encodeURIComponent(`decision:${decisionId}`)}`, routeParams))}
+            onOpenForecast={(scopeId) => router.push(`/forecast?scopeId=${scopeId}`)}
+            onOpenDecisions={(decisionId) => router.push(`/decisions?decisionId=${decisionId}`)}
             onAcceptCandidate={acceptCandidate}
             onSupplyTiming={supplyTiming}
             suppliedDate={selectedCandidate ? suppliedTiming[selectedCandidate.id] ?? null : null}

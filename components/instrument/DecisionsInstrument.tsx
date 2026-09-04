@@ -13,7 +13,7 @@
 // are marked as such.
 
 import { useMemo, useState } from "react";
-import Link from "@/components/instrument/SignalLink";
+import Link from "next/link";
 import InstrumentShell from "@/components/instrument/InstrumentShell";
 import ScenarioStrip, { chipsFor } from "@/components/instrument/ScenarioStrip";
 import { Panel, Prototype, SeverityDot, EpistemicBadge } from "@/components/instrument/Panel";

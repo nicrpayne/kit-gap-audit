@@ -31,7 +31,7 @@
 // V3 / material passes.
 
 import { useCallback, useMemo, useRef, useState } from "react";
-import Link from "@/components/instrument/SignalLink";
+import Link from "next/link";
 import {
   DndContext,
   DragOverlay,

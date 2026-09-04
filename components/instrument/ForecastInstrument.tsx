@@ -19,7 +19,7 @@
 
 import { useMemo, useState } from "react";
 import { useProjectParam } from "@/lib/shell/useProjectParam";
-import Link from "@/components/instrument/SignalLink";
+import Link from "next/link";
 import InstrumentShell from "@/components/instrument/InstrumentShell";
 import ScenarioStrip, { chipsFor } from "@/components/instrument/ScenarioStrip";
 import LivingForecast, { type GateMark } from "@/components/instrument/LivingForecast";

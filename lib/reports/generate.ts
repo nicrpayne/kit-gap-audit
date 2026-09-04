@@ -1,73 +1,95 @@
-import type { Prisma, Report, Scope } from "@prisma/client";
+import type { Scope, Report } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
-import { buildDecisionBriefReadModel } from "./readModel";
-import { DECISION_BRIEF_VERSION, type BriefMode, type DecisionBriefV1 } from "./decisionBrief";
-import { BRIEF_PRESENTATION_VERSION, BRIEF_RECIPE_VERSION, type BriefRecipeV1 } from "./composer";
-import { normalizeBriefRecipe } from "./composer";
-import { buildBriefPresentation } from "./presentation";
-import { renderAudienceBriefMarkdown } from "./audienceBriefRender";
+import { computeForecast, type ForecastResult } from "@/lib/forecast/compute";
+import { renderReportMarkdown, type ReportData } from "@/lib/reports/render";
+import { computeChangesSince } from "@/lib/reports/changes";
 
 export interface GeneratedReport {
   report: Report;
-  brief: DecisionBriefV1;
-  recipe: BriefRecipeV1;
-  presentation: ReturnType<typeof buildBriefPresentation>;
+  forecast: ForecastResult;
 }
 
-/**
- * The only DecisionBrief persistence boundary.
- *
- * One server-owned read model is fully assembled first. The immutable JSON,
- * typed compatibility columns and Markdown export are then inserted together.
- * No renderer or historical reader is allowed to re-read owner state.
- */
-export async function generateReport(
-  scope: Scope,
-  contextSnapshotId?: string | null,
-  options?: { mode?: BriefMode; scenarioId?: string | null; scenarioSnapshot?: Prisma.InputJsonValue | null; recipe?: unknown }
-): Promise<GeneratedReport> {
-  if (options?.mode === "scenario") {
-    throw new Error("Scenario Decision Brief generation requires a canonical server-owned scenario read model; live Reality cannot be relabeled as Scenario.");
-  }
-  const assembled = await buildDecisionBriefReadModel(scope, {
-    contextSnapshotId,
-    mode: options?.mode ?? "reality",
-    scenarioId: options?.scenarioId ?? null,
+// Generates a new leadership report: current Forecast + Decision Queue +
+// what shipped/resolved since the previous report for this Scope (or
+// "first report" framing if there isn't one). Reuses computeForecast so
+// the numbers always agree with what's on /forecast. Throws on Linear
+// failure -- callers convert to a 502, same message used everywhere else.
+//
+// `contextSnapshotId`, when provided, is stamped onto the created Report
+// as-is -- this function NEVER persists a ContextSnapshot itself. The one
+// accepted package -> one snapshot invariant lives entirely in the
+// caller (POST /api/refresh): it persists a snapshot once, then passes
+// the same id through to both runAudit() and this function, so a refresh
+// that runs an audit AND generates a report never ends up with two
+// snapshots for the one package it accepted.
+export async function generateReport(scope: Scope, contextSnapshotId?: string | null): Promise<GeneratedReport> {
+  const forecast = await computeForecast(scope);
+  const { findings, likelyDate, earliestDate, latestDate, confidenceAtTarget, scenarios } = forecast;
+
+  const previousReport = await prisma.report.findFirst({
+    where: { scopeId: scope.id },
+    orderBy: { generatedAt: "desc" },
   });
-  // JSONB is the immutable source model. Normalize through the same JSON
-  // boundary before rendering so floating-point representations cannot make
-  // stored JSON re-render differently from the Markdown saved beside it.
-  const brief = JSON.parse(JSON.stringify(assembled, (_key, value) =>
-    typeof value === "number" && Number.isFinite(value) ? Math.round(value * 1_000_000_000) / 1_000_000_000 : value
-  )) as DecisionBriefV1;
-  const recipe = normalizeBriefRecipe(options?.recipe, brief);
-  const presentation = buildBriefPresentation(brief, recipe);
-  const markdown = renderAudienceBriefMarkdown(brief, recipe);
-  const window = brief.headline.likelyWindow.value;
-  const movement = brief.headline.movement.value;
+  const since = previousReport?.generatedAt ?? null;
+  const startDate = new Date();
+
+  const changes = await computeChangesSince(scope, forecast, since);
+  const shipped = changes.shipped;
+  const resolvedSinceLast = changes.resolvedDecisions.map((d) => ({ title: d.title, resolution: d.resolution ?? "" }));
+
+  const blockingDecisions = findings
+    .filter((f) => f.type === "decision" && f.status === "open" && f.blocking)
+    .map((f) => ({ title: f.title, owner: f.owner, blocks: f.blocks, quote: f.quote }));
+
+  const nonBlockingDecisions = findings
+    .filter((f) => f.type === "decision" && f.status === "open" && !f.blocking)
+    .map((f) => ({ title: f.title, owner: f.owner, blocks: f.blocks, quote: f.quote }));
+
+  const bestScenario = scenarios.reduce<{ label: string; deltaDays: number } | null>(
+    (best, s) => (best === null || s.deltaDays < best.deltaDays ? { label: s.label, deltaDays: s.deltaDays } : best),
+    null
+  );
+
+  const likelyDateDeltaDays = previousReport
+    ? Math.round((likelyDate.getTime() - previousReport.likelyDate.getTime()) / 86400000)
+    : null;
+
+  const reportData: ReportData = {
+    scopeName: scope.name,
+    generatedAt: startDate,
+    targetDate: scope.targetDate,
+    likelyDate,
+    earliestDate,
+    latestDate,
+    confidenceAtTarget,
+    previousReportAt: previousReport?.generatedAt ?? null,
+    likelyDateDeltaDays,
+    shipped,
+    blockingDecisions,
+    nonBlockingDecisions,
+    resolvedSinceLast,
+    bestScenario,
+  };
+
+  const summaryMarkdown = renderReportMarkdown(reportData);
+
   const report = await prisma.report.create({
     data: {
       scopeId: scope.id,
-      generatedAt: new Date(brief.identity.generatedAt),
-      targetDate: brief.headline.targetDate.value ? new Date(brief.headline.targetDate.value) : null,
-      likelyDate: new Date(window.likely),
-      earliestDate: new Date(window.earliest),
-      latestDate: new Date(window.latest),
-      confidenceAtTarget: brief.headline.confidenceAtTarget.value,
-      likelyDateDeltaDays: movement?.days ?? null,
-      shippedCount: brief.changes.delivery.value.shipped.length,
-      blockingCount: brief.calls.decisions.value.filter((decision) => decision.gated).length,
-      resolvedSinceLastCount: brief.changes.audit.value.resolvedFindings.length,
-      summaryMarkdown: markdown,
-      contextSnapshotId: contextSnapshotId ?? brief.identity.sourceSnapshots.find((item) => item.owner === "ContextSnapshot")?.sourceId ?? null,
-      briefVersion: DECISION_BRIEF_VERSION,
-      briefSnapshot: brief as unknown as Prisma.InputJsonValue,
-      recipeVersion: BRIEF_RECIPE_VERSION,
-      briefRecipe: recipe as unknown as Prisma.InputJsonValue,
-      presentationVersion: BRIEF_PRESENTATION_VERSION,
-      mode: brief.identity.mode,
-      scenarioSnapshot: options?.scenarioSnapshot ?? undefined,
+      generatedAt: startDate,
+      targetDate: scope.targetDate,
+      likelyDate,
+      earliestDate,
+      latestDate,
+      confidenceAtTarget,
+      likelyDateDeltaDays,
+      shippedCount: shipped.length,
+      blockingCount: blockingDecisions.length,
+      resolvedSinceLastCount: resolvedSinceLast.length,
+      summaryMarkdown,
+      contextSnapshotId: contextSnapshotId ?? null,
     },
   });
-  return { report, brief, recipe, presentation };
+
+  return { report, forecast };
 }

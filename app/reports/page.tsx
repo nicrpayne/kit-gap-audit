@@ -5,8 +5,8 @@ export default function ReportsPage() {
   return (
     <SignalSurface
       eyebrow="Reports"
-      title="Brief Composer"
-      lede="Configure the audience and purpose. Signal freezes the same source-aware project truth underneath every brief."
+      title="The leadership update"
+      lede="One click: the current forecast, what shipped, what's blocking, and what changed since the last report — ready to copy and send."
     >
       <ReportsPageClient />
     </SignalSurface>

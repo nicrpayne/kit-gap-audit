@@ -638,20 +638,19 @@ export default function ForecastView({ scopeId }: { scopeId: string }) {
         </summary>
         <div className="px-5 pb-5 pt-1 text-sm text-[var(--color-ink)] space-y-3">
           <p>
-            Based on <strong>{breakdown.remainingIssueCount}</strong> open canonical Linear ticket
-            {breakdown.remainingIssueCount === 1 ? "" : "s"}, split across <strong>{breakdown.teamCapacity}</strong> parallel developer
+            Based on <strong>{breakdown.remainingIssueCount}</strong> open Linear ticket
+            {breakdown.remainingIssueCount === 1 ? "" : "s"}
+            {breakdown.unticketedFindingCount > 0 && (
+              <>
+                {" "}
+                and <strong>{breakdown.unticketedFindingCount}</strong> finding
+                {breakdown.unticketedFindingCount === 1 ? "" : "s"} that don&apos;t have a ticket yet
+              </>
+            )}
+            , split across <strong>{breakdown.teamCapacity}</strong> parallel developer
             {breakdown.teamCapacity === 1 ? "" : "s"}
             {breakdown.teamCapacityInferred && " (inferred from assignees — set your own above for a more accurate date)"}.
           </p>
-
-          {breakdown.unticketedFindingCount > 0 && (
-            <p className="text-xs text-[var(--color-ink-soft)]">
-              <strong className="text-[var(--color-ink)]">{breakdown.unticketedFindingCount}</strong>{" "}
-              open Audit finding{breakdown.unticketedFindingCount === 1 ? " remains" : "s remain"} outside
-              Reality. {breakdown.unticketedFindingCount === 1 ? "It has" : "They have"} zero forecast effect
-              until governed work represents {breakdown.unticketedFindingCount === 1 ? "it" : "them"}.
-            </p>
-          )}
 
           <p className="text-xs text-[var(--color-ink-soft)]">
             Everything in this scope right now:{" "}

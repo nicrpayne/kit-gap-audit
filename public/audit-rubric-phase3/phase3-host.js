@@ -17,110 +17,6 @@
     external: '#58abf5',
   };
   const counted = (value, singular) => `${value} ${singular}${value === 1 ? '' : 's'}`;
-  let inspectorClosed = false;
-  let closedSelectionId = null;
-
-  function syncInspectorChrome() {
-    const core = window.BrainCore;
-    if (!core || !core.S) return;
-    const selected = core.S.sel;
-    const card = document.getElementById('brain-card');
-    const overview = document.getElementById('signal-inspector-overview');
-    const reopen = document.getElementById('signal-inspector-reopen');
-    if (!card || !overview || !reopen) return;
-
-    if (inspectorClosed && (selected && selected.id) !== closedSelectionId) {
-      inspectorClosed = false;
-      closedSelectionId = null;
-    }
-    document.body.classList.toggle('signal-inspector-closed', inspectorClosed);
-    document.body.dataset.signalInspectorOpen = inspectorClosed ? 'false' : 'true';
-    card.style.display = !inspectorClosed && selected ? 'block' : 'none';
-    overview.style.display = !inspectorClosed && !selected ? 'block' : 'none';
-    reopen.style.display = inspectorClosed ? 'block' : 'none';
-    const reopenLabel = selected ? 'Open Inspector' : 'Open Project Overview';
-    if (reopen.textContent !== reopenLabel) reopen.textContent = reopenLabel;
-    const meta = core.S.meta || {};
-    const overviewValues = {
-      'signal-overview-title': String(meta.scopeName || 'Current project'),
-      'signal-overview-objects': Number(meta.canonicalNodes || meta.totalFiles || 0).toLocaleString(),
-      'signal-overview-relationships': Number(meta.canonicalEdges || meta.mdLinks || 0).toLocaleString(),
-    };
-    for (const [id, value] of Object.entries(overviewValues)) {
-      const node = document.getElementById(id);
-      if (node && node.textContent !== value) node.textContent = value;
-    }
-  }
-
-  function installInspectorShell() {
-    const core = window.BrainCore;
-    if (!core || !core.S || !core.S.meta) return;
-
-    const search = document.querySelector('#brain-panel [data-sec="search"]');
-    if (search && !document.getElementById('signal-search-widget')) {
-      const widget = document.createElement('div');
-      widget.id = 'signal-search-widget';
-      widget.dataset.shoot = 'signal-search-widget';
-      search.parentElement.insertBefore(widget, search);
-      widget.appendChild(search);
-      document.body.appendChild(widget);
-    }
-
-    if (!document.getElementById('signal-inspector-overview')) {
-      const meta = core.S.meta;
-      const overview = document.createElement('aside');
-      overview.id = 'signal-inspector-overview';
-      overview.dataset.shoot = 'signal-inspector-overview';
-      overview.setAttribute('aria-label', 'Audit Project Overview');
-      overview.innerHTML = `
-        <div class="card-head"><div class="signal-inspector-label">Project overview</div><button id="signal-overview-close" aria-label="Close Project Overview">×</button></div>
-        <h2 id="signal-overview-title">${String(meta.scopeName || 'Current project')}</h2>
-        <p>Audit discovers. Reality governs. Signal responds. This dock describes the current canonical world without changing its spatial instrument.</p>
-        <div class="signal-overview-counts">
-          <div><strong id="signal-overview-objects">${Number(meta.canonicalNodes || meta.totalFiles || 0).toLocaleString()}</strong> canonical objects</div>
-          <div><strong id="signal-overview-relationships">${Number(meta.canonicalEdges || meta.mdLinks || 0).toLocaleString()}</strong> canonical relationships</div>
-          <div>Current read-only Audit World</div>
-        </div>`;
-      document.body.appendChild(overview);
-    }
-
-    if (!document.getElementById('signal-inspector-reopen')) {
-      const reopen = document.createElement('button');
-      reopen.id = 'signal-inspector-reopen';
-      reopen.type = 'button';
-      reopen.dataset.shoot = 'signal-inspector-reopen';
-      reopen.onclick = () => {
-        inspectorClosed = false;
-        closedSelectionId = null;
-        syncInspectorChrome();
-      };
-      document.body.appendChild(reopen);
-    }
-
-    if (!document.body.dataset.signalInspectorControls) {
-      document.body.dataset.signalInspectorControls = 'true';
-      document.addEventListener('click', event => {
-        const close = event.target.closest && event.target.closest('#card-close, #signal-overview-close');
-        if (!close) return;
-        event.preventDefault();
-        event.stopImmediatePropagation();
-        inspectorClosed = true;
-        closedSelectionId = core.S.sel && core.S.sel.id;
-        syncInspectorChrome();
-      }, true);
-    }
-
-    window.__signalAuditInspector = {
-      showOverview() {
-        inspectorClosed = false;
-        closedSelectionId = null;
-        core.select(null);
-        syncInspectorChrome();
-      },
-      sync: syncInspectorChrome,
-    };
-    syncInspectorChrome();
-  }
 
   function installMaterialChannels() {
     const core = window.BrainCore;
@@ -208,30 +104,7 @@
     const card = document.getElementById('brain-card');
     if (!n || !card || card.style.display === 'none') return;
     const actions = card.querySelector('.card-actions');
-    const syncStatus = () => {
-      let label = card.querySelector('.signal-inspector-label');
-      if (!label) {
-        label = document.createElement('div');
-        label.className = 'signal-inspector-label';
-        label.textContent = 'Inspector';
-        card.insertAdjacentElement('afterbegin', label);
-      }
-      const traceLive = document.body.dataset.signalTraceActive === 'true';
-      const traceBadge = label.querySelector('.signal-trace-badge');
-      if (traceLive && !traceBadge) {
-        const badge = document.createElement('span');
-        badge.className = 'signal-trace-badge';
-        badge.textContent = 'Trace live';
-        label.appendChild(badge);
-      } else if (!traceLive && traceBadge) traceBadge.remove();
-      card.dataset.shoot = 'signal-inspector';
-      card.dataset.canonicalId = n.canonicalId || '';
-    };
-    syncStatus();
-    if (card.dataset.signalPhase3Id === n.id && actions && actions.dataset.signalPhase3Patched === 'true') {
-      syncInspectorChrome();
-      return;
-    }
+    if (card.dataset.signalPhase3Id === n.id && actions && actions.dataset.signalPhase3Patched === 'true') return;
     card.dataset.signalPhase3Id = n.id;
 
     const badges = card.querySelector('.card-badges');
@@ -265,7 +138,6 @@
     }
     if (line.textContent) card.appendChild(line);
     if (actions) actions.dataset.signalPhase3Patched = 'true';
-    syncInspectorChrome();
   }
 
   function patchShell() {
@@ -319,20 +191,6 @@
       layout.querySelectorAll('button').forEach(button => button.addEventListener('click', refreshQuestion));
       refreshQuestion();
     }
-    installInspectorShell();
-  }
-
-  function publishInspectableState() {
-    const core = window.BrainCore;
-    if (!core || !core.S) {
-      requestAnimationFrame(publishInspectableState);
-      return;
-    }
-    const cam = core.S.cam || { x: 0, y: 0, k: 1 };
-    document.body.dataset.signalCameraState = `${Number(cam.x).toFixed(3)},${Number(cam.y).toFixed(3)},${Number(cam.k).toFixed(5)}`;
-    document.body.dataset.signalSelectedId = core.S.sel ? String(core.S.sel.canonicalId || core.S.sel.id || '') : '';
-    syncInspectorChrome();
-    requestAnimationFrame(publishInspectableState);
   }
 
   const observer = new MutationObserver(records => {
@@ -343,5 +201,4 @@
     patchPhase3Card();
   });
   observer.observe(document.documentElement, { childList: true, subtree: true });
-  requestAnimationFrame(publishInspectableState);
 })();

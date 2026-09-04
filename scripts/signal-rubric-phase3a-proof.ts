@@ -64,11 +64,9 @@ function main() {
   check("history lens preserves an honest current canonical frame",
     graphInputs.includes("auditSourceId?: string") && graphInputs.includes("Reality, accepted project structure")
       && graphInputs.includes("sourceId: auditSourceId"));
-  check("selected Inspector remains primary and governed Findings use Review finding",
-    host.includes("button.textContent = labels[button.dataset.act]")
-      && host.includes("n.kind === 'finding' ? 'Review finding' : 'View here'")
-      && host.includes("window.BrainCore.openViewer(n.id)")
-      && host.includes("signal-audit-open-finding"));
+  check("selected popup remains primary and View here uses Rubric viewer",
+    host.includes("button.textContent = labels[button.dataset.act]") && host.includes("view: 'View here'")
+      && host.includes("window.BrainCore.openViewer(n.id)"));
   check("deeper viewer overlays the world in embedded mode",
     route.includes("body.signal-audit-embedded:has(#brain-viewer.open)") && route.includes("#brain-viewer .v-close"));
   check("Search stays Signal MiniSearch behind Rubric's surface",

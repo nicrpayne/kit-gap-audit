@@ -19,7 +19,7 @@
 // result down as children without becoming a client component itself.
 
 import type { ReactNode } from "react";
-import Link from "@/components/instrument/SignalLink";
+import Link from "next/link";
 import InstrumentShell from "@/components/instrument/InstrumentShell";
 
 export default function SignalSurface({

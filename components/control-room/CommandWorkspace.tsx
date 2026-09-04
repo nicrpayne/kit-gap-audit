@@ -29,7 +29,7 @@
 // their own real quantities, and "All systems nominal" is the oldest
 // reading on the page.
 
-import Link from "@/components/instrument/SignalLink";
+import Link from "next/link";
 import type { ReactNode } from "react";
 import TimelinePageClient from "@/components/TimelinePageClient";
 import type { ControlRoomReading, Point, Series } from "@/lib/control-room/read";

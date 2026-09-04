@@ -207,20 +207,6 @@ model Report {
   resolvedSinceLastCount Int
   summaryMarkdown    String  // the full rendered report -- the historical record
 
-  // DecisionBriefV1 stores the complete, machine-readable communication
-  // artifact. These fields are append-only: legacy Reports remain null and
-  // are rendered through the legacy history path; a V1 brief is always read
-  // from this exact JSON rather than reassembled from newer upstream state.
-  briefVersion       String?
-  briefSnapshot      Json?
-  // Presentation is a frozen recipe over briefSnapshot. It may hide,
-  // reorder, or change the density of modules, but cannot change facts.
-  recipeVersion      String?
-  briefRecipe        Json?
-  presentationVersion String?
-  mode               String? // "reality" | "scenario"; null for legacy rows
-  scenarioSnapshot   Json?   // explicit scenario inputs, never implied defaults
-
   // Which ContextSnapshot (if any) fed the computation this Report was
   // generated from. Nullable -- every Report predating this field, and
   // every Report generated before Phase 1b wires snapshot creation into

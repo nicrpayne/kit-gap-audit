@@ -7,7 +7,7 @@
 // borders, a door out to whoever owns the number. A dashboard drifts when
 // each card invents its own weight.
 
-import Link from "@/components/instrument/SignalLink";
+import Link from "next/link";
 import type { CSSProperties, ReactNode } from "react";
 import type { Point } from "@/lib/control-room/read";
 
