@@ -5,8 +5,8 @@ export default function ReportsPage() {
   return (
     <SignalSurface
       eyebrow="Reports"
-      title="The leadership update"
-      lede="One click: the current forecast, what shipped, what's blocking, and what changed since the last report — ready to copy and send."
+      title="Decision Brief"
+      lede="One immutable, source-aware statement of where the project stands, what changed, and which calls need leadership."
     >
       <ReportsPageClient />
     </SignalSurface>

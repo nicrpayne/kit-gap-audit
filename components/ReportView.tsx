@@ -85,7 +85,7 @@ export default function ReportView({ markdown }: { markdown: string }) {
   return <div>{elements}</div>;
 }
 
-export function CopyMarkdownButton({ markdown }: { markdown: string }) {
+export function CopyMarkdownButton({ markdown, label = "Copy to clipboard" }: { markdown: string; label?: string }) {
   const [copied, setCopied] = useState(false);
 
   async function copy() {
@@ -99,7 +99,7 @@ export function CopyMarkdownButton({ markdown }: { markdown: string }) {
       onClick={copy}
       className="rounded-md border border-[var(--color-line)] px-3 py-1.5 text-xs hover:bg-black/5"
     >
-      {copied ? "Copied" : "Copy to clipboard"}
+      {copied ? "Copied" : label}
     </button>
   );
 }

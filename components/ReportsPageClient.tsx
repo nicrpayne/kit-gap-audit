@@ -3,11 +3,14 @@
 import { useEffect, useState, useCallback, useMemo } from "react";
 import Link from "@/components/instrument/SignalLink";
 import ReportView, { CopyMarkdownButton } from "./ReportView";
+import DecisionBriefView from "./DecisionBriefView";
 import MomentumChip from "./MomentumChip";
 import { computeMomentum } from "@/lib/momentum/compute";
 import { reportAttributionSentence } from "@/lib/momentum/attribution";
 import { describeSnapshot, withSnapshotProvenance } from "@/lib/reports/snapshot";
 import { useProjectParam } from "@/lib/shell/useProjectParam";
+import { isDecisionBriefV1, type DecisionBriefV1 } from "@/lib/reports/decisionBrief";
+import { renderDecisionBriefPlainText } from "@/lib/reports/decisionBriefRender";
 
 /** The live forecast is a comparison input, not report data. Three states,
     because "we could not resolve it" must be distinguishable from "it
@@ -33,6 +36,9 @@ interface ReportRow {
   blockingCount: number;
   resolvedSinceLastCount: number;
   summaryMarkdown: string;
+  briefVersion: string | null;
+  briefSnapshot: unknown;
+  mode: string | null;
 }
 
 function formatDate(iso: string): string {
@@ -51,6 +57,10 @@ export default function ReportsPageClient() {
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [live, setLive] = useState<LiveForecast | null>(null);
+  const selectedBrief = useMemo<DecisionBriefV1 | null>(
+    () => selected && isDecisionBriefV1(selected.briefSnapshot) ? selected.briefSnapshot : null,
+    [selected]
+  );
 
   // Momentum for the selected report: comparison is against the report
   // immediately BEFORE it chronologically (`reports` is sorted newest
@@ -187,7 +197,7 @@ export default function ReportsPageClient() {
           <select
             value={scopeId ?? ""}
             onChange={(e) => setScopeId(e.target.value)}
-            className="rounded-md border border-[var(--color-line)] bg-white px-3 py-2 text-sm"
+            className="rounded-md border border-[var(--i-border)] bg-[var(--i-panel)] px-3 py-2 text-sm text-[var(--i-text)]"
           >
             {scopes.map((s) => (
               <option key={s.id} value={s.id}>
@@ -207,15 +217,16 @@ export default function ReportsPageClient() {
             report leaves Signal through this button and is read somewhere
             Signal cannot annotate, so the warning has to travel inside the
             text rather than live beside it on screen. */}
-        {selected && snapshot && (
-          <CopyMarkdownButton markdown={withSnapshotProvenance(selected.summaryMarkdown, snapshot)} />
-        )}
+        {selected && snapshot && <CopyMarkdownButton markdown={withSnapshotProvenance(selected.summaryMarkdown, snapshot)} label="Copy Markdown" />}
+        {selectedBrief && <CopyMarkdownButton markdown={renderDecisionBriefPlainText(selectedBrief)} label="Copy plain text" />}
+        {selected && <a href={`/reports/${encodeURIComponent(selected.id)}/print`} target="_blank" rel="noreferrer" className="report-no-print rounded-md border border-[var(--i-border)] px-3 py-1.5 text-xs text-[var(--i-text-soft)] hover:bg-white/5">Print view</a>}
+        {live?.state === "ready" && <span className="report-no-print ml-auto text-[10px] uppercase tracking-wider text-[var(--i-mint)]">Current live comparison · {formatDate(live.likelyDate)}</span>}
       </div>
 
-      {error && <div className="text-sm text-[var(--color-danger)] mb-4">{error}</div>}
+      {error && <div className="text-sm text-[var(--i-red)] mb-4">{error}</div>}
 
-      <div className="grid grid-cols-[1fr_16rem] gap-6 items-start">
-        <div className="border border-[var(--color-line)] rounded-xl bg-[var(--color-card)] p-6">
+      <div className="grid grid-cols-[minmax(0,1fr)_18rem] gap-6 items-start reports-layout">
+        <div className="border border-[var(--i-border)] rounded-xl bg-[var(--i-panel)] p-6">
           {selected ? (
             <>
               {/* WHAT THIS IS, BEFORE WHAT IT SAYS. A stored report is a
@@ -245,8 +256,13 @@ export default function ReportsPageClient() {
                   <p className="mt-1.5 text-xs leading-relaxed text-[var(--color-ink)]">{snapshot.line}</p>
                 </div>
               )}
-              {momentum && <MomentumChip momentum={momentum} currentConfidence={selected.confidenceAtTarget} />}
-              <ReportView markdown={selected.summaryMarkdown} />
+              {momentum && <div className="report-no-print"><MomentumChip momentum={momentum} currentConfidence={selected.confidenceAtTarget} /></div>}
+              {selectedBrief ? <DecisionBriefView brief={selectedBrief} /> : (
+                <>
+                  <div className="mb-4 rounded border border-[var(--i-amber)] bg-[var(--i-amber-soft)] px-3 py-2 text-xs text-[var(--i-amber)]">Legacy immutable report · retained exactly as generated. It is not promoted into the DecisionBriefV1 semantic model.</div>
+                  <ReportView markdown={selected.summaryMarkdown} />
+                </>
+              )}
             </>
           ) : (
             <div className="text-sm text-[var(--color-ink-soft)] py-8 text-center">
@@ -256,7 +272,7 @@ export default function ReportsPageClient() {
         </div>
 
         {reports && reports.length > 0 && (
-          <div>
+          <div className="report-no-print">
             <div className="text-xs uppercase tracking-wider text-[var(--color-ink-soft)] mb-2">
               History
             </div>
@@ -272,6 +288,7 @@ export default function ReportsPageClient() {
                   }`}
                 >
                   <div className="font-medium">{formatDate(r.generatedAt)}</div>
+                  <div className="mt-0.5 text-[9px] uppercase tracking-wider">{r.briefVersion ? "Decision Brief V1" : "Legacy snapshot"} · {r.mode ?? "historical"}</div>
                   <div className={selected?.id === r.id ? "text-[var(--color-accent)]" : "text-[var(--color-ink-soft)]"}>
                     {formatDate(r.likelyDate)}
                     {r.confidenceAtTarget !== null && ` · ${r.confidenceAtTarget}%`}
