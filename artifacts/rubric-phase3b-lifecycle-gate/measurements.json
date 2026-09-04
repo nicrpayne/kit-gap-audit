@@ -1,0 +1,68 @@
+{
+  "testedSha": "d0227f826c658de52dae34253c79d961eb203a68",
+  "baseline": {
+    "canonicalObjects": 438,
+    "canonicalRelationships": 543,
+    "visualNodes": 513,
+    "visualRelationships": 1591,
+    "duplicateCanonicalIds": 0,
+    "missingVisualEndpoints": 0,
+    "findings": 37,
+    "sources": 1,
+    "auditRuns": 2,
+    "realityFingerprint": "2c34bbb305750f906fb90f1a5c0844dc1cabbf1b955fed2f67cddd1e656fda57"
+  },
+  "run": {
+    "title": "Phase 3B final lifecycle gate",
+    "sourceId": "cmtm6knjd000fitpgexsr9ewx",
+    "auditRunId": "cmtm6knjt000litpgredu8pfo",
+    "model": "claude-sonnet-4-6",
+    "findingCount": 2,
+    "currentPosition": "current",
+    "priorTitle": "Notes — 2026-08-05"
+  },
+  "afterAudit": {
+    "canonicalObjects": 441,
+    "canonicalRelationships": 547,
+    "visualNodes": 518,
+    "visualRelationships": 1603,
+    "duplicateCanonicalIds": 0,
+    "missingVisualEndpoints": 0,
+    "realityFingerprint": "2c34bbb305750f906fb90f1a5c0844dc1cabbf1b955fed2f67cddd1e656fda57"
+  },
+  "afterGovernedDecision": {
+    "canonicalObjects": 442,
+    "canonicalRelationships": 548,
+    "visualNodes": 519,
+    "visualRelationships": 1604,
+    "decisionStatus": "open",
+    "decisionGated": false,
+    "realityFingerprint": "2c34bbb305750f906fb90f1a5c0844dc1cabbf1b955fed2f67cddd1e656fda57"
+  },
+  "sameMountedWorld": {
+    "parentTimeOrigin": 1788479521511.8,
+    "iframeTimeOrigin": 1788479521993.6,
+    "observedAt": 1788479716937,
+    "preRunSelectionRetained": true,
+    "governedWriteSelectionRetained": true,
+    "automaticFitObserved": false
+  },
+  "hoverRegression": {
+    "movesPerLayout": 300,
+    "totalMoves": 1200,
+    "rings": { "callbacks": 64, "records": 209, "tipRecords": 158, "transitions": 60 },
+    "circle": { "callbacks": 43, "records": 134, "tipRecords": 107, "transitions": 39 },
+    "force": { "callbacks": 58, "records": 185, "tipRecords": 146, "transitions": 54 },
+    "hex": { "callbacks": 39, "records": 120, "tipRecords": 93, "transitions": 34 },
+    "finalHeapBytes": 40741516,
+    "canvasCount": 2,
+    "warningErrorConsoleEntries": 0,
+    "instrumentationRemoved": true
+  },
+  "protectedRuntime": {
+    "_core.js": "efa2678c8c62fe2b85fec8826d7778c6dcecb23543f5426501488ba967caa213",
+    "_flows2.js": "2fb3e9937a141df8ec9233c851426f845718216c54fb6336752291b539b07496",
+    "_core.css": "51797b9f261c03255db8cc660897812f1106d16e4ca1eacaeb7f94de7bc7a06a",
+    "_icons.js": "59dfd3e24f8cf7504c05609eb0063c22898950c33f45facea13b92c2b173f48a"
+  }
+}

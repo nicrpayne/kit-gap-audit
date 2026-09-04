@@ -442,7 +442,7 @@ async function main() {
         if (i < 0) continue;
         checked++;
         const base = -90 + i * SECTOR;
-        let d = (Math.atan2(p.y - FIELD.cy, p.x - FIELD.cx) / RAD - base + 540) % 360 - 180;
+        const d = (Math.atan2(p.y - FIELD.cy, p.x - FIELD.cx) / RAD - base + 540) % 360 - 180;
         if (Math.abs(d) > SECTOR / 2 + 0.5) outside++;
       }
       check(`P14 ${name}: every seat is inside its own sector`, outside === 0, `${checked - outside}/${checked}`);
