@@ -1,7 +1,9 @@
 import assert from "node:assert/strict";
 import { PrismaClient } from "@prisma/client";
 import { isDecisionBriefV1 } from "../lib/reports/decisionBrief";
-import { briefPayloadFingerprint, renderDecisionBriefMarkdown } from "../lib/reports/decisionBriefRender";
+import { briefPayloadFingerprint } from "../lib/reports/decisionBriefRender";
+import { isBriefRecipeV1 } from "../lib/reports/composer";
+import { renderAudienceBriefMarkdown } from "../lib/reports/audienceBriefRender";
 
 if (process.env.REPORTS_DB_PROOF !== "1") {
   throw new Error("Refusing to write: set REPORTS_DB_PROOF=1 for a disposable local fixture database.");
@@ -36,9 +38,13 @@ try {
   assert.equal(saved.briefVersion, "decision-brief.v1");
   assert.equal(saved.mode, "reality");
   assert(isDecisionBriefV1(saved.briefSnapshot));
+  assert(isBriefRecipeV1(saved.briefRecipe));
+  assert.equal(saved.recipeVersion, "brief-recipe.v1");
+  assert.equal(saved.presentationVersion, "brief-presentation.v1");
   const brief = saved.briefSnapshot;
+  const recipe = saved.briefRecipe;
   const savedJson = JSON.stringify(brief);
-  assert.equal(saved.summaryMarkdown, renderDecisionBriefMarkdown(brief));
+  assert.equal(saved.summaryMarkdown, renderAudienceBriefMarkdown(brief, recipe));
   assert.equal(saved.likelyDate.toISOString(), brief.headline.likelyWindow.value.likely);
   assert.equal(saved.confidenceAtTarget, brief.headline.confidenceAtTarget.value);
   assert.equal(saved.blockingCount, brief.calls.decisions.value.filter((decision) => decision.gated).length);
