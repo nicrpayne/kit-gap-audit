@@ -1831,7 +1831,6 @@ export default function AuditInstrument({ initialScopeId }: { initialScopeId?: s
             className={`${worldStyles.dockReopen} ${worldStyles.worldWidget} flex items-center gap-2 px-3 py-2 text-left`}
             style={{ color: "var(--i-text-soft)" }}
           >
-            <span style={{ color: "var(--i-signal)" }}><RealityGlyph size={15} variant="signal" /></span>
             <span className="min-w-0 flex-1">
               <span className="i-label block" style={{ color: "var(--i-signal)" }}>Open Inspector</span>
               <span className="mt-1 block truncate text-[10px]" style={{ color: "var(--i-text-faint)" }}>
@@ -1853,7 +1852,6 @@ export default function AuditInstrument({ initialScopeId }: { initialScopeId?: s
             data-shoot="finding-review-sheet"
           >
             <div className="flex min-h-[54px] shrink-0 items-center gap-3 border-b px-4" style={{ borderColor: "var(--i-border)" }}>
-              <span style={{ color: "var(--i-violet)" }}><RealityGlyph size={17} variant="relay" /></span>
               <span className="min-w-0 flex-1">
                 <span className="i-label block" style={{ color: "var(--i-violet)" }}>Governed finding review</span>
                 <span className="mt-1 block truncate text-[11px]" style={{ color: "var(--i-text-soft)" }}>{selectedFinding.title}</span>
