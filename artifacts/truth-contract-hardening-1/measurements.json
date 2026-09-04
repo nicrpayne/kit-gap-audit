@@ -1,0 +1,55 @@
+{
+  "date": "2026-09-04",
+  "startingProductionSha": "95407ec18fc2b4e6d8e8fe3892975606dd0607fd",
+  "productionBranch": "claude/product-timeline-audit-a72dmg",
+  "productionDeploymentId": "3ec9bd20-d702-41e2-a15d-6e8a38427cd2",
+  "fixture": "truth-contract-project-world-v1",
+  "findingBoundary": {
+    "openFindingForecastItems": 0,
+    "representedCanonicalWorkItems": 1
+  },
+  "navigation": {
+    "pureRouteMatrixDestinations": 11,
+    "browserInstrumentRoutes": 9,
+    "project": "kit-construct",
+    "selectedObject": "decision:d-1",
+    "scenario": "pivot-a",
+    "backForwardPreserved": true
+  },
+  "decisionGate": {
+    "decisionHomeScope": "jsa",
+    "targetScope": "kit-construct",
+    "ungatedOpenForecastActive": false
+  },
+  "timeline": {
+    "liveLikely": "2026-11-25T00:00:00.000Z",
+    "historicalLikely": "2026-09-01T00:00:00.000Z",
+    "missingLiveFallsBackToHistorical": false
+  },
+  "capacity": {
+    "workforceFte": 1.8,
+    "namedRawFte": 1.8,
+    "effectiveFte": 1.7,
+    "jsaForecastEffectiveFte": 1.25,
+    "jsaNamedEffectiveFte": 1.25,
+    "reconciles": true
+  },
+  "platformParent": {
+    "remainingRows": 17,
+    "rawLikelyDays": 44,
+    "parentContainerId": "SOF-810",
+    "childId": "SOF-487",
+    "parentLikelyDays": 3,
+    "executableLikelyDays": 41
+  },
+  "verification": {
+    "typecheck": "PASS",
+    "lintErrors": 0,
+    "build": "PASS",
+    "rubricProtectedByteEquivalence": "PASS",
+    "productionRoutes": 9,
+    "productionFatalRoutes": 0,
+    "productionBrowserWarningsOrErrors": 0
+  }
+}
+
