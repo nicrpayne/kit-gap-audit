@@ -39,6 +39,7 @@ import { TokenPalette } from "./canvas/paintTokens";
 import type { PaintStats } from "./canvas/rubric/painter";
 import { RubricViewportEngine } from "./canvas/rubric/engine";
 import { fromSignal, toSignal } from "./rubricCamera";
+import worldStyles from "./AuditWorld.module.css";
 
 declare global {
   interface Window {
@@ -109,6 +110,7 @@ export default function CanvasAuditRenderer(props: AuditRendererProps) {
   viewportRef.current = onViewport;
 
   const [layoutMode, setLayoutMode] = useState<LayoutMode>("rings");
+  const [menuOpen, setMenuOpen] = useState(false);
   useEffect(() => {
     if (typeof window === "undefined") return;
     setLayoutMode(resolveLayout(window.location.search));
@@ -743,21 +745,36 @@ export default function CanvasAuditRenderer(props: AuditRendererProps) {
     >
       <canvas ref={canvasRef} aria-hidden="true" style={{ width: "100%", height: "100%", display: "block" }} />
 
-      {/* THE ONE PRODUCTION CONTROL. Physics dials stay out of the product —
-          the handoff's Slice 5 is explicit — but WHICH ARRANGEMENT you are
-          looking at is a reading choice and belongs on the surface. */}
+      {/* Rubric owns the layout mechanics; Audit owns the product-facing
+          control around them. The compact MENU keeps the world dominant and
+          replaces the reference demo's orange/retro chrome with Signal's
+          raised graphite material. */}
       <div
-        className="absolute left-3 top-3 flex gap-1 rounded-md p-1"
-        style={{
-          background: "color-mix(in srgb, var(--i-panel) 92%, transparent)",
-          border: "1px solid var(--i-border-strong)",
-        }}
+        className={`absolute left-3 top-3 ${worldStyles.worldWidget}`}
         data-shoot="layout-switch"
         onPointerDown={(e) => e.stopPropagation()}
         onPointerUp={(e) => e.stopPropagation()}
         onDoubleClick={(e) => e.stopPropagation()}
       >
-        {(["rings", "constellations"] as LayoutMode[]).map((m) => (
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            setMenuOpen((open) => !open);
+          }}
+          aria-expanded={menuOpen}
+          data-shoot="world-menu-toggle"
+          className="flex h-9 items-center gap-2 rounded-[9px] px-3 text-[9.5px] font-semibold uppercase tracking-[0.16em]"
+          style={{ color: menuOpen ? "var(--i-signal)" : "var(--i-text-soft)" }}
+        >
+          <span aria-hidden className="text-[13px] leading-none">☰</span>
+          Menu
+        </button>
+        {menuOpen && (
+          <div className="border-t px-2.5 pb-2.5 pt-2" style={{ borderColor: "var(--i-border)" }} data-shoot="world-menu-panel">
+            <div className="i-label mb-1.5" style={{ color: "var(--i-text-faint)" }}>World layout</div>
+            <div className="flex gap-1 rounded-md bg-black/20 p-1">
+            {(["rings", "constellations"] as LayoutMode[]).map((m) => (
           <button
             key={m}
             type="button"
@@ -767,15 +784,19 @@ export default function CanvasAuditRenderer(props: AuditRendererProps) {
             }}
             aria-pressed={layoutMode === m}
             data-shoot={`layout-${m}`}
-            className="rounded px-2 py-1 text-[10.5px] uppercase tracking-wider transition-colors"
+            className="rounded px-2 py-1 text-[10px] uppercase tracking-wider transition-colors"
             style={{
-              color: layoutMode === m ? "var(--i-text)" : "var(--i-text-faint)",
+              color: layoutMode === m ? "var(--i-signal)" : "var(--i-text-faint)",
               background: layoutMode === m ? "var(--i-signal-soft)" : "transparent",
+              border: `1px solid ${layoutMode === m ? "color-mix(in srgb, var(--i-signal) 48%, transparent)" : "transparent"}`,
             }}
           >
             {m === "rings" ? "Rings" : "Constellations"}
           </button>
-        ))}
+            ))}
+            </div>
+          </div>
+        )}
       </div>
 
       <A11yMirror

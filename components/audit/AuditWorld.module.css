@@ -1,0 +1,149 @@
+.auditWorld {
+  /* Audit-local semantic aliases. They intentionally resolve to the Master
+     Control Room palette without changing the shared application tokens. */
+  --audit-live: var(--i-signal);
+  --audit-structure: var(--i-violet);
+  --audit-attention: var(--i-amber);
+  --audit-critical: var(--i-red);
+  --audit-accepted: var(--i-mint);
+  --audit-source: var(--i-source);
+  --audit-passage: var(--i-silver);
+  --audit-ground: var(--i-bg);
+  --audit-inactive: var(--i-reality);
+  position: relative;
+  isolation: isolate;
+}
+
+.worldWidget {
+  background:
+    linear-gradient(180deg, rgba(31, 39, 45, 0.94), rgba(19, 25, 29, 0.94)),
+    var(--i-panel);
+  border: 1px solid rgba(83, 100, 111, 0.52);
+  border-top-color: rgba(115, 133, 144, 0.48);
+  box-shadow:
+    0 14px 36px rgba(0, 0, 0, 0.36),
+    0 1px 0 rgba(255, 255, 255, 0.045) inset;
+  border-radius: 10px;
+}
+
+.inspectorDock {
+  position: absolute;
+  z-index: 35;
+  top: 12px;
+  right: 12px;
+  bottom: 12px;
+  width: min(392px, calc(100% - 24px));
+  min-width: 340px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  animation: dock-in 180ms ease-out both;
+}
+
+.inspectorBody {
+  min-height: 0;
+  flex: 1;
+  background: rgba(17, 23, 27, 0.72);
+}
+
+.reviewSheet {
+  position: absolute;
+  z-index: 45;
+  top: 12px;
+  right: 12px;
+  bottom: 12px;
+  width: min(720px, calc(100% - 24px));
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  animation: dock-in 190ms ease-out both;
+}
+
+.reviewBody {
+  min-height: 0;
+  flex: 1;
+  overflow-y: auto;
+  background: var(--i-panel);
+}
+
+.searchWidget {
+  position: absolute;
+  z-index: 25;
+  top: 12px;
+  right: 416px;
+  width: min(286px, calc(100% - 456px));
+  min-width: 246px;
+  transition: right 160ms ease, width 160ms ease;
+}
+
+.searchWidget[data-inspector-open="false"] {
+  right: 12px;
+  width: 286px;
+}
+
+.auditWorld[data-review-open="true"] .searchWidget {
+  display: none;
+}
+
+.contextWidget {
+  position: absolute;
+  z-index: 22;
+  top: 12px;
+  left: 132px;
+  max-width: 330px;
+}
+
+.legendWidget {
+  position: absolute;
+  z-index: 24;
+  left: 12px;
+  bottom: 12px;
+  max-width: 480px;
+}
+
+.dockReopen {
+  position: absolute;
+  z-index: 34;
+  right: 12px;
+  top: 12px;
+  max-width: 260px;
+}
+
+.traceBadge {
+  box-shadow: 0 0 0 1px rgba(70, 195, 214, 0.2), 0 0 22px rgba(70, 195, 214, 0.13);
+}
+
+@keyframes dock-in {
+  from {
+    opacity: 0;
+    transform: translateX(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@media (max-width: 1180px) {
+  .inspectorDock {
+    width: 352px;
+  }
+
+  .searchWidget {
+    right: 376px;
+    width: 258px;
+    min-width: 220px;
+  }
+
+  .contextWidget {
+    top: 56px;
+    left: 12px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .inspectorDock,
+  .reviewSheet {
+    animation: none;
+  }
+}
