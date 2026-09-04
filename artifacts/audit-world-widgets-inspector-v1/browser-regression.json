@@ -104,7 +104,7 @@
     {
       "name": "20 review close restores the same camera",
       "ok": true,
-      "detail": "569.001,706.985,0.88401 → 569.001,706.985,0.88401"
+      "detail": "568.841,706.970,0.88365 → 568.841,706.970,0.88365"
     },
     {
       "name": "21 review close restores the same selection",
