@@ -1,0 +1,95 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1800" height="1060" viewBox="0 0 1800 1060">
+    <defs>
+      <radialGradient id="groundGlow" cx="16%" cy="-5%" r="75%"><stop stop-color="#46c3d6" stop-opacity=".12"/><stop offset=".58" stop-color="#46c3d6" stop-opacity="0"/></radialGradient>
+      <radialGradient id="coreGlow"><stop stop-color="#46c3d6" stop-opacity=".22"/><stop offset=".46" stop-color="#0b0f12"/><stop offset=".72" stop-color="#0b0f12"/><stop offset=".74" stop-color="#46c3d6" stop-opacity=".5"/><stop offset=".76" stop-color="#0b0f12"/><stop offset="1" stop-color="#0b0f12" stop-opacity=".15"/></radialGradient>
+      <filter id="shadow"><feGaussianBlur stdDeviation="12"/></filter>
+      <pattern id="grid" width="24" height="24" patternUnits="userSpaceOnUse"><path d="M24 0H0v24" fill="none" stroke="#fff" stroke-opacity=".025"/></pattern>
+    </defs>
+    <rect width="100%" height="100%" fill="#080b0d"/><rect width="100%" height="100%" fill="url(#groundGlow)"/>
+    <text x="72" y="78" fill="#46c3d6" font-family="Inter, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="14" font-weight="700" text-anchor="start" letter-spacing="3.1">03 · RECOMMENDED SHORTLIST</text><text x="72" y="136" fill="#f3f0e6" font-family="Inter, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="44" font-weight="620" text-anchor="start" letter-spacing="-1.8">Three directions for Nic review</text><text x="72" y="172" fill="#9ca8af" font-family="Inter, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="18" font-weight="400" text-anchor="start" letter-spacing="0">Selection advances a direction to optical refinement; it does not declare a final logo.</text><rect x="72" y="225" width="1656" height="224" rx="13" fill="#12171b" stroke="#253038"/><rect x="96" y="249" width="176" height="176" rx="12" fill="#0b0f12" stroke="#253038"/><circle cx="184" cy="337" r="63" fill="#46c3d6" fill-opacity=".04" stroke="#46c3d6" stroke-opacity=".12"/><g transform="translate(136 289) scale(1.5)" color="#46c3d6"><g stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M8 15h8c9 0 8 14 17 14"/>
+    <path d="M8 32h25"/>
+    <path d="M8 49h8c9 0 8-14 17-14"/>
+    <path d="M39 24v16"/>
+  </g>
+  <circle cx="39" cy="32" r="3" fill="currentColor"/></g><text x="308" y="286" fill="#f3f0e6" font-family="Inter, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="26" font-weight="610" text-anchor="start" letter-spacing="-0.4">01 · Phase Lock</text><text x="308" y="317" fill="#9ca8af" font-family="Inter, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="14" font-weight="400" text-anchor="start" letter-spacing="0">Three readings settle against one exact datum.</text><text x="308" y="359" fill="#46c3d6" font-family="Inter, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="11" font-weight="700" text-anchor="start" letter-spacing="1.6">BEST OVERALL</text><text x="308" y="396" fill="#f3f0e6" font-family="Inter, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="14" font-weight="650" text-anchor="start" letter-spacing="1.2">SCORE  9.0</text><rect x="780" y="264" width="310" height="146" rx="10" fill="#182026" stroke="#253038"/><rect x="796" y="280" width="278" height="54" rx="8" fill="#46c3d6" fill-opacity=".09"/><rect x="796" y="280" width="2" height="54" fill="#46c3d6"/><rect x="810" y="289" width="36" height="36" rx="8" fill="#46c3d6" fill-opacity=".08" stroke="#46c3d6" stroke-opacity=".28"/><g transform="translate(816 295) scale(0.375)" color="#46c3d6"><g stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M8 15h8c9 0 8 14 17 14"/>
+    <path d="M8 32h25"/>
+    <path d="M8 49h8c9 0 8-14 17-14"/>
+    <path d="M39 24v16"/>
+  </g>
+  <circle cx="39" cy="32" r="3" fill="currentColor"/></g><text x="862" y="305" fill="#f3f0e6" font-family="Inter, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="11" font-weight="700" text-anchor="start" letter-spacing="1.1">AUDIT WORLD</text><text x="862" y="323" fill="#64717a" font-family="Inter, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="11" font-weight="400" text-anchor="start" letter-spacing="0">Accepted Reality</text><text x="810" y="368" fill="#64717a" font-family="Inter, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="10" font-weight="650" text-anchor="start" letter-spacing="1.3">24px RAIL / AVATAR</text><rect x="1130" y="264" width="156" height="146" rx="10" fill="#46c3d6" stroke="#253038"/><g transform="translate(1176 290) scale(1)" color="#0b0f12"><g stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M8 15h8c9 0 8 14 17 14"/>
+    <path d="M8 32h25"/>
+    <path d="M8 49h8c9 0 8-14 17-14"/>
+    <path d="M39 24v16"/>
+  </g>
+  <circle cx="39" cy="32" r="3" fill="currentColor"/></g><text x="1208" y="389" fill="#0b0f12" font-family="Inter, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="9" font-weight="700" text-anchor="middle" letter-spacing="1.25">CYAN</text><rect x="1310" y="264" width="156" height="146" rx="10" fill="#f3f0e6" stroke="#253038"/><g transform="translate(1356 290) scale(1)" color="#0b0f12"><g stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M8 15h8c9 0 8 14 17 14"/>
+    <path d="M8 32h25"/>
+    <path d="M8 49h8c9 0 8-14 17-14"/>
+    <path d="M39 24v16"/>
+  </g>
+  <circle cx="39" cy="32" r="3" fill="currentColor"/></g><text x="1388" y="389" fill="#0b0f12" font-family="Inter, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="9" font-weight="700" text-anchor="middle" letter-spacing="1.25">WARM WHITE</text><rect x="1490" y="264" width="156" height="146" rx="10" fill="#0b0f12" stroke="#253038"/><g transform="translate(1536 290) scale(1)" color="#f3f0e6"><g stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M8 15h8c9 0 8 14 17 14"/>
+    <path d="M8 32h25"/>
+    <path d="M8 49h8c9 0 8-14 17-14"/>
+    <path d="M39 24v16"/>
+  </g>
+  <circle cx="39" cy="32" r="3" fill="currentColor"/></g><text x="1568" y="389" fill="#f3f0e6" font-family="Inter, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="9" font-weight="700" text-anchor="middle" letter-spacing="1.25">MONO</text><rect x="72" y="480" width="1656" height="224" rx="13" fill="#12171b" stroke="#253038"/><rect x="96" y="504" width="176" height="176" rx="12" fill="#0b0f12" stroke="#253038"/><circle cx="184" cy="592" r="63" fill="#46c3d6" fill-opacity=".04" stroke="#46c3d6" stroke-opacity=".12"/><g transform="translate(136 544) scale(1.5)" color="#46c3d6"><g stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M9 11h5c8 0 9 13 16 14"/>
+    <path d="M9 53h5c8 0 9-13 16-14"/>
+    <path d="M55 11h-5c-8 0-9 13-16 14"/>
+    <path d="M55 53h-5c-8 0-9-13-16-14"/>
+    <circle cx="32" cy="32" r="7"/>
+  </g>
+  <circle cx="32" cy="32" r="2.75" fill="currentColor"/></g><text x="308" y="541" fill="#f3f0e6" font-family="Inter, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="26" font-weight="610" text-anchor="start" letter-spacing="-0.4">02 · Confluence</text><text x="308" y="572" fill="#9ca8af" font-family="Inter, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="14" font-weight="400" text-anchor="start" letter-spacing="0">Four independent paths bend into one bounded center.</text><text x="308" y="614" fill="#46c3d6" font-family="Inter, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="11" font-weight="700" text-anchor="start" letter-spacing="1.6">BEST IN WORLD</text><text x="308" y="651" fill="#f3f0e6" font-family="Inter, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="14" font-weight="650" text-anchor="start" letter-spacing="1.2">SCORE  8.8</text><rect x="780" y="519" width="310" height="146" rx="10" fill="#182026" stroke="#253038"/><rect x="796" y="535" width="278" height="54" rx="8" fill="#46c3d6" fill-opacity=".09"/><rect x="796" y="535" width="2" height="54" fill="#46c3d6"/><rect x="810" y="544" width="36" height="36" rx="8" fill="#46c3d6" fill-opacity=".08" stroke="#46c3d6" stroke-opacity=".28"/><g transform="translate(816 550) scale(0.375)" color="#46c3d6"><g stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M9 11h5c8 0 9 13 16 14"/>
+    <path d="M9 53h5c8 0 9-13 16-14"/>
+    <path d="M55 11h-5c-8 0-9 13-16 14"/>
+    <path d="M55 53h-5c-8 0-9-13-16-14"/>
+    <circle cx="32" cy="32" r="7"/>
+  </g>
+  <circle cx="32" cy="32" r="2.75" fill="currentColor"/></g><text x="862" y="560" fill="#f3f0e6" font-family="Inter, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="11" font-weight="700" text-anchor="start" letter-spacing="1.1">AUDIT WORLD</text><text x="862" y="578" fill="#64717a" font-family="Inter, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="11" font-weight="400" text-anchor="start" letter-spacing="0">Accepted Reality</text><text x="810" y="623" fill="#64717a" font-family="Inter, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="10" font-weight="650" text-anchor="start" letter-spacing="1.3">24px RAIL / AVATAR</text><rect x="1130" y="519" width="156" height="146" rx="10" fill="#46c3d6" stroke="#253038"/><g transform="translate(1176 545) scale(1)" color="#0b0f12"><g stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M9 11h5c8 0 9 13 16 14"/>
+    <path d="M9 53h5c8 0 9-13 16-14"/>
+    <path d="M55 11h-5c-8 0-9 13-16 14"/>
+    <path d="M55 53h-5c-8 0-9-13-16-14"/>
+    <circle cx="32" cy="32" r="7"/>
+  </g>
+  <circle cx="32" cy="32" r="2.75" fill="currentColor"/></g><text x="1208" y="644" fill="#0b0f12" font-family="Inter, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="9" font-weight="700" text-anchor="middle" letter-spacing="1.25">CYAN</text><rect x="1310" y="519" width="156" height="146" rx="10" fill="#f3f0e6" stroke="#253038"/><g transform="translate(1356 545) scale(1)" color="#0b0f12"><g stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M9 11h5c8 0 9 13 16 14"/>
+    <path d="M9 53h5c8 0 9-13 16-14"/>
+    <path d="M55 11h-5c-8 0-9 13-16 14"/>
+    <path d="M55 53h-5c-8 0-9-13-16-14"/>
+    <circle cx="32" cy="32" r="7"/>
+  </g>
+  <circle cx="32" cy="32" r="2.75" fill="currentColor"/></g><text x="1388" y="644" fill="#0b0f12" font-family="Inter, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="9" font-weight="700" text-anchor="middle" letter-spacing="1.25">WARM WHITE</text><rect x="1490" y="519" width="156" height="146" rx="10" fill="#0b0f12" stroke="#253038"/><g transform="translate(1536 545) scale(1)" color="#f3f0e6"><g stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M9 11h5c8 0 9 13 16 14"/>
+    <path d="M9 53h5c8 0 9-13 16-14"/>
+    <path d="M55 11h-5c-8 0-9 13-16 14"/>
+    <path d="M55 53h-5c-8 0-9-13-16-14"/>
+    <circle cx="32" cy="32" r="7"/>
+  </g>
+  <circle cx="32" cy="32" r="2.75" fill="currentColor"/></g><text x="1568" y="644" fill="#f3f0e6" font-family="Inter, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="9" font-weight="700" text-anchor="middle" letter-spacing="1.25">MONO</text><rect x="72" y="735" width="1656" height="224" rx="13" fill="#12171b" stroke="#253038"/><rect x="96" y="759" width="176" height="176" rx="12" fill="#0b0f12" stroke="#253038"/><circle cx="184" cy="847" r="63" fill="#46c3d6" fill-opacity=".04" stroke="#46c3d6" stroke-opacity=".12"/><g transform="translate(136 799) scale(1.5)" color="#46c3d6"><g stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M8 15h9c10 0 9 11 15 17s5 17 15 17h9"/>
+    <path d="M8 49h9c10 0 9-11 15-17s5-17 15-17h9"/>
+  </g>
+  <circle cx="32" cy="32" r="3.25" fill="currentColor"/></g><text x="308" y="796" fill="#f3f0e6" font-family="Inter, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="26" font-weight="610" text-anchor="start" letter-spacing="-0.4">03 · Signal Fold</text><text x="308" y="827" fill="#9ca8af" font-family="Inter, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="14" font-weight="400" text-anchor="start" letter-spacing="0">Differing waves cross phase and stabilize at one point.</text><text x="308" y="869" fill="#46c3d6" font-family="Inter, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="11" font-weight="700" text-anchor="start" letter-spacing="1.6">MOST DISTINCTIVE</text><text x="308" y="906" fill="#f3f0e6" font-family="Inter, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="14" font-weight="650" text-anchor="start" letter-spacing="1.2">SCORE  8.6</text><rect x="780" y="774" width="310" height="146" rx="10" fill="#182026" stroke="#253038"/><rect x="796" y="790" width="278" height="54" rx="8" fill="#46c3d6" fill-opacity=".09"/><rect x="796" y="790" width="2" height="54" fill="#46c3d6"/><rect x="810" y="799" width="36" height="36" rx="8" fill="#46c3d6" fill-opacity=".08" stroke="#46c3d6" stroke-opacity=".28"/><g transform="translate(816 805) scale(0.375)" color="#46c3d6"><g stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M8 15h9c10 0 9 11 15 17s5 17 15 17h9"/>
+    <path d="M8 49h9c10 0 9-11 15-17s5-17 15-17h9"/>
+  </g>
+  <circle cx="32" cy="32" r="3.25" fill="currentColor"/></g><text x="862" y="815" fill="#f3f0e6" font-family="Inter, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="11" font-weight="700" text-anchor="start" letter-spacing="1.1">AUDIT WORLD</text><text x="862" y="833" fill="#64717a" font-family="Inter, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="11" font-weight="400" text-anchor="start" letter-spacing="0">Accepted Reality</text><text x="810" y="878" fill="#64717a" font-family="Inter, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="10" font-weight="650" text-anchor="start" letter-spacing="1.3">24px RAIL / AVATAR</text><rect x="1130" y="774" width="156" height="146" rx="10" fill="#46c3d6" stroke="#253038"/><g transform="translate(1176 800) scale(1)" color="#0b0f12"><g stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M8 15h9c10 0 9 11 15 17s5 17 15 17h9"/>
+    <path d="M8 49h9c10 0 9-11 15-17s5-17 15-17h9"/>
+  </g>
+  <circle cx="32" cy="32" r="3.25" fill="currentColor"/></g><text x="1208" y="899" fill="#0b0f12" font-family="Inter, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="9" font-weight="700" text-anchor="middle" letter-spacing="1.25">CYAN</text><rect x="1310" y="774" width="156" height="146" rx="10" fill="#f3f0e6" stroke="#253038"/><g transform="translate(1356 800) scale(1)" color="#0b0f12"><g stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M8 15h9c10 0 9 11 15 17s5 17 15 17h9"/>
+    <path d="M8 49h9c10 0 9-11 15-17s5-17 15-17h9"/>
+  </g>
+  <circle cx="32" cy="32" r="3.25" fill="currentColor"/></g><text x="1388" y="899" fill="#0b0f12" font-family="Inter, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="9" font-weight="700" text-anchor="middle" letter-spacing="1.25">WARM WHITE</text><rect x="1490" y="774" width="156" height="146" rx="10" fill="#0b0f12" stroke="#253038"/><g transform="translate(1536 800) scale(1)" color="#f3f0e6"><g stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M8 15h9c10 0 9 11 15 17s5 17 15 17h9"/>
+    <path d="M8 49h9c10 0 9-11 15-17s5-17 15-17h9"/>
+  </g>
+  <circle cx="32" cy="32" r="3.25" fill="currentColor"/></g><text x="1568" y="899" fill="#f3f0e6" font-family="Inter, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="9" font-weight="700" text-anchor="middle" letter-spacing="1.25">MONO</text><line x1="72" y1="1005" x2="1728" y2="1005" stroke="#253038"/><text x="72" y="1037" fill="#46c3d6" font-family="Inter, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="12" font-weight="700" text-anchor="start" letter-spacing="1.8">PHASE LOCK → CONFLUENCE → SIGNAL FOLD</text><text x="1728" y="1037" fill="#64717a" font-family="Inter, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="12" font-weight="650" text-anchor="end" letter-spacing="1.8">STATIC RECOGNIZABILITY PRESERVED</text>
+  </svg>

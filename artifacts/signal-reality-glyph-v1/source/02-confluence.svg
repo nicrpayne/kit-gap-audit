@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none" role="img" aria-labelledby="title desc">
+  <title id="title">Confluence</title>
+  <desc id="desc">Four independent paths bend into one accepted center.</desc>
+  <g stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M9 11h5c8 0 9 13 16 14"/>
+    <path d="M9 53h5c8 0 9-13 16-14"/>
+    <path d="M55 11h-5c-8 0-9 13-16 14"/>
+    <path d="M55 53h-5c-8 0-9-13-16-14"/>
+    <circle cx="32" cy="32" r="7"/>
+  </g>
+  <circle cx="32" cy="32" r="2.75" fill="currentColor"/>
+</svg>

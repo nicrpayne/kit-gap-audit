@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none" role="img" aria-labelledby="title desc">
+  <title id="title">Quiet Core</title>
+  <desc id="desc">Broken observation waves progressively settle into a quiet center.</desc>
+  <g stroke="currentColor" stroke-width="4" stroke-linecap="round">
+    <path d="M16 15a23 23 0 0 0 0 34" opacity=".55"/>
+    <path d="M48 15a23 23 0 0 1 0 34" opacity=".55"/>
+    <path d="M22 22a14 14 0 0 0 0 20" opacity=".78"/>
+    <path d="M42 22a14 14 0 0 1 0 20" opacity=".78"/>
+    <path d="M28 28a6 6 0 0 0 0 8"/>
+    <path d="M36 28a6 6 0 0 1 0 8"/>
+  </g>
+  <circle cx="32" cy="32" r="3.25" fill="currentColor"/>
+</svg>

@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none" role="img" aria-labelledby="title desc">
+  <title id="title">Signal Fold</title>
+  <desc id="desc">Two signal paths cross phase and settle at one stable point.</desc>
+  <g stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M8 15h9c10 0 9 11 15 17s5 17 15 17h9"/>
+    <path d="M8 49h9c10 0 9-11 15-17s5-17 15-17h9"/>
+  </g>
+  <circle cx="32" cy="32" r="3.25" fill="currentColor"/>
+</svg>

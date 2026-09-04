@@ -1,0 +1,202 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Signal Reality Glyph — V1 Exploration</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --void: #080b0d;
+      --bg: #0b0f12;
+      --panel: #12171b;
+      --raised: #182026;
+      --line: #253038;
+      --line-strong: #34434d;
+      --text: #f3f0e6;
+      --soft: #9ca8af;
+      --faint: #64717a;
+      --cyan: #46c3d6;
+      --cyan-soft: rgba(70, 195, 214, .14);
+      --mint: #4ad9a8;
+      --amber: #e0b04a;
+      --red: #ef6b5b;
+    }
+
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background:
+        radial-gradient(circle at 22% -8%, rgba(70, 195, 214, .08), transparent 32rem),
+        var(--void);
+      color: var(--text);
+      font: 14px/1.45 Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      letter-spacing: .005em;
+    }
+    .shell { width: min(1480px, calc(100% - 48px)); margin: 0 auto; padding: 48px 0 72px; }
+    .eyebrow, .meta, .section-kicker, th {
+      color: var(--cyan);
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: .19em;
+      text-transform: uppercase;
+    }
+    header { display: grid; grid-template-columns: 1fr auto; gap: 32px; align-items: end; padding-bottom: 28px; border-bottom: 1px solid var(--line); }
+    h1 { margin: 8px 0 6px; font-size: clamp(34px, 5vw, 68px); line-height: .98; letter-spacing: -.052em; font-weight: 620; }
+    .lede { max-width: 710px; color: var(--soft); font-size: 16px; }
+    .status { text-align: right; border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; background: rgba(18,23,27,.72); }
+    .status strong { display: block; margin-top: 4px; color: var(--text); font-size: 13px; font-weight: 600; }
+    section { margin-top: 44px; }
+    .section-head { display: flex; justify-content: space-between; gap: 24px; align-items: end; margin-bottom: 16px; }
+    h2 { margin: 5px 0 0; font-size: 22px; letter-spacing: -.025em; font-weight: 580; }
+    .section-note { max-width: 560px; color: var(--faint); font-size: 12px; text-align: right; }
+
+    .concept-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+    .card { position: relative; min-height: 302px; overflow: hidden; border: 1px solid var(--line); border-radius: 12px; background: linear-gradient(145deg, rgba(24,32,38,.86), rgba(12,16,19,.95)); }
+    .card::before { content: ""; position: absolute; inset: 0; background-image: linear-gradient(rgba(255,255,255,.018) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,.018) 1px, transparent 1px); background-size: 24px 24px; mask-image: linear-gradient(to bottom, black, transparent 80%); }
+    .card-top { position: relative; display: flex; align-items: start; justify-content: space-between; padding: 18px 18px 0; }
+    .number { color: var(--faint); font: 600 11px/1 ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: .08em; }
+    .tag { border: 1px solid var(--line); border-radius: 999px; padding: 4px 7px; color: var(--soft); font-size: 9px; letter-spacing: .12em; text-transform: uppercase; }
+    .mark-stage { position: relative; height: 148px; display: grid; place-items: center; color: var(--cyan); }
+    .mark-stage::after { content: ""; position: absolute; width: 112px; height: 112px; border: 1px solid rgba(70,195,214,.11); border-radius: 50%; box-shadow: 0 0 70px rgba(70,195,214,.08); }
+    .mark { display: block; width: 76px; height: 76px; position: relative; z-index: 1; filter: drop-shadow(0 0 12px rgba(70,195,214,.15)); }
+    .card-copy { position: relative; padding: 0 18px 18px; }
+    .card h3 { margin: 0; font-size: 17px; font-weight: 590; letter-spacing: -.015em; }
+    .card p { min-height: 40px; margin: 5px 0 14px; color: var(--soft); font-size: 12px; }
+    .scale-row { display: flex; align-items: center; gap: 14px; min-height: 40px; padding-top: 12px; border-top: 1px solid var(--line); }
+    .scale { display: grid; place-items: center; color: var(--text); }
+    .scale small { display: block; margin-top: 4px; color: var(--faint); font: 9px/1 ui-monospace, monospace; }
+    .scale svg { display: block; }
+    .recommend { border-color: rgba(70,195,214,.42); box-shadow: inset 0 1px 0 rgba(70,195,214,.08); }
+    .recommend .tag { color: var(--cyan); border-color: rgba(70,195,214,.3); background: var(--cyan-soft); }
+
+    .world-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+    .world { position: relative; height: 245px; overflow: hidden; border: 1px solid var(--line); border-radius: 10px; background-image: linear-gradient(rgba(8,11,13,.1), rgba(8,11,13,.1)), url("../source/audit-world-reference.png"); background-size: auto 100%; background-position: center; }
+    .world::after { content: ""; position: absolute; inset: 0; background: radial-gradient(circle at 43.3% 56.7%, transparent 0 40px, rgba(8,11,13,.08) 76px, rgba(8,11,13,.28) 100%); pointer-events: none; }
+    .world-core { position: absolute; z-index: 2; left: 43.3%; top: 56.7%; translate: -50% -50%; width: 80px; height: 80px; display: grid; place-items: center; border-radius: 50%; color: var(--cyan); background: radial-gradient(circle, #0b1115 47%, rgba(11,17,21,.97) 48% 61%, rgba(70,195,214,.23) 62% 63%, rgba(11,17,21,.32) 64% 74%, rgba(70,195,214,.17) 75% 76%, transparent 77%); box-shadow: 0 0 38px rgba(70,195,214,.2); }
+    .world-core svg { width: 43px; height: 43px; filter: drop-shadow(0 0 7px rgba(70,195,214,.35)); }
+    .world-label { position: absolute; z-index: 4; left: 12px; top: 11px; padding: 6px 8px; border: 1px solid rgba(255,255,255,.14); border-radius: 6px; background: rgba(8,11,13,.78); font-size: 10px; letter-spacing: .13em; text-transform: uppercase; }
+
+    .usage { display: grid; grid-template-columns: 310px 1fr; gap: 12px; }
+    .rail { border: 1px solid var(--line); border-radius: 11px; background: #141a1e; padding: 16px; }
+    .rail-item { display: grid; grid-template-columns: 40px 1fr; gap: 12px; align-items: center; padding: 10px; border-radius: 9px; color: var(--soft); }
+    .rail-item.active { background: rgba(70,195,214,.1); color: var(--text); box-shadow: inset 2px 0 var(--cyan); }
+    .rail-icon { display: grid; place-items: center; width: 38px; height: 38px; color: var(--cyan); border: 1px solid rgba(70,195,214,.28); border-radius: 9px; background: rgba(70,195,214,.08); }
+    .rail-icon svg { width: 24px; height: 24px; }
+    .rail-label b { display: block; font-size: 12px; font-weight: 590; }
+    .rail-label span { color: var(--faint); font-size: 10px; }
+    .mono-panel { display: grid; grid-template-columns: 1fr 1fr; min-height: 218px; overflow: hidden; border: 1px solid var(--line); border-radius: 11px; }
+    .mono-swatch { display: grid; place-items: center; gap: 9px; align-content: center; }
+    .mono-swatch:first-child { background: #f3f0e6; color: #101417; }
+    .mono-swatch:last-child { background: #101417; color: #f3f0e6; border-left: 1px solid var(--line); }
+    .mono-swatch svg { width: 64px; height: 64px; }
+    .mono-swatch span { font-size: 10px; letter-spacing: .14em; text-transform: uppercase; opacity: .6; }
+
+    .matrix { overflow: hidden; border: 1px solid var(--line); border-radius: 11px; }
+    table { width: 100%; border-collapse: collapse; background: rgba(18,23,27,.72); }
+    th, td { padding: 13px 12px; border-bottom: 1px solid var(--line); text-align: center; }
+    th:first-child, td:first-child { text-align: left; }
+    tr:last-child td { border-bottom: 0; }
+    td { color: var(--soft); font-size: 12px; }
+    td:first-child { color: var(--text); font-weight: 560; }
+    .score-high { color: var(--cyan); font-weight: 650; }
+    .risk-low { color: var(--mint); }
+    .risk-med { color: var(--amber); }
+    .risk-high { color: var(--red); }
+    footer { display: flex; justify-content: space-between; gap: 24px; margin-top: 34px; padding-top: 18px; border-top: 1px solid var(--line); color: var(--faint); font-size: 11px; }
+
+    @media (prefers-reduced-motion: no-preference) {
+      .card:hover .mark-stage::after { animation: settle 1.4s ease-out both; }
+      @keyframes settle { from { scale: 1.12; opacity: .2; } to { scale: 1; opacity: 1; } }
+    }
+    @media (max-width: 920px) { .concept-grid, .world-grid { grid-template-columns: repeat(2, 1fr); } .usage { grid-template-columns: 1fr; } }
+    @media (max-width: 620px) { .shell { width: min(100% - 24px, 1480px); padding-top: 28px; } header { grid-template-columns: 1fr; } .status { text-align: left; } .concept-grid, .world-grid { grid-template-columns: 1fr; } .section-head { display: block; } .section-note { text-align: left; margin-top: 7px; } }
+  </style>
+</head>
+<body>
+  <svg width="0" height="0" aria-hidden="true" style="position:absolute">
+    <symbol id="phase-lock" viewBox="0 0 64 64"><g fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"><path d="M8 15h8c9 0 8 14 17 14"/><path d="M8 32h25"/><path d="M8 49h8c9 0 8-14 17-14"/><path d="M39 24v16"/></g><circle cx="39" cy="32" r="3" fill="currentColor"/></symbol>
+    <symbol id="confluence" viewBox="0 0 64 64"><g fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11h5c8 0 9 13 16 14"/><path d="M9 53h5c8 0 9-13 16-14"/><path d="M55 11h-5c-8 0-9 13-16 14"/><path d="M55 53h-5c-8 0-9-13-16-14"/><circle cx="32" cy="32" r="7"/></g><circle cx="32" cy="32" r="2.75" fill="currentColor"/></symbol>
+    <symbol id="signal-fold" viewBox="0 0 64 64"><g fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"><path d="M8 15h9c10 0 9 11 15 17s5 17 15 17h9"/><path d="M8 49h9c10 0 9-11 15-17s5-17 15-17h9"/></g><circle cx="32" cy="32" r="3.25" fill="currentColor"/></symbol>
+    <symbol id="resolution-gate" viewBox="0 0 64 64"><g fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"><path d="M8 16h9l12 12"/><path d="M8 32h21"/><path d="M8 48h9l12-12"/><path d="M35 23v18"/><path d="M42 32h14"/></g><circle cx="35" cy="32" r="3" fill="currentColor"/></symbol>
+    <symbol id="quiet-core" viewBox="0 0 64 64"><g fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round"><path d="M16 15a23 23 0 0 0 0 34" opacity=".55"/><path d="M48 15a23 23 0 0 1 0 34" opacity=".55"/><path d="M22 22a14 14 0 0 0 0 20" opacity=".78"/><path d="M42 22a14 14 0 0 1 0 20" opacity=".78"/><path d="M28 28a6 6 0 0 0 0 8"/><path d="M36 28a6 6 0 0 1 0 8"/></g><circle cx="32" cy="32" r="3.25" fill="currentColor"/></symbol>
+    <symbol id="triangulate" viewBox="0 0 64 64"><g fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"><path d="M14 15l13 12"/><path d="M14 49l13-12"/><path d="M51 32H37"/><circle cx="32" cy="32" r="7"/></g><g fill="currentColor"><circle cx="12" cy="13" r="3"/><circle cx="12" cy="51" r="3"/><circle cx="54" cy="32" r="3"/><circle cx="32" cy="32" r="2.75"/></g></symbol>
+  </svg>
+
+  <main class="shell">
+    <header>
+      <div>
+        <div class="eyebrow">Signal · Audit-local exploration</div>
+        <h1>Reality glyphs</h1>
+        <div class="lede">Six minimal marks for the place where many signals resolve into one accepted Reality. Static form first; graphite, cyan, and warm white only.</div>
+      </div>
+      <div class="status"><span class="meta">Review state</span><strong>V1 · Not a corporate logo</strong></div>
+    </header>
+
+    <section>
+      <div class="section-head"><div><div class="section-kicker">01 · Candidate set</div><h2>One idea, six geometries</h2></div><div class="section-note">Every mark uses one 64×64 grid, a 4-unit primary stroke, round construction, no type, and no fill dependency beyond the accepted point.</div></div>
+      <div class="concept-grid">
+        <article class="card recommend"><div class="card-top"><span class="number">01</span><span class="tag">Recommended</span></div><div class="mark-stage"><svg class="mark" role="img" aria-label="Phase Lock glyph"><use href="#phase-lock"/></svg></div><div class="card-copy"><h3>Phase Lock</h3><p>Three readings settle against one exact datum. Directional, calm, and most faithful to the philosophy.</p><div class="scale-row" data-scales="phase-lock"></div></div></article>
+        <article class="card recommend"><div class="card-top"><span class="number">02</span><span class="tag">Recommended</span></div><div class="mark-stage"><svg class="mark" role="img" aria-label="Confluence glyph"><use href="#confluence"/></svg></div><div class="card-copy"><h3>Confluence</h3><p>Independent paths arrive at a single bounded center. Balanced, compact, and strong in the world.</p><div class="scale-row" data-scales="confluence"></div></div></article>
+        <article class="card recommend"><div class="card-top"><span class="number">03</span><span class="tag">Recommended</span></div><div class="mark-stage"><svg class="mark" role="img" aria-label="Signal Fold glyph"><use href="#signal-fold"/></svg></div><div class="card-copy"><h3>Signal Fold</h3><p>Conflicting waves cross, reconcile, and continue in stable phase. Most distinctive at hero scale.</p><div class="scale-row" data-scales="signal-fold"></div></div></article>
+        <article class="card"><div class="card-top"><span class="number">04</span><span class="tag">Systemic</span></div><div class="mark-stage"><svg class="mark" role="img" aria-label="Resolution Gate glyph"><use href="#resolution-gate"/></svg></div><div class="card-copy"><h3>Resolution Gate</h3><p>Evidence lanes pass through a narrow acceptance gate. Very legible, but slightly diagrammatic.</p><div class="scale-row" data-scales="resolution-gate"></div></div></article>
+        <article class="card"><div class="card-top"><span class="number">05</span><span class="tag">Atmospheric</span></div><div class="mark-stage"><svg class="mark" role="img" aria-label="Quiet Core glyph"><use href="#quiet-core"/></svg></div><div class="card-copy"><h3>Quiet Core</h3><p>Observation waves lose noise as they approach the settled center. Clear, with familiar radar risk.</p><div class="scale-row" data-scales="quiet-core"></div></div></article>
+        <article class="card"><div class="card-top"><span class="number">06</span><span class="tag">Literal</span></div><div class="mark-stage"><svg class="mark" role="img" aria-label="Triangulate glyph"><use href="#triangulate"/></svg></div><div class="card-copy"><h3>Triangulate</h3><p>Three observed points establish one accepted center. Strong concept; highest network/crypto risk.</p><div class="scale-row" data-scales="triangulate"></div></div></article>
+      </div>
+    </section>
+
+    <section>
+      <div class="section-head"><div><div class="section-kicker">02 · Audit World</div><h2>Placed in the current center</h2></div><div class="section-note">The old text disc is covered only in this static composition. No production renderer or route is changed.</div></div>
+      <div class="world-grid" id="world-grid"></div>
+    </section>
+
+    <section>
+      <div class="section-head"><div><div class="section-kicker">03 · System usage</div><h2>Rail and monochrome checks</h2></div><div class="section-note">Phase Lock shown as the leading functional mark. All candidates remain neutral SVG geometry and inherit a single current color.</div></div>
+      <div class="usage">
+        <div class="rail"><div class="rail-item active"><div class="rail-icon"><svg aria-hidden="true"><use href="#phase-lock"/></svg></div><div class="rail-label"><b>Audit World</b><span>Accepted Reality center</span></div></div><div class="rail-item"><div class="rail-icon" style="color:var(--soft);border-color:var(--line)">◇</div><div class="rail-label"><b>Decisions</b><span>Open choices and gates</span></div></div><div class="rail-item"><div class="rail-icon" style="color:var(--soft);border-color:var(--line)">⌁</div><div class="rail-label"><b>Forecast</b><span>Likely outcomes</span></div></div></div>
+        <div class="mono-panel"><div class="mono-swatch"><svg role="img" aria-label="Phase Lock in black"><use href="#phase-lock"/></svg><span>One-color dark</span></div><div class="mono-swatch"><svg role="img" aria-label="Phase Lock in white"><use href="#phase-lock"/></svg><span>One-color light</span></div></div>
+      </div>
+    </section>
+
+    <section>
+      <div class="section-head"><div><div class="section-kicker">04 · Evaluation</div><h2>Weighted design read</h2></div><div class="section-note">Scores are directional, not brand clearance. Risk is inverse: lower is safer.</div></div>
+      <div class="matrix">
+        <table>
+          <thead><tr><th>Concept</th><th>Recognizable</th><th>Simple</th><th>Unique</th><th>16px</th><th>Philosophy</th><th>Control Room</th><th>Audit World</th><th>Common-mark risk</th><th>Overall</th></tr></thead>
+          <tbody>
+            <tr><td>01 · Phase Lock</td><td>9</td><td>9</td><td>8</td><td>9</td><td>10</td><td>9</td><td>9</td><td class="risk-low">Low</td><td class="score-high">9.0</td></tr>
+            <tr><td>02 · Confluence</td><td>9</td><td>8</td><td>8</td><td>9</td><td>9</td><td>9</td><td>10</td><td class="risk-med">Med-low</td><td class="score-high">8.8</td></tr>
+            <tr><td>03 · Signal Fold</td><td>8</td><td>8</td><td>9</td><td>7</td><td>9</td><td>9</td><td>9</td><td class="risk-low">Low</td><td class="score-high">8.6</td></tr>
+            <tr><td>04 · Resolution Gate</td><td>9</td><td>8</td><td>7</td><td>9</td><td>9</td><td>8</td><td>8</td><td class="risk-med">Medium</td><td>8.3</td></tr>
+            <tr><td>05 · Quiet Core</td><td>9</td><td>8</td><td>6</td><td>8</td><td>8</td><td>8</td><td>8</td><td class="risk-high">High</td><td>7.6</td></tr>
+            <tr><td>06 · Triangulate</td><td>9</td><td>8</td><td>6</td><td>8</td><td>9</td><td>7</td><td>8</td><td class="risk-high">High</td><td>7.7</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <footer><span>Signal Reality Glyph · V1 exploration</span><span>Artifact-only · no mounted production changes</span></footer>
+  </main>
+
+  <script>
+    const concepts = [
+      ["phase-lock", "01 · Phase Lock"], ["confluence", "02 · Confluence"], ["signal-fold", "03 · Signal Fold"],
+      ["resolution-gate", "04 · Resolution Gate"], ["quiet-core", "05 · Quiet Core"], ["triangulate", "06 · Triangulate"]
+    ];
+    for (const [id] of concepts) {
+      const row = document.querySelector(`[data-scales="${id}"]`);
+      for (const size of [16, 24, 40, 64]) {
+        const box = document.createElement("div"); box.className = "scale";
+        box.innerHTML = `<svg width="${size}" height="${size}" viewBox="0 0 64 64" aria-hidden="true"><use href="#${id}"/></svg><small>${size}</small>`;
+        row.appendChild(box);
+      }
+    }
+    const worldGrid = document.querySelector("#world-grid");
+    for (const [id, label] of concepts) {
+      const frame = document.createElement("div"); frame.className = "world";
+      frame.innerHTML = `<div class="world-label">${label}</div><div class="world-core"><svg viewBox="0 0 64 64" role="img" aria-label="${label} in Audit World"><use href="#${id}"/></svg></div>`;
+      worldGrid.appendChild(frame);
+    }
+  </script>
+</body>
+</html>

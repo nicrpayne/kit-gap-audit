@@ -1,0 +1,53 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1800" height="1010" viewBox="0 0 1800 1010">
+    <defs>
+      <radialGradient id="groundGlow" cx="16%" cy="-5%" r="75%"><stop stop-color="#46c3d6" stop-opacity=".12"/><stop offset=".58" stop-color="#46c3d6" stop-opacity="0"/></radialGradient>
+      <radialGradient id="coreGlow"><stop stop-color="#46c3d6" stop-opacity=".22"/><stop offset=".46" stop-color="#0b0f12"/><stop offset=".72" stop-color="#0b0f12"/><stop offset=".74" stop-color="#46c3d6" stop-opacity=".5"/><stop offset=".76" stop-color="#0b0f12"/><stop offset="1" stop-color="#0b0f12" stop-opacity=".15"/></radialGradient>
+      <filter id="shadow"><feGaussianBlur stdDeviation="12"/></filter>
+      <pattern id="grid" width="24" height="24" patternUnits="userSpaceOnUse"><path d="M24 0H0v24" fill="none" stroke="#fff" stroke-opacity=".025"/></pattern>
+    </defs>
+    <rect width="100%" height="100%" fill="#080b0d"/><rect width="100%" height="100%" fill="url(#groundGlow)"/>
+    <text x="72" y="78" fill="#46c3d6" font-family="Inter, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="14" font-weight="700" text-anchor="start" letter-spacing="3.1">02 · AUDIT WORLD CONTEXT</text><text x="72" y="136" fill="#f3f0e6" font-family="Inter, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="44" font-weight="620" text-anchor="start" letter-spacing="-1.8">Does it hold the center?</text><text x="72" y="172" fill="#9ca8af" font-family="Inter, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="18" font-weight="400" text-anchor="start" letter-spacing="0">Each mark covers the current text disc in this static composition only.</text><clipPath id="clip-0"><rect x="72" y="218" width="540" height="338" rx="12"/></clipPath><g clip-path="url(#clip-0)"><image href="../source/audit-world-reference.png" x="72" y="218" width="540" height="338" preserveAspectRatio="xMidYMid meet"/><circle cx="305.82" cy="409.64599999999996" r="40" fill="#0b0f12" fill-opacity=".98"/><circle cx="305.82" cy="409.64599999999996" r="58" fill="#46c3d6" fill-opacity=".07" stroke="#46c3d6" stroke-opacity=".16"/><circle cx="305.82" cy="409.64599999999996" r="46" fill="none" stroke="#46c3d6" stroke-opacity=".42"/><g transform="translate(275.82 379.64599999999996) scale(0.9375)" color="#46c3d6"><g stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M8 15h8c9 0 8 14 17 14"/>
+    <path d="M8 32h25"/>
+    <path d="M8 49h8c9 0 8-14 17-14"/>
+    <path d="M39 24v16"/>
+  </g>
+  <circle cx="39" cy="32" r="3" fill="currentColor"/></g><rect x="84" y="230" width="190" height="32" rx="6" fill="#080b0d" fill-opacity=".88" stroke="#fff" stroke-opacity=".14"/><text x="97" y="251" fill="#f3f0e6" font-family="Inter, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="11" font-weight="700" text-anchor="start" letter-spacing="1.2">01 · PHASE LOCK</text></g><rect x="72" y="218" width="540" height="338" rx="12" fill="none" stroke="#46c3d6" stroke-opacity="0.5"/><clipPath id="clip-1"><rect x="636" y="218" width="540" height="338" rx="12"/></clipPath><g clip-path="url(#clip-1)"><image href="../source/audit-world-reference.png" x="636" y="218" width="540" height="338" preserveAspectRatio="xMidYMid meet"/><circle cx="869.8199999999999" cy="409.64599999999996" r="40" fill="#0b0f12" fill-opacity=".98"/><circle cx="869.8199999999999" cy="409.64599999999996" r="58" fill="#46c3d6" fill-opacity=".07" stroke="#46c3d6" stroke-opacity=".16"/><circle cx="869.8199999999999" cy="409.64599999999996" r="46" fill="none" stroke="#46c3d6" stroke-opacity=".42"/><g transform="translate(839.8199999999999 379.64599999999996) scale(0.9375)" color="#46c3d6"><g stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M9 11h5c8 0 9 13 16 14"/>
+    <path d="M9 53h5c8 0 9-13 16-14"/>
+    <path d="M55 11h-5c-8 0-9 13-16 14"/>
+    <path d="M55 53h-5c-8 0-9-13-16-14"/>
+    <circle cx="32" cy="32" r="7"/>
+  </g>
+  <circle cx="32" cy="32" r="2.75" fill="currentColor"/></g><rect x="648" y="230" width="190" height="32" rx="6" fill="#080b0d" fill-opacity=".88" stroke="#fff" stroke-opacity=".14"/><text x="661" y="251" fill="#f3f0e6" font-family="Inter, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="11" font-weight="700" text-anchor="start" letter-spacing="1.2">02 · CONFLUENCE</text></g><rect x="636" y="218" width="540" height="338" rx="12" fill="none" stroke="#46c3d6" stroke-opacity="0.5"/><clipPath id="clip-2"><rect x="1200" y="218" width="540" height="338" rx="12"/></clipPath><g clip-path="url(#clip-2)"><image href="../source/audit-world-reference.png" x="1200" y="218" width="540" height="338" preserveAspectRatio="xMidYMid meet"/><circle cx="1433.82" cy="409.64599999999996" r="40" fill="#0b0f12" fill-opacity=".98"/><circle cx="1433.82" cy="409.64599999999996" r="58" fill="#46c3d6" fill-opacity=".07" stroke="#46c3d6" stroke-opacity=".16"/><circle cx="1433.82" cy="409.64599999999996" r="46" fill="none" stroke="#46c3d6" stroke-opacity=".42"/><g transform="translate(1403.82 379.64599999999996) scale(0.9375)" color="#46c3d6"><g stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M8 15h9c10 0 9 11 15 17s5 17 15 17h9"/>
+    <path d="M8 49h9c10 0 9-11 15-17s5-17 15-17h9"/>
+  </g>
+  <circle cx="32" cy="32" r="3.25" fill="currentColor"/></g><rect x="1212" y="230" width="190" height="32" rx="6" fill="#080b0d" fill-opacity=".88" stroke="#fff" stroke-opacity=".14"/><text x="1225" y="251" fill="#f3f0e6" font-family="Inter, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="11" font-weight="700" text-anchor="start" letter-spacing="1.2">03 · SIGNAL FOLD</text></g><rect x="1200" y="218" width="540" height="338" rx="12" fill="none" stroke="#46c3d6" stroke-opacity="0.5"/><clipPath id="clip-3"><rect x="72" y="594" width="540" height="338" rx="12"/></clipPath><g clip-path="url(#clip-3)"><image href="../source/audit-world-reference.png" x="72" y="594" width="540" height="338" preserveAspectRatio="xMidYMid meet"/><circle cx="305.82" cy="785.646" r="40" fill="#0b0f12" fill-opacity=".98"/><circle cx="305.82" cy="785.646" r="58" fill="#46c3d6" fill-opacity=".07" stroke="#46c3d6" stroke-opacity=".16"/><circle cx="305.82" cy="785.646" r="46" fill="none" stroke="#46c3d6" stroke-opacity=".42"/><g transform="translate(275.82 755.646) scale(0.9375)" color="#46c3d6"><g stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M8 16h9l12 12"/>
+    <path d="M8 32h21"/>
+    <path d="M8 48h9l12-12"/>
+    <path d="M35 23v18"/>
+    <path d="M42 32h14"/>
+  </g>
+  <circle cx="35" cy="32" r="3" fill="currentColor"/></g><rect x="84" y="606" width="190" height="32" rx="6" fill="#080b0d" fill-opacity=".88" stroke="#fff" stroke-opacity=".14"/><text x="97" y="627" fill="#f3f0e6" font-family="Inter, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="11" font-weight="700" text-anchor="start" letter-spacing="1.2">04 · RESOLUTION GATE</text></g><rect x="72" y="594" width="540" height="338" rx="12" fill="none" stroke="#253038" stroke-opacity="1"/><clipPath id="clip-4"><rect x="636" y="594" width="540" height="338" rx="12"/></clipPath><g clip-path="url(#clip-4)"><image href="../source/audit-world-reference.png" x="636" y="594" width="540" height="338" preserveAspectRatio="xMidYMid meet"/><circle cx="869.8199999999999" cy="785.646" r="40" fill="#0b0f12" fill-opacity=".98"/><circle cx="869.8199999999999" cy="785.646" r="58" fill="#46c3d6" fill-opacity=".07" stroke="#46c3d6" stroke-opacity=".16"/><circle cx="869.8199999999999" cy="785.646" r="46" fill="none" stroke="#46c3d6" stroke-opacity=".42"/><g transform="translate(839.8199999999999 755.646) scale(0.9375)" color="#46c3d6"><g stroke="currentColor" stroke-width="4" stroke-linecap="round">
+    <path d="M16 15a23 23 0 0 0 0 34" opacity=".55"/>
+    <path d="M48 15a23 23 0 0 1 0 34" opacity=".55"/>
+    <path d="M22 22a14 14 0 0 0 0 20" opacity=".78"/>
+    <path d="M42 22a14 14 0 0 1 0 20" opacity=".78"/>
+    <path d="M28 28a6 6 0 0 0 0 8"/>
+    <path d="M36 28a6 6 0 0 1 0 8"/>
+  </g>
+  <circle cx="32" cy="32" r="3.25" fill="currentColor"/></g><rect x="648" y="606" width="190" height="32" rx="6" fill="#080b0d" fill-opacity=".88" stroke="#fff" stroke-opacity=".14"/><text x="661" y="627" fill="#f3f0e6" font-family="Inter, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="11" font-weight="700" text-anchor="start" letter-spacing="1.2">05 · QUIET CORE</text></g><rect x="636" y="594" width="540" height="338" rx="12" fill="none" stroke="#253038" stroke-opacity="1"/><clipPath id="clip-5"><rect x="1200" y="594" width="540" height="338" rx="12"/></clipPath><g clip-path="url(#clip-5)"><image href="../source/audit-world-reference.png" x="1200" y="594" width="540" height="338" preserveAspectRatio="xMidYMid meet"/><circle cx="1433.82" cy="785.646" r="40" fill="#0b0f12" fill-opacity=".98"/><circle cx="1433.82" cy="785.646" r="58" fill="#46c3d6" fill-opacity=".07" stroke="#46c3d6" stroke-opacity=".16"/><circle cx="1433.82" cy="785.646" r="46" fill="none" stroke="#46c3d6" stroke-opacity=".42"/><g transform="translate(1403.82 755.646) scale(0.9375)" color="#46c3d6"><g stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M14 15l13 12"/>
+    <path d="M14 49l13-12"/>
+    <path d="M51 32H37"/>
+    <circle cx="32" cy="32" r="7"/>
+  </g>
+  <g fill="currentColor">
+    <circle cx="12" cy="13" r="3"/>
+    <circle cx="12" cy="51" r="3"/>
+    <circle cx="54" cy="32" r="3"/>
+    <circle cx="32" cy="32" r="2.75"/>
+  </g></g><rect x="1212" y="606" width="190" height="32" rx="6" fill="#080b0d" fill-opacity=".88" stroke="#fff" stroke-opacity=".14"/><text x="1225" y="627" fill="#f3f0e6" font-family="Inter, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="11" font-weight="700" text-anchor="start" letter-spacing="1.2">06 · TRIANGULATE</text></g><rect x="1200" y="594" width="540" height="338" rx="12" fill="none" stroke="#253038" stroke-opacity="1"/><text x="72" y="970" fill="#64717a" font-family="Inter, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="12" font-weight="650" text-anchor="start" letter-spacing="1.8">REAL PHASE 3 COMPOSITION REFERENCE · NO RUNTIME FILES MODIFIED</text>
+  </svg>

@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none" role="img" aria-labelledby="title desc">
+  <title id="title">Resolution Gate</title>
+  <desc id="desc">Three evidence lanes resolve through one narrow acceptance gate.</desc>
+  <g stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M8 16h9l12 12"/>
+    <path d="M8 32h21"/>
+    <path d="M8 48h9l12-12"/>
+    <path d="M35 23v18"/>
+    <path d="M42 32h14"/>
+  </g>
+  <circle cx="35" cy="32" r="3" fill="currentColor"/>
+</svg>
