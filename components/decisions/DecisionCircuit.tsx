@@ -398,7 +398,7 @@ function GateSocket({
           assumed={released}
           onClick={onSelect}
           meta={[
-            { label: `→ ${decision.scope.name}` },
+            { label: `→ ${gate.targetScope.name}` },
             { label: `${decision.evidence.length} ev` },
             ...(decision.owner ? [{ label: decision.owner }] : []),
           ]}

@@ -1,6 +1,6 @@
 "use client";
 
-import Link from "next/link";
+import Link from "@/components/instrument/SignalLink";
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import AuditFindingOverlay from "./AuditFindingOverlay";
 

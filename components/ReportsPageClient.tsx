@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback, useMemo } from "react";
-import Link from "next/link";
+import Link from "@/components/instrument/SignalLink";
 import ReportView, { CopyMarkdownButton } from "./ReportView";
 import MomentumChip from "./MomentumChip";
 import { computeMomentum } from "@/lib/momentum/compute";

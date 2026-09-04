@@ -13,7 +13,7 @@
 // the audit source detail, which this hands off to rather than duplicating.
 
 import { useMemo, useState } from "react";
-import Link from "next/link";
+import Link from "@/components/instrument/SignalLink";
 import InstrumentShell from "@/components/instrument/InstrumentShell";
 import { Panel, EpistemicBadge, SeverityDot, Stat, type Epistemic } from "@/components/instrument/Panel";
 import { useProject, fmtDay } from "@/lib/instrument/useProject";

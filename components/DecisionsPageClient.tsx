@@ -17,6 +17,7 @@
 // a refresh (§28).
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import InstrumentShell from "@/components/instrument/InstrumentShell";
 import ScenarioStrip, { chipsFor } from "@/components/instrument/ScenarioStrip";
 import DecisionCircuit, { type CircuitNode } from "@/components/decisions/DecisionCircuit";
@@ -34,6 +35,9 @@ type Filter = "all" | "candidates" | "open" | "gating" | "decided";
 export default function DecisionsPageClient() {
   const project = useProject();
   const { data, loading, error, write } = useDecisions();
+  const router = useRouter();
+  const pathname = usePathname();
+  const params = useSearchParams();
 
   const [selection, setSelection] = useState<Selection>(null);
   const [filter, setFilter] = useState<Filter>("all");
@@ -42,9 +46,35 @@ export default function DecisionsPageClient() {
   const [busy, setBusy] = useState(false);
   const [tool, setTool] = useState<"new" | "import" | "connect" | null>(null);
 
+  const selectObject = useCallback((nextSelection: Selection) => {
+    setSelection(nextSelection);
+    const next = new URLSearchParams(params.toString());
+    if (nextSelection) next.set("select", `${nextSelection.kind}:${nextSelection.id}`);
+    else if (/^(decision|candidate):/.test(next.get("select") ?? "")) next.delete("select");
+    const query = next.toString();
+    router.push(query ? `${pathname}?${query}` : pathname, { scroll: false });
+  }, [params, pathname, router]);
+
   const decisions = useMemo(() => data?.decisions ?? [], [data]);
   const candidates = useMemo(() => data?.candidates ?? [], [data]);
   const scopes = useMemo(() => data?.scopes ?? [], [data]);
+
+  // URL-owned object identity makes Decision links shareable and lets
+  // Back/Forward restore the same object, while an invalid/stale id simply
+  // leaves the circuit unselected instead of selecting a neighbour.
+  useEffect(() => {
+    if (loading) return;
+    const raw = params.get("select") ?? (params.get("decisionId") ? `decision:${params.get("decisionId")}` : null);
+    if (!raw) {
+      setSelection(null);
+      return;
+    }
+    const [kind, ...idParts] = raw.split(":");
+    const id = idParts.join(":");
+    if (kind === "decision" && decisions.some((d) => d.id === id)) setSelection({ kind, id });
+    else if (kind === "candidate" && candidates.some((c) => c.id === id)) setSelection({ kind, id });
+    else setSelection(null);
+  }, [params, loading, decisions, candidates]);
 
   // Which delivery path the circuit is about. Defaults to whichever project
   // actually has gates -- opening on a clear path when another is blocked
@@ -181,9 +211,9 @@ export default function DecisionsPageClient() {
     async (id: string) => {
       const res = await run(() => write(`/api/decision-candidates/${id}/accept`, { method: "POST" }));
       const decision = res.body.decision as { id?: string } | undefined;
-      if (decision?.id) setSelection({ kind: "decision", id: decision.id });
+      if (decision?.id) selectObject({ kind: "decision", id: decision.id });
     },
-    [run, write]
+    [run, write, selectObject]
   );
 
   const scopeNameById = useMemo(() => new Map(scopes.map((s) => [s.id, s.name])), [scopes]);
@@ -319,7 +349,7 @@ export default function DecisionsPageClient() {
                     gates={circuitGates}
                     assumedGateIds={project.scenario.resolvedGateIds}
                     selectedId={selectedDecision?.id ?? null}
-                    onSelect={(id) => setSelection({ kind: "decision", id })}
+                    onSelect={(id) => selectObject({ kind: "decision", id })}
                     onAssume={assumeGate}
                   />
                 )}
@@ -383,21 +413,21 @@ export default function DecisionsPageClient() {
                     <CandidateTray
                       candidates={candidates}
                       selectedId={selectedCandidate?.id ?? null}
-                      onSelect={(id) => setSelection({ kind: "candidate", id })}
+                      onSelect={(id) => selectObject({ kind: "candidate", id })}
                     />
                   )}
                   {show("open") && (
                     <OpenLane
                       decisions={openLane}
                       selectedId={selectedDecision?.id ?? null}
-                      onSelect={(id) => setSelection({ kind: "decision", id })}
+                      onSelect={(id) => selectObject({ kind: "decision", id })}
                     />
                   )}
                   {show("decided") && (
                     <DecidedBand
                       decisions={decided}
                       selectedId={selectedDecision?.id ?? null}
-                      onSelect={(id) => setSelection({ kind: "decision", id })}
+                      onSelect={(id) => selectObject({ kind: "decision", id })}
                     />
                   )}
                   {filter === "all" && (
@@ -406,7 +436,7 @@ export default function DecisionsPageClient() {
                       expanded={showDismissed}
                       onToggle={() => setShowDismissed((v) => !v)}
                       selectedId={selectedDecision?.id ?? null}
-                      onSelect={(id) => setSelection({ kind: "decision", id })}
+                      onSelect={(id) => selectObject({ kind: "decision", id })}
                     />
                   )}
                   <Legend />
@@ -468,7 +498,7 @@ export default function DecisionsPageClient() {
           candidate={selectedCandidate}
           assumed={!!selectedDecision?.gate && project.scenario.resolvedGateIds.has(selectedDecision.gate.id)}
           busy={busy}
-          onClose={() => setSelection(null)}
+          onClose={() => selectObject(null)}
           onAssume={(assume) => selectedDecision?.gate && assumeGate(selectedDecision.gate.id, assume)}
           onConnect={() => setTool("connect")}
           onDisconnect={async () => {
@@ -482,7 +512,7 @@ export default function DecisionsPageClient() {
           onDismissCandidate={async () => {
             if (!selectedCandidate) return;
             await run(() => write(`/api/decision-candidates/${selectedCandidate.id}/dismiss`, { method: "POST" }));
-            setSelection(null);
+            selectObject(null);
           }}
           onAttachToExisting={async (decisionId) => {
             if (!selectedCandidate) return;
@@ -492,7 +522,7 @@ export default function DecisionsPageClient() {
                 body: JSON.stringify({ fromCandidateId: selectedCandidate.id }),
               })
             );
-            setSelection({ kind: "decision", id: decisionId });
+            selectObject({ kind: "decision", id: decisionId });
           }}
           attachTargets={attachTargetsFor(decisions, selectedCandidate?.scopeId ?? null)}
         />
@@ -520,7 +550,7 @@ export default function DecisionsPageClient() {
           );
           const dup = res.body.possibleDuplicate as { title?: string } | null | undefined;
           const created = res.body.decision as { id?: string } | undefined;
-          if (created?.id) setSelection({ kind: "decision", id: created.id });
+          if (created?.id) selectObject({ kind: "decision", id: created.id });
           return { duplicateTitle: dup?.title ?? null };
         }}
       />

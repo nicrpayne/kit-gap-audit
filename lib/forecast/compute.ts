@@ -15,6 +15,7 @@ import type { SimulationResult } from "@/lib/forecast/simulate";
 import { estimateContentHash, findingContentHash } from "@/lib/estimate/run";
 import { buildReleaseContext } from "@/lib/estimate/context";
 import { resolveCapacity, type CapacityContributor } from "@/lib/capacity/resolve";
+import { capacityForecastContract, type CapacityForecastContract } from "@/lib/capacity/contract";
 
 export interface ForecastFinding {
   id: string;
@@ -350,6 +351,10 @@ export interface PortfolioScopeInput {
   // asserting a figure. Every field is read off the same computation that
   // produced teamCapacity -- nothing here is re-derived or estimated.
   capacityBasis: CapacityBasis;
+  /** Machine-checkable Capacity -> Forecast reconciliation. Named capacity
+      is READY only when `reconciles` is true; legacy inference is explicit
+      migration debt, never silently presented as roster-backed. */
+  capacityContract: CapacityForecastContract;
 }
 
 export type CapacityBasis =
@@ -461,6 +466,14 @@ export async function buildPortfolioInputs(): Promise<PortfolioInputs> {
       lastReport,
       reportHistory,
       capacityBasis: capacityBasisFor(scope, bundle),
+      capacityContract: capacityForecastContract(
+        scope.id,
+        people,
+        allocations,
+        portfolioSettings?.contextSwitchCostPct ?? 0,
+        bundle.inputs.teamCapacity,
+        bundle.inputs.capacitySource
+      ),
     });
   }
 

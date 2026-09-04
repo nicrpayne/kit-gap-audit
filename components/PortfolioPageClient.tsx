@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
   resolveCapacity,
   validateAllocations,
@@ -44,6 +44,7 @@ import InstrumentRail from "@/components/instrument/InstrumentRail";
 import CommandMenu from "@/components/instrument/CommandMenu";
 import { mutateReality } from "@/lib/instrument/reality";
 import type { DependencyDelta, DependentDelta } from "@/lib/portfolio/explain";
+import { contextualHref } from "@/lib/shell/context";
 
 // The Instrument. GET /api/portfolio/inputs is the one expensive network
 // call (Linear + findings + context, per Scope), fetched once on mount;
@@ -181,6 +182,7 @@ function axisTicks(startDate: Date, minDay: number, maxDay: number): { day: numb
 export default function PortfolioPageClient() {
   const pathname = usePathname();
   const router = useRouter();
+  const params = useSearchParams();
 
   const [data, setData] = useState<PortfolioInputsResponse | null>(null);
   const [loading, setLoading] = useState(true);
@@ -1122,7 +1124,7 @@ export default function PortfolioPageClient() {
               onContextSwitch={(pct) => setSwitchCostPct(Math.round(pct))}
               onWorkforce={onWorkforce}
               onOpenSplits={() => setPatchbayOpen(true)}
-              onOpenGates={() => router.push("/decisions")}
+              onOpenGates={() => router.push(contextualHref("/decisions", params))}
               onExplainSwitchCost={() => openInspector("switchCost")}
               hoveredScopeId={hoveredScopeId}
               onHover={setHoveredScopeId}

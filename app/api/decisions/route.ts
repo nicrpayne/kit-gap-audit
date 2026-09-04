@@ -14,7 +14,7 @@ export async function GET() {
     prisma.decision.findMany({
       orderBy: [{ status: "asc" }, { createdAt: "asc" }],
       include: {
-        gate: true,
+        gate: { include: { targetScope: { select: { id: true, name: true, targetDate: true } } } },
         evidence: { select: { id: true, kind: true, sourceLabel: true, excerpt: true, externalRef: true, contextSnapshotId: true } },
         scope: { select: { id: true, name: true, targetDate: true } },
       },

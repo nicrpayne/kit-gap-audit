@@ -448,7 +448,8 @@ const RealitySection = function RealitySection({
           </div>
           <p className="mt-2 text-[10.5px] text-[var(--i-text-faint)] leading-relaxed">
             It counts ticket-holders, not availability — someone with one ticket at 10% of their week counts the
-            same as someone full-time. If that&rsquo;s wrong, set the real number.
+            same as someone full-time. This is a legacy, unstaffed forecast basis: it does not reconcile to named
+            Portfolio allocations and must not be reported as named capacity. Allocate real people here to replace it.
           </p>
         </>
       )}

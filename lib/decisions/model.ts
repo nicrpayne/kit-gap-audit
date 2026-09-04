@@ -23,6 +23,13 @@ export interface DecisionGateRow {
   high: number;
   serial: boolean;
   provenance: string;
+  /** Canonical display identity resolved from DecisionGate.targetScopeId.
+      Never substitute the Decision's home Scope or current URL project. */
+  targetScope: { id: string; name: string; targetDate: string | null };
+}
+
+export function gateTarget(d: DecisionRow): DecisionGateRow["targetScope"] | null {
+  return d.gate?.targetScope ?? null;
 }
 
 export interface DecisionEvidenceRow {

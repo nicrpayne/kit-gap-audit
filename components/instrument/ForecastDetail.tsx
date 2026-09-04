@@ -22,7 +22,7 @@
 // magnitude and says so.
 
 import { useMemo, useState } from "react";
-import Link from "next/link";
+import Link from "@/components/instrument/SignalLink";
 import ToolWindow, { RailButton, Row } from "@/components/instrument/ToolWindow";
 import type { SimulationResult } from "@/lib/forecast/simulate";
 import type { ProjectScope, SuiteScenario } from "@/lib/instrument/useProject";
@@ -598,11 +598,18 @@ export default function ForecastDetail({
               <Row key={c.personId} k={c.name} v={`${c.effectiveFte.toFixed(2)} FTE`} note={c.scopeCount > 1 ? `across ${c.scopeCount} scopes` : undefined} />
             ))}
             {scope.capacityBasis.kind === "inferred" && (
-              <Row
-                k="Basis"
-                v={`${scope.capacityBasis.assignees?.length ?? 0} assignees`}
-                note={`${scope.capacityBasis.remainingIssueCount ?? 0} remaining issues · ${scope.capacityBasis.unassignedCount ?? 0} unassigned`}
-              />
+              <>
+                <Row
+                  k="Basis"
+                  v={`${scope.capacityBasis.assignees?.length ?? 0} assignees`}
+                  note={`${scope.capacityBasis.remainingIssueCount ?? 0} remaining issues · ${scope.capacityBasis.unassignedCount ?? 0} unassigned`}
+                />
+                <Row
+                  k="Reconciliation"
+                  v="Not named capacity"
+                  note="Legacy ticket-holder inference; allocate people in Portfolio before using this as a staffing fact"
+                />
+              </>
             )}
             <NavRow href="/portfolio">
               <Row

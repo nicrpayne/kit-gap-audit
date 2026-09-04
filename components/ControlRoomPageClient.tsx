@@ -37,7 +37,7 @@
 // the page.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import Link from "next/link";
+import Link from "@/components/instrument/SignalLink";
 import InstrumentShell from "@/components/instrument/InstrumentShell";
 import TimelinePageClient from "@/components/TimelinePageClient";
 import { Panel, PanelDoor, Row } from "@/components/control-room/Panels";

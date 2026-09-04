@@ -11,7 +11,7 @@
 // pillow, no drop shadow stack, and it can be promoted to fill the workspace.
 
 import type { ReactNode } from "react";
-import Link from "next/link";
+import Link from "@/components/instrument/SignalLink";
 
 export function Panel({
   title,

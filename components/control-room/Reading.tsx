@@ -26,7 +26,7 @@
 // something is actually blocking, so red keeps meaning "wrong" instead of
 // becoming the permanent identity of a panel.
 
-import Link from "next/link";
+import Link from "@/components/instrument/SignalLink";
 import type { Point } from "@/lib/control-room/read";
 import { Spark } from "@/components/control-room/Panels";
 

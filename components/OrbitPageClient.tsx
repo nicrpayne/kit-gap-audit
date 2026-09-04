@@ -24,7 +24,7 @@
 //   here, no score, and no unitless weight.
 
 import { useMemo, useState } from "react";
-import Link from "next/link";
+import Link from "@/components/instrument/SignalLink";
 import { useSearchParams } from "next/navigation";
 import { useProjectParam } from "@/lib/shell/useProjectParam";
 import InstrumentShell from "@/components/instrument/InstrumentShell";

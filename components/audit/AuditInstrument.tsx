@@ -18,7 +18,7 @@
 // — camera, selection, expansion, solo, search — is presentation.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import Link from "next/link";
+import Link from "@/components/instrument/SignalLink";
 import Graph from "graphology";
 import type { TruthMapModel, TruthFinding } from "@/lib/audit/truth";
 import type { FindingProvenance, groundingLabel } from "@/lib/audit/provenance";

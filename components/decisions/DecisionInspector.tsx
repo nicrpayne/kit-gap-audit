@@ -19,7 +19,7 @@
 // why deciding asks for a resolution rather than flipping a status.
 
 import { useEffect, useState } from "react";
-import Link from "next/link";
+import Link from "@/components/instrument/SignalLink";
 import {
   LANE_COLOR,
   forecastActive,
@@ -450,10 +450,10 @@ function DecisionBody({
             style={{ background: tone, boxShadow: `0 0 6px ${tone}` }}
           />
           <span className="text-[10.5px]" style={{ color: tone }}>
-            {gating ? `Holding ${decision.scope.name}` : decision.status === "open" ? "Open · holding nothing" : decision.status}
+            {gating ? `Holding ${decision.gate!.targetScope.name}` : decision.status === "open" ? "Open · holding nothing" : decision.status}
           </span>
           <span className="ml-auto i-label" style={{ fontSize: 8.5 }}>
-            {decision.scope.name}
+            Decision home · {decision.scope.name}
           </span>
         </div>
       </header>
@@ -485,7 +485,7 @@ function DecisionBody({
         <>
           <Group label="What it gates">
             <div className="i-meter flex gap-3 px-3 py-2">
-              <Pair label="Delivery" value={decision.scope.name} />
+              <Pair label="Delivery" value={decision.gate.targetScope.name} />
               <Pair
                 label="Relationship"
                 value={decision.gate.serial ? "Serial dependency" : "Non-serial"}
