@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none" role="img" aria-labelledby="title desc">
+  <title id="title">Phase Lock P2 — Datum Ring</title>
+  <desc id="desc">Three readings converge at one bounded accepted datum.</desc>
+  <g stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M8 15h8c9 0 8 13 17 14"/>
+    <path d="M8 32h25"/>
+    <path d="M8 49h8c9 0 8-13 17-14"/>
+    <circle cx="40" cy="32" r="6.5"/>
+  </g>
+  <circle cx="40" cy="32" r="2.5" fill="currentColor"/>
+</svg>

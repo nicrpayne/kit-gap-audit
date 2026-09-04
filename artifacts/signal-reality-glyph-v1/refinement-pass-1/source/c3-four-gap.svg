@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none" role="img" aria-labelledby="title desc">
+  <title id="title">Confluence C3 — Four Gap</title>
+  <desc id="desc">Four signals approach but do not cross the boundary of one accepted Reality.</desc>
+  <g stroke="currentColor" stroke-width="3.75" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M8 13h6c8 0 8 9 14 13"/>
+    <path d="M8 51h6c8 0 8-9 14-13"/>
+    <path d="M56 13h-6c-8 0-8 9-14 13"/>
+    <path d="M56 51h-6c-8 0-8-9-14-13"/>
+    <circle cx="32" cy="32" r="8" stroke-width="4.25"/>
+  </g>
+  <circle cx="32" cy="32" r="3" fill="currentColor"/>
+</svg>

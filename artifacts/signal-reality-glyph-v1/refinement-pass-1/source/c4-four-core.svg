@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none" role="img" aria-labelledby="title desc">
+  <title id="title">Confluence C4 — Four Core</title>
+  <desc id="desc">Four softly curved signals converge near one solid accepted core.</desc>
+  <g stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M9 15h7c7 0 7 7 10 11"/>
+    <path d="M9 49h7c7 0 7-7 10-11"/>
+    <path d="M55 15h-7c-7 0-7 7-10 11"/>
+    <path d="M55 49h-7c-7 0-7-7-10-11"/>
+  </g>
+  <circle cx="32" cy="32" r="5.5" fill="currentColor"/>
+</svg>

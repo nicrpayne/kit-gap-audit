@@ -51,3 +51,23 @@ until one or two directions are explicitly selected.
 
 Full sources, screenshots, scoring, and similarity notes live in
 `artifacts/signal-reality-glyph-v1/`.
+
+## Focused optical refinement — pass 1
+
+The first follow-up pass refined only Confluence and Phase Lock, producing five
+controlled optical variants of each.
+
+- **Confluence finalists:** C3 Four Gap and C4 Four Core. Both prevent the arms
+  from crossing through Reality; C3 uses a governed ring and C4 uses a solid
+  accepted core. Three-path tests were rejected because they drifted toward
+  share/network and radial/crypto categories.
+- **Phase Lock finalists:** P2 Datum Ring and P1 Open Point. Both replace the
+  barrier with a point-like result. P2 better communicates governed acceptance;
+  P1 is the cleanest tiny utility mark.
+
+C3 remains the strongest Reality-center candidate. P2 remains the strongest
+compact Signal/Audit utility candidate. This is still direction selection, not
+a production mount or corporate-logo decision.
+
+The complete pass is documented in
+`artifacts/signal-reality-glyph-v1/refinement-pass-1/`.

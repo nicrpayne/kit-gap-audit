@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Signal Reality Glyph — Focused Optical Refinement</title>
+  <style>
+    :root { color-scheme: dark; --void:#080b0d; --bg:#0b0f12; --panel:#12171b; --raised:#182026; --line:#253038; --text:#f3f0e6; --soft:#9ca8af; --faint:#64717a; --cyan:#46c3d6; }
+    * { box-sizing:border-box; }
+    body { margin:0; background:radial-gradient(circle at 15% -5%,rgba(70,195,214,.1),transparent 38rem),var(--void); color:var(--text); font:14px/1.45 Inter,ui-sans-serif,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; }
+    main { width:min(1480px,calc(100% - 48px)); margin:auto; padding:48px 0 72px; }
+    header { display:flex; align-items:end; justify-content:space-between; gap:32px; padding-bottom:27px; border-bottom:1px solid var(--line); }
+    .eyebrow,.tag,th { color:var(--cyan); font-size:10px; font-weight:700; letter-spacing:.18em; text-transform:uppercase; }
+    h1 { margin:8px 0 6px; font-size:clamp(36px,5vw,64px); line-height:1; letter-spacing:-.05em; font-weight:620; }
+    .lede { max-width:760px; color:var(--soft); font-size:16px; }
+    .status { padding:12px 15px; border:1px solid var(--line); border-radius:9px; background:rgba(18,23,27,.8); text-align:right; }
+    section { margin-top:42px; }
+    h2 { margin:5px 0 14px; font-size:23px; letter-spacing:-.025em; font-weight:590; }
+    .family { margin-top:22px; }
+    .grid { display:grid; grid-template-columns:repeat(5,1fr); gap:10px; }
+    .card { padding:16px; border:1px solid var(--line); border-radius:11px; background:linear-gradient(145deg,var(--raised),var(--panel)); }
+    .card-head { display:flex; justify-content:space-between; color:var(--faint); font:700 10px/1 ui-monospace,monospace; }
+    .hero { height:128px; display:grid; place-items:center; color:var(--cyan); }
+    .hero::before { content:""; grid-area:1/1; width:100px; height:100px; border:1px solid rgba(70,195,214,.12); border-radius:50%; }
+    .glyph { grid-area:1/1; display:block; width:72px; height:72px; color:inherit; background:currentColor; -webkit-mask:var(--src) center/contain no-repeat; mask:var(--src) center/contain no-repeat; }
+    .card h3 { margin:0; font-size:16px; font-weight:600; }
+    .card p { min-height:34px; margin:5px 0 13px; color:var(--soft); font-size:11px; }
+    .sizes { display:flex; align-items:center; gap:14px; padding-top:11px; border-top:1px solid var(--line); color:var(--text); }
+    .sizes .glyph:nth-child(1) { width:16px;height:16px }.sizes .glyph:nth-child(2) { width:24px;height:24px }.sizes .glyph:nth-child(3) { width:40px;height:40px }.sizes .glyph:nth-child(4) { width:64px;height:64px }
+    .finalists { display:grid; grid-template-columns:repeat(2,1fr); gap:12px; }
+    .finalist { display:grid; grid-template-columns:150px 1fr; min-height:270px; overflow:hidden; border:1px solid rgba(70,195,214,.35); border-radius:12px; background:var(--panel); }
+    .final-copy { padding:20px; }
+    .final-copy h3 { margin:6px 0; font-size:21px; }
+    .final-copy p { color:var(--soft); font-size:12px; }
+    .contexts { display:grid; grid-template-columns:repeat(3,1fr); gap:1px; background:var(--line); }
+    .context { min-height:134px; display:grid; place-items:center; align-content:center; gap:8px; background:var(--bg); color:var(--cyan); }
+    .context.world { background-image:linear-gradient(rgba(8,11,13,.15),rgba(8,11,13,.15)),url("../../source/audit-world-reference.png"); background-size:cover; }
+    .context .glyph { width:48px;height:48px; }
+    .context small { padding:3px 6px; border-radius:4px; background:rgba(8,11,13,.78); color:var(--soft); font-size:8px; letter-spacing:.1em; text-transform:uppercase; }
+    .context.white { color:#fff; }.context.warm { color:var(--text); }.context.mono { color:#101417;background:#f5f4f0; }
+    table { width:100%; border-collapse:collapse; overflow:hidden; border:1px solid var(--line); border-radius:11px; background:var(--panel); }
+    th,td { padding:13px 10px; border-bottom:1px solid var(--line); text-align:center; }
+    th:first-child,td:first-child { text-align:left; } td { color:var(--soft); font-size:12px; } td:first-child,td:last-child { color:var(--text); font-weight:600; } tr:last-child td { border:0; }
+    footer { display:flex; justify-content:space-between; gap:20px; margin-top:36px; padding-top:18px; border-top:1px solid var(--line); color:var(--faint); font-size:11px; }
+    @media(max-width:1000px){.grid{grid-template-columns:repeat(2,1fr)}.finalists{grid-template-columns:1fr}} @media(max-width:620px){main{width:calc(100% - 24px)}header{display:block}.status{text-align:left;margin-top:16px}.grid{grid-template-columns:1fr}.finalist{grid-template-columns:1fr}.contexts{grid-template-columns:repeat(2,1fr)}}
+  </style>
+</head>
+<body>
+<main>
+  <header><div><div class="eyebrow">Signal · focused optical pass</div><h1>Confluence × Phase Lock</h1><div class="lede">Ten controlled refinements of the two selected families. The four finalists remain candidates—not a production asset or corporate logo.</div></div><div class="status"><span class="tag">Review state</span><br>Ready for Nic</div></header>
+
+  <section><div class="tag">01 · Optical variants</div><h2>Path count, boundary, curvature, weight, result</h2><div id="variant-families"></div></section>
+
+  <section><div class="tag">02 · Finalists</div><h2>Two Confluence and two Phase Lock directions</h2><div class="finalists" id="finalists"></div></section>
+
+  <section><div class="tag">03 · Evaluation</div><h2>Directional scorecard</h2><table><thead><tr><th>Finalist</th><th>Meaning</th><th>Distinct</th><th>16px</th><th>Circle</th><th>Brand</th><th>Risk ↓</th><th>Philosophy</th><th>Overall</th></tr></thead><tbody id="scores"></tbody></table></section>
+  <footer><span>Master Control Room material reference</span><span>No production mounting · no corporate-logo declaration</span></footer>
+</main>
+<script>
+  const variants=[
+    ["C1","Confluence","Triad Datum","3 paths · offset core","c1-triad-datum.svg"],["C2","Confluence","Triad Radial","3 paths · 120° balance","c2-triad-radial.svg"],["C3","Confluence","Four Gap","4 paths · governed boundary","c3-four-gap.svg"],["C4","Confluence","Four Core","4 paths · solid accepted core","c4-four-core.svg"],["C5","Confluence","Weighted Arrival","4 paths · certainty weight","c5-weighted-arrival.svg"],
+    ["P1","Phase Lock","Open Point","point result · no stop line","p1-open-point.svg"],["P2","Phase Lock","Datum Ring","bounded result · no stop line","p2-datum-ring.svg"],["P3","Phase Lock","Short Pulse","7-unit pulse","p3-short-pulse.svg"],["P4","Phase Lock","Quiet Datum","point + quiet field","p4-quiet-datum.svg"],["P5","Phase Lock","Weighted Settle","certainty weight shift","p5-weighted-settle.svg"]
+  ];
+  const src=file=>`--src:url('../source/${file}')`;
+  for(const family of ["Confluence","Phase Lock"]){const wrap=document.createElement("div");wrap.className="family";wrap.innerHTML=`<div class="tag">${family}</div><div class="grid"></div>`;for(const [id,f,name,note,file] of variants.filter(v=>v[1]===family)){const card=document.createElement("article");card.className="card";card.innerHTML=`<div class="card-head"><span>${id}</span><span>${f}</span></div><div class="hero"><i class="glyph" role="img" aria-label="${name}" style="${src(file)}"></i></div><h3>${name}</h3><p>${note}</p><div class="sizes">${[16,24,40,64].map(()=>`<i class="glyph" aria-hidden="true" style="${src(file)}"></i>`).join("")}</div>`;wrap.querySelector(".grid").appendChild(card)}document.querySelector("#variant-families").appendChild(wrap)}
+  const picks=["C3","C4","P2","P1"].map(id=>variants.find(v=>v[0]===id));
+  for(const [id,f,name,note,file] of picks){const el=document.createElement("article");el.className="finalist";el.innerHTML=`<div class="final-copy"><div class="tag">${id} · ${f}</div><h3>${name}</h3><p>${note}</p></div><div class="contexts"><div class="context world"><i class="glyph" style="${src(file)}"></i><small>Audit World</small></div><div class="context"><i class="glyph" style="${src(file)}"></i><small>Cyan</small></div><div class="context white"><i class="glyph" style="${src(file)}"></i><small>White</small></div><div class="context warm"><i class="glyph" style="${src(file)}"></i><small>Warm white</small></div><div class="context mono"><i class="glyph" style="${src(file)}"></i><small>Monochrome</small></div><div class="context"><i class="glyph" style="${src(file)};width:16px;height:16px"></i><small>Favicon · 16</small></div></div>`;document.querySelector("#finalists").appendChild(el)}
+  const scores=[["C3 · Four Gap",9.5,8.6,9.1,9.8,8.9,2.7,9.6,9.2],["C4 · Four Core",9.3,8.8,8.8,9.6,9.0,2.5,9.4,9.1],["P2 · Datum Ring",9.6,8.2,9.4,8.5,8.8,3.7,9.6,9.0],["P1 · Open Point",9.4,7.9,9.7,7.8,8.4,4.2,9.3,8.8]];
+  for(const row of scores){const tr=document.createElement("tr");tr.innerHTML=row.map(v=>`<td>${v}</td>`).join("");document.querySelector("#scores").appendChild(tr)}
+</script>
+</body>
+</html>

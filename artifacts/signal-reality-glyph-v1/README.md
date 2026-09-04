@@ -2,6 +2,10 @@
 
 Status: **ready for Nic review**, not selected, not a corporate logo.
 
+> **Focused follow-up:** The Confluence × Phase Lock optical refinement is in
+> [`refinement-pass-1/`](refinement-pass-1/README.md), with four narrowed
+> finalists tested in real product states.
+
 This artifact explores one proposition:
 
 > Many independent signals resolve into one accepted Reality.
