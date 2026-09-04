@@ -361,9 +361,9 @@ function SelectedFinding({
               data-shoot="open-full-review"
               className="rounded-md border px-3 py-2 text-[11px] font-medium transition-colors hover:bg-white/[0.04]"
               style={{
-                borderColor: `color-mix(in srgb, ${color} 65%, var(--i-border-strong))`,
-                background: `color-mix(in srgb, ${color} 10%, transparent)`,
-                color,
+                borderColor: "color-mix(in srgb, var(--i-violet) 65%, var(--i-border-strong))",
+                background: "var(--i-violet-soft)",
+                color: "var(--i-violet)",
               }}
             >
               Review finding →

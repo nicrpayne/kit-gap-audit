@@ -1241,6 +1241,8 @@ export default function AuditInstrument({ initialScopeId }: { initialScopeId?: s
       style={{ background: "var(--i-bg)" }}
       data-selected-id={selectedId ?? ""}
       data-review-open={reviewOpen ? "true" : "false"}
+      data-inspector-open={inspectorOpen ? "true" : "false"}
+      data-camera-state={`${camera.x.toFixed(3)},${camera.y.toFixed(3)},${camera.k.toFixed(5)}`}
       data-trace-complete={soloable ? "true" : "false"}
       data-trace-node-kinds={
         traceRoute
