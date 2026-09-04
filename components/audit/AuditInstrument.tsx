@@ -64,7 +64,6 @@ import GraphInspector, { connectionsOf } from "./GraphInspector";
 import AggregateInspector from "./AggregateInspector";
 import FindingInspector from "./FindingInspector";
 import AuditReviewConsole, { type ConsoleMode } from "./AuditReviewConsole";
-import RealityGlyph from "./RealityGlyph";
 import worldStyles from "./AuditWorld.module.css";
 import { zoomLevel, nextZoomLevel, nodeColor, fieldLabel, KIND_LABEL, REL_LABEL, type ZoomLevel } from "./graphTokens";
 import { SignalSearchIndex, SEARCH_MATURITY, type SearchHit } from "@/lib/audit/searchIndex";
@@ -1295,10 +1294,7 @@ export default function AuditInstrument({ initialScopeId }: { initialScopeId?: s
         style={{ background: "var(--i-panel)", borderBottom: "1px solid var(--i-border)" }}
         data-shoot="audit-header"
       >
-        <span className="flex items-center gap-2 text-[12px] font-medium tracking-[0.16em] text-[var(--i-text)]">
-          <span style={{ color: "var(--i-signal)" }}><RealityGlyph size={17} variant="signal" /></span>
-          SIGNAL AUDIT
-        </span>
+        <span className="text-[12px] font-medium tracking-[0.16em] text-[var(--i-text)]">SIGNAL AUDIT</span>
         <select
           value={payload.scope.id}
           onChange={(e) => {
@@ -1695,7 +1691,6 @@ export default function AuditInstrument({ initialScopeId }: { initialScopeId?: s
             aria-label="Audit Inspector"
           >
             <div className="flex h-11 shrink-0 items-center gap-2 border-b px-3" style={{ borderColor: "var(--i-border)" }}>
-              <span style={{ color: "var(--i-signal)" }}><RealityGlyph size={15} variant="signal" /></span>
               <span className="i-label" style={{ color: "var(--i-text-soft)" }}>
                 {selectedId ? "Inspector" : "Project overview"}
               </span>

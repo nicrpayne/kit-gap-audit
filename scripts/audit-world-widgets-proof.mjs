@@ -1,42 +1,90 @@
-// AUDIT WORLD WIDGETS + INSPECTOR V1 — browser regression and evidence.
+// CURRENT AUDIT WORLD + ACCEPTED INSPECTOR/WIDGETS — browser regression.
 //
-// This is presentation-only proof. It serves the existing in-memory Audit
-// fixture through Playwright routing, performs no governed action, and writes
-// screenshots/video beneath the requested artifact directory.
-//
-//   npx tsx scripts/audit-renderer-fixture.ts /tmp/audit-world-widgets-fixture.json
-//   BASE_URL=http://localhost:3017 node scripts/audit-world-widgets-proof.mjs
+// The active /audit route is the protected Rubric-powered world, not the
+// retired AuditInstrument fixture surface. This proof routes that real surface
+// to the checked-in 438/543 production-shaped mirror and a read-only captured
+// truth response. It performs no governed write.
 
-import { createHash } from "crypto";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
+import { createHash } from "node:crypto";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { chromium } from "playwright";
 
 const BASE = process.env.BASE_URL ?? "http://localhost:3017";
 const PASSWORD = process.env.APP_PASSWORD ?? "proof";
-const FIXTURE = process.env.AUDIT_WIDGET_FIXTURE ?? "/tmp/audit-world-widgets-fixture.json";
-const OUT = process.env.AUDIT_WIDGET_OUT ?? "artifacts/audit-world-widgets-inspector-v1";
+const OUT = process.env.AUDIT_WIDGET_OUT ?? "artifacts/audit-truth-inspector-integration-v1";
+const TRUTH_CAPTURE = process.env.AUDIT_TRUTH_CAPTURE ?? "artifacts/rubric-production-parity/production-jsa-truth.json";
 const AFTER = `${OUT}/after`;
 const VIDEO = `${OUT}/video`;
 
-if (!existsSync(FIXTURE)) {
-  throw new Error(`Missing ${FIXTURE}. Run the fixture command printed at the top of this file.`);
+if (!existsSync(TRUTH_CAPTURE)) {
+  throw new Error(`Missing read-only truth capture: ${TRUTH_CAPTURE}`);
 }
 mkdirSync(AFTER, { recursive: true });
 mkdirSync(VIDEO, { recursive: true });
 
-const payload = JSON.parse(readFileSync(FIXTURE, "utf8"));
-// The general fixture deliberately leaves package anchors empty. This proof
-// adds a presentation-only anchor to its first passage so the source-anchor
-// Inspector path can be exercised without changing any product contract.
-const passages = payload.graph.nodes.filter((node) => node.attributes.kind === "passage");
-for (const passage of passages) {
-  passage.attributes.anchor = {
-    charStart: 128,
-    charEnd: 214,
-    offsetUnit: "unicode_codepoint",
-    quoteHash: "fixture-anchor-proof",
-  };
-}
+const mirrorResponse = await fetch(`${BASE}/api/audit/rubric?fixture=production-mirror&mode=graph`, {
+  headers: { Authorization: `Bearer ${PASSWORD}` },
+});
+if (!mirrorResponse.ok) throw new Error(`Could not load production-shaped mirror: ${mirrorResponse.status}`);
+const mirror = await mirrorResponse.json();
+const truth = JSON.parse(readFileSync(TRUTH_CAPTURE, "utf8"));
+const traceableFinding = mirror.nodes.find(node =>
+  node.kind === "finding" && (mirror.meta.traceByNode[node.id] || []).length > 0
+);
+if (!traceableFinding) throw new Error("The current mirror has no traceable Finding.");
+// The checked-in mirror deliberately redacts canonical production IDs. Preserve
+// the captured Truth shape while replacing the one browser-reviewed Finding
+// with a non-sensitive mirror identity and copy.
+const reviewId = traceableFinding.canonicalId.replace(/^finding:/, "");
+const capturedFinding = truth.model.findings[0];
+const capturedProvenance = truth.provenance[capturedFinding.id];
+truth.model = {
+  ...truth.model,
+  findings: [{
+    ...capturedFinding,
+    id: reviewId,
+    title: traceableFinding.label,
+    quote: "Redacted production-shaped evidence passage.",
+    rationale: "Governed review proof using the redacted 438/543 current-world mirror.",
+    owner: null,
+    blocks: "Redacted current-world milestone",
+    matchedIssues: [],
+  }],
+};
+truth.provenance = {
+  [reviewId]: {
+    ...capturedProvenance,
+    findingId: reviewId,
+    quote: "Redacted production-shaped evidence passage.",
+    snapshot: capturedProvenance?.snapshot ? {
+      ...capturedProvenance.snapshot,
+      id: "mirror:snapshot:redacted",
+      packageId: "mirror-package-redacted",
+    } : null,
+    passages: (capturedProvenance?.passages || []).slice(0, 1).map(passage => ({
+      ...passage,
+      evidenceId: "mirror:evidence:redacted",
+      excerpt: "Redacted production-shaped evidence passage used only for interaction proof.",
+      sourceRef: "mirror://source/redacted",
+      externalRef: "mirror://source/redacted#passage",
+      registrationId: "mirror:registration:redacted",
+    })),
+    source: null,
+    matchedIssues: [],
+    unresolvedRefs: [],
+  },
+};
+const trace = mirror.meta.traceByNode[traceableFinding.id];
+const traceIds = new Set(trace.flatMap(edge => [edge.s, edge.t]));
+const routeConnection = (traceableFinding.connections || []).find(connection => traceIds.has(connection.transportId));
+if (!routeConnection) throw new Error("The traceable Finding exposes no connected route row.");
+const routeTarget = mirror.nodes.find(node => node.id === routeConnection.transportId);
+const anchoredPassage = mirror.nodes.find(node =>
+  node.kind === "passage"
+  && (node.connections || []).some(connection => connection.rel === "extracted_from")
+);
+if (!anchoredPassage) throw new Error("The current mirror has no source-linked passage.");
+const sourceConnection = anchoredPassage.connections.find(connection => connection.rel === "extracted_from");
 
 let failures = 0;
 const rows = [];
@@ -53,201 +101,155 @@ const context = await browser.newContext({
   deviceScaleFactor: 1,
   recordVideo: { dir: VIDEO, size: { width: 1440, height: 900 } },
 });
-await context.addCookies([
-  {
-    name: "kit_session",
-    value: createHash("sha256").update(`kit-gap-audit::${PASSWORD}`).digest("hex"),
-    domain: "localhost",
-    path: "/",
-  },
-]);
+await context.addCookies([{
+  name: "kit_session",
+  value: createHash("sha256").update(`kit-gap-audit::${PASSWORD}`).digest("hex"),
+  domain: "localhost",
+  path: "/",
+}]);
 
 const page = await context.newPage();
 const pageErrors = [];
-page.on("pageerror", (error) => pageErrors.push(error.message));
-page.on("console", (message) => {
-  if (message.type() === "error" && !message.text().includes("404")) {
-    pageErrors.push(`console: ${message.text()}`);
-  }
+page.on("pageerror", error => pageErrors.push(error.message));
+page.on("console", message => {
+  if (message.type() === "error" && !message.text().includes("404")) pageErrors.push(`console: ${message.text()}`);
 });
-await page.route("**/api/audit/graph*", (route) =>
-  route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(payload) })
-);
-await page.route("**/api/audit/truth*", (route) =>
-  route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(payload.truth) })
+
+await page.route("**/api/audit/rubric*", async route => {
+  const url = new URL(route.request().url());
+  url.searchParams.set("fixture", "production-mirror");
+  const response = await route.fetch({ url: url.toString() });
+  await route.fulfill({ response });
+});
+await page.route("**/api/audit/truth*", route =>
+  route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(truth) })
 );
 
-const root = page.locator("[data-selected-id]");
-const camera = () => root.getAttribute("data-camera-state");
-const selected = () => root.getAttribute("data-selected-id");
-const settle = (ms = 450) => page.waitForTimeout(ms);
-const shot = (name) => page.screenshot({ path: `${AFTER}/${name}.png`, animations: "disabled" });
+await page.goto(`${BASE}/audit`, { waitUntil: "domcontentloaded", timeout: 30_000 });
+const frame = page.frameLocator('iframe[title="Signal Audit World"]');
+await frame.locator("#brain-canvas").waitFor({ timeout: 30_000 });
+await frame.locator("#signal-inspector-overview").waitFor({ timeout: 30_000 });
+await page.waitForTimeout(1_500);
 
-await page.goto(`${BASE}/audit?renderer=canvas&layout=rings`, {
-  waitUntil: "domcontentloaded",
-  timeout: 30_000,
-});
-await page.waitForSelector('[data-shoot="signal-graph"]', { timeout: 30_000 });
-await settle(1_500);
-await page.evaluate(() => {
-  const graph = document.querySelector('[data-shoot="signal-graph"]');
-  if (graph instanceof HTMLElement) graph.dataset.proofMount = "original";
-  window.__auditWidgetObservers = { resize: 0, long: 0 };
-  const host = document.querySelector('[data-shoot="graph-viewport"]');
+await frame.locator("#brain-canvas").evaluate(canvas => { canvas.dataset.proofMount = "original"; });
+await frame.locator("body").evaluate(body => {
+  window.__auditWidgetObservers = { resize: 0 };
   const resize = new ResizeObserver(() => window.__auditWidgetObservers.resize++);
-  if (host) resize.observe(host);
+  resize.observe(document.documentElement);
   window.__auditWidgetResizeObserver = resize;
-  try {
-    const long = new PerformanceObserver((list) => {
-      window.__auditWidgetObservers.long += list.getEntries().length;
-    });
-    long.observe({ entryTypes: ["longtask"] });
-    window.__auditWidgetLongObserver = long;
-  } catch {
-    // Safari/WebKit may not expose longtask. ResizeObserver still proves the
-    // observer path survives the hover storm below.
-  }
+  body.dataset.proofReady = "true";
 });
 
-check("01 world and default Project Overview Inspector render", await page.locator('[data-shoot="inspector-overview"]').count() === 1);
-check("02 world occupies the full host behind the dock", await page.evaluate(() => {
-  const world = document.querySelector('[data-shoot="graph-viewport"]')?.getBoundingClientRect();
-  const host = document.querySelector('[data-shoot="audit-world-host"]')?.getBoundingClientRect();
-  return Boolean(world && host && Math.abs(world.width - host.width) < 1 && Math.abs(world.height - host.height) < 1);
+const body = frame.locator("body");
+const camera = () => body.getAttribute("data-signal-camera-state");
+const selected = () => body.getAttribute("data-signal-selected-id");
+const settle = (ms = 500) => page.waitForTimeout(ms);
+const shot = name => page.screenshot({ path: `${AFTER}/${name}.png`, animations: "disabled" });
+
+check("01 current world census is 438 canonical objects", mirror.meta.canonicalNodes === 438, String(mirror.meta.canonicalNodes));
+check("02 current world census is 543 canonical relationships", mirror.meta.canonicalEdges === 543, String(mirror.meta.canonicalEdges));
+check("03 old 427/439 fixture is not acceptance authority", mirror.meta.canonicalNodes !== 427 && mirror.meta.canonicalEdges !== 439);
+check("04 Project Overview Inspector renders by default", await frame.locator("#signal-inspector-overview").isVisible());
+check("05 Rubric canvas still owns the full world", await frame.locator("#brain-canvas").evaluate(canvas => {
+  const rect = canvas.getBoundingClientRect();
+  return Math.abs(rect.width - innerWidth) < 1 && Math.abs(rect.height - innerHeight) < 1;
+}));
+await shot("01-current-world-overview");
+
+const cameraBeforeStress = await camera();
+for (let index = 0; index < 100; index++) {
+  await frame.locator("#signal-overview-close").click({ force: true });
+  await frame.locator("#signal-inspector-reopen").click({ force: true });
+}
+check("06 Inspector closes and reopens 100x", await frame.locator("#signal-inspector-overview").isVisible(), "100 cycles");
+check("07 Inspector cycling preserves exact camera", (await camera()) === cameraBeforeStress, `${cameraBeforeStress} → ${await camera()}`);
+check("08 Inspector cycling never remounts Rubric", await frame.locator("#brain-canvas").getAttribute("data-proof-mount") === "original");
+
+async function selectBySearch(node) {
+  const input = frame.locator("#brain-search");
+  await input.fill(node.canonicalId);
+  const result = frame.locator(`.res[data-path="${node.id}"]`);
+  await result.waitFor({ timeout: 10_000 });
+  await result.click({ force: true });
+  await frame.locator("#brain-card").waitFor({ state: "visible" });
+  await settle(900);
+}
+
+await selectBySearch(traceableFinding);
+check("09 Search lands in the floating Inspector", (await selected()) === traceableFinding.canonicalId && await frame.locator("#brain-card").isVisible(), await selected() ?? "none");
+check("10 Inspector width stays within 340–392px", await frame.locator("#brain-card").evaluate(card => {
+  const width = card.getBoundingClientRect().width;
+  return width >= 340 && width <= 392.5;
 }));
 
-// Close/reopen 100 times. The renderer node is marked above; retaining the
-// mark proves React never remounted it, while the camera data proves the
-// overlay never wrote to Rubric's viewport.
-const cameraBeforeDockStress = await camera();
-for (let i = 0; i < 100; i++) {
-  await page.locator('[data-shoot="inspector-close"]').click({ force: true });
-  await page.locator('[data-shoot="inspector-reopen"]').click({ force: true });
+await frame.locator('#brain-card [data-act="trace"]').click({ force: true });
+await settle(500);
+check("11 Trace remains visible with Inspector open", await body.getAttribute("data-signal-trace-active") === "true" && await frame.locator(".signal-trace-badge").isVisible());
+const connectedRow = frame.locator(`#brain-card .nrow[data-id="${routeConnection.transportId}"]`);
+check("12 trace exposes a connected canonical selection", await connectedRow.count() === 1, routeConnection.transportId);
+await connectedRow.click({ force: true });
+await settle(700);
+check("13 connected selection updates Inspector without ending Trace", (await selected()) === routeTarget.canonicalId && await body.getAttribute("data-signal-trace-active") === "true", await selected() ?? "none");
+await shot("02-trace-with-inspector");
+
+await selectBySearch(anchoredPassage);
+check("14 source-linked passage selects canonically", (await selected()) === anchoredPassage.canonicalId, anchoredPassage.canonicalId);
+const sourceRow = frame.locator(`#brain-card .nrow[data-id="${sourceConnection.transportId}"]`);
+check("15 passage exposes its canonical source relationship", await sourceRow.count() === 1, sourceConnection.transportId);
+await sourceRow.click({ force: true });
+await settle(500);
+check("16 source relationship navigation updates Inspector", (await selected()) === mirror.nodes.find(node => node.id === sourceConnection.transportId)?.canonicalId, await selected() ?? "none");
+
+await frame.locator("#fab-menu").click({ force: true });
+for (const layout of ["rings", "circle", "hex", "force"]) {
+  await frame.locator(`#seg-layout button[data-v="${layout}"]`).click({ force: true });
+  await settle(350);
+  check(`17-${layout} current Rubric ${layout} behavior remains available`, await frame.locator("body").evaluate((_, value) => window.BrainCore.S.st.layout === value, layout));
 }
-check("03 Inspector closes and reopens 100x", await page.locator('[data-shoot="inspector"]').count() === 1, "100 cycles");
-check("04 Inspector cycling does not change camera", (await camera()) === cameraBeforeDockStress, String(await camera()));
-check("05 Inspector cycling does not remount the world", await page.getAttribute('[data-shoot="signal-graph"]', "data-proof-mount") === "original");
+check("18 layout changes retain Inspector selection", Boolean(await selected()) && await frame.locator("#brain-card").isVisible());
 
-// Canonical Finding selection into the Inspector.
-await page.locator('[data-shoot="overview-finding"]').first().click({ force: true });
-await page.waitForSelector('[data-shoot="inspector-finding"]');
-await settle(700);
-const findingId = await selected();
-check("06 selection opens the canonical Inspector", findingId?.startsWith("finding:") && await page.locator('[data-shoot="inspector-finding"]').count() === 1, findingId ?? "none");
-await shot("02-finding-inspector");
-
-// Search is another selection source and must end at the same dock grammar.
-await page.keyboard.press("Escape");
-await page.locator('[data-shoot="graph-search"]').fill("Docufy callback");
-await page.waitForSelector('[data-shoot="search-results"] button');
-await page.locator('[data-shoot="search-results"] button').first().click({ force: true });
-await settle(700);
-check(
-  "07 Search result lands in Inspector",
-  Boolean(await selected()) &&
-    (await page.locator('[data-shoot="inspector-finding"], [data-shoot="graph-inspector"]').count()) === 1,
-  await selected() ?? "none"
-);
-
-// Choose the deterministic offline finding and run Trace while the dock stays
-// readable. The route's promoted passage/source buttons become available in
-// the canvas accessibility mirror.
-await page.locator('[data-shoot="graph-search"]').fill("Offline capture has no ticket");
-await page.waitForSelector('[data-shoot="search-results"] button');
-await page.locator('[data-shoot="search-results"] button').first().click({ force: true });
-await settle(650);
-await page.locator('[data-shoot="inspector-evidence-solo"]').click({ force: true });
-await settle(900);
-check("08 Trace is visible with Inspector", await page.locator('[data-shoot="trace-active-badge"]').count() === 1 && await page.locator('[data-shoot="inspector"]').count() === 1);
-check("09 Trace route is complete and framed", await root.getAttribute("data-trace-complete") === "true" && await page.evaluate(() => (window.__signalCanvas?.geometry?.traceEndpointsOffscreen ?? 1) === 0));
-await shot("03-trace-with-inspector");
-
-const passageButton = page.locator('[data-shoot="node-passage:snap-jsa-1:ke-ev-0088"]');
-check("10 Trace exposes a connected passage", await passageButton.count() === 1);
-await passageButton.evaluate((button) => button.click());
-await page.waitForFunction(() => document.querySelector('[data-selected-id]')?.getAttribute("data-selected-id")?.startsWith("passage:"));
+const cameraBeforeOverview = await camera();
+await page.locator('[data-shoot="project-overview"]').click({ force: true });
+await frame.locator("#signal-inspector-overview").waitFor({ state: "visible" });
 await settle(250);
-const passageId = await selected();
-check("11 connected-node navigation updates Inspector without ending Trace", passageId?.startsWith("passage:") && await page.locator('[data-shoot="trace-active-badge"]').count() === 1, passageId ?? "none");
+check("19 project/context handoff opens Overview in place", (await selected()) === "" && await frame.locator("#signal-inspector-overview").isVisible());
+check("20 project/context handoff preserves exact camera", (await camera()) === cameraBeforeOverview, `${cameraBeforeOverview} → ${await camera()}`);
+check("21 project/context handoff never remounts Rubric", await frame.locator("#brain-canvas").getAttribute("data-proof-mount") === "original");
 
-await page.locator('[data-shoot="inspector-technical"] summary').click({ force: true });
-check("12 source anchor is inspectable", await page.getByText("Anchored in the source", { exact: true }).count() === 1 && await page.getByText("fixture-anchor-proof", { exact: true }).count() === 1);
-
-const sourceConnection = page.locator('[data-shoot="connection-extracted_from"]').first();
-check("13 passage exposes its source connection", await sourceConnection.count() === 1);
-if (await sourceConnection.count()) {
-  await sourceConnection.click({ force: true });
-  await settle(300);
-  check("14 source navigation keeps Trace live", /^(source|transcript):/.test((await selected()) ?? "") && await page.locator('[data-shoot="trace-active-badge"]').count() === 1, await selected() ?? "none");
-}
-
-// Layout is a world menu, not a competing dashboard column.
-await page.locator('[data-shoot="world-menu-toggle"]').click({ force: true });
-await page.locator('[data-shoot="layout-constellations"]').click({ force: true });
-await settle(900);
-check("15 layout switches with Inspector and Trace intact", await page.getAttribute('[data-shoot="signal-graph"]', "data-layout") === "constellations" && await page.locator('[data-shoot="inspector"]').count() === 1 && await page.locator('[data-shoot="trace-active-badge"]').count() === 1);
-await page.locator('[data-shoot="layout-rings"]').click({ force: true });
-await settle(800);
-
-// Direct pan/zoom must continue to work under the floating dock.
-const cameraBeforeHand = await camera();
-await page.mouse.move(520, 450);
-await page.mouse.wheel(0, -420);
-await settle(250);
-const cameraAfterZoom = await camera();
-await page.mouse.move(520, 450);
-await page.mouse.down();
-await page.mouse.move(585, 495, { steps: 5 });
-await page.mouse.up();
-await settle(250);
-const cameraAfterPan = await camera();
-check("16 wheel zoom works with Inspector open", cameraAfterZoom !== cameraBeforeHand, `${cameraBeforeHand} → ${cameraAfterZoom}`);
-check("17 pan works with Inspector open", cameraAfterPan !== cameraAfterZoom, `${cameraAfterZoom} → ${cameraAfterPan}`);
-check("18 pan/zoom keep Inspector selection", await page.locator('[data-shoot="inspector"]').count() === 1 && Boolean(await selected()));
-
-// Return to a Finding, then enter/exit second-level governed review. The
-// camera and canonical selection must be byte-for-byte the same afterwards.
-await page.locator('[data-shoot="graph-search"]').fill("");
-await page.locator('[data-shoot="graph-search"]').fill("Offline capture has no ticket");
-await page.waitForSelector('[data-shoot="search-results"] button');
-await page.locator('[data-shoot="search-results"] button').first().click({ force: true });
-await settle(700);
+await selectBySearch(traceableFinding);
 const cameraBeforeReview = await camera();
 const selectionBeforeReview = await selected();
-await page.locator('[data-shoot="open-full-review"]').click({ force: true });
-await page.waitForSelector('[data-shoot="finding-review-sheet"]');
-check("19 deep review is a side sheet, not the default surface", await page.locator('[data-review-variant="sheet"]').count() === 1 && await page.locator('[data-shoot="inspector"]').count() === 0);
-await shot("04-deep-review-sheet");
+await frame.locator('#brain-card [data-act="view"]').click({ force: true });
+await page.locator('[data-shoot="finding-review-sheet"]').waitFor({ timeout: 10_000 });
+check("22 Review finding opens the governed second-level side sheet", await page.locator('[data-review-variant="sheet"]').count() === 1);
+await shot("03-governed-review-sheet");
 await page.locator('[data-shoot="close-full-review"]').click({ force: true });
-await page.waitForSelector('[data-shoot="inspector"]');
-check("20 review close restores the same camera", (await camera()) === cameraBeforeReview, `${cameraBeforeReview} → ${await camera()}`);
-check("21 review close restores the same selection", (await selected()) === selectionBeforeReview, await selected() ?? "none");
+await page.locator('[data-shoot="finding-review-sheet"]').waitFor({ state: "detached" });
+check("23 review close restores exact camera", (await camera()) === cameraBeforeReview, `${cameraBeforeReview} → ${await camera()}`);
+check("24 review close restores exact selection", (await selected()) === selectionBeforeReview, await selected() ?? "none");
+check("25 review handoff never remounts Rubric", await frame.locator("#brain-canvas").getAttribute("data-proof-mount") === "original");
 
-// Widget chrome evidence.
-if (await page.locator('[data-shoot="world-menu-panel"]').count()) {
-  await page.locator('[data-shoot="world-menu-toggle"]').click({ force: true });
-}
-await page.locator('[data-shoot="legend-toggle"]').click({ force: true });
-await page.locator('[data-shoot="world-menu-toggle"]').click({ force: true });
-check("22 Menu and Legend are collapsible Signal widgets", await page.locator('[data-shoot="legend-panel"]').count() === 1 && await page.locator('[data-shoot="world-menu-panel"]').count() === 1);
-await shot("05-menu-legend-widget-family");
+if (!await frame.locator("#brain-panel").isVisible()) await frame.locator("#fab-menu").click({ force: true });
+await frame.locator("#fab-legend").click({ force: true });
+check("26 Menu/Search/Legend/Inspector form the active widget family", await frame.locator("#brain-panel").isVisible() && await frame.locator("#signal-search-widget").isVisible() && await frame.locator("#brain-legend").isVisible() && await frame.locator("#brain-card").isVisible());
+check("27 Run Audit remains in the parent Signal shell", await page.locator('button:has-text("Run Audit")').count() === 1);
+await shot("04-widget-family-current-world");
 
-// Hover/observer crash regression: cross the moving field repeatedly while
-// both observers are live, then verify the app and canvas loop still answer.
-for (let i = 0; i < 140; i++) {
-  await page.mouse.move(170 + (i * 37) % 760, 150 + (i * 61) % 630);
+for (let index = 0; index < 180; index++) {
+  await page.mouse.move(130 + (index * 43) % 900, 100 + (index * 67) % 700);
 }
 await page.setViewportSize({ width: 1439, height: 900 });
 await page.setViewportSize({ width: 1440, height: 900 });
-await settle(500);
-const observerState = await page.evaluate(() => ({
-  counters: window.__auditWidgetObservers,
-  canvas: Boolean(window.__signalCanvas?.stats),
+await settle(600);
+const observerState = await frame.locator("body").evaluate(() => ({
+  resize: window.__auditWidgetObservers?.resize || 0,
+  core: Boolean(window.BrainCore?.S?.nodes?.length),
+  canvas: Boolean(document.getElementById("brain-canvas")),
 }));
-check("23 hover/observer stress has no browser crash", pageErrors.length === 0 && observerState.canvas, pageErrors.join(" | "));
-check("24 ResizeObserver remained live", observerState.counters?.resize > 0, JSON.stringify(observerState.counters));
+check("28 hover/observer stress has no browser crash", pageErrors.length === 0 && observerState.core && observerState.canvas, pageErrors.join(" | "));
+check("29 ResizeObserver remained live", observerState.resize > 0, JSON.stringify(observerState));
+check("30 final world remains the current 438/543 corpus", await frame.locator("body").evaluate(() => window.BrainCore.S.meta.canonicalNodes === 438 && window.BrainCore.S.meta.canonicalEdges === 543));
 
-await shot("06-final-world-state");
 const video = page.video();
 await page.close();
 await context.close();
@@ -256,7 +258,8 @@ await browser.close();
 
 const report = {
   baseUrl: BASE,
-  fixture: FIXTURE,
+  currentWorld: { canonicalNodes: mirror.meta.canonicalNodes, canonicalEdges: mirror.meta.canonicalEdges },
+  truthCapture: TRUTH_CAPTURE,
   checks: rows.length,
   failures,
   pageErrors,

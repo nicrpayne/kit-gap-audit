@@ -3,6 +3,7 @@
 import Link from "@/components/instrument/SignalLink";
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import AuditFindingOverlay from "./AuditFindingOverlay";
+import worldStyles from "./AuditWorld.module.css";
 
 interface ScopeOption {
   id: string;
@@ -52,7 +53,6 @@ export default function AuditWorld({
   const [contextError, setContextError] = useState<string | null>(null);
   const [worldMounted, setWorldMounted] = useState(false);
   const [worldState, setWorldState] = useState<"loading" | "ready" | "updating">("loading");
-  const [overviewOpen, setOverviewOpen] = useState(false);
   const [runOpen, setRunOpen] = useState(false);
   const [runTitle, setRunTitle] = useState("");
   const [runKind, setRunKind] = useState("transcript");
@@ -150,8 +150,6 @@ export default function AuditWorld({
   }, [loadContext, sendContext]);
 
   const selectedAudit = context?.audits.find((audit) => audit.id === auditId) ?? null;
-  const currentAudit = context?.audits[0] ?? null;
-  const priorAudit = context?.audits[1] ?? null;
 
   async function changeScope(nextScope: string) {
     setScopeId(nextScope);
@@ -206,7 +204,11 @@ export default function AuditWorld({
   }
 
   return (
-    <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden" style={{ background: "#05060d" }}>
+    <div
+      className={`${worldStyles.auditWorld} relative flex min-h-0 flex-1 flex-col overflow-hidden`}
+      style={{ background: "#05060d" }}
+      data-review-open={findingReviewId ? "true" : "false"}
+    >
       <header
         className="relative z-30 flex h-[46px] shrink-0 items-center gap-3 px-4"
         style={{ background: "var(--i-panel)", borderBottom: "1px solid var(--i-border)" }}
@@ -242,9 +244,10 @@ export default function AuditWorld({
         <div className="flex-1" />
         <button
           type="button"
-          onClick={() => setOverviewOpen((open) => !open)}
+          onClick={() => frameRef.current?.contentWindow?.postMessage({ type: "signal-audit-show-overview" }, window.location.origin)}
+          data-shoot="project-overview"
           className="shrink-0 rounded-md px-2.5 py-1.5 text-[11px]"
-          style={{ border: "1px solid var(--i-border-strong)", color: overviewOpen ? "var(--i-signal)" : "var(--i-text-soft)" }}
+          style={{ border: "1px solid var(--i-border-strong)", color: "var(--i-text-soft)" }}
         >
           Project Overview
         </button>
@@ -277,39 +280,6 @@ export default function AuditWorld({
           <div className="absolute left-1/2 top-4 z-40 -translate-x-1/2 rounded-md px-4 py-2 text-[11px]" style={{ background: "var(--i-panel)", border: "1px solid var(--i-red)", color: "var(--i-red)" }}>
             {contextError}
           </div>
-        )}
-
-        {overviewOpen && context && (
-          <section
-            className="absolute left-4 top-4 z-40 w-[340px] rounded-xl p-4 shadow-2xl"
-            style={{ background: "color-mix(in srgb, var(--i-panel) 96%, transparent)", border: "1px solid var(--i-border-strong)" }}
-            aria-label="Project Overview"
-          >
-            <div className="flex items-start justify-between gap-4">
-              <div>
-                <div className="i-label text-[9px]" style={{ color: "var(--i-text-faint)" }}>PROJECT OVERVIEW</div>
-                <h2 className="mt-1 text-[16px] font-medium text-[var(--i-text)]">{context.scope.name}</h2>
-                <p className="mt-1 text-[11px] leading-relaxed text-[var(--i-text-soft)]">Audit discovers. Reality governs. Signal responds.</p>
-              </div>
-              <button type="button" onClick={() => setOverviewOpen(false)} aria-label="Close Project Overview" className="text-[18px] text-[var(--i-text-faint)]">×</button>
-            </div>
-            <div className="mt-4 space-y-2">
-              {[currentAudit, priorAudit].filter(Boolean).map((audit) => (
-                <button
-                  key={audit!.id}
-                  type="button"
-                  onClick={() => { changeAudit(audit!.id); setOverviewOpen(false); }}
-                  className="block w-full rounded-lg px-3 py-2.5 text-left"
-                  style={{ background: "var(--i-recess)", border: "1px solid var(--i-border)" }}
-                >
-                  <span className="text-[9px] uppercase tracking-[0.12em] text-[var(--i-text-faint)]">{audit!.position} Audit · {dateLabel(audit!.createdAt)}</span>
-                  <span className="mt-1 block truncate text-[12px] text-[var(--i-text)]">{audit!.title}</span>
-                  <span className="mt-0.5 block text-[10.5px] text-[var(--i-text-soft)]">{audit!.findingCount} findings · {audit!.openFindingCount} open</span>
-                </button>
-              ))}
-              {!currentAudit && <p className="text-[11px] text-[var(--i-text-faint)]">No evidence Audits have been run for this project yet.</p>}
-            </div>
-          </section>
         )}
 
         {runOpen && !fixture && (

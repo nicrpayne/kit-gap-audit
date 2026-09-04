@@ -48,7 +48,7 @@ export default function FindingInspector({
       instrument being broken, not as the finding being ungrounded. The panel
       says so in words instead of offering a control that cannot work. */
   onEvidenceSolo: (() => void) | null;
-  onOpenReview: () => void;
+  onOpenReview?: () => void;
 }) {
   if (!finding) return <AuditOverview model={model} onSelect={onSelect} />;
   return (
@@ -195,7 +195,7 @@ function SelectedFinding({
       instrument being broken, not as the finding being ungrounded. The panel
       says so in words instead of offering a control that cannot work. */
   onEvidenceSolo: (() => void) | null;
-  onOpenReview: () => void;
+  onOpenReview?: () => void;
 }) {
   const color = findingColor(finding);
   const Icon = findingIcon(finding.type, finding.blocking);
@@ -355,19 +355,21 @@ function SelectedFinding({
                 {evidenceSolo ? "Stop trace" : "Trace provenance"}
               </button>
             )}
-            <button
-              type="button"
-              onClick={onOpenReview}
-              data-shoot="open-full-review"
-              className="rounded-md border px-3 py-2 text-[11px] font-medium transition-colors hover:bg-white/[0.04]"
-              style={{
-                borderColor: "color-mix(in srgb, var(--i-violet) 65%, var(--i-border-strong))",
-                background: "var(--i-violet-soft)",
-                color: "var(--i-violet)",
-              }}
-            >
-              Review finding →
-            </button>
+            {onOpenReview && (
+              <button
+                type="button"
+                onClick={onOpenReview}
+                data-shoot="open-full-review"
+                className="rounded-md border px-3 py-2 text-[11px] font-medium transition-colors hover:bg-white/[0.04]"
+                style={{
+                  borderColor: "color-mix(in srgb, var(--i-violet) 65%, var(--i-border-strong))",
+                  background: "var(--i-violet-soft)",
+                  color: "var(--i-violet)",
+                }}
+              >
+                Review finding →
+              </button>
+            )}
           </div>
         </div>
 
