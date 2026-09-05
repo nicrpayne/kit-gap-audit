@@ -74,111 +74,38 @@ body {
    text colour and numerals below -- what moved is the vocabulary, not the
    treatment. */
 :root {
-  /* SIGNAL VISUAL SYSTEM V1
-     Product meaning is named here; components do not ask for a hue. */
-  --signal-surface-void: #090c0f;
-  --signal-surface-canvas: #0e1317;
-  --signal-surface-panel: #151b20;
-  --signal-surface-raised: #1c242a;
-  --signal-surface-recessed: #070a0c;
-
-  --signal-border-subtle: #29323a;
-  --signal-border-strong: #3a4650;
-  --signal-border-selected: #bec9d0;
-
-  --signal-text-primary: #f3f0e7;
-  --signal-text-secondary: #a1abb3;
-  --signal-text-tertiary: #808c95;
-  --signal-text-disabled: rgb(243 240 231 / 52%);
-
-  --signal-reality: #51c9db;
-  --signal-reality-soft: rgb(81 201 219 / 14%);
-  --signal-reality-muted: #3d98a6;
-  --signal-reality-contrast: #090c0f;
-  --signal-scenario: #a397fa;
-  --signal-scenario-soft: rgb(163 151 250 / 16%);
-  --signal-scenario-muted: #796fba;
-  --signal-scenario-contrast: #090c0f;
-  --signal-attention: #e3b455;
-  --signal-attention-soft: rgb(227 180 85 / 14%);
-  --signal-attention-muted: #a18240;
-  --signal-attention-contrast: #090c0f;
-  --signal-risk: #f07162;
-  --signal-risk-soft: rgb(240 113 98 / 14%);
-  --signal-risk-muted: #ad544a;
-  --signal-risk-contrast: #090c0f;
-  --signal-positive: #53d7aa;
-  --signal-positive-soft: rgb(83 215 170 / 14%);
-  --signal-positive-muted: #3d9c7d;
-  --signal-positive-contrast: #090c0f;
-  --signal-source: #63acd0;
-  --signal-source-soft: rgb(99 172 208 / 15%);
-  --signal-source-muted: #4b809a;
-  --signal-source-contrast: #090c0f;
-  --signal-evidence: #bec9d0;
-  --signal-evidence-soft: rgb(190 201 208 / 13%);
-  --signal-evidence-muted: #89949b;
-  --signal-evidence-contrast: #090c0f;
-  --signal-inactive: #808c95;
-
-  /* A Reality comparison ghost is intentionally neutral. This is the
-     deliberate successor to legacy --i-reality; it is not live Reality. */
-  --signal-reality-reference: #808c95;
-  --signal-reality-reference-soft: rgb(128 140 149 / 14%);
-
-  /* Orthogonal interaction state. Selection and focus must survive on top
-     of every semantic status rather than recolouring it. */
-  --signal-focus-ring: #a397fa;
-  --signal-hover-overlay: rgb(255 255 255 / 4%);
-  --signal-selected-overlay: rgb(190 201 208 / 9%);
-  --signal-selected-shadow: 0 0 0 1px var(--signal-border-selected) inset,
-    0 0 0 3px var(--signal-evidence-soft);
-  --signal-disabled-opacity: 0.52;
-
-  /* The established Control Room time-frame tone is retained as a narrow
-     compatibility role until Timeline receives its own migration. */
-  --signal-time-frame: #7f9cf5;
-  --signal-time-frame-soft: rgb(127 156 245 / 16%);
-
-  /* Material recipes: raised = operable; recessed = computed. */
-  --signal-control-fill: linear-gradient(
-    180deg,
-    var(--signal-surface-raised),
-    var(--signal-surface-panel)
-  );
-  --signal-control-shadow: inset 0 1px rgb(255 255 255 / 5%),
-    0 2px 5px rgb(0 0 0 / 45%);
-  --signal-recess-shadow: inset 0 2px 7px rgb(0 0 0 / 58%),
-    inset 0 -1px rgb(255 255 255 / 3%);
-  --signal-widget-shadow: -18px 14px 40px rgb(0 0 0 / 42%),
-    inset 0 1px rgb(255 255 255 / 4%);
-  --signal-widget-fill: rgb(21 27 32 / 96%);
-
-  /* Compatibility aliases keep the product stable while touched surfaces
-     move to explicit semantic names. */
-  --i-void: var(--signal-surface-void);
-  --i-bg: var(--signal-surface-canvas);
-  --i-panel: var(--signal-surface-panel);
-  --i-panel-raised: var(--signal-surface-raised);
-  --i-recess: var(--signal-surface-recessed);
-  --i-border: var(--signal-border-subtle);
-  --i-border-strong: var(--signal-border-strong);
-  --i-text: var(--signal-text-primary);
-  --i-text-soft: var(--signal-text-secondary);
-  --i-text-faint: var(--signal-text-tertiary);
-  --i-signal: var(--signal-reality);
-  --i-signal-soft: var(--signal-reality-soft);
-  --i-violet: var(--signal-scenario);
-  --i-violet-soft: var(--signal-scenario-soft);
-  --i-amber: var(--signal-attention);
-  --i-amber-soft: var(--signal-attention-soft);
-  --i-red: var(--signal-risk);
-  --i-red-soft: var(--signal-risk-soft);
-  --i-mint: var(--signal-positive);
-  --i-mint-soft: var(--signal-positive-soft);
-  --i-reality: var(--signal-reality-reference);
-  --i-cool: var(--signal-time-frame);
-  --i-cool-soft: var(--signal-time-frame-soft);
+  /* Depth ladder. Four levels, not two -- the Instrument's physicality
+     comes from things sitting ON or being CUT INTO a surface, which needs
+     a ground darker than the panels and a recess darker than the ground. */
+  --i-void: #0b0e10; /* the ground everything sits on */
+  --i-bg: #101417; /* canvas / field */
+  --i-panel: #161b1f;
+  --i-panel-raised: #1d2429; /* controls sit UP here */
+  --i-recess: #0a0d0f; /* meter windows are CUT IN to here */
+  --i-border: #262d33;
+  --i-border-strong: #333c43;
+  --i-text: #f3f0e6;
+  --i-text-soft: #9099a1;
+  --i-text-faint: #667079;
+  --i-mint: #4ad9a8;
+  --i-mint-soft: rgba(74, 217, 168, 0.14);
+  /* MATERIAL, not state: a capability that is accepted Reality and live in
+     the release. Deliberately cooler than --i-mint so "this is seated and
+     powered" never reads as "this moved in your favour". Every accepted
+     capability shares it -- hue is not a per-module variable. */
+  --i-signal: #46c3d6;
+  --i-signal-soft: rgba(70, 195, 214, 0.14);
+  --i-violet: #9b8cfa;
+  --i-violet-soft: rgba(155, 140, 250, 0.16);
+  --i-amber: #e0b04a;
+  --i-amber-soft: rgba(224, 176, 74, 0.14);
+  --i-red: #ef6b5b;
+  --i-red-soft: rgba(239, 107, 91, 0.14);
+  --i-reality: #6b7278;
+  /* TIME's own hue in the approved layout: a periwinkle that sits beside
+     violet without being it. Time is the frame, not a domain. */
+  --i-cool: #7f9cf5;
+  --i-cool-soft: rgba(127, 156, 245, 0.16);
 
   /* ── THE EXTERNAL POPULATIONS ──────────────────────────────────────
      Added for the Signal Graph, and for one measured reason: a blind
@@ -201,21 +128,21 @@ body {
 
   /* Warm, and deliberately NOT --i-red: Signal's own dependency node keeps
      that alarm red, and a risk somebody else asserts must not borrow it. */
-  --i-coral: var(--signal-risk);
-  --i-coral-soft: var(--signal-risk-soft);
+  --i-coral: #f4846d;
+  --i-coral-soft: rgba(244, 132, 109, 0.16);
   /* An observation is the producer's largest and least pointed population
      (59 of 161). Blue-grey: present, legible, never competing. */
-  --i-slate: var(--signal-inactive);
-  --i-slate-soft: var(--signal-reality-reference-soft);
+  --i-slate: #8496a6;
+  --i-slate-soft: rgba(132, 150, 166, 0.14);
   /* A passage is a quotation — Signal's own material, luminous rather than
      coloured, because it carries no position of its own. */
-  --i-silver: var(--signal-evidence);
-  --i-silver-soft: var(--signal-evidence-soft);
+  --i-silver: #b9c6cf;
+  --i-silver-soft: rgba(185, 198, 207, 0.14);
   /* Source artifacts are the hubs the whole evidence sector hangs off.
      Same family as Reality's cyan, a step deeper, so "where knowledge came
      from" reads as Signal's own without ever being mistaken for Reality. */
-  --i-source: var(--signal-source);
-  --i-source-soft: var(--signal-source-soft);
+  --i-source: #58a6cc;
+  --i-source-soft: rgba(88, 166, 204, 0.16);
 }
 
 .instrument {
@@ -261,7 +188,7 @@ body {
 /* Structural micro-label. Uppercase, wide-tracked, quiet -- these do the
    Instrument's organizing work so boxes and rules don't have to. */
 .i-label {
-  font-size: 10px;
+  font-size: 9.5px;
   line-height: 1;
   text-transform: uppercase;
   letter-spacing: 0.15em;
@@ -275,245 +202,17 @@ body {
    INTO the panel and unlit. You can tell what is operable without reading
    a label, and a meter can never be mistaken for a control. */
 .i-control {
-  background: var(--signal-control-fill);
+  background: linear-gradient(180deg, var(--i-panel-raised), var(--i-panel));
   border: 1px solid var(--i-border-strong);
-  box-shadow: var(--signal-control-shadow);
+  border-top-color: #3f4950;
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.05) inset, 0 2px 5px rgba(0, 0, 0, 0.45);
   border-radius: 7px;
 }
 .i-meter {
   background: var(--i-recess);
-  border: 1px solid var(--signal-border-subtle);
-  box-shadow: var(--signal-recess-shadow);
+  border: 1px solid #1c2227;
+  box-shadow: 0 2px 7px rgba(0, 0, 0, 0.55) inset, 0 1px 0 rgba(255, 255, 255, 0.035);
   border-radius: 7px;
-}
-
-/* Shared Signal material primitives. Geometry remains the responsibility of
-   each instrument; these classes provide one material and state grammar. */
-.signal-widget {
-  position: relative;
-  overflow: hidden;
-  color: var(--signal-text-secondary);
-  background: var(--signal-widget-fill);
-  border: 1px solid var(--signal-border-strong);
-  border-radius: 8px;
-  box-shadow: var(--signal-widget-shadow);
-}
-.signal-widget__rail {
-  position: absolute;
-  inset: 0 auto 0 0;
-  width: 2px;
-  background: var(--signal-status-color, var(--signal-evidence));
-}
-.signal-widget__header,
-.signal-panel__header {
-  display: flex;
-  min-height: 40px;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 12px;
-  border-bottom: 1px solid var(--signal-border-subtle);
-}
-.signal-widget__label {
-  display: block;
-  color: var(--signal-text-tertiary);
-  font-size: 10px;
-  font-weight: 600;
-  line-height: 1;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-}
-.signal-widget__title {
-  display: block;
-  color: var(--signal-text-primary);
-  font-size: 12px;
-  font-weight: 600;
-  line-height: 1.35;
-}
-.signal-widget__count {
-  margin-left: auto;
-  color: var(--signal-text-tertiary);
-  font-size: 10px;
-  font-variant-numeric: tabular-nums;
-}
-.signal-widget__body { min-height: 0; }
-.signal-widget__footer {
-  padding: 8px 12px;
-  border-top: 1px solid var(--signal-border-subtle);
-  color: var(--signal-text-tertiary);
-  font-size: 10px;
-}
-
-.signal-panel {
-  position: relative;
-  color: var(--signal-text-secondary);
-  background: var(--signal-surface-panel);
-  border: 1px solid var(--signal-border-subtle);
-  border-radius: 8px;
-}
-.signal-panel--operable {
-  background: var(--signal-control-fill);
-  border-color: var(--signal-border-strong);
-  transition: border-color 150ms ease, background-color 150ms ease;
-}
-.signal-panel--operable:hover {
-  border-color: var(--signal-border-selected);
-  background-color: var(--signal-hover-overlay);
-}
-
-.signal-control,
-.signal-meter {
-  min-height: 32px;
-  border-radius: 7px;
-}
-.signal-control {
-  color: var(--signal-text-secondary);
-  background: var(--signal-control-fill);
-  border: 1px solid var(--signal-border-strong);
-  box-shadow: var(--signal-control-shadow);
-  cursor: pointer;
-  transition: border-color 150ms ease, color 150ms ease, background-color 150ms ease,
-    box-shadow 150ms ease, transform 100ms ease;
-}
-.signal-control:hover:not(:disabled) {
-  color: var(--signal-text-primary);
-  border-color: var(--signal-border-selected);
-}
-.signal-control:active:not(:disabled) { transform: translateY(1px); }
-.signal-control[data-signal-interaction="selected"] {
-  color: var(--signal-text-primary);
-  background-color: var(--signal-selected-overlay);
-  box-shadow: var(--signal-selected-shadow), var(--signal-control-shadow);
-}
-.signal-control:disabled,
-.signal-control[aria-disabled="true"] {
-  color: var(--signal-text-disabled);
-  background: var(--signal-surface-panel);
-  box-shadow: none;
-  cursor: default;
-  opacity: var(--signal-disabled-opacity);
-}
-.signal-meter {
-  color: var(--signal-text-primary);
-  background: var(--signal-surface-recessed);
-  border: 1px solid var(--signal-border-subtle);
-  box-shadow: var(--signal-recess-shadow);
-}
-
-.signal-state-mark,
-.signal-basis-mark,
-.signal-handoff {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  min-height: 24px;
-  color: var(--signal-status-color, var(--signal-text-secondary));
-  font-size: 10px;
-  line-height: 1.35;
-}
-.signal-state-mark__status { width: 12px; text-align: center; }
-.signal-state-mark__time {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding-left: 6px;
-  border-left: 1px solid var(--signal-border-subtle);
-  color: var(--signal-text-secondary);
-}
-.signal-state-mark[data-signal-time="stale"] .signal-state-mark__time {
-  color: var(--signal-attention);
-  border-left-style: dotted;
-}
-.signal-state-mark[data-signal-time="superseded"] {
-  opacity: 0.55;
-  text-decoration: line-through;
-  text-decoration-thickness: 1px;
-}
-.signal-basis-mark { color: var(--signal-text-secondary); }
-.signal-handoff {
-  min-height: 32px;
-  justify-content: center;
-  color: var(--signal-text-secondary);
-  border: 1px solid var(--signal-border-strong);
-  border-radius: 6px;
-  transition: color 150ms ease, border-color 150ms ease, background-color 150ms ease;
-}
-.signal-handoff__arrow { color: var(--signal-source); }
-.signal-handoff:hover {
-  color: var(--signal-text-primary);
-  border-color: var(--signal-source);
-  background: var(--signal-hover-overlay);
-}
-
-[data-signal-status="reality"] { --signal-status-color: var(--signal-reality); }
-[data-signal-status="scenario"] { --signal-status-color: var(--signal-scenario); }
-[data-signal-status="attention"] { --signal-status-color: var(--signal-attention); }
-[data-signal-status="risk"] { --signal-status-color: var(--signal-risk); }
-[data-signal-status="positive"] { --signal-status-color: var(--signal-positive); }
-[data-signal-status="source"] { --signal-status-color: var(--signal-source); }
-[data-signal-status="evidence"] { --signal-status-color: var(--signal-evidence); }
-[data-signal-status="neutral"] { --signal-status-color: var(--signal-text-secondary); }
-
-.signal-shell__rail {
-  background: var(--signal-surface-panel);
-  border-right: 1px solid var(--signal-border-subtle);
-}
-.signal-shell__identity {
-  background: var(--signal-surface-panel);
-  border-bottom: 1px solid var(--signal-border-subtle);
-}
-.signal-control-room__statusbar {
-  background: var(--signal-surface-panel);
-  border-top: 1px solid var(--signal-border-subtle);
-}
-.signal-shell__nav-item {
-  min-height: 32px;
-  color: var(--signal-text-secondary);
-  border: 1px solid transparent;
-}
-.signal-shell__nav-item:hover {
-  color: var(--signal-text-primary);
-  border-color: var(--signal-border-strong);
-  background: var(--signal-hover-overlay);
-}
-.signal-shell__nav-item[data-signal-interaction="selected"] {
-  color: var(--signal-reality);
-  border-color: var(--signal-border-strong);
-  background: var(--signal-selected-overlay);
-  box-shadow: var(--signal-selected-shadow);
-}
-
-.instrument :focus-visible {
-  outline: 2px solid var(--signal-focus-ring);
-  outline-offset: 2px;
-  border-radius: 3px;
-}
-.instrument [data-signal-interaction="selected"]:focus-visible {
-  box-shadow: var(--signal-selected-shadow);
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .signal-widget,
-  .signal-control,
-  .signal-handoff,
-  .signal-shell__nav-item {
-    animation-duration: 0.001ms !important;
-    transition-duration: 0.001ms !important;
-  }
-}
-
-@media (forced-colors: active) {
-  .signal-widget,
-  .signal-panel,
-  .signal-control,
-  .signal-meter,
-  .signal-handoff,
-  .signal-shell__nav-item {
-    border-color: CanvasText;
-  }
-  .signal-shell__nav-item[data-signal-interaction="selected"] {
-    outline: 1px solid Highlight;
-    outline-offset: -3px;
-  }
 }
 
 /* Recessed slot a fader cap travels in -- cut into the control plate. */
@@ -564,6 +263,12 @@ body {
     rgba(224, 176, 74, 0.16) 0 1px,
     transparent 1px 6px
   );
+}
+
+.instrument :focus-visible {
+  outline: 2px solid var(--i-violet);
+  outline-offset: 2px;
+  border-radius: 3px;
 }
 
 /* ---- DECISIONS: the circuit chassis ---------------------------------

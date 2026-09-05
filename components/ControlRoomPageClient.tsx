@@ -39,7 +39,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "@/components/instrument/SignalLink";
 import InstrumentShell from "@/components/instrument/InstrumentShell";
-import { SignalControl, SignalStateMark } from "@/components/instrument/SignalPrimitives";
 import TimelinePageClient from "@/components/TimelinePageClient";
 import { Panel, PanelDoor, Row } from "@/components/control-room/Panels";
 import { Telemetry, TelemetryStrip, DOMAIN_ACCENT } from "@/components/control-room/Telemetry";
@@ -201,8 +200,9 @@ export default function ControlRoomPageClient() {
   const strip = (
     <div
       data-shoot="cr-strip"
-      className="signal-shell__identity relative flex shrink-0 items-center gap-0 px-3.5"
+      className="relative flex shrink-0 items-center gap-0 px-3.5"
       style={{
+        background: "var(--i-panel)",
         borderBottom: `1px solid ${m.active ? "var(--i-violet)" : "var(--i-border)"}`,
         height: 46,
       }}
@@ -234,15 +234,21 @@ export default function ControlRoomPageClient() {
 
       {m.active && (
         <>
-          <SignalStateMark data-shoot="cr-scenario" status="scenario" label="Scenario" className="mr-2 px-2" />
-          <SignalControl
+          <span
+            data-shoot="cr-scenario"
+            className="mr-2 inline-flex items-center gap-1.5 rounded-[3px] px-2.5 py-1 text-[9.5px] font-bold uppercase tracking-[0.16em]"
+            style={{ background: "var(--i-violet)", color: "var(--i-void)" }}
+          >
+            Scenario
+          </span>
+          <button
             data-shoot="cr-discard"
             onClick={() => m.setScenario(EMPTY_SCENARIO)}
-            status="scenario"
-            className="mr-3 px-2.5 py-1 text-[10.5px] text-[var(--signal-status-color)]"
+            className="mr-3 rounded-[3px] px-2.5 py-1 text-[10.5px]"
+            style={{ border: "1px solid var(--i-violet)", color: "var(--i-violet)" }}
           >
             Back to Reality
-          </SignalControl>
+          </button>
         </>
       )}
 
@@ -254,7 +260,8 @@ export default function ControlRoomPageClient() {
         href="/timeline?add=1"
         data-shoot="cr-add-event"
         title="Events are created on the Timeline"
-        className="signal-control mr-2 flex min-h-8 items-center gap-1.5 rounded-[5px] px-2.5 py-1.5 text-[11px] transition-colors"
+        className="mr-2 flex items-center gap-1.5 rounded-[5px] px-2.5 py-1.5 text-[11px] transition-colors hover:bg-[var(--i-panel-raised)]"
+        style={{ border: "1px solid var(--i-border-strong)", color: "var(--i-text)" }}
       >
         <span style={{ color: "var(--i-text-faint)" }}>+</span> Add event
       </Link>
@@ -263,24 +270,25 @@ export default function ControlRoomPageClient() {
           one control that changes which tools are on the desk, and never
           anything about the project. */}
       <div className="relative">
-        <SignalControl
+        <button
           data-shoot="cr-views"
           onClick={() => setViewsOpen((v) => !v)}
-          selected={viewsOpen}
-          className="flex items-center gap-2 px-2.5 py-1.5 text-[11px] transition-colors"
+          className="flex items-center gap-2 rounded-[3px] px-2.5 py-1.5 text-[11px] transition-colors"
+          style={{ border: "1px solid var(--i-border-strong)", color: "var(--i-text)" }}
         >
           <span style={{ color: "var(--i-text-faint)" }}>Views</span>
           <span className="font-medium">{lens?.label ?? "Custom"}</span>
           <span className="text-[8px]" style={{ color: "var(--i-text-faint)" }}>
             ▼
           </span>
-        </SignalControl>
+        </button>
         {viewsOpen && (
           <>
             <div className="fixed inset-0 z-40" onClick={() => setViewsOpen(false)} />
             <div
               data-shoot="cr-views-menu"
-              className="signal-widget absolute right-0 z-50 mt-1.5 w-[268px] overflow-hidden"
+              className="absolute right-0 z-50 mt-1.5 w-[268px] overflow-hidden rounded-md"
+              style={{ background: "var(--i-panel-raised)", border: "1px solid var(--i-border-strong)" }}
             >
               {LENSES.filter((l) => l.surfaces !== null || workspace.lens === "custom").map((l) => {
                 const active = workspace.lens === l.id;
@@ -289,13 +297,12 @@ export default function ControlRoomPageClient() {
                     key={l.id}
                     data-shoot={`cr-lens-pick-${l.id}`}
                     data-on={active}
-                    data-signal-interaction={active ? "selected" : "rest"}
-                    aria-pressed={active}
                     onClick={() => {
                       commit({ ...workspace, lens: l.id });
                       setViewsOpen(false);
                     }}
-                    className="signal-shell__nav-item flex w-full items-baseline gap-2.5 px-3 py-2 text-left transition-colors"
+                    className="flex w-full items-baseline gap-2.5 px-3 py-2 text-left transition-colors hover:bg-[var(--i-panel)]"
+                    style={{ background: active ? "var(--i-panel)" : "transparent" }}
                   >
                     <span
                       className="w-[78px] shrink-0 text-[11.5px]"
@@ -313,14 +320,15 @@ export default function ControlRoomPageClient() {
           </>
         )}
       </div>
-      <SignalControl
+      <button
         data-shoot="cr-lens-editor-open"
         onClick={() => setEditing(true)}
         title="Customize this workspace"
-        className="ml-2 flex h-8 w-8 items-center justify-center text-[13px]"
+        className="ml-2 flex h-[28px] w-[28px] items-center justify-center rounded-[3px] text-[13px]"
+        style={{ border: "1px solid var(--i-border-strong)", color: "var(--i-text-soft)" }}
       >
         ⚙
-      </SignalControl>
+      </button>
     </div>
   );
 

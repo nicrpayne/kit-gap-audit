@@ -250,37 +250,6 @@ check("28 hover/observer stress has no browser crash", pageErrors.length === 0 &
 check("29 ResizeObserver remained live", observerState.resize > 0, JSON.stringify(observerState));
 check("30 final world remains the current 438/543 corpus", await frame.locator("body").evaluate(() => window.BrainCore.S.meta.canonicalNodes === 438 && window.BrainCore.S.meta.canonicalEdges === 543));
 
-check("31 embedded Audit widgets receive shared semantic tokens", await body.evaluate(element => {
-  const style = getComputedStyle(element);
-  return ["--signal-reality", "--signal-border-selected", "--signal-focus-ring", "--signal-widget-fill"]
-    .every(name => style.getPropertyValue(name).trim().length > 0);
-}));
-check("32 touched Audit controls keep 32px hit targets", await frame.locator("#fab-menu, #fab-legend, #brain-search, #signal-overview-close").evaluateAll(elements =>
-  elements.every(element => {
-    const rect = element.getBoundingClientRect();
-    return rect.width >= 32 && rect.height >= 32;
-  })
-));
-const selectedLayout = frame.locator("#seg-layout button.on");
-await selectedLayout.focus();
-check("33 selected and focused Audit states remain distinguishable", await selectedLayout.evaluate(element => {
-  const style = getComputedStyle(element);
-  return style.outlineStyle !== "none" && style.boxShadow !== "none";
-}));
-await page.emulateMedia({ reducedMotion: "reduce" });
-check("34 reduced-motion removes Inspector entrance animation", await frame.locator("#brain-card").evaluate(element =>
-  getComputedStyle(element).animationName === "none"
-));
-await page.setViewportSize({ width: 720, height: 450 });
-await settle(250);
-check("35 touched widget controls remain available at 200% zoom equivalent", await frame.locator("#fab-menu, #fab-legend, #brain-search").evaluateAll(elements =>
-  elements.every(element => {
-    const rect = element.getBoundingClientRect();
-    return rect.width > 0 && rect.height >= 32 && rect.right > 0 && rect.left < innerWidth;
-  })
-));
-await page.setViewportSize({ width: 1440, height: 900 });
-
 const video = page.video();
 await page.close();
 await context.close();

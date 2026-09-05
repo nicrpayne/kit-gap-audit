@@ -208,20 +208,19 @@ function RailLink({
   expanded?: boolean;
   onClick?: (e: MouseEvent<HTMLAnchorElement>) => void;
 }) {
-  const color = active || anchor ? "var(--signal-reality)" : muted ? "var(--signal-text-tertiary)" : "var(--signal-text-secondary)";
+  const color = active || anchor ? "var(--i-signal)" : muted ? "var(--i-text-faint)" : "var(--i-text-soft)";
   return (
     <Link
       href={d.href}
       title={d.question ?? (d.verb ? `${d.label} — ${d.verb}` : d.label)}
       aria-current={active ? "page" : undefined}
       aria-expanded={expanded}
-      data-signal-interaction={active ? "selected" : "rest"}
       onClick={onClick}
       data-rail-entry={d.label}
-      className={`signal-shell__nav-item relative flex flex-col items-center rounded-[8px] px-1 transition-colors ${
+      className={`relative flex flex-col items-center rounded-[8px] px-1 transition-colors hover:text-[var(--i-text)] ${
         muted ? "w-[66px] gap-[3px] px-0 py-[6px]" : "w-[76px] gap-[5px] py-[9px]"
       }`}
-      style={{ color }}
+      style={{ background: active ? "var(--i-signal-soft)" : "transparent", color }}
     >
       {active && (
         <span
@@ -313,7 +312,8 @@ export default function InstrumentRail({
         onClick={onToggle}
         title="Show navigation (⌘\)"
         aria-label="Show navigation"
-        className="signal-control absolute left-0 top-0 z-20 h-9 w-8 flex items-center justify-center transition-colors"
+        className="absolute left-0 top-0 z-20 h-9 w-6 flex items-center justify-center text-[var(--i-text-faint)] hover:text-[var(--i-text)] transition-colors"
+        style={{ background: "var(--i-panel)", borderRight: "1px solid var(--i-border)", borderBottom: "1px solid var(--i-border)" }}
       >
         ›
       </button>
@@ -324,8 +324,8 @@ export default function InstrumentRail({
     <nav
       aria-label="Sections"
       data-shoot="instrument-rail"
-      className="signal-shell__rail i-noscrollbar flex shrink-0 flex-col items-center gap-[3px] overflow-y-auto pb-3 pt-4"
-      style={{ width: 92 }}
+      className="i-noscrollbar flex shrink-0 flex-col items-center gap-[3px] overflow-y-auto pb-3 pt-4"
+      style={{ width: 92, background: "var(--i-panel)", borderRight: "1px solid var(--i-border)" }}
     >
       {/* Signal's mark, and the way home. Home is the Control Room now, not
           a dashboard behind the instruments — the mark is an entrance
@@ -334,9 +334,11 @@ export default function InstrumentRail({
         href="/"
         title="Signal — Control Room"
         aria-label="Signal home"
-        className="signal-control mb-3 flex h-[44px] w-[44px] items-center justify-center rounded-[10px] text-[16px] font-semibold transition-colors"
+        className="mb-3 flex h-[44px] w-[44px] items-center justify-center rounded-[10px] text-[16px] font-semibold transition-colors"
         style={{
-          color: "var(--signal-reality)",
+          background: "var(--i-panel-raised)",
+          border: "1px solid var(--i-border-strong)",
+          color: "var(--i-signal)",
         }}
       >
         S
@@ -491,7 +493,7 @@ export default function InstrumentRail({
         onClick={onOpenCommand}
         title="Command menu (⌘K)"
         aria-label="Open command menu"
-        className="signal-shell__nav-item flex w-[76px] flex-col items-center gap-[5px] rounded-[8px] py-[9px] transition-colors"
+        className="flex w-[76px] flex-col items-center gap-[5px] rounded-[8px] py-[9px] text-[var(--i-text-faint)] transition-colors hover:text-[var(--i-text)]"
       >
         <span className="text-[12px] leading-none">⌘K</span>
         <span className="text-[9.5px] leading-none">Search</span>
@@ -500,7 +502,7 @@ export default function InstrumentRail({
         onClick={onToggle}
         title="Hide navigation (⌘\)"
         aria-label="Hide navigation"
-        className="signal-shell__nav-item flex w-[76px] flex-col items-center gap-[5px] rounded-[8px] py-[9px] transition-colors"
+        className="flex w-[76px] flex-col items-center gap-[5px] rounded-[8px] py-[9px] text-[var(--i-text-faint)] transition-colors hover:text-[var(--i-text)]"
       >
         <span className="text-[12px] leading-none">‹</span>
         <span className="text-[9.5px] leading-none">Collapse</span>

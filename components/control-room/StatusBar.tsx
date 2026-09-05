@@ -18,7 +18,8 @@ export default function StatusBar({
   return (
     <div
       data-shoot="cr-statusbar"
-      className="signal-control-room__statusbar flex shrink-0 items-center gap-6 px-3 py-1.5"
+      className="flex shrink-0 items-center gap-6 px-3 py-1.5"
+      style={{ background: "var(--i-panel)", borderTop: "1px solid var(--i-border)" }}
     >
       {cells.map((c) => {
         const body = (
