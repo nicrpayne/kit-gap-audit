@@ -2,6 +2,7 @@
 
 import Link from "@/components/instrument/SignalLink";
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useProjectParam } from "@/lib/shell/useProjectParam";
 import AuditFindingOverlay from "./AuditFindingOverlay";
 import worldStyles from "./AuditWorld.module.css";
 
@@ -45,12 +46,15 @@ export default function AuditWorld({
   fixture?: string;
 }) {
   const frameRef = useRef<HTMLIFrameElement | null>(null);
-  const [scopeId, setScopeId] = useState(initialScopeId ?? "");
+  const [context, setContext] = useState<AuditContextPayload | null>(null);
+  const [contextError, setContextError] = useState<string | null>(null);
+  const { projectId: urlScopeId, select: selectUrlScope } = useProjectParam(
+    context ? context.scopes.map((scope) => scope.id) : null
+  );
+  const [scopeId, setScopeId] = useState(initialScopeId ?? urlScopeId ?? "");
   const [auditId, setAuditId] = useState("");
   const scopeRef = useRef(scopeId);
   const auditRef = useRef(auditId);
-  const [context, setContext] = useState<AuditContextPayload | null>(null);
-  const [contextError, setContextError] = useState<string | null>(null);
   const [worldMounted, setWorldMounted] = useState(false);
   const [worldState, setWorldState] = useState<"loading" | "ready" | "updating">("loading");
   const [runOpen, setRunOpen] = useState(false);
@@ -106,10 +110,20 @@ export default function AuditWorld({
   }, [fixture]);
 
   useEffect(() => {
-    void loadContext(initialScopeId).catch((error) => {
-      setContextError(error instanceof Error ? error.message : "Audit context could not be read.");
-    });
-  }, [initialScopeId, loadContext]);
+    const requestedScope = urlScopeId ?? initialScopeId;
+    let cancelled = false;
+    void loadContext(requestedScope)
+      .then((updated) => {
+        if (cancelled) return;
+        setAuditId("");
+        setNotice(null);
+        sendContext(updated.scope.id, "");
+      })
+      .catch((error) => {
+        if (!cancelled) setContextError(error instanceof Error ? error.message : "Audit context could not be read.");
+      });
+    return () => { cancelled = true; };
+  }, [initialScopeId, loadContext, sendContext, urlScopeId]);
 
   useEffect(() => {
     const onMessage = (event: MessageEvent) => {
@@ -151,16 +165,16 @@ export default function AuditWorld({
 
   const selectedAudit = context?.audits.find((audit) => audit.id === auditId) ?? null;
 
-  async function changeScope(nextScope: string) {
+  function changeScope(nextScope: string) {
     setScopeId(nextScope);
     setAuditId("");
     setNotice(null);
     sendContext(nextScope, "");
-    try {
-      await loadContext(nextScope);
-    } catch (error) {
-      setContextError(error instanceof Error ? error.message : "Audit context could not be read.");
-    }
+    // The shared hook publishes ?project= with a history entry, clears an
+    // object selection that belonged to the previous project, and preserves
+    // explicit Scenario context. The embedded Rubric world still morphs over
+    // its bridge above; it is never remounted just to make the URL honest.
+    selectUrlScope(nextScope);
   }
 
   function changeAudit(nextAudit: string) {
@@ -218,7 +232,7 @@ export default function AuditWorld({
         <select
           aria-label="Project"
           value={scopeId}
-          onChange={(event) => void changeScope(event.target.value)}
+          onChange={(event) => changeScope(event.target.value)}
           className="max-w-[210px] rounded-md px-2.5 py-1.5 text-[11.5px] outline-none"
           style={{ background: "var(--i-recess)", border: "1px solid var(--i-border-strong)", color: "var(--i-text)" }}
         >

@@ -45,6 +45,7 @@ import CommandMenu from "@/components/instrument/CommandMenu";
 import { mutateReality } from "@/lib/instrument/reality";
 import type { DependencyDelta, DependentDelta } from "@/lib/portfolio/explain";
 import { contextualHref } from "@/lib/shell/context";
+import { useProjectParam } from "@/lib/shell/useProjectParam";
 
 // The Instrument. GET /api/portfolio/inputs is the one expensive network
 // call (Linear + findings + context, per Scope), fetched once on mount;
@@ -211,7 +212,12 @@ export default function PortfolioPageClient() {
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saveSummary, setSaveSummary] = useState<{ text: string; hadBlocks: boolean } | null>(null);
 
-  const [selectedScopeId, setSelectedScopeId] = useState<string | null>(null);
+  // Project selection is shared URL context, just like Forecast, Scope,
+  // Decisions, Dependencies, Reports, and Audit. Keeping this in local state
+  // made a correct /portfolio?project= link silently display the first Scope.
+  const { projectId: selectedScopeId, select: setSelectedScopeId } = useProjectParam(
+    data ? data.scopes.map((scope) => scope.scopeId) : null
+  );
   const [removingId, setRemovingId] = useState<string | null>(null);
   const [removeError, setRemoveError] = useState<string | null>(null);
 
