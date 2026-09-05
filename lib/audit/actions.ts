@@ -176,21 +176,15 @@ export function candidateRealityFor(f: TruthFinding, scopeName: string): Candida
           ? `Execution carries ${f.matchedIssues.join(", ")}, which the audit judged not to cover this.`
           : "No tracked work covers this.",
         candidate: `A Linear issue exists for "${f.title}", linked to this finding.`,
-        // COUNTER-INTUITIVE ENOUGH TO BE WORTH SAYING, and checked against
-        // lib/forecast/build.ts rather than assumed: every open non-decision
-        // finding is ALREADY a work item in the forecast, carrying a
-        // placeholder estimate. Filing it flips status to "ticketed", which
-        // drops the placeholder, and the real issue takes its place on the
-        // next Linear read. The work is conserved; only its estimate changes.
         consequence:
-          "The forecast already carries this finding as placeholder work. Filing it hands the same work to a real ticket — the date moves only insofar as the ticket's own estimate differs from the placeholder.",
+          "This finding has zero forecast effect on its own. Filing or attaching canonical work lets that work enter Reality once, through the delivery model.",
       };
     case "contradiction":
       return {
         current: "Both sources are recorded, and neither is marked authoritative.",
         candidate: `The finding is resolved with a note saying which source stands.`,
         consequence:
-          "Resolving it removes the placeholder work this finding contributes to the forecast, which can pull the date in. It writes nothing to either source.",
+          "Resolving it records how the contradiction was handled. The Finding itself has no forecast effect and it writes nothing to either source.",
       };
     default:
       return {
@@ -199,7 +193,7 @@ export function candidateRealityFor(f: TruthFinding, scopeName: string): Candida
           : "The risk is recorded, with no resolution stored.",
         candidate: "The finding is resolved with a note saying how it was handled.",
         consequence:
-          "Resolving it removes the placeholder work this finding contributes to the forecast, which can pull the date in. It declares no gate, so nothing becomes a serial dependency.",
+          "Resolving it records how the risk was handled. The Finding itself has no forecast effect and it declares no gate.",
       };
   }
 }

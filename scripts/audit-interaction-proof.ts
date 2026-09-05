@@ -140,6 +140,7 @@ async function main() {
     let anchors = 0;
     let membershipLeaks = 0;
     let twoHopLeaks = 0;
+    let laneSectionWake = 0;
     for (const { g } of graphs) {
       for (const n of g.nodes()) {
         const f = semanticFocus(g, n);
@@ -152,14 +153,23 @@ async function main() {
         }
         for (const id of f.nodes.keys()) {
           if (id === n) continue;
-          if (!g.neighbors(n).includes(id)) twoHopLeaks++;
+          if (!g.neighbors(n).includes(id)) {
+            const anchor = g.getNodeAttributes(n);
+            const candidate = g.getNodeAttributes(id);
+            const nativeLaneWake =
+              anchor.kind === "lane" &&
+              typeof anchor.lane === "string" &&
+              candidate.lane === anchor.lane;
+            if (nativeLaneWake) laneSectionWake++;
+            else twoHopLeaks++;
+          }
         }
       }
     }
     check(
-      "F1 selection is one hop, never two",
+      "F1 selection is one hop, except Rubric's native lane-section wake",
       twoHopLeaks === 0,
-      `${anchors} anchors across ${graphs.length} projects, ${twoHopLeaks} nodes or edges reached beyond one hop`
+      `${anchors} anchors across ${graphs.length} projects, ${twoHopLeaks} illegal nodes or edges; ${laneSectionWake} same-lane members woken by lane hubs`
     );
     check("F2 membership never lights", membershipLeaks === 0, `${membershipLeaks} attests/belongs_to edges in a focus set`);
     check(

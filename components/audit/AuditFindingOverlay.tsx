@@ -87,21 +87,21 @@ export default function AuditFindingOverlay({
   }, [finding, load, onCanonicalChange]);
 
   return (
-    <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/60 p-3" role="presentation">
+    <div className="pointer-events-none absolute inset-0 z-50 flex items-stretch justify-end p-3" role="presentation" data-shoot="finding-review-sheet">
       <section
         role="dialog"
-        aria-modal="true"
+        aria-modal="false"
         aria-label="Finding review"
         data-shoot="audit-finding-review"
-        className="flex max-h-[calc(100%-24px)] w-full max-w-[1240px] flex-col overflow-hidden rounded-2xl shadow-2xl"
-        style={{ background: "var(--i-panel)", border: "1px solid var(--i-border-strong)" }}
+        className="pointer-events-auto flex h-full w-[min(720px,calc(100%-24px))] flex-col overflow-hidden rounded-[10px] shadow-2xl"
+        style={{ background: "linear-gradient(180deg, rgba(31,39,45,.97), rgba(19,25,29,.97))", border: "1px solid rgba(83,100,111,.52)" }}
       >
         <header className="flex shrink-0 items-center justify-between gap-4 px-4 py-3" style={{ borderBottom: "1px solid var(--i-border)" }}>
           <div>
             <div className="i-label text-[9px]" style={{ color: "var(--i-signal)" }}>GOVERNED FINDING REVIEW</div>
             <div className="mt-1 text-[11px] text-[var(--i-text-soft)]">{canonicalId} · Reality changes only through the existing confirmed Signal actions below.</div>
           </div>
-          <button type="button" onClick={onClose} aria-label="Close Finding review" className="text-[22px] text-[var(--i-text-faint)]">×</button>
+          <button type="button" onClick={onClose} aria-label="Close Finding review" data-shoot="close-full-review" className="rounded-md border px-2.5 py-1.5 text-[10.5px] text-[var(--i-text-soft)]" style={{ borderColor: "var(--i-border-strong)" }}>Return to Inspector</button>
         </header>
 
         {error ? (
@@ -116,7 +116,8 @@ export default function AuditFindingOverlay({
                 finding={finding}
                 provenance={payload.provenance[finding.id] ?? null}
                 onSelect={() => undefined}
-                onEvidenceSolo={(payload.provenance[finding.id]?.kind ?? "none") === "none" ? null : () => changeTrace(true)}
+                evidenceSolo={evidenceSolo}
+                onEvidenceSolo={(payload.provenance[finding.id]?.kind ?? "none") === "none" ? null : () => changeTrace(!evidenceSolo)}
               />
             </div>
             <AuditReviewConsole
@@ -131,6 +132,7 @@ export default function AuditFindingOverlay({
               busy={busy}
               result={result}
               awaitingEvidence={awaitingEvidence}
+              variant="sheet"
             />
           </>
         )}

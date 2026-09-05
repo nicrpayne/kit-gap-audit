@@ -16,7 +16,7 @@
 // viewport, which is what you want when screen-sharing a scenario.
 
 import { useEffect, useRef, useState, type MouseEvent } from "react";
-import Link from "next/link";
+import Link from "@/components/instrument/SignalLink";
 import { AnimatePresence, MotionConfig, motion } from "motion/react";
 import { DESTINATIONS, type ShellDestination } from "@/lib/shell/mode";
 import BuildId from "@/components/instrument/BuildId";

@@ -124,6 +124,22 @@
     .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
   const signalNode = () => window.BrainCore && window.BrainCore.S.sel;
 
+  function setTrace(next) {
+    trace = next;
+    document.body.dataset.signalTraceActive = trace && trace.length ? 'true' : 'false';
+    document.querySelectorAll('[data-act="trace"]').forEach(button => {
+      button.textContent = trace && trace.length ? 'Stop trace' : 'Trace provenance';
+      button.setAttribute('aria-pressed', trace && trace.length ? 'true' : 'false');
+    });
+  }
+
+  function reconcileTraceWithSelection() {
+    if (!trace || !trace.length) return;
+    const selected = signalNode();
+    const routeIds = new Set(trace.flatMap(edge => [edge.s, edge.t]));
+    if (!selected || !routeIds.has(selected.id)) setTrace(null);
+  }
+
   function signalTooltipHTML(n) {
     const identity = n.presentationOnly && !n.canonicalId
       ? `${(n.memberIds || []).length} canonical objects represented · presentation only`
@@ -163,7 +179,8 @@
       window.BrainCore.S.refreshData('Hiding from this view');
     } else if (act === 'trace') {
       event.preventDefault(); event.stopImmediatePropagation();
-      activateTrace(n.id);
+      if (trace && trace.length) setTrace(null);
+      else activateTrace(n.id);
     }
   }
   document.addEventListener('click', action, true);
@@ -189,19 +206,19 @@
       n.basisSummary ? `<span class="badge signal-basis">${escape(n.basisSummary)}</span>` : '',
     ].join('');
     card.querySelectorAll('.act').forEach(button => {
-      const labels = { view: 'View here', open: 'Open source', copy: 'Copy reference', remove: 'Hide from view', fly: 'Fly to' };
+      const labels = { view: n.kind === 'finding' ? 'Review finding' : 'View here', open: 'Open source', copy: 'Copy reference', remove: 'Hide from view', fly: 'Fly to' };
       if (labels[button.dataset.act]) button.textContent = labels[button.dataset.act];
       if (button.dataset.act === 'open' && !n.sourceResolver) button.style.display = 'none';
       if (button.dataset.act === 'edit' || button.dataset.act === 'toggle') button.style.display = 'none';
     });
     if (actions && n.canonicalId && !actions.querySelector('[data-act="view"]')) {
-      actions.insertAdjacentHTML('afterbegin', '<button class="act" data-act="view">View here</button>');
+      actions.insertAdjacentHTML('afterbegin', `<button class="act" data-act="view">${n.kind === 'finding' ? 'Review finding' : 'View here'}</button>`);
     }
     if (actions && n.canonicalId && !actions.querySelector('[data-act="copy"]')) {
       actions.insertAdjacentHTML('beforeend', '<button class="act" data-act="copy">Copy reference</button>');
     }
     const tracePath = window.BrainCore.S.meta.traceByNode && window.BrainCore.S.meta.traceByNode[n.id];
-    if (actions && tracePath && tracePath.length) actions.insertAdjacentHTML('beforeend', '<button class="act" data-act="trace">Trace provenance</button>');
+    if (actions && tracePath && tracePath.length) actions.insertAdjacentHTML('beforeend', `<button class="act" data-act="trace" aria-pressed="${trace && trace.length ? 'true' : 'false'}">${trace && trace.length ? 'Stop trace' : 'Trace provenance'}</button>`);
 
     const oldRows = card.querySelector('.card-neigh');
     const sub = card.querySelector('.card-sub');
@@ -280,7 +297,7 @@
     };
     input.addEventListener('input', () => {
       if (!input.value.trim()) return;
-      trace = null;
+      setTrace(null);
       remember();
     });
     document.getElementById('brain-results').addEventListener('mousedown', remember, true);
@@ -337,7 +354,7 @@
   }
 
   function activateTrace(id) {
-    trace = window.BrainCore.S.meta.traceByNode && window.BrainCore.S.meta.traceByNode[id] || null;
+    setTrace(window.BrainCore.S.meta.traceByNode && window.BrainCore.S.meta.traceByNode[id] || null);
     window.BrainCore.toast(trace && trace.length ? 'Canonical provenance path' : 'No supported provenance path to Reality');
   }
 
@@ -362,10 +379,10 @@
     const canvas = document.getElementById('brain-canvas');
     if (!canvas || canvas.dataset.signalInstalled) return;
     canvas.dataset.signalInstalled = 'true';
-    canvas.addEventListener('mousedown', () => { trace = null; }, true);
+    canvas.addEventListener('mouseup', () => setTimeout(reconcileTraceWithSelection, 0), false);
     document.addEventListener('keydown', event => {
       if (event.key === 'Escape' && searchRestore) { event.preventDefault(); event.stopImmediatePropagation(); restoreSearch(); }
-      else if (event.key === 'Escape') trace = null;
+      else if (event.key === 'Escape') setTrace(null);
     }, true);
   }
 
@@ -388,8 +405,13 @@
       const message = event.data;
       if (!message) return;
       if (message.type === 'signal-audit-trace-canonical') {
-        if (message.active === false) trace = null;
+        if (message.active === false) setTrace(null);
         else if (typeof message.canonicalId === 'string') activateTrace(message.canonicalId === 'reality' ? 'CLAUDE.md' : message.canonicalId);
+        return;
+      }
+      if (message.type === 'signal-audit-show-overview') {
+        if (window.__signalAuditInspector) window.__signalAuditInspector.showOverview();
+        else window.BrainCore.select(null);
         return;
       }
       if (message.type !== 'signal-audit-set-context') return;

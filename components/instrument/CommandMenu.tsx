@@ -6,8 +6,9 @@
 // action that isn't already reachable by clicking something.
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { ALL_DESTINATIONS } from "@/lib/shell/mode";
+import { contextualHref } from "@/lib/shell/context";
 
 export interface CommandScope {
   scopeId: string;
@@ -33,6 +34,7 @@ export default function CommandMenu({
   onSelectScope: (scopeId: string) => void;
 }) {
   const router = useRouter();
+  const params = useSearchParams();
   const [q, setQ] = useState("");
   const [cursor, setCursor] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -58,13 +60,13 @@ export default function CommandMenu({
         id: `route:${d.href}:${d.label}`,
         label: d.label,
         hint: d.question ?? d.owns ?? "Go to",
-        run: () => router.push(d.href),
+        run: () => router.push(contextualHref(d.href, params)),
       })),
     ];
     const needle = q.trim().toLowerCase();
     if (!needle) return list;
     return list.filter((i) => i.label.toLowerCase().includes(needle) || i.hint.toLowerCase().includes(needle));
-  }, [q, scopes, onSelectScope, router]);
+  }, [q, scopes, onSelectScope, router, params]);
 
   useEffect(() => {
     if (open) {

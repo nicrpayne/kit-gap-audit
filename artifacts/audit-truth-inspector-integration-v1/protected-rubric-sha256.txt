@@ -1,0 +1,6 @@
+efa2678c8c62fe2b85fec8826d7778c6dcecb23543f5426501488ba967caa213  public/audit-rubric-phase1/_core.js
+2fb3e9937a141df8ec9233c851426f845718216c54fb6336752291b539b07496  public/audit-rubric-phase1/_flows2.js
+51797b9f261c03255db8cc660897812f1106d16e4ca1eacaeb7f94de7bc7a06a  public/audit-rubric-phase1/_core.css
+59dfd3e24f8cf7504c05609eb0063c22898950c33f45facea13b92c2b173f48a  public/audit-rubric-phase1/_icons.js
+
+All four files are byte-identical to truth-hardened base `59678655ae5d8941366e0859c9d3dd0952680035`.

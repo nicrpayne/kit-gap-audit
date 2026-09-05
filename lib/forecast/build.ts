@@ -147,14 +147,22 @@ export interface ScopeComposition {
 // assignees on remaining issues.
 export type CapacitySource = "allocations" | "explicit" | "inferred";
 
-// The work the forecast actually simulates: everything not already
-// finished, minus Triage unless the Scope opts in. Extracted so the
+// The work the forecast actually simulates: executable leaf work not already
+// finished, minus Triage unless the Scope opts in. A Linear parent that has
+// another counted issue beneath it is a grouping container, not a second
+// delivery item. A dangling parent remains counted: without a fetched child
+// there is no evidence that its own work is represented elsewhere.
+// Extracted so the
 // capacity inference below AND the Instrument's "why is Reality 10?"
 // explanation read from one definition instead of two that can drift.
 export function remainingIssuesFor(issues: LinearIssueSummary[], includeTriage: boolean): LinearIssueSummary[] {
-  return issues.filter(
+  const remaining = issues.filter(
     (i) => !DONE_STATE_TYPES.has(i.stateType) && (includeTriage || i.stateType !== "triage")
   );
+  const representedParents = new Set(
+    remaining.map((i) => i.parentIdentifier).filter((id): id is string => id !== null)
+  );
+  return remaining.filter((i) => !representedParents.has(i.identifier));
 }
 
 // Capacity inference, stage 2 of the fallback chain: with no named
@@ -196,12 +204,13 @@ export interface ForecastInputs {
   ai: AiEstimateStats;
 }
 
-// Assembles the Monte Carlo inputs from raw Linear issues + Findings for a
-// Scope. Ticketed findings are excluded from the finding pass since
-// they're already counted via the Linear issue they became. Triage-state
-// issues are excluded from the forecast by default (they're unaccepted
-// work, not release scope) unless includeTriage is set -- the audit is
-// unaffected either way and always matches against every ticket.
+// Assembles the Monte Carlo inputs from canonical Linear work for a Scope.
+// Findings never enter the delivery model directly: an open Finding is an
+// Audit observation, not accepted Reality. Filing or attaching it creates or
+// identifies canonical Linear work, and that Linear row then enters here
+// exactly once through the issue pass. Triage-state issues are excluded from
+// the forecast by default (they're unaccepted work, not release scope) unless
+// includeTriage is set -- Audit is unaffected and retains every Finding.
 export function buildForecastInputs(
   issues: LinearIssueSummary[],
   findings: FindingLike[],
@@ -226,9 +235,6 @@ export function buildForecastInputs(
   const includeTriage = options?.includeTriage ?? false;
   const estimates = options?.estimates ?? new Map<string, WorkEstimateLike>();
   const hashFor = options?.hashFor;
-  const findingEstimates = options?.findingEstimates ?? new Map<string, WorkEstimateLike>();
-  const findingHashFor = options?.findingHashFor;
-
   const composition: ScopeComposition = {
     triage: 0,
     backlog: 0,
@@ -295,38 +301,10 @@ export function buildForecastInputs(
     items.push({ id: issue.identifier, label, estimateSource: source, ...tp });
   }
 
+  // Attention count only. These rows are intentionally absent from `items`.
+  // Keeping the count lets Forecast name the unresolved observations without
+  // implying that they have already altered Reality.
   const openWorkFindings = findings.filter((f) => f.type !== "decision" && f.status === "open");
-  for (const f of openWorkFindings) {
-    const estimate = findingEstimates.get(f.id);
-    const fresh = estimate && (!findingHashFor || estimate.contentHash === findingHashFor(f));
-    if (estimate && !fresh) ai.staleCount += 1;
-
-    if (fresh) {
-      ai.aiItemCount += 1;
-      if (estimate.flags.length > 0) {
-        ai.flagged.push({
-          id: f.id,
-          label: f.title,
-          flags: estimate.flags,
-          rationale: estimate.rationale,
-          aiLikelyDays: estimate.likelyDays,
-          teamPoints: null,
-        });
-      }
-      items.push({
-        id: f.id,
-        label: f.title,
-        estimateSource: "ai",
-        low: estimate.lowDays,
-        likely: estimate.likelyDays,
-        high: estimate.highDays,
-      });
-      continue;
-    }
-
-    const { tp, source } = classifyEstimateHint(f.estimateHint);
-    items.push({ id: f.id, label: f.title, estimateSource: source, ...tp });
-  }
 
   ai.flagged.sort((a, b) => b.aiLikelyDays - a.aiLikelyDays);
   ai.flagged = ai.flagged.slice(0, 8);

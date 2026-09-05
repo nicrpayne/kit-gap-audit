@@ -17,7 +17,7 @@
 // filled out with plausible-looking material.
 
 import { useMemo, useState } from "react";
-import Link from "next/link";
+import Link from "@/components/instrument/SignalLink";
 import ToolWindow, { RailButton, Row } from "@/components/instrument/ToolWindow";
 import { DistributionDisplay, accentFor, materialOf } from "@/components/instrument/CapabilityTile";
 import { Prototype } from "@/components/instrument/Panel";

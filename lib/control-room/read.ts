@@ -674,7 +674,7 @@ export function readControlRoom(i: ControlRoomInput): ControlRoomReading {
   // it rather than making the reader go and look.
   for (const d of gating) {
     if (!d.gate) continue;
-    const blocked = scopeName.get(d.gate.targetScopeId) ?? d.scope?.name ?? null;
+    const blocked = scopeName.get(d.gate.targetScopeId) ?? d.gate.targetScopeId;
     constraints.push({
       id: `gate:${d.gate.id}`,
       label: blocked ? `Holding ${blocked} — unanswered decision` : "Unanswered decision",

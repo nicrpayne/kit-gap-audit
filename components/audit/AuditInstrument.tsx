@@ -18,7 +18,7 @@
 // — camera, selection, expansion, solo, search — is presentation.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import Link from "next/link";
+import Link from "@/components/instrument/SignalLink";
 import Graph from "graphology";
 import type { TruthMapModel, TruthFinding } from "@/lib/audit/truth";
 import type { FindingProvenance, groundingLabel } from "@/lib/audit/provenance";
@@ -64,6 +64,7 @@ import GraphInspector, { connectionsOf } from "./GraphInspector";
 import AggregateInspector from "./AggregateInspector";
 import FindingInspector from "./FindingInspector";
 import AuditReviewConsole, { type ConsoleMode } from "./AuditReviewConsole";
+import worldStyles from "./AuditWorld.module.css";
 import { zoomLevel, nextZoomLevel, nodeColor, fieldLabel, KIND_LABEL, REL_LABEL, type ZoomLevel } from "./graphTokens";
 import { SignalSearchIndex, SEARCH_MATURITY, type SearchHit } from "@/lib/audit/searchIndex";
 import { revealFor, commitFor, disclosedSet } from "@/lib/audit/searchLens";
@@ -142,11 +143,12 @@ export default function AuditInstrument({ initialScopeId }: { initialScopeId?: s
   const [error, setError] = useState<string | null>(null);
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [detailsOpen, setDetailsOpen] = useState(false);
-  const [overviewOpen, setOverviewOpen] = useState(false);
   const [copiedReference, setCopiedReference] = useState(false);
   const [hiddenIds, setHiddenIds] = useState<Set<string>>(new Set());
   const [hoveredId, setHoveredId] = useState<string | null>(null);
+  const [inspectorOpen, setInspectorOpen] = useState(true);
+  const [reviewOpen, setReviewOpen] = useState(false);
+  const [legendOpen, setLegendOpen] = useState(false);
   const [camera, setCameraState] = useState<Camera>(DEFAULT_CAMERA);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [query, setQuery] = useState("");
@@ -525,12 +527,14 @@ export default function AuditInstrument({ initialScopeId }: { initialScopeId?: s
   // "is there a route" before the button is offered, not after it is pressed.
   // A Trace that lights one node — the node you already had — reads as the
   // instrument being broken rather than as the object being ungrounded.
+  const [traceAnchorId, setTraceAnchorId] = useState<string | null>(null);
+  const traceSubjectId = solo && traceAnchorId ? traceAnchorId : selectedId;
   const traceRoute = useMemo(() => {
-    if (!graph || !selectedId || !graph.hasNode(selectedId)) return null;
-    const kind = graph.getNodeAttribute(selectedId, "kind");
+    if (!graph || !traceSubjectId || !graph.hasNode(traceSubjectId)) return null;
+    const kind = graph.getNodeAttribute(traceSubjectId, "kind");
     if (kind !== "finding" && kind !== "intel") return null;
-    return evidenceSolo(graph, selectedId);
-  }, [graph, selectedId]);
+    return evidenceSolo(graph, traceSubjectId);
+  }, [graph, traceSubjectId]);
 
   const soloNodes = useMemo(() => (solo && traceRoute ? traceRoute.nodes : null), [solo, traceRoute]);
 
@@ -633,7 +637,9 @@ export default function AuditInstrument({ initialScopeId }: { initialScopeId?: s
   const setTrace = useCallback(
     (on: boolean) => {
       if (on) {
+        if (!selectedId) return;
         restoreTrace.current = { camera: cameraRef.current, expanded: [...expandedRef.current] };
+        setTraceAnchorId(selectedId);
       } else if (restoreTrace.current) {
         const world = restoreTrace.current;
         restoreTrace.current = null;
@@ -642,9 +648,10 @@ export default function AuditInstrument({ initialScopeId }: { initialScopeId?: s
         if (authority) authority.flyToCamera(world.camera);
         else flyCamera(world.camera);
       }
+      if (!on) setTraceAnchorId(null);
       setSolo(on);
     },
-    [flyCamera]
+    [flyCamera, selectedId]
   );
 
   const select = useCallback(
@@ -653,10 +660,10 @@ export default function AuditInstrument({ initialScopeId }: { initialScopeId?: s
       // carry the field out from under the thing just clicked.
       stopTween();
       setSelectedId(id);
-      setDetailsOpen(false);
-      setOverviewOpen(false);
       setCopiedReference(false);
+      setReviewOpen(false);
       setResult(null);
+      if (id !== null) setInspectorOpen(true);
       if (id === null) {
         if (moveCamera) {
           setTrace(false);
@@ -670,6 +677,12 @@ export default function AuditInstrument({ initialScopeId }: { initialScopeId?: s
         // LAW 9: clearing does NOT move the camera. You stay exactly where you
         // were looking; a silent Fit throws away the view you built.
         return;
+      }
+      if (solo && soloNodes && !soloNodes.has(id)) {
+        // Walking a highlighted provenance hop keeps the same Trace alive.
+        // Leaving that route is a semantically new question, so restore the
+        // world before framing the replacement selection.
+        setTrace(false);
       }
       // LAW 7: attention transfers. No cleared intermediate state, no rebuild
       // — the neighbourhood is replaced in one commit.
@@ -692,7 +705,7 @@ export default function AuditInstrument({ initialScopeId }: { initialScopeId?: s
         frameCanonicalIds(focus?.frame ?? [id], "selection", id);
       }
     },
-    [stopTween, graph, frameCanonicalIds, setTrace]
+    [stopTween, graph, frameCanonicalIds, setTrace, solo, soloNodes]
   );
 
   /** Rubric's canvas click changes focus without moving the camera. Search,
@@ -852,12 +865,12 @@ export default function AuditInstrument({ initialScopeId }: { initialScopeId?: s
   // nobody saw it. Framed by the SAME minimal law as everything else: still
   // if it already fits, the smallest pull-back if it does not.
   useEffect(() => {
-    if (!soloNodes || !layout || !selectedId) return;
+    if (!soloNodes || !layout || !traceSubjectId) return;
     if (spatialAuthorityRef.current) {
       spatialAuthorityRef.current.frameIds([...soloNodes], { reason: "trace", padding: 64 });
       return;
     }
-    const anchor = layout.get(selectedId);
+    const anchor = layout.get(traceSubjectId);
     if (!anchor) return;
     const pts: { x: number; y: number }[] = [];
     for (const n of soloNodes) {
@@ -873,7 +886,7 @@ export default function AuditInstrument({ initialScopeId }: { initialScopeId?: s
     // Deliberately keyed on the route itself: re-framing on every camera
     // change would fight the hand, which always outranks the instrument.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [soloNodes, layout, selectedId]);
+  }, [soloNodes, layout, traceSubjectId]);
 
   // WHICH NODES CAN BE TRACED. A finding — "why does Signal believe this" —
   // and an external object — "why does the producer say this". Both questions
@@ -885,14 +898,17 @@ export default function AuditInstrument({ initialScopeId }: { initialScopeId?: s
   // the node already selected. The traversal is run up front and the control
   // is offered only if it reaches something; the inspector says so in words
   // instead of handing over a button that lies.
-  const soloable = !!graph && traceIsComplete(graph, traceRoute, selectedId);
+  const soloable = !!graph && traceIsComplete(graph, traceRoute, traceSubjectId);
 
 
   // Leaving a traceable node must drop the trace with it, and the hypothetical
   // mode with it — that one belongs to findings alone.
   useEffect(() => {
     if (!soloable) setTrace(false);
-    if (!selectedFinding) setMode("A");
+    if (!selectedFinding) {
+      setMode("A");
+      setReviewOpen(false);
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [soloable, selectedFinding]);
 
@@ -955,7 +971,9 @@ export default function AuditInstrument({ initialScopeId }: { initialScopeId?: s
         // selection, and whether or not either exists. An interrupted move
         // stops where it has got to and stays there.
         stopTween();
-        if (query) {
+        if (reviewOpen) {
+          setReviewOpen(false);
+        } else if (query) {
           // CLEARING THE QUERY PUTS THE FIELD BACK, AND COSTS NOTHING TO DO.
           // `revealed` is derived from the hits, so an empty query derives an
           // empty set and the disclosure the reader built is exactly what is
@@ -981,7 +999,7 @@ export default function AuditInstrument({ initialScopeId }: { initialScopeId?: s
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [selectedId, query, select, stopTween, navigateTo]);
+  }, [selectedId, query, reviewOpen, select, stopTween, navigateTo]);
 
   // EXPANDING FLIES TO WHAT IT REVEALED.
   //
@@ -1257,9 +1275,12 @@ export default function AuditInstrument({ initialScopeId }: { initialScopeId?: s
 
   return (
     <div
-      className="flex min-h-0 flex-1 flex-col"
+      className={`${worldStyles.auditWorld} flex min-h-0 flex-1 flex-col`}
       style={{ background: "var(--i-bg)" }}
       data-selected-id={selectedId ?? ""}
+      data-review-open={reviewOpen ? "true" : "false"}
+      data-inspector-open={inspectorOpen ? "true" : "false"}
+      data-camera-state={`${camera.x.toFixed(3)},${camera.y.toFixed(3)},${camera.k.toFixed(5)}`}
       data-trace-complete={soloable ? "true" : "false"}
       data-trace-node-kinds={
         traceRoute
@@ -1295,14 +1316,6 @@ export default function AuditInstrument({ initialScopeId }: { initialScopeId?: s
           ))}
         </select>
 
-        {truth?.model.lastRunAt && (
-          <span className="text-[11px]" style={{ color: "var(--i-signal)" }}>
-            Current audit · {fmt(truth.model.lastRunAt)}
-            {truth.model.priorRunAt && (
-              <span style={{ color: "var(--i-text-faint)" }}> ↔ Prior · {fmt(truth.model.priorRunAt)}</span>
-            )}
-          </span>
-        )}
         {sweepNote && (
           <span data-shoot="sweep-note" className="text-[11px]" style={{ color: "var(--i-signal)" }}>
             {sweepNote}
@@ -1325,12 +1338,13 @@ export default function AuditInstrument({ initialScopeId }: { initialScopeId?: s
         <button
           type="button"
           onClick={() => {
-            setOverviewOpen((open) => !open);
-            setDetailsOpen(false);
+            select(null, false);
+            setReviewOpen(false);
+            setInspectorOpen(true);
           }}
           className="rounded-md px-2.5 py-1.5 text-[11px] transition-colors hover:bg-white/[0.04]"
-          style={{ border: "1px solid var(--i-border-strong)", color: overviewOpen ? "var(--i-signal)" : "var(--i-text-soft)" }}
-          aria-pressed={overviewOpen}
+          style={{ border: "1px solid var(--i-border-strong)", color: !selectedId && inspectorOpen ? "var(--i-signal)" : "var(--i-text-soft)" }}
+          aria-pressed={!selectedId && inspectorOpen}
         >
           Project overview
         </button>
@@ -1363,8 +1377,8 @@ export default function AuditInstrument({ initialScopeId }: { initialScopeId?: s
       </div>
 
       {/* ── BODY: the graph owns it ──────────────────────────────── */}
-      <div className="relative min-h-0 flex-1">
-        <div className="relative h-full min-h-0" data-shoot="graph-viewport">
+      <div className="relative min-h-0 flex-1" data-shoot="audit-world-host">
+        <div className="absolute inset-0 min-h-0" data-shoot="graph-viewport">
           <AuditGraphRenderer
             graph={graph}
             opened={opened}
@@ -1389,15 +1403,26 @@ export default function AuditInstrument({ initialScopeId }: { initialScopeId?: s
             onSpatialAuthority={onSpatialAuthority}
           />
 
+          {truth?.model.lastRunAt && (
+            <div className={`${worldStyles.contextWidget} ${worldStyles.worldWidget} pointer-events-none px-3 py-2`} data-shoot="audit-context-widget">
+              <div className="flex items-center gap-2">
+                <span className="h-1.5 w-1.5 rounded-full" style={{ background: "var(--i-signal)", boxShadow: "0 0 10px var(--i-signal)" }} />
+                <span className="i-label" style={{ color: "var(--i-signal)" }}>Current audit</span>
+                <span className="text-[10.5px]" style={{ color: "var(--i-text)" }}>{fmt(truth.model.lastRunAt)}</span>
+              </div>
+              {truth.model.priorRunAt && (
+                <div className="mt-1 pl-3.5 text-[9.5px]" style={{ color: "var(--i-text-faint)" }}>
+                  compared with prior · {fmt(truth.model.priorRunAt)}
+                </div>
+              )}
+            </div>
+          )}
+
           {/* SEARCH + CAMERA, floating over the field — the reference keeps
               its controls on the canvas rather than stealing a column. */}
-          <div
-            className="pointer-events-none absolute top-3 w-[266px] transition-[right] duration-200"
-            style={{ right: selectedId || overviewOpen ? 400 : 12 }}
-          >
+          <div className={`${worldStyles.searchWidget} pointer-events-none`} data-inspector-open={inspectorOpen}>
             <div
-              className="pointer-events-auto rounded-lg p-2.5"
-              style={{ background: "color-mix(in srgb, var(--i-panel) 92%, transparent)", border: "1px solid var(--i-border-strong)" }}
+              className={`${worldStyles.worldWidget} pointer-events-auto p-2.5`}
             >
               <input
                 value={query}
@@ -1621,108 +1646,122 @@ export default function AuditInstrument({ initialScopeId }: { initialScopeId?: s
             </div>
           )}
 
-          {/* A legend only where it earns its place: what the two edge
-              treatments mean. Everything else is learnable by clicking. */}
-          <div
-            className="pointer-events-none absolute bottom-3 left-3 flex items-center gap-4 rounded-md px-2.5 py-1.5"
-            style={{ background: "color-mix(in srgb, var(--i-panel) 88%, transparent)", border: "1px solid var(--i-border)" }}
-            data-shoot="graph-legend"
-          >
-            <span className="flex items-center gap-1.5 text-[10px]" style={{ color: "var(--i-text-soft)" }}>
-              <svg width="22" height="6" aria-hidden="true">
-                <line x1="0" y1="3" x2="22" y2="3" stroke="var(--i-text-soft)" strokeWidth="1.4" />
-              </svg>
-              attested
-            </span>
-            <span className="flex items-center gap-1.5 text-[10px]" style={{ color: "var(--i-text-faint)" }}>
-              <svg width="22" height="6" aria-hidden="true">
-                <line x1="0" y1="3" x2="22" y2="3" stroke="var(--i-text-faint)" strokeWidth="1.4" strokeDasharray="4 4" />
-              </svg>
-              inferred
-            </span>
-            <span className="text-[10px]" style={{ color: "var(--i-text-faint)" }}>
-              Project World radius = disagreement · outer anchors = source systems
-            </span>
+          <div className={`${worldStyles.legendWidget} ${worldStyles.worldWidget} pointer-events-auto`} data-shoot="graph-legend">
+            <button
+              type="button"
+              onClick={() => setLegendOpen((open) => !open)}
+              aria-expanded={legendOpen}
+              data-shoot="legend-toggle"
+              className="flex h-9 items-center gap-2 rounded-[9px] px-3 text-[9.5px] font-semibold uppercase tracking-[0.16em]"
+              style={{ color: legendOpen ? "var(--i-signal)" : "var(--i-text-soft)" }}
+            >
+              <span aria-hidden style={{ color: "var(--i-source)" }}>◇</span>
+              Legend
+            </button>
+            {legendOpen && (
+              <div className="border-t px-3 pb-3 pt-2.5" style={{ borderColor: "var(--i-border)" }} data-shoot="legend-panel">
+                <div className="grid grid-cols-4 gap-x-3 gap-y-2 text-[9.5px]">
+                  <LegendTone color="var(--i-signal)" label="Reality / live" />
+                  <LegendTone color="var(--i-violet)" label="Decision / structure" />
+                  <LegendTone color="var(--i-amber)" label="Attention" />
+                  <LegendTone color="var(--i-red)" label="Risk / conflict" />
+                  <LegendTone color="var(--i-mint)" label="Accepted / available" />
+                  <LegendTone color="var(--i-source)" label="Source" />
+                  <LegendTone color="var(--i-silver)" label="Passage / neutral" />
+                  <LegendTone color="var(--i-reality)" label="Inactive" />
+                </div>
+                <div className="mt-3 flex flex-wrap items-center gap-4 border-t pt-2" style={{ borderColor: "var(--i-border)" }}>
+                  <LegendLine dashed={false} label="attested" />
+                  <LegendLine dashed label="inferred" />
+                  <span className="text-[9.5px]" style={{ color: "var(--i-text-faint)" }}>distance from centre = disagreement</span>
+                </div>
+              </div>
+            )}
           </div>
         </div>
 
-        {/* ── CONTEXTUAL OBJECT CARD ────────────────────────────────
-            The world remains full-canvas. Selection opens a Rubric-style
-            utility card over it; detailed Audit meaning is one explicit
-            step deeper and never replaces the map. */}
-        {(selectedId || overviewOpen) && (
-          <div
-            className={`absolute right-4 top-4 z-20 flex w-[min(376px,calc(100%-32px))] min-h-0 flex-col overflow-hidden rounded-2xl shadow-[0_24px_70px_rgba(0,0,0,0.48)] ${overviewOpen || detailsOpen ? "bottom-4" : ""}`}
-            style={{ background: "color-mix(in srgb, var(--i-panel) 96%, transparent)", border: "1px solid var(--i-border-strong)" }}
+        {/* The Inspector floats over the world instead of resizing it. Closing
+            or reopening this sibling never remounts the renderer and never
+            writes to the camera. */}
+        {!reviewOpen && (inspectorOpen ? (
+          <aside
+            className={`${worldStyles.inspectorDock} ${worldStyles.worldWidget}`}
             data-shoot="inspector"
+            data-inspector-selected={selectedId ?? "overview"}
+            aria-label="Audit Inspector"
           >
+            <div className="flex h-11 shrink-0 items-center gap-2 border-b px-3" style={{ borderColor: "var(--i-border)" }}>
+              <span className="i-label" style={{ color: "var(--i-text-soft)" }}>
+                {selectedId ? "Inspector" : "Project overview"}
+              </span>
+              {solo && (
+                <span className={`${worldStyles.traceBadge} ml-1 rounded px-1.5 py-1 text-[8.5px] uppercase tracking-[0.14em]`} style={{ color: "var(--i-signal)", background: "var(--i-signal-soft)" }} data-shoot="trace-active-badge">
+                  Trace live
+                </span>
+              )}
+              <span className="flex-1" />
+              <button
+                type="button"
+                onClick={() => setInspectorOpen(false)}
+                data-shoot="inspector-close"
+                aria-label="Close Inspector"
+                className="grid h-7 w-7 place-items-center rounded-md text-[16px] transition-colors hover:bg-white/[0.05]"
+                style={{ color: "var(--i-text-faint)" }}
+              >
+                ×
+              </button>
+            </div>
             {selectedId && (
-              <div className="shrink-0 border-b px-4 py-3" style={{ borderColor: "var(--i-border)" }}>
-                <div className="flex items-start gap-3">
+              <div className="shrink-0 border-b px-3 py-2.5" style={{ borderColor: "var(--i-border)" }} data-shoot="inspector-object-actions">
+                <div className="flex items-start gap-2">
                   <div className="min-w-0 flex-1">
                     <div className="i-label" style={{ color: "var(--i-text-faint)" }}>{selectedKind}</div>
-                    <div className="mt-1 line-clamp-2 text-[15px] font-medium leading-snug text-[var(--i-text)]">{selectedLabel}</div>
-                    <div className="mt-1 truncate text-[10px] text-[var(--i-text-faint)]">{selectedId}</div>
+                    <div className="mt-1 line-clamp-2 text-[12px] font-medium leading-snug" style={{ color: "var(--i-text)" }}>{selectedLabel}</div>
+                    <div className="mt-1 truncate text-[9.5px]" style={{ color: "var(--i-text-faint)" }}>{selectedId}</div>
                   </div>
                   <button
                     type="button"
                     onClick={() => select(null, false)}
-                    className="rounded-md px-2 py-1 text-[18px] leading-none hover:bg-white/[0.05]"
+                    className="rounded-md px-2 py-1 text-[10px] hover:bg-white/[0.05]"
                     style={{ color: "var(--i-text-faint)" }}
-                    aria-label="Close object card"
                   >
-                    ×
+                    Overview
                   </button>
                 </div>
-                <div className="mt-3 flex flex-wrap gap-1.5">
-                  <button type="button" onClick={() => setDetailsOpen((open) => !open)} className="rounded-md px-2.5 py-1.5 text-[10.5px] font-medium hover:bg-white/[0.05]" style={{ border: "1px solid var(--i-border-strong)", color: "var(--i-text)" }}>
-                    {detailsOpen ? "Hide details" : "View here"}
-                  </button>
-                  <button type="button" onClick={() => frameNode(selectedId)} className="rounded-md px-2.5 py-1.5 text-[10.5px] font-medium hover:bg-white/[0.05]" style={{ border: "1px solid var(--i-border-strong)", color: "var(--i-text)" }}>
-                    Fly to
-                  </button>
-                  <button
-                    type="button"
+                <div className="mt-2 flex flex-wrap gap-1.5">
+                  <InspectorAction onClick={() => frameNode(selectedId)} label="Fly to" />
+                  <InspectorAction
                     onClick={() => {
                       void navigator.clipboard.writeText(selectedId).then(() => {
                         setCopiedReference(true);
                         window.setTimeout(() => setCopiedReference(false), 1400);
                       });
                     }}
-                    className="rounded-md px-2.5 py-1.5 text-[10.5px] font-medium hover:bg-white/[0.05]"
-                    style={{ border: "1px solid var(--i-border-strong)", color: "var(--i-text)" }}
-                  >
-                    {copiedReference ? "Copied" : "Copy reference"}
-                  </button>
+                    label={copiedReference ? "Copied" : "Copy reference"}
+                  />
                   {selectedSourceUrl && (
-                    <button type="button" onClick={() => window.open(selectedSourceUrl, "_blank", "noopener,noreferrer")} className="rounded-md px-2.5 py-1.5 text-[10.5px] font-medium hover:bg-white/[0.05]" style={{ border: "1px solid var(--i-border-strong)", color: "var(--i-text)" }}>
-                      Open source
-                    </button>
+                    <InspectorAction onClick={() => window.open(selectedSourceUrl, "_blank", "noopener,noreferrer")} label="Open source" />
                   )}
                   {soloable && (
-                    <button type="button" onClick={() => setTrace(!solo)} className="rounded-md px-2.5 py-1.5 text-[10.5px] font-medium hover:bg-white/[0.05]" style={{ border: "1px solid var(--i-source)", color: "var(--i-source)" }}>
-                      {solo ? "Exit trace" : "Trace provenance"}
-                    </button>
+                    <InspectorAction onClick={() => setTrace(!solo)} label={solo ? "Exit trace" : "Trace provenance"} accent="var(--i-source)" />
                   )}
                   {selectedAttrs && selectedAttrs.kind !== "reality" && (
-                    <button
-                      type="button"
+                    <InspectorAction
                       onClick={() => {
                         setHiddenIds((current) => new Set([...current, selectedId]));
                         select(null, false);
                       }}
-                      className="rounded-md px-2.5 py-1.5 text-[10.5px] font-medium hover:bg-white/[0.05]"
-                      style={{ border: "1px solid var(--i-border-strong)", color: "var(--i-text-soft)" }}
+                      label="Hide from view"
                       title="Presentation only. This does not delete or change canonical data."
-                    >
-                      Hide from view
-                    </button>
+                    />
                   )}
                 </div>
-                {selectedConnections.length > 0 && !detailsOpen && (
-                  <div className="mt-3 border-t pt-2.5" style={{ borderColor: "var(--i-border)" }}>
-                    <div className="i-label mb-1.5" style={{ color: "var(--i-text-faint)" }}>Connections</div>
-                    <div className="space-y-0.5">
+                {selectedConnections.length > 0 && (
+                  <details className="mt-2 border-t pt-2" style={{ borderColor: "var(--i-border)" }}>
+                    <summary className="cursor-pointer text-[9.5px] uppercase tracking-[0.1em]" style={{ color: "var(--i-text-faint)" }}>
+                      {selectedConnections.length} connected
+                    </summary>
+                    <div className="mt-1 space-y-0.5" data-shoot="inspector-connections">
                       {selectedConnections.map((connection) => (
                         <button
                           key={connection.edgeId}
@@ -1731,82 +1770,121 @@ export default function AuditInstrument({ initialScopeId }: { initialScopeId?: s
                             select(connection.otherId, false);
                             requestAnimationFrame(() => frameNode(connection.otherId));
                           }}
-                          className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left hover:bg-white/[0.05]"
+                          className="flex w-full items-center gap-2 rounded-md px-2 py-1 text-left hover:bg-white/[0.05]"
                           title={`${connection.outbound ? "Outgoing" : "Incoming"} ${connection.rel} · ${connection.basis}`}
                         >
-                          <span className="w-[88px] shrink-0 truncate text-[9.5px] uppercase tracking-[0.08em]" style={{ color: connection.basis === "attested" ? "var(--i-text-soft)" : "var(--i-text-faint)" }}>
+                          <span className="w-[88px] shrink-0 truncate text-[9px] uppercase tracking-[0.08em]" style={{ color: connection.basis === "attested" ? "var(--i-text-soft)" : "var(--i-text-faint)" }}>
                             {connection.outbound ? "→ " : "← "}{REL_LABEL[connection.rel] ?? connection.rel.replaceAll("_", " ")}
                           </span>
-                          <span className="min-w-0 flex-1 truncate text-[11px]" style={{ color: "var(--i-text)" }}>{connection.otherLabel}</span>
-                          <span aria-hidden="true" className="text-[11px]" style={{ color: "var(--i-text-faint)" }}>›</span>
+                          <span className="min-w-0 flex-1 truncate text-[10.5px]" style={{ color: "var(--i-text)" }}>{connection.otherLabel}</span>
+                          <span aria-hidden style={{ color: "var(--i-text-faint)" }}>›</span>
                         </button>
                       ))}
                     </div>
-                  </div>
+                  </details>
                 )}
               </div>
             )}
+            <div className={worldStyles.inspectorBody}>
+              <div className={worldStyles.inspectorContent}>
+              {selectedFinding && truth ? (
+                <FindingInspector
+                  model={truth.model}
+                  finding={selectedFinding}
+                  provenance={truth.provenance[selectedFinding.id] ?? null}
+                  onSelect={(id) => select(gid.finding(id))}
+                  evidenceSolo={solo}
+                  onEvidenceSolo={soloable ? () => setTrace(!solo) : null}
+                  onOpenReview={() => setReviewOpen(true)}
+                />
+              ) : selectedAggregate ? (
+                <AggregateInspector
+                  graph={graph}
+                  aggregate={selectedAggregate}
+                  expandedNodes={expanded}
+                  onSelect={select}
+                  onExpand={() => toggleNode(selectedAggregate.hub ?? selectedAggregate.id)}
+                />
+              ) : selectedId && graph.hasNode(selectedId) ? (
+                <GraphInspector
+                  graph={graph}
+                  nodeId={selectedId}
+                  onSelect={select}
+                  onFocusNode={frameNode}
+                  expandedNodes={expanded}
+                  onToggleNode={toggleNode}
+                  evidenceSolo={solo}
+                  onEvidenceSolo={solo || soloable ? setTrace : null}
+                  onExpandCluster={toggleCluster}
+                />
+              ) : (
+                <GraphOverview graph={graph} truth={truth} counts={counts} onSelect={select} />
+              )}
+              </div>
+            </div>
+          </aside>
+        ) : (
+          <button
+            type="button"
+            onClick={() => setInspectorOpen(true)}
+            data-shoot="inspector-reopen"
+            className={`${worldStyles.dockReopen} ${worldStyles.worldWidget} flex items-center gap-2 px-3 py-2 text-left`}
+            style={{ color: "var(--i-text-soft)" }}
+          >
+            <span className="min-w-0 flex-1">
+              <span className="i-label block" style={{ color: "var(--i-signal)" }}>Open Inspector</span>
+              <span className="mt-1 block truncate text-[10px]" style={{ color: "var(--i-text-faint)" }}>
+                {selectedFinding?.title ?? (selectedId ? String(selectedAttrs?.label ?? selectedId) : "Project overview")}
+              </span>
+            </span>
+            <span aria-hidden>←</span>
+          </button>
+        ))}
 
-          {overviewOpen && !selectedId ? (
-            <GraphOverview graph={graph} truth={truth} counts={counts} onSelect={select} />
-          ) : detailsOpen && selectedFinding && truth ? (
-            <FindingInspector
-              model={truth.model}
-              finding={selectedFinding}
-              provenance={truth.provenance[selectedFinding.id] ?? null}
-              onSelect={(id) => select(gid.finding(id))}
-              onEvidenceSolo={soloable ? () => setTrace(true) : null}
-            />
-          ) : detailsOpen && selectedAggregate ? (
-            <AggregateInspector
-              graph={graph}
-              aggregate={selectedAggregate}
-              expandedNodes={expanded}
-              onSelect={select}
-              // ONE HANDLE PER GROUP, AND THE SOURCE GROUPS SHARE THEIRS
-              // WITH THE NODE INSPECTOR. Opening a transcript from its own
-              // panel and opening it from its shell are the same act on the
-              // same key, so the two panels can never disagree about whether
-              // it is open. A type group has no such node, so it keys on
-              // itself.
-              onExpand={() => toggleNode(selectedAggregate.hub ?? selectedAggregate.id)}
-            />
-          ) : detailsOpen && selectedId && graph.hasNode(selectedId) ? (
-            <GraphInspector
-              graph={graph}
-              nodeId={selectedId}
-              onSelect={select}
-              onFocusNode={frameNode}
-              expandedNodes={expanded}
-              onToggleNode={toggleNode}
-              evidenceSolo={solo}
-              onEvidenceSolo={soloable ? setTrace : null}
-              onExpandCluster={toggleCluster}
-            />
-          ) : null}
-          </div>
+        {/* Full review is a second-level side sheet. It reuses the governed
+            action component unchanged and leaves the world alive beside it. */}
+        {reviewOpen && selectedFinding && truth && (
+          <section
+            className={`${worldStyles.reviewSheet} ${worldStyles.worldWidget}`}
+            role="dialog"
+            aria-modal="false"
+            aria-label={`Review finding: ${selectedFinding.title}`}
+            data-shoot="finding-review-sheet"
+          >
+            <div className="flex min-h-[54px] shrink-0 items-center gap-3 border-b px-4" style={{ borderColor: "var(--i-border)" }}>
+              <span className="min-w-0 flex-1">
+                <span className="i-label block" style={{ color: "var(--i-violet)" }}>Governed finding review</span>
+                <span className="mt-1 block truncate text-[11px]" style={{ color: "var(--i-text-soft)" }}>{selectedFinding.title}</span>
+              </span>
+              <button
+                type="button"
+                onClick={() => setReviewOpen(false)}
+                data-shoot="close-full-review"
+                className="rounded-md border px-2.5 py-1.5 text-[10.5px] transition-colors hover:bg-white/[0.04]"
+                style={{ borderColor: "var(--i-border-strong)", color: "var(--i-text-soft)" }}
+              >
+                Return to Inspector
+              </button>
+            </div>
+            <div className={`${worldStyles.reviewBody} i-noscrollbar`}>
+              <AuditReviewConsole
+                model={truth.model}
+                finding={selectedFinding}
+                provenance={truth.provenance[selectedFinding.id] ?? null}
+                evidenceSolo={solo}
+                onEvidenceSolo={setTrace}
+                mode={mode}
+                onMode={setMode}
+                onAction={runAction}
+                busy={busy}
+                result={result}
+                awaitingEvidence={awaiting.has(selectedFinding.id)}
+                variant="sheet"
+              />
+            </div>
+          </section>
         )}
       </div>
-
-      {/* ── REVIEW CONSOLE — only for a Finding ───────────────────────
-          Graph-first means the default state is the graph owning the
-          viewport. A console of acceptance actions has nothing to say about
-          a Linear ticket, so it does not occupy space while one is selected. */}
-      {selectedFinding && truth && (
-        <AuditReviewConsole
-          model={truth.model}
-          finding={selectedFinding}
-          provenance={truth.provenance[selectedFinding.id] ?? null}
-          evidenceSolo={solo}
-          onEvidenceSolo={setTrace}
-          mode={mode}
-          onMode={setMode}
-          onAction={runAction}
-          busy={busy}
-          result={result}
-          awaitingEvidence={awaiting.has(selectedFinding.id)}
-        />
-      )}
     </div>
   );
 }
@@ -2087,6 +2165,30 @@ function GraphOverview({
   );
 }
 
+function InspectorAction({
+  onClick,
+  label,
+  title,
+  accent = "var(--i-text-soft)",
+}: {
+  onClick: () => void;
+  label: string;
+  title?: string;
+  accent?: string;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      title={title}
+      className="rounded-md px-2 py-1 text-[9.5px] font-medium transition-colors hover:bg-white/[0.05]"
+      style={{ border: "1px solid var(--i-border-strong)", color: accent }}
+    >
+      {label}
+    </button>
+  );
+}
+
 function MiniButton({
   onClick,
   label,
@@ -2116,6 +2218,34 @@ function MiniButton({
     >
       {label}
     </button>
+  );
+}
+
+function LegendTone({ color, label }: { color: string; label: string }) {
+  return (
+    <span className="flex items-center gap-1.5 whitespace-nowrap" style={{ color: "var(--i-text-soft)" }}>
+      <span className="h-1.5 w-1.5 shrink-0 rounded-full" style={{ background: color, boxShadow: `0 0 8px ${color}` }} />
+      {label}
+    </span>
+  );
+}
+
+function LegendLine({ dashed, label }: { dashed: boolean; label: string }) {
+  return (
+    <span className="flex items-center gap-1.5 text-[9.5px]" style={{ color: dashed ? "var(--i-text-faint)" : "var(--i-text-soft)" }}>
+      <svg width="22" height="6" aria-hidden="true">
+        <line
+          x1="0"
+          y1="3"
+          x2="22"
+          y2="3"
+          stroke="currentColor"
+          strokeWidth="1.4"
+          strokeDasharray={dashed ? "4 4" : undefined}
+        />
+      </svg>
+      {label}
+    </span>
   );
 }
 

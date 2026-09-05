@@ -34,17 +34,21 @@ export default function FindingInspector({
   finding,
   provenance,
   onSelect,
+  evidenceSolo,
   onEvidenceSolo,
+  onOpenReview,
 }: {
   model: TruthMapModel;
   finding: TruthFinding | null;
   provenance: Provenance | null;
   onSelect: (id: string) => void;
+  evidenceSolo: boolean;
   /** Null when the graph holds no provenance route out of this finding.
       LAW 10: a Trace that lights only the node you already had reads as the
       instrument being broken, not as the finding being ungrounded. The panel
       says so in words instead of offering a control that cannot work. */
   onEvidenceSolo: (() => void) | null;
+  onOpenReview?: () => void;
 }) {
   if (!finding) return <AuditOverview model={model} onSelect={onSelect} />;
   return (
@@ -52,7 +56,9 @@ export default function FindingInspector({
       model={model}
       finding={finding}
       provenance={provenance}
+      evidenceSolo={evidenceSolo}
       onEvidenceSolo={onEvidenceSolo}
+      onOpenReview={onOpenReview}
     />
   );
 }
@@ -176,16 +182,20 @@ function SelectedFinding({
   model,
   finding,
   provenance,
+  evidenceSolo,
   onEvidenceSolo,
+  onOpenReview,
 }: {
   model: TruthMapModel;
   finding: TruthFinding;
   provenance: Provenance | null;
+  evidenceSolo: boolean;
   /** Null when the graph holds no provenance route out of this finding.
       LAW 10: a Trace that lights only the node you already had reads as the
       instrument being broken, not as the finding being ungrounded. The panel
       says so in words instead of offering a control that cannot work. */
   onEvidenceSolo: (() => void) | null;
+  onOpenReview?: () => void;
 }) {
   const color = findingColor(finding);
   const Icon = findingIcon(finding.type, finding.blocking);
@@ -247,6 +257,13 @@ function SelectedFinding({
         )}
       </div>
 
+      <div className="mt-4 px-4" data-shoot="inspector-why-it-matters">
+        <div className="i-label mb-1.5" style={{ color: "var(--i-text-faint)" }}>
+          Why it matters
+        </div>
+        <p className="text-[11px] leading-[1.6] text-[var(--i-text-soft)]">{whyItMatters(finding)}</p>
+      </div>
+
       {/* CLAIM vs EVIDENCE — the audit's assertion beside the words it read. */}
       <div className="mt-4 px-4">
         <div className="grid grid-cols-2 gap-px overflow-hidden rounded-lg" style={{ background: "var(--i-border)" }}>
@@ -301,17 +318,7 @@ function SelectedFinding({
                   <ProvRow key={id} laneId="linear" title={id} sub="matched against execution" />
                 ))}
               </div>
-              {onEvidenceSolo ? (
-                <button
-                  type="button"
-                  onClick={onEvidenceSolo}
-                  data-shoot="inspector-evidence-solo"
-                  className="mt-2 w-full rounded-md border px-3 py-2 text-[11px] transition-colors hover:bg-white/[0.04]"
-                  style={{ borderColor: "var(--i-border-strong)", color: "var(--i-signal)" }}
-                >
-                  Trace it on the map →
-                </button>
-              ) : (
+              {!onEvidenceSolo && (
                 <p
                   className="mt-2 text-[10.5px] leading-[1.55]"
                   style={{ color: "var(--i-text-faint)" }}
@@ -327,9 +334,44 @@ function SelectedFinding({
       )}
 
       <div className="mt-4 px-4 pb-6">
-        <Disclosure label="Why it matters">
-          <p className="text-[11px] leading-[1.6] text-[var(--i-text-soft)]">{whyItMatters(finding)}</p>
-        </Disclosure>
+        <div className="mb-4" data-shoot="inspector-next-actions">
+          <div className="i-label mb-2" style={{ color: "var(--i-text-faint)" }}>
+            Next actions
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            {onEvidenceSolo && (
+              <button
+                type="button"
+                onClick={onEvidenceSolo}
+                data-shoot="inspector-evidence-solo"
+                aria-pressed={evidenceSolo}
+                className="rounded-md border px-3 py-2 text-[11px] transition-colors hover:bg-white/[0.04]"
+                style={{
+                  borderColor: evidenceSolo ? "var(--i-signal)" : "var(--i-border-strong)",
+                  background: evidenceSolo ? "var(--i-signal-soft)" : "transparent",
+                  color: evidenceSolo ? "var(--i-signal)" : "var(--i-text-soft)",
+                }}
+              >
+                {evidenceSolo ? "Stop trace" : "Trace provenance"}
+              </button>
+            )}
+            {onOpenReview && (
+              <button
+                type="button"
+                onClick={onOpenReview}
+                data-shoot="open-full-review"
+                className="rounded-md border px-3 py-2 text-[11px] font-medium transition-colors hover:bg-white/[0.04]"
+                style={{
+                  borderColor: "color-mix(in srgb, var(--i-violet) 65%, var(--i-border-strong))",
+                  background: "var(--i-violet-soft)",
+                  color: "var(--i-violet)",
+                }}
+              >
+                Review finding →
+              </button>
+            )}
+          </div>
+        </div>
 
         <Disclosure label="Deep provenance">
           {provenance && provenance.passages.length > 0 ? (

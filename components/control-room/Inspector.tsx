@@ -19,7 +19,7 @@
 // is selected the panel says what the project is doing on its own — it is
 // never blank, because an empty rail teaches nothing.
 
-import Link from "next/link";
+import Link from "@/components/instrument/SignalLink";
 import type { ProjectField, Selection } from "@/lib/control-room/field";
 import type { ControlRoomReading } from "@/lib/control-room/read";
 

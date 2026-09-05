@@ -39,8 +39,9 @@ check("document-wide host observers ignore tooltip-only mutations",
 check("source counts state linked-object semantics",
   adapter.includes("linkedObjects") && adapter.includes("worldLabel: `${provider} · ${sourceCounts.linkedObjects} linked`")
     && phase3Host.includes("counted(n.sourceCounts.linkedObjects, 'linked object')"));
-check("Finding View here crosses only the Audit-local bridge",
-  host.includes("signal-audit-open-finding") && world.includes("setFindingReviewId(message.canonicalId)"));
+check("Finding Review crosses only the Audit-local bridge",
+  host.includes("n.kind === 'finding' ? 'Review finding' : 'View here'")
+    && host.includes("signal-audit-open-finding") && world.includes("setFindingReviewId(message.canonicalId)"));
 check("Finding overlay reuses existing governed UI and action rules",
   overlay.includes('import FindingInspector from "./FindingInspector"')
     && overlay.includes('import AuditReviewConsole')
@@ -59,7 +60,7 @@ check("canonical refresh preserves selection across presentation-role changes",
     && !host.includes("fitToView") && !host.includes("resetView"));
 check("starting Search clears a stale Trace before navigation",
   host.includes("if (!input.value.trim()) return;")
-    && host.includes("trace = null;\n      remember();"));
+    && host.includes("setTrace(null);"));
 check("presentation echoes inherit only their canonical Trace path",
   adapter.includes("if (!node.presentationOnly || !node.canonicalId) continue;")
     && adapter.includes("traceByNode[node.id] = traceByNode[canonicalTransportId]"));
