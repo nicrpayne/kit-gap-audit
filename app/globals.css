@@ -74,38 +74,111 @@ body {
    text colour and numerals below -- what moved is the vocabulary, not the
    treatment. */
 :root {
-  /* Depth ladder. Four levels, not two -- the Instrument's physicality
-     comes from things sitting ON or being CUT INTO a surface, which needs
-     a ground darker than the panels and a recess darker than the ground. */
-  --i-void: #0b0e10; /* the ground everything sits on */
-  --i-bg: #101417; /* canvas / field */
-  --i-panel: #161b1f;
-  --i-panel-raised: #1d2429; /* controls sit UP here */
-  --i-recess: #0a0d0f; /* meter windows are CUT IN to here */
-  --i-border: #262d33;
-  --i-border-strong: #333c43;
-  --i-text: #f3f0e6;
-  --i-text-soft: #9099a1;
-  --i-text-faint: #667079;
-  --i-mint: #4ad9a8;
-  --i-mint-soft: rgba(74, 217, 168, 0.14);
-  /* MATERIAL, not state: a capability that is accepted Reality and live in
-     the release. Deliberately cooler than --i-mint so "this is seated and
-     powered" never reads as "this moved in your favour". Every accepted
-     capability shares it -- hue is not a per-module variable. */
-  --i-signal: #46c3d6;
-  --i-signal-soft: rgba(70, 195, 214, 0.14);
-  --i-violet: #9b8cfa;
-  --i-violet-soft: rgba(155, 140, 250, 0.16);
-  --i-amber: #e0b04a;
-  --i-amber-soft: rgba(224, 176, 74, 0.14);
-  --i-red: #ef6b5b;
-  --i-red-soft: rgba(239, 107, 91, 0.14);
-  --i-reality: #6b7278;
-  /* TIME's own hue in the approved layout: a periwinkle that sits beside
-     violet without being it. Time is the frame, not a domain. */
-  --i-cool: #7f9cf5;
-  --i-cool-soft: rgba(127, 156, 245, 0.16);
+  /* SIGNAL VISUAL SYSTEM V1
+     Product meaning is named here; components do not ask for a hue. */
+  --signal-surface-void: #090c0f;
+  --signal-surface-canvas: #0e1317;
+  --signal-surface-panel: #151b20;
+  --signal-surface-raised: #1c242a;
+  --signal-surface-recessed: #070a0c;
+
+  --signal-border-subtle: #29323a;
+  --signal-border-strong: #3a4650;
+  --signal-border-selected: #bec9d0;
+
+  --signal-text-primary: #f3f0e7;
+  --signal-text-secondary: #a1abb3;
+  --signal-text-tertiary: #808c95;
+  --signal-text-disabled: rgb(243 240 231 / 52%);
+
+  --signal-reality: #51c9db;
+  --signal-reality-soft: rgb(81 201 219 / 14%);
+  --signal-reality-muted: #3d98a6;
+  --signal-reality-contrast: #090c0f;
+  --signal-scenario: #a397fa;
+  --signal-scenario-soft: rgb(163 151 250 / 16%);
+  --signal-scenario-muted: #796fba;
+  --signal-scenario-contrast: #090c0f;
+  --signal-attention: #e3b455;
+  --signal-attention-soft: rgb(227 180 85 / 14%);
+  --signal-attention-muted: #a18240;
+  --signal-attention-contrast: #090c0f;
+  --signal-risk: #f07162;
+  --signal-risk-soft: rgb(240 113 98 / 14%);
+  --signal-risk-muted: #ad544a;
+  --signal-risk-contrast: #090c0f;
+  --signal-positive: #53d7aa;
+  --signal-positive-soft: rgb(83 215 170 / 14%);
+  --signal-positive-muted: #3d9c7d;
+  --signal-positive-contrast: #090c0f;
+  --signal-source: #63acd0;
+  --signal-source-soft: rgb(99 172 208 / 15%);
+  --signal-source-muted: #4b809a;
+  --signal-source-contrast: #090c0f;
+  --signal-evidence: #bec9d0;
+  --signal-evidence-soft: rgb(190 201 208 / 13%);
+  --signal-evidence-muted: #89949b;
+  --signal-evidence-contrast: #090c0f;
+  --signal-inactive: #808c95;
+
+  /* A Reality comparison ghost is intentionally neutral. This is the
+     deliberate successor to legacy --i-reality; it is not live Reality. */
+  --signal-reality-reference: #808c95;
+  --signal-reality-reference-soft: rgb(128 140 149 / 14%);
+
+  /* Orthogonal interaction state. Selection and focus must survive on top
+     of every semantic status rather than recolouring it. */
+  --signal-focus-ring: #a397fa;
+  --signal-hover-overlay: rgb(255 255 255 / 4%);
+  --signal-selected-overlay: rgb(190 201 208 / 9%);
+  --signal-selected-shadow: 0 0 0 1px var(--signal-border-selected) inset,
+    0 0 0 3px var(--signal-evidence-soft);
+  --signal-disabled-opacity: 0.52;
+
+  /* The established Control Room time-frame tone is retained as a narrow
+     compatibility role until Timeline receives its own migration. */
+  --signal-time-frame: #7f9cf5;
+  --signal-time-frame-soft: rgb(127 156 245 / 16%);
+
+  /* Material recipes: raised = operable; recessed = computed. */
+  --signal-control-fill: linear-gradient(
+    180deg,
+    var(--signal-surface-raised),
+    var(--signal-surface-panel)
+  );
+  --signal-control-shadow: inset 0 1px rgb(255 255 255 / 5%),
+    0 2px 5px rgb(0 0 0 / 45%);
+  --signal-recess-shadow: inset 0 2px 7px rgb(0 0 0 / 58%),
+    inset 0 -1px rgb(255 255 255 / 3%);
+  --signal-widget-shadow: -18px 14px 40px rgb(0 0 0 / 42%),
+    inset 0 1px rgb(255 255 255 / 4%);
+  --signal-widget-fill: rgb(21 27 32 / 96%);
+
+  /* Compatibility aliases keep the product stable while touched surfaces
+     move to explicit semantic names. */
+  --i-void: var(--signal-surface-void);
+  --i-bg: var(--signal-surface-canvas);
+  --i-panel: var(--signal-surface-panel);
+  --i-panel-raised: var(--signal-surface-raised);
+  --i-recess: var(--signal-surface-recessed);
+  --i-border: var(--signal-border-subtle);
+  --i-border-strong: var(--signal-border-strong);
+  --i-text: var(--signal-text-primary);
+  --i-text-soft: var(--signal-text-secondary);
+  --i-text-faint: var(--signal-text-tertiary);
+  --i-signal: var(--signal-reality);
+  --i-signal-soft: var(--signal-reality-soft);
+  --i-violet: var(--signal-scenario);
+  --i-violet-soft: var(--signal-scenario-soft);
+  --i-amber: var(--signal-attention);
+  --i-amber-soft: var(--signal-attention-soft);
+  --i-red: var(--signal-risk);
+  --i-red-soft: var(--signal-risk-soft);
+  --i-mint: var(--signal-positive);
+  --i-mint-soft: var(--signal-positive-soft);
+  --i-reality: var(--signal-reality-reference);
+  --i-cool: var(--signal-time-frame);
+  --i-cool-soft: var(--signal-time-frame-soft);
 
   /* ── THE EXTERNAL POPULATIONS ──────────────────────────────────────
      Added for the Signal Graph, and for one measured reason: a blind
@@ -128,21 +201,21 @@ body {
 
   /* Warm, and deliberately NOT --i-red: Signal's own dependency node keeps
      that alarm red, and a risk somebody else asserts must not borrow it. */
-  --i-coral: #f4846d;
-  --i-coral-soft: rgba(244, 132, 109, 0.16);
+  --i-coral: var(--signal-risk);
+  --i-coral-soft: var(--signal-risk-soft);
   /* An observation is the producer's largest and least pointed population
      (59 of 161). Blue-grey: present, legible, never competing. */
-  --i-slate: #8496a6;
-  --i-slate-soft: rgba(132, 150, 166, 0.14);
+  --i-slate: var(--signal-inactive);
+  --i-slate-soft: var(--signal-reality-reference-soft);
   /* A passage is a quotation — Signal's own material, luminous rather than
      coloured, because it carries no position of its own. */
-  --i-silver: #b9c6cf;
-  --i-silver-soft: rgba(185, 198, 207, 0.14);
+  --i-silver: var(--signal-evidence);
+  --i-silver-soft: var(--signal-evidence-soft);
   /* Source artifacts are the hubs the whole evidence sector hangs off.
      Same family as Reality's cyan, a step deeper, so "where knowledge came
      from" reads as Signal's own without ever being mistaken for Reality. */
-  --i-source: #58a6cc;
-  --i-source-soft: rgba(88, 166, 204, 0.16);
+  --i-source: var(--signal-source);
+  --i-source-soft: var(--signal-source-soft);
 }
 
 .instrument {
