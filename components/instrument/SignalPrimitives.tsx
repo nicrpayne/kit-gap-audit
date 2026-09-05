@@ -97,15 +97,17 @@ export function SignalStateMark({
   time = "current",
   timeLabel,
   className = "",
+  ...props
 }: {
   status: SignalStatus;
   label: string;
   time?: SignalTime;
   timeLabel?: string;
   className?: string;
-}) {
+} & Omit<HTMLAttributes<HTMLSpanElement>, "children">) {
   return (
     <span
+      {...props}
       className={`signal-state-mark ${className}`}
       data-signal-status={status}
       data-signal-time={time}

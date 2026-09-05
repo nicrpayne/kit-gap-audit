@@ -93,15 +93,14 @@ export default function AuditFindingOverlay({
         aria-modal="false"
         aria-label="Finding review"
         data-shoot="audit-finding-review"
-        className="pointer-events-auto flex h-full w-[min(720px,calc(100%-24px))] flex-col overflow-hidden rounded-[10px] shadow-2xl"
-        style={{ background: "linear-gradient(180deg, rgba(31,39,45,.97), rgba(19,25,29,.97))", border: "1px solid rgba(83,100,111,.52)" }}
+        className="signal-widget pointer-events-auto flex h-full w-[min(720px,calc(100%-24px))] flex-col overflow-hidden"
       >
         <header className="flex shrink-0 items-center justify-between gap-4 px-4 py-3" style={{ borderBottom: "1px solid var(--i-border)" }}>
           <div>
             <div className="i-label text-[9px]" style={{ color: "var(--i-signal)" }}>GOVERNED FINDING REVIEW</div>
             <div className="mt-1 text-[11px] text-[var(--i-text-soft)]">{canonicalId} · Reality changes only through the existing confirmed Signal actions below.</div>
           </div>
-          <button type="button" onClick={onClose} aria-label="Close Finding review" data-shoot="close-full-review" className="rounded-md border px-2.5 py-1.5 text-[10.5px] text-[var(--i-text-soft)]" style={{ borderColor: "var(--i-border-strong)" }}>Return to Inspector</button>
+          <button type="button" onClick={onClose} aria-label="Close Finding review" data-shoot="close-full-review" className="signal-control min-h-8 px-2.5 py-1.5 text-[10.5px]">Return to Inspector</button>
         </header>
 
         {error ? (

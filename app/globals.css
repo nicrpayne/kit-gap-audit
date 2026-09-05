@@ -350,6 +350,15 @@ body {
   border: 1px solid var(--signal-border-subtle);
   border-radius: 8px;
 }
+.signal-panel--operable {
+  background: var(--signal-control-fill);
+  border-color: var(--signal-border-strong);
+  transition: border-color 150ms ease, background-color 150ms ease;
+}
+.signal-panel--operable:hover {
+  border-color: var(--signal-border-selected);
+  background-color: var(--signal-hover-overlay);
+}
 
 .signal-control,
 .signal-meter {
@@ -451,6 +460,10 @@ body {
 .signal-shell__identity {
   background: var(--signal-surface-panel);
   border-bottom: 1px solid var(--signal-border-subtle);
+}
+.signal-control-room__statusbar {
+  background: var(--signal-surface-panel);
+  border-top: 1px solid var(--signal-border-subtle);
 }
 .signal-shell__nav-item {
   min-height: 32px;

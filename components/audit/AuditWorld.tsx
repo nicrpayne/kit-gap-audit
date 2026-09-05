@@ -5,6 +5,7 @@ import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "re
 import { useProjectParam } from "@/lib/shell/useProjectParam";
 import AuditFindingOverlay from "./AuditFindingOverlay";
 import worldStyles from "./AuditWorld.module.css";
+import { SignalControl } from "@/components/instrument/SignalPrimitives";
 
 interface ScopeOption {
   id: string;
@@ -220,12 +221,11 @@ export default function AuditWorld({
   return (
     <div
       className={`${worldStyles.auditWorld} relative flex min-h-0 flex-1 flex-col overflow-hidden`}
-      style={{ background: "#05060d" }}
+      style={{ background: "var(--signal-surface-canvas)" }}
       data-review-open={findingReviewId ? "true" : "false"}
     >
       <header
-        className="relative z-30 flex h-[46px] shrink-0 items-center gap-3 px-4"
-        style={{ background: "var(--i-panel)", borderBottom: "1px solid var(--i-border)" }}
+        className="signal-shell__identity relative z-30 flex h-[46px] shrink-0 items-center gap-3 px-4"
         data-shoot="audit-world-header"
       >
         <span className="shrink-0 text-[12px] font-semibold tracking-[0.18em] text-[var(--i-text)]">SIGNAL AUDIT</span>
@@ -233,8 +233,7 @@ export default function AuditWorld({
           aria-label="Project"
           value={scopeId}
           onChange={(event) => changeScope(event.target.value)}
-          className="max-w-[210px] rounded-md px-2.5 py-1.5 text-[11.5px] outline-none"
-          style={{ background: "var(--i-recess)", border: "1px solid var(--i-border-strong)", color: "var(--i-text)" }}
+          className="signal-meter min-h-8 max-w-[210px] rounded-md px-2.5 py-1.5 text-[11.5px] outline-none"
         >
           {(context?.scopes ?? []).map((scope) => <option key={scope.id} value={scope.id}>{scope.name}</option>)}
         </select>
@@ -242,8 +241,7 @@ export default function AuditWorld({
           aria-label="Audit context"
           value={auditId}
           onChange={(event) => changeAudit(event.target.value)}
-          className="max-w-[300px] rounded-md px-2.5 py-1.5 text-[11.5px] outline-none"
-          style={{ background: "var(--i-recess)", border: "1px solid var(--i-border-strong)", color: "var(--i-text)" }}
+          className="signal-meter min-h-8 max-w-[300px] rounded-md px-2.5 py-1.5 text-[11.5px] outline-none"
         >
           <option value="">Current project world</option>
           {(context?.audits ?? []).map((audit) => (
@@ -256,28 +254,29 @@ export default function AuditWorld({
           {worldState === "loading" ? "Opening world…" : worldState === "updating" ? "World morphing…" : selectedAudit ? `${selectedAudit.findingCount} findings in this Audit` : notice ?? (fixture ? "Deterministic evidence fixture" : "Live canonical graph")}
         </span>
         <div className="flex-1" />
-        <button
+        <SignalControl
           type="button"
           onClick={() => frameRef.current?.contentWindow?.postMessage({ type: "signal-audit-show-overview" }, window.location.origin)}
           data-shoot="project-overview"
-          className="shrink-0 rounded-md px-2.5 py-1.5 text-[11px]"
-          style={{ border: "1px solid var(--i-border-strong)", color: "var(--i-text-soft)" }}
+          className="shrink-0 px-2.5 py-1.5 text-[11px]"
         >
           Project Overview
-        </button>
+        </SignalControl>
         <Link href={`/audit/history${scopeId ? `?scope=${encodeURIComponent(scopeId)}` : ""}`} className="shrink-0 text-[11px]" style={{ color: "var(--i-text-faint)" }}>
           History
         </Link>
-        <button
+        <SignalControl
           type="button"
           onClick={() => { setRunOpen(true); setRunError(null); }}
           disabled={Boolean(fixture)}
-          className="shrink-0 rounded-md px-3 py-1.5 text-[11.5px] font-medium"
-          style={{ background: "var(--i-signal-soft)", border: "1px solid var(--i-signal)", color: "var(--i-signal)", opacity: fixture ? 0.45 : 1 }}
+          status="reality"
+          aria-describedby={fixture ? "audit-run-disabled-reason" : undefined}
+          className="shrink-0 px-3 py-1.5 text-[11.5px] font-medium text-[var(--signal-status-color)]"
           title={fixture ? "Run Audit is disabled for deterministic fixtures" : "Run Audit through Signal's canonical pipeline"}
         >
           Run Audit
-        </button>
+        </SignalControl>
+        {fixture && <span id="audit-run-disabled-reason" className="sr-only">Run Audit is disabled for deterministic fixtures.</span>}
       </header>
 
       <div className="relative min-h-0 flex-1" data-shoot="audit-world-viewport">
@@ -300,8 +299,7 @@ export default function AuditWorld({
           <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/55 p-6" role="presentation">
             <form
               onSubmit={(event) => void runAudit(event)}
-              className="w-full max-w-[620px] rounded-2xl p-5 shadow-2xl"
-              style={{ background: "var(--i-panel)", border: "1px solid var(--i-border-strong)" }}
+              className="signal-widget w-full max-w-[620px] p-5"
               aria-label="Run Audit"
             >
               <div className="flex items-start justify-between gap-4">
@@ -317,14 +315,12 @@ export default function AuditWorld({
                   value={runTitle}
                   onChange={(event) => setRunTitle(event.target.value)}
                   placeholder="Audit title (optional)"
-                  className="rounded-md px-3 py-2 text-[12px] outline-none"
-                  style={{ background: "var(--i-recess)", border: "1px solid var(--i-border-strong)", color: "var(--i-text)" }}
+                  className="signal-meter rounded-md px-3 py-2 text-[12px] outline-none"
                 />
                 <select
                   value={runKind}
                   onChange={(event) => setRunKind(event.target.value)}
-                  className="rounded-md px-3 py-2 text-[12px] outline-none"
-                  style={{ background: "var(--i-recess)", border: "1px solid var(--i-border-strong)", color: "var(--i-text)" }}
+                  className="signal-meter rounded-md px-3 py-2 text-[12px] outline-none"
                 >
                   {AUDIT_KINDS.map((kind) => <option key={kind.value} value={kind.value}>{kind.label}</option>)}
                 </select>
@@ -334,8 +330,7 @@ export default function AuditWorld({
                 onChange={(event) => setRunContent(event.target.value)}
                 rows={12}
                 placeholder="Paste a transcript, notes, estimates, or task list…"
-                className="mt-3 w-full resize-y rounded-md px-3 py-2.5 font-mono text-[11.5px] leading-relaxed outline-none"
-                style={{ background: "var(--i-recess)", border: "1px solid var(--i-border-strong)", color: "var(--i-text)" }}
+                className="signal-meter mt-3 w-full resize-y rounded-md px-3 py-2.5 font-mono text-[11.5px] leading-relaxed outline-none"
               />
               {runError && <p className="mt-2 text-[11px]" style={{ color: "var(--i-red)" }}>{runError}</p>}
               <div className="mt-4 flex items-center justify-between gap-4">
@@ -343,10 +338,10 @@ export default function AuditWorld({
                   Need file upload? Open the full Audit form
                 </Link>
                 <div className="flex gap-2">
-                  <button type="button" onClick={() => setRunOpen(false)} className="rounded-md px-3 py-1.5 text-[11px] text-[var(--i-text-soft)]" style={{ border: "1px solid var(--i-border-strong)" }}>Cancel</button>
-                  <button disabled={running} type="submit" className="rounded-md px-3 py-1.5 text-[11px] font-medium disabled:opacity-50" style={{ background: "var(--i-signal-soft)", border: "1px solid var(--i-signal)", color: "var(--i-signal)" }}>
+                  <SignalControl type="button" onClick={() => setRunOpen(false)} className="px-3 py-1.5 text-[11px]">Cancel</SignalControl>
+                  <SignalControl disabled={running} type="submit" status="reality" className="px-3 py-1.5 text-[11px] font-medium text-[var(--signal-status-color)]">
                     {running ? "Running…" : "Run Audit"}
-                  </button>
+                  </SignalControl>
                 </div>
               </div>
             </form>

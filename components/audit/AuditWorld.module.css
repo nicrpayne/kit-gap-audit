@@ -1,29 +1,24 @@
 .auditWorld {
   /* Audit-local semantic aliases. They intentionally resolve to the Master
      Control Room palette without changing the shared application tokens. */
-  --audit-live: var(--i-signal);
-  --audit-structure: var(--i-violet);
-  --audit-attention: var(--i-amber);
-  --audit-critical: var(--i-red);
-  --audit-accepted: var(--i-mint);
-  --audit-source: var(--i-source);
-  --audit-passage: var(--i-silver);
-  --audit-ground: var(--i-bg);
-  --audit-inactive: var(--i-reality);
+  --audit-live: var(--signal-reality);
+  --audit-structure: var(--signal-scenario);
+  --audit-attention: var(--signal-attention);
+  --audit-critical: var(--signal-risk);
+  --audit-accepted: var(--signal-positive);
+  --audit-source: var(--signal-source);
+  --audit-passage: var(--signal-evidence);
+  --audit-ground: var(--signal-surface-canvas);
+  --audit-inactive: var(--signal-reality-reference);
   position: relative;
   isolation: isolate;
 }
 
 .worldWidget {
-  background:
-    linear-gradient(180deg, rgba(31, 39, 45, 0.94), rgba(19, 25, 29, 0.94)),
-    var(--i-panel);
-  border: 1px solid rgba(83, 100, 111, 0.52);
-  border-top-color: rgba(115, 133, 144, 0.48);
-  box-shadow:
-    0 14px 36px rgba(0, 0, 0, 0.36),
-    0 1px 0 rgba(255, 255, 255, 0.045) inset;
-  border-radius: 10px;
+  background: var(--signal-widget-fill);
+  border: 1px solid var(--signal-border-strong);
+  box-shadow: var(--signal-widget-shadow);
+  border-radius: 8px;
 }
 
 .inspectorDock {
@@ -45,7 +40,7 @@
   flex: 1;
   display: flex;
   flex-direction: column;
-  background: rgba(17, 23, 27, 0.72);
+  background: var(--signal-surface-panel);
 }
 
 .inspectorContent {
@@ -70,7 +65,7 @@
   min-height: 0;
   flex: 1;
   overflow-y: auto;
-  background: var(--i-panel);
+  background: var(--signal-surface-panel);
 }
 
 .searchWidget {
@@ -117,7 +112,7 @@
 }
 
 .traceBadge {
-  box-shadow: 0 0 0 1px rgba(70, 195, 214, 0.2), 0 0 22px rgba(70, 195, 214, 0.13);
+  box-shadow: 0 0 0 1px var(--signal-reality-muted), 0 0 22px var(--signal-reality-soft);
 }
 
 @keyframes dock-in {

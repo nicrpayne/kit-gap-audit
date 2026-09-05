@@ -102,10 +102,8 @@ export function Telemetry({
       href={href}
       data-shoot={shoot}
       data-domain={domain}
-      className="group relative flex min-w-0 flex-col overflow-hidden rounded-md transition-colors"
+      className="signal-panel signal-panel--operable group relative flex min-w-0 flex-col overflow-hidden transition-colors"
       style={{
-        background: "var(--i-panel)",
-        border: "1px solid var(--i-border)",
         borderTop: `2px solid ${accent}`,
       }}
     >
