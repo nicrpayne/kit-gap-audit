@@ -261,7 +261,7 @@ body {
 /* Structural micro-label. Uppercase, wide-tracked, quiet -- these do the
    Instrument's organizing work so boxes and rules don't have to. */
 .i-label {
-  font-size: 9.5px;
+  font-size: 10px;
   line-height: 1;
   text-transform: uppercase;
   letter-spacing: 0.15em;
@@ -275,17 +275,232 @@ body {
    INTO the panel and unlit. You can tell what is operable without reading
    a label, and a meter can never be mistaken for a control. */
 .i-control {
-  background: linear-gradient(180deg, var(--i-panel-raised), var(--i-panel));
+  background: var(--signal-control-fill);
   border: 1px solid var(--i-border-strong);
-  border-top-color: #3f4950;
-  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.05) inset, 0 2px 5px rgba(0, 0, 0, 0.45);
+  box-shadow: var(--signal-control-shadow);
   border-radius: 7px;
 }
 .i-meter {
   background: var(--i-recess);
-  border: 1px solid #1c2227;
-  box-shadow: 0 2px 7px rgba(0, 0, 0, 0.55) inset, 0 1px 0 rgba(255, 255, 255, 0.035);
+  border: 1px solid var(--signal-border-subtle);
+  box-shadow: var(--signal-recess-shadow);
   border-radius: 7px;
+}
+
+/* Shared Signal material primitives. Geometry remains the responsibility of
+   each instrument; these classes provide one material and state grammar. */
+.signal-widget {
+  position: relative;
+  overflow: hidden;
+  color: var(--signal-text-secondary);
+  background: var(--signal-widget-fill);
+  border: 1px solid var(--signal-border-strong);
+  border-radius: 8px;
+  box-shadow: var(--signal-widget-shadow);
+}
+.signal-widget__rail {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 2px;
+  background: var(--signal-status-color, var(--signal-evidence));
+}
+.signal-widget__header,
+.signal-panel__header {
+  display: flex;
+  min-height: 40px;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--signal-border-subtle);
+}
+.signal-widget__label {
+  display: block;
+  color: var(--signal-text-tertiary);
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+.signal-widget__title {
+  display: block;
+  color: var(--signal-text-primary);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.35;
+}
+.signal-widget__count {
+  margin-left: auto;
+  color: var(--signal-text-tertiary);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+}
+.signal-widget__body { min-height: 0; }
+.signal-widget__footer {
+  padding: 8px 12px;
+  border-top: 1px solid var(--signal-border-subtle);
+  color: var(--signal-text-tertiary);
+  font-size: 10px;
+}
+
+.signal-panel {
+  position: relative;
+  color: var(--signal-text-secondary);
+  background: var(--signal-surface-panel);
+  border: 1px solid var(--signal-border-subtle);
+  border-radius: 8px;
+}
+
+.signal-control,
+.signal-meter {
+  min-height: 32px;
+  border-radius: 7px;
+}
+.signal-control {
+  color: var(--signal-text-secondary);
+  background: var(--signal-control-fill);
+  border: 1px solid var(--signal-border-strong);
+  box-shadow: var(--signal-control-shadow);
+  cursor: pointer;
+  transition: border-color 150ms ease, color 150ms ease, background-color 150ms ease,
+    box-shadow 150ms ease, transform 100ms ease;
+}
+.signal-control:hover:not(:disabled) {
+  color: var(--signal-text-primary);
+  border-color: var(--signal-border-selected);
+}
+.signal-control:active:not(:disabled) { transform: translateY(1px); }
+.signal-control[data-signal-interaction="selected"] {
+  color: var(--signal-text-primary);
+  background-color: var(--signal-selected-overlay);
+  box-shadow: var(--signal-selected-shadow), var(--signal-control-shadow);
+}
+.signal-control:disabled,
+.signal-control[aria-disabled="true"] {
+  color: var(--signal-text-disabled);
+  background: var(--signal-surface-panel);
+  box-shadow: none;
+  cursor: default;
+  opacity: var(--signal-disabled-opacity);
+}
+.signal-meter {
+  color: var(--signal-text-primary);
+  background: var(--signal-surface-recessed);
+  border: 1px solid var(--signal-border-subtle);
+  box-shadow: var(--signal-recess-shadow);
+}
+
+.signal-state-mark,
+.signal-basis-mark,
+.signal-handoff {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 24px;
+  color: var(--signal-status-color, var(--signal-text-secondary));
+  font-size: 10px;
+  line-height: 1.35;
+}
+.signal-state-mark__status { width: 12px; text-align: center; }
+.signal-state-mark__time {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding-left: 6px;
+  border-left: 1px solid var(--signal-border-subtle);
+  color: var(--signal-text-secondary);
+}
+.signal-state-mark[data-signal-time="stale"] .signal-state-mark__time {
+  color: var(--signal-attention);
+  border-left-style: dotted;
+}
+.signal-state-mark[data-signal-time="superseded"] {
+  opacity: 0.55;
+  text-decoration: line-through;
+  text-decoration-thickness: 1px;
+}
+.signal-basis-mark { color: var(--signal-text-secondary); }
+.signal-handoff {
+  min-height: 32px;
+  justify-content: center;
+  color: var(--signal-text-secondary);
+  border: 1px solid var(--signal-border-strong);
+  border-radius: 6px;
+  transition: color 150ms ease, border-color 150ms ease, background-color 150ms ease;
+}
+.signal-handoff__arrow { color: var(--signal-source); }
+.signal-handoff:hover {
+  color: var(--signal-text-primary);
+  border-color: var(--signal-source);
+  background: var(--signal-hover-overlay);
+}
+
+[data-signal-status="reality"] { --signal-status-color: var(--signal-reality); }
+[data-signal-status="scenario"] { --signal-status-color: var(--signal-scenario); }
+[data-signal-status="attention"] { --signal-status-color: var(--signal-attention); }
+[data-signal-status="risk"] { --signal-status-color: var(--signal-risk); }
+[data-signal-status="positive"] { --signal-status-color: var(--signal-positive); }
+[data-signal-status="source"] { --signal-status-color: var(--signal-source); }
+[data-signal-status="evidence"] { --signal-status-color: var(--signal-evidence); }
+[data-signal-status="neutral"] { --signal-status-color: var(--signal-text-secondary); }
+
+.signal-shell__rail {
+  background: var(--signal-surface-panel);
+  border-right: 1px solid var(--signal-border-subtle);
+}
+.signal-shell__identity {
+  background: var(--signal-surface-panel);
+  border-bottom: 1px solid var(--signal-border-subtle);
+}
+.signal-shell__nav-item {
+  min-height: 32px;
+  color: var(--signal-text-secondary);
+  border: 1px solid transparent;
+}
+.signal-shell__nav-item:hover {
+  color: var(--signal-text-primary);
+  border-color: var(--signal-border-strong);
+  background: var(--signal-hover-overlay);
+}
+.signal-shell__nav-item[data-signal-interaction="selected"] {
+  color: var(--signal-reality);
+  border-color: var(--signal-border-strong);
+  background: var(--signal-selected-overlay);
+  box-shadow: var(--signal-selected-shadow);
+}
+
+.instrument :focus-visible {
+  outline: 2px solid var(--signal-focus-ring);
+  outline-offset: 2px;
+  border-radius: 3px;
+}
+.instrument [data-signal-interaction="selected"]:focus-visible {
+  box-shadow: var(--signal-selected-shadow);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .signal-widget,
+  .signal-control,
+  .signal-handoff,
+  .signal-shell__nav-item {
+    animation-duration: 0.001ms !important;
+    transition-duration: 0.001ms !important;
+  }
+}
+
+@media (forced-colors: active) {
+  .signal-widget,
+  .signal-panel,
+  .signal-control,
+  .signal-meter,
+  .signal-handoff,
+  .signal-shell__nav-item {
+    border-color: CanvasText;
+  }
+  .signal-shell__nav-item[data-signal-interaction="selected"] {
+    outline: 1px solid Highlight;
+    outline-offset: -3px;
+  }
 }
 
 /* Recessed slot a fader cap travels in -- cut into the control plate. */
@@ -336,12 +551,6 @@ body {
     rgba(224, 176, 74, 0.16) 0 1px,
     transparent 1px 6px
   );
-}
-
-.instrument :focus-visible {
-  outline: 2px solid var(--i-violet);
-  outline-offset: 2px;
-  border-radius: 3px;
 }
 
 /* ---- DECISIONS: the circuit chassis ---------------------------------

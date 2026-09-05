@@ -70,7 +70,7 @@ export default function InstrumentShell({
   }, []);
 
   return (
-    <div className="instrument fixed inset-0 flex overflow-hidden">
+    <div className="instrument signal-shell fixed inset-0 flex overflow-hidden">
       <InstrumentRail
         pathname={pathname}
         hidden={railHidden}
@@ -114,8 +114,7 @@ export default function InstrumentShell({
           // "which instrument am I in and what does it own" is answerable
           // without reading the whole screen.
           <div
-            className="shrink-0 flex items-center gap-3 px-4 py-2.5"
-            style={{ background: "var(--i-panel)", borderBottom: "1px solid var(--i-border)" }}
+            className="signal-shell__identity shrink-0 flex items-center gap-3 px-4 py-2.5"
           >
             <span className="text-[12px] font-medium text-[var(--i-text)]">{dest?.label ?? "Instrument"}</span>
             {dest && <span className="text-[11px] text-[var(--i-text-faint)] truncate">{dest.owns}</span>}

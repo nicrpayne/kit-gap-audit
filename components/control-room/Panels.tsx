@@ -10,6 +10,7 @@
 import Link from "@/components/instrument/SignalLink";
 import type { CSSProperties, ReactNode } from "react";
 import type { Point } from "@/lib/control-room/read";
+import { SignalHandoff, SignalPanel } from "@/components/instrument/SignalPrimitives";
 
 export function Panel({
   title,
@@ -37,17 +38,17 @@ export function Panel({
   note?: string | null;
 }) {
   return (
-    <section
+    <SignalPanel
       data-shoot={shoot}
-      className={`relative flex min-h-0 flex-col overflow-hidden rounded-md ${className}`}
-      style={{ background: "var(--i-panel)", border: "1px solid var(--i-border)", ...style }}
+      className={`flex min-h-0 flex-col overflow-hidden ${className}`}
+      style={style}
     >
       {/* THE PANEL'S IDENTITY IS ITS HEADER, not a box around it. The title
           takes the domain's colour and the rule under it carries a wash of
           the same — the approved layout's way of saying what a surface is
           about before you read a word of it. */}
       <header
-        className="flex shrink-0 items-baseline justify-between gap-3 px-3 pb-1.5 pt-2"
+        className="signal-panel__header shrink-0 items-baseline justify-between gap-3 px-3 pb-1.5 pt-2"
         style={{ borderBottom: `1px solid ${accent ? "var(--i-border)" : "transparent"}` }}
       >
         <div className="flex min-w-0 items-baseline gap-2">
@@ -74,7 +75,7 @@ export function Panel({
         )}
       </header>
       <div className="min-h-0 flex-1 overflow-hidden px-3 pb-2.5 pt-2">{children}</div>
-    </section>
+    </SignalPanel>
   );
 }
 
@@ -83,14 +84,14 @@ export function Panel({
     the Control Room has no buttons of its own, because it owns nothing. */
 export function PanelDoor({ href, label, tone }: { href: string; label: string; tone?: string }) {
   return (
-    <Link
+    <SignalHandoff
       href={href}
+      owner={label}
+      prefix="Open"
       data-shoot="cr-panel-door"
-      className="mt-1.5 flex shrink-0 items-center justify-center gap-1.5 rounded-[3px] py-1 text-[10px] transition-colors hover:bg-[var(--i-panel-raised)]"
-      style={{ border: `1px solid ${tone ?? "var(--i-border-strong)"}`, color: tone ?? "var(--i-text-soft)" }}
-    >
-      {label} <span aria-hidden>→</span>
-    </Link>
+      className="mt-1.5 shrink-0 px-2 py-1 text-[10px]"
+      style={tone ? { "--signal-status-color": tone } as CSSProperties : undefined}
+    />
   );
 }
 

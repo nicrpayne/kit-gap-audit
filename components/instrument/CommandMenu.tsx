@@ -102,8 +102,7 @@ export default function CommandMenu({
         aria-modal="true"
         aria-label="Command menu"
         onClick={(e) => e.stopPropagation()}
-        className="w-[440px] max-w-[92vw] overflow-hidden rounded-lg"
-        style={{ background: "var(--i-panel)", border: "1px solid var(--i-border-strong)", boxShadow: "0 24px 60px rgba(0,0,0,0.6)" }}
+        className="signal-widget w-[440px] max-w-[92vw] overflow-hidden"
       >
         <input
           ref={inputRef}
@@ -129,16 +128,18 @@ export default function CommandMenu({
             }
           }}
         />
-        <ul className="max-h-[300px] overflow-y-auto py-1">
+        <ul className="max-h-[300px] overflow-y-auto py-1" role="listbox" aria-label="Command results">
           {items.length === 0 && <li className="px-4 py-3 text-[12px] text-[var(--i-text-faint)]">Nothing matches.</li>}
           {items.map((item, i) => (
             <li key={item.id}>
               <button
                 onMouseEnter={() => setCursor(i)}
                 onClick={() => choose(item)}
-                className="w-full flex items-center justify-between px-4 py-2 text-left text-[13px]"
+                data-signal-interaction={i === cursor ? "selected" : "rest"}
+                aria-selected={i === cursor}
+                role="option"
+                className="signal-shell__nav-item w-full flex items-center justify-between px-4 py-2 text-left text-[13px]"
                 style={{
-                  background: i === cursor ? "var(--i-violet-soft)" : "transparent",
                   color: i === cursor ? "var(--i-text)" : "var(--i-text-soft)",
                 }}
               >
