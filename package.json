@@ -9,8 +9,7 @@
     "lint": "eslint",
     "postinstall": "prisma generate",
     "db:seed": "tsx prisma/seed.ts",
-    "proof:visual-system": "node scripts/signal-visual-system-token-proof.mjs && npx tsx scripts/signal-primitives-proof.tsx && node scripts/signal-visual-system-proof.mjs",
-    "proof:production-hardening-2": "tsx scripts/production-hardening-2-proof.tsx && node scripts/production-hardening-2-audit-proof.mjs"
+    "proof:visual-system": "node scripts/signal-visual-system-token-proof.mjs && npx tsx scripts/signal-primitives-proof.tsx && node scripts/signal-visual-system-proof.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.32",

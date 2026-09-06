@@ -247,7 +247,7 @@ export interface DecisionBriefV1 {
   };
   boundaries: {
     findingsForecastEffect: Sourced<{ unacceptedFindingCount: number; modeledBaselineWorkItems: 0 }>;
-    timelineReading: Sourced<{ temporalRole: "live"; label: "Live Forecast" }>;
+    timelineReading: Sourced<{ temporalRole: "live"; label: "Current Forecast" }>;
   };
   caveats: Sourced<{ code: string; message: string }[]>;
 }
@@ -294,16 +294,7 @@ function headlineReason(input: DecisionBriefOwnerInputs, delta: ReturnType<typeo
 }
 
 export function assembleDecisionBrief(input: DecisionBriefOwnerInputs): DecisionBriefV1 {
-  const forecastAgeDays = Math.max(0, Math.floor((new Date(input.generatedAt).getTime() - new Date(input.forecast.asOf).getTime()) / day));
-  const forecastCurrentness: Currentness = forecastAgeDays > 7 ? "stale" : "current";
-  const forecastSource = source(
-    "Forecast",
-    input.forecast.asOf,
-    input.forecast.sourceId,
-    forecastCurrentness,
-    "live",
-    forecastCurrentness === "stale" ? `Live owner read is ${forecastAgeDays} days old.` : undefined
-  );
+  const forecastSource = source("Forecast", input.forecast.asOf, input.forecast.sourceId);
   const auditCurrentness: Currentness = input.audit.current ? input.audit.comparisonCurrentness : "missing";
   const auditSource = source("Audit", input.audit.current?.asOf ?? input.generatedAt, input.audit.current?.runId ?? null, auditCurrentness);
   const delta = input.audit.comparisonCurrentness === "unavailable"
@@ -377,7 +368,6 @@ export function assembleDecisionBrief(input: DecisionBriefOwnerInputs): Decision
   if (weak.length) caveats.push({ code: "WEAK_GROUNDING", message: `${weak.length} current Finding${weak.length === 1 ? " is" : "s are"} not grounded to passage-level evidence.` });
   if (suspicious.length) caveats.push({ code: "TEST_RESIDUE", message: `${suspicious.length} suspicious test Decision/Gate record${suspicious.length === 1 ? "" : "s"} remain for governed disposition.` });
   if (input.audit.comparisonCurrentness === "unavailable") caveats.push({ code: "AUDIT_DELTA_UNAVAILABLE", message: "Exact current/prior Audit membership is unavailable for runs sharing the same source snapshot; no change is inferred from absence." });
-  if (forecastCurrentness === "stale") caveats.push({ code: "FORECAST_STALE", message: `The live Forecast owner read is stale (${forecastAgeDays} days old; as of ${input.forecast.asOf}).` });
 
   const movement = input.previousReport
     ? {
@@ -455,7 +445,7 @@ export function assembleDecisionBrief(input: DecisionBriefOwnerInputs): Decision
       },
       scenarioOptions: {
         value: input.forecast.scenarios,
-        source: source("Forecast", input.forecast.asOf, input.forecast.sourceId, forecastCurrentness, "live", "Existing canonical Forecast scenarios; no new Reports simulation semantics."),
+        source: source("Forecast", input.forecast.asOf, input.forecast.sourceId, "current", "live", "Existing canonical Forecast scenarios; no new Reports simulation semantics."),
       },
     },
     timeline: {
@@ -472,7 +462,7 @@ export function assembleDecisionBrief(input: DecisionBriefOwnerInputs): Decision
     },
     boundaries: {
       findingsForecastEffect: { value: { unacceptedFindingCount: input.forecast.unticketedFindingCount, modeledBaselineWorkItems: 0 }, source: forecastSource },
-      timelineReading: { value: { temporalRole: "live", label: "Live Forecast" }, source: forecastSource },
+      timelineReading: { value: { temporalRole: "live", label: "Current Forecast" }, source: forecastSource },
     },
     caveats: { value: caveats, source: contextSource },
   };

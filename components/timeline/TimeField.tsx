@@ -396,7 +396,7 @@ function MemoryBand({
   const xT = tT !== null ? xFor(view, tT) : null;
   const h = 26;
   const id = `mem-${snap.id.replace(/[^a-zA-Z0-9_-]/g, "-")}${ghost ? "-g" : ""}`;
-  const accent = snap.temporalRole === "live" && snap.currentness === "stale" ? "var(--i-amber)" : snap.temporalRole === "live" ? "var(--i-signal)" : "var(--i-violet)";
+  const accent = snap.temporalRole === "live" ? "var(--i-signal)" : "var(--i-violet)";
   const op = ghost ? 0.3 : 1;
 
   // ── THE ONE THING A FORECAST AND A TARGET HAVE TO SAY TO EACH OTHER ──
@@ -1150,7 +1150,7 @@ export default function TimeField({
                   repeated down eight rows is noise saying nothing. The master
                   display already carries the em dash for these projects. */}
               {rail ? null : mem ? (
-                <span className="i-readout text-[13px] leading-none mt-1" style={{ color: mem.temporalRole === "live" && mem.currentness === "stale" ? "var(--i-amber)" : mem.temporalRole === "live" ? "var(--i-signal)" : "var(--i-violet)" }}>
+                <span className="i-readout text-[13px] leading-none mt-1" style={{ color: mem.temporalRole === "live" ? "var(--i-signal)" : "var(--i-violet)" }}>
                   {fmtDay(new Date(mem.likelyDate).getTime())}
                 </span>
               ) : (

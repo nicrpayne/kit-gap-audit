@@ -99,22 +99,6 @@ export function openNotGating(d: DecisionRow): boolean {
   return d.status === "open" && !forecastActive(d);
 }
 
-/** Lifecycle and delivery effect are two axes. `gating` is deliberately a
- * subset of `open`; consumers must never replace the open lifecycle count
- * with the non-gating lane count. */
-export function decisionCounts(decisions: DecisionRow[]) {
-  const open = decisions.filter((decision) => decision.status === "open").length;
-  const gating = decisions.filter(forecastActive).length;
-  return {
-    all: decisions.length,
-    open,
-    gating,
-    openNotGating: open - gating,
-    decided: decisions.filter((decision) => decision.status === "decided").length,
-    dismissed: decisions.filter((decision) => decision.status === "dismissed").length,
-  };
-}
-
 export type Lane = "gating" | "open" | "decided" | "dismissed";
 
 export function laneOf(d: DecisionRow): Lane {

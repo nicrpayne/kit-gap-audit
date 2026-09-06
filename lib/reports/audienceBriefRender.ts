@@ -105,7 +105,7 @@ function moduleMarkdown(id: BriefModuleId, density: ModuleDensity, brief: Decisi
     }
     case "timeline":
       heading("Timeline");
-      out.push(`**Live Forecast · ${brief.timeline.currentForecast.source.currentness.toUpperCase()} · as of ${date(brief.timeline.currentForecast.source.asOf)}** — [likely ${date(brief.timeline.currentForecast.value.likelyDate)}](${brief.timeline.currentForecast.value.href})`);
+      out.push(`**Current Forecast · LIVE** — [likely ${date(brief.timeline.currentForecast.value.likelyDate)}](${brief.timeline.currentForecast.value.href})`);
       out.push(brief.timeline.nextMilestone.value ? `Next milestone: ${brief.timeline.nextMilestone.value.title} · ${date(brief.timeline.nextMilestone.value.date)}` : "Next milestone: MISSING.");
       for (const conflict of brief.timeline.conflicts.value) out.push(`- Conflict: ${conflict.title} · ${date(conflict.date)}`);
       break;

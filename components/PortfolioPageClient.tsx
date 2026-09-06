@@ -46,7 +46,6 @@ import { mutateReality } from "@/lib/instrument/reality";
 import type { DependencyDelta, DependentDelta } from "@/lib/portfolio/explain";
 import { contextualHref } from "@/lib/shell/context";
 import { useProjectParam } from "@/lib/shell/useProjectParam";
-import type { CapacityForecastContract } from "@/lib/capacity/contract";
 
 // The Instrument. GET /api/portfolio/inputs is the one expensive network
 // call (Linear + findings + context, per Scope), fetched once on mount;
@@ -88,7 +87,6 @@ interface ScopeInputRow {
     resolvedSinceLastCount: number;
   }[];
   capacityBasis: CapacityBasisPayload;
-  capacityContract: CapacityForecastContract;
 }
 
 interface PersonRow {
@@ -1161,7 +1159,6 @@ export default function PortfolioPageClient() {
               realityCapacity={selectedScope.teamCapacity}
               scenarioCapacity={scenarioCapacityByScope.get(selectedScope.scopeId) ?? selectedScope.teamCapacity}
               capacityBasis={capacityBasis}
-              capacityContract={selectedScope.capacityContract}
               onSaveRealityCapacity={(fte) => saveRealityCapacity(selectedScope.scopeId, fte)}
               onManagePeople={() => setAllocationsOpen(true)}
               switchCostPct={switchCostPct}

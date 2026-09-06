@@ -1,7 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
-import { presentLegacyReport } from "@/lib/reports/legacySanitization";
+import { useState } from "react";
 
 // Renders exactly the shape lib/reports/render.ts produces -- not a
 // general markdown renderer. Kept dependency-free since the format is
@@ -18,11 +17,6 @@ function renderInline(text: string): React.ReactNode {
 }
 
 export default function ReportView({ markdown }: { markdown: string }) {
-  const presentation = presentLegacyReport(markdown);
-  if (presentation.kind === "html_error") {
-    return <LegacySourceFailure raw={markdown} rawLength={presentation.rawLength} />;
-  }
-  markdown = presentation.safeMarkdown;
   const lines = markdown.split("\n");
   const elements: React.ReactNode[] = [];
   let listBuffer: React.ReactNode[] = [];
@@ -89,33 +83,6 @@ export default function ReportView({ markdown }: { markdown: string }) {
   flushList();
 
   return <div>{elements}</div>;
-}
-
-function LegacySourceFailure({ raw, rawLength }: { raw: string; rawLength: number }) {
-  const [copied, setCopied] = useState(false);
-  return (
-    <div data-shoot="legacy-source-failure" className="rounded-lg border border-[var(--i-amber)] bg-[var(--i-amber-soft)] p-4">
-      <div className="text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--i-amber)]">Historical source failure</div>
-      <p className="mt-2 text-sm leading-relaxed text-[var(--i-text)]">
-        Source fetch failed when this historical snapshot was generated. Raw source response is available in technical details.
-      </p>
-      <details className="mt-3 text-xs text-[var(--i-text-soft)]">
-        <summary className="cursor-pointer">Technical details</summary>
-        <p className="mt-2">Immutable raw payload retained · {rawLength.toLocaleString()} characters · not rendered as report prose.</p>
-        <button
-          type="button"
-          className="mt-2 rounded border border-[var(--i-border-strong)] px-2.5 py-1.5"
-          onClick={async () => {
-            await navigator.clipboard.writeText(raw);
-            setCopied(true);
-            setTimeout(() => setCopied(false), 1800);
-          }}
-        >
-          {copied ? "Raw payload copied" : "Copy raw source response"}
-        </button>
-      </details>
-    </div>
-  );
 }
 
 export function CopyMarkdownButton({ markdown, label = "Copy to clipboard" }: { markdown: string; label?: string }) {

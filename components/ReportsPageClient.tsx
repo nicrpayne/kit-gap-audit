@@ -11,18 +11,16 @@ import { describeSnapshot, withSnapshotProvenance } from "@/lib/reports/snapshot
 import { useProjectParam } from "@/lib/shell/useProjectParam";
 import { isDecisionBriefV1, type DecisionBriefV1 } from "@/lib/reports/decisionBrief";
 import { renderDecisionBriefPlainText } from "@/lib/reports/decisionBriefRender";
-import { presentLegacyReport } from "@/lib/reports/legacySanitization";
 import AudienceBriefView from "./reports/AudienceBriefView";
 import { AUDIENCE_LABELS, PURPOSE_LABELS, buildBriefRecipe, isBriefRecipeV1, type AudienceLens, type BriefPurpose, type BriefRecipeV1 } from "@/lib/reports/composer";
 import { renderAudienceBriefPlainText } from "@/lib/reports/audienceBriefRender";
-import { currentnessLabel, sourceCurrentness } from "@/lib/truth/currentness";
 
 /** The live forecast is a comparison input, not report data. Three states,
     because "we could not resolve it" must be distinguishable from "it
     agrees" — collapsing them is how a stale report starts looking current. */
 type LiveForecast =
   | { state: "loading" }
-  | { state: "ready"; likelyDate: string; confidenceAtTarget: number | null; asOf: string }
+  | { state: "ready"; likelyDate: string; confidenceAtTarget: number | null }
   | { state: "error"; reason: string };
 
 interface ScopeOption {
@@ -144,7 +142,7 @@ export default function ReportsPageClient() {
       })
       .then((body) => {
         if (cancelled) return;
-        setLive({ state: "ready", likelyDate: body.likelyDate, confidenceAtTarget: body.confidenceAtTarget ?? null, asOf: body.forecastSource.asOf });
+        setLive({ state: "ready", likelyDate: body.likelyDate, confidenceAtTarget: body.confidenceAtTarget ?? null });
       })
       .catch((err: unknown) => {
         if (cancelled) return;
@@ -237,16 +235,11 @@ export default function ReportsPageClient() {
             report leaves Signal through this button and is read somewhere
             Signal cannot annotate, so the warning has to travel inside the
             text rather than live beside it on screen. */}
-        {selected && snapshot && <CopyMarkdownButton markdown={withSnapshotProvenance(presentLegacyReport(selected.summaryMarkdown).safeMarkdown, snapshot)} label="Copy Markdown" />}
+        {selected && snapshot && <CopyMarkdownButton markdown={withSnapshotProvenance(selected.summaryMarkdown, snapshot)} label="Copy Markdown" />}
         {selectedBrief && <CopyMarkdownButton markdown={selectedRecipe ? renderAudienceBriefPlainText(selectedBrief, selectedRecipe) : renderDecisionBriefPlainText(selectedBrief)} label="Copy plain text" />}
         {process.env.NODE_ENV !== "production" && <a href="/reports/composer/fixture" className="report-no-print rounded-md border border-[var(--i-border)] px-3 py-1.5 text-xs text-[var(--i-signal)]">Open composer prototype</a>}
         {selected && <a href={`/reports/${encodeURIComponent(selected.id)}/print`} target="_blank" rel="noreferrer" className="report-no-print rounded-md border border-[var(--i-border)] px-3 py-1.5 text-xs text-[var(--i-text-soft)] hover:bg-white/5">Print view</a>}
-        {live?.state === "ready" && (() => {
-          const freshness = sourceCurrentness(live.asOf, new Date());
-          return <span className="report-no-print ml-auto text-[10px] uppercase tracking-wider" style={{ color: freshness.currentness === "stale" ? "var(--i-amber)" : "var(--i-mint)" }}>
-            Live owner · {currentnessLabel(freshness)} · as of {formatDate(live.asOf)} · likely {formatDate(live.likelyDate)}
-          </span>;
-        })()}
+        {live?.state === "ready" && <span className="report-no-print ml-auto text-[10px] uppercase tracking-wider text-[var(--i-mint)]">Current live comparison · {formatDate(live.likelyDate)}</span>}
       </div>
 
       {error && <div className="text-sm text-[var(--i-red)] mb-4">{error}</div>}

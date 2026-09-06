@@ -6,7 +6,6 @@ import { BRIEF_PRESENTATION_VERSION, BRIEF_RECIPE_VERSION, type BriefRecipeV1 } 
 import { normalizeBriefRecipe } from "./composer";
 import { buildBriefPresentation } from "./presentation";
 import { renderAudienceBriefMarkdown } from "./audienceBriefRender";
-import { assertGeneratedReportProse } from "./legacySanitization";
 
 export interface GeneratedReport {
   report: Report;
@@ -44,9 +43,6 @@ export async function generateReport(
   const recipe = normalizeBriefRecipe(options?.recipe, brief);
   const presentation = buildBriefPresentation(brief, recipe);
   const markdown = renderAudienceBriefMarkdown(brief, recipe);
-  // Fail closed before the immutable write boundary. An upstream HTML error
-  // page is evidence of a failed source read, never a report body.
-  assertGeneratedReportProse(markdown);
   const window = brief.headline.likelyWindow.value;
   const movement = brief.headline.movement.value;
   const report = await prisma.report.create({

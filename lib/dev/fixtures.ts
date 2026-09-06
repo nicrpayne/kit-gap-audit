@@ -43,17 +43,6 @@ interface TeamFixture {
 }
 
 const TEAMS: Record<string, TeamFixture> = {
-  // Production Hardening 2: one completed source anchor and no executable
-  // work. Its fixed updatedAt (applied below) makes dependency currentness
-  // reproducible without inventing a live backlog.
-  PH2: {
-    titles: ["Completed source anchor"],
-    assignees: ["Archive owner"],
-    doneCount: 1,
-    unassignedCount: 0,
-    epic: "Platform",
-    features: [{ key: "PH2-F1", title: "Source history", items: [0] }],
-  },
   // Platform: capacity is INFERRED. Ten distinct people hold remaining
   // tickets, so the engine infers 10 FTE -- the exact case that was
   // baffling in production ("why is Platform 10?").
@@ -269,12 +258,7 @@ export function devFixtureIssues(scope: ScopeFilter): LinearIssueSummary[] {
       estimate: i % 3 === 0 ? null : POINTS[i % POINTS.length],
       assignee,
       labels: [],
-      completedAt: isDone
-        ? scope.teamKey === "PH2"
-          ? "2026-08-01T12:00:00.000Z"
-          : new Date(FIXTURE_EPOCH - (i + 3) * 86400000).toISOString()
-        : null,
-      updatedAt: scope.teamKey === "PH2" ? "2026-08-05T12:00:00.000Z" : new Date(FIXTURE_EPOCH).toISOString(),
+      completedAt: isDone ? new Date(FIXTURE_EPOCH - (i + 3) * 86400000).toISOString() : null,
       parentIdentifier,
       parentTitle,
       projectName: fixture.epic,

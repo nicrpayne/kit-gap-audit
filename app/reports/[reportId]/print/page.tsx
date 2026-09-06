@@ -25,7 +25,7 @@ export default async function ReportPrintPage({ params }: { params: Promise<{ re
       </div>
       {brief && recipe ? <AudienceBriefView brief={brief} recipe={recipe} /> : brief ? <DecisionBriefView brief={brief} /> : (
         <article className="decision-brief-print mx-auto max-w-[920px] rounded border border-[var(--i-border)] bg-[var(--i-panel)] p-8">
-          <div className="mb-5 rounded border border-[var(--i-amber)] bg-[var(--i-amber-soft)] p-3 text-xs text-[var(--i-amber)]">Legacy immutable report · raw history retained exactly; unsafe source payloads are compacted in presentation.</div>
+          <div className="mb-5 rounded border border-[var(--i-amber)] bg-[var(--i-amber-soft)] p-3 text-xs text-[var(--i-amber)]">Legacy immutable report · rendered exactly as stored.</div>
           <ReportView markdown={report.summaryMarkdown} />
         </article>
       )}

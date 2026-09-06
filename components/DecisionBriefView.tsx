@@ -38,7 +38,6 @@ export default function DecisionBriefView({ brief }: { brief: DecisionBriefV1 })
   const window = brief.headline.likelyWindow.value;
   const movement = brief.headline.movement.value;
   const capacity = brief.movable.capacity.value;
-  const forecastStale = brief.headline.likelyWindow.source.currentness === "stale";
   return (
     <article
       className="decision-brief-print mx-auto max-w-[920px] text-[var(--i-text)]"
@@ -72,8 +71,8 @@ export default function DecisionBriefView({ brief }: { brief: DecisionBriefV1 })
 
       <Section title="Headline" source={brief.headline.likelyWindow.source}>
         <div className="grid gap-3 sm:grid-cols-3">
-          <div className={`rounded-lg border bg-[var(--i-panel)] p-4 sm:col-span-2 ${forecastStale ? "border-[var(--i-amber)]" : "border-[var(--i-signal)]"}`}>
-            <div className={`text-[9px] uppercase tracking-[0.14em] ${forecastStale ? "text-[var(--i-amber)]" : "text-[var(--i-text-faint)]"}`}>Live likely window · {brief.headline.likelyWindow.source.currentness} · as of {date(brief.headline.likelyWindow.source.asOf)}</div>
+          <div className="rounded-lg border border-[var(--i-signal)] bg-[var(--i-panel)] p-4 sm:col-span-2">
+            <div className="text-[9px] uppercase tracking-[0.14em] text-[var(--i-text-faint)]">Live likely window</div>
             <div className="mt-1 font-display text-2xl">{date(window.likely)}</div>
             <div className="mt-1 text-xs text-[var(--i-text-faint)]">{date(window.earliest)} – {date(window.latest)}</div>
           </div>
@@ -156,8 +155,8 @@ export default function DecisionBriefView({ brief }: { brief: DecisionBriefV1 })
       </Section>
 
       <Section title="Timeline" source={brief.timeline.currentForecast.source}>
-        <Link href={brief.timeline.currentForecast.value.href} className={`block rounded-lg border bg-[var(--i-panel)] p-4 ${forecastStale ? "border-[var(--i-amber)]" : "border-[var(--i-signal)]"}`}>
-          <div className={`text-[9px] font-semibold uppercase tracking-wider ${forecastStale ? "text-[var(--i-amber)]" : "text-[var(--i-mint)]"}`}>Live Forecast · {brief.timeline.currentForecast.source.currentness} · as of {date(brief.timeline.currentForecast.source.asOf)}</div>
+        <Link href={brief.timeline.currentForecast.value.href} className="block rounded-lg border border-[var(--i-signal)] bg-[var(--i-panel)] p-4">
+          <div className="text-[9px] font-semibold uppercase tracking-wider text-[var(--i-mint)]">Current Forecast · LIVE</div>
           <div className="mt-1 font-display text-lg">Likely {date(brief.timeline.currentForecast.value.likelyDate)}</div>
         </Link>
         <div className="mt-4 text-sm">Next committed/current milestone: {brief.timeline.nextMilestone.value ? `${brief.timeline.nextMilestone.value.title} · ${date(brief.timeline.nextMilestone.value.date)}` : "MISSING"}</div>

@@ -1,6 +1,5 @@
 import type { SimulationResult } from "@/lib/forecast/simulate";
 import type { ForecastSnapshot } from "@/lib/timeline/entries";
-import { sourceCurrentness, type SourceCurrentness } from "@/lib/truth/currentness";
 
 interface ForecastReadingBase {
   id: string;
@@ -11,8 +10,6 @@ interface ForecastReadingBase {
   latestDate: string;
   targetDate: string | null;
   confidenceAtTarget: number | null;
-  currentness: SourceCurrentness;
-  ageDays: number;
 }
 
 export type TimelineForecastReading =
@@ -23,10 +20,8 @@ export function liveForecastReading(
   scopeId: string,
   asOf: string,
   result: SimulationResult,
-  targetDate: string | null,
-  now: string = asOf
+  targetDate: string | null
 ): TimelineForecastReading {
-  const freshness = sourceCurrentness(asOf, now);
   return {
     id: `live:${scopeId}`,
     scopeId,
@@ -38,8 +33,6 @@ export function liveForecastReading(
     latestDate: result.latestDate.toISOString(),
     targetDate,
     confidenceAtTarget: result.confidenceAtTarget,
-    currentness: freshness.currentness,
-    ageDays: freshness.ageDays,
   };
 }
 
@@ -56,8 +49,6 @@ export function historicalForecastReading(snapshot: ForecastSnapshot): TimelineF
     latestDate: snapshot.latestDate,
     targetDate: snapshot.targetDate,
     confidenceAtTarget: snapshot.confidenceAtTarget,
-    currentness: "current",
-    ageDays: 0,
   };
 }
 
@@ -71,3 +62,4 @@ export function forecastReadingForTime(
   if (atNow) return live?.temporalRole === "live" ? live : null;
   return historical ? historicalForecastReading(historical) : null;
 }
+

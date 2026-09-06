@@ -46,7 +46,6 @@ import { layoutLanes, isDormant } from "@/lib/timeline/plan";
 import { spokenSourceLabel } from "@/lib/timeline/producer";
 import { useProject } from "@/lib/instrument/useProject";
 import { forecastReadingForTime, liveForecastReading } from "@/lib/timeline/forecastTruth";
-import { sourceCurrentness } from "@/lib/truth/currentness";
 import {
   EMPTY_UNDO, record, undoTop, redoTop, describe, remapId,
   type UndoState, type TimelineCommand, type PlanSnapshot,
@@ -435,9 +434,6 @@ export default function TimelinePageClient({ embedded = false }: { embedded?: bo
   }, [memoryByScope]);
 
   const atNow = playheadT !== null && Math.abs(playheadT - nowT) < 12 * 3600 * 1000;
-  const liveFreshness = project.data && data
-    ? sourceCurrentness(project.data.forecastSource.asOf, data.now)
-    : null;
 
   // LIVE and HISTORICAL are different types before they are different
   // colours. At NOW the value comes only from the current Forecast read
@@ -447,14 +443,13 @@ export default function TimelinePageClient({ embedded = false }: { embedded?: bo
     if (!data) return out;
     for (const lane of data.lanes) {
       const sim = project.baseline?.get(lane.scopeId) ?? null;
-      const scopeSource = project.data?.scopes.find((scope) => scope.scopeId === lane.scopeId)?.forecastSource;
       const live = sim
-        ? liveForecastReading(lane.scopeId, scopeSource?.asOf ?? data.now, sim, lane.targetDate, data.now)
+        ? liveForecastReading(lane.scopeId, data.now, sim, lane.targetDate)
         : null;
       out[lane.scopeId] = forecastReadingForTime(atNow, live, memoryByScope[lane.scopeId] ?? null);
     }
     return out;
-  }, [data, project.data, project.baseline, atNow, memoryByScope]);
+  }, [data, project.baseline, atNow, memoryByScope]);
 
   // ── WHAT THE INSTRUMENT IS READING ─────────────────────────────────
   //
@@ -1070,14 +1065,9 @@ export default function TimelinePageClient({ embedded = false }: { embedded?: bo
               >
                 {fmtFull(playheadT)}
               </div>
-              <div
-                className="text-[8.5px] mt-1.5"
-                style={{ color: atNow && liveFreshness?.currentness === "stale" ? "var(--i-amber)" : "var(--i-text-faint)" }}
-              >
+              <div className="text-[8.5px] text-[var(--i-text-faint)] mt-1.5">
                 {atNow
-                  ? liveFreshness
-                    ? `Live Forecast · ${liveFreshness.currentness === "stale" ? `STALE ${liveFreshness.ageDays}d` : "CURRENT"} · as of ${fmtDay(new Date(liveFreshness.asOf).getTime())}`
-                    : "Live Forecast unavailable"
+                  ? "Current Forecast"
                   : memoryLead
                     ? `Report snapshot · as of ${fmtDay(new Date(memoryLead.asOf).getTime())}`
                     : "No forecast snapshot yet"}
@@ -1146,7 +1136,7 @@ export default function TimelinePageClient({ embedded = false }: { embedded?: bo
                       <div
                         className="i-readout leading-none mt-1.5"
                         data-shoot={`memory-likely-${lane.scopeId}`}
-                        style={{ fontSize: dense ? 13.5 : 17, color: m.temporalRole === "live" && m.currentness === "stale" ? "var(--i-amber)" : m.temporalRole === "live" ? "var(--i-signal)" : "var(--i-violet)" }}
+                        style={{ fontSize: dense ? 13.5 : 17, color: m.temporalRole === "live" ? "var(--i-signal)" : "var(--i-violet)" }}
                       >
                         {fmtDay(new Date(m.likelyDate).getTime())}
                       </div>
@@ -1162,7 +1152,7 @@ export default function TimelinePageClient({ embedded = false }: { embedded?: bo
                       >
                         {fmtDay(new Date(m.earliestDate).getTime())} – {fmtDay(new Date(m.latestDate).getTime())}
                         {m.confidenceAtTarget !== null && ` · ${m.confidenceAtTarget}%`}
-                        {m.temporalRole === "live" ? ` · LIVE owner · ${m.currentness === "stale" ? `STALE ${m.ageDays}d` : "CURRENT"} · as of ${fmtDay(new Date(m.asOf).getTime())}` : ` · Report snapshot · as of ${fmtDay(new Date(m.asOf).getTime())}`}
+                        {m.temporalRole === "live" ? " · Current Forecast" : ` · Report snapshot · as of ${fmtDay(new Date(m.asOf).getTime())}`}
                         {stale !== null && stale > 0 && ` · held ${stale}d`}
                       </div>
                     </>

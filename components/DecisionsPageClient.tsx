@@ -28,7 +28,7 @@ import { useProjectParam } from "@/lib/shell/useProjectParam";
 import { useDecisions } from "@/lib/decisions/useDecisions";
 import { useFlip } from "@/lib/decisions/useFlip";
 import { EMPTY_SCENARIO, fmtDay, useProject } from "@/lib/instrument/useProject";
-import { LANE_COLOR, decisionCounts, forecastActive, openNotGating, type DecisionRow } from "@/lib/decisions/model";
+import { LANE_COLOR, forecastActive, openNotGating, type DecisionRow } from "@/lib/decisions/model";
 
 type Filter = "all" | "candidates" | "open" | "gating" | "decided";
 
@@ -153,7 +153,6 @@ export default function DecisionsPageClient() {
     return [...byScope.entries()];
   }, [gatingAll, activeScopeId]);
   const openLane = useMemo(() => decisions.filter(openNotGating), [decisions]);
-  const counts = useMemo(() => decisionCounts(decisions), [decisions]);
   const decided = useMemo(() => decisions.filter((d) => d.status === "decided"), [decisions]);
   const dismissed = useMemo(() => decisions.filter((d) => d.status === "dismissed"), [decisions]);
 
@@ -286,8 +285,8 @@ export default function DecisionsPageClient() {
                 [
                   ["all", "All", decisions.length + candidates.length, "var(--i-text-soft)"],
                   ["candidates", "Cand", candidates.length, LANE_COLOR.candidate],
-                  ["open", "Open", counts.open, LANE_COLOR.open],
-                  ["gating", "Gating", counts.gating, LANE_COLOR.gating],
+                  ["open", "Open", openLane.length, LANE_COLOR.open],
+                  ["gating", "Gating", gatingAll.length, LANE_COLOR.gating],
                   ["decided", "Decided", decided.length, LANE_COLOR.decided],
                 ] as const
               ).map(([key, label, count, tone], i) => (
@@ -394,7 +393,7 @@ export default function DecisionsPageClient() {
                     second circuit crowding the first. */}
                 {elsewhere.length > 0 && (
                   <div data-shoot="gates-elsewhere" className="flex flex-wrap items-center gap-2 px-6 pt-2.5">
-                    <span className="i-label">Gating another delivery path</span>
+                    <span className="i-label">Also gating</span>
                     {elsewhere.map(([id, count]) => (
                       <button
                         key={id}
@@ -453,8 +452,8 @@ export default function DecisionsPageClient() {
             style={{ background: "var(--i-panel)", borderTop: "1px solid var(--i-border)" }}
           >
             <span className="i-label">Shared</span>
-            <Count value={counts.open} label="open decisions" tone={LANE_COLOR.open} shoot="count-open" />
-            <Count value={counts.gating} label="gating · subset of open" tone={LANE_COLOR.gating} shoot="count-gating" />
+            <Count value={gatingAll.length} label="gating delivery" tone={LANE_COLOR.gating} shoot="count-gating" />
+            <Count value={openLane.length} label="open · not gating" tone={LANE_COLOR.open} shoot="count-open" />
             <Count value={candidates.length} label="candidates" tone={LANE_COLOR.candidate} shoot="count-candidates" />
             <Count value={decided.length} label="decided" tone={LANE_COLOR.decided} shoot="count-decided" />
             <Count value={dismissed.length} label="dismissed" tone="var(--i-reality)" shoot="count-dismissed" />

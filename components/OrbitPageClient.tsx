@@ -141,9 +141,6 @@ export default function OrbitPageClient() {
   const places = useMemo(() => (graph ? layoutOrbit(graph, SIZE) : new Map()), [graph]);
   const related = useMemo(() => (graph && selected ? relatedTo(graph, selected) : null), [graph, selected]);
   const node = graph?.nodes.find((n) => n.id === selected) ?? null;
-  const activeSerialGates = (d.data?.decisions ?? []).filter((decision) => decision.status === "open" && decision.gate?.serial);
-  const visibleGateCount = graph?.nodes.filter((item) => item.kind === "gate").length ?? 0;
-  const outsideGateCount = Math.max(0, activeSerialGates.length - visibleGateCount);
 
   const strip = (
     <ScenarioStrip
@@ -376,10 +373,6 @@ export default function OrbitPageClient() {
           style={{ background: "var(--i-panel)", borderLeft: "1px solid var(--i-border)" }}
           data-shoot="orbit-inspector"
         >
-          <div className="mb-3 rounded-md border border-[var(--i-border)] bg-[var(--i-recess)] p-2.5 text-[10.5px] leading-relaxed text-[var(--i-text-soft)]" data-shoot="orbit-semantics">
-            Solid dependency nodes come from <strong className="text-[var(--i-text)]">Scope.dependsOnScopeIds</strong>. Amber clamps are serial <strong className="text-[var(--i-text)]">DecisionGate</strong> effects whose canonical target is in this focused path.
-            {outsideGateCount > 0 && <span className="mt-1 block text-[var(--i-amber)]">{outsideGateCount} open serial {outsideGateCount === 1 ? "gate targets" : "gates target"} another delivery path and {outsideGateCount === 1 ? "is" : "are"} intentionally not drawn here.</span>}
-          </div>
           {!node && (
             <div className="i-label" data-shoot="orbit-inspector-rest">
               Touch anything to see what it does to the date.
