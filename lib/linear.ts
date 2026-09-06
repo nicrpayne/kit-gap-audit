@@ -34,6 +34,9 @@ export interface LinearIssueSummary {
   // Null unless the issue is in a "completed" state. Powers "what shipped
   // since the last report" without a second fetch.
   completedAt: string | null;
+  /** Linear's canonical content-update timestamp. Optional so historical
+      fixtures remain valid; live reads always request it. */
+  updatedAt?: string | null;
   // THE FEATURE LAYER. Linear has no first-class "Feature" entity -- what it
   // has is issue nesting (parent/children) and Projects. After the Epic ->
   // Feature -> Issue -> Sub-issue reorganisation, a FEATURE is the ancestor
@@ -69,6 +72,7 @@ const SCOPED_ISSUES_QUERY = `
         description
         estimate
         completedAt
+        updatedAt
         state { name type }
         assignee { name }
         labels { nodes { name } }
@@ -88,6 +92,7 @@ interface ScopedIssuesQueryData {
       description: string | null;
       estimate: number | null;
       completedAt: string | null;
+      updatedAt: string;
       state: { name: string; type: string } | null;
       assignee: { name: string } | null;
       labels: { nodes: { name: string }[] };
@@ -166,6 +171,7 @@ export async function getScopedIssues(scope: ScopeFilter): Promise<LinearIssueSu
         assignee: node.assignee?.name ?? null,
         labels: node.labels.nodes.map((l) => l.name),
         completedAt: node.completedAt ?? null,
+        updatedAt: node.updatedAt ?? null,
         parentIdentifier: node.parent?.identifier ?? null,
         parentTitle: node.parent?.title ?? null,
         projectName: node.project?.name ?? null,

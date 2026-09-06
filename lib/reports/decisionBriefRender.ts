@@ -103,7 +103,7 @@ export function renderDecisionBriefMarkdown(brief: DecisionBriefV1): string {
   pushSource(brief.movable.capacity.source);
 
   out.push("## Timeline");
-  out.push("**Current Forecast (LIVE)**");
+  out.push(`**Live Forecast · ${brief.timeline.currentForecast.source.currentness.toUpperCase()} · as of ${date(brief.timeline.currentForecast.source.asOf)}**`);
   out.push(`[Likely ${date(brief.timeline.currentForecast.value.likelyDate)} · ${date(brief.timeline.currentForecast.value.earliestDate)}–${date(brief.timeline.currentForecast.value.latestDate)}](${brief.timeline.currentForecast.value.href})`);
   const milestone = brief.timeline.nextMilestone.value;
   out.push(milestone ? `Next committed/current milestone: ${milestone.title} · ${date(milestone.date)}.` : "Next committed/current milestone: MISSING.");

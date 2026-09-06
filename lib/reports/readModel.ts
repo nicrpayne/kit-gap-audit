@@ -171,7 +171,7 @@ export async function loadDecisionBriefOwnerInputs(
     },
     forecast: {
       sourceId: `forecast:${scope.id}:${generatedAt}`,
-      asOf: generatedAt,
+      asOf: forecast.forecastSource.asOf.toISOString(),
       earliestDate: forecast.earliestDate.toISOString(),
       likelyDate: forecast.likelyDate.toISOString(),
       latestDate: forecast.latestDate.toISOString(),

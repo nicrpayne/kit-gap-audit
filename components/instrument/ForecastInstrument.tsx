@@ -25,9 +25,10 @@ import ScenarioStrip, { chipsFor } from "@/components/instrument/ScenarioStrip";
 import LivingForecast, { type GateMark } from "@/components/instrument/LivingForecast";
 import ForecastDetail from "@/components/instrument/ForecastDetail";
 import { GateDetail, TargetDetail, ContextDetail, RealityDetail } from "@/components/instrument/ForecastTools";
-import { useProject, EMPTY_SCENARIO, fmtDay, deltaLabel, deltaTone } from "@/lib/instrument/useProject";
+import { useProject, EMPTY_SCENARIO, fmtDay, fmtFull, deltaLabel, deltaTone } from "@/lib/instrument/useProject";
 import { confidenceAtDay } from "@/lib/forecast/simulate";
 import { formatCapacity } from "@/lib/capacity/limits";
+import { currentnessLabel, sourceCurrentness } from "@/lib/truth/currentness";
 
 type Tool =
   | null
@@ -163,6 +164,7 @@ export default function ForecastInstrument() {
   // still shows here (tagged), because the shared scenario is one world.
   const capValue = m.scenario.capacityOverrideByScope[scope.scopeId] ?? scope.teamCapacity;
   const capOverridden = m.scenario.capacityOverrideByScope[scope.scopeId] !== undefined;
+  const freshness = sourceCurrentness(scope.forecastSource.asOf, new Date());
 
   const setOverride = (day: number) =>
     setTargetOverride((prev) => new Map(prev).set(scope.scopeId, day));
@@ -180,6 +182,17 @@ export default function ForecastInstrument() {
       onSelectScope={setSelected}
     >
       <div className="flex-1 min-h-0 relative" style={{ background: "var(--i-void)" }}>
+        <div
+          data-shoot="forecast-currentness"
+          className="absolute right-5 top-4 z-20 rounded-md border px-3 py-2 text-[10px] uppercase tracking-[0.12em]"
+          style={{
+            color: freshness.currentness === "stale" ? "var(--i-amber)" : "var(--i-text-soft)",
+            borderColor: freshness.currentness === "stale" ? "var(--i-amber)" : "var(--i-border)",
+            background: freshness.currentness === "stale" ? "var(--i-amber-soft)" : "var(--i-panel)",
+          }}
+        >
+          Live owner · {currentnessLabel(freshness)} · as of {fmtFull(new Date(freshness.asOf))}{scope.forecastSource.availability === "empty" ? " · source coverage empty" : ""}
+        </div>
         <LivingForecast
           key={scope.scopeId}
           result={res}

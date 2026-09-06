@@ -162,7 +162,7 @@ export function OpenLane({
       emptyShoot="open-empty"
       tone={LANE_COLOR.open}
       title="Open bank"
-      sub="Accepted · unresolved · no gate"
+      sub="Accepted · unresolved · not currently gating"
       count={decisions.length}
       glyph={<Clock />}
       empty="Nothing unresolved here."

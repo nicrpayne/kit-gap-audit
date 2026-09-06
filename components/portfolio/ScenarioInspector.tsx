@@ -21,6 +21,7 @@ import {
   type MomentumTrend,
 } from "@/lib/momentum/trend";
 import AskChips from "@/components/AskChips";
+import type { CapacityForecastContract } from "@/lib/capacity/contract";
 
 export type InspectorFocus = "capacity" | "switchCost" | "momentum" | null;
 
@@ -57,6 +58,7 @@ interface ScenarioInspectorProps {
   realityCapacity: number;
   scenarioCapacity: number;
   capacityBasis: CapacityBasisView;
+  capacityContract: CapacityForecastContract;
   onSaveRealityCapacity: (fte: number) => Promise<void>;
   onManagePeople: () => void;
   switchCostPct: number;
@@ -84,6 +86,7 @@ export default function ScenarioInspector({
   realityCapacity,
   scenarioCapacity,
   capacityBasis,
+  capacityContract,
   onSaveRealityCapacity,
   onManagePeople,
   switchCostPct,
@@ -106,7 +109,7 @@ export default function ScenarioInspector({
     target?.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
   }, [focus]);
 
-  const capacityChanged = Math.abs(scenarioCapacity - realityCapacity) > 1e-6;
+  const capacityChanged = dirty && Math.abs(scenarioCapacity - realityCapacity) > 1e-6;
 
   const explanation = useMemo(
     () =>
@@ -186,6 +189,7 @@ export default function ScenarioInspector({
         scenarioCapacity={scenarioCapacity}
         capacityChanged={capacityChanged}
         basis={capacityBasis}
+        contract={capacityContract}
         onSave={onSaveRealityCapacity}
         onManagePeople={onManagePeople}
         highlighted={focus === "capacity"}
@@ -367,6 +371,7 @@ const RealitySection = function RealitySection({
   scenarioCapacity,
   capacityChanged,
   basis,
+  contract,
   onSave,
   onManagePeople,
   highlighted,
@@ -377,6 +382,7 @@ const RealitySection = function RealitySection({
   scenarioCapacity: number;
   capacityChanged: boolean;
   basis: CapacityBasisView;
+  contract: CapacityForecastContract;
   onSave: (fte: number) => Promise<void>;
   onManagePeople: () => void;
   highlighted: boolean;
@@ -414,17 +420,32 @@ const RealitySection = function RealitySection({
       className="px-4 py-3.5"
       style={{ borderBottom: "1px solid var(--i-border)", background: highlighted ? "rgba(155,140,250,0.05)" : undefined }}
     >
-      <div className="i-label mb-2">Reality capacity</div>
+      <div className="i-label mb-2">Capacity truth</div>
 
-      <div className="flex items-baseline gap-2">
-        <span className="i-readout text-[20px] leading-none text-[var(--i-text)]">
-          {realityCapacity.toFixed(1)} <span className="text-[11px] font-normal">FTE</span>
-        </span>
-        {capacityChanged && (
-          <span className="text-[11px]" style={{ color: "var(--i-violet)" }}>
-            simulating {scenarioCapacity.toFixed(1)}
-          </span>
-        )}
+      <div className="space-y-1.5 rounded-md border border-[var(--i-border)] bg-[var(--i-recess)] p-2.5 text-[11px]">
+        <div className="flex items-baseline justify-between gap-3">
+          <span className="text-[var(--i-text-soft)]">Forecast basis</span>
+          <strong className="i-readout text-[var(--i-text)]">{contract.forecastEffectiveFte.toFixed(1)} FTE</strong>
+        </div>
+        <div className="text-[10px] text-[var(--i-amber)]">
+          {contract.source === "allocations" ? "named allocations · reconciled" : `${contract.source === "inferred" ? "legacy inferred" : "legacy explicit"} · unreconciled`}
+        </div>
+        <div className="flex items-baseline justify-between gap-3 border-t border-[var(--i-border)] pt-1.5">
+          <span className="text-[var(--i-text-soft)]">Named allocations</span>
+          <strong className="i-readout text-[var(--i-text)]">{contract.namedEffectiveFte.toFixed(1)} FTE</strong>
+        </div>
+        <div className="text-[10px] text-[var(--i-text-faint)]">{contract.namedRawFte.toFixed(1)} raw · {contract.source === "allocations" ? "configured" : "not configured for this project"}</div>
+        <div className="flex items-baseline justify-between gap-3 border-t border-[var(--i-border)] pt-1.5">
+          <span className="text-[var(--i-text-soft)]">Scenario input</span>
+          <strong className="i-readout" style={{ color: capacityChanged ? "var(--i-violet)" : "var(--i-text)" }}>{scenarioCapacity.toFixed(1)} FTE</strong>
+        </div>
+        <div className="text-[10px] text-[var(--i-text-faint)]">
+          {capacityChanged
+            ? "hypothetical · not saved to Reality"
+            : contract.reconciles
+              ? "same as current Forecast basis"
+              : "mixer baseline · named allocations only; does not replace the legacy Forecast basis"}
+        </div>
       </div>
 
       {basis.kind === "inferred" && (

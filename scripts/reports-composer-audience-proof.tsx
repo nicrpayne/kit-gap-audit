@@ -71,7 +71,7 @@ assert(siteHandoffPrompt(bundle).includes("Do not fetch live Signal data"));
 assert.equal(bundle.presentation.snapshotFingerprint, fingerprint, "screen/Site bundle shares the snapshot identity");
 assert(bundle.presentation.modules.length === baseRecipe.modules.length, "screen/Site modules come from the same recipe");
 const timelineRecipe = buildBriefRecipe("operator", "delivery-review", brief);
-assert(renderAudienceBriefMarkdown(brief, timelineRecipe).includes("Current Forecast · LIVE"));
+assert(renderAudienceBriefMarkdown(brief, timelineRecipe).includes("Live Forecast · CURRENT · as of Sep 4, 2026"));
 assert(renderAudienceBriefMarkdown(brief, baseRecipe).includes("ReportHistory · HISTORICAL"));
 
 const missingCapacityBrief = assembleDecisionBrief(missingNamedCapacityFixture());
