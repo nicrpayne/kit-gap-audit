@@ -221,6 +221,7 @@ const cameraBeforeReview = await camera();
 const selectionBeforeReview = await selected();
 await frame.locator('#brain-card [data-act="view"]').click({ force: true });
 await page.locator('[data-shoot="finding-review-sheet"]').waitFor({ timeout: 10_000 });
+await page.locator('[data-review-variant="sheet"]').waitFor({ timeout: 10_000 });
 check("22 Review finding opens the governed second-level side sheet", await page.locator('[data-review-variant="sheet"]').count() === 1);
 await shot("03-governed-review-sheet");
 await page.locator('[data-shoot="close-full-review"]').click({ force: true });
@@ -255,18 +256,25 @@ check("31 embedded Audit widgets receive shared semantic tokens", await body.eva
   return ["--signal-reality", "--signal-border-selected", "--signal-focus-ring", "--signal-widget-fill"]
     .every(name => style.getPropertyValue(name).trim().length > 0);
 }));
-check("32 touched Audit controls keep 32px hit targets", await frame.locator("#fab-menu, #fab-legend, #brain-search, #signal-overview-close").evaluateAll(elements =>
-  elements.every(element => {
+const hitTargets = await frame.locator("#fab-menu, #fab-legend, #brain-search, #signal-overview-close").evaluateAll(elements =>
+  elements.map(element => {
     const rect = element.getBoundingClientRect();
-    return rect.width >= 32 && rect.height >= 32;
+    return { id: element.id, width: rect.width, height: rect.height };
   })
-));
+);
+check("32 touched Audit controls keep 32px hit targets",
+  hitTargets.filter(target => target.width > 0 && target.height > 0)
+    .every(target => target.width >= 32 && target.height >= 32), JSON.stringify(hitTargets));
 const selectedLayout = frame.locator("#seg-layout button.on");
 await selectedLayout.focus();
-check("33 selected and focused Audit states remain distinguishable", await selectedLayout.evaluate(element => {
+await page.keyboard.press("Tab");
+await page.keyboard.press("Shift+Tab");
+const selectedFocusStyle = await selectedLayout.evaluate(element => {
   const style = getComputedStyle(element);
-  return style.outlineStyle !== "none" && style.boxShadow !== "none";
-}));
+  return { outlineStyle: style.outlineStyle, outlineWidth: style.outlineWidth, boxShadow: style.boxShadow };
+});
+check("33 selected and focused Audit states remain distinguishable",
+  selectedFocusStyle.outlineStyle !== "none" && selectedFocusStyle.boxShadow !== "none", JSON.stringify(selectedFocusStyle));
 await page.emulateMedia({ reducedMotion: "reduce" });
 check("34 reduced-motion removes Inspector entrance animation", await frame.locator("#brain-card").evaluate(element =>
   getComputedStyle(element).animationName === "none"

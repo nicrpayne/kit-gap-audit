@@ -35,6 +35,7 @@ import TimelinePageClient from "@/components/TimelinePageClient";
 import type { ControlRoomReading, Point, Series } from "@/lib/control-room/read";
 import type { ProjectPayload, SuiteScenario } from "@/lib/instrument/useProject";
 import { composeFeatures } from "@/lib/scope/features";
+import { formatDateOnly } from "@/lib/time/dateContract";
 
 // ── THE APPROVED PALETTE ───────────────────────────────────────────────
 //
@@ -60,7 +61,8 @@ const HUE_SOFT: Record<keyof typeof HUE, string> = {
 
 const dLong = (d: Date) => d.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
 const dShort = (d: Date) => d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
-const MONTH = (d: Date) => d.toLocaleDateString(undefined, { month: "short" }).toUpperCase();
+const deliveryDay = (d: Date) => formatDateOnly(d, { month: "short", day: "numeric" });
+const MONTH = (d: Date) => formatDateOnly(d, { month: "short" }).toUpperCase();
 const ago = (d: Date, now: Date) => {
   const h = (now.getTime() - d.getTime()) / 3600000;
   if (h < 1) return `${Math.max(1, Math.round(h * 60))}m ago`;
@@ -221,7 +223,7 @@ export default function CommandWorkspace({
             hue="outcome"
             label="Likely Outcome"
             question={r.time.forecastCurrentness === "stale" ? `Live owner · Stale ${r.time.forecastAgeDays}d · as of ${dShort(r.time.forecastAsOf)}` : "Live owner · Current"}
-            a={r.outcome.likely ? dShort(r.outcome.likely) : "—"}
+            a={r.outcome.likely ? deliveryDay(r.outcome.likely) : "—"}
             aLabel={r.outcome.gatedBy ? `${r.outcome.gatedBy} Lands Last` : "Nothing Simulated"}
             aTone={outcomeHue}
             // Confidence is per project, against that project's own target.
@@ -233,9 +235,9 @@ export default function CommandWorkspace({
             series={r.outcome.confidenceHistory.find((s) => s.id === r.outcome.gatedByScopeId)?.points ?? null}
             reality={
               scenarioActive && realityLikely
-                ? r.outcome.likely && dShort(realityLikely) === dShort(r.outcome.likely)
-                  ? `${dShort(realityLikely)} · unchanged`
-                  : dShort(realityLikely)
+                ? r.outcome.likely && deliveryDay(realityLikely) === deliveryDay(r.outcome.likely)
+                  ? `${deliveryDay(realityLikely)} · unchanged`
+                  : deliveryDay(realityLikely)
                 : null
             }
             href="/forecast"

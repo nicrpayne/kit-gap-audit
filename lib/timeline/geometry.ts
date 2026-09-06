@@ -1,3 +1,5 @@
+import { formatDateOnly } from "@/lib/time/dateContract";
+
 // TIME -> PIXELS.
 //
 // One absolute axis, shared by every lane. That is the whole reason the
@@ -161,11 +163,9 @@ export function windowFollowing(
 }
 
 export function fmtDay(t: number): string {
-  const d = new Date(t);
-  return `${MONTHS[d.getUTCMonth()]} ${d.getUTCDate()}`;
+  return formatDateOnly(t, { month: "short", day: "numeric" });
 }
 
 export function fmtFull(t: number): string {
-  const d = new Date(t);
-  return `${MONTHS[d.getUTCMonth()]} ${d.getUTCDate()}, ${d.getUTCFullYear()}`;
+  return formatDateOnly(t, { month: "short", day: "numeric", year: "numeric" });
 }

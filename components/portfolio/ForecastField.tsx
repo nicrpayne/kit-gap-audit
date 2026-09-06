@@ -25,6 +25,7 @@
 import { useId, useMemo, useRef } from "react";
 import type { SimulationResult } from "@/lib/forecast/simulate";
 import { confidenceAtDay } from "@/lib/forecast/simulate";
+import { formatDateOnly, toDateOnly } from "@/lib/time/dateContract";
 
 export interface FieldScope {
   scopeId: string;
@@ -81,10 +82,10 @@ const RIDGE_BOTTOM = 18;
 const PEAK_FILL = 0.86;
 
 function fmtShort(d: Date): string {
-  return d.toLocaleDateString(undefined, { month: "short", day: "numeric", timeZone: "UTC" });
+  return formatDateOnly(d, { month: "short", day: "numeric" });
 }
 function fmtLong(d: Date): string {
-  return d.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" });
+  return formatDateOnly(d, { month: "short", day: "numeric", year: "numeric" });
 }
 function addDays(date: Date, days: number): Date {
   const d = new Date(date);
@@ -97,7 +98,7 @@ function dayOffset(startDate: Date, date: Date): number {
 // Move an ISO date (or a full ISO timestamp from the DB) by whole days,
 // staying in UTC calendar days and returning a plain YYYY-MM-DD.
 function shiftIsoDay(iso: string, days: number): string {
-  const d = new Date(iso);
+  const d = new Date(`${toDateOnly(iso)}T00:00:00.000Z`);
   const utc = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
   utc.setUTCDate(utc.getUTCDate() + days);
   return utc.toISOString().slice(0, 10);

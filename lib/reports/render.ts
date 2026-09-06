@@ -1,3 +1,5 @@
+import { formatDateOnly, formatInstant, toInstant } from "@/lib/time/dateContract";
+
 // Pure markdown rendering for a leadership report -- no DB/network here,
 // so it's easy to reason about and test against fixed input. The output
 // is what gets stored verbatim in Report.summaryMarkdown: the historical
@@ -42,9 +44,10 @@ export interface ReportData {
   bestScenario: ReportScenario | null; // largest deltaDays improvement available
 }
 
-function fmtDate(d: Date): string {
-  return d.toLocaleDateString(undefined, { month: "long", day: "numeric", year: "numeric" });
-}
+const fmtCalendarDate = (d: Date) => formatDateOnly(d, { month: "long", day: "numeric", year: "numeric" });
+const fmtInstantDate = (d: Date) => formatInstant(toInstant(d), {
+  timeZone: "UTC", month: "long", day: "numeric", year: "numeric",
+});
 
 function deltaPhrase(days: number): string {
   if (days === 0) return "unchanged";
@@ -55,19 +58,19 @@ export function renderReportMarkdown(data: ReportData): string {
   const lines: string[] = [];
 
   lines.push(`# ${data.scopeName} — Release Update`);
-  lines.push(`*${fmtDate(data.generatedAt)}*`);
+  lines.push(`*${fmtInstantDate(data.generatedAt)}*`);
   lines.push("");
 
   lines.push(`## Forecast`);
-  lines.push(`**Likely release: ${fmtDate(data.likelyDate)}**`);
+  lines.push(`**Likely release: ${fmtCalendarDate(data.likelyDate)}**`);
   if (data.targetDate) {
     lines.push(
-      `${data.confidenceAtTarget ?? "?"}% chance of landing on or before the target date (${fmtDate(data.targetDate)}).`
+      `${data.confidenceAtTarget ?? "?"}% chance of landing on or before the target date (${fmtCalendarDate(data.targetDate)}).`
     );
   }
-  lines.push(`Range: ${fmtDate(data.earliestDate)} – ${fmtDate(data.latestDate)}.`);
+  lines.push(`Range: ${fmtCalendarDate(data.earliestDate)} – ${fmtCalendarDate(data.latestDate)}.`);
   if (data.previousReportAt && data.likelyDateDeltaDays !== null) {
-    lines.push(`Since the last report (${fmtDate(data.previousReportAt)}): the likely date moved **${deltaPhrase(data.likelyDateDeltaDays)}**.`);
+    lines.push(`Since the last report (${fmtInstantDate(data.previousReportAt)}): the likely date moved **${deltaPhrase(data.likelyDateDeltaDays)}**.`);
   }
   lines.push("");
 

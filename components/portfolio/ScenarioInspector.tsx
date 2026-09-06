@@ -22,6 +22,7 @@ import {
 } from "@/lib/momentum/trend";
 import AskChips from "@/components/AskChips";
 import type { CapacityForecastContract } from "@/lib/capacity/contract";
+import { formatDateOnly } from "@/lib/time/dateContract";
 
 export type InspectorFocus = "capacity" | "switchCost" | "momentum" | null;
 
@@ -68,7 +69,7 @@ interface ScenarioInspectorProps {
 }
 
 function formatDate(d: Date): string {
-  return d.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+  return formatDateOnly(d, { month: "short", day: "numeric", year: "numeric" });
 }
 function moveColor(deltaDays: number): string {
   return deltaDays < 0 ? "var(--i-mint)" : deltaDays > 0 ? "var(--i-red)" : "var(--i-text-soft)";

@@ -7,9 +7,10 @@ import type { ForecastSnapshot, TimelineLane } from "@/lib/timeline/entries";
  * asked the same question and test output never depends on the wall clock. */
 export const PRODUCTION_HARDENING_FIXTURE = {
   id: "production-hardening-2-live-truth-v1",
-  now: "2026-09-05T12:00:00.000Z",
+  now: "2026-09-06T03:03:40.000Z",
   forecastAsOf: "2026-08-05T12:00:00.000Z",
-  likelyDate: "2026-09-17T00:00:00.000Z",
+  rawLikelyValue: "2026-09-18T03:03:40.000Z",
+  likelyDate: "2026-09-18",
   historicalReportAsOf: "2026-08-01T12:00:00.000Z",
   audit: {
     objects: 438,

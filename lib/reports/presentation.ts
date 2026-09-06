@@ -1,4 +1,5 @@
 import type { DecisionBriefV1, SourceStamp } from "./decisionBrief";
+import { formatDateOnly } from "@/lib/time/dateContract";
 import { briefPayloadFingerprint } from "./decisionBriefRender";
 import {
   AUDIENCE_LABELS,
@@ -80,7 +81,7 @@ export interface InteractiveBriefBundleV1 {
 }
 
 function isoDate(iso: string | null): string {
-  return iso ? new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" }) : "MISSING";
+  return iso ? formatDateOnly(iso, { month: "short", day: "numeric", year: "numeric" }) : "MISSING";
 }
 
 export function sourceForModule(brief: DecisionBriefV1, id: BriefModuleId): SourceStamp {

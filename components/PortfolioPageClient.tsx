@@ -47,6 +47,7 @@ import type { DependencyDelta, DependentDelta } from "@/lib/portfolio/explain";
 import { contextualHref } from "@/lib/shell/context";
 import { useProjectParam } from "@/lib/shell/useProjectParam";
 import type { CapacityForecastContract } from "@/lib/capacity/contract";
+import { formatDateOnly } from "@/lib/time/dateContract";
 
 // The Instrument. GET /api/portfolio/inputs is the one expensive network
 // call (Linear + findings + context, per Scope), fetched once on mount;
@@ -158,7 +159,7 @@ function axisTicks(startDate: Date, minDay: number, maxDay: number): { day: numb
     for (let day = first; day <= maxDay; day += dayStep) {
       ticks.push({
         day,
-        label: addDays(startDate, day).toLocaleDateString(undefined, { month: "short", day: "numeric", timeZone: "UTC" }),
+        label: formatDateOnly(addDays(startDate, day), { month: "short", day: "numeric" }),
       });
     }
     return ticks;
@@ -174,7 +175,7 @@ function axisTicks(startDate: Date, minDay: number, maxDay: number): { day: numb
     if (day >= minDay) {
       ticks.push({
         day,
-        label: cursor.toLocaleDateString(undefined, { month: "short", year: "2-digit", timeZone: "UTC" }),
+        label: formatDateOnly(cursor, { month: "short", year: "2-digit" }),
       });
     }
     cursor.setUTCMonth(cursor.getUTCMonth() + step);
@@ -894,7 +895,7 @@ export default function PortfolioPageClient() {
         accent: CHANNEL_ACCENTS[i % CHANNEL_ACCENTS.length],
         // The SAME simulation result the swim lane above is drawing.
         likelyDate: p
-          ? p.likelyDate.toLocaleDateString(undefined, { month: "short", day: "numeric", timeZone: "UTC" })
+          ? formatDateOnly(p.likelyDate, { month: "short", day: "numeric" })
           : "—",
         deltaDays,
         raw: reading.raw,
@@ -989,7 +990,7 @@ export default function PortfolioPageClient() {
   const spreadDays = selectedActive
     ? Math.round(selectedActive.percentiles.p90 - selectedActive.percentiles.p10)
     : null;
-  const fmtDay = (d: Date) => d.toLocaleDateString(undefined, { month: "short", day: "numeric", timeZone: "UTC" });
+  const fmtDay = (d: Date) => formatDateOnly(d, { month: "short", day: "numeric" });
   const spreadRange =
     selectedActive && startDateObj
       ? {

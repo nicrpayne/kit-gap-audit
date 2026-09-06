@@ -5,6 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { computeForecast } from "@/lib/forecast/compute";
 import { computeChangesSince } from "@/lib/reports/changes";
 import { capacityForecastContract } from "@/lib/capacity/contract";
+import { toDateOnly } from "@/lib/time/dateContract";
 import type { PolicyEvaluatedCompleteness } from "@/lib/context/sourcePolicy";
 import {
   assembleDecisionBrief,
@@ -160,7 +161,7 @@ export async function loadDecisionBriefOwnerInputs(
     generatedAt,
     mode: options?.mode ?? "reality",
     scenarioId: options?.scenarioId ?? null,
-    project: { id: scope.id, name: scope.name, targetDate: scope.targetDate?.toISOString() ?? null, asOf: generatedAt },
+    project: { id: scope.id, name: scope.name, targetDate: scope.targetDate ? toDateOnly(scope.targetDate) : null, asOf: generatedAt },
     context: {
       snapshotId: contextSnapshot?.id ?? null,
       packageId: contextSnapshot?.packageId ?? null,
@@ -172,20 +173,20 @@ export async function loadDecisionBriefOwnerInputs(
     forecast: {
       sourceId: `forecast:${scope.id}:${generatedAt}`,
       asOf: forecast.forecastSource.asOf.toISOString(),
-      earliestDate: forecast.earliestDate.toISOString(),
-      likelyDate: forecast.likelyDate.toISOString(),
-      latestDate: forecast.latestDate.toISOString(),
+      earliestDate: toDateOnly(forecast.earliestDate),
+      likelyDate: toDateOnly(forecast.likelyDate),
+      latestDate: toDateOnly(forecast.latestDate),
       confidenceAtTarget: forecast.confidenceAtTarget,
       remainingIssueCount: forecast.breakdown.remainingIssueCount,
       unticketedFindingCount: forecast.breakdown.unticketedFindingCount,
       remainingEffortDays: forecast.breakdown.remainingEffortDays,
       decisionDelayDays: forecast.breakdown.decisionDelayDays,
-      scenarios: forecast.scenarios.map((scenario) => ({ ...scenario, likelyDate: scenario.likelyDate.toISOString() })),
+      scenarios: forecast.scenarios.map((scenario) => ({ ...scenario, likelyDate: toDateOnly(scenario.likelyDate) })),
     },
     previousReport: previousReport ? {
       id: previousReport.id,
       generatedAt: previousReport.generatedAt.toISOString(),
-      likelyDate: previousReport.likelyDate.toISOString(),
+      likelyDate: toDateOnly(previousReport.likelyDate),
       confidenceAtTarget: previousReport.confidenceAtTarget,
     } : null,
     audit: { current: audit.current, prior: audit.prior, comparisonCurrentness: audit.comparisonCurrentness, warnings: audit.warnings },
@@ -196,7 +197,7 @@ export async function loadDecisionBriefOwnerInputs(
       title: decision.title,
       status: decision.status,
       owner: decision.owner,
-      neededBy: decision.neededBy?.toISOString() ?? null,
+      neededBy: decision.neededBy ? toDateOnly(decision.neededBy) : null,
       createdAt: decision.createdAt.toISOString(),
       evidenceCount: decision.evidence.length,
       gate: decision.gate ? {
@@ -223,8 +224,8 @@ export async function loadDecisionBriefOwnerInputs(
       asOf: generatedAt,
       events: timelineEvents.map((event) => ({
         ...event,
-        date: event.date.toISOString(),
-        endDate: event.endDate?.toISOString() ?? null,
+        date: toDateOnly(event.date),
+        endDate: event.endDate ? toDateOnly(event.endDate) : null,
         temporalState: event.temporalState === "planned" ? "planned" as const : "occurred" as const,
       })),
     },

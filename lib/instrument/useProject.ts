@@ -16,6 +16,7 @@ import { applyScenarioInputDelta, type ScenarioInputDelta, type ScenarioInputSco
 import { computeMomentum } from "@/lib/momentum/compute";
 import { computeMomentumTrend, type MomentumTrend } from "@/lib/momentum/trend";
 import { realityRevision, subscribeReality } from "@/lib/instrument/reality";
+import { formatDateOnly } from "@/lib/time/dateContract";
 
 // The provenance the Scope instrument reads. Produced by describeItems in
 // lib/forecast/compute.ts by joining each simulated item back to the Linear
@@ -562,9 +563,9 @@ export function useProject(): ProjectModel {
 // Shared formatting so seven surfaces can't disagree about what a date or a
 // delta looks like.
 export const fmtDay = (d: Date) =>
-  d.toLocaleDateString(undefined, { month: "short", day: "numeric", timeZone: "UTC" });
+  formatDateOnly(d, { month: "short", day: "numeric" });
 export const fmtFull = (d: Date) =>
-  d.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" });
+  formatDateOnly(d, { month: "short", day: "numeric", year: "numeric" });
 export const deltaLabel = (days: number) =>
   days === 0 ? "no change" : days < 0 ? `${Math.abs(days)}d earlier` : `${days}d later`;
 export const deltaTone = (days: number) =>

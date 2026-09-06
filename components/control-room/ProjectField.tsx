@@ -30,6 +30,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { ProjectField as Field, Selection } from "@/lib/control-room/field";
 import { reachOf } from "@/lib/control-room/field";
+import { formatDateOnly } from "@/lib/time/dateContract";
 
 const HEAD = 168; // the fixed label column, in px
 const AXIS = 26; // room for the date rule at the foot
@@ -49,7 +50,7 @@ export function fieldHeight(laneCount: number): number {
   return Math.max(1, laneCount) * LANE_MAX + AXIS;
 }
 
-const dShort = (d: Date) => d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+const dShort = (d: Date) => formatDateOnly(d, { month: "short", day: "numeric" });
 
 export default function ProjectField({
   field,
@@ -122,7 +123,7 @@ export default function ProjectField({
       const day = (d.getTime() - field.startDate.getTime()) / 86400000;
       if (day > field.endDay) break;
       if (day >= field.startDay)
-        ticks.push({ at: day, label: d.toLocaleDateString(undefined, { month: "short" }).toUpperCase() });
+        ticks.push({ at: day, label: formatDateOnly(d, { month: "short" }).toUpperCase() });
       d.setMonth(d.getMonth() + 1);
     }
   }
