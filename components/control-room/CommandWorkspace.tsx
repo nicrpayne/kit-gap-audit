@@ -122,7 +122,7 @@ export default function CommandWorkspace({
   scenarioActive: boolean;
   realityLikely: Date | null;
 }) {
-  const outcomeHue = scenarioActive ? "var(--i-violet)" : HUE.outcome;
+  const outcomeHue = scenarioActive ? "var(--i-violet)" : r.time.forecastCurrentness === "stale" ? "var(--i-amber)" : HUE.outcome;
 
   // WHAT CHANGED, with its subjects kept distinct. The same work item title
   // can land on two different projects — the seed has `jsa` and `jsa-seed`,
@@ -220,7 +220,7 @@ export default function CommandWorkspace({
             index={4}
             hue="outcome"
             label="Likely Outcome"
-            question="What we believe will happen"
+            question={r.time.forecastCurrentness === "stale" ? `Live owner · Stale ${r.time.forecastAgeDays}d · as of ${dShort(r.time.forecastAsOf)}` : "Live owner · Current"}
             a={r.outcome.likely ? dShort(r.outcome.likely) : "—"}
             aLabel={r.outcome.gatedBy ? `${r.outcome.gatedBy} Lands Last` : "Nothing Simulated"}
             aTone={outcomeHue}
@@ -713,25 +713,24 @@ export default function CommandWorkspace({
                       key={c.id}
                       href={c.href}
                       data-shoot="cr-constraint"
-                      className="flex items-baseline gap-[8px] rounded-[3px] hover:bg-[color-mix(in_srgb,var(--i-amber)_7%,transparent)]"
+                      className="flex items-start gap-[8px] rounded-[3px] py-[2px] hover:bg-[color-mix(in_srgb,var(--i-amber)_7%,transparent)]"
                       title={`${c.detail} — ${c.label}`}
                     >
-                      <span className="w-[56px] shrink-0 whitespace-nowrap text-right leading-[16px]">
+                      <span className="flex w-[58px] shrink-0 flex-col items-end leading-[13px]">
                         <span className="i-readout text-[12.5px]" style={{ color: "var(--i-amber)" }}>
                           {mag}
                         </span>
                         {unit && (
-                          <span className="text-[9px]" style={{ color: "color-mix(in srgb, var(--i-amber) 62%, var(--i-text-faint))" }}>
-                            {" "}
+                          <span className="text-[8.5px]" style={{ color: "color-mix(in srgb, var(--i-amber) 62%, var(--i-text-faint))" }}>
                             {unit}
                           </span>
                         )}
                       </span>
-                      <span className="min-w-0 flex-1 truncate text-[10.5px] leading-[16px]" style={{ color: "var(--i-text-soft)" }}>
+                      <span className="min-w-0 flex-1 text-[10.5px] leading-[13px] line-clamp-2" style={{ color: "var(--i-text-soft)" }}>
                         {c.detail}
                       </span>
                       {holding && (
-                        <span className="shrink-0 text-[9px] uppercase leading-[16px] tracking-[0.05em]" style={{ color: "var(--i-text-faint)" }}>
+                        <span className="shrink-0 rounded px-1 py-px text-[8px] uppercase leading-[12px] tracking-[0.05em]" style={{ color: "var(--i-text-faint)", border: "1px solid var(--i-border)" }}>
                           {holding}
                         </span>
                       )}
@@ -758,7 +757,7 @@ export default function CommandWorkspace({
                     key={a.id}
                     href={a.href}
                     data-shoot="cr-activity-row"
-                    className="flex items-center gap-[8px] rounded-[3px] leading-[15px] hover:bg-[rgba(243,240,230,0.035)]"
+                    className="flex items-start gap-[8px] rounded-[3px] py-[2px] leading-[14px] hover:bg-[rgba(243,240,230,0.035)]"
                     title={a.note ? `${a.title} — ${a.note}` : a.title}
                   >
                     <span
@@ -766,7 +765,7 @@ export default function CommandWorkspace({
                       className="h-[10px] w-[2px] shrink-0 rounded-full"
                       style={{ background: familyColour(a.family) }}
                     />
-                    <span className="min-w-0 flex-1 truncate text-[10.5px]" style={{ color: "var(--i-text-soft)" }}>
+                    <span className="min-w-0 flex-1 text-[10.5px] line-clamp-2" style={{ color: "var(--i-text-soft)" }}>
                       {a.title}
                       {a.scopeLabel && <span style={{ color: "var(--i-text-faint)" }}> · {a.scopeLabel}</span>}
                       {a.count > 1 && <span style={{ color: "var(--i-text-faint)" }}> ×{a.count}</span>}
@@ -808,9 +807,9 @@ export default function CommandWorkspace({
         />
         <StatusCell
           id="forecast"
-          label="Forecast"
-          value={r.time.lastForecastAt ? dLong(r.time.lastForecastAt) : "never run"}
-          tone="var(--i-amber)"
+          label="Forecast owner"
+          value={`${r.time.forecastCurrentness === "stale" ? `Stale · ${r.time.forecastAgeDays}d` : "Current"} · ${dLong(r.time.forecastAsOf)}`}
+          tone={r.time.forecastCurrentness === "stale" ? "var(--i-amber)" : "var(--i-signal)"}
           href="/forecast"
         />
         <StatusCell
@@ -944,14 +943,14 @@ function Tile({
           smaller, dimmer one, so the eye lands on the headline and only then
           finds the qualifier beside it. Both were 29px in V5, which is why
           neither of them led. */}
-      <div className="flex min-w-0 shrink-0 items-baseline gap-[16px] pt-[6px]">
-        <span className="min-w-0">
+      <div className="flex min-w-0 shrink-0 items-baseline gap-[12px] pt-[6px]">
+        <span className="min-w-0 flex-1">
           <span
             data-shoot={`${shoot}-primary`}
             className="i-readout block truncate leading-none"
             style={{
               color: aTone ?? c,
-              fontSize: a.length > 7 ? 22 : 33,
+              fontSize: a.length > 7 ? 22 : a.length > 5 ? 25 : 33,
               letterSpacing: "-0.015em",
               textShadow: `0 0 22px color-mix(in srgb, ${aTone ?? c} 26%, transparent)`,
             }}
@@ -965,7 +964,7 @@ function Tile({
             {aLabel}
           </span>
         </span>
-        <span className="min-w-0">
+        <span className="min-w-0 max-w-[44%] shrink-0 text-right">
           <span
             data-shoot={`${shoot}-second`}
             className="i-readout block truncate leading-none"

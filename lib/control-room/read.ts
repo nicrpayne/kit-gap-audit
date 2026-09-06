@@ -24,6 +24,7 @@ import { composeFeatures } from "@/lib/scope/features";
 import type { ProjectPayload, SuiteScenario } from "@/lib/instrument/useProject";
 import type { DecisionRow } from "@/lib/decisions/model";
 import type { TimelineEntry, TimelineCandidate, TimelineLane } from "@/lib/timeline/entries";
+import { sourceCurrentness, type SourceCurrentness } from "@/lib/truth/currentness";
 
 const DAY = 86400000;
 const days = (a: Date, b: Date) => (a.getTime() - b.getTime()) / DAY;
@@ -174,6 +175,10 @@ export interface TimeSummary {
   now: Date;
   horizonDays: number | null;
   lastForecastAt: Date | null;
+  /** Source-owner read timestamp, independent of the last saved Report. */
+  forecastAsOf: Date;
+  forecastAgeDays: number;
+  forecastCurrentness: SourceCurrentness;
   nextLandmark: { title: string; date: Date; scopeId: string; inDays: number } | null;
   nextTarget: { name: string; date: Date; scopeId: string; inDays: number } | null;
 }
@@ -502,6 +507,9 @@ export function readControlRoom(i: ControlRoomInput): ControlRoomReading {
     now,
     horizonDays: i.timelineRangeEnd ? Math.round(days(i.timelineRangeEnd, now)) : null,
     lastForecastAt: reportDates.length ? new Date(Math.max(...reportDates.map((d) => +d))) : null,
+    forecastAsOf: new Date(data.forecastSource.asOf),
+    forecastAgeDays: sourceCurrentness(data.forecastSource.asOf, now).ageDays,
+    forecastCurrentness: sourceCurrentness(data.forecastSource.asOf, now).currentness,
     nextLandmark: landmarks[0]
       ? {
           title: landmarks[0].title,
@@ -858,7 +866,7 @@ export function readControlRoom(i: ControlRoomInput): ControlRoomReading {
     },
     {
       id: "forecast",
-      label: "Forecast",
+      label: "Saved forecast reports",
       state: plural(data.scopes.filter((s) => s.lastReport).length, "project") + " reported",
       ageDays: age(time.lastForecastAt),
       href: "/forecast",

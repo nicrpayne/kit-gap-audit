@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { PrismaClient } from "@prisma/client";
 import { isDecisionBriefV1 } from "../lib/reports/decisionBrief";
 import { briefPayloadFingerprint } from "../lib/reports/decisionBriefRender";
@@ -11,6 +12,10 @@ if (process.env.REPORTS_DB_PROOF !== "1") {
 
 const prisma = new PrismaClient();
 const base = process.env.BASE_URL ?? "http://localhost:3000";
+const password = process.env.APP_PASSWORD ?? "proof";
+const authHeaders = {
+  Cookie: `kit_session=${createHash("sha256").update(`kit-gap-audit::${password}`).digest("hex")}`,
+};
 let reportId: string | null = null;
 let mutationDecisionId: string | null = null;
 
@@ -20,14 +25,14 @@ try {
   assert(scope, "seeded JSA scope exists");
   const unavailableScenario = await fetch(`${base}/api/reports`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...authHeaders },
     body: JSON.stringify({ scopeId: scope.id, mode: "scenario", scenarioId: "capacity-plus-1", scenarioSnapshot: { id: "capacity-plus-1" } }),
   });
   assert.equal(unavailableScenario.status, 409, "Reports refuses to relabel live Reality as a Scenario snapshot");
   assert((await unavailableScenario.json() as { error: string }).error.includes("UNAVAILABLE"));
   const response = await fetch(`${base}/api/reports`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...authHeaders },
     body: JSON.stringify({ scopeId: scope.id }),
   });
   const body = await response.json() as { report?: { id: string }; error?: string };
@@ -60,16 +65,16 @@ try {
   assert.equal(JSON.stringify(unchanged.briefSnapshot), savedJson, "later owner mutation cannot alter saved JSON");
   assert.equal(unchanged.summaryMarkdown, saved.summaryMarkdown, "later owner mutation cannot alter saved export");
 
-  const history = await fetch(`${base}/api/reports?scopeId=${encodeURIComponent(scope.id)}`);
+  const history = await fetch(`${base}/api/reports?scopeId=${encodeURIComponent(scope.id)}`, { headers: authHeaders });
   const historyBody = await history.json() as { reports: { id: string; briefSnapshot: unknown }[] };
   const returned = historyBody.reports.find((report) => report.id === reportId);
   assert(returned && JSON.stringify(returned.briefSnapshot) === savedJson);
 
-  const print = await fetch(`${base}/reports/${encodeURIComponent(reportId)}/print`);
+  const print = await fetch(`${base}/reports/${encodeURIComponent(reportId)}/print`, { headers: authHeaders });
   const html = await print.text();
   assert(print.ok);
   assert(html.includes(briefPayloadFingerprint(brief)));
-  assert(html.includes("Current Forecast"));
+  assert(html.includes("Live Forecast"));
 
   console.log(`PASS Reports DB boundary: migration + API generation + immutable JSON + exact Markdown + history + print (${reportId})`);
 } finally {

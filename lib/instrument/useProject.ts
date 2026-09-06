@@ -67,6 +67,17 @@ export interface ProjectScope {
     remainingIssueCount?: number;
     unassignedCount?: number;
   };
+  capacityContract: {
+    scopeId: string;
+    workforceFte: number;
+    namedRawFte: number;
+    namedEffectiveFte: number;
+    forecastEffectiveFte: number;
+    source: "allocations" | "explicit" | "inferred";
+    status: "named_exact" | "legacy_inferred_unstaffed" | "legacy_explicit_unstaffed";
+    reconciles: boolean;
+  };
+  forecastSource: { asOf: string; provider: "Linear"; temporalRole: "live"; availability: "available" | "empty" };
 }
 
 export interface ProjectFinding {
@@ -115,6 +126,7 @@ export interface ProjectReport {
 
 export interface ProjectPayload {
   startDate: string;
+  forecastSource: { asOf: string; provider: "Linear"; temporalRole: "live"; availability: "available" | "empty" };
   scopes: ProjectScope[];
   people: { id: string; name: string; fte: number; active: boolean }[];
   allocations: { id: string; personId: string; scopeId: string; fraction: number }[];

@@ -249,6 +249,11 @@ export default function ScopeInstrument() {
 
   const openFeature = composition.features.find((f) => f.id === openFeatureId) ?? null;
   const openGates = scope.gates.filter((g) => !m.scenario.resolvedGateIds.has(g.id));
+  const scopeSourceIds = new Set(m.data.sources.filter((source) => source.scopeId === scope.scopeId).map((source) => source.id));
+  const unrepresentedFindings = m.data.findings.filter(
+    (finding) => finding.status === "open" && finding.matchedIssues.length === 0 && !!finding.sourceId && scopeSourceIds.has(finding.sourceId)
+  );
+  const dependencyNames = scope.dependsOnScopeIds.map((id) => scopeNameById.get(id) ?? id);
   const effortRemoved = reality.loadDays - composition.loadDays;
 
   const carryingSeated = !!dragging && !dragging.bypassed;
@@ -381,6 +386,14 @@ export default function ScopeInstrument() {
                     scopeName={scope.name}
                     unmappedItems={composition.unmappedItems}
                     totalItems={composition.totalItems}
+                    emptyTruth={{
+                      openFindingCount: unrepresentedFindings.length,
+                      gateDays: openGates.reduce((sum, gate) => sum + gate.likely, 0),
+                      dependencyNames,
+                      forecastAsOf: scope.forecastSource.asOf,
+                      sourceAvailability: scope.forecastSource.availability,
+                      scopeId: scope.scopeId,
+                    }}
                   />
 
                   {/* The destination is subordinate: it flanks the deck only,
@@ -404,10 +417,10 @@ export default function ScopeInstrument() {
                   capacityLabel={formatCapacity(capacity)}
                   capacitySource={
                     scope.capacitySource === "explicit"
-                      ? "set by hand in Portfolio"
+                      ? "legacy explicit · unreconciled"
                       : scope.capacitySource === "allocations"
-                        ? "from named allocations"
-                        : "inferred from assignees"
+                        ? "named allocations · reconciled"
+                        : "legacy inferred · unreconciled"
                   }
                   capacityChanged={m.scenario.capacityOverrideByScope[scope.scopeId] !== undefined}
                   contextPct={m.scenario.contextSwitchCostPct ?? m.data.contextSwitchCostPct}
@@ -885,6 +898,7 @@ function ReleaseRack({
   scopeName,
   unmappedItems,
   totalItems,
+  emptyTruth,
 }: {
   /** EVERY capability in this release, in the deck's canonical order. */
   features: Feature[];
@@ -899,6 +913,7 @@ function ReleaseRack({
   scopeName: string;
   unmappedItems: number;
   totalItems: number;
+  emptyTruth: { openFindingCount: number; gateDays: number; dependencyNames: string[]; forecastAsOf: string; sourceAvailability: "available" | "empty"; scopeId: string };
 }) {
   const { setNodeRef } = useDroppable({ id: BAY_IN });
 
@@ -957,13 +972,35 @@ function ReleaseRack({
         </span>
       )}
       <div className={`h-full px-4 pt-6 pb-4 ${rows > 2 ? "overflow-y-auto" : "overflow-hidden"}`}>
-        <div
-          className="grid gap-3.5"
-          style={{ gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))`, ...rowGeometry(rows) }}
-        >
-          <AnimatePresence initial={false}>{cells}</AnimatePresence>
-          <ReserveBay onAdd={onAdd} />
-        </div>
+        {features.length === 0 ? (
+          <div data-shoot="scope-empty-truth" className="flex h-full items-center justify-center">
+            <div className="max-w-[620px] rounded-xl border border-[var(--i-border)] bg-[var(--i-recess)] px-6 py-5 text-center">
+              <div className="text-[13px] font-semibold text-[var(--i-text)]">No canonical executable work is currently represented for {scopeName}.</div>
+              <p className="mt-2 text-[11px] leading-relaxed text-[var(--i-text-soft)]">
+                0 modeled executable days means this owner read found no remaining canonical work items. It does not prove there is no work.
+              </p>
+              <p className="mt-2 text-[10.5px] leading-relaxed text-[var(--i-text-faint)]">
+                Linear owner read {emptyTruth.sourceAvailability === "empty" ? "succeeded but returned no matching issue rows" : "succeeded"} as of {new Date(emptyTruth.forecastAsOf).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}.
+                {emptyTruth.gateDays > 0 ? ` Forecast still includes ${emptyTruth.gateDays} likely days of serial DecisionGate delay.` : ""}
+                {emptyTruth.dependencyNames.length ? ` This scope also waits on ${emptyTruth.dependencyNames.join(", ")}.` : ""}
+              </p>
+              {emptyTruth.openFindingCount > 0 && (
+                <Link href={`/audit?project=${encodeURIComponent(emptyTruth.scopeId)}`} className="mt-3 inline-block text-[10.5px] text-[var(--i-amber)] hover:underline">
+                  {emptyTruth.openFindingCount} open Audit {emptyTruth.openFindingCount === 1 ? "Finding describes" : "Findings describe"} unrepresented work · not promoted into Reality →
+                </Link>
+              )}
+              <div className="mx-auto mt-4 max-w-[190px]"><ReserveBay onAdd={onAdd} /></div>
+            </div>
+          </div>
+        ) : (
+          <div
+            className="grid gap-3.5"
+            style={{ gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))`, ...rowGeometry(rows) }}
+          >
+            <AnimatePresence initial={false}>{cells}</AnimatePresence>
+            <ReserveBay onAdd={onAdd} />
+          </div>
+        )}
       </div>
     </section>
   );
@@ -1318,7 +1355,7 @@ function SignalStrip({
       data-shoot="signal-strip"
     >
       <InheritedSignal
-        label="Capacity"
+        label="Forecast basis"
         value={`${capacityLabel} FTE`}
         note={capacitySource}
         changed={capacityChanged}

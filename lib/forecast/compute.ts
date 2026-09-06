@@ -41,6 +41,7 @@ export interface ForecastScenario {
 }
 
 export interface ForecastResult {
+  forecastSource: ForecastSourceStamp;
   issues: LinearIssueSummary[];
   findings: ForecastFinding[];
   notionDocs: { id: string; title: string; chars: number }[];
@@ -80,6 +81,35 @@ export interface ForecastResult {
     estimateQuality: ReturnType<typeof buildForecastInputs>["estimateQuality"];
     composition: ReturnType<typeof buildForecastInputs>["composition"];
     ai: ReturnType<typeof buildForecastInputs>["ai"];
+  };
+}
+
+export interface ForecastSourceStamp {
+  asOf: Date;
+  provider: "Linear";
+  temporalRole: "live";
+  availability: "available" | "empty";
+}
+
+export function sourceStampForIssues(issues: LinearIssueSummary[], fallback: Date): ForecastSourceStamp {
+  const timestamps = issues
+    .map((issue) => issue.updatedAt ? new Date(issue.updatedAt) : null)
+    .filter((value): value is Date => value !== null && Number.isFinite(value.getTime()));
+  return {
+    asOf: timestamps.length ? new Date(Math.max(...timestamps.map((value) => value.getTime()))) : fallback,
+    provider: "Linear",
+    temporalRole: "live",
+    availability: issues.length ? "available" : "empty",
+  };
+}
+
+export function weakestSourceStamp(stamps: ForecastSourceStamp[], fallback: Date): ForecastSourceStamp {
+  if (!stamps.length) return sourceStampForIssues([], fallback);
+  return {
+    asOf: new Date(Math.min(...stamps.map((stamp) => stamp.asOf.getTime()))),
+    provider: "Linear",
+    temporalRole: "live",
+    availability: stamps.every((stamp) => stamp.availability === "empty") ? "empty" : "available",
   };
 }
 
@@ -355,6 +385,7 @@ export interface PortfolioScopeInput {
       is READY only when `reconciles` is true; legacy inference is explicit
       migration debt, never silently presented as roster-backed. */
   capacityContract: CapacityForecastContract;
+  forecastSource: ForecastSourceStamp;
 }
 
 export type CapacityBasis =
@@ -402,6 +433,7 @@ function capacityBasisFor(scope: Scope, bundle: ScopeSimBundle): CapacityBasis {
 
 export interface PortfolioInputs {
   startDate: Date;
+  forecastSource: ForecastSourceStamp;
   scopes: PortfolioScopeInput[];
   people: Awaited<ReturnType<typeof prisma.person.findMany>>;
   allocations: Awaited<ReturnType<typeof prisma.allocation.findMany>>;
@@ -418,6 +450,7 @@ export interface PortfolioInputs {
 // the browser re-runs resolveCapacity + runPortfolioSimulation directly
 // against this payload rather than round-tripping to a server route.
 export async function buildPortfolioInputs(): Promise<PortfolioInputs> {
+  const readAt = new Date();
   const [scopes, people, allocations, portfolioSettings] = await Promise.all([
     prisma.scope.findMany({ orderBy: { createdAt: "asc" } }),
     prisma.person.findMany({ orderBy: { name: "asc" } }),
@@ -474,11 +507,31 @@ export async function buildPortfolioInputs(): Promise<PortfolioInputs> {
         bundle.inputs.teamCapacity,
         bundle.inputs.capacitySource
       ),
+      forecastSource: sourceStampForIssues(bundle.issues, readAt),
     });
+  }
+
+  // A scope forecast inherits the least-recent source stamp in its declared
+  // dependency closure. A fresh empty JSA read cannot make an Aug 5 Platform
+  // input look current when JSA's date is constrained by Platform.
+  const scopeById = new Map(scopeInputs.map((scope) => [scope.scopeId, scope]));
+  const sourceClosure = (scopeId: string, seen = new Set<string>()): ForecastSourceStamp[] => {
+    if (seen.has(scopeId)) return [];
+    seen.add(scopeId);
+    const current = scopeById.get(scopeId);
+    if (!current) return [];
+    return [
+      current.forecastSource,
+      ...current.dependsOnScopeIds.flatMap((dependencyId) => sourceClosure(dependencyId, seen)),
+    ];
+  };
+  for (const scope of scopeInputs) {
+    scope.forecastSource = weakestSourceStamp(sourceClosure(scope.scopeId), readAt);
   }
 
   return {
     startDate,
+    forecastSource: weakestSourceStamp(scopeInputs.map((scope) => scope.forecastSource), readAt),
     scopes: scopeInputs,
     people,
     allocations,
@@ -530,12 +583,14 @@ export async function collectDependencyClosure(rootScope: Scope): Promise<Scope[
 // known, deliberate limitation, since making the interactive levers
 // respect dependencies too is Phase 2 territory, not this one.
 export async function computeForecast(scope: Scope): Promise<ForecastResult> {
+  const readAt = new Date();
   const own = await buildScopeSimInputs(scope);
   const { inputs } = own;
   const startDate = new Date();
 
   let base: SimulationResult;
   let rawScenarios: ForecastScenario[];
+  const sourceStamps = [sourceStampForIssues(own.issues, readAt)];
 
   if (scope.dependsOnScopeIds.length === 0) {
     const scenarioRun = buildScenarios(inputs, startDate, scope.targetDate);
@@ -546,6 +601,7 @@ export async function computeForecast(scope: Scope): Promise<ForecastResult> {
     const specs: ScopeSimulationSpec[] = [];
     for (const s of closure) {
       const bundle = s.id === scope.id ? own : await buildScopeSimInputs(s);
+      if (s.id !== scope.id) sourceStamps.push(sourceStampForIssues(bundle.issues, readAt));
       specs.push({
         scopeId: s.id,
         items: bundle.inputs.items,
@@ -574,6 +630,7 @@ export async function computeForecast(scope: Scope): Promise<ForecastResult> {
   const capacityBasis = capacityBasisFor(scope, own);
 
   return {
+    forecastSource: weakestSourceStamp(sourceStamps, readAt),
     issues: own.issues,
     findings: own.findings,
     notionDocs: own.notionDocs,

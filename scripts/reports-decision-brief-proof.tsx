@@ -37,7 +37,7 @@ for (const [name, factory] of cases) {
   assert.equal(brief.movable.scope.value.executableItemCount, owner.forecast.remainingIssueCount, `${name}: executable Scope count`);
   assert.deepEqual(brief.movable.scope.value.remainingEffortDays, owner.forecast.remainingEffortDays, `${name}: executable Scope effort`);
   assert.equal(brief.timeline.currentForecast.source.temporalRole, "live", `${name}: Timeline live`);
-  assert.equal(brief.boundaries.timelineReading.value.label, "Current Forecast", `${name}: Timeline label`);
+  assert.equal(brief.boundaries.timelineReading.value.label, "Live Forecast", `${name}: Timeline label`);
   assert.equal(brief.calls.decisions.value.length, owner.decisions.filter((decision) => decision.status === "open").length, `${name}: only first-class open Decisions`);
 
   const fingerprint = briefPayloadFingerprint(brief);

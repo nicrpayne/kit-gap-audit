@@ -223,7 +223,7 @@ export default function ControlRoomPageClient() {
           />
           <Divider />
           <HeaderField
-            label="Last forecast update"
+            label="Last saved forecast report"
             value={reading.time.lastForecastAt ? dLong(reading.time.lastForecastAt) : "never run"}
             tone={reading.time.lastForecastAt ? "var(--i-amber)" : "var(--i-text-faint)"}
             shoot="cr-forecast-age"
@@ -387,7 +387,7 @@ export default function ControlRoomPageClient() {
 
   const r = reading;
   const gatingConfidence = r.outcome.confidenceHistory.find((s) => s.id === r.outcome.gatedByScopeId) ?? null;
-  const forecastTone = m.active ? "var(--i-violet)" : "var(--i-signal)";
+  const forecastTone = m.active ? "var(--i-violet)" : r.time.forecastCurrentness === "stale" ? "var(--i-amber)" : "var(--i-signal)";
 
   // THE COMMAND WORKSPACE IS A FIXED COMPOSITION, not a set of surfaces
   // that happen to be on. It is the approved Master Control Room layout,
@@ -525,7 +525,7 @@ export default function ControlRoomPageClient() {
                   label="Likely outcome"
                   question="What we believe will happen"
                   value={r.outcome.likely ? dShort(r.outcome.likely) : "—"}
-                  unit={r.outcome.gatedBy ? `${r.outcome.gatedBy} lands last` : "Nothing simulated"}
+                  unit={r.time.forecastCurrentness === "stale" ? `Stale · ${r.time.forecastAgeDays}d · as of ${dShort(r.time.forecastAsOf)}` : r.outcome.gatedBy ? `${r.outcome.gatedBy} lands last` : "Nothing simulated"}
                   valueTone={forecastTone}
                   second={r.outcome.confidence !== null ? `${r.outcome.confidence}%` : "No target"}
                   secondLabel={r.outcome.confidence !== null ? "Confidence" : "to measure against"}
@@ -1143,9 +1143,9 @@ export default function ControlRoomPageClient() {
             },
             {
               id: "forecast",
-              label: "Forecast",
-              value: r.time.lastForecastAt ? dLong(r.time.lastForecastAt) : "never run",
-              tone: "var(--i-amber)",
+              label: "Forecast owner",
+              value: `${r.time.forecastCurrentness === "stale" ? `Stale · ${r.time.forecastAgeDays}d` : "Current"} · ${dLong(r.time.forecastAsOf)}`,
+              tone: r.time.forecastCurrentness === "stale" ? "var(--i-amber)" : "var(--i-signal)",
               href: "/forecast",
             },
             {
