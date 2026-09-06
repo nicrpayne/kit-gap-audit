@@ -572,3 +572,154 @@ model TimelineEventCandidate {
 
   @@index([scopeId, status])
 }
+
+// PRE-REALITY PROJECT IDENTITY. A ProjectBootstrap is intentionally not a
+// Scope and has no relationship to Forecast-owned records. It can collect
+// investigatory knowledge and human dispositions without making any delivery
+// claim. Phase 2 activation is the only future path allowed to create a Scope.
+model ProjectBootstrap {
+  id                      String   @id @default(cuid())
+  canonicalName           String
+  normalizedName          String
+  aliases                 String[] @default([])
+  ownerHint               String?
+  sourceHints             Json
+  searchExistingKnowledge Boolean  @default(true)
+  status                  String   @default("draft") // draft | scanning | reviewing | scan_failed | archived
+  activePackageId         String?
+  reviewRevision          Int      @default(0)
+  createdAt               DateTime @default(now())
+  updatedAt               DateTime @updatedAt
+
+  scans        BootstrapScanRun[]
+  packages     BootstrapPackage[]
+  candidates   BootstrapCandidate[]
+  reviewEvents BootstrapReviewEvent[]
+
+  @@index([normalizedName])
+  @@index([status, updatedAt])
+}
+
+// Durable job/status envelope. The current Railway/Next stack has no queue;
+// a route schedules the worker after returning 202 and every stage is saved.
+// An interrupted run is visible and a rescan creates a new sequence without
+// deleting the prior evidence or review history.
+model BootstrapScanRun {
+  id               String   @id @default(cuid())
+  bootstrapId      String
+  bootstrap        ProjectBootstrap @relation(fields: [bootstrapId], references: [id], onDelete: Cascade)
+  sequence         Int
+  status           String   @default("queued") // queued | running | partial | complete | failed
+  stage            String   @default("queued")
+  providerCoverage Json
+  metrics          Json
+  warnings         Json
+  error            String?
+  resultPackageId  String?
+  startedAt        DateTime?
+  completedAt      DateTime?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  package BootstrapPackage?
+
+  @@unique([bootstrapId, sequence])
+  @@index([bootstrapId, createdAt])
+}
+
+// Immutable, versioned compiler delivery. This is NOT a ContextSnapshot:
+// nothing in it has crossed the active-project acceptance boundary.
+model BootstrapPackage {
+  id                  String   @id @default(cuid())
+  bootstrapId         String
+  bootstrap           ProjectBootstrap @relation(fields: [bootstrapId], references: [id], onDelete: Cascade)
+  scanRunId           String   @unique
+  scanRun             BootstrapScanRun @relation(fields: [scanRunId], references: [id], onDelete: Cascade)
+  packageId           String
+  packageVersion      String
+  producer            String
+  compilerVersion     String
+  packageHash         String
+  package             Json
+  generatedAt         DateTime
+  supersedesPackageId String?
+  createdAt           DateTime @default(now())
+
+  candidates BootstrapCandidate[]
+
+  @@unique([producer, packageId])
+  @@index([bootstrapId, createdAt])
+}
+
+// Common candidate ledger across every review section. originalProposal is
+// immutable per package. Rescans create a new row and use carriedFromCandidateId
+// to inherit a disposition only when the stable fingerprint is unchanged.
+model BootstrapCandidate {
+  id                     String   @id @default(cuid())
+  bootstrapId            String
+  bootstrap              ProjectBootstrap @relation(fields: [bootstrapId], references: [id], onDelete: Cascade)
+  packageId              String?
+  package                BootstrapPackage? @relation(fields: [packageId], references: [id], onDelete: Cascade)
+  candidateKey           String
+  kind                   String
+  title                  String
+  summary                String
+  whyProposed            String
+  matchBasis             String
+  currentness            String   @default("unknown")
+  relevance              String   @default("medium")
+  sourceFingerprint      String
+  originalProposal       Json
+  reviewedProposal       Json?
+  status                 String   @default("pending") // pending | accepted | deferred | rejected | information-only | superseded
+  dispositionReason      String?
+  active                 Boolean  @default(true)
+  changedSincePrior      Boolean  @default(false)
+  carriedFromCandidateId String?
+  carriedFromCandidate   BootstrapCandidate? @relation("CandidateRefresh", fields: [carriedFromCandidateId], references: [id], onDelete: SetNull)
+  refreshedCandidates    BootstrapCandidate[] @relation("CandidateRefresh")
+  operatorAssertion      Boolean  @default(false)
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
+
+  evidenceLinks BootstrapEvidenceLink[]
+  reviewEvents BootstrapReviewEvent[]
+
+  @@unique([packageId, candidateKey])
+  @@index([bootstrapId, active, kind, status])
+  @@index([bootstrapId, candidateKey, createdAt])
+}
+
+// Links are mutable review overlays on an immutable package. Detaching an
+// item never edits or deletes the evidence passage transported by the scan.
+model BootstrapEvidenceLink {
+  id          String   @id @default(cuid())
+  candidateId String
+  candidate   BootstrapCandidate @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+  evidenceId  String
+  linkState   String   @default("attached") // attached | detached
+  attachedBy  String   @default("compiler") // compiler | operator
+  reason      String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([candidateId, evidenceId])
+}
+
+// Small append-only audit trail for human governance. Candidate rows retain
+// the current projection; events retain how it got there across reloads.
+model BootstrapReviewEvent {
+  id          String   @id @default(cuid())
+  bootstrapId String
+  bootstrap   ProjectBootstrap @relation(fields: [bootstrapId], references: [id], onDelete: Cascade)
+  candidateId String?
+  candidate   BootstrapCandidate? @relation(fields: [candidateId], references: [id], onDelete: SetNull)
+  action      String
+  fromStatus  String?
+  toStatus    String?
+  detail      Json
+  createdAt   DateTime @default(now())
+
+  @@index([bootstrapId, createdAt])
+  @@index([candidateId, createdAt])
+}

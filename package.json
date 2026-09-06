@@ -11,7 +11,8 @@
     "db:seed": "tsx prisma/seed.ts",
     "proof:visual-system": "node scripts/signal-visual-system-token-proof.mjs && npx tsx scripts/signal-primitives-proof.tsx && node scripts/signal-visual-system-proof.mjs",
     "proof:date-contract": "tsx scripts/date-time-contract-proof.ts",
-    "proof:production-hardening-2": "tsx scripts/date-time-contract-proof.ts && tsx scripts/production-hardening-2-proof.tsx && node scripts/production-hardening-2-audit-proof.mjs"
+    "proof:production-hardening-2": "tsx scripts/date-time-contract-proof.ts && tsx scripts/production-hardening-2-proof.tsx && node scripts/production-hardening-2-audit-proof.mjs",
+    "proof:project-activation-phase1": "tsx scripts/project-activation-phase1-proof.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.32",

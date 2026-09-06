@@ -11,6 +11,7 @@ import { usePathname } from "next/navigation";
 import InstrumentRail from "@/components/instrument/InstrumentRail";
 import CommandMenu, { type CommandScope } from "@/components/instrument/CommandMenu";
 import { destinationFor } from "@/lib/shell/mode";
+import AddProjectSheet from "@/components/bootstrap/AddProjectSheet";
 
 /** Below this, a dense control surface cannot show its controls without
     clipping them — QA found the Timeline still losing playback, snap and
@@ -39,6 +40,7 @@ export default function InstrumentShell({
   const pathname = usePathname();
   const [railHidden, setRailHidden] = useState(false);
   const [commandOpen, setCommandOpen] = useState(false);
+  const [addProjectOpen, setAddProjectOpen] = useState(false);
   const dest = destinationFor(pathname);
 
   // MEASURED, NOT GUESSED. Starts null so the first client render matches
@@ -76,6 +78,7 @@ export default function InstrumentShell({
         hidden={railHidden}
         onToggle={() => setRailHidden((v) => !v)}
         onOpenCommand={() => setCommandOpen(true)}
+        onAddProject={() => setAddProjectOpen(true)}
       />
       <div className="flex-1 min-w-0 flex flex-col">
         {/* AN HONEST MESSAGE INSTEAD OF A CLIPPED INSTRUMENT.
@@ -129,7 +132,9 @@ export default function InstrumentShell({
         onClose={() => setCommandOpen(false)}
         scopes={scopes}
         onSelectScope={onSelectScope ?? (() => {})}
+        onAddProject={() => setAddProjectOpen(true)}
       />
+      <AddProjectSheet open={addProjectOpen} onClose={() => setAddProjectOpen(false)} />
     </div>
   );
 }
