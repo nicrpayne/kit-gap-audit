@@ -1,10 +1,14 @@
 import type { DecisionBriefV1, SourceStamp } from "./decisionBrief";
+import { formatDateOnly, formatInstant, toInstant } from "@/lib/time/dateContract";
 
 const date = (iso: string | null) =>
-  iso ? new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" }) : "MISSING";
+  iso ? formatDateOnly(iso, { month: "short", day: "numeric", year: "numeric" }) : "MISSING";
+const instantDate = (iso: string) => formatInstant(toInstant(iso), {
+  timeZone: "UTC", month: "short", day: "numeric", year: "numeric",
+});
 const n = (value: number) => (Number.isInteger(value) ? String(value) : value.toFixed(2));
 const status = (source: SourceStamp) =>
-  `${source.owner} · ${source.temporalRole.toUpperCase()} · as of ${date(source.asOf)} · ${source.currentness.toUpperCase()}${source.sourceId ? ` · ${source.sourceId}` : ""}`;
+  `${source.owner} · ${source.temporalRole.toUpperCase()} · as of ${instantDate(source.asOf)} · ${source.currentness.toUpperCase()}${source.sourceId ? ` · ${source.sourceId}` : ""}`;
 
 export function briefPayloadFingerprint(brief: DecisionBriefV1): string {
   // PostgreSQL JSONB does not preserve object-key insertion order. Sort keys
@@ -33,7 +37,7 @@ export function renderDecisionBriefMarkdown(brief: DecisionBriefV1): string {
   const window = brief.headline.likelyWindow.value;
 
   out.push(`# ${project.name} — Decision Brief`);
-  out.push(`**${brief.identity.mode === "reality" ? "REALITY" : "SCENARIO"} · generated ${date(brief.identity.generatedAt)} · ${briefPayloadFingerprint(brief)}**`);
+  out.push(`**${brief.identity.mode === "reality" ? "REALITY" : "SCENARIO"} · generated ${instantDate(brief.identity.generatedAt)} · ${briefPayloadFingerprint(brief)}**`);
   if (brief.identity.mode === "scenario") out.push(`Scenario: ${brief.identity.scenarioId ?? "MISSING"}`);
   out.push("");
 
@@ -103,7 +107,7 @@ export function renderDecisionBriefMarkdown(brief: DecisionBriefV1): string {
   pushSource(brief.movable.capacity.source);
 
   out.push("## Timeline");
-  out.push(`**Live Forecast · ${brief.timeline.currentForecast.source.currentness.toUpperCase()} · as of ${date(brief.timeline.currentForecast.source.asOf)}**`);
+  out.push(`**Live Forecast · ${brief.timeline.currentForecast.source.currentness.toUpperCase()} · as of ${instantDate(brief.timeline.currentForecast.source.asOf)}**`);
   out.push(`[Likely ${date(brief.timeline.currentForecast.value.likelyDate)} · ${date(brief.timeline.currentForecast.value.earliestDate)}–${date(brief.timeline.currentForecast.value.latestDate)}](${brief.timeline.currentForecast.value.href})`);
   const milestone = brief.timeline.nextMilestone.value;
   out.push(milestone ? `Next committed/current milestone: ${milestone.title} · ${date(milestone.date)}.` : "Next committed/current milestone: MISSING.");

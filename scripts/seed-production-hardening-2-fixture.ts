@@ -10,9 +10,9 @@ if (!["127.0.0.1", "localhost"].includes(url.hostname) || url.port !== "55433" |
 }
 
 const prisma = new PrismaClient();
-const now = new Date("2026-09-05T12:00:00.000Z");
+const now = new Date("2026-09-06T03:03:40.000Z");
 const asOf = new Date("2026-08-05T12:00:00.000Z");
-const likely = new Date("2026-09-17T00:00:00.000Z");
+const likely = new Date("2026-09-18T00:00:00.000Z");
 
 async function main() {
   const itrack = await prisma.scope.create({

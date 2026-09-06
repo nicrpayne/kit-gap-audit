@@ -6,6 +6,7 @@ import { bettingOddsPhrase } from "@/lib/momentum/compute";
 import MomentumChip, { type MomentumData } from "./MomentumChip";
 import AskChips from "./AskChips";
 import CalibrationLink, { type CalibrationData } from "./CalibrationLink";
+import { formatDateOnly, toDateOnly } from "@/lib/time/dateContract";
 
 interface ScenarioRow {
   id: string;
@@ -95,13 +96,9 @@ const FLAG_LABELS: Record<string, string> = {
   hidden_work: "hidden work implied",
 };
 
-function formatDate(iso: string): string {
-  return new Date(iso).toLocaleDateString(undefined, { month: "short", day: "numeric" });
-}
-
 function toDateInputValue(iso: string | null): string {
   if (!iso) return "";
-  return new Date(iso).toISOString().slice(0, 10);
+  return toDateOnly(iso);
 }
 
 export default function ForecastView({ scopeId }: { scopeId: string }) {
@@ -518,7 +515,7 @@ export default function ForecastView({ scopeId }: { scopeId: string }) {
         <div className="text-[11px] uppercase tracking-wider text-[var(--color-ink-soft)] mb-1">
           Likely release date
         </div>
-        <div className="font-display text-6xl mb-3">{formatDate(data.likelyDate)}</div>
+        <div className="font-display text-6xl mb-3">{formatDateOnly(data.likelyDate)}</div>
         {data.confidenceAtTarget !== null && (
           <div className="inline-flex items-center rounded-full bg-[var(--color-accent-soft)] text-[var(--color-accent-dark)] px-3 py-1 text-xs font-medium mb-5">
             {bettingOddsPhrase(data.confidenceAtTarget)}
@@ -529,15 +526,15 @@ export default function ForecastView({ scopeId }: { scopeId: string }) {
         <CalibrationLink calibration={data.calibration} />
 
         <div className="flex items-center gap-4 text-xs text-[var(--color-ink-soft)] mt-5">
-          <span>Earliest {formatDate(data.earliestDate)}</span>
+          <span>Earliest {formatDateOnly(data.earliestDate)}</span>
           <div className="flex-1 h-2 rounded-full bg-[var(--color-line)] relative">
             <div
               className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 h-3 w-3 rounded-full bg-[var(--color-accent)] border-2 border-white shadow"
               style={{ left: `${likelyPos}%` }}
-              title={`Likely: ${formatDate(data.likelyDate)}`}
+              title={`Likely: ${formatDateOnly(data.likelyDate)}`}
             />
           </div>
-          <span>Latest {formatDate(data.latestDate)}</span>
+          <span>Latest {formatDateOnly(data.latestDate)}</span>
         </div>
       </div>
 
@@ -560,7 +557,7 @@ export default function ForecastView({ scopeId }: { scopeId: string }) {
                     </span>
                     {s.label}
                   </span>
-                  <span className="font-medium whitespace-nowrap">{formatDate(s.likelyDate)}</span>
+                  <span className="font-medium whitespace-nowrap">{formatDateOnly(s.likelyDate)}</span>
                   <span
                     className={`text-xs whitespace-nowrap w-16 text-right ${
                       s.deltaDays < 0 ? "text-[var(--color-accent-dark)]" : "text-[var(--color-ink-soft)]"

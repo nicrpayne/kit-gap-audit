@@ -69,9 +69,11 @@ import {
 } from "@/lib/control-room/lenses";
 import { composeFeatures } from "@/lib/scope/features";
 import type { TimelineProjection } from "@/lib/timeline/entries";
+import { formatDateOnly } from "@/lib/time/dateContract";
 
 const dLong = (d: Date) => d.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
 const dShort = (d: Date) => d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+const deliveryDay = (d: Date) => formatDateOnly(d, { month: "short", day: "numeric" });
 const ago = (d: Date, now: Date) => {
   const h = (now.getTime() - d.getTime()) / 3600000;
   if (h < 1) return `${Math.max(1, Math.round(h * 60))}m ago`;
@@ -524,7 +526,7 @@ export default function ControlRoomPageClient() {
                   domain="outcome"
                   label="Likely outcome"
                   question="What we believe will happen"
-                  value={r.outcome.likely ? dShort(r.outcome.likely) : "—"}
+                  value={r.outcome.likely ? deliveryDay(r.outcome.likely) : "—"}
                   unit={r.time.forecastCurrentness === "stale" ? `Stale · ${r.time.forecastAgeDays}d · as of ${dShort(r.time.forecastAsOf)}` : r.outcome.gatedBy ? `${r.outcome.gatedBy} lands last` : "Nothing simulated"}
                   valueTone={forecastTone}
                   second={r.outcome.confidence !== null ? `${r.outcome.confidence}%` : "No target"}
@@ -536,9 +538,9 @@ export default function ControlRoomPageClient() {
                   // leaving a person to spot that they match.
                   reality={
                     m.active && r.outcome.realityLikely
-                      ? r.outcome.likely && dShort(r.outcome.realityLikely) === dShort(r.outcome.likely)
-                        ? `${dShort(r.outcome.realityLikely)} · unchanged`
-                        : dShort(r.outcome.realityLikely)
+                      ? r.outcome.likely && deliveryDay(r.outcome.realityLikely) === deliveryDay(r.outcome.likely)
+                        ? `${deliveryDay(r.outcome.realityLikely)} · unchanged`
+                        : deliveryDay(r.outcome.realityLikely)
                       : null
                   }
                   href="/forecast"
@@ -566,7 +568,7 @@ export default function ControlRoomPageClient() {
                         : "Nothing planned ahead"
                   }
                   valueTone="var(--i-text)"
-                  second={r.time.nextTarget ? dShort(r.time.nextTarget.date) : dShort(r.time.now)}
+                  second={r.time.nextTarget ? deliveryDay(r.time.nextTarget.date) : dShort(r.time.now)}
                   secondLabel={r.time.nextTarget ? "Next target" : "Today"}
                   series={null}
                   href="/timeline"

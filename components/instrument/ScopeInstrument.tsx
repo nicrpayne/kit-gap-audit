@@ -56,7 +56,6 @@ import CapabilityTile, { Seat, materialOf, sigilPathFor, MODULE_H } from "@/comp
 import {
   useProject,
   EMPTY_SCENARIO,
-  fmtFull,
   fmtDay,
   deltaLabel,
   deltaTone,
@@ -65,6 +64,7 @@ import {
 import { composeFeatures, type Feature, type ThreePoint } from "@/lib/scope/features";
 import { readDominance } from "@/lib/scope/constraint";
 import { formatCapacity } from "@/lib/capacity/limits";
+import { formatDateOnly } from "@/lib/time/dateContract";
 
 const BAY_IN = "bay-in";
 const BAY_OUT = "bay-out";
@@ -355,9 +355,9 @@ export default function ScopeInstrument() {
                 <div className="flex-1" />
                 <MasterDisplay
                   scopeName={scope.name}
-                  date={fmtFull(res.likelyDate)}
-                  best={fmtDay(res.earliestDate)}
-                  worst={fmtDay(res.latestDate)}
+                  date={formatDateOnly(res.likelyDate, { month: "short", day: "numeric", year: "numeric" })}
+                  best={formatDateOnly(res.earliestDate)}
+                  worst={formatDateOnly(res.latestDate)}
                   loadDays={composition.loadDays}
                   realityLoadDays={reality.loadDays}
                   capacityLabel={formatCapacity(capacity)}

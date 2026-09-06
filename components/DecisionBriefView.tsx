@@ -4,15 +4,19 @@ import React from "react";
 import Link from "@/components/instrument/SignalLink";
 import type { DecisionBriefV1, SourceStamp } from "@/lib/reports/decisionBrief";
 import { briefPayloadFingerprint } from "@/lib/reports/decisionBriefRender";
+import { formatDateOnly, formatInstant, toInstant } from "@/lib/time/dateContract";
 
 const date = (iso: string | null) =>
-  iso ? new Date(iso).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" }) : "MISSING";
+  iso ? formatDateOnly(iso, { month: "short", day: "numeric", year: "numeric" }) : "MISSING";
+const instantDate = (iso: string) => formatInstant(toInstant(iso), {
+  timeZone: "UTC", month: "short", day: "numeric", year: "numeric",
+});
 const fte = (value: number) => (Number.isInteger(value) ? String(value) : value.toFixed(2));
 
 function Stamp({ value }: { value: SourceStamp }) {
   return (
     <span className="text-[9px] uppercase tracking-[0.12em] text-[var(--i-text-faint)]">
-      {value.owner} · {value.temporalRole} · as of {date(value.asOf)} · {value.currentness}
+      {value.owner} · {value.temporalRole} · as of {instantDate(value.asOf)} · {value.currentness}
     </span>
   );
 }
@@ -55,7 +59,7 @@ export default function DecisionBriefView({ brief }: { brief: DecisionBriefV1 })
           </span>
         </div>
         <h1 className="font-display text-3xl">{project.name} — Decision Brief</h1>
-        <p className="mt-2 text-xs text-[var(--i-text-faint)]">Generated {date(brief.identity.generatedAt)}{brief.identity.scenarioId ? ` · scenario ${brief.identity.scenarioId}` : ""}</p>
+        <p className="mt-2 text-xs text-[var(--i-text-faint)]">Generated {instantDate(brief.identity.generatedAt)}{brief.identity.scenarioId ? ` · scenario ${brief.identity.scenarioId}` : ""}</p>
       </header>
 
       <Section title="As-of / trust">
@@ -73,7 +77,7 @@ export default function DecisionBriefView({ brief }: { brief: DecisionBriefV1 })
       <Section title="Headline" source={brief.headline.likelyWindow.source}>
         <div className="grid gap-3 sm:grid-cols-3">
           <div className={`rounded-lg border bg-[var(--i-panel)] p-4 sm:col-span-2 ${forecastStale ? "border-[var(--i-amber)]" : "border-[var(--i-signal)]"}`}>
-            <div className={`text-[9px] uppercase tracking-[0.14em] ${forecastStale ? "text-[var(--i-amber)]" : "text-[var(--i-text-faint)]"}`}>Live likely window · {brief.headline.likelyWindow.source.currentness} · as of {date(brief.headline.likelyWindow.source.asOf)}</div>
+            <div className={`text-[9px] uppercase tracking-[0.14em] ${forecastStale ? "text-[var(--i-amber)]" : "text-[var(--i-text-faint)]"}`}>Live likely window · {brief.headline.likelyWindow.source.currentness} · as of {instantDate(brief.headline.likelyWindow.source.asOf)}</div>
             <div className="mt-1 font-display text-2xl">{date(window.likely)}</div>
             <div className="mt-1 text-xs text-[var(--i-text-faint)]">{date(window.earliest)} – {date(window.latest)}</div>
           </div>
@@ -157,7 +161,7 @@ export default function DecisionBriefView({ brief }: { brief: DecisionBriefV1 })
 
       <Section title="Timeline" source={brief.timeline.currentForecast.source}>
         <Link href={brief.timeline.currentForecast.value.href} className={`block rounded-lg border bg-[var(--i-panel)] p-4 ${forecastStale ? "border-[var(--i-amber)]" : "border-[var(--i-signal)]"}`}>
-          <div className={`text-[9px] font-semibold uppercase tracking-wider ${forecastStale ? "text-[var(--i-amber)]" : "text-[var(--i-mint)]"}`}>Live Forecast · {brief.timeline.currentForecast.source.currentness} · as of {date(brief.timeline.currentForecast.source.asOf)}</div>
+          <div className={`text-[9px] font-semibold uppercase tracking-wider ${forecastStale ? "text-[var(--i-amber)]" : "text-[var(--i-mint)]"}`}>Live Forecast · {brief.timeline.currentForecast.source.currentness} · as of {instantDate(brief.timeline.currentForecast.source.asOf)}</div>
           <div className="mt-1 font-display text-lg">Likely {date(brief.timeline.currentForecast.value.likelyDate)}</div>
         </Link>
         <div className="mt-4 text-sm">Next committed/current milestone: {brief.timeline.nextMilestone.value ? `${brief.timeline.nextMilestone.value.title} · ${date(brief.timeline.nextMilestone.value.date)}` : "MISSING"}</div>

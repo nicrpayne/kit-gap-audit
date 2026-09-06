@@ -4,6 +4,7 @@ import { computeForecast } from "@/lib/forecast/compute";
 import { computeChangesSince } from "@/lib/reports/changes";
 import { computeMomentum } from "@/lib/momentum/compute";
 import { attributionSentence } from "@/lib/momentum/attribution";
+import { toDateOnly } from "@/lib/time/dateContract";
 
 // How many most-recent Reports feed the sparkline -- small on purpose,
 // it's an at-a-glance trend line, not a chart worth panning/zooming.
@@ -58,10 +59,10 @@ export async function GET(req: NextRequest) {
       sparkline: [
         ...[...recentReports].reverse().map((r) => ({
           generatedAt: r.generatedAt,
-          likelyDate: r.likelyDate,
-          targetDate: r.targetDate,
+          likelyDate: toDateOnly(r.likelyDate),
+          targetDate: r.targetDate ? toDateOnly(r.targetDate) : null,
         })),
-        { generatedAt: new Date(), likelyDate: result.likelyDate, targetDate: scope.targetDate },
+        { generatedAt: new Date(), likelyDate: toDateOnly(result.likelyDate), targetDate: scope.targetDate ? toDateOnly(scope.targetDate) : null },
       ],
     };
   }
@@ -90,7 +91,7 @@ export async function GET(req: NextRequest) {
     scope: {
       id: scope.id,
       name: scope.name,
-      targetDate: scope.targetDate,
+      targetDate: scope.targetDate ? toDateOnly(scope.targetDate) : null,
       teamCapacity: scope.teamCapacity,
       includeTriage: scope.includeTriage,
       estimationContext: scope.estimationContext,
@@ -102,11 +103,11 @@ export async function GET(req: NextRequest) {
     contextDocs: result.contextDocs,
     contextComplete: result.contextComplete,
     contextIssues: result.contextIssues,
-    likelyDate: result.likelyDate,
-    earliestDate: result.earliestDate,
-    latestDate: result.latestDate,
+    likelyDate: toDateOnly(result.likelyDate),
+    earliestDate: toDateOnly(result.earliestDate),
+    latestDate: toDateOnly(result.latestDate),
     confidenceAtTarget: result.confidenceAtTarget,
-    scenarios: result.scenarios,
+    scenarios: result.scenarios.map((scenario) => ({ ...scenario, likelyDate: toDateOnly(scenario.likelyDate) })),
     breakdown: result.breakdown,
   });
 }

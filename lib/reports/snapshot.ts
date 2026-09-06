@@ -1,3 +1,5 @@
+import { formatDateOnly, formatInstant, toInstant } from "@/lib/time/dateContract";
+
 // WHAT A STORED REPORT IS, SAID ONCE.
 //
 // A Report is an immutable historical snapshot. The Reports surface used to
@@ -39,12 +41,14 @@ export interface SnapshotVerdict {
     comparison — it is a product judgement, and it should be arguable. */
 export const STALE_AFTER_DAYS = 7;
 
-const fmt = (d: Date) =>
-  d.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+const fmtDateOnly = (d: Date) => formatDateOnly(d, { month: "short", day: "numeric", year: "numeric" });
+const fmtInstant = (d: Date) => formatInstant(toInstant(d), {
+  timeZone: "UTC", month: "short", day: "numeric", year: "numeric",
+});
 
 export function describeSnapshot(ctx: SnapshotContext): SnapshotVerdict {
-  const generated = fmt(ctx.generatedAt);
-  const snapshot = fmt(ctx.snapshotLikelyDate);
+  const generated = fmtInstant(ctx.generatedAt);
+  const snapshot = fmtDateOnly(ctx.snapshotLikelyDate);
 
   // No live forecast to compare against. Say that plainly rather than
   // letting silence imply the snapshot is current.
@@ -63,7 +67,7 @@ export function describeSnapshot(ctx: SnapshotContext): SnapshotVerdict {
   const deltaDays = Math.round(
     (ctx.liveLikelyDate.getTime() - ctx.snapshotLikelyDate.getTime()) / 86400000
   );
-  const live = fmt(ctx.liveLikelyDate);
+  const live = fmtDateOnly(ctx.liveLikelyDate);
 
   if (deltaDays === 0) {
     return {

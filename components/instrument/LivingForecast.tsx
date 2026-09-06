@@ -1,5 +1,7 @@
 "use client";
 
+import { formatDateOnly } from "@/lib/time/dateContract";
+
 // THE LIVING FORECAST — the delivery outcome as an object rather than a chart.
 //
 // Everything drawn here is the real Monte Carlo result. The trial density is
@@ -391,11 +393,7 @@ export default function LivingForecast({
   const fmtTarget =
     targetDay === null
       ? ""
-      : new Date(startDate.getTime() + targetDay * 86400000).toLocaleDateString(undefined, {
-          month: "short",
-          day: "numeric",
-          timeZone: "UTC",
-        });
+      : formatDateOnly(new Date(startDate.getTime() + targetDay * 86400000), { month: "short", day: "numeric" });
 
   return (
     <div ref={wrapRef} className="lf-subject absolute inset-0 overflow-hidden">
@@ -760,11 +758,7 @@ export default function LivingForecast({
             {reality.percentiles.p50 > dHi ? "Reality →" : "← Reality"}
           </div>
           <div className="mt-1 i-readout text-[12px] whitespace-nowrap" style={{ color: "var(--i-reality)" }}>
-            {new Date(startDate.getTime() + reality.percentiles.p50 * 86400000).toLocaleDateString(undefined, {
-              month: "short",
-              day: "numeric",
-              timeZone: "UTC",
-            })}
+            {formatDateOnly(new Date(startDate.getTime() + reality.percentiles.p50 * 86400000), { month: "short", day: "numeric" })}
           </div>
           <div className="mt-1 text-[10px] text-[var(--i-text-faint)] whitespace-nowrap">
             the baseline this scenario left

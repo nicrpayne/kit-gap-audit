@@ -24,6 +24,7 @@
 
 import { prisma } from "@/lib/prisma";
 import { getScopedIssues } from "@/lib/linear";
+import { toDateOnly } from "@/lib/time/dateContract";
 
 /** What KIND of moment this is. Not a colour -- a semantic class; the
     surface derives material from `family` + `temporalState`. */
@@ -183,10 +184,10 @@ export async function buildTimeline(): Promise<TimelineProjection> {
       reportId: r.id,
       scopeId: r.scopeId,
       generatedAt: iso(r.generatedAt),
-      earliestDate: iso(r.earliestDate),
-      likelyDate: iso(r.likelyDate),
-      latestDate: iso(r.latestDate),
-      targetDate: r.targetDate ? iso(r.targetDate) : null,
+      earliestDate: toDateOnly(r.earliestDate),
+      likelyDate: toDateOnly(r.likelyDate),
+      latestDate: toDateOnly(r.latestDate),
+      targetDate: r.targetDate ? toDateOnly(r.targetDate) : null,
       confidenceAtTarget: r.confidenceAtTarget,
       likelyDateDeltaDays: r.likelyDateDeltaDays,
       shippedCount: r.shippedCount,
@@ -525,7 +526,7 @@ export async function buildTimeline(): Promise<TimelineProjection> {
     lanes: scopes.map((s) => ({
       scopeId: s.id,
       name: s.name,
-      targetDate: s.targetDate ? iso(s.targetDate) : null,
+      targetDate: s.targetDate ? toDateOnly(s.targetDate) : null,
       dependsOnScopeIds: s.dependsOnScopeIds,
     })),
     entries,

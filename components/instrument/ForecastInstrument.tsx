@@ -29,6 +29,7 @@ import { useProject, EMPTY_SCENARIO, fmtDay, fmtFull, deltaLabel, deltaTone } fr
 import { confidenceAtDay } from "@/lib/forecast/simulate";
 import { formatCapacity } from "@/lib/capacity/limits";
 import { currentnessLabel, sourceCurrentness } from "@/lib/truth/currentness";
+import { formatDateOnly } from "@/lib/time/dateContract";
 
 type Tool =
   | null
@@ -156,8 +157,8 @@ export default function ForecastInstrument() {
   const trend = m.momentumByScope.get(scope.scopeId) ?? null;
   const momentumDir = !trend ? 0 : trend.direction === "rising" ? -1 : trend.direction === "falling" ? 1 : 0;
 
-  const month = res.likelyDate.toLocaleDateString(undefined, { month: "short", timeZone: "UTC" }).toUpperCase();
-  const dayNum = res.likelyDate.toLocaleDateString(undefined, { day: "numeric", timeZone: "UTC" });
+  const month = formatDateOnly(res.likelyDate, { month: "short" }).toUpperCase();
+  const dayNum = formatDateOnly(res.likelyDate, { day: "numeric" });
 
   const cutCount = scope.items.filter((i) => m.scenario.excludedItemIds.has(i.id)).length;
   // Forecast DISPLAYS capacity; Portfolio owns it. A Portfolio-made override

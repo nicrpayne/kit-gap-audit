@@ -2,12 +2,16 @@ import type { DecisionBriefV1, SourceStamp } from "./decisionBrief";
 import { briefPayloadFingerprint } from "./decisionBriefRender";
 import type { BriefModuleId, BriefRecipeV1, ModuleDensity } from "./composer";
 import { buildBriefPresentation, sourceForModule } from "./presentation";
+import { formatDateOnly, formatInstant, toInstant } from "@/lib/time/dateContract";
 
 const date = (iso: string | null) => iso
-  ? new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" })
+  ? formatDateOnly(iso, { month: "short", day: "numeric", year: "numeric" })
   : "MISSING";
+const instantDate = (iso: string) => formatInstant(toInstant(iso), {
+  timeZone: "UTC", month: "short", day: "numeric", year: "numeric",
+});
 const number = (value: number) => Number.isInteger(value) ? String(value) : value.toFixed(2);
-const stamp = (source: SourceStamp) => `${source.owner} · ${source.temporalRole.toUpperCase()} · as of ${date(source.asOf)} · ${source.currentness.toUpperCase()}`;
+const stamp = (source: SourceStamp) => `${source.owner} · ${source.temporalRole.toUpperCase()} · as of ${instantDate(source.asOf)} · ${source.currentness.toUpperCase()}`;
 
 function moduleMarkdown(id: BriefModuleId, density: ModuleDensity, brief: DecisionBriefV1, recipe: BriefRecipeV1): string[] {
   const out: string[] = [];
@@ -105,7 +109,7 @@ function moduleMarkdown(id: BriefModuleId, density: ModuleDensity, brief: Decisi
     }
     case "timeline":
       heading("Timeline");
-      out.push(`**Live Forecast · ${brief.timeline.currentForecast.source.currentness.toUpperCase()} · as of ${date(brief.timeline.currentForecast.source.asOf)}** — [likely ${date(brief.timeline.currentForecast.value.likelyDate)}](${brief.timeline.currentForecast.value.href})`);
+      out.push(`**Live Forecast · ${brief.timeline.currentForecast.source.currentness.toUpperCase()} · as of ${instantDate(brief.timeline.currentForecast.source.asOf)}** — [likely ${date(brief.timeline.currentForecast.value.likelyDate)}](${brief.timeline.currentForecast.value.href})`);
       out.push(brief.timeline.nextMilestone.value ? `Next milestone: ${brief.timeline.nextMilestone.value.title} · ${date(brief.timeline.nextMilestone.value.date)}` : "Next milestone: MISSING.");
       for (const conflict of brief.timeline.conflicts.value) out.push(`- Conflict: ${conflict.title} · ${date(conflict.date)}`);
       break;
@@ -142,7 +146,7 @@ export function renderAudienceBriefMarkdown(brief: DecisionBriefV1, inputRecipe:
   const presentation = buildBriefPresentation(brief, inputRecipe);
   const out = [
     `# ${presentation.projectName} — ${presentation.audienceLabel} Brief`,
-    `**${presentation.purposeLabel} · ${brief.identity.mode.toUpperCase()} · generated ${date(brief.identity.generatedAt)} · ${presentation.snapshotFingerprint}**`,
+    `**${presentation.purposeLabel} · ${brief.identity.mode.toUpperCase()} · generated ${instantDate(brief.identity.generatedAt)} · ${presentation.snapshotFingerprint}**`,
     "",
   ];
   for (const item of presentation.modules) out.push(...moduleMarkdown(item.id, item.density, brief, presentation.recipe));

@@ -153,9 +153,9 @@ const report: ForecastSnapshot = {
   summaryMarkdown: "Historical memory",
 };
 const live = liveForecastReading("kit-construct", "2026-09-04T00:00:00.000Z", liveResult, null);
-assert.equal(forecastReadingForTime(true, live, report)?.likelyDate, "2026-11-25T00:00:00.000Z");
+assert.equal(forecastReadingForTime(true, live, report)?.likelyDate, "2026-11-25");
 assert.equal(forecastReadingForTime(true, live, report)?.temporalRole, "live");
-assert.equal(forecastReadingForTime(false, live, report)?.likelyDate, "2026-09-01T00:00:00.000Z");
+assert.equal(forecastReadingForTime(false, live, report)?.likelyDate, "2026-09-01");
 assert.equal(forecastReadingForTime(false, live, report)?.temporalRole, "historical");
 assert.equal(forecastReadingForTime(true, null, report), null);
 
@@ -219,4 +219,3 @@ const result = {
 };
 
 console.log(JSON.stringify(result, null, 2));
-

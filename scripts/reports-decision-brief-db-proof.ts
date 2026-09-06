@@ -5,6 +5,7 @@ import { isDecisionBriefV1 } from "../lib/reports/decisionBrief";
 import { briefPayloadFingerprint } from "../lib/reports/decisionBriefRender";
 import { isBriefRecipeV1 } from "../lib/reports/composer";
 import { renderAudienceBriefMarkdown } from "../lib/reports/audienceBriefRender";
+import { toDateOnly } from "../lib/time/dateContract";
 
 if (process.env.REPORTS_DB_PROOF !== "1") {
   throw new Error("Refusing to write: set REPORTS_DB_PROOF=1 for a disposable local fixture database.");
@@ -50,7 +51,7 @@ try {
   const recipe = saved.briefRecipe;
   const savedJson = JSON.stringify(brief);
   assert.equal(saved.summaryMarkdown, renderAudienceBriefMarkdown(brief, recipe));
-  assert.equal(saved.likelyDate.toISOString(), brief.headline.likelyWindow.value.likely);
+  assert.equal(toDateOnly(saved.likelyDate), brief.headline.likelyWindow.value.likely);
   assert.equal(saved.confidenceAtTarget, brief.headline.confidenceAtTarget.value);
   assert.equal(saved.blockingCount, brief.calls.decisions.value.filter((decision) => decision.gated).length);
   assert(brief.calls.decisions.value.every((decision) => decision.status === "open"));

@@ -1,6 +1,7 @@
 import type { SimulationResult } from "@/lib/forecast/simulate";
 import type { ForecastSnapshot } from "@/lib/timeline/entries";
 import { sourceCurrentness, type SourceCurrentness } from "@/lib/truth/currentness";
+import { toDateOnly } from "@/lib/time/dateContract";
 
 interface ForecastReadingBase {
   id: string;
@@ -33,10 +34,10 @@ export function liveForecastReading(
     asOf,
     temporalRole: "live",
     source: "Forecast",
-    earliestDate: result.earliestDate.toISOString(),
-    likelyDate: result.likelyDate.toISOString(),
-    latestDate: result.latestDate.toISOString(),
-    targetDate,
+    earliestDate: toDateOnly(result.earliestDate),
+    likelyDate: toDateOnly(result.likelyDate),
+    latestDate: toDateOnly(result.latestDate),
+    targetDate: targetDate ? toDateOnly(targetDate) : null,
     confidenceAtTarget: result.confidenceAtTarget,
     currentness: freshness.currentness,
     ageDays: freshness.ageDays,
@@ -51,10 +52,10 @@ export function historicalForecastReading(snapshot: ForecastSnapshot): TimelineF
     asOf: snapshot.generatedAt,
     temporalRole: "historical",
     source: "Report snapshot",
-    earliestDate: snapshot.earliestDate,
-    likelyDate: snapshot.likelyDate,
-    latestDate: snapshot.latestDate,
-    targetDate: snapshot.targetDate,
+    earliestDate: toDateOnly(snapshot.earliestDate),
+    likelyDate: toDateOnly(snapshot.likelyDate),
+    latestDate: toDateOnly(snapshot.latestDate),
+    targetDate: snapshot.targetDate ? toDateOnly(snapshot.targetDate) : null,
     confidenceAtTarget: snapshot.confidenceAtTarget,
     currentness: "current",
     ageDays: 0,

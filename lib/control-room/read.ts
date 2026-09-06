@@ -25,6 +25,7 @@ import type { ProjectPayload, SuiteScenario } from "@/lib/instrument/useProject"
 import type { DecisionRow } from "@/lib/decisions/model";
 import type { TimelineEntry, TimelineCandidate, TimelineLane } from "@/lib/timeline/entries";
 import { sourceCurrentness, type SourceCurrentness } from "@/lib/truth/currentness";
+import { formatDateOnly } from "@/lib/time/dateContract";
 
 const DAY = 86400000;
 const days = (a: Date, b: Date) => (a.getTime() - b.getTime()) / DAY;
@@ -290,8 +291,8 @@ function upstreamOf(scopeId: string, byId: Map<string, TimelineLane>, seen = new
     current one, because "Jan 1" silently means "the next one" to a reader and
     a stale target is exactly the case where that is wrong. */
 function dateWithYear(d: Date, now: Date = new Date()): string {
-  const sameYear = d.getFullYear() === now.getFullYear();
-  return d.toLocaleDateString(undefined, {
+  const sameYear = d.getUTCFullYear() === now.getUTCFullYear();
+  return formatDateOnly(d, {
     month: "short",
     day: "numeric",
     ...(sameYear ? {} : { year: "numeric" }),
@@ -577,7 +578,7 @@ export function readControlRoom(i: ControlRoomInput): ControlRoomReading {
         // from the backlog, gets the sentence explaining it.
         detail:
           overrun !== null && overrun > 0
-            ? `${upName} is not expected until ${upSim.likelyDate.toLocaleDateString(undefined, { month: "short", day: "numeric" })} — after ${lane.name}'s own target.`
+            ? `${upName} is not expected until ${formatDateOnly(upSim.likelyDate, { month: "short", day: "numeric" })} — after ${lane.name}'s own target.`
             : dom?.dominated
               ? `${lane.name}'s backlog has stopped deciding its date. What it waits on decides it.`
               : "",

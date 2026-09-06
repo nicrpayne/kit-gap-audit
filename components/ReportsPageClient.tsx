@@ -16,6 +16,7 @@ import AudienceBriefView from "./reports/AudienceBriefView";
 import { AUDIENCE_LABELS, PURPOSE_LABELS, buildBriefRecipe, isBriefRecipeV1, type AudienceLens, type BriefPurpose, type BriefRecipeV1 } from "@/lib/reports/composer";
 import { renderAudienceBriefPlainText } from "@/lib/reports/audienceBriefRender";
 import { currentnessLabel, sourceCurrentness } from "@/lib/truth/currentness";
+import { formatDateOnly } from "@/lib/time/dateContract";
 
 /** The live forecast is a comparison input, not report data. Three states,
     because "we could not resolve it" must be distinguishable from "it
@@ -49,7 +50,7 @@ interface ReportRow {
   presentationVersion: string | null;
 }
 
-function formatDate(iso: string): string {
+function formatTimestampDate(iso: string): string {
   return new Date(iso).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
 }
 
@@ -244,7 +245,7 @@ export default function ReportsPageClient() {
         {live?.state === "ready" && (() => {
           const freshness = sourceCurrentness(live.asOf, new Date());
           return <span className="report-no-print ml-auto text-[10px] uppercase tracking-wider" style={{ color: freshness.currentness === "stale" ? "var(--i-amber)" : "var(--i-mint)" }}>
-            Live owner · {currentnessLabel(freshness)} · as of {formatDate(live.asOf)} · likely {formatDate(live.likelyDate)}
+            Live owner · {currentnessLabel(freshness)} · as of {formatTimestampDate(live.asOf)} · likely {formatDateOnly(live.likelyDate, { month: "short", day: "numeric", year: "numeric" })}
           </span>;
         })()}
       </div>
@@ -313,10 +314,10 @@ export default function ReportsPageClient() {
                       : "border border-[var(--color-line)] hover:bg-black/5"
                   }`}
                 >
-                  <div className="font-medium">{formatDate(r.generatedAt)}</div>
+                  <div className="font-medium">{formatTimestampDate(r.generatedAt)}</div>
                   <div className="mt-0.5 text-[9px] uppercase tracking-wider">{isBriefRecipeV1(r.briefRecipe) ? `${AUDIENCE_LABELS[r.briefRecipe.audience]} brief` : r.briefVersion ? "Decision Brief V1" : "Legacy snapshot"} · {r.mode ?? "historical"}</div>
                   <div className={selected?.id === r.id ? "text-[var(--color-accent)]" : "text-[var(--color-ink-soft)]"}>
-                    {formatDate(r.likelyDate)}
+                    {formatDateOnly(r.likelyDate, { month: "short", day: "numeric", year: "numeric" })}
                     {r.confidenceAtTarget !== null && ` · ${r.confidenceAtTarget}%`}
                   </div>
                 </button>

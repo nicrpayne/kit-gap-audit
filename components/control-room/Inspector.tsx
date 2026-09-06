@@ -22,9 +22,9 @@
 import Link from "@/components/instrument/SignalLink";
 import type { ProjectField, Selection } from "@/lib/control-room/field";
 import type { ControlRoomReading } from "@/lib/control-room/read";
+import { formatDateOnly } from "@/lib/time/dateContract";
 
 const DAY = 86400000;
-const dShort = (d: Date) => d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
 const plural = (n: number, one: string, many: string) => (n === 1 ? one : many);
 
 export default function Inspector({
@@ -40,7 +40,7 @@ export default function Inspector({
   onSelect: (s: Selection | null) => void;
   scenarioActive: boolean;
 }) {
-  const date = (days: number) => dShort(new Date(field.startDate.getTime() + days * DAY));
+  const date = (days: number) => formatDateOnly(new Date(field.startDate.getTime() + days * DAY), { month: "short", day: "numeric" });
   const laneById = new Map(field.lanes.map((l) => [l.scopeId, l]));
   const nameOf = (id: string) => laneById.get(id)?.name ?? id;
 
