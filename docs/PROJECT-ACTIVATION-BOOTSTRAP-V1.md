@@ -12,6 +12,8 @@ Raw sources remain immutable evidence. Evidence passages remain exact located qu
 
 `Draft identity → corpus discovery → immutable bootstrap package → ambiguity resolution → sectioned candidate review → deterministic Ready check → atomic activation → first ContextSnapshot → first Audit → Audit World → continuous refresh/review`
 
+The operator UI deliberately compresses this service lifecycle to `Identity → Scan → Review → Activate → Audit`. Add Project is a compact sheet from the normal project control. Review is the main workspace and contains Proposed Scope and the other candidate families as sections; it is not a wizard. Search V2 remains suite-wide global Search / `⌘K`, outside activation navigation.
+
 No Scope exists during discovery/review. A `ProjectBootstrap` aggregate holds investigatory identity, packages, candidate dispositions, and activation readiness. Activation creates the existing canonical `Scope` aggregate and only the individually reviewed accepted objects.
 
 ## Canonical model
@@ -60,7 +62,14 @@ Recommended implementation: asynchronous approved embedding API plus Postgres/pg
 
 Full contracts, UI behavior, failure states, exact repository seams, upstream Hermes/bridge needs, prototype, and deterministic acceptance laws live in [`artifacts/project-activation-bootstrap-v1/`](../artifacts/project-activation-bootstrap-v1/README.md).
 
+## UX simplification
+
+- Add Project asks only for identity hints, keeps knowledge search on by default, and makes Start blank secondary.
+- Scan reports provider/artifact/intelligence/evidence/proposal counts and permits safe partial Review entry without hiding unavailable providers.
+- Review preserves the explicit `NOT REALITY` boundary, candidate dispositions, status counts, Ready check, and right-side provenance inspector.
+- Activation presents the exact canonical manifest beside everything remaining external/candidate, then uses the explicit `ACTIVATE PROJECT` act.
+- The handoff creates the first ContextSnapshot and opens the first Audit; activation never implies completeness.
+
 ## Verdict
 
-**PROJECT ACTIVATION V1 READY FOR IMPLEMENTATION**
-
+**PROJECT ACTIVATION UX SIMPLIFIED — READY FOR IMPLEMENTATION**

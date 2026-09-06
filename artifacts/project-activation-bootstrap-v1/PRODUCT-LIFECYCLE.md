@@ -1,5 +1,11 @@
 # Canonical product lifecycle
 
+## Operator instrument
+
+The interface exposes five states: `Identity → Scan → Review → Activate → Audit`. These are operational locations, not a page-by-page wizard. Identity is a compact sheet opened from Signal's normal project selector. Review owns Sources, People/owners, Proposed Scope, Decisions, Dependencies, Milestones, Risks/unknowns, and Missing information as switchable sections. Search V2 is not in this state machine; it is a global Signal instrument used by activation's retrieval engine.
+
+The more precise states below remain the authoritative service lifecycle and are intentionally not projected one-for-one into navigation.
+
 ## State machine
 
 ```text
@@ -119,4 +125,3 @@ It must be able to raise gaps against the accepted model. “The bootstrap found
 - Before activation: “12 proposals will become project Reality. 9 deferred or rejected items remain in review history. This does not create Linear work or staffing.”
 - After activation: “Harbor Relay is now tracked. Signal is auditing the accepted model against the available evidence.”
 - Audit failure: “The project is active. Its first Audit did not finish; no result is being implied.”
-

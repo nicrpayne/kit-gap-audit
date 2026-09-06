@@ -1,53 +1,36 @@
 const screens = [...document.querySelectorAll('.screen')];
-const railItems = [...document.querySelectorAll('.rail-item')];
-const topCrumb = document.querySelector('.crumb');
+const sheet = document.querySelector('#add-sheet');
+const scrim = document.querySelector('#scrim');
+
+function setSheet(open) {
+  sheet.classList.toggle('active', open);
+  scrim.classList.toggle('active', open);
+}
 
 function show(name) {
   const target = document.querySelector(`#screen-${name}`);
   if (!target) return;
   screens.forEach((screen) => screen.classList.toggle('active', screen === target));
-  railItems.forEach((item) => item.classList.toggle('active', item.dataset.screen === name));
-  topCrumb.textContent = target.dataset.title || 'Harbor Relay';
+  document.querySelectorAll('.suite-item').forEach((item) => item.classList.toggle('active', item.dataset.nav === name || (name !== 'search' && item.dataset.nav === 'control')));
+  setSheet(false);
   history.replaceState(null, '', `#${name}`);
   window.scrollTo({ top: 0, behavior: 'instant' });
 }
 
-railItems.forEach((item) => item.addEventListener('click', () => show(item.dataset.screen)));
-document.querySelectorAll('[data-go]').forEach((button) => button.addEventListener('click', () => show(button.dataset.go)));
-document.querySelector('#add-form').addEventListener('submit', (event) => { event.preventDefault(); show('scan'); });
-document.querySelector('#reset').addEventListener('click', () => { localStorage.removeItem('signal-bootstrap-prototype'); show('add'); });
+document.querySelectorAll('[data-nav]').forEach((button) => button.addEventListener('click', () => show(button.dataset.nav)));
+document.querySelector('#project-control').addEventListener('click', () => { show('control'); setSheet(true); });
+document.querySelector('#close-sheet').addEventListener('click', () => setSheet(false));
+scrim.addEventListener('click', () => setSheet(false));
+document.querySelector('#add-form').addEventListener('submit', (event) => { event.preventDefault(); document.querySelector('#project-name').textContent = 'Harbor Relay'; show('scan'); });
 
-document.querySelectorAll('[data-action]').forEach((button) => {
-  button.addEventListener('click', () => {
-    const card = button.closest('[data-candidate]');
-    const disposition = card.querySelector('.disposition span');
-    const action = button.dataset.action;
-    const labels = { accept: 'ACCEPTED', defer: 'DEFERRED', reject: 'REJECTED', info: 'INFORMATION ONLY' };
-    disposition.textContent = labels[action] || 'PENDING';
-    card.classList.remove('pending', 'accepted');
-    card.classList.add(action === 'accept' ? 'accepted' : 'pending');
-    localStorage.setItem('signal-bootstrap-prototype', disposition.textContent);
-  });
-});
+document.querySelectorAll('[data-disposition]').forEach((button) => button.addEventListener('click', () => {
+  const card = button.closest('[data-candidate]');
+  const status = button.dataset.disposition.toUpperCase();
+  card.querySelector('.candidate-state').textContent = status === 'INFORMATION' ? 'INFO ONLY' : status;
+  card.classList.remove('pending', 'accepted');
+  if (status === 'ACCEPTED') card.classList.add('accepted');
+}));
 
-const dialog = document.querySelector('#evidence-dialog');
-document.querySelectorAll('[data-open-evidence]').forEach((button) => {
-  button.addEventListener('click', () => {
-    if (button.dataset.openEvidence === 'checklist') {
-      document.querySelector('#evidence-panel').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-      return;
-    }
-    dialog.showModal();
-  });
-});
-document.querySelector('.dialog-close').addEventListener('click', () => dialog.close());
-dialog.addEventListener('click', (event) => { if (event.target === dialog) dialog.close(); });
-document.querySelector('#close-evidence').addEventListener('click', () => document.querySelector('#evidence-panel').classList.toggle('closed'));
-
-document.querySelector('#search-button').addEventListener('click', () => {
-  const input = document.querySelector('#search-input');
-  input.animate([{ outlineColor: 'transparent' }, { outlineColor: '#a397fa' }, { outlineColor: 'transparent' }], { duration: 500 });
-});
-document.querySelector('#search-input').addEventListener('keydown', (event) => { if (event.key === 'Enter') document.querySelector('#search-button').click(); });
-
-show(location.hash.slice(1) || 'add');
+const initial = location.hash.slice(1);
+if (initial && initial !== 'add') show(initial);
+else { show('control'); setSheet(true); }

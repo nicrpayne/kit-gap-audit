@@ -1,8 +1,10 @@
 # Bootstrap Review workspace
 
+Bootstrap Review is the primary Project Activation instrument, not one step among several equally weighted screens. The compact five-state header provides location only; most operator time is spent here.
+
 ## Layout
 
-The workspace is a review instrument, not a wizard with one item per screen.
+The workspace is a review instrument, not a wizard with one item per screen. Proposed Scope is one of its switchable sections, not a separate stage.
 
 ```text
 ┌ Project identity / package freshness / coverage / activation status ┐
@@ -48,7 +50,7 @@ Suggested order:
 8. Risks / Unknowns / Commitments
 9. Missing Information
 
-Identity and source lineage come first because every later proposal depends on them.
+Identity and source lineage come first because every later proposal depends on them. The ordering is advisory: Nic can switch sections without completing a sequence.
 
 ## Candidate card
 
@@ -133,7 +135,7 @@ Warnings must say what will not happen:
 - `Candidate milestones are not commitments; only the one explicitly marked committed will be stored that way.`
 - `No Linear binding is configured; the first Audit can run, but Forecast cannot claim executable completeness.`
 
-The final button is `Activate Harbor Relay`. A secondary `Return to review` remains available. There is no “skip review and activate” route.
+The final button is the explicit instrument act `ACTIVATE PROJECT`, with the project identity adjacent in the manifest. A secondary `Return to review` remains available. There is no “skip review and activate” route.
 
 ## Failure and ambiguity surfaces
 
@@ -152,4 +154,3 @@ The final button is `Activate Harbor Relay`. A secondary `Return to review` rema
 - `Open source` — jump to the exact provider location when a deep link/locator exists.
 
 The wiki label always includes `Synthesis · derived`, never `Evidence`.
-

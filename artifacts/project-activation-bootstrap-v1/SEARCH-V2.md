@@ -1,5 +1,7 @@
 # Search V2 — hybrid semantic and graph-aware retrieval
 
+Search V2 is a **suite-wide Signal capability** available from global Search / `⌘K`. It is not an activation step or activation-only screen. Project Activation consumes the same retrieval services internally and links to global results when an operator wants to investigate beyond the bounded bootstrap package.
+
 ## Product promise
 
 Keep the current fast Level 1 search and add meaning without obscuring why a result appeared.
@@ -131,4 +133,3 @@ This recommendation avoids a standalone vector vendor, preserves exact search, a
 - embeddings/backfill;
 - synthesis/answer generation;
 - cross-project access control changes.
-

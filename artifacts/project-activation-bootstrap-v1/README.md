@@ -1,11 +1,12 @@
 # Signal Project Activation / Bootstrap V1
 
-Status: **ready for implementation**  
-Production reference: `d1c09c61339e3752379996da389ed0c661dc42cd`  
-Production tree: `2ed569d1d6b73bf371a5492c69db001a233c9c9d`  
+Status: **ready for implementation**
+
+Production reference: `bce38dde332fa1d049363fe502c5921326556311`
+
 Reference branch: `claude/product-timeline-audit-a72dmg`
 
-Production Hardening 2 (`43c93a8e00db6991313d9c54733aae81f10a35e2`) was fetched and inspected, but production currently reports the revert commit above. This tranche therefore uses current production read-only and does not depend on hardening-branch internals.
+This SHA was verified against both `origin/claude/product-timeline-audit-a72dmg` and the deployed `/api/version` endpoint on 2026-09-06. Implementation must fetch origin again and treat then-current production as authority; these artifacts do not depend on branch internals.
 
 ## The product sentence
 
@@ -16,6 +17,8 @@ Activation reconstructs a dormant project world from historical knowledge, asks 
 ## Recommended lifecycle
 
 `Draft identity → Discover corpus → Compile package → Resolve ambiguity → Review candidates → Ready check → Activate atomically → Freeze first ContextSnapshot → Run first Audit → Open Audit World → Refresh continuously`
+
+The operator-facing instrument compresses those internal states to `Identity → Scan → Review → Activate → Audit`. Review is the dominant workspace; its sections include Proposed Scope rather than sending the operator through a separate wizard stage. Global Search is suite infrastructure, not part of activation.
 
 The pre-activation workspace is deliberately not Forecast. Candidate decisions, dependencies, milestones, people, and scope concepts have zero simulation effect. Activation writes only the items the operator explicitly accepted, edited-and-accepted, or linked to an existing canonical object.
 
@@ -51,7 +54,7 @@ See [DATA-CONTRACTS.md](./DATA-CONTRACTS.md) for the proposed models and version
 | [DATA-CONTRACTS.md](./DATA-CONTRACTS.md) | Versioned contracts and proposed persistence model |
 | [IMPLEMENTATION-PLAN.md](./IMPLEMENTATION-PLAN.md) | Exact phases, likely files/APIs, bridge boundaries |
 | [TEST-MATRIX.md](./TEST-MATRIX.md) | Fixtures, acceptance laws, failure coverage |
-| [prototype/index.html](./prototype/index.html) | Build-excluded clickable prototype, screens A–G |
+| [prototype/index.html](./prototype/index.html) | Build-excluded operator prototype: five-state activation plus global Search |
 | [screenshots/](./screenshots/) | Browser-verified prototype evidence |
 
 ## Existing architecture this respects
@@ -65,14 +68,13 @@ See [DATA-CONTRACTS.md](./DATA-CONTRACTS.md) for the proposed models and version
 
 ## Prototype
 
-The prototype uses the invented project **Harbor Relay**. It contains no claims about any real future product or implied staffing. Open `prototype/index.html` directly or serve the repository root and navigate to the artifact. The flow includes:
+The prototype uses the invented project **Harbor Relay**. It contains no claims about any real future product or implied staffing. Open `prototype/index.html` directly or serve the repository root and navigate to the artifact. It demonstrates:
 
-1. Add Project
-2. Knowledge scan
-3. Bootstrap Review
-4. Proposed Scope detail
-5. Ready to Activate
-6. First Audit handoff
-7. Search V2 result drilldown
+1. compact Add Project sheet from the normal project control;
+2. asynchronous knowledge scan with safe partial entry;
+3. primary Bootstrap Review workspace with Proposed Scope as a section;
+4. explicit activation manifest and `ACTIVATE PROJECT` act;
+5. first Audit handoff;
+6. suite-wide Search V2 result drilldown from global Search / `⌘K`.
 
 The prototype is static HTML/CSS/JavaScript under `artifacts/`; Next does not import or build it.

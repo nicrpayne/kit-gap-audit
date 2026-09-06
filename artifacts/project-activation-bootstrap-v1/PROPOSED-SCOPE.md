@@ -1,5 +1,7 @@
 # Proposed Scope
 
+Proposed Scope is a section inside the primary Bootstrap Review workspace. It is not a standalone wizard page. Its candidate bay, evidence inspection, manual-add flow, and canonical handoff all use the shared Review disposition model.
+
 ## Product model
 
 Scope gets a persistent **Proposed Scope bay** beside the canonical release composition. It contains capability candidates from Hermes and manual operator assertions. Nothing in the bay contributes work, load, Forecast, or completeness until explicitly accepted into the canonical Capability owner and, separately, linked to execution work.
@@ -106,4 +108,3 @@ The UI says why (`Same Linear parent`, `Similar outcome`, `Derived from the same
 - `Insufficient evidence to establish scope` is used when sources mention the project but not deliverable capabilities.
 - `5 capabilities accepted · 2 have no executable mapping` is preferred to a false `scope complete` message.
 - A project can activate with zero capabilities if the operator acknowledges the gap; the first Audit should make that gap explicit.
-

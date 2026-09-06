@@ -1,214 +1,23 @@
 <!doctype html>
 <html lang="en">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Signal · Project Activation V1 prototype</title>
-  <link rel="stylesheet" href="styles.css">
-</head>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Signal · Project Activation operator prototype</title><link rel="stylesheet" href="styles.css"></head>
 <body>
-  <aside class="rail" aria-label="Prototype navigation">
-    <div class="mark" aria-label="Signal">S</div>
-    <div class="rail-line"></div>
-    <button class="rail-item active" data-screen="add"><span>A</span>Add</button>
-    <button class="rail-item" data-screen="scan"><span>B</span>Scan</button>
-    <button class="rail-item" data-screen="review"><span>C</span>Review</button>
-    <button class="rail-item" data-screen="scope"><span>D</span>Scope</button>
-    <button class="rail-item" data-screen="ready"><span>E</span>Ready</button>
-    <button class="rail-item" data-screen="audit"><span>F</span>Audit</button>
-    <button class="rail-item" data-screen="search"><span>G</span>Search</button>
-    <div class="rail-spacer"></div>
-    <div class="build">PROTOTYPE<br>BUILD-EXCLUDED</div>
-  </aside>
+<aside class="suite-rail"><div class="signal-mark">S</div><button class="suite-item active" data-nav="control"><span>◫</span>Control</button><button class="suite-item"><span>◈</span>Portfolio</button><button class="suite-item"><span>▤</span>Scope</button><button class="suite-item"><span>◇</span>Timeline</button><button class="suite-item" data-nav="audit"><span>◎</span>Audit</button><button class="suite-item"><span>△</span>Decisions</button><button class="suite-item" data-nav="search"><span>⌕</span>Search</button><div class="rail-fill"></div><span class="prototype-label">UX PROTOTYPE</span></aside>
+<main>
+  <header class="global-bar"><button class="project-control" id="project-control"><span class="status-dot"></span><b id="project-name">All projects</b><small>⌄</small></button><span class="global-context">MASTER CONTROL ROOM</span><div class="global-actions"><button class="command" data-nav="search">⌕ &nbsp; Search <kbd>⌘K</kbd></button><button class="icon-button">⚙</button></div></header>
 
-  <main>
-    <header class="topbar">
-      <div>
-        <span class="eyebrow">SIGNAL · PROJECT ACTIVATION</span>
-        <span class="crumb">Harbor Relay</span>
-      </div>
-      <div class="top-actions">
-        <span class="state"><i></i> NOT REALITY</span>
-        <button class="ghost" id="reset">Reset prototype</button>
-      </div>
-    </header>
+  <section class="screen active" id="screen-control"><div class="control-head"><div><span class="label">PORTFOLIO STATUS</span><h1>Control Room</h1></div><span class="live"><i></i> 4 projects reporting</span></div><div class="control-grid"><article class="metric"><span>ACTIVE PROJECTS</span><b>4</b><small>3 with current context</small></article><article class="metric"><span>OPEN DECISIONS</span><b>11</b><small>2 gated</small></article><article class="metric warning"><span>COVERAGE GAPS</span><b>6</b><small>Across 3 projects</small></article></div><div class="project-table panel"><div class="table-head"><span>PROJECT</span><span>CONTEXT</span><span>AUDIT</span><span>FORECAST</span></div><div class="table-row"><b>Northline</b><span>Current · 2h</span><span>3 findings</span><span>Oct 18</span></div><div class="table-row"><b>Atlas Field</b><span>Current · 5h</span><span>Clear</span><span>Nov 02</span></div><div class="table-row"><b>Beacon Ops</b><span class="amber">Stale · 19d</span><span>4 findings</span><span>Unavailable</span></div></div></section>
+  <div class="scrim active" id="scrim"></div>
+  <aside class="add-sheet active" id="add-sheet"><div class="sheet-head"><div><span class="label">PROJECT CONTROL</span><h2>Add project</h2></div><button id="close-sheet">×</button></div><p class="boundary">Signal can search existing knowledge and prepare a governed proposal. Nothing becomes project Reality during the scan.</p><form id="add-form"><label>Project name <em>Required</em><input value="Harbor Relay" required></label><label>Aliases / acronyms<input value="Relay, HR Pilot"></label><label>Owner hint <small>Optional</small><input value="Delivery operations"></label><label>Source hints <small>Optional</small><textarea>Field handoff workshop
+notion://relay-pilot</textarea></label><label class="toggle-row"><span><b>Search existing knowledge</b><small>Hermes will compile candidates for review.</small></span><input type="checkbox" checked><i></i></label><button class="primary wide" type="submit">CREATE &amp; SCAN</button><button class="blank-action" type="button">Advanced: start blank</button></form></aside>
 
-    <section class="screen active" id="screen-add" data-title="Add Project">
-      <div class="hero-grid">
-        <div class="intro">
-          <span class="section-number">01 · IDENTITY</span>
-          <h1>Track a project that<br>already has a history.</h1>
-          <p>Signal will search historical knowledge and propose a delivery model for review. Nothing becomes Reality automatically.</p>
-          <div class="law"><span>GOVERNANCE LAW</span>Knowledge may propose. Only a human can accept.</div>
-        </div>
-        <form class="panel form-panel" id="add-form">
-          <label>Canonical name<input value="Harbor Relay" required></label>
-          <label>Aliases / acronyms<input value="Relay, HR Pilot"></label>
-          <label>Description<textarea>A coordination product for field handoffs</textarea></label>
-          <div class="two">
-            <label>Owner hint<input value="Delivery operations"></label>
-            <label>Known source hint<input value="Field handoff workshop"></label>
-          </div>
-          <div class="mode selected">
-            <div class="radio"></div>
-            <div><strong>Bootstrap from existing knowledge</strong><p>Scan wiki, intelligence, evidence, transcripts, imports, and registered systems.</p></div>
-          </div>
-          <div class="mode">
-            <div class="radio"></div>
-            <div><strong>Start blank</strong><p>Create an explicit operator-authored project with known gaps.</p></div>
-          </div>
-          <button class="primary wide" type="submit">Start knowledge scan <b>→</b></button>
-        </form>
-      </div>
-    </section>
+  <section class="screen" id="screen-scan"><div class="activation-bar"><div><span class="label">PROJECT ACTIVATION</span><b>Harbor Relay</b></div><nav class="steps"><span class="done">Identity</span><i></i><span class="current">Scan</span><i></i><span>Review</span><i></i><span>Activate</span><i></i><span>Audit</span></nav><span class="boundary-chip">NOT REALITY</span></div><div class="scan-shell"><header class="work-head"><div><span class="label">KNOWLEDGE SCAN · RUN 01</span><h1>Compiling project knowledge</h1><p>Review can begin from verified partial results while slower providers continue.</p></div><button class="secondary">Pause</button></header><div class="scan-summary"><div><b>7</b><span>PROVIDERS CHECKED</span><small>5 available · 2 unavailable</small></div><div><b>43</b><span>ARTIFACTS FOUND</span><small>14 direct identity matches</small></div><div><b>9</b><span>INTELLIGENCE HEADS</span><small>2 contradictory</small></div><div><b>27</b><span>EVIDENCE PASSAGES</span><small>11 lineage roots</small></div><div><b>31</b><span>PROPOSALS</span><small>18 ready for review</small></div></div><div class="scan-columns"><div class="panel scan-ledger"><div class="panel-title"><b>Retrieval pipeline</b><span>LIVE</span></div><div class="scan-row complete"><i>✓</i><div><b>Identity and alias check</b><small>3 names checked · 1 low-risk overlap noted</small></div><span>COMPLETE</span></div><div class="scan-row complete"><i>✓</i><div><b>Exact + lexical retrieval</b><small>43 artifacts · 14 direct matches</small></div><span>COMPLETE</span></div><div class="scan-row complete"><i>✓</i><div><b>Evidence lineage</b><small>7 derivative repetitions collapsed</small></div><span>COMPLETE</span></div><div class="scan-row running"><i></i><div><b>Semantic idea retrieval</b><small>18 possible matches · validating source anchors</small></div><span>RUNNING</span></div><div class="scan-row queued"><i>·</i><div><b>Bounded graph expansion</b><small>Waiting for semantic candidate set</small></div><span>QUEUED</span></div><div class="scan-row queued"><i>·</i><div><b>Proposal compilation</b><small>18 available now · final package pending</small></div><span>PARTIAL</span></div></div><aside class="panel coverage-panel"><div class="panel-title"><b>Coverage and gaps</b><span>PARTIAL</span></div><dl><dt>Transcripts</dt><dd class="green">Available · 12</dd><dt>Wiki</dt><dd class="green">Available · 8</dd><dt>Current intelligence</dt><dd class="green">Available · 9</dd><dt>Notion</dt><dd class="green">Available · 3</dd><dt>Imported files</dt><dd class="green">Available · 4</dd><dt>Figma</dt><dd class="amber">Unavailable · auth</dd><dt>Archive</dt><dd class="amber">Unavailable · timeout</dd></dl><div class="notice"><b>1 alias overlap</b><p>“Relay” appears in an unrelated source set. Review is required; activation is not blocked yet.</p></div></aside></div><footer class="action-bar"><span><b>18 candidates are safe to review now.</b><small>Partial entry does not acknowledge missing providers.</small></span><button class="primary" data-nav="review">ENTER REVIEW</button></footer></div></section>
 
-    <section class="screen" id="screen-scan" data-title="Knowledge Scan">
-      <div class="narrow">
-        <div class="screen-head">
-          <div><span class="section-number">02 · CORPUS DISCOVERY</span><h1>Reconstructing Harbor Relay</h1><p>Deterministic identity and lexical passes run before semantic and graph expansion.</p></div>
-          <div class="scan-orbit"><i></i><i></i><i></i><span>31</span><small>PROPOSALS</small></div>
-        </div>
-        <div class="panel scan-panel">
-          <div class="scan-row done"><span class="check">✓</span><div><strong>Identity checks</strong><small>3 names checked · no blocking collision</small></div><b>Complete</b></div>
-          <div class="scan-row warn"><span class="check">!</span><div><strong>Connected providers</strong><small>5 of 7 responded · Figma and archive unavailable</small></div><b>Partial</b></div>
-          <div class="scan-row done"><span class="check">✓</span><div><strong>Exact + lexical retrieval</strong><small>43 artifacts considered · 14 direct matches</small></div><b>Complete</b></div>
-          <div class="scan-row done"><span class="check">✓</span><div><strong>Semantic idea retrieval</strong><small>18 possible matches · kept separate from direct evidence</small></div><b>Complete</b></div>
-          <div class="scan-row done"><span class="check">✓</span><div><strong>Graph + lineage expansion</strong><small>12 related artifacts · 7 derivative repetitions collapsed</small></div><b>Complete</b></div>
-          <div class="scan-row done"><span class="check">✓</span><div><strong>Package validation</strong><small>31 proposals · 4 ambiguities · no geometry</small></div><b>Complete</b></div>
-          <div class="coverage">
-            <span>Coverage is partial</span>
-            <p>The scan is usable, but unavailable providers remain an information gap. Continuing does not imply they were checked.</p>
-            <button class="text-button" data-open-evidence="coverage">View provider coverage →</button>
-          </div>
-          <button class="primary" data-go="review">Review reconstructed project <b>→</b></button>
-        </div>
-      </div>
-    </section>
+  <section class="screen" id="screen-review"><div class="activation-bar"><div><span class="label">PROJECT ACTIVATION</span><b>Harbor Relay</b></div><nav class="steps"><span class="done">Identity</span><i></i><span class="done">Scan</span><i></i><span class="current">Review</span><i></i><span>Activate</span><i></i><span>Audit</span></nav><span class="boundary-chip">NOT REALITY</span></div><div class="review-command"><div><span class="label">BOOTSTRAP REVIEW</span><h1>31 proposals <small>18 reviewed · 13 open</small></h1></div><div class="review-actions"><button class="secondary">Rescan</button><button class="primary" data-nav="activate">RUN READY CHECK</button></div></div><div class="review-workspace"><nav class="review-nav"><button><span>Sources</span><b>4/6</b></button><button><span>People / owners</span><b>0/4</b></button><button class="active"><span>Proposed Scope</span><b>3/5</b></button><button><span>Decisions</span><b>1/2</b></button><button><span>Dependencies</span><b>1/2</b></button><button><span>Milestones</span><b>2/3</b></button><button><span>Risks / unknowns</span><b>3/5</b></button><button><span>Missing information</span><b class="amber">4</b></button><div class="review-totals"><span>ACCEPTED <b>12</b></span><span>DEFERRED <b>4</b></span><span>REJECTED <b>2</b></span><span>PENDING <b>13</b></span></div></nav><section class="candidate-workspace"><div class="list-tools"><div><b>Proposed Scope</b><span>Candidate capabilities · zero Forecast effect</span></div><button class="secondary">+ Add manually</button><select><option>All statuses</option></select></div><article class="candidate accepted" data-candidate><div class="candidate-state">ACCEPTED</div><div><div class="tags"><span>CAPABILITY</span><span class="exact">DIRECT EVIDENCE</span><span>CURRENT</span></div><h3>Field handoff checklist</h3><p>Capture readiness and approval before a field transfer.</p><button class="trace-link">2 passages · 2 lineage roots · Trace provenance →</button></div><button class="more">•••</button></article><article class="candidate pending selected" data-candidate><div class="candidate-state">PENDING</div><div><div class="tags"><span>CAPABILITY</span><span class="semantic">SEMANTIC MATCH</span><span class="amber">AGING</span></div><h3>On-site readiness view</h3><p>Give field leads a concise readiness state before work begins.</p><button class="trace-link">Why proposed · 1 passage · wiki shares same lineage →</button><div class="candidate-actions"><button data-disposition="accepted">Accept</button><button>Edit</button><button>Merge</button><button data-disposition="deferred">Defer</button><button data-disposition="rejected">Reject</button><button data-disposition="information">Information only</button></div></div><button class="more">•••</button></article><article class="candidate accepted" data-candidate><div class="candidate-state">ACCEPTED</div><div><div class="tags"><span>CAPABILITY</span><span class="exact">DIRECT EVIDENCE</span><span>NO WORK LINK</span></div><h3>Transfer packet export</h3><p>Package the handoff record for downstream teams.</p><button class="trace-link">3 passages · 1 lineage root · Trace provenance →</button></div><button class="more">•••</button></article></section><aside class="inspector"><div class="inspector-head"><span>PROVENANCE INSPECTOR</span><button>×</button></div><h2>On-site readiness view</h2><p>Proposed because one workshop describes a visible readiness state. The wiki repeats that source and is not independent evidence.</p><div class="lineage"><div><span>PROPOSAL</span><b>Capability candidate</b><small>Hermes compiler · current head</small></div><i></i><div><span>INTELLIGENCE</span><b>Field readiness observation</b><small>Current · grounded</small></div><i></i><div class="evidence"><span>EVIDENCE PASSAGE</span><blockquote>“The field lead needs one place to see if the handoff is actually ready.”</blockquote><small>Operations workshop · segment 42</small><button>OPEN SOURCE ↗</button></div><i></i><div class="derived"><span>WIKI SYNTHESIS · DERIVED</span><b>Field operations summary</b><small>Same lineage root · not corroboration</small><button>VIEW KNOWLEDGE ↗</button></div></div><div class="evidence-actions"><button>Detach evidence</button><button>Attach evidence</button></div></aside></div></section>
 
-    <section class="screen" id="screen-review" data-title="Bootstrap Review">
-      <div class="workspace-head">
-        <div><span class="section-number">03 · BOOTSTRAP REVIEW</span><h1>Harbor Relay</h1></div>
-        <div class="package-meta"><span>PACKAGE</span><b>hermes · 1.0 · 8m ago</b><span>COVERAGE</span><b class="amber">5 / 7 providers</b></div>
-        <button class="ghost">Rescan</button><button class="primary" data-go="ready">Ready check →</button>
-      </div>
-      <div class="review-grid">
-        <nav class="section-nav">
-          <button class="active">Project identity <b>1 / 1</b></button>
-          <button>Sources found <b>4 / 6</b></button>
-          <button>People / owners <b>0 / 4</b></button>
-          <button data-go="scope">Proposed Scope <b>3 / 5</b></button>
-          <button>Decisions <b>1 / 2</b></button>
-          <button>Dependencies <b>1 / 2</b></button>
-          <button>Milestones <b>2 / 3</b></button>
-          <button>Risks / unknowns <b>0 / 5</b></button>
-          <button>Missing information <b class="amber">4</b></button>
-        </nav>
-        <div class="candidate-column">
-          <div class="list-head"><div><strong>Proposed Scope</strong><span>3 accepted · 2 pending</span></div><select><option>All proposals</option><option>Pending</option><option>Changed</option></select></div>
-          <article class="candidate accepted" data-candidate>
-            <div class="candidate-mark">C</div><div class="candidate-main"><div class="badges"><span>CAPABILITY</span><span class="direct">DIRECT EVIDENCE</span><span>CURRENT</span></div><h3>Field handoff checklist</h3><p>Capture readiness and approval before a field transfer.</p><button class="why" data-open-evidence="checklist">2 passages · 2 independent origins · Why proposed →</button></div><div class="disposition"><span>ACCEPTED</span><button class="kebab">•••</button></div>
-          </article>
-          <article class="candidate pending" data-candidate>
-            <div class="candidate-mark">C</div><div class="candidate-main"><div class="badges"><span>CAPABILITY</span><span class="semantic">SEMANTIC LEAD</span><span class="amber-text">AGING</span></div><h3>On-site readiness view</h3><p>Give field leads a concise readiness state before work begins.</p><button class="why" data-open-evidence="readiness">1 passage · same lineage as wiki · Why proposed →</button><div class="candidate-actions"><button data-action="accept">Accept</button><button>Edit</button><button>Merge</button><button data-action="defer">Defer</button><button data-action="reject">Reject</button><button data-action="info">Information only</button></div></div><div class="disposition"><span>PENDING</span></div>
-          </article>
-          <article class="candidate accepted" data-candidate>
-            <div class="candidate-mark">C</div><div class="candidate-main"><div class="badges"><span>CAPABILITY</span><span class="direct">DIRECT EVIDENCE</span><span>NO EXECUTION LINK</span></div><h3>Transfer packet export</h3><p>Package the handoff record for downstream teams.</p><button class="why" data-open-evidence="export">3 passages · 1 independent origin · Why proposed →</button></div><div class="disposition"><span>ACCEPTED</span></div>
-          </article>
-        </div>
-        <aside class="evidence-panel" id="evidence-panel">
-          <div class="evidence-top"><span>TRACE PROVENANCE</span><button id="close-evidence">×</button></div>
-          <h2>Field handoff checklist</h2>
-          <p class="muted">Proposed because two independent workshops describe the same user outcome and a Notion requirement names the checklist.</p>
-          <div class="trace-step"><span>IDEA</span><b>Capability proposal</b><small>Hermes compiler · current head</small></div>
-          <div class="trace-line"></div>
-          <div class="quote"><span>EVIDENCE PASSAGE · DIRECT</span><blockquote>“Before we transfer it, the field lead needs to check readiness and approve the handoff.”</blockquote><small>Field handoff workshop · Aug 19 · segment 42</small><button class="text-button">Open source ↗</button></div>
-          <div class="quote derivative"><span>WIKI SYNTHESIS · DERIVED</span><p>Harbor Relay coordinates field handoff readiness.</p><small>Derived from the workshop above · not independent evidence</small><button class="text-button">View knowledge →</button></div>
-          <div class="trace-actions"><button class="ghost">Detach passage</button><button class="ghost">Attach evidence</button></div>
-        </aside>
-      </div>
-    </section>
+  <section class="screen" id="screen-activate"><div class="activation-bar"><div><span class="label">PROJECT ACTIVATION</span><b>Harbor Relay</b></div><nav class="steps"><span class="done">Identity</span><i></i><span class="done">Scan</span><i></i><span class="done">Review</span><i></i><span class="current">Activate</span><i></i><span>Audit</span></nav><span class="boundary-chip">NOT REALITY</span></div><div class="activate-shell"><header class="work-head"><div><span class="label">READY CHECK · REVISION 07</span><h1>Activation manifest</h1><p>One governed transaction will create the canonical project state shown below.</p></div><span class="ready-badge">READY · 4 WARNINGS ACKNOWLEDGED</span></header><div class="manifest-grid"><section class="panel manifest"><div class="panel-title"><b>Will become canonical</b><span>17 OBJECTS</span></div><div class="manifest-row"><span>Project identity</span><b>1 Scope · 2 aliases</b></div><div class="manifest-row"><span>Capabilities</span><b>5 accepted · 2 work links</b></div><div class="manifest-row"><span>Decisions</span><b>2 open · 0 gates</b></div><div class="manifest-row"><span>Dependencies</span><b>1 declared</b></div><div class="manifest-row"><span>Milestones</span><b>3 planned · 1 committed</b></div><div class="manifest-row"><span>Source registrations</span><b>4 active · 1 candidate</b></div><div class="manifest-row"><span>Context boundary</span><b>Snapshot 01 + acceptance manifest</b></div></section><section class="panel manifest muted-manifest"><div class="panel-title"><b>Will remain external / candidate</b><span>23 ITEMS</span></div><div class="manifest-row"><span>Deferred</span><b>4 · review history</b></div><div class="manifest-row"><span>Rejected</span><b>2 · review history</b></div><div class="manifest-row"><span>Information only</span><b>3 · searchable context</b></div><div class="manifest-row"><span>People mentions</span><b>4 · not staffing</b></div><div class="manifest-row"><span>Milestone mentions</span><b>2 · not planned</b></div><div class="manifest-row"><span>Semantic relationships</span><b>1 · not dependency</b></div></section></div><div class="readiness-grid"><div><span>PROVIDER COVERAGE</span><b>5 / 7 available</b><small>Figma + archive unavailable</small></div><div><span>UNRESOLVED AMBIGUITIES</span><b class="amber">1 acknowledged</b><small>Low-risk alias overlap</small></div><div><span>MISSING INFORMATION</span><b class="amber">4 accepted gaps</b><small>Includes execution owner</small></div><div><span>FORECAST EFFECT</span><b>Unavailable initially</b><small>No complete work mapping</small></div></div><div class="activation-warning"><b>ACTIVATION DOES NOT CERTIFY COMPLETENESS.</b><span>The first Audit will compare this accepted model with external evidence and report what remains unexplained.</span></div><footer class="action-bar"><button class="secondary" data-nav="review">RETURN TO REVIEW</button><button class="activate-button" data-nav="audit">ACTIVATE PROJECT <small>Create canonical state · snapshot · first Audit</small></button></footer></div></section>
 
-    <section class="screen" id="screen-scope" data-title="Proposed Scope">
-      <div class="scope-layout">
-        <div class="screen-head"><div><span class="section-number">04 · PROPOSED SCOPE</span><h1>Candidate bay</h1><p>Capabilities remain outside the release until governed into a canonical owner.</p></div><button class="ghost" data-open-evidence="manual">+ Add to Scope manually</button></div>
-        <div class="scope-machine">
-          <div class="machine-label"><span>CANONICAL RELEASE · PENDING ACTIVATION</span><small>Will become Reality only when Harbor Relay is activated</small></div>
-          <div class="modules">
-            <div class="module"><span>ACCEPTED</span><b>Field handoff checklist</b><i></i><small>Possible Notion mapping</small></div>
-            <div class="module"><span>ACCEPTED</span><b>Transfer packet export</b><i></i><small>No execution mapping</small></div>
-            <div class="module"><span>ACCEPTED</span><b>Approval trail</b><i></i><small>Linear parent REL-42</small></div>
-            <div class="module reserve"><span>OPEN BAY</span><b>Not scope</b><small>Candidate proposals stay below</small></div>
-          </div>
-          <div class="bay-label"><span>PROPOSED SCOPE · ZERO FORECAST EFFECT</span><small>2 candidates waiting for governance</small></div>
-          <div class="candidate-bay">
-            <div class="bay-card"><span>SEMANTIC LEAD</span><b>On-site readiness view</b><small>Derivative wiki + one raw passage</small><div><button>Accept</button><button>Review</button></div></div>
-            <div class="bay-card warning"><span>OVERLAP HINT</span><b>Readiness checklist</b><small>Possible duplicate of Field handoff checklist</small><div><button>Merge</button><button>Review</button></div></div>
-          </div>
-        </div>
-        <div class="scope-footer"><div><span>FORECAST EFFECT</span><b>None until canonical work is linked</b></div><div><span>EXECUTION COVERAGE</span><b class="amber-text">1 capability has no work mapping</b></div><button class="primary" data-go="ready">Continue to ready check →</button></div>
-      </div>
-    </section>
+  <section class="screen" id="screen-audit"><div class="activation-bar"><div><span class="label">PROJECT ACTIVATION</span><b>Harbor Relay</b></div><nav class="steps"><span class="done">Identity</span><i></i><span class="done">Scan</span><i></i><span class="done">Review</span><i></i><span class="done">Activate</span><i></i><span class="current">Audit</span></nav><span class="reality-chip">ACTIVE</span></div><div class="audit-shell"><header class="work-head"><div><span class="label">FIRST AUDIT · RUN 01</span><h1>Accepted model under test</h1><p>Harbor Relay is active. Audit is identifying what the governed bootstrap still does not explain.</p></div><button class="primary">OPEN AUDIT WORLD</button></header><div class="audit-strip"><div><b>17</b><span>CANONICAL OBJECTS</span></div><div><b>7</b><span>FINDINGS</span></div><div><b>2</b><span>COVERAGE GAPS</span></div><div><b>4</b><span>UNKNOWNS</span></div><div><b>01</b><span>CONTEXT SNAPSHOT</span></div></div><div class="audit-grid"><section class="panel findings"><div class="panel-title"><b>Initial findings</b><span>7 OPEN</span></div><article><i class="risk-dot"></i><div><b>Execution model is incomplete</b><p>Three accepted capabilities have no canonical work link.</p></div><span>HIGH</span></article><article><i class="warn-dot"></i><div><b>Approval owner is unresolved</b><p>Two current intelligence heads disagree; neither was promoted to staffing.</p></div><span>MEDIUM</span></article><article><i class="warn-dot"></i><div><b>Provider coverage is partial</b><p>Figma and archive sources were unavailable at activation.</p></div><span>MEDIUM</span></article></section><aside class="panel snapshot"><div class="panel-title"><b>Audit basis</b><span>FROZEN</span></div><dl><dt>ContextSnapshot</dt><dd>ctx_01HARBOR</dd><dt>Accepted manifest</dt><dd>revision 07</dd><dt>Linear</dt><dd class="amber">Not configured</dd><dt>External intelligence</dt><dd>9 heads</dd><dt>Evidence</dt><dd>27 passages · 11 roots</dd></dl><p>Candidate, rejected, and deferred items remain visible to Audit as external context, but do not become delivery Reality.</p></aside></div></div></section>
 
-    <section class="screen" id="screen-ready" data-title="Ready to Activate">
-      <div class="narrow ready-layout">
-        <div class="screen-head"><div><span class="section-number">05 · READY TO ACTIVATE</span><h1>Make Harbor Relay real.</h1><p>This is the only step that writes the reviewed model into canonical owners.</p></div><div class="ready-ring"><span>READY</span><small>4 WARNINGS<br>ACKNOWLEDGED</small></div></div>
-        <div class="panel summary">
-          <div class="summary-row"><span>Project identity</span><b>1 Scope</b><small>Harbor Relay · 2 aliases</small></div>
-          <div class="summary-row"><span>Recurring sources</span><b>4 active · 1 candidate</b><small>2 providers unavailable and acknowledged</small></div>
-          <div class="summary-row"><span>Canonical capabilities</span><b>5</b><small>2 have no executable mapping</small></div>
-          <div class="summary-row"><span>Open Decisions</span><b>2 · 0 gates</b><small>Decisions do not move Forecast</small></div>
-          <div class="summary-row"><span>Dependencies</span><b>1 declared</b><small>1 semantic relationship stays information only</small></div>
-          <div class="summary-row"><span>Milestones</span><b>3 planned · 1 committed</b><small>2 mentions remain candidates</small></div>
-          <div class="summary-row"><span>People</span><b>4 mentions · 0 allocations</b><small>Mentions are not staffing</small></div>
-          <div class="summary-row"><span>Review history</span><b>4 deferred · 2 rejected</b><small>Retained with provenance, no Forecast effect</small></div>
-        </div>
-        <div class="warning-box"><b>Execution source not configured</b><p>The project can activate and Audit can run. Forecast will not claim executable completeness or a delivery date until an execution owner is configured.</p><label><input type="checkbox" checked> I understand this project will begin with an explicit execution gap.</label></div>
-        <div class="activate-row"><button class="ghost" data-go="review">← Return to review</button><button class="activate" data-go="audit">Activate Harbor Relay <b>→</b><small>Create Reality + first snapshot</small></button></div>
-      </div>
-    </section>
-
-    <section class="screen" id="screen-audit" data-title="First Audit Handoff">
-      <div class="audit-world">
-        <div class="audit-copy"><span class="section-number">06 · FIRST AUDIT</span><h1>Harbor Relay is now tracked.</h1><p>Signal compared the accepted model with available evidence and execution truth. Activation did not certify completeness.</p><div class="audit-stats"><div><b>5</b><span>CAPABILITIES</span></div><div><b>7</b><span>FINDINGS</span></div><div><b>2</b><span>COVERAGE GAPS</span></div></div><button class="primary">Open Audit World →</button><button class="text-button" data-go="search">Try Search V2 prototype →</button></div>
-        <div class="world" aria-label="Stylized Audit World preview">
-          <div class="halo h1"></div><div class="halo h2"></div>
-          <div class="node core"><b>HARBOR<br>RELAY</b><small>REALITY</small></div>
-          <div class="node cap n1">Scope</div><div class="node cap n2">Decisions</div><div class="node cap n3">Timeline</div><div class="node source n4">Sources</div><div class="node risk n5">7 gaps</div><div class="node evidence n6">Evidence</div>
-          <svg viewBox="0 0 700 540"><line x1="350" y1="270" x2="160" y2="130"/><line x1="350" y1="270" x2="535" y2="115"/><line x1="350" y1="270" x2="590" y2="320"/><line x1="350" y1="270" x2="470" y2="455"/><line x1="350" y1="270" x2="170" y2="430"/><line x1="350" y1="270" x2="100" y2="280"/></svg>
-          <div class="world-note">First Audit found what the accepted bootstrap still does not explain.</div>
-        </div>
-      </div>
-    </section>
-
-    <section class="screen" id="screen-search" data-title="Search V2">
-      <div class="search-layout">
-        <div class="search-head"><span class="section-number">07 · SEARCH V2</span><h1>Find the idea. Verify the source.</h1><div class="searchbox"><svg viewBox="0 0 24 24"><circle cx="10" cy="10" r="6"/><line x1="15" y1="15" x2="21" y2="21"/></svg><input id="search-input" value="Where have we discussed field readiness?"><button id="search-button">Search</button></div><div class="layer-chips"><span>Exact identity</span><span>Lexical + fuzzy</span><span class="active">Semantic ideas</span><span>Graph-aware</span></div></div>
-        <div class="search-results">
-          <div class="result-summary"><b>9 results</b><span>Grouped from 17 matches · derivative repetition collapsed</span></div>
-          <article class="result primary-result" data-open-evidence="search"><div class="result-icon">I</div><div><div class="badges"><span>EXTERNAL OBSERVATION</span><span class="semantic">SEMANTIC MATCH</span><span>CURRENT</span></div><h3>Field teams need a visible readiness state before handoff</h3><p>Current structured intelligence grounded in two evidence passages.</p><small>Matched the idea “field readiness” · 2 independent origins</small></div><button>Trace →</button></article>
-          <article class="result"><div class="result-icon quote-icon">“</div><div><div class="badges"><span>EVIDENCE PASSAGE</span><span class="direct">QUOTE</span></div><h3>“Before we transfer it, the field lead needs to check readiness…”</h3><p>Field handoff workshop · Aug 19 · segment 42</p><small>Evidence for the observation above</small></div><button>Open →</button></article>
-          <article class="result derivative-result"><div class="result-icon">W</div><div><div class="badges"><span>WIKI SYNTHESIS · DERIVED</span><span>KEYWORD</span></div><h3>Harbor Relay · field operations</h3><p>Human-readable synthesis of the workshop and requirement evidence.</p><small>Same lineage as result above · not independent corroboration</small></div><button>View →</button></article>
-          <article class="result"><div class="result-icon">S</div><div><div class="badges"><span>TRANSCRIPT</span><span>RELATED VIA GRAPH</span></div><h3>Field handoff workshop</h3><p>Source artifact containing the cited passage.</p><small>Related via extracted_from</small></div><button>Open →</button></article>
-        </div>
-        <aside class="search-trace">
-          <span class="section-number">WHY THIS MATCHED</span><h2>Semantic match</h2><p>Discusses the same operational idea: showing whether a field handoff is ready to proceed.</p>
-          <div class="trace-map"><div><b>IDEA / INTELLIGENCE</b><small>Current Observation</small></div><i></i><div><b>EVIDENCE PASSAGE</b><small>Exact quote · segment 42</small></div><i></i><div><b>SOURCE</b><small>Field handoff workshop</small></div></div>
-          <div class="not-confidence">Vector similarity is not shown as confidence or truth.</div>
-        </aside>
-      </div>
-    </section>
-  </main>
-
-  <dialog id="evidence-dialog">
-    <button class="dialog-close">×</button>
-    <span class="section-number">TRACE PROVENANCE</span>
-    <h2>Provider coverage</h2>
-    <p>This prototype keeps exact knowledge → evidence → source lineage visible. The complete implementation uses the right-side inspector shown in Review and Search.</p>
-    <div class="provider"><b>Transcripts</b><span class="ok">Available · 12 read</span></div>
-    <div class="provider"><b>Notion</b><span class="ok">Available · 3 read</span></div>
-    <div class="provider"><b>Figma</b><span class="bad">Unavailable · auth expired</span></div>
-    <div class="provider"><b>Archive</b><span class="bad">Unavailable · timed out</span></div>
-  </dialog>
-  <script src="app.js"></script>
-</body>
-</html>
+  <section class="screen" id="screen-search"><div class="search-shell"><header class="search-header"><div><span class="label">SIGNAL GLOBAL SEARCH · ⌘K</span><h1>Search</h1></div><span class="suite-chip">SUITE-WIDE · NOT AN ACTIVATION STEP</span></header><div class="search-box"><span>⌕</span><input value="Where have we discussed field readiness?"><kbd>↵</kbd></div><div class="search-layers"><span>1 · EXACT IDENTITY</span><i>→</i><span>2 · LEXICAL / FUZZY</span><i>→</i><span class="semantic">3 · SEMANTIC IDEAS</span><i>→</i><span>4 · BOUNDED GRAPH EXPANSION</span></div><div class="search-grid"><section class="search-results"><div class="result-head"><b>9 grouped results</b><span>17 raw matches · derivative repetition collapsed</span></div><article class="result selected"><div class="result-kind">OBS</div><div><div class="tags"><span>STRUCTURED INTELLIGENCE</span><span class="semantic">SEMANTIC MATCH</span><span>CURRENT</span></div><h3>Field teams need a visible readiness state before handoff</h3><p>Matched the idea “field readiness” · grounded in 2 independent origins.</p></div><button>TRACE</button></article><article class="result"><div class="result-kind quote">“</div><div><div class="tags"><span>EVIDENCE PASSAGE</span><span class="exact">QUOTE</span></div><h3>“The field lead needs one place to see if the handoff is actually ready.”</h3><p>Operations workshop · segment 42</p></div><button>OPEN</button></article><article class="result derivative"><div class="result-kind">W</div><div><div class="tags"><span>WIKI SYNTHESIS · DERIVED</span><span>KEYWORD</span></div><h3>Harbor Relay · field operations</h3><p>Same lineage as the workshop above · not independent corroboration.</p></div><button>VIEW</button></article><article class="result"><div class="result-kind">SRC</div><div><div class="tags"><span>SOURCE ARTIFACT</span><span>RELATED VIA GRAPH</span></div><h3>Operations workshop</h3><p>Related via extracted_from · Aug 19</p></div><button>OPEN</button></article></section><aside class="inspector search-inspector"><div class="inspector-head"><span>WHY THIS MATCHED</span></div><h2>Same operational idea</h2><p>The result discusses showing whether a field handoff is ready to proceed. Semantic retrieval found the candidate; evidence establishes the trace.</p><div class="lineage compact"><div><span>IDEA / INTELLIGENCE</span><b>Current observation</b></div><i></i><div class="evidence"><span>EVIDENCE PASSAGES</span><b>2 passages · 2 roots</b><button>VIEW PASSAGES →</button></div><i></i><div><span>EXACT SOURCES</span><b>Workshop + requirement</b><button>OPEN SOURCE →</button></div></div><div class="notice violet"><b>Similarity is not confidence.</b><p>Raw embedding distance is retriever diagnostics and is never presented as truth.</p></div></aside></div></div></section>
+</main><script src="app.js"></script></body></html>

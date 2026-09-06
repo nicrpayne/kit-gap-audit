@@ -138,11 +138,19 @@ Expected:
 
 ## UX tests
 
-- `⌘K → Add project` reachable everywhere the shared shell is used;
+- the normal project selector opens a compact Add Project sheet without replacing the active instrument;
+- Search existing knowledge defaults on; Start blank is secondary/advanced;
+- Create & scan enters Scan directly with no onboarding/landing interstitial;
+- activation navigation contains only Identity, Scan, Review, Activate, and Audit;
+- global Search / `⌘K` is reachable suite-wide and never appears as an activation state;
+- Scan reports providers, artifacts, intelligence heads, passages, aliases/collisions, proposals, and gaps/unavailable providers;
+- verified partial results can enter Review, while missing provider state remains visible and Ready laws still apply;
 - direct URL/reload reproduces bootstrap section and selected candidate;
 - keyboard candidate review and evidence drawer usable;
+- Proposed Scope is governed within Review and has no redundant standalone stage;
 - no bulk Accept action;
-- Ready summary exactly reconciles reviewed dispositions;
+- Ready summary exactly reconciles reviewed dispositions and separates canonical writes from external/candidate items;
+- the only canonical transition is the explicit `ACTIVATE PROJECT` act;
 - collision and derivative-only blockers identify the required remedy;
 - provider outage can be retried and can be acknowledged without disappearing;
 - narrow viewport uses an evidence drawer with focus return;

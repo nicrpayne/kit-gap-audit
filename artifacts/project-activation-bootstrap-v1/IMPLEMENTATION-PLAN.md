@@ -1,13 +1,13 @@
 # Implementation plan
 
-This plan is based on current production `d1c09c61339e3752379996da389ed0c661dc42cd`. It deliberately avoids the reverted Production Hardening 2 internals.
+Design reference: production `bce38dde332fa1d049363fe502c5921326556311`, verified from Git and deployed `/api/version` on 2026-09-06. When implementation begins, fetch origin and use **current production** as authority. Do not implement from an old design SHA or unstable branch internals.
 
 ## Current seams found in the repository
 
 | Area | Current seam | Constraint / opportunity |
 | --- | --- | --- |
 | Project identity | `Scope` in `prisma/schema.prisma`; `POST /api/scopes`; `/scopes`; `ScopesManager` | Scope requires `teamKey` and is immediately visible as Reality; unsuitable as a pre-activation draft |
-| Global entry | `components/instrument/CommandMenu.tsx`; `InstrumentShell.tsx` | Add one global action routing to the activation flow |
+| Global entry | `components/instrument/CommandMenu.tsx`; `InstrumentShell.tsx` | Add Project opens one compact route-backed sheet from normal project control; global Search remains suite-wide |
 | Project selection | `useProjectParam`; suite payload from `/api/instrument/project` | Only active Scopes should enter normal selectors; bootstrap routes use `bootstrapId` |
 | Context transport | `lib/context/package.ts`, `validate.ts`, `snapshot.ts`, `/api/refresh` | Strong immutable/idempotent pattern; add sibling bootstrap contract rather than create early ContextSnapshot |
 | Source policy | `SourceRegistration`, source APIs, `sourcePolicy.ts` | Reuse roles/statuses after activation; review suggestions pre-activation |
@@ -45,9 +45,9 @@ Likely files:
 - `app/api/project-bootstraps/[id]/route.ts`
 - `app/api/project-bootstraps/[id]/scans/route.ts`
 - `app/api/project-bootstraps/[id]/scan-status/route.ts` (or server-sent events if already supported; polling is sufficient V1)
-- `app/projects/new/page.tsx`
+- route-backed Add Project sheet from the normal project selector (a thin `/projects/new` fallback may remain for deep links)
 - `app/projects/bootstrap/[id]/page.tsx`
-- `components/bootstrap/AddProject.tsx`
+- `components/bootstrap/AddProjectSheet.tsx`
 - `components/bootstrap/ScanProgress.tsx`
 - `components/instrument/CommandMenu.tsx`
 - `components/ScopesManager.tsx` / `/scopes` copy to separate identity from execution binding
@@ -309,4 +309,3 @@ Go/no-go gates:
 - Phase 3: atomic activation + first Audit, including no-Linear behavior.
 - Phase 4: Scope/Dependency/Timeline parity and no double-count.
 - Phase 5: Level 1 regression suite + grounded semantic drilldown + fallback.
-
