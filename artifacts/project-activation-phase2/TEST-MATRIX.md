@@ -3,6 +3,7 @@
 | Area | Evidence |
 |---|---|
 | Contract/retrieval/lineage | `npm run proof:project-activation-phase2` |
+| Pre-Scope Hermes producer | `npm run proof:hermes-bootstrap-bridge`; synthetic fixture plus read-only real-estate shape smoke validated by Signal's TypeScript contract |
 | Rich accepted subset | DB proof canonical census |
 | Sparse/no Linear | DB proof activation + unavailable Forecast |
 | Contradiction | DB proof unresolved first-Audit finding |

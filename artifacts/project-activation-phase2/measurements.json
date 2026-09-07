@@ -4,6 +4,24 @@
   "phase1Base": "9153ee741f3a8de8d2fb93e4c52a31a60a074fe5",
   "contractVersion": "1.1",
   "migrationCountApplied": 22,
+  "hermesBootstrapBridge": {
+    "mode": "read-only pre-Scope identity compile",
+    "syntheticProof": "pass",
+    "realEstateContractSmoke": "pass",
+    "deterministic": true,
+    "realEstateJsaCensus": {
+      "intelligenceHeads": 181,
+      "relations": 96,
+      "evidencePassages": 173,
+      "artifacts": 53,
+      "proposals": 136,
+      "typedDependencyProposals": 14,
+      "derivativeWikiPassages": 7
+    },
+    "semanticRetrieval": "unavailable",
+    "geometry": "absent",
+    "networkWrites": 0
+  },
   "richActivation": {
     "capabilities": 3,
     "capabilityWorkLinks": 1,
