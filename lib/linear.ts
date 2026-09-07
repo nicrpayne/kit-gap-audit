@@ -17,6 +17,7 @@ export interface ScopeFilter {
   teamKey: string;
   projectNames?: string[];
   labelFilter?: string | null;
+  executionState?: string;
 }
 
 export interface LinearIssueSummary {
@@ -121,6 +122,10 @@ export function invalidateIssueCache(): void {
 // data (see Scope model), not env vars, so a new module (Precon, Design,
 // ...) is a new row, not a redeploy.
 export async function getScopedIssues(scope: ScopeFilter): Promise<LinearIssueSummary[]> {
+  // An activated project is valid before an execution system is configured.
+  // Returning the empty structural read here keeps Audit/Scope navigable;
+  // Forecast itself checks executionState and refuses to manufacture a date.
+  if (scope.executionState && scope.executionState !== "configured") return [];
   // Offline/design mode: opt-in only, never set in a real deployment. Lets
   // the whole app (especially /portfolio's live simulation) run without a
   // Linear key or network. See lib/dev/fixtures.ts.

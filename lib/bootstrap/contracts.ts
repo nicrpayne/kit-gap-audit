@@ -1,9 +1,11 @@
 import type { JsonValue } from "@/lib/context/package";
 
-export const BOOTSTRAP_PACKAGE_VERSION = "1.0" as const;
-export const BOOTSTRAP_COMPILER_VERSION = "signal-bootstrap-1.0" as const;
+export const BOOTSTRAP_PACKAGE_VERSION = "1.1" as const;
+export const SUPPORTED_BOOTSTRAP_PACKAGE_VERSIONS = ["1.0", "1.1"] as const;
+export type BootstrapPackageVersion = (typeof SUPPORTED_BOOTSTRAP_PACKAGE_VERSIONS)[number];
+export const BOOTSTRAP_COMPILER_VERSION = "signal-bootstrap-1.1" as const;
 
-export type BootstrapLifecycle = "draft" | "scanning" | "reviewing" | "scan_failed" | "archived";
+export type BootstrapLifecycle = "draft" | "scanning" | "reviewing" | "scan_failed" | "activated" | "archived";
 export type ProviderState = "available" | "unavailable" | "not_configured" | "partial" | "stale";
 export type CandidateDisposition =
   | "pending"
@@ -63,6 +65,7 @@ export interface BootstrapArtifact {
 
 export interface BootstrapEvidencePassage {
   evidenceId: string;
+  passageHash?: string;
   artifactId: string;
   exactQuote: string;
   locator: Record<string, JsonValue>;
@@ -86,6 +89,16 @@ export interface BootstrapIntelligenceHead {
   provenance: Record<string, JsonValue>;
 }
 
+export interface BootstrapIntelligenceRelation {
+  sourceId: string;
+  relation: "supports" | "contradicts" | "supersedes" | "resolves" | "reopens" | "depends_on" | "related_to";
+  targetId: string;
+  relationClass: "temporal" | "semantic" | "provenance" | "contextual";
+  sourceInPackage: boolean;
+  targetInPackage: boolean;
+  provenance: Record<string, JsonValue>;
+}
+
 export interface BootstrapProposal {
   proposalId: string;
   candidateKey: string;
@@ -95,10 +108,17 @@ export interface BootstrapProposal {
   statement: string;
   whyProposed: string;
   matchBasis: string;
+  basis?: "direct" | "semantic" | "inferred";
   evidenceRefs: string[];
   intelligenceRefs: string[];
   relevance: "high" | "medium" | "low";
   currentness: "current" | "aging" | "stale" | "unknown";
+  retrieval?: {
+    strategy: "exact_identity" | "lexical" | "structured_current_head" | "graph_expansion" | "semantic" | "operator_assertion" | "coverage_gap";
+    scoreBand: "exact" | "strong" | "possible" | "not_applicable";
+    semanticSimilarity?: number;
+  };
+  ambiguityMarkers?: string[];
   grounding: {
     directEvidenceCount: number;
     independentLineageRootCount: number;
@@ -124,13 +144,19 @@ export interface BootstrapGap {
 }
 
 export interface ProjectBootstrapPackageV1 {
-  version: typeof BOOTSTRAP_PACKAGE_VERSION;
+  version: BootstrapPackageVersion;
   packageId: string;
   producer: "gap_app" | "hermes" | "manual";
   compilerVersion: string;
   generatedAt: string;
   bootstrapId: string;
   requestedIdentity: ProjectIdentityQuery;
+  identity?: {
+    detectedCanonicalName: string;
+    aliases: string[];
+    collisions: string[];
+    relatedEntities: string[];
+  };
   discovery: {
     strategies: { id: string; state: "complete" | "partial" | "unavailable"; detail: string }[];
     partial: boolean;
@@ -138,12 +164,18 @@ export interface ProjectBootstrapPackageV1 {
   artifacts: BootstrapArtifact[];
   evidence: BootstrapEvidencePassage[];
   intelligenceHeads: BootstrapIntelligenceHead[];
+  relations?: BootstrapIntelligenceRelation[];
   proposals: BootstrapProposal[];
   coverage: ProviderCoverage[];
   ambiguities: BootstrapAmbiguity[];
   gaps: BootstrapGap[];
   warnings: string[];
 }
+
+// External compiler name for the same versioned transport. Keeping the Phase
+// 1 type export avoids a flag-day rename while making the Hermes contract
+// explicit at the API boundary.
+export type BootstrapKnowledgePackageV1 = ProjectBootstrapPackageV1;
 
 const FORBIDDEN_GEOMETRY_KEYS = new Set([
   "x", "y", "xy", "position", "positions", "coordinates", "geometry", "layout", "laneGeometry",
@@ -172,7 +204,7 @@ function rejectGeometry(value: unknown, path = "package") {
 export function validateBootstrapPackage(value: unknown, expectedBootstrapId?: string): ProjectBootstrapPackageV1 {
   if (!isObject(value)) throw new BootstrapPackageValidationError("package must be an object");
   rejectGeometry(value);
-  if (value.version !== BOOTSTRAP_PACKAGE_VERSION) {
+  if (!(SUPPORTED_BOOTSTRAP_PACKAGE_VERSIONS as readonly string[]).includes(String(value.version))) {
     throw new BootstrapPackageValidationError(`unsupported bootstrap package version ${String(value.version)}`);
   }
   for (const key of ["packageId", "producer", "compilerVersion", "generatedAt", "bootstrapId"] as const) {
@@ -196,6 +228,13 @@ export function validateBootstrapPackage(value: unknown, expectedBootstrapId?: s
   if (!isObject(value.discovery) || !Array.isArray(value.discovery.strategies)) {
     throw new BootstrapPackageValidationError("discovery.strategies must be an array");
   }
+  if (value.version === "1.1") {
+    if (!isObject(value.identity) || typeof value.identity.detectedCanonicalName !== "string" ||
+        !Array.isArray(value.identity.aliases) || !Array.isArray(value.identity.collisions) || !Array.isArray(value.identity.relatedEntities)) {
+      throw new BootstrapPackageValidationError("identity is required for bootstrap package 1.1");
+    }
+    if (!Array.isArray(value.relations)) throw new BootstrapPackageValidationError("relations must be an array for bootstrap package 1.1");
+  }
   const artifactIds = new Set<string>();
   for (const [index, artifact] of (value.artifacts as unknown[]).entries()) {
     if (!isObject(artifact) || typeof artifact.artifactId !== "string" || !artifact.artifactId) {
@@ -214,6 +253,9 @@ export function validateBootstrapPackage(value: unknown, expectedBootstrapId?: s
     if (typeof evidence.artifactId !== "string" || !artifactIds.has(evidence.artifactId)) {
       throw new BootstrapPackageValidationError(`evidence[${index}].artifactId does not resolve`);
     }
+    if (evidence.passageHash !== undefined && (typeof evidence.passageHash !== "string" || !evidence.passageHash.trim())) {
+      throw new BootstrapPackageValidationError(`evidence[${index}].passageHash must be a non-empty string when supplied`);
+    }
   }
   const intelligenceIds = new Set<string>();
   for (const [index, head] of (value.intelligenceHeads as unknown[]).entries()) {
@@ -225,6 +267,17 @@ export function validateBootstrapPackage(value: unknown, expectedBootstrapId?: s
       if (typeof ref !== "string" || !evidenceIds.has(ref)) {
         throw new BootstrapPackageValidationError(`intelligenceHeads[${index}] has a dangling evidence ref`);
       }
+    }
+  }
+  for (const [index, relation] of (Array.isArray(value.relations) ? value.relations : []).entries()) {
+    if (!isObject(relation) || typeof relation.sourceId !== "string" || typeof relation.targetId !== "string" || typeof relation.relation !== "string") {
+      throw new BootstrapPackageValidationError(`relations[${index}] is invalid`);
+    }
+    if (relation.sourceInPackage === true && !intelligenceIds.has(relation.sourceId)) {
+      throw new BootstrapPackageValidationError(`relations[${index}].sourceId does not resolve`);
+    }
+    if (relation.targetInPackage === true && !intelligenceIds.has(relation.targetId)) {
+      throw new BootstrapPackageValidationError(`relations[${index}].targetId does not resolve`);
     }
   }
   const seen = new Set<string>();

@@ -42,7 +42,10 @@ const allScopes = (await scopesResponse.json()).scopes;
 const projects = EXPECTED_IDS.map((id) => allScopes.find((scope) => scope.id === id)).filter(Boolean);
 check("fixture exposes every permanent matrix project", projects.length === EXPECTED_IDS.length, projects.map((p) => p.id).join(","));
 
-const browser = await chromium.launch({ headless: true });
+const browser = await chromium.launch({
+  headless: true,
+  ...(process.env.PLAYWRIGHT_CHROMIUM_PATH ? { executablePath: process.env.PLAYWRIGHT_CHROMIUM_PATH } : {}),
+});
 const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, deviceScaleFactor: 1 });
 await context.addCookies([{
   name: "kit_session",

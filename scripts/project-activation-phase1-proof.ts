@@ -42,8 +42,9 @@ assert.equal(changed.status, "pending");
 assert.equal(changed.changedSincePrior, true);
 
 const schema = readFileSync("prisma/schema.prisma", "utf8");
-const bootstrapBlock = schema.slice(schema.indexOf("model ProjectBootstrap"));
-assert.ok(!/\bscopeId\b/.test(bootstrapBlock.split("model BootstrapScanRun")[0]), "ProjectBootstrap must not reference Scope");
+const bootstrapModel = schema.match(/model ProjectBootstrap \{[\s\S]*?\n\}/)?.[0] ?? "";
+assert.ok(!/\bscopeId\s+String\b/.test(bootstrapModel), "ProjectBootstrap must not require a Scope before activation");
+assert.match(bootstrapModel, /activation\s+ProjectActivation\?/, "Phase 2 may add only an optional post-activation link");
 for (const protectedModel of ["Scope", "ContextSnapshot", "Decision", "DecisionGate", "TimelineEvent", "Person", "Allocation", "Report"]) {
   assert.ok(!rich.proposals.some((p) => p.payload.canonicalModel === protectedModel));
 }

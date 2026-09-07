@@ -28,15 +28,19 @@ export const richHistoricalCorpus: BootstrapCorpus = {
     { id: "intel-milestone", type: "Commitment", statement: "Harbor Relay pilot review is scheduled.", isCurrent: true, observedDate: "2026-08-20T15:00:00.000Z", fields: { action: "Pilot review", due_date: "2026-10-02" }, evidenceRefs: ["evidence-harbor-direct"], supersedes: [], contradictedBy: [], provenance: { batch: "fixture-rich" }, sourceSnapshotId: "snapshot-rich" },
   ],
   derivedClaims: [], activeIdentities: [], registrations: [], snapshotCount: 1,
+  relations: [
+    { sourceId: "intel-capability", relation: "supports", targetId: "intel-decision", relationClass: "semantic", sourceInPackage: true, targetInPackage: true, provenance: { batch: "fixture-rich" } },
+    { sourceId: "intel-dependency", relation: "depends_on", targetId: "intel-capability", relationClass: "contextual", sourceInPackage: true, targetInPackage: true, provenance: { batch: "fixture-rich" } },
+  ],
 };
 
 export const sparseCorpus: BootstrapCorpus = {
   artifacts: [{ ...directArtifact, id: "artifact-cedar", title: "Cedar Note mention", canonicalRef: "fixture://transcript/cedar", text: "Cedar Note was mentioned; no scope was described.", lineageRootIds: ["fixture://transcript/cedar"] }],
-  evidence: [], intelligence: [], derivedClaims: [], activeIdentities: [], registrations: [], snapshotCount: 0,
+  evidence: [], intelligence: [], relations: [], derivedClaims: [], activeIdentities: [], registrations: [], snapshotCount: 0,
 };
 
 export const aliasCollisionCorpus: BootstrapCorpus = {
-  artifacts: [], evidence: [], intelligence: [], derivedClaims: [], registrations: [], snapshotCount: 0,
+  artifacts: [], evidence: [], intelligence: [], relations: [], derivedClaims: [], registrations: [], snapshotCount: 0,
   activeIdentities: [{ id: "scope-northstar", name: "Northstar Vendor Program", projectNames: ["NS"] }],
 };
 

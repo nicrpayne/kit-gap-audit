@@ -11,11 +11,15 @@ export async function readBootstrap(bootstrapId: string) {
         include: { evidenceLinks: true },
       },
       reviewEvents: { orderBy: { createdAt: "desc" }, take: 100 },
+      activation: true,
     },
   });
   if (!bootstrap) return null;
   const activePackage = bootstrap.activePackageId
     ? await prisma.bootstrapPackage.findUnique({ where: { id: bootstrap.activePackageId } })
+    : null;
+  const firstAudit = bootstrap.activation
+    ? await prisma.auditRun.findUnique({ where: { id: bootstrap.activation.firstAuditRunId }, include: { findings: { orderBy: { createdAt: "asc" } } } })
     : null;
   const counts = bootstrap.candidates.reduce<Record<string, number>>((out, candidate) => {
     out[candidate.kind] = (out[candidate.kind] ?? 0) + 1;
@@ -28,6 +32,7 @@ export async function readBootstrap(bootstrapId: string) {
       ownerHint: bootstrap.ownerHint, sourceHints: bootstrap.sourceHints,
       searchExistingKnowledge: bootstrap.searchExistingKnowledge, status: bootstrap.status,
       reviewRevision: bootstrap.reviewRevision, createdAt: bootstrap.createdAt, updatedAt: bootstrap.updatedAt,
+      activation: bootstrap.activation ? { ...bootstrap.activation, firstAudit } : null,
     },
     scans: bootstrap.scans,
     activePackage: activePackage
@@ -41,7 +46,12 @@ export async function readBootstrap(bootstrapId: string) {
     candidates: bootstrap.candidates,
     reviewEvents: bootstrap.reviewEvents,
     counts,
-    boundary: {
+    boundary: bootstrap.activation ? {
+      label: "ACTIVATED",
+      canonicalWrites: 1,
+      forecastEffect: 0,
+      detail: "The accepted activation manifest crossed into Reality. All later scan candidates remain external until separately accepted.",
+    } : {
       label: "NOT REALITY",
       canonicalWrites: 0,
       forecastEffect: 0,

@@ -3,6 +3,8 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import InstrumentShell from "@/components/instrument/InstrumentShell";
+import Link from "@/components/instrument/SignalLink";
+import type { ActivationManifestV1 } from "@/lib/bootstrap/activation";
 import type {
   BootstrapEvidencePassage, BootstrapIntelligenceHead,
   BootstrapProposal, ProjectBootstrapPackageV1, ProviderCoverage,
@@ -37,6 +39,7 @@ interface BootstrapRead {
   bootstrap: {
     id: string; canonicalName: string; aliases: string[]; ownerHint: string | null; sourceHints: unknown;
     searchExistingKnowledge: boolean; status: string; reviewRevision: number; createdAt: string; updatedAt: string;
+    activation: { id: string; scopeId: string; contextSnapshotId: string; firstAuditRunId: string; firstAudit: { id: string; findingCount: number; findings: { id: string; title: string; severity: string; type: string }[] } | null } | null;
   };
   scans: Scan[];
   activePackage: { id: string; packageId: string; packageVersion: string; producer: string; compilerVersion: string; packageHash: string; generatedAt: string; package: ProjectBootstrapPackageV1 } | null;
@@ -56,7 +59,15 @@ const SECTIONS = [
   { id: "gaps", label: "Missing information", kinds: ["missing_information"] },
 ] as const;
 
-type Surface = "identity" | "scan" | "review";
+type Surface = "identity" | "scan" | "review" | "activate" | "audit";
+
+interface ActivationResult {
+  reused: boolean;
+  scope: { id: string; name: string; executionState: string };
+  snapshot: { id: string; packageId: string };
+  audit: { id: string; findingCount: number; findings: { id: string; title: string; severity: string; type: string }[] };
+  links: { auditWorld: string; scope: string; reports: string };
+}
 
 export default function BootstrapWorkspace({ bootstrapId }: { bootstrapId: string }) {
   const params = useSearchParams();
@@ -65,10 +76,13 @@ export default function BootstrapWorkspace({ bootstrapId }: { bootstrapId: strin
   const [busy, setBusy] = useState<string | null>(null);
   const [surface, setSurface] = useState<Surface>(() => {
     const requested = params.get("view");
-    return requested === "identity" || requested === "review" ? requested : "scan";
+    return requested === "identity" || requested === "scan" || requested === "review" || requested === "activate" || requested === "audit" ? requested : "scan";
   });
   const [sectionId, setSectionId] = useState(() => params.get("section") ?? "sources");
   const [selectedId, setSelectedId] = useState<string | null>(() => params.get("candidate"));
+  const [manifest, setManifest] = useState<ActivationManifestV1 | null>(null);
+  const [acknowledged, setAcknowledged] = useState(false);
+  const [activationResult, setActivationResult] = useState<ActivationResult | null>(null);
 
   const load = useCallback(async () => {
     const response = await fetch(`/api/project-bootstraps/${bootstrapId}`, { cache: "no-store" });
@@ -153,13 +167,47 @@ export default function BootstrapWorkspace({ bootstrapId }: { bootstrapId: strin
     finally { setBusy(null); }
   }
 
+  const loadManifest = useCallback(async () => {
+    if (!data) return;
+    const response = await fetch(`/api/project-bootstraps/${bootstrapId}/activation-manifest?revision=${data.bootstrap.reviewRevision}`, { cache: "no-store" });
+    const body = await response.json();
+    if (!response.ok) throw new Error(body.error ?? "Could not prepare activation manifest");
+    setManifest(body.manifest);
+  }, [bootstrapId, data]);
+
+  useEffect(() => {
+    if (surface === "activate") loadManifest().catch((cause) => setError(cause instanceof Error ? cause.message : "Could not prepare activation manifest"));
+  }, [surface, loadManifest]);
+
+  async function activate() {
+    if (!data || !manifest) return;
+    setBusy("activate"); setError(null);
+    try {
+      const response = await fetch(`/api/project-bootstraps/${bootstrapId}/activate`, {
+        method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          expectedRevision: data.bootstrap.reviewRevision,
+          acknowledgeProviderGaps: acknowledged,
+          acknowledgedBlockerIds: acknowledged ? manifest.blockers.map((blocker) => blocker.id).filter((id) => id !== "provider-gaps") : [],
+          execution: { state: "not_configured" },
+        }),
+      });
+      const body = await response.json();
+      if (!response.ok) throw new Error(body.error ?? "Could not activate project");
+      setActivationResult(body);
+      await load();
+      setSurface("audit");
+    } catch (cause) { setError(cause instanceof Error ? cause.message : "Could not activate project"); }
+    finally { setBusy(null); }
+  }
+
   const stateBar = data ? (
     <div className="flex h-[42px] shrink-0 items-center gap-3 border-b px-4" style={{ background: "var(--i-panel)", borderColor: "var(--i-border)" }}>
       <span className="text-[12px] font-semibold text-[var(--i-text)]">{data.bootstrap.canonicalName}</span>
-      <span className="rounded px-2 py-1 text-[9px] font-semibold tracking-[0.12em]" style={{ color: "var(--i-amber)", background: "var(--i-amber-soft)", border: "1px solid color-mix(in srgb, var(--i-amber) 45%, transparent)" }}>NOT REALITY</span>
+      <span className="rounded px-2 py-1 text-[9px] font-semibold tracking-[0.12em]" style={{ color: data.bootstrap.activation ? "var(--i-mint)" : "var(--i-amber)", background: data.bootstrap.activation ? "var(--i-mint-soft)" : "var(--i-amber-soft)", border: "1px solid color-mix(in srgb, currentColor 45%, transparent)" }}>{data.bootstrap.activation ? "ACTIVATED" : "NOT REALITY"}</span>
       <span className="text-[10px] text-[var(--i-text-faint)]">Bootstrap {data.bootstrap.id.slice(-7)} · rev {data.bootstrap.reviewRevision}</span>
       <span className="flex-1" />
-      <span className="text-[10px] text-[var(--i-text-faint)]">0 canonical writes · 0 Forecast effect</span>
+      <span className="text-[10px] text-[var(--i-text-faint)]">{data.bootstrap.activation ? "accepted manifest canonicalized · Forecast honest" : "0 canonical writes · 0 Forecast effect"}</span>
     </div>
   ) : undefined;
 
@@ -170,21 +218,23 @@ export default function BootstrapWorkspace({ bootstrapId }: { bootstrapId: strin
   return (
     <InstrumentShell stateBar={stateBar} minViewportWidth={1060}>
       <div className="flex min-h-0 flex-1 flex-col" style={{ background: "var(--i-bg)" }}>
-        <Lifecycle surface={surface} setSurface={setSurface} reviewReady={Boolean(pkg)} />
+        <Lifecycle surface={surface} setSurface={setSurface} reviewReady={Boolean(pkg)} activated={Boolean(data.bootstrap.activation)} />
         {error && <div className="shrink-0 border-b px-4 py-2 text-[11px] text-[var(--i-red)]" style={{ borderColor: "var(--i-border)", background: "var(--i-red-soft)" }}>{error}</div>}
         {surface === "identity" ? <IdentityPanel data={data} onScan={rescan} busy={busy === "scan"} />
           : surface === "scan" ? <ScanPanel data={data} scan={latest} pkg={pkg} onReview={() => setSurface("review")} onScan={rescan} busy={busy === "scan"} />
-          : <ReviewPanel data={data} pkg={pkg} section={section} visible={visible} selected={selected} setSection={setSectionId} setSelected={setSelectedId} busy={busy} update={updateCandidate} edit={edit} reject={reject} addManual={addManual} onRescan={rescan} />}
+          : surface === "review" ? <ReviewPanel data={data} pkg={pkg} section={section} visible={visible} selected={selected} setSection={setSectionId} setSelected={setSelectedId} busy={busy} update={updateCandidate} edit={edit} reject={reject} addManual={addManual} onRescan={rescan} />
+          : surface === "activate" ? <ManifestPanel manifest={manifest} acknowledged={acknowledged} setAcknowledged={setAcknowledged} activate={activate} busy={busy === "activate"} alreadyActivated={Boolean(data.bootstrap.activation)} />
+          : <FirstAuditPanel result={activationResult} activation={data.bootstrap.activation} />}
       </div>
     </InstrumentShell>
   );
 }
 
-function Lifecycle({ surface, setSurface, reviewReady }: { surface: Surface; setSurface: (s: Surface) => void; reviewReady: boolean }) {
+function Lifecycle({ surface, setSurface, reviewReady, activated }: { surface: Surface; setSurface: (s: Surface) => void; reviewReady: boolean; activated: boolean }) {
   const items = [
     { id: "identity", label: "Identity", enabled: true }, { id: "scan", label: "Scan", enabled: true },
-    { id: "review", label: "Review", enabled: reviewReady }, { id: "activate", label: "Activate", enabled: false },
-    { id: "audit", label: "Audit", enabled: false },
+    { id: "review", label: "Review", enabled: reviewReady }, { id: "activate", label: "Activate", enabled: reviewReady },
+    { id: "audit", label: "Audit", enabled: activated },
   ] as const;
   return <div className="flex h-[48px] shrink-0 items-center border-b px-4" style={{ borderColor: "var(--i-border)", background: "var(--i-void)" }}>
     {items.map((item, index) => <div key={item.id} className="flex items-center">
@@ -198,8 +248,55 @@ function Lifecycle({ surface, setSurface, reviewReady }: { surface: Surface; set
       </button>
     </div>)}
     <span className="flex-1" />
-    <span className="text-[9px] text-[var(--i-text-faint)]">Phase 1 stops before activation</span>
+    <span className="text-[9px] text-[var(--i-text-faint)]">Knowledge proposes · a human activates</span>
   </div>;
+}
+
+function ManifestPanel({ manifest, acknowledged, setAcknowledged, activate, busy, alreadyActivated }: {
+  manifest: ActivationManifestV1 | null; acknowledged: boolean; setAcknowledged: (value: boolean) => void;
+  activate: () => void; busy: boolean; alreadyActivated: boolean;
+}) {
+  if (!manifest) return <main className="flex flex-1 items-center justify-center text-[12px] text-[var(--i-text-faint)]">Preparing activation manifest…</main>;
+  const canonical = [
+    ...manifest.willBecomeCanonical.capabilities, ...manifest.willBecomeCanonical.decisions,
+    ...manifest.willBecomeCanonical.dependencies, ...manifest.willBecomeCanonical.milestones,
+    ...manifest.willBecomeCanonical.sourceRegistrations,
+  ];
+  const external = manifest.willRemainExternal.candidates;
+  return <main className="min-h-0 flex-1 overflow-y-auto p-5" data-shoot="activation-manifest">
+    <div className="mx-auto max-w-[1180px] space-y-4">
+      <div><div className="i-label" style={{ color: "var(--i-signal)" }}>Activation Manifest · revision {manifest.reviewRevision}</div><h1 className="mt-1 text-[20px] font-semibold text-[var(--i-text)]">{manifest.projectIdentity.canonicalName}</h1><p className="mt-2 text-[11px] text-[var(--i-amber)]">{manifest.warning}</p></div>
+      <div className="grid grid-cols-2 gap-4">
+        <ManifestColumn title="WILL BECOME CANONICAL" tone="var(--i-mint)" rows={canonical.map((item) => `${item.kind} · ${item.title}`)} empty="Only the active project identity will be created." />
+        <ManifestColumn title="WILL REMAIN EXTERNAL / CANDIDATE" tone="var(--i-amber)" rows={[
+          ...external.map((item) => `${item.status} · ${item.kind} · ${item.title}`),
+          ...manifest.willRemainExternal.peopleNotStaffing.map((item) => `person mention, not staffing · ${item.title}`),
+          ...manifest.willRemainExternal.semanticRelationsNotDependencies.map((item) => `${item.relation} relation, not dependency · ${item.sourceId} → ${item.targetId}`),
+          ...manifest.willRemainExternal.providerGaps.map((item) => `${item.provider} · ${item.state}`),
+        ]} empty="No external review items." />
+      </div>
+      <section className="rounded-lg border p-4" style={{ background: "var(--i-panel)", borderColor: "var(--i-border)" }}>
+        <div className="grid grid-cols-3 gap-4 text-[10px]"><div><span className="i-label">Execution</span><p className="mt-1 text-[var(--i-text)]">{manifest.execution.state.replaceAll("_", " ")}</p></div><div><span className="i-label">Forecast</span><p className="mt-1 text-[var(--i-amber)]">{manifest.forecast.state} · {manifest.forecast.reason}</p></div><div><span className="i-label">First Audit</span><p className="mt-1 text-[var(--i-text)]">Runs atomically after the frozen snapshot is created.</p></div></div>
+        {(manifest.blockers.length > 0 || manifest.willRemainExternal.providerGaps.length > 0) && <label className="mt-4 flex items-start gap-2 text-[10px] text-[var(--i-text-soft)]"><input type="checkbox" checked={acknowledged} onChange={(event) => setAcknowledged(event.target.checked)} /><span>I acknowledge the provider gaps and unresolved ambiguities shown above. Activation does not resolve or certify them.</span></label>}
+        <div className="mt-4 flex justify-end"><button data-shoot="activate-project" onClick={activate} disabled={busy || alreadyActivated || ((manifest.blockers.length > 0 || manifest.willRemainExternal.providerGaps.length > 0) && !acknowledged)} className="signal-control rounded px-5 py-2 text-[10px] font-semibold disabled:opacity-35">{alreadyActivated ? "PROJECT ACTIVATED" : busy ? "ACTIVATING…" : "ACTIVATE PROJECT"}</button></div>
+      </section>
+    </div>
+  </main>;
+}
+
+function ManifestColumn({ title, tone, rows, empty }: { title: string; tone: string; rows: string[]; empty: string }) {
+  return <section className="rounded-lg border p-4" style={{ background: "var(--i-panel)", borderColor: tone }}><h2 className="text-[10px] font-semibold tracking-[0.12em]" style={{ color: tone }}>{title}</h2><ul className="mt-3 space-y-1.5">{rows.length ? rows.map((row, index) => <li key={`${row}-${index}`} className="rounded px-2 py-1.5 text-[10px] text-[var(--i-text-soft)]" style={{ background: "var(--i-recess)" }}>{row}</li>) : <li className="text-[10px] text-[var(--i-text-faint)]">{empty}</li>}</ul></section>;
+}
+
+function FirstAuditPanel({ result, activation }: { result: ActivationResult | null; activation: BootstrapRead["bootstrap"]["activation"] }) {
+  const scopeId = result?.scope.id ?? activation?.scopeId;
+  const audit = result?.audit ?? activation?.firstAudit;
+  return <main className="min-h-0 flex-1 overflow-y-auto p-6" data-shoot="first-audit-results"><div className="mx-auto max-w-[900px]">
+    <div className="i-label" style={{ color: "var(--i-mint)" }}>Activation complete · ContextSnapshot 01 frozen</div>
+    <h1 className="mt-2 text-[22px] font-semibold text-[var(--i-text)]">First Audit</h1>
+    {audit ? <><p className="mt-2 text-[11px] text-[var(--i-text-soft)]">Snapshot {result?.snapshot.id ?? activation?.contextSnapshotId} · Audit {audit.id} · {audit.findingCount} finding{audit.findingCount === 1 ? "" : "s"}</p><ul className="mt-5 space-y-2">{audit.findings.map((finding) => <li key={finding.id} className="rounded-lg border p-3" style={{ background: "var(--i-panel)", borderColor: "var(--i-border)" }}><span className="text-[9px] uppercase tracking-[0.1em] text-[var(--i-amber)]">{finding.type} · {finding.severity}</span><p className="mt-1 text-[12px] text-[var(--i-text)]">{finding.title}</p></li>)}</ul></> : <p className="mt-3 text-[11px] text-[var(--i-text-soft)]">This project is activated. Open Audit World to inspect its current findings.</p>}
+    {scopeId && <div className="mt-6 flex flex-wrap gap-2"><Link className="signal-control rounded px-4 py-2 text-[10px]" href={`/audit?project=${encodeURIComponent(scopeId)}`}>OPEN AUDIT WORLD</Link><Link className="signal-control rounded px-4 py-2 text-[10px]" href={`/scope?project=${encodeURIComponent(scopeId)}`}>SCOPE</Link><Link className="signal-control rounded px-4 py-2 text-[10px]" href={`/decisions?project=${encodeURIComponent(scopeId)}`}>DECISIONS</Link><Link className="signal-control rounded px-4 py-2 text-[10px]" href={`/reports?project=${encodeURIComponent(scopeId)}`}>REPORTS</Link></div>}
+  </div></main>;
 }
 
 function IdentityPanel({ data, onScan, busy }: { data: BootstrapRead; onScan: () => void; busy: boolean }) {

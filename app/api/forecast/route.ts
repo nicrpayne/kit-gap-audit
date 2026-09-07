@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { computeForecast } from "@/lib/forecast/compute";
+import { computeForecast, ForecastUnavailableError } from "@/lib/forecast/compute";
 import { computeChangesSince } from "@/lib/reports/changes";
 import { computeMomentum } from "@/lib/momentum/compute";
 import { attributionSentence } from "@/lib/momentum/attribution";
@@ -27,6 +27,9 @@ export async function GET(req: NextRequest) {
   try {
     result = await computeForecast(scope);
   } catch (error) {
+    if (error instanceof ForecastUnavailableError) {
+      return NextResponse.json({ unavailable: true, code: error.code, error: error.message, reason: error.reason }, { status: 409 });
+    }
     return NextResponse.json(
       { error: `Couldn't read tickets from Linear: ${error instanceof Error ? error.message : "unknown error"}` },
       { status: 502 }

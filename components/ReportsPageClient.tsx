@@ -168,6 +168,7 @@ export default function ReportsPageClient() {
       liveUnavailableReason: live?.state === "error" ? live.reason : live?.state === "loading" ? "still loading" : null,
     });
   }, [selected, live]);
+  const forecastUnavailable = live?.state === "error" && live.reason.includes("FORECAST UNAVAILABLE");
 
   async function generate() {
     if (!scopeId) return;
@@ -223,7 +224,7 @@ export default function ReportsPageClient() {
         )}
         <button
           onClick={generate}
-          disabled={generating || !scopeId}
+          disabled={generating || !scopeId || forecastUnavailable}
           className="i-btn-primary px-4 py-2 text-sm"
         >
           {generating ? "Generating…" : "Generate report"}
@@ -293,7 +294,7 @@ export default function ReportsPageClient() {
             </>
           ) : (
             <div className="text-sm text-[var(--color-ink-soft)] py-8 text-center">
-              No reports yet for this scope — click &ldquo;Generate report&rdquo;.
+              {forecastUnavailable ? <><strong className="block text-[var(--i-amber)]">REPORT UNAVAILABLE</strong><span className="mt-2 block">{live.reason}. The project remains selectable; Signal will not fabricate a finished brief from absent execution data.</span></> : <>No reports yet for this scope — click &ldquo;Generate report&rdquo;.</>}
             </div>
           )}
         </div>

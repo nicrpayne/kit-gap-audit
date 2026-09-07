@@ -1,0 +1,1019 @@
+{
+  "fixture": "project-context-matrix-v1",
+  "baseUrl": "http://localhost:3021",
+  "projects": [
+    {
+      "id": "matrix-jsa",
+      "name": "Matrix JSA"
+    },
+    {
+      "id": "matrix-platform",
+      "name": "Matrix Platform"
+    },
+    {
+      "id": "matrix-itrack",
+      "name": "Matrix iTrack"
+    },
+    {
+      "id": "matrix-design",
+      "name": "Matrix Design"
+    }
+  ],
+  "routes": [
+    {
+      "path": "/control-room",
+      "label": "Control Room",
+      "kind": "portfolio-wide"
+    },
+    {
+      "path": "/audit",
+      "label": "Audit",
+      "kind": "audit"
+    },
+    {
+      "path": "/decisions",
+      "label": "Decisions",
+      "kind": "decisions"
+    },
+    {
+      "path": "/forecast",
+      "label": "Forecast",
+      "kind": "forecast"
+    },
+    {
+      "path": "/portfolio",
+      "label": "Portfolio",
+      "kind": "portfolio"
+    },
+    {
+      "path": "/scope",
+      "label": "Scope",
+      "kind": "scope"
+    },
+    {
+      "path": "/orbit",
+      "label": "Dependencies",
+      "kind": "orbit"
+    },
+    {
+      "path": "/timeline",
+      "label": "Timeline",
+      "kind": "portfolio-wide"
+    },
+    {
+      "path": "/reports",
+      "label": "Reports",
+      "kind": "reports"
+    }
+  ],
+  "checks": 189,
+  "failures": 0,
+  "browserErrors": [],
+  "results": [
+    {
+      "name": "fixture exposes every permanent matrix project",
+      "ok": true,
+      "detail": "matrix-jsa,matrix-platform,matrix-itrack,matrix-design"
+    },
+    {
+      "name": "direct Control Room URL resolves Matrix JSA",
+      "ok": true,
+      "detail": "http://localhost:3021/control-room?project=matrix-jsa&scenario=matrix-scenario&select=scope%3Amatrix-jsa"
+    },
+    {
+      "name": "direct Control Room preserves explicit Scenario",
+      "ok": true,
+      "detail": "?project=matrix-jsa&scenario=matrix-scenario&select=scope%3Amatrix-jsa"
+    },
+    {
+      "name": "direct Control Room preserves selected canonical object",
+      "ok": true,
+      "detail": "?project=matrix-jsa&scenario=matrix-scenario&select=scope%3Amatrix-jsa"
+    },
+    {
+      "name": "direct Audit URL resolves Matrix JSA",
+      "ok": true,
+      "detail": "http://localhost:3021/audit?project=matrix-jsa&scenario=matrix-scenario&select=scope%3Amatrix-jsa"
+    },
+    {
+      "name": "direct Audit preserves explicit Scenario",
+      "ok": true,
+      "detail": "?project=matrix-jsa&scenario=matrix-scenario&select=scope%3Amatrix-jsa"
+    },
+    {
+      "name": "direct Audit preserves selected canonical object",
+      "ok": true,
+      "detail": "?project=matrix-jsa&scenario=matrix-scenario&select=scope%3Amatrix-jsa"
+    },
+    {
+      "name": "direct Decisions URL resolves Matrix JSA",
+      "ok": true,
+      "detail": "http://localhost:3021/decisions?project=matrix-jsa&scenario=matrix-scenario&select=scope%3Amatrix-jsa"
+    },
+    {
+      "name": "direct Decisions preserves explicit Scenario",
+      "ok": true,
+      "detail": "?project=matrix-jsa&scenario=matrix-scenario&select=scope%3Amatrix-jsa"
+    },
+    {
+      "name": "direct Decisions preserves selected canonical object",
+      "ok": true,
+      "detail": "?project=matrix-jsa&scenario=matrix-scenario&select=scope%3Amatrix-jsa"
+    },
+    {
+      "name": "direct Forecast URL resolves Matrix JSA",
+      "ok": true,
+      "detail": "http://localhost:3021/forecast?project=matrix-jsa&scenario=matrix-scenario&select=scope%3Amatrix-jsa"
+    },
+    {
+      "name": "direct Forecast preserves explicit Scenario",
+      "ok": true,
+      "detail": "?project=matrix-jsa&scenario=matrix-scenario&select=scope%3Amatrix-jsa"
+    },
+    {
+      "name": "direct Forecast preserves selected canonical object",
+      "ok": true,
+      "detail": "?project=matrix-jsa&scenario=matrix-scenario&select=scope%3Amatrix-jsa"
+    },
+    {
+      "name": "direct Portfolio URL resolves Matrix JSA",
+      "ok": true,
+      "detail": "http://localhost:3021/portfolio?project=matrix-jsa&scenario=matrix-scenario&select=scope%3Amatrix-jsa"
+    },
+    {
+      "name": "direct Portfolio preserves explicit Scenario",
+      "ok": true,
+      "detail": "?project=matrix-jsa&scenario=matrix-scenario&select=scope%3Amatrix-jsa"
+    },
+    {
+      "name": "direct Portfolio preserves selected canonical object",
+      "ok": true,
+      "detail": "?project=matrix-jsa&scenario=matrix-scenario&select=scope%3Amatrix-jsa"
+    },
+    {
+      "name": "direct Scope URL resolves Matrix JSA",
+      "ok": true,
+      "detail": "http://localhost:3021/scope?project=matrix-jsa&scenario=matrix-scenario&select=scope%3Amatrix-jsa"
+    },
+    {
+      "name": "direct Scope preserves explicit Scenario",
+      "ok": true,
+      "detail": "?project=matrix-jsa&scenario=matrix-scenario&select=scope%3Amatrix-jsa"
+    },
+    {
+      "name": "direct Scope preserves selected canonical object",
+      "ok": true,
+      "detail": "?project=matrix-jsa&scenario=matrix-scenario&select=scope%3Amatrix-jsa"
+    },
+    {
+      "name": "direct Dependencies URL resolves Matrix JSA",
+      "ok": true,
+      "detail": "http://localhost:3021/orbit?project=matrix-jsa&scenario=matrix-scenario&select=scope%3Amatrix-jsa"
+    },
+    {
+      "name": "direct Dependencies preserves explicit Scenario",
+      "ok": true,
+      "detail": "?project=matrix-jsa&scenario=matrix-scenario&select=scope%3Amatrix-jsa"
+    },
+    {
+      "name": "direct Dependencies preserves selected canonical object",
+      "ok": true,
+      "detail": "?project=matrix-jsa&scenario=matrix-scenario&select=scope%3Amatrix-jsa"
+    },
+    {
+      "name": "direct Timeline URL resolves Matrix JSA",
+      "ok": true,
+      "detail": "http://localhost:3021/timeline?project=matrix-jsa&scenario=matrix-scenario&select=scope%3Amatrix-jsa"
+    },
+    {
+      "name": "direct Timeline preserves explicit Scenario",
+      "ok": true,
+      "detail": "?project=matrix-jsa&scenario=matrix-scenario&select=scope%3Amatrix-jsa"
+    },
+    {
+      "name": "direct Timeline preserves selected canonical object",
+      "ok": true,
+      "detail": "?project=matrix-jsa&scenario=matrix-scenario&select=scope%3Amatrix-jsa"
+    },
+    {
+      "name": "direct Reports URL resolves Matrix JSA",
+      "ok": true,
+      "detail": "http://localhost:3021/reports?project=matrix-jsa&scenario=matrix-scenario&select=scope%3Amatrix-jsa"
+    },
+    {
+      "name": "direct Reports preserves explicit Scenario",
+      "ok": true,
+      "detail": "?project=matrix-jsa&scenario=matrix-scenario&select=scope%3Amatrix-jsa"
+    },
+    {
+      "name": "direct Reports preserves selected canonical object",
+      "ok": true,
+      "detail": "?project=matrix-jsa&scenario=matrix-scenario&select=scope%3Amatrix-jsa"
+    },
+    {
+      "name": "direct Control Room URL resolves Matrix Platform",
+      "ok": true,
+      "detail": "http://localhost:3021/control-room?project=matrix-platform&scenario=matrix-scenario&select=scope%3Amatrix-platform"
+    },
+    {
+      "name": "direct Control Room preserves explicit Scenario",
+      "ok": true,
+      "detail": "?project=matrix-platform&scenario=matrix-scenario&select=scope%3Amatrix-platform"
+    },
+    {
+      "name": "direct Control Room preserves selected canonical object",
+      "ok": true,
+      "detail": "?project=matrix-platform&scenario=matrix-scenario&select=scope%3Amatrix-platform"
+    },
+    {
+      "name": "direct Audit URL resolves Matrix Platform",
+      "ok": true,
+      "detail": "http://localhost:3021/audit?project=matrix-platform&scenario=matrix-scenario&select=scope%3Amatrix-platform"
+    },
+    {
+      "name": "direct Audit preserves explicit Scenario",
+      "ok": true,
+      "detail": "?project=matrix-platform&scenario=matrix-scenario&select=scope%3Amatrix-platform"
+    },
+    {
+      "name": "direct Audit preserves selected canonical object",
+      "ok": true,
+      "detail": "?project=matrix-platform&scenario=matrix-scenario&select=scope%3Amatrix-platform"
+    },
+    {
+      "name": "direct Decisions URL resolves Matrix Platform",
+      "ok": true,
+      "detail": "http://localhost:3021/decisions?project=matrix-platform&scenario=matrix-scenario&select=scope%3Amatrix-platform"
+    },
+    {
+      "name": "direct Decisions preserves explicit Scenario",
+      "ok": true,
+      "detail": "?project=matrix-platform&scenario=matrix-scenario&select=scope%3Amatrix-platform"
+    },
+    {
+      "name": "direct Decisions preserves selected canonical object",
+      "ok": true,
+      "detail": "?project=matrix-platform&scenario=matrix-scenario&select=scope%3Amatrix-platform"
+    },
+    {
+      "name": "direct Forecast URL resolves Matrix Platform",
+      "ok": true,
+      "detail": "http://localhost:3021/forecast?project=matrix-platform&scenario=matrix-scenario&select=scope%3Amatrix-platform"
+    },
+    {
+      "name": "direct Forecast preserves explicit Scenario",
+      "ok": true,
+      "detail": "?project=matrix-platform&scenario=matrix-scenario&select=scope%3Amatrix-platform"
+    },
+    {
+      "name": "direct Forecast preserves selected canonical object",
+      "ok": true,
+      "detail": "?project=matrix-platform&scenario=matrix-scenario&select=scope%3Amatrix-platform"
+    },
+    {
+      "name": "direct Portfolio URL resolves Matrix Platform",
+      "ok": true,
+      "detail": "http://localhost:3021/portfolio?project=matrix-platform&scenario=matrix-scenario&select=scope%3Amatrix-platform"
+    },
+    {
+      "name": "direct Portfolio preserves explicit Scenario",
+      "ok": true,
+      "detail": "?project=matrix-platform&scenario=matrix-scenario&select=scope%3Amatrix-platform"
+    },
+    {
+      "name": "direct Portfolio preserves selected canonical object",
+      "ok": true,
+      "detail": "?project=matrix-platform&scenario=matrix-scenario&select=scope%3Amatrix-platform"
+    },
+    {
+      "name": "direct Scope URL resolves Matrix Platform",
+      "ok": true,
+      "detail": "http://localhost:3021/scope?project=matrix-platform&scenario=matrix-scenario&select=scope%3Amatrix-platform"
+    },
+    {
+      "name": "direct Scope preserves explicit Scenario",
+      "ok": true,
+      "detail": "?project=matrix-platform&scenario=matrix-scenario&select=scope%3Amatrix-platform"
+    },
+    {
+      "name": "direct Scope preserves selected canonical object",
+      "ok": true,
+      "detail": "?project=matrix-platform&scenario=matrix-scenario&select=scope%3Amatrix-platform"
+    },
+    {
+      "name": "direct Dependencies URL resolves Matrix Platform",
+      "ok": true,
+      "detail": "http://localhost:3021/orbit?project=matrix-platform&scenario=matrix-scenario&select=scope%3Amatrix-platform"
+    },
+    {
+      "name": "direct Dependencies preserves explicit Scenario",
+      "ok": true,
+      "detail": "?project=matrix-platform&scenario=matrix-scenario&select=scope%3Amatrix-platform"
+    },
+    {
+      "name": "direct Dependencies preserves selected canonical object",
+      "ok": true,
+      "detail": "?project=matrix-platform&scenario=matrix-scenario&select=scope%3Amatrix-platform"
+    },
+    {
+      "name": "direct Timeline URL resolves Matrix Platform",
+      "ok": true,
+      "detail": "http://localhost:3021/timeline?project=matrix-platform&scenario=matrix-scenario&select=scope%3Amatrix-platform"
+    },
+    {
+      "name": "direct Timeline preserves explicit Scenario",
+      "ok": true,
+      "detail": "?project=matrix-platform&scenario=matrix-scenario&select=scope%3Amatrix-platform"
+    },
+    {
+      "name": "direct Timeline preserves selected canonical object",
+      "ok": true,
+      "detail": "?project=matrix-platform&scenario=matrix-scenario&select=scope%3Amatrix-platform"
+    },
+    {
+      "name": "direct Reports URL resolves Matrix Platform",
+      "ok": true,
+      "detail": "http://localhost:3021/reports?project=matrix-platform&scenario=matrix-scenario&select=scope%3Amatrix-platform"
+    },
+    {
+      "name": "direct Reports preserves explicit Scenario",
+      "ok": true,
+      "detail": "?project=matrix-platform&scenario=matrix-scenario&select=scope%3Amatrix-platform"
+    },
+    {
+      "name": "direct Reports preserves selected canonical object",
+      "ok": true,
+      "detail": "?project=matrix-platform&scenario=matrix-scenario&select=scope%3Amatrix-platform"
+    },
+    {
+      "name": "direct Control Room URL resolves Matrix iTrack",
+      "ok": true,
+      "detail": "http://localhost:3021/control-room?project=matrix-itrack&scenario=matrix-scenario&select=scope%3Amatrix-itrack"
+    },
+    {
+      "name": "direct Control Room preserves explicit Scenario",
+      "ok": true,
+      "detail": "?project=matrix-itrack&scenario=matrix-scenario&select=scope%3Amatrix-itrack"
+    },
+    {
+      "name": "direct Control Room preserves selected canonical object",
+      "ok": true,
+      "detail": "?project=matrix-itrack&scenario=matrix-scenario&select=scope%3Amatrix-itrack"
+    },
+    {
+      "name": "direct Audit URL resolves Matrix iTrack",
+      "ok": true,
+      "detail": "http://localhost:3021/audit?project=matrix-itrack&scenario=matrix-scenario&select=scope%3Amatrix-itrack"
+    },
+    {
+      "name": "direct Audit preserves explicit Scenario",
+      "ok": true,
+      "detail": "?project=matrix-itrack&scenario=matrix-scenario&select=scope%3Amatrix-itrack"
+    },
+    {
+      "name": "direct Audit preserves selected canonical object",
+      "ok": true,
+      "detail": "?project=matrix-itrack&scenario=matrix-scenario&select=scope%3Amatrix-itrack"
+    },
+    {
+      "name": "direct Decisions URL resolves Matrix iTrack",
+      "ok": true,
+      "detail": "http://localhost:3021/decisions?project=matrix-itrack&scenario=matrix-scenario&select=scope%3Amatrix-itrack"
+    },
+    {
+      "name": "direct Decisions preserves explicit Scenario",
+      "ok": true,
+      "detail": "?project=matrix-itrack&scenario=matrix-scenario&select=scope%3Amatrix-itrack"
+    },
+    {
+      "name": "direct Decisions preserves selected canonical object",
+      "ok": true,
+      "detail": "?project=matrix-itrack&scenario=matrix-scenario&select=scope%3Amatrix-itrack"
+    },
+    {
+      "name": "direct Forecast URL resolves Matrix iTrack",
+      "ok": true,
+      "detail": "http://localhost:3021/forecast?project=matrix-itrack&scenario=matrix-scenario&select=scope%3Amatrix-itrack"
+    },
+    {
+      "name": "direct Forecast preserves explicit Scenario",
+      "ok": true,
+      "detail": "?project=matrix-itrack&scenario=matrix-scenario&select=scope%3Amatrix-itrack"
+    },
+    {
+      "name": "direct Forecast preserves selected canonical object",
+      "ok": true,
+      "detail": "?project=matrix-itrack&scenario=matrix-scenario&select=scope%3Amatrix-itrack"
+    },
+    {
+      "name": "direct Portfolio URL resolves Matrix iTrack",
+      "ok": true,
+      "detail": "http://localhost:3021/portfolio?project=matrix-itrack&scenario=matrix-scenario&select=scope%3Amatrix-itrack"
+    },
+    {
+      "name": "direct Portfolio preserves explicit Scenario",
+      "ok": true,
+      "detail": "?project=matrix-itrack&scenario=matrix-scenario&select=scope%3Amatrix-itrack"
+    },
+    {
+      "name": "direct Portfolio preserves selected canonical object",
+      "ok": true,
+      "detail": "?project=matrix-itrack&scenario=matrix-scenario&select=scope%3Amatrix-itrack"
+    },
+    {
+      "name": "direct Scope URL resolves Matrix iTrack",
+      "ok": true,
+      "detail": "http://localhost:3021/scope?project=matrix-itrack&scenario=matrix-scenario&select=scope%3Amatrix-itrack"
+    },
+    {
+      "name": "direct Scope preserves explicit Scenario",
+      "ok": true,
+      "detail": "?project=matrix-itrack&scenario=matrix-scenario&select=scope%3Amatrix-itrack"
+    },
+    {
+      "name": "direct Scope preserves selected canonical object",
+      "ok": true,
+      "detail": "?project=matrix-itrack&scenario=matrix-scenario&select=scope%3Amatrix-itrack"
+    },
+    {
+      "name": "direct Dependencies URL resolves Matrix iTrack",
+      "ok": true,
+      "detail": "http://localhost:3021/orbit?project=matrix-itrack&scenario=matrix-scenario&select=scope%3Amatrix-itrack"
+    },
+    {
+      "name": "direct Dependencies preserves explicit Scenario",
+      "ok": true,
+      "detail": "?project=matrix-itrack&scenario=matrix-scenario&select=scope%3Amatrix-itrack"
+    },
+    {
+      "name": "direct Dependencies preserves selected canonical object",
+      "ok": true,
+      "detail": "?project=matrix-itrack&scenario=matrix-scenario&select=scope%3Amatrix-itrack"
+    },
+    {
+      "name": "direct Timeline URL resolves Matrix iTrack",
+      "ok": true,
+      "detail": "http://localhost:3021/timeline?project=matrix-itrack&scenario=matrix-scenario&select=scope%3Amatrix-itrack"
+    },
+    {
+      "name": "direct Timeline preserves explicit Scenario",
+      "ok": true,
+      "detail": "?project=matrix-itrack&scenario=matrix-scenario&select=scope%3Amatrix-itrack"
+    },
+    {
+      "name": "direct Timeline preserves selected canonical object",
+      "ok": true,
+      "detail": "?project=matrix-itrack&scenario=matrix-scenario&select=scope%3Amatrix-itrack"
+    },
+    {
+      "name": "direct Reports URL resolves Matrix iTrack",
+      "ok": true,
+      "detail": "http://localhost:3021/reports?project=matrix-itrack&scenario=matrix-scenario&select=scope%3Amatrix-itrack"
+    },
+    {
+      "name": "direct Reports preserves explicit Scenario",
+      "ok": true,
+      "detail": "?project=matrix-itrack&scenario=matrix-scenario&select=scope%3Amatrix-itrack"
+    },
+    {
+      "name": "direct Reports preserves selected canonical object",
+      "ok": true,
+      "detail": "?project=matrix-itrack&scenario=matrix-scenario&select=scope%3Amatrix-itrack"
+    },
+    {
+      "name": "direct Control Room URL resolves Matrix Design",
+      "ok": true,
+      "detail": "http://localhost:3021/control-room?project=matrix-design&scenario=matrix-scenario&select=scope%3Amatrix-design"
+    },
+    {
+      "name": "direct Control Room preserves explicit Scenario",
+      "ok": true,
+      "detail": "?project=matrix-design&scenario=matrix-scenario&select=scope%3Amatrix-design"
+    },
+    {
+      "name": "direct Control Room preserves selected canonical object",
+      "ok": true,
+      "detail": "?project=matrix-design&scenario=matrix-scenario&select=scope%3Amatrix-design"
+    },
+    {
+      "name": "direct Audit URL resolves Matrix Design",
+      "ok": true,
+      "detail": "http://localhost:3021/audit?project=matrix-design&scenario=matrix-scenario&select=scope%3Amatrix-design"
+    },
+    {
+      "name": "direct Audit preserves explicit Scenario",
+      "ok": true,
+      "detail": "?project=matrix-design&scenario=matrix-scenario&select=scope%3Amatrix-design"
+    },
+    {
+      "name": "direct Audit preserves selected canonical object",
+      "ok": true,
+      "detail": "?project=matrix-design&scenario=matrix-scenario&select=scope%3Amatrix-design"
+    },
+    {
+      "name": "direct Decisions URL resolves Matrix Design",
+      "ok": true,
+      "detail": "http://localhost:3021/decisions?project=matrix-design&scenario=matrix-scenario&select=scope%3Amatrix-design"
+    },
+    {
+      "name": "direct Decisions preserves explicit Scenario",
+      "ok": true,
+      "detail": "?project=matrix-design&scenario=matrix-scenario&select=scope%3Amatrix-design"
+    },
+    {
+      "name": "direct Decisions preserves selected canonical object",
+      "ok": true,
+      "detail": "?project=matrix-design&scenario=matrix-scenario&select=scope%3Amatrix-design"
+    },
+    {
+      "name": "direct Forecast URL resolves Matrix Design",
+      "ok": true,
+      "detail": "http://localhost:3021/forecast?project=matrix-design&scenario=matrix-scenario&select=scope%3Amatrix-design"
+    },
+    {
+      "name": "direct Forecast preserves explicit Scenario",
+      "ok": true,
+      "detail": "?project=matrix-design&scenario=matrix-scenario&select=scope%3Amatrix-design"
+    },
+    {
+      "name": "direct Forecast preserves selected canonical object",
+      "ok": true,
+      "detail": "?project=matrix-design&scenario=matrix-scenario&select=scope%3Amatrix-design"
+    },
+    {
+      "name": "direct Portfolio URL resolves Matrix Design",
+      "ok": true,
+      "detail": "http://localhost:3021/portfolio?project=matrix-design&scenario=matrix-scenario&select=scope%3Amatrix-design"
+    },
+    {
+      "name": "direct Portfolio preserves explicit Scenario",
+      "ok": true,
+      "detail": "?project=matrix-design&scenario=matrix-scenario&select=scope%3Amatrix-design"
+    },
+    {
+      "name": "direct Portfolio preserves selected canonical object",
+      "ok": true,
+      "detail": "?project=matrix-design&scenario=matrix-scenario&select=scope%3Amatrix-design"
+    },
+    {
+      "name": "direct Scope URL resolves Matrix Design",
+      "ok": true,
+      "detail": "http://localhost:3021/scope?project=matrix-design&scenario=matrix-scenario&select=scope%3Amatrix-design"
+    },
+    {
+      "name": "direct Scope preserves explicit Scenario",
+      "ok": true,
+      "detail": "?project=matrix-design&scenario=matrix-scenario&select=scope%3Amatrix-design"
+    },
+    {
+      "name": "direct Scope preserves selected canonical object",
+      "ok": true,
+      "detail": "?project=matrix-design&scenario=matrix-scenario&select=scope%3Amatrix-design"
+    },
+    {
+      "name": "direct Dependencies URL resolves Matrix Design",
+      "ok": true,
+      "detail": "http://localhost:3021/orbit?project=matrix-design&scenario=matrix-scenario&select=scope%3Amatrix-design"
+    },
+    {
+      "name": "direct Dependencies preserves explicit Scenario",
+      "ok": true,
+      "detail": "?project=matrix-design&scenario=matrix-scenario&select=scope%3Amatrix-design"
+    },
+    {
+      "name": "direct Dependencies preserves selected canonical object",
+      "ok": true,
+      "detail": "?project=matrix-design&scenario=matrix-scenario&select=scope%3Amatrix-design"
+    },
+    {
+      "name": "direct Timeline URL resolves Matrix Design",
+      "ok": true,
+      "detail": "http://localhost:3021/timeline?project=matrix-design&scenario=matrix-scenario&select=scope%3Amatrix-design"
+    },
+    {
+      "name": "direct Timeline preserves explicit Scenario",
+      "ok": true,
+      "detail": "?project=matrix-design&scenario=matrix-scenario&select=scope%3Amatrix-design"
+    },
+    {
+      "name": "direct Timeline preserves selected canonical object",
+      "ok": true,
+      "detail": "?project=matrix-design&scenario=matrix-scenario&select=scope%3Amatrix-design"
+    },
+    {
+      "name": "direct Reports URL resolves Matrix Design",
+      "ok": true,
+      "detail": "http://localhost:3021/reports?project=matrix-design&scenario=matrix-scenario&select=scope%3Amatrix-design"
+    },
+    {
+      "name": "direct Reports preserves explicit Scenario",
+      "ok": true,
+      "detail": "?project=matrix-design&scenario=matrix-scenario&select=scope%3Amatrix-design"
+    },
+    {
+      "name": "direct Reports preserves selected canonical object",
+      "ok": true,
+      "detail": "?project=matrix-design&scenario=matrix-scenario&select=scope%3Amatrix-design"
+    },
+    {
+      "name": "Audit selector publishes Matrix Platform",
+      "ok": true,
+      "detail": "http://localhost:3021/audit?project=matrix-platform&scenario=matrix-scenario"
+    },
+    {
+      "name": "Audit switch clears cross-project object selection",
+      "ok": true,
+      "detail": "?project=matrix-platform&scenario=matrix-scenario"
+    },
+    {
+      "name": "Audit switch preserves explicit Scenario for Matrix Platform",
+      "ok": true,
+      "detail": "?project=matrix-platform&scenario=matrix-scenario"
+    },
+    {
+      "name": "Audit switch keeps Rubric mounted for Matrix Platform",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "Audit selector publishes Matrix iTrack",
+      "ok": true,
+      "detail": "http://localhost:3021/audit?project=matrix-itrack&scenario=matrix-scenario"
+    },
+    {
+      "name": "Audit switch clears cross-project object selection",
+      "ok": true,
+      "detail": "?project=matrix-itrack&scenario=matrix-scenario"
+    },
+    {
+      "name": "Audit switch preserves explicit Scenario for Matrix iTrack",
+      "ok": true,
+      "detail": "?project=matrix-itrack&scenario=matrix-scenario"
+    },
+    {
+      "name": "Audit switch keeps Rubric mounted for Matrix iTrack",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "Audit selector publishes Matrix Design",
+      "ok": true,
+      "detail": "http://localhost:3021/audit?project=matrix-design&scenario=matrix-scenario"
+    },
+    {
+      "name": "Audit switch clears cross-project object selection",
+      "ok": true,
+      "detail": "?project=matrix-design&scenario=matrix-scenario"
+    },
+    {
+      "name": "Audit switch preserves explicit Scenario for Matrix Design",
+      "ok": true,
+      "detail": "?project=matrix-design&scenario=matrix-scenario"
+    },
+    {
+      "name": "Audit switch keeps Rubric mounted for Matrix Design",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "Back restores the prior canonical project",
+      "ok": true,
+      "detail": "http://localhost:3021/audit?project=matrix-itrack&scenario=matrix-scenario"
+    },
+    {
+      "name": "Forward restores the next canonical project",
+      "ok": true,
+      "detail": "http://localhost:3021/audit?project=matrix-design&scenario=matrix-scenario"
+    },
+    {
+      "name": "Back/Forward never remounts Rubric",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "rail Control Room URL resolves Matrix JSA",
+      "ok": true,
+      "detail": "http://localhost:3021/control-room?project=matrix-jsa&scenario=matrix-scenario"
+    },
+    {
+      "name": "rail Control Room preserves explicit Scenario",
+      "ok": true,
+      "detail": "?project=matrix-jsa&scenario=matrix-scenario"
+    },
+    {
+      "name": "rail Decisions URL resolves Matrix JSA",
+      "ok": true,
+      "detail": "http://localhost:3021/decisions?project=matrix-jsa&scenario=matrix-scenario"
+    },
+    {
+      "name": "rail Decisions preserves explicit Scenario",
+      "ok": true,
+      "detail": "?project=matrix-jsa&scenario=matrix-scenario"
+    },
+    {
+      "name": "rail Forecast URL resolves Matrix JSA",
+      "ok": true,
+      "detail": "http://localhost:3021/forecast?project=matrix-jsa&scenario=matrix-scenario"
+    },
+    {
+      "name": "rail Forecast preserves explicit Scenario",
+      "ok": true,
+      "detail": "?project=matrix-jsa&scenario=matrix-scenario"
+    },
+    {
+      "name": "rail Portfolio URL resolves Matrix JSA",
+      "ok": true,
+      "detail": "http://localhost:3021/portfolio?project=matrix-jsa&scenario=matrix-scenario"
+    },
+    {
+      "name": "rail Portfolio preserves explicit Scenario",
+      "ok": true,
+      "detail": "?project=matrix-jsa&scenario=matrix-scenario"
+    },
+    {
+      "name": "rail Scope URL resolves Matrix JSA",
+      "ok": true,
+      "detail": "http://localhost:3021/scope?project=matrix-jsa&scenario=matrix-scenario"
+    },
+    {
+      "name": "rail Scope preserves explicit Scenario",
+      "ok": true,
+      "detail": "?project=matrix-jsa&scenario=matrix-scenario"
+    },
+    {
+      "name": "rail Dependencies URL resolves Matrix JSA",
+      "ok": true,
+      "detail": "http://localhost:3021/orbit?project=matrix-jsa&scenario=matrix-scenario"
+    },
+    {
+      "name": "rail Dependencies preserves explicit Scenario",
+      "ok": true,
+      "detail": "?project=matrix-jsa&scenario=matrix-scenario"
+    },
+    {
+      "name": "rail Timeline URL resolves Matrix JSA",
+      "ok": true,
+      "detail": "http://localhost:3021/timeline?project=matrix-jsa&scenario=matrix-scenario"
+    },
+    {
+      "name": "rail Timeline preserves explicit Scenario",
+      "ok": true,
+      "detail": "?project=matrix-jsa&scenario=matrix-scenario"
+    },
+    {
+      "name": "rail Reports URL resolves Matrix JSA",
+      "ok": true,
+      "detail": "http://localhost:3021/reports?project=matrix-jsa&scenario=matrix-scenario"
+    },
+    {
+      "name": "rail Reports preserves explicit Scenario",
+      "ok": true,
+      "detail": "?project=matrix-jsa&scenario=matrix-scenario"
+    },
+    {
+      "name": "rail Control Room URL resolves Matrix Platform",
+      "ok": true,
+      "detail": "http://localhost:3021/control-room?project=matrix-platform&scenario=matrix-scenario"
+    },
+    {
+      "name": "rail Control Room preserves explicit Scenario",
+      "ok": true,
+      "detail": "?project=matrix-platform&scenario=matrix-scenario"
+    },
+    {
+      "name": "rail Decisions URL resolves Matrix Platform",
+      "ok": true,
+      "detail": "http://localhost:3021/decisions?project=matrix-platform&scenario=matrix-scenario"
+    },
+    {
+      "name": "rail Decisions preserves explicit Scenario",
+      "ok": true,
+      "detail": "?project=matrix-platform&scenario=matrix-scenario"
+    },
+    {
+      "name": "rail Forecast URL resolves Matrix Platform",
+      "ok": true,
+      "detail": "http://localhost:3021/forecast?project=matrix-platform&scenario=matrix-scenario"
+    },
+    {
+      "name": "rail Forecast preserves explicit Scenario",
+      "ok": true,
+      "detail": "?project=matrix-platform&scenario=matrix-scenario"
+    },
+    {
+      "name": "rail Portfolio URL resolves Matrix Platform",
+      "ok": true,
+      "detail": "http://localhost:3021/portfolio?project=matrix-platform&scenario=matrix-scenario"
+    },
+    {
+      "name": "rail Portfolio preserves explicit Scenario",
+      "ok": true,
+      "detail": "?project=matrix-platform&scenario=matrix-scenario"
+    },
+    {
+      "name": "rail Scope URL resolves Matrix Platform",
+      "ok": true,
+      "detail": "http://localhost:3021/scope?project=matrix-platform&scenario=matrix-scenario"
+    },
+    {
+      "name": "rail Scope preserves explicit Scenario",
+      "ok": true,
+      "detail": "?project=matrix-platform&scenario=matrix-scenario"
+    },
+    {
+      "name": "rail Dependencies URL resolves Matrix Platform",
+      "ok": true,
+      "detail": "http://localhost:3021/orbit?project=matrix-platform&scenario=matrix-scenario"
+    },
+    {
+      "name": "rail Dependencies preserves explicit Scenario",
+      "ok": true,
+      "detail": "?project=matrix-platform&scenario=matrix-scenario"
+    },
+    {
+      "name": "rail Timeline URL resolves Matrix Platform",
+      "ok": true,
+      "detail": "http://localhost:3021/timeline?project=matrix-platform&scenario=matrix-scenario"
+    },
+    {
+      "name": "rail Timeline preserves explicit Scenario",
+      "ok": true,
+      "detail": "?project=matrix-platform&scenario=matrix-scenario"
+    },
+    {
+      "name": "rail Reports URL resolves Matrix Platform",
+      "ok": true,
+      "detail": "http://localhost:3021/reports?project=matrix-platform&scenario=matrix-scenario"
+    },
+    {
+      "name": "rail Reports preserves explicit Scenario",
+      "ok": true,
+      "detail": "?project=matrix-platform&scenario=matrix-scenario"
+    },
+    {
+      "name": "rail Control Room URL resolves Matrix iTrack",
+      "ok": true,
+      "detail": "http://localhost:3021/control-room?project=matrix-itrack&scenario=matrix-scenario"
+    },
+    {
+      "name": "rail Control Room preserves explicit Scenario",
+      "ok": true,
+      "detail": "?project=matrix-itrack&scenario=matrix-scenario"
+    },
+    {
+      "name": "rail Decisions URL resolves Matrix iTrack",
+      "ok": true,
+      "detail": "http://localhost:3021/decisions?project=matrix-itrack&scenario=matrix-scenario"
+    },
+    {
+      "name": "rail Decisions preserves explicit Scenario",
+      "ok": true,
+      "detail": "?project=matrix-itrack&scenario=matrix-scenario"
+    },
+    {
+      "name": "rail Forecast URL resolves Matrix iTrack",
+      "ok": true,
+      "detail": "http://localhost:3021/forecast?project=matrix-itrack&scenario=matrix-scenario"
+    },
+    {
+      "name": "rail Forecast preserves explicit Scenario",
+      "ok": true,
+      "detail": "?project=matrix-itrack&scenario=matrix-scenario"
+    },
+    {
+      "name": "rail Portfolio URL resolves Matrix iTrack",
+      "ok": true,
+      "detail": "http://localhost:3021/portfolio?project=matrix-itrack&scenario=matrix-scenario"
+    },
+    {
+      "name": "rail Portfolio preserves explicit Scenario",
+      "ok": true,
+      "detail": "?project=matrix-itrack&scenario=matrix-scenario"
+    },
+    {
+      "name": "rail Scope URL resolves Matrix iTrack",
+      "ok": true,
+      "detail": "http://localhost:3021/scope?project=matrix-itrack&scenario=matrix-scenario"
+    },
+    {
+      "name": "rail Scope preserves explicit Scenario",
+      "ok": true,
+      "detail": "?project=matrix-itrack&scenario=matrix-scenario"
+    },
+    {
+      "name": "rail Dependencies URL resolves Matrix iTrack",
+      "ok": true,
+      "detail": "http://localhost:3021/orbit?project=matrix-itrack&scenario=matrix-scenario"
+    },
+    {
+      "name": "rail Dependencies preserves explicit Scenario",
+      "ok": true,
+      "detail": "?project=matrix-itrack&scenario=matrix-scenario"
+    },
+    {
+      "name": "rail Timeline URL resolves Matrix iTrack",
+      "ok": true,
+      "detail": "http://localhost:3021/timeline?project=matrix-itrack&scenario=matrix-scenario"
+    },
+    {
+      "name": "rail Timeline preserves explicit Scenario",
+      "ok": true,
+      "detail": "?project=matrix-itrack&scenario=matrix-scenario"
+    },
+    {
+      "name": "rail Reports URL resolves Matrix iTrack",
+      "ok": true,
+      "detail": "http://localhost:3021/reports?project=matrix-itrack&scenario=matrix-scenario"
+    },
+    {
+      "name": "rail Reports preserves explicit Scenario",
+      "ok": true,
+      "detail": "?project=matrix-itrack&scenario=matrix-scenario"
+    },
+    {
+      "name": "rail Control Room URL resolves Matrix Design",
+      "ok": true,
+      "detail": "http://localhost:3021/control-room?project=matrix-design&scenario=matrix-scenario"
+    },
+    {
+      "name": "rail Control Room preserves explicit Scenario",
+      "ok": true,
+      "detail": "?project=matrix-design&scenario=matrix-scenario"
+    },
+    {
+      "name": "rail Decisions URL resolves Matrix Design",
+      "ok": true,
+      "detail": "http://localhost:3021/decisions?project=matrix-design&scenario=matrix-scenario"
+    },
+    {
+      "name": "rail Decisions preserves explicit Scenario",
+      "ok": true,
+      "detail": "?project=matrix-design&scenario=matrix-scenario"
+    },
+    {
+      "name": "rail Forecast URL resolves Matrix Design",
+      "ok": true,
+      "detail": "http://localhost:3021/forecast?project=matrix-design&scenario=matrix-scenario"
+    },
+    {
+      "name": "rail Forecast preserves explicit Scenario",
+      "ok": true,
+      "detail": "?project=matrix-design&scenario=matrix-scenario"
+    },
+    {
+      "name": "rail Portfolio URL resolves Matrix Design",
+      "ok": true,
+      "detail": "http://localhost:3021/portfolio?project=matrix-design&scenario=matrix-scenario"
+    },
+    {
+      "name": "rail Portfolio preserves explicit Scenario",
+      "ok": true,
+      "detail": "?project=matrix-design&scenario=matrix-scenario"
+    },
+    {
+      "name": "rail Scope URL resolves Matrix Design",
+      "ok": true,
+      "detail": "http://localhost:3021/scope?project=matrix-design&scenario=matrix-scenario"
+    },
+    {
+      "name": "rail Scope preserves explicit Scenario",
+      "ok": true,
+      "detail": "?project=matrix-design&scenario=matrix-scenario"
+    },
+    {
+      "name": "rail Dependencies URL resolves Matrix Design",
+      "ok": true,
+      "detail": "http://localhost:3021/orbit?project=matrix-design&scenario=matrix-scenario"
+    },
+    {
+      "name": "rail Dependencies preserves explicit Scenario",
+      "ok": true,
+      "detail": "?project=matrix-design&scenario=matrix-scenario"
+    },
+    {
+      "name": "rail Timeline URL resolves Matrix Design",
+      "ok": true,
+      "detail": "http://localhost:3021/timeline?project=matrix-design&scenario=matrix-scenario"
+    },
+    {
+      "name": "rail Timeline preserves explicit Scenario",
+      "ok": true,
+      "detail": "?project=matrix-design&scenario=matrix-scenario"
+    },
+    {
+      "name": "rail Reports URL resolves Matrix Design",
+      "ok": true,
+      "detail": "http://localhost:3021/reports?project=matrix-design&scenario=matrix-scenario"
+    },
+    {
+      "name": "rail Reports preserves explicit Scenario",
+      "ok": true,
+      "detail": "?project=matrix-design&scenario=matrix-scenario"
+    },
+    {
+      "name": "matrix produced no browser errors",
+      "ok": true,
+      "detail": ""
+    }
+  ]
+}

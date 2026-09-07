@@ -8,35 +8,115 @@ datasource db {
 }
 
 model Scope {
-  id           String    @id @default(cuid())
-  name         String // e.g. "JSA", "iTrack", "Precon"
-  teamKey      String // e.g. "SOF" -- will repeat across scopes
-  projectNames String[] @default([]) // Linear projects to filter to (union, no double-count within one Scope's own simulation), e.g. ["KIT JSA", "KIT Platform"]. Empty = any project.
-  labelFilter  String? // optional label name to further narrow, e.g. "JSA"
-  targetDate   DateTime? // release target the Forecast confidence is measured against
-  teamCapacity Float? // parallel "developer equivalents"; null = infer from assignees
-  includeTriage Boolean  @default(false) // count Triage-state tickets in the Forecast (audit always sees them)
-  estimationContext String? // free text fed to the AI estimator: team makeup, stack, what this release is
-  notionPageIds String[] @default([]) // Notion requirements/scoping pages pulled in as estimator context
-  figmaRefs     String[] @default([]) // "fileKey:nodeId" design pages/frames pulled in as estimator context
+  id                      String                   @id @default(cuid())
+  name                    String // e.g. "JSA", "iTrack", "Precon"
+  teamKey                 String // e.g. "SOF" -- will repeat across scopes
+  projectNames            String[]                 @default([]) // Linear projects to filter to (union, no double-count within one Scope's own simulation), e.g. ["KIT JSA", "KIT Platform"]. Empty = any project.
+  labelFilter             String? // optional label name to further narrow, e.g. "JSA"
+  targetDate              DateTime? // release target the Forecast confidence is measured against
+  teamCapacity            Float? // parallel "developer equivalents"; null = infer from assignees
+  includeTriage           Boolean                  @default(false) // count Triage-state tickets in the Forecast (audit always sees them)
+  estimationContext       String? // free text fed to the AI estimator: team makeup, stack, what this release is
+  // Whether Signal has a usable execution-system mapping for this project.
+  // Legacy scopes default to configured so this migration cannot reinterpret
+  // production. Bootstrap activation explicitly writes not_configured unless
+  // a human accepts a concrete execution mapping.
+  executionState          String                   @default("configured") // configured | not_configured | unavailable | stale
+  executionDetail         String?
+  notionPageIds           String[]                 @default([]) // Notion requirements/scoping pages pulled in as estimator context
+  figmaRefs               String[]                 @default([]) // "fileKey:nodeId" design pages/frames pulled in as estimator context
   // Other Scope ids this Scope's forecast can't finish ahead of -- e.g.
   // JSA/iTrack depending on shared Platform work. Modeled per trial as
   // max(this scope's own days, a draw from each dependency's own
   // completion-day samples), see lib/forecast/portfolio.ts. Empty (the
   // default, true for every Scope before this field existed) means a
   // Scope's forecast is computed exactly as it always was.
-  dependsOnScopeIds String[] @default([])
-  createdAt    DateTime  @default(now())
-  sources      Source[]
-  reports      Report[]
-  contextDocs  ContextDoc[]
-  allocations  Allocation[]
-  contextSnapshots ContextSnapshot[]
-  decisions    Decision[]
-  gatedBy      DecisionGate[] @relation("GatedScope")
-  decisionCandidates DecisionCandidate[]
-  timelineEvents     TimelineEvent[]
+  dependsOnScopeIds       String[]                 @default([])
+  createdAt               DateTime                 @default(now())
+  sources                 Source[]
+  reports                 Report[]
+  contextDocs             ContextDoc[]
+  allocations             Allocation[]
+  contextSnapshots        ContextSnapshot[]
+  decisions               Decision[]
+  gatedBy                 DecisionGate[]           @relation("GatedScope")
+  decisionCandidates      DecisionCandidate[]
+  timelineEvents          TimelineEvent[]
   timelineEventCandidates TimelineEventCandidate[]
+  aliases                 ScopeAlias[]
+  capabilities            Capability[]
+  dependenciesUpstream    ScopeDependency[]        @relation("DependencyUpstream")
+  dependenciesDownstream  ScopeDependency[]        @relation("DependencyDownstream")
+  activation              ProjectActivation?
+}
+
+// Alternate project identities accepted at activation. Aliases are project
+// identity, not Linear project filters; keeping them separate prevents a
+// knowledge-search synonym from silently changing execution scope.
+model ScopeAlias {
+  id              String   @id @default(cuid())
+  scopeId         String
+  scope           Scope    @relation(fields: [scopeId], references: [id], onDelete: Cascade)
+  alias           String
+  normalizedAlias String
+  provenance      Json
+  createdAt       DateTime @default(now())
+
+  @@unique([scopeId, normalizedAlias])
+  @@index([normalizedAlias])
+}
+
+// Accepted product/scope shape. A Capability can exist honestly without any
+// execution work. That absence is an Audit input, never a reason to fabricate
+// a ticket or suppress activation.
+model Capability {
+  id                String               @id @default(cuid())
+  scopeId           String
+  scope             Scope                @relation(fields: [scopeId], references: [id], onDelete: Cascade)
+  name              String
+  description       String?
+  status            String               @default("accepted")
+  provenance        Json
+  sourceCandidateId String?              @unique
+  createdAt         DateTime             @default(now())
+  updatedAt         DateTime             @updatedAt
+  workLinks         CapabilityWorkLink[]
+
+  @@index([scopeId, status])
+}
+
+model CapabilityWorkLink {
+  id           String     @id @default(cuid())
+  capabilityId String
+  capability   Capability @relation(fields: [capabilityId], references: [id], onDelete: Cascade)
+  provider     String
+  externalId   String
+  externalUrl  String?
+  state        String     @default("configured")
+  provenance   Json
+  createdAt    DateTime   @default(now())
+
+  @@unique([capabilityId, provider, externalId])
+  @@index([provider, externalId])
+}
+
+// Evidence-bearing project dependency. dependsOnScopeIds remains populated
+// for the protected Forecast engine, but this row is the durable canonical
+// relationship and the array is only its backwards-compatible projection.
+model ScopeDependency {
+  id                String   @id @default(cuid())
+  upstreamScopeId   String
+  upstreamScope     Scope    @relation("DependencyUpstream", fields: [upstreamScopeId], references: [id], onDelete: Cascade)
+  downstreamScopeId String
+  downstreamScope   Scope    @relation("DependencyDownstream", fields: [downstreamScopeId], references: [id], onDelete: Cascade)
+  basis             String
+  evidence          Json
+  sourceCandidateId String?  @unique
+  acceptedAt        DateTime @default(now())
+  state             String   @default("active")
+
+  @@unique([upstreamScopeId, downstreamScopeId])
+  @@index([downstreamScopeId, state])
 }
 
 // Tracking POLICY for a recurring source -- "should we currently keep
@@ -51,7 +131,7 @@ model Scope {
 // Scope.projectNames/teamKey, not something with a candidate/retired
 // lifecycle (see docs/CONTEXT-MODEL.md).
 model SourceRegistration {
-  id         String   @id @default(cuid())
+  id         String @id @default(cuid())
   sourceType String // "notion" | "figma" | "contextDoc" | "spreadsheet" | ...
   sourceRef  String // Notion page id / Figma "fileKey:nodeId" / ContextDoc id or label
 
@@ -80,20 +160,23 @@ model SourceRegistration {
   supersededByRegistration   SourceRegistration?  @relation("SourceSupersession", fields: [supersededByRegistrationId], references: [id])
   supersededSources          SourceRegistration[] @relation("SourceSupersession")
 
-  createdAt DateTime @default(now())
+  createdAt         DateTime @default(now())
+  sourceCandidateId String?  @unique
+  provenance        Json?
 }
 
 // One immutable, frozen instance of a ProjectContextPackage (see
 // lib/context/package.ts) -- the historical input boundary. Created ONLY
-// by lib/context/snapshot.ts's persistContextSnapshot(), and only at a
-// deliberate moment (never on an ordinary /forecast page load -- see
+// by lib/context/snapshot.ts's persistContextSnapshot() or the governed,
+// serializable Project Activation transaction, and only at a deliberate
+// moment (never on an ordinary /forecast page load -- see
 // docs/CONTEXT-MODEL.md). Never updated after creation: a later
 // SourceRegistration status change must never alter what an existing
 // ContextSnapshot says it used.
 model ContextSnapshot {
-  id      String  @id @default(cuid())
+  id      String @id @default(cuid())
   scopeId String // Phase 1a is single-scope only; portfolio-wide snapshots are explicitly deferred
-  scope   Scope   @relation(fields: [scopeId], references: [id])
+  scope   Scope  @relation(fields: [scopeId], references: [id])
 
   // packageId + producer are the PRODUCER's own transport identity for
   // this package instance (independent from this row's own `id`) -- the
@@ -113,10 +196,11 @@ model ContextSnapshot {
 
   createdAt DateTime @default(now())
 
-  findings  Finding[]
-  reports   Report[]
-  auditRuns AuditRun[]
+  findings       Finding[]
+  reports        Report[]
+  auditRuns      AuditRun[]
   timelineEvents TimelineEvent[]
+  activation     ProjectActivation? @relation("ActivationSnapshot")
 
   @@unique([producer, packageId])
 }
@@ -192,34 +276,34 @@ model ContextDoc {
 // actually reported even as the underlying logic changes later, and
 // "since last report" diffing has a stable prior snapshot to compare to.
 model Report {
-  id                 String   @id @default(cuid())
-  scopeId            String
-  scope              Scope    @relation(fields: [scopeId], references: [id])
-  generatedAt        DateTime @default(now())
-  targetDate         DateTime?
-  likelyDate         DateTime
-  earliestDate       DateTime
-  latestDate         DateTime
-  confidenceAtTarget Int?
-  likelyDateDeltaDays Int?    // vs. the previous report for this scope, null if first
-  shippedCount       Int
-  blockingCount      Int
+  id                     String    @id @default(cuid())
+  scopeId                String
+  scope                  Scope     @relation(fields: [scopeId], references: [id])
+  generatedAt            DateTime  @default(now())
+  targetDate             DateTime?
+  likelyDate             DateTime
+  earliestDate           DateTime
+  latestDate             DateTime
+  confidenceAtTarget     Int?
+  likelyDateDeltaDays    Int? // vs. the previous report for this scope, null if first
+  shippedCount           Int
+  blockingCount          Int
   resolvedSinceLastCount Int
-  summaryMarkdown    String  // the full rendered report -- the historical record
+  summaryMarkdown        String // the full rendered report -- the historical record
 
   // DecisionBriefV1 stores the complete, machine-readable communication
   // artifact. These fields are append-only: legacy Reports remain null and
   // are rendered through the legacy history path; a V1 brief is always read
   // from this exact JSON rather than reassembled from newer upstream state.
-  briefVersion       String?
-  briefSnapshot      Json?
+  briefVersion        String?
+  briefSnapshot       Json?
   // Presentation is a frozen recipe over briefSnapshot. It may hide,
   // reorder, or change the density of modules, but cannot change facts.
-  recipeVersion      String?
-  briefRecipe        Json?
+  recipeVersion       String?
+  briefRecipe         Json?
   presentationVersion String?
-  mode               String? // "reality" | "scenario"; null for legacy rows
-  scenarioSnapshot   Json?   // explicit scenario inputs, never implied defaults
+  mode                String? // "reality" | "scenario"; null for legacy rows
+  scenarioSnapshot    Json? // explicit scenario inputs, never implied defaults
 
   // Which ContextSnapshot (if any) fed the computation this Report was
   // generated from. Nullable -- every Report predating this field, and
@@ -227,8 +311,8 @@ model Report {
   // generateReport(), has none. Deliberately a single FK, not a parallel
   // "sourcesUsed" JSON manifest -- ContextSnapshot.package already is the
   // full manifest; a Report should reference it, not duplicate it.
-  contextSnapshotId  String?
-  contextSnapshot    ContextSnapshot? @relation(fields: [contextSnapshotId], references: [id])
+  contextSnapshotId String?
+  contextSnapshot   ContextSnapshot? @relation(fields: [contextSnapshotId], references: [id])
 }
 
 // An AI-produced three-point estimate for one work item, cached by content
@@ -265,7 +349,7 @@ model Source {
 }
 
 model Finding {
-  id            String   @id @default(cuid())
+  id            String    @id @default(cuid())
   // Nullable as of Phase 1b (was required through Phase 1a). A LEGACY/
   // DIRECT AUDIT Finding still always has one, set exactly as before. A
   // PACKAGE-DERIVED Finding (contextSnapshotId set, no pasted transcript
@@ -275,7 +359,9 @@ model Finding {
   // deliberate flow genuinely used a transcript AND package evidence in
   // the same audit run.
   sourceId      String?
-  source        Source?  @relation(fields: [sourceId], references: [id], onDelete: SetNull)
+  source        Source?   @relation(fields: [sourceId], references: [id], onDelete: SetNull)
+  auditRunId    String?
+  auditRun      AuditRun? @relation(fields: [auditRunId], references: [id], onDelete: SetNull)
   type          String // "missing_work" | "decision" | "risk" | "contradiction"
   title         String
   quote         String
@@ -284,14 +370,14 @@ model Finding {
   estimateHint  String?
   owner         String? // for decisions: who seems to own the call
   blocks        String? // for decisions/risks: what this is holding up
-  blocking      Boolean  @default(false) // true = actively blocks scoped work
+  blocking      Boolean   @default(false) // true = actively blocks scoped work
   matchedIssues String[]
-  status        String   @default("open") // open | ticketed | dismissed | resolved
+  status        String    @default("open") // open | ticketed | dismissed | resolved
   linearIssueId String?
   dismissReason String?
   resolution    String? // for decisions: what was decided, when marked resolved
   resolvedAt    DateTime? // set when status -> resolved; powers "resolved since last report"
-  createdAt     DateTime @default(now())
+  createdAt     DateTime  @default(now())
 
   // Which ContextSnapshot this Finding was derived from, and which
   // evidence items within its package it cites (EvidenceItem.id values,
@@ -303,7 +389,7 @@ model Finding {
   // source-level FK alone.
   contextSnapshotId String?
   contextSnapshot   ContextSnapshot? @relation(fields: [contextSnapshotId], references: [id])
-  evidenceRefs      String[] @default([])
+  evidenceRefs      String[]         @default([])
 }
 
 // A CHOICE, not an observation.
@@ -324,34 +410,34 @@ model Finding {
 // "How should addresses be stored?" can be open, real and important
 // forever while changing no date at all.
 model Decision {
-  id        String   @id @default(cuid())
-  scopeId   String
-  scope     Scope    @relation(fields: [scopeId], references: [id], onDelete: Cascade)
+  id            String    @id @default(cuid())
+  scopeId       String
+  scope         Scope     @relation(fields: [scopeId], references: [id], onDelete: Cascade)
   // The question, phrased as a question.
-  title     String
-  status    String   @default("open") // open | decided | dismissed
-  owner     String?
-  rationale String?
+  title         String
+  status        String    @default("open") // open | decided | dismissed
+  owner         String?
+  rationale     String?
   // When the answer is needed by. Advisory only -- it feeds no simulation.
-  neededBy  DateTime?
+  neededBy      DateTime?
   // Choices under consideration. Options are optional: plenty of real
   // decisions are "we have to decide X" long before anyone has enumerated
   // the ways X could go. Shape: [{ id, label, note? }].
-  options   Json     @default("[]")
-  chosenOption String?
-  resolution   String?
-  decidedAt    DateTime?
+  options       Json      @default("[]")
+  chosenOption  String?
+  resolution    String?
+  decidedAt     DateTime?
   dismissReason String?
   // Linear identifiers this choice touches. Display + navigation only.
-  relatedIssues String[] @default([])
+  relatedIssues String[]  @default([])
 
   // WHERE THIS CAME FROM. A Decision migrated from a legacy Finding keeps
   // a pointer to it so the migration is idempotent and reversible, and so
   // history survives -- the Finding row is never deleted.
-  sourceFindingId String?  @unique
+  sourceFindingId String? @unique
   // The candidate this was promoted from, when it began as a machine
   // suggestion. Also the idempotency key for acceptance.
-  sourceClaimKey  String?  @unique
+  sourceClaimKey  String? @unique
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -405,7 +491,7 @@ model DecisionGate {
 
   // "migrated" marks a gate created by the legacy backfill rather than by
   // someone answering the connect-to-delivery questions.
-  provenance String @default("manual") // manual | migrated
+  provenance String   @default("manual") // manual | migrated
   createdAt  DateTime @default(now())
 
   @@index([targetScopeId])
@@ -420,15 +506,15 @@ model DecisionEvidence {
   decisionId String
   decision   Decision @relation(fields: [decisionId], references: [id], onDelete: Cascade)
 
-  kind    String // "context_package" | "linear" | "manual" | "finding"
-  excerpt String
+  kind              String // "context_package" | "linear" | "manual" | "finding"
+  excerpt           String
   // Provenance, as specific as the source allows. All optional because
   // different sources can honestly supply different amounts.
   contextSnapshotId String?
   evidenceItemId    String?
   externalRef       String?
   sourceLabel       String?
-  createdAt DateTime @default(now())
+  createdAt         DateTime @default(now())
 
   @@index([decisionId])
 }
@@ -449,39 +535,41 @@ model DecisionCandidate {
   scopeId String
   scope   Scope  @relation(fields: [scopeId], references: [id], onDelete: Cascade)
 
-  title      String
-  question   String?
-  sourceLabel String // "Hermes · Refinement call", "Linear #2431", ...
+  title             String
+  question          String?
+  sourceLabel       String // "Hermes · Refinement call", "Linear #2431", ...
   contextSnapshotId String?
   // EvidenceItem ids within the snapshot's package, carried verbatim so
   // acceptance can copy real citations rather than inventing them.
-  evidenceRefs String[] @default([])
-  excerpts     String[] @default([])
+  evidenceRefs      String[] @default([])
+  excerpts          String[] @default([])
 
-  status     String   @default("pending") // pending | accepted | dismissed
+  status             String   @default("pending") // pending | accepted | dismissed
   acceptedDecisionId String?
-  createdAt  DateTime @default(now())
+  createdAt          DateTime @default(now())
 
   @@index([scopeId, status])
 }
 
 model AuditRun {
-  id           String   @id @default(cuid())
+  id                String             @id @default(cuid())
   // Nullable as of Phase 1b -- a loose string reference (not a real
   // Prisma relation), so relaxing it is a plain column-constraint change.
   // Null for a package-only audit run that created no Source row.
-  sourceId     String?
+  sourceId          String?
   // Which ContextSnapshot this run consumed package evidence from, when
   // any (Phase 1c) -- so a package-driven AuditRun is never provenance-
   // orphaned the way a bare-null sourceId alone would leave it. A legacy
   // audit run has sourceId set and this null; a package-only run has this
   // set and sourceId null; a mixed run may have both.
   contextSnapshotId String?
-  contextSnapshot   ContextSnapshot? @relation(fields: [contextSnapshotId], references: [id])
-  issueCount   Int
-  findingCount Int
-  model        String
-  createdAt    DateTime @default(now())
+  contextSnapshot   ContextSnapshot?   @relation(fields: [contextSnapshotId], references: [id])
+  issueCount        Int
+  findingCount      Int
+  model             String
+  createdAt         DateTime           @default(now())
+  findings          Finding[]
+  activation        ProjectActivation? @relation("ActivationAudit")
 }
 
 // ── TIMELINE ───────────────────────────────────────────────────────────
@@ -503,9 +591,9 @@ model TimelineEvent {
   scopeId String
   scope   Scope  @relation(fields: [scopeId], references: [id], onDelete: Cascade)
 
-  kind  String // event | milestone | kickoff | delivery | phase
-  title String
-  date  DateTime
+  kind    String // event | milestone | kickoff | delivery | phase
+  title   String
+  date    DateTime
   // Set only for a genuine duration. Most landmarks are points; a span is
   // NOT the default, because a timeline of bars is a Gantt chart.
   endDate DateTime?
@@ -515,21 +603,24 @@ model TimelineEvent {
   // date has passed is OVERDUE, which is information worth keeping, not a
   // thing that silently became history because the clock moved.
   temporalState String @default("occurred") // occurred | planned
+  // Semantic assertion preserved independently of the clock. A projected
+  // date is not promoted to a commitment merely because both are future.
+  semanticState String @default("event") // mention | planned | commitment | projected | occurred | event
 
   note String?
 
   // WHERE IT CAME FROM. A landmark someone typed and a landmark accepted
   // from a Hermes claim are both Reality, but they are not equally
   // attested, and the difference has to survive.
-  source            String  @default("manual") // manual | candidate | import
+  source            String           @default("manual") // manual | candidate | import
   sourceLabel       String?
   contextSnapshotId String?
   contextSnapshot   ContextSnapshot? @relation(fields: [contextSnapshotId], references: [id])
-  evidenceRefs      String[] @default([])
+  evidenceRefs      String[]         @default([])
   externalRef       String?
   // The candidate this was seated from; also the idempotency key, so a
   // retried acceptance updates rather than duplicating.
-  sourceClaimKey String? @unique
+  sourceClaimKey    String?          @unique
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -552,14 +643,14 @@ model TimelineEventCandidate {
   scopeId String
   scope   Scope  @relation(fields: [scopeId], references: [id], onDelete: Cascade)
 
-  title String
-  date  DateTime?
+  title   String
+  date    DateTime?
   // A SUGGESTED END, held to the same standard as the suggested start: it
   // exists only when structured evidence metadata stated one. Never derived
   // from prose, never a default duration — an activity whose length nobody
   // wrote down arrives as a moment, not as a guessed span.
   endDate DateTime?
-  kind    String @default("event")
+  kind    String    @default("event")
 
   sourceLabel       String
   contextSnapshotId String?
@@ -576,7 +667,8 @@ model TimelineEventCandidate {
 // PRE-REALITY PROJECT IDENTITY. A ProjectBootstrap is intentionally not a
 // Scope and has no relationship to Forecast-owned records. It can collect
 // investigatory knowledge and human dispositions without making any delivery
-// claim. Phase 2 activation is the only future path allowed to create a Scope.
+// claim. The Phase 2 activation transaction is the only path from this model
+// to a Scope.
 model ProjectBootstrap {
   id                      String   @id @default(cuid())
   canonicalName           String
@@ -585,7 +677,7 @@ model ProjectBootstrap {
   ownerHint               String?
   sourceHints             Json
   searchExistingKnowledge Boolean  @default(true)
-  status                  String   @default("draft") // draft | scanning | reviewing | scan_failed | archived
+  status                  String   @default("draft") // draft | scanning | reviewing | scan_failed | activated | archived
   activePackageId         String?
   reviewRevision          Int      @default(0)
   createdAt               DateTime @default(now())
@@ -595,9 +687,30 @@ model ProjectBootstrap {
   packages     BootstrapPackage[]
   candidates   BootstrapCandidate[]
   reviewEvents BootstrapReviewEvent[]
+  activation   ProjectActivation?
 
   @@index([normalizedName])
   @@index([status, updatedAt])
+}
+
+// The immutable receipt for the single governed boundary crossing. The
+// manifest is a frozen census of both sides of the boundary; bootstrap review
+// rows remain the detailed history. Unique bootstrap/scope/snapshot/audit keys
+// make retries resolve to the original result instead of duplicating Reality.
+model ProjectActivation {
+  id                String           @id @default(cuid())
+  bootstrapId       String           @unique
+  bootstrap         ProjectBootstrap @relation(fields: [bootstrapId], references: [id])
+  scopeId           String           @unique
+  scope             Scope            @relation(fields: [scopeId], references: [id])
+  reviewRevision    Int
+  manifestVersion   String
+  manifest          Json
+  contextSnapshotId String           @unique
+  contextSnapshot   ContextSnapshot  @relation("ActivationSnapshot", fields: [contextSnapshotId], references: [id], onDelete: Restrict)
+  firstAuditRunId   String           @unique
+  firstAuditRun     AuditRun         @relation("ActivationAudit", fields: [firstAuditRunId], references: [id], onDelete: Restrict)
+  createdAt         DateTime         @default(now())
 }
 
 // Durable job/status envelope. The current Railway/Next stack has no queue;
@@ -605,12 +718,12 @@ model ProjectBootstrap {
 // An interrupted run is visible and a rescan creates a new sequence without
 // deleting the prior evidence or review history.
 model BootstrapScanRun {
-  id               String   @id @default(cuid())
+  id               String           @id @default(cuid())
   bootstrapId      String
   bootstrap        ProjectBootstrap @relation(fields: [bootstrapId], references: [id], onDelete: Cascade)
   sequence         Int
-  status           String   @default("queued") // queued | running | partial | complete | failed
-  stage            String   @default("queued")
+  status           String           @default("queued") // queued | running | partial | complete | failed
+  stage            String           @default("queued")
   providerCoverage Json
   metrics          Json
   warnings         Json
@@ -618,8 +731,8 @@ model BootstrapScanRun {
   resultPackageId  String?
   startedAt        DateTime?
   completedAt      DateTime?
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
 
   package BootstrapPackage?
 
@@ -630,10 +743,10 @@ model BootstrapScanRun {
 // Immutable, versioned compiler delivery. This is NOT a ContextSnapshot:
 // nothing in it has crossed the active-project acceptance boundary.
 model BootstrapPackage {
-  id                  String   @id @default(cuid())
+  id                  String           @id @default(cuid())
   bootstrapId         String
   bootstrap           ProjectBootstrap @relation(fields: [bootstrapId], references: [id], onDelete: Cascade)
-  scanRunId           String   @unique
+  scanRunId           String           @unique
   scanRun             BootstrapScanRun @relation(fields: [scanRunId], references: [id], onDelete: Cascade)
   packageId           String
   packageVersion      String
@@ -643,7 +756,7 @@ model BootstrapPackage {
   package             Json
   generatedAt         DateTime
   supersedesPackageId String?
-  createdAt           DateTime @default(now())
+  createdAt           DateTime         @default(now())
 
   candidates BootstrapCandidate[]
 
@@ -655,35 +768,35 @@ model BootstrapPackage {
 // immutable per package. Rescans create a new row and use carriedFromCandidateId
 // to inherit a disposition only when the stable fingerprint is unchanged.
 model BootstrapCandidate {
-  id                     String   @id @default(cuid())
+  id                     String               @id @default(cuid())
   bootstrapId            String
-  bootstrap              ProjectBootstrap @relation(fields: [bootstrapId], references: [id], onDelete: Cascade)
+  bootstrap              ProjectBootstrap     @relation(fields: [bootstrapId], references: [id], onDelete: Cascade)
   packageId              String?
-  package                BootstrapPackage? @relation(fields: [packageId], references: [id], onDelete: Cascade)
+  package                BootstrapPackage?    @relation(fields: [packageId], references: [id], onDelete: Cascade)
   candidateKey           String
   kind                   String
   title                  String
   summary                String
   whyProposed            String
   matchBasis             String
-  currentness            String   @default("unknown")
-  relevance              String   @default("medium")
+  currentness            String               @default("unknown")
+  relevance              String               @default("medium")
   sourceFingerprint      String
   originalProposal       Json
   reviewedProposal       Json?
-  status                 String   @default("pending") // pending | accepted | deferred | rejected | information-only | superseded
+  status                 String               @default("pending") // pending | accepted | deferred | rejected | information-only | superseded
   dispositionReason      String?
-  active                 Boolean  @default(true)
-  changedSincePrior      Boolean  @default(false)
+  active                 Boolean              @default(true)
+  changedSincePrior      Boolean              @default(false)
   carriedFromCandidateId String?
-  carriedFromCandidate   BootstrapCandidate? @relation("CandidateRefresh", fields: [carriedFromCandidateId], references: [id], onDelete: SetNull)
+  carriedFromCandidate   BootstrapCandidate?  @relation("CandidateRefresh", fields: [carriedFromCandidateId], references: [id], onDelete: SetNull)
   refreshedCandidates    BootstrapCandidate[] @relation("CandidateRefresh")
-  operatorAssertion      Boolean  @default(false)
-  createdAt              DateTime @default(now())
-  updatedAt              DateTime @updatedAt
+  operatorAssertion      Boolean              @default(false)
+  createdAt              DateTime             @default(now())
+  updatedAt              DateTime             @updatedAt
 
   evidenceLinks BootstrapEvidenceLink[]
-  reviewEvents BootstrapReviewEvent[]
+  reviewEvents  BootstrapReviewEvent[]
 
   @@unique([packageId, candidateKey])
   @@index([bootstrapId, active, kind, status])
@@ -693,15 +806,15 @@ model BootstrapCandidate {
 // Links are mutable review overlays on an immutable package. Detaching an
 // item never edits or deletes the evidence passage transported by the scan.
 model BootstrapEvidenceLink {
-  id          String   @id @default(cuid())
+  id          String             @id @default(cuid())
   candidateId String
   candidate   BootstrapCandidate @relation(fields: [candidateId], references: [id], onDelete: Cascade)
   evidenceId  String
-  linkState   String   @default("attached") // attached | detached
-  attachedBy  String   @default("compiler") // compiler | operator
+  linkState   String             @default("attached") // attached | detached
+  attachedBy  String             @default("compiler") // compiler | operator
   reason      String?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  createdAt   DateTime           @default(now())
+  updatedAt   DateTime           @updatedAt
 
   @@unique([candidateId, evidenceId])
 }
@@ -709,16 +822,16 @@ model BootstrapEvidenceLink {
 // Small append-only audit trail for human governance. Candidate rows retain
 // the current projection; events retain how it got there across reloads.
 model BootstrapReviewEvent {
-  id          String   @id @default(cuid())
+  id          String              @id @default(cuid())
   bootstrapId String
-  bootstrap   ProjectBootstrap @relation(fields: [bootstrapId], references: [id], onDelete: Cascade)
+  bootstrap   ProjectBootstrap    @relation(fields: [bootstrapId], references: [id], onDelete: Cascade)
   candidateId String?
   candidate   BootstrapCandidate? @relation(fields: [candidateId], references: [id], onDelete: SetNull)
   action      String
   fromStatus  String?
   toStatus    String?
   detail      Json
-  createdAt   DateTime @default(now())
+  createdAt   DateTime            @default(now())
 
   @@index([bootstrapId, createdAt])
   @@index([candidateId, createdAt])

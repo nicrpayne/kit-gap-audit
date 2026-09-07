@@ -12,6 +12,7 @@ import {
   type BootstrapEvidencePassage,
   type BootstrapGap,
   type BootstrapIntelligenceHead,
+  type BootstrapIntelligenceRelation,
   type BootstrapProposal,
   type MatchReason,
   type ProjectBootstrapPackageV1,
@@ -64,6 +65,7 @@ export interface BootstrapCorpus {
   artifacts: CorpusArtifact[];
   evidence: CorpusEvidence[];
   intelligence: CorpusIntelligence[];
+  relations: BootstrapIntelligenceRelation[];
   derivedClaims: {
     id: string;
     kind: string;
@@ -132,6 +134,7 @@ export async function loadBootstrapCorpus(): Promise<BootstrapCorpus> {
   const artifacts = new Map<string, CorpusArtifact>();
   const evidence = new Map<string, CorpusEvidence>();
   const intelligence = new Map<string, CorpusIntelligence>();
+  const graphRelations = new Map<string, BootstrapIntelligenceRelation>();
   const derivedClaims = new Map<string, BootstrapCorpus["derivedClaims"][number]>();
 
   for (const source of sources) {
@@ -218,6 +221,19 @@ export async function loadBootstrapCorpus(): Promise<BootstrapCorpus> {
       const to = typeof rel.to === "string" ? rel.to : typeof rel.targetId === "string" ? rel.targetId : "";
       const kind = typeof rel.rel === "string" ? rel.rel : typeof rel.relation === "string" ? rel.relation : "";
       if (!from || !to) continue;
+      const allowed = new Set(["supports", "contradicts", "supersedes", "resolves", "reopens", "depends_on", "related_to"]);
+      if (allowed.has(kind)) {
+        const relationClass = rel.relClass === "temporal" || rel.relationClass === "temporal"
+          ? "temporal" : rel.relClass === "provenance" || rel.relationClass === "provenance"
+            ? "provenance" : rel.relClass === "semantic" || rel.relationClass === "semantic"
+              ? "semantic" : "contextual";
+        const key = `${from}:${kind}:${to}`;
+        graphRelations.set(key, {
+          sourceId: from, relation: kind as BootstrapIntelligenceRelation["relation"], targetId: to,
+          relationClass, sourceInPackage: true, targetInPackage: true,
+          provenance: { sourceSnapshotId: snapshot.id, declaredAs: typeof rel.declaredAs === "string" ? rel.declaredAs : kind },
+        });
+      }
       if (kind === "contradicts") {
         contradicted.set(from, [...(contradicted.get(from) ?? []), to]);
         contradicted.set(to, [...(contradicted.get(to) ?? []), from]);
@@ -253,6 +269,7 @@ export async function loadBootstrapCorpus(): Promise<BootstrapCorpus> {
 
   return {
     artifacts: [...artifacts.values()], evidence: [...evidence.values()], intelligence: [...intelligence.values()],
+    relations: [...graphRelations.values()],
     derivedClaims: [...derivedClaims.values()], activeIdentities: scopes,
     registrations: registrations.map((r) => ({ ...r })), snapshotCount: snapshots.length,
   };
@@ -348,6 +365,14 @@ function proposal(
   const fingerprint = bootstrapHash({ kind: input.kind, payload: input.payload, independentRoots: [...independentRoots].sort() });
   return {
     ...input, proposalId: stableId("proposal", { key, fingerprint }), candidateKey: key, fingerprint,
+    basis: input.evidenceRefs.length > 0 ? "direct" : input.matchBasis.includes("semantic") ? "semantic" : "inferred",
+    retrieval: {
+      strategy: input.matchBasis.includes("current structured") ? "structured_current_head"
+        : input.matchBasis.includes("coverage") ? "coverage_gap"
+          : input.matchBasis.includes("exact") ? "exact_identity" : "lexical",
+      scoreBand: input.matchBasis.includes("exact") ? "exact" : input.relevance === "high" ? "strong" : "possible",
+    },
+    ambiguityMarkers: contradiction ? ["unresolved_contradiction"] : [],
     grounding: {
       directEvidenceCount: linked.filter((e) => e.independence !== "derivative").length,
       independentLineageRootCount: independentRoots.size, derivativeOnly, unresolvedContradiction: contradiction,
@@ -494,7 +519,7 @@ export function compileBootstrapPackage(
       if (evidenceSeen.has(item.id)) continue;
       evidenceSeen.add(item.id);
       evidence.push({
-        evidenceId: item.id, artifactId: item.artifactId, exactQuote: item.exactQuote,
+        evidenceId: item.id, passageHash: bootstrapHash({ quote: item.exactQuote, locator: item.locator, artifactId: item.artifactId }), artifactId: item.artifactId, exactQuote: item.exactQuote,
         locator: item.locator, ...(item.occurredAt ? { occurredAt: item.occurredAt } : {}),
         independence: item.independence, lineageRootIds: item.lineageRootIds,
       });
@@ -505,7 +530,7 @@ export function compileBootstrapPackage(
         const id = stableId("evidence", { artifact: artifact.id, quote });
         evidenceSeen.add(id);
         evidence.push({
-          evidenceId: id, artifactId: artifact.id, exactQuote: quote,
+          evidenceId: id, passageHash: bootstrapHash({ quote, artifactId: artifact.id, canonicalRef: artifact.canonicalRef }), artifactId: artifact.id, exactQuote: quote,
           locator: { stableRef: artifact.canonicalRef, locatorLimitation: "Signal stores no character-offset index for this source." },
           independence: artifact.derivative ? "derivative" : "independent", lineageRootIds: artifact.lineageRootIds,
         });
@@ -534,7 +559,7 @@ export function compileBootstrapPackage(
         });
       }
       evidenceById.set(raw.id, {
-        evidenceId: raw.id, artifactId: raw.artifactId, exactQuote: raw.exactQuote, locator: raw.locator,
+        evidenceId: raw.id, passageHash: bootstrapHash({ quote: raw.exactQuote, locator: raw.locator, artifactId: raw.artifactId }), artifactId: raw.artifactId, exactQuote: raw.exactQuote, locator: raw.locator,
         ...(raw.occurredAt ? { occurredAt: raw.occurredAt } : {}), independence: raw.independence, lineageRootIds: raw.lineageRootIds,
       });
       evidence.push(evidenceById.get(raw.id)!);
@@ -605,7 +630,7 @@ export function compileBootstrapPackage(
   const coverage: ProviderCoverage[] = [
     { provider: "signal-source-store", label: "Signal sources", state: "available", artifacts: matchedProviders.get("signal-source-store") ?? 0, detail: "Searched persisted Source rows with exact and lexical matching." },
     { provider: "signal-context", label: "Signal context", state: "available", artifacts: (matchedProviders.get("signal-context") ?? 0) + (matchedProviders.get("context-package") ?? 0), detail: `Searched ContextDocs and ${corpus.snapshotCount} stored context packages.` },
-    { provider: "hermes", label: "Hermes / structured intelligence", state: hermesArtifacts.length || intelligenceHeads.length ? "partial" : "not_configured", artifacts: hermesArtifacts.length, detail: hermesArtifacts.length || intelligenceHeads.length ? "Stored push packages searched; Signal has no live Hermes pull or health endpoint." : "No matching stored Hermes package. The current bridge requires an active Scope and cannot scan pre-Reality identities." },
+    { provider: "hermes", label: "Hermes / structured intelligence", state: hermesArtifacts.length || intelligenceHeads.length ? "partial" : "not_configured", artifacts: hermesArtifacts.length, detail: hermesArtifacts.length || intelligenceHeads.length ? "Stored push packages searched; Signal has no live Hermes pull or health endpoint." : "No matching stored Hermes package. BootstrapKnowledgePackage 1.1 can be pushed before a Scope exists; live Hermes pull is not configured." },
     { provider: "wiki", label: "Derivative wiki", state: wikiArtifacts.length ? "partial" : "not_configured", artifacts: wikiArtifacts.length, detail: wikiArtifacts.length ? "Stored wiki-derived material searched; live wiki access is not configured in Signal." : "No live wiki connector exists in Signal." },
     { provider: "notion", label: "Notion", state: "not_configured", artifacts: artifacts.filter((a) => a.provider.toLowerCase().includes("notion")).length, detail: "Bootstrap has no active Scope source bindings; live Notion collection is not run." },
     { provider: "figma", label: "Figma", state: "not_configured", artifacts: artifacts.filter((a) => a.provider.toLowerCase().includes("figma")).length, detail: "Bootstrap has no active Scope source bindings; live Figma collection is not run." },
@@ -615,7 +640,7 @@ export function compileBootstrapPackage(
   const gaps: BootstrapGap[] = [];
   const kinds = new Set([...deduped.values()].map((p) => p.kind));
   if (!kinds.has("capability")) gaps.push({ id: "gap-scope", category: "Proposed Scope", summary: "Insufficient evidence to establish scope", detail: "No matched typed claim or current intelligence object explicitly named a capability." });
-  if (!intelligenceHeads.length) gaps.push({ id: "gap-heads", category: "Structured intelligence", summary: "No matching current intelligence heads", detail: "Signal searched stored packages only; a generic pre-Scope Hermes compiler is not available." });
+  if (!intelligenceHeads.length) gaps.push({ id: "gap-heads", category: "Structured intelligence", summary: "No matching current intelligence heads", detail: "Signal searched stored packages; no BootstrapKnowledgePackage 1.1 was supplied by Hermes for this identity." });
   if (!artifacts.length) gaps.push({ id: "gap-corpus", category: "Sources", summary: "No matching persisted artifacts", detail: "This is an honest sparse result, not evidence that no project history exists." });
   if (!kinds.has("dependency")) gaps.push({ id: "gap-dependency", category: "Dependencies", summary: "No causally structured dependency", detail: "Semantic or lexical relatedness alone is not treated as dependency direction." });
 
@@ -632,6 +657,15 @@ export function compileBootstrapPackage(
   const packageSeed = {
     version: BOOTSTRAP_PACKAGE_VERSION, producer: "gap_app" as const, compilerVersion: BOOTSTRAP_COMPILER_VERSION,
     bootstrapId, requestedIdentity: identity,
+    identity: {
+      detectedCanonicalName: identity.canonicalName,
+      aliases: [...identity.aliases].sort(),
+      collisions: ambiguities.filter((item) => item.kind !== "contradiction").map((item) => item.id).sort(),
+      relatedEntities: [...new Set(intelligenceHeads.flatMap((head) => [
+        firstString(head.fields, ["from", "dependent", "subject", "project"]),
+        firstString(head.fields, ["to", "prerequisite", "depends_on", "dependency"]),
+      ]).filter((item): item is string => Boolean(item)))].sort(),
+    },
     discovery: {
       strategies: [
         { id: "identity", state: "complete" as const, detail: "Canonical name and aliases checked exactly." },
@@ -646,11 +680,19 @@ export function compileBootstrapPackage(
     artifacts: artifacts.sort((a, b) => a.artifactId.localeCompare(b.artifactId)),
     evidence: evidence.sort((a, b) => a.evidenceId.localeCompare(b.evidenceId)),
     intelligenceHeads: intelligenceHeads.sort((a, b) => a.intelligenceId.localeCompare(b.intelligenceId)),
+    relations: corpus.relations
+      .map((relation) => ({
+        ...relation,
+        sourceInPackage: intelligenceHeads.some((head) => head.intelligenceId === relation.sourceId),
+        targetInPackage: intelligenceHeads.some((head) => head.intelligenceId === relation.targetId),
+      }))
+      .filter((relation) => relation.sourceInPackage || relation.targetInPackage)
+      .sort((a, b) => `${a.sourceId}:${a.relation}:${a.targetId}`.localeCompare(`${b.sourceId}:${b.relation}:${b.targetId}`)),
     proposals: [...deduped.values()].sort((a, b) => a.candidateKey.localeCompare(b.candidateKey)),
     coverage, ambiguities, gaps,
     warnings: [
       "This package is pre-Reality. Candidate dispositions have zero Forecast effect.",
-      "Coverage is limited to knowledge already persisted in Signal; live provider collection was not attempted.",
+      "Coverage is limited to Signal-held packages unless a Hermes BootstrapKnowledgePackageV1 is posted; live provider collection was not attempted by this server.",
     ],
   };
   const contentHash = bootstrapHash(packageSeed);
@@ -671,7 +713,9 @@ export async function executeBootstrapScan(scanRunId: string): Promise<void> {
     await prisma.bootstrapScanRun.update({
       where: { id: scan.id }, data: { status: "running", stage: "identity", startedAt: scan.startedAt ?? new Date(), error: null },
     });
-    await prisma.projectBootstrap.update({ where: { id: scan.bootstrapId }, data: { status: "scanning" } });
+    if (scan.bootstrap.status !== "activated") {
+      await prisma.projectBootstrap.update({ where: { id: scan.bootstrapId }, data: { status: "scanning" } });
+    }
     const corpus = await loadBootstrapCorpus();
     await prisma.bootstrapScanRun.update({ where: { id: scan.id }, data: { stage: "lexical_retrieval" } });
     const identity: ProjectIdentityQuery = {
@@ -681,14 +725,14 @@ export async function executeBootstrapScan(scanRunId: string): Promise<void> {
     };
     const compiled = scan.bootstrap.searchExistingKnowledge
       ? compileBootstrapPackage(scan.bootstrapId, identity, corpus)
-      : compileBootstrapPackage(scan.bootstrapId, identity, { ...corpus, artifacts: [], evidence: [], intelligence: [], derivedClaims: [], snapshotCount: 0 });
+      : compileBootstrapPackage(scan.bootstrapId, identity, { ...corpus, artifacts: [], evidence: [], intelligence: [], relations: [], derivedClaims: [], snapshotCount: 0 });
     await prisma.bootstrapScanRun.update({ where: { id: scan.id }, data: { stage: "proposal_compilation" } });
     await persistCompiledPackage(scan.id, compiled);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Bootstrap scan failed";
     await prisma.$transaction([
       prisma.bootstrapScanRun.update({ where: { id: scanRunId }, data: { status: "failed", stage: "failed", error: message, completedAt: new Date() } }),
-      prisma.projectBootstrap.update({ where: { id: scan.bootstrapId }, data: { status: "scan_failed" } }),
+      ...(scan.bootstrap.status === "activated" ? [] : [prisma.projectBootstrap.update({ where: { id: scan.bootstrapId }, data: { status: "scan_failed" } })]),
     ]);
   }
 }
@@ -699,7 +743,7 @@ export async function persistCompiledPackage(scanRunId: string, compiled: Projec
     where: { producer_packageId: { producer: compiled.producer, packageId: compiled.packageId } },
   });
   if (existing) {
-    const current = await prisma.projectBootstrap.findUnique({ where: { id: compiled.bootstrapId }, select: { activePackageId: true } });
+    const current = await prisma.projectBootstrap.findUnique({ where: { id: compiled.bootstrapId }, select: { activePackageId: true, status: true } });
     const switchingPackage = current?.activePackageId !== existing.id;
     await prisma.$transaction([
       ...(switchingPackage ? [
@@ -707,7 +751,7 @@ export async function persistCompiledPackage(scanRunId: string, compiled: Projec
         prisma.bootstrapCandidate.updateMany({ where: { packageId: existing.id }, data: { active: true } }),
       ] : []),
       prisma.projectBootstrap.update({ where: { id: compiled.bootstrapId }, data: {
-        activePackageId: existing.id, status: "reviewing", ...(switchingPackage ? { reviewRevision: { increment: 1 } } : {}),
+        activePackageId: existing.id, status: current?.status === "activated" ? "activated" : "reviewing", ...(switchingPackage ? { reviewRevision: { increment: 1 } } : {}),
       } }),
       prisma.bootstrapScanRun.update({
         where: { id: scanRunId }, data: {
@@ -721,7 +765,10 @@ export async function persistCompiledPackage(scanRunId: string, compiled: Projec
     return;
   }
 
-  const previous = await prisma.bootstrapPackage.findFirst({ where: { bootstrapId: compiled.bootstrapId }, orderBy: { createdAt: "desc" } });
+  const [previous, bootstrapState] = await Promise.all([
+    prisma.bootstrapPackage.findFirst({ where: { bootstrapId: compiled.bootstrapId }, orderBy: { createdAt: "desc" } }),
+    prisma.projectBootstrap.findUnique({ where: { id: compiled.bootstrapId }, select: { status: true } }),
+  ]);
   const candidateHistory = await prisma.bootstrapCandidate.findMany({
     where: { bootstrapId: compiled.bootstrapId, packageId: { not: null } }, orderBy: { createdAt: "desc" }, include: { evidenceLinks: true },
   });
@@ -757,7 +804,7 @@ export async function persistCompiledPackage(scanRunId: string, compiled: Projec
       }
     }
     await tx.projectBootstrap.update({
-      where: { id: compiled.bootstrapId }, data: { activePackageId: packageRow.id, status: "reviewing", reviewRevision: { increment: 1 } },
+      where: { id: compiled.bootstrapId }, data: { activePackageId: packageRow.id, status: bootstrapState?.status === "activated" ? "activated" : "reviewing", reviewRevision: { increment: 1 } },
     });
     await tx.bootstrapScanRun.update({
       where: { id: scanRunId }, data: {
