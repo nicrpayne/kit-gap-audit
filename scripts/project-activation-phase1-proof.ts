@@ -8,6 +8,9 @@ import { validateBootstrapPackage } from "../lib/bootstrap/contracts";
 const when = new Date("2026-09-06T18:00:00.000Z");
 const rich = compileBootstrapPackage("bootstrap-rich", { canonicalName: "Harbor Relay", aliases: ["HR"], sourceHints: [] }, richHistoricalCorpus, when);
 validateBootstrapPackage(rich, "bootstrap-rich");
+assert.throws(() => validateBootstrapPackage({ ...rich, version: "2.0" }), /unsupported/);
+assert.throws(() => validateBootstrapPackage({ ...rich, proposals: [{ ...rich.proposals[0], payload: { x: 12 } }] }), /presentation geometry/);
+assert.throws(() => validateBootstrapPackage({ ...rich, proposals: [{ ...rich.proposals[0], evidenceRefs: ["missing-evidence"] }] }), /dangling evidence ref/);
 assert.ok(rich.proposals.some((p) => p.kind === "source"));
 assert.ok(rich.proposals.some((p) => p.kind === "person"));
 assert.ok(rich.proposals.some((p) => p.kind === "capability"));
@@ -51,4 +54,3 @@ console.log(JSON.stringify({
   rescan: "accepted/deferred/rejected/information-only preserved; changed reopened",
   realityWrites: 0, forecastEffect: 0,
 }, null, 2));
-

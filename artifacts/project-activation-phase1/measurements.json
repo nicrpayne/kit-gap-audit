@@ -1,0 +1,21 @@
+{
+  "productionBase": "bce38dde332fa1d049363fe502c5921326556311",
+  "packageVersion": "1.0",
+  "compilerVersion": "signal-bootstrap-1.0",
+  "migrationCountApplied": 21,
+  "fixture": {
+    "richArtifacts": 2,
+    "richEvidencePassages": 2,
+    "richIntelligenceHeads": 4,
+    "richProposals": 7,
+    "independentLineageRootsForRepeatedClaim": 1
+  },
+  "protectedWritesBeforeActivation": 0,
+  "forecastEffectBeforeActivation": 0,
+  "browserProjectContextAssertions": 144,
+  "screenshots": [
+    { "file": "01-knowledge-scan.png", "width": 1440, "height": 1000, "bytes": 84700 },
+    { "file": "02-add-project-sheet.png", "width": 1440, "height": 1000, "bytes": 70098 },
+    { "file": "03-bootstrap-review.png", "width": 1440, "height": 1000, "bytes": 79045 }
+  ]
+}

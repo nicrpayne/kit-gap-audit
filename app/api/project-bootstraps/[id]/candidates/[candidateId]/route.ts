@@ -13,6 +13,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   });
   if (!existing) return NextResponse.json({ error: "Active bootstrap candidate not found" }, { status: 404 });
   const data: Prisma.BootstrapCandidateUpdateInput = {};
+  let evidenceChange: { evidenceId: string; linkState: "attached" | "detached"; reason: string | null } | null = null;
   let action = "edit";
   let nextStatus = existing.status;
   if (body.status !== undefined) {
@@ -40,14 +41,15 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     if (!evidence.some((item) => item.evidenceId === body.evidenceId)) {
       return NextResponse.json({ error: "Evidence is not part of this candidate package" }, { status: 400 });
     }
-    await prisma.bootstrapEvidenceLink.upsert({
-      where: { candidateId_evidenceId: { candidateId, evidenceId: body.evidenceId } },
-      create: { candidateId, evidenceId: body.evidenceId, linkState: body.linkState, attachedBy: "operator", reason: typeof body.reason === "string" ? body.reason : null },
-      update: { linkState: body.linkState, attachedBy: "operator", reason: typeof body.reason === "string" ? body.reason : null },
-    });
+    evidenceChange = { evidenceId: body.evidenceId, linkState: body.linkState, reason: typeof body.reason === "string" ? body.reason : null };
     action = "evidence_link";
   }
   const candidate = await prisma.$transaction(async (tx) => {
+    if (evidenceChange) await tx.bootstrapEvidenceLink.upsert({
+      where: { candidateId_evidenceId: { candidateId, evidenceId: evidenceChange.evidenceId } },
+      create: { candidateId, evidenceId: evidenceChange.evidenceId, linkState: evidenceChange.linkState, attachedBy: "operator", reason: evidenceChange.reason },
+      update: { linkState: evidenceChange.linkState, attachedBy: "operator", reason: evidenceChange.reason },
+    });
     const row = Object.keys(data).length ? await tx.bootstrapCandidate.update({ where: { id: candidateId }, data }) : existing;
     await tx.bootstrapReviewEvent.create({ data: {
       bootstrapId: id, candidateId, action, fromStatus: existing.status, toStatus: nextStatus,
@@ -60,4 +62,3 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   });
   return NextResponse.json({ candidate });
 }
-

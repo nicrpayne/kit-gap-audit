@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import InstrumentShell from "@/components/instrument/InstrumentShell";
 import type {
-  BootstrapArtifact, BootstrapEvidencePassage, BootstrapIntelligenceHead,
+  BootstrapEvidencePassage, BootstrapIntelligenceHead,
   BootstrapProposal, ProjectBootstrapPackageV1, ProviderCoverage,
 } from "@/lib/bootstrap/contracts";
 
@@ -63,7 +63,10 @@ export default function BootstrapWorkspace({ bootstrapId }: { bootstrapId: strin
   const [data, setData] = useState<BootstrapRead | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
-  const [surface, setSurface] = useState<Surface>("scan");
+  const [surface, setSurface] = useState<Surface>(() => {
+    const requested = params.get("view");
+    return requested === "identity" || requested === "review" ? requested : "scan";
+  });
   const [sectionId, setSectionId] = useState(() => params.get("section") ?? "sources");
   const [selectedId, setSelectedId] = useState<string | null>(() => params.get("candidate"));
 
@@ -72,7 +75,6 @@ export default function BootstrapWorkspace({ bootstrapId }: { bootstrapId: strin
     const body = await response.json();
     if (!response.ok) throw new Error(body.error ?? "Could not read bootstrap");
     setData(body);
-    if (body.bootstrap.status === "reviewing") setSurface((current) => current === "scan" && !body.activePackage ? "scan" : current);
   }, [bootstrapId]);
 
   useEffect(() => { load().catch((cause) => setError(cause instanceof Error ? cause.message : "Could not read bootstrap")); }, [load]);
@@ -90,10 +92,11 @@ export default function BootstrapWorkspace({ bootstrapId }: { bootstrapId: strin
   }, [selected?.id, selectedId]);
   useEffect(() => {
     const next = new URLSearchParams(window.location.search);
+    next.set("view", surface);
     next.set("section", section.id);
     if (selected?.id) next.set("candidate", selected.id); else next.delete("candidate");
     window.history.replaceState(null, "", `${window.location.pathname}?${next}`);
-  }, [section.id, selected?.id]);
+  }, [section.id, selected?.id, surface]);
 
   async function rescan() {
     setBusy("scan"); setError(null); setSurface("scan");
@@ -326,4 +329,3 @@ function Inspector({ candidate, pkg, update, busy }: { candidate: Candidate | nu
 function TraceStep({ index, label, detail }: { index: string; label: string; detail: string }) { return <div className="mt-3 flex gap-3"><span className="i-readout flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[8px] text-[var(--i-text-faint)]" style={{ border: "1px solid var(--i-border-strong)" }}>{index}</span><span><span className="block text-[9px] font-semibold uppercase tracking-[0.1em] text-[var(--i-text-soft)]">{label}</span><span className="mt-0.5 block text-[9px] leading-[1.4] text-[var(--i-text-faint)]">{detail}</span></span></div>; }
 function Badge({ children, tone }: { children: React.ReactNode; tone?: "amber" | "mint" | "violet" }) { const color = tone === "amber" ? "var(--i-amber)" : tone === "mint" ? "var(--i-mint)" : tone === "violet" ? "var(--i-violet)" : "var(--i-text-soft)"; return <span className="rounded px-1.5 py-0.5 text-[8px] font-semibold uppercase tracking-[0.08em]" style={{ color, background: `color-mix(in srgb, ${color} 10%, transparent)` }}>{children}</span>; }
 function Action({ label, active, disabled, onClick }: { label: string; active?: boolean; disabled?: boolean; onClick: () => void }) { return <button disabled={disabled} onClick={onClick} className="rounded px-2 py-1 text-[8.5px] font-medium disabled:opacity-40" style={{ color: active ? "var(--signal-reality-contrast)" : "var(--i-text-soft)", background: active ? "var(--i-signal)" : "var(--i-panel-raised)", border: "1px solid var(--i-border)" }}>{label}</button>; }
-

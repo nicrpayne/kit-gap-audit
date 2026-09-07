@@ -697,11 +697,18 @@ export async function persistCompiledPackage(scanRunId: string, compiled: Projec
   const fullHash = bootstrapHash(compiled);
   const existing = await prisma.bootstrapPackage.findUnique({
     where: { producer_packageId: { producer: compiled.producer, packageId: compiled.packageId } },
-    include: { candidates: { where: { active: true } } },
   });
   if (existing) {
+    const current = await prisma.projectBootstrap.findUnique({ where: { id: compiled.bootstrapId }, select: { activePackageId: true } });
+    const switchingPackage = current?.activePackageId !== existing.id;
     await prisma.$transaction([
-      prisma.projectBootstrap.update({ where: { id: compiled.bootstrapId }, data: { activePackageId: existing.id, status: "reviewing" } }),
+      ...(switchingPackage ? [
+        prisma.bootstrapCandidate.updateMany({ where: { bootstrapId: compiled.bootstrapId, packageId: { not: null } }, data: { active: false } }),
+        prisma.bootstrapCandidate.updateMany({ where: { packageId: existing.id }, data: { active: true } }),
+      ] : []),
+      prisma.projectBootstrap.update({ where: { id: compiled.bootstrapId }, data: {
+        activePackageId: existing.id, status: "reviewing", ...(switchingPackage ? { reviewRevision: { increment: 1 } } : {}),
+      } }),
       prisma.bootstrapScanRun.update({
         where: { id: scanRunId }, data: {
           status: "complete", stage: "complete", resultPackageId: existing.id, completedAt: new Date(),
@@ -715,10 +722,11 @@ export async function persistCompiledPackage(scanRunId: string, compiled: Projec
   }
 
   const previous = await prisma.bootstrapPackage.findFirst({ where: { bootstrapId: compiled.bootstrapId }, orderBy: { createdAt: "desc" } });
-  const priorCandidates = await prisma.bootstrapCandidate.findMany({
-    where: { bootstrapId: compiled.bootstrapId, active: true }, orderBy: { createdAt: "desc" }, include: { evidenceLinks: true },
+  const candidateHistory = await prisma.bootstrapCandidate.findMany({
+    where: { bootstrapId: compiled.bootstrapId, packageId: { not: null } }, orderBy: { createdAt: "desc" }, include: { evidenceLinks: true },
   });
-  const priorByKey = new Map(priorCandidates.map((c) => [c.candidateKey, c]));
+  const historyByKey = new Map<string, typeof candidateHistory>();
+  for (const candidate of candidateHistory) historyByKey.set(candidate.candidateKey, [...(historyByKey.get(candidate.candidateKey) ?? []), candidate]);
 
   await prisma.$transaction(async (tx) => {
     await tx.bootstrapCandidate.updateMany({ where: { bootstrapId: compiled.bootstrapId, packageId: { not: null } }, data: { active: false } });
@@ -728,7 +736,8 @@ export async function persistCompiledPackage(scanRunId: string, compiled: Projec
       packageHash: fullHash, package: emptyJson(compiled), generatedAt: new Date(compiled.generatedAt), supersedesPackageId: previous?.id,
     } });
     for (const item of compiled.proposals) {
-      const prior = priorByKey.get(item.candidateKey);
+      const history = historyByKey.get(item.candidateKey) ?? [];
+      const prior = history.find((candidate) => candidate.sourceFingerprint === item.fingerprint) ?? history[0];
       const refresh = resolveRefreshDisposition(prior, item.fingerprint);
       const row = await tx.bootstrapCandidate.create({ data: {
         bootstrapId: compiled.bootstrapId, packageId: packageRow.id, candidateKey: item.candidateKey,
