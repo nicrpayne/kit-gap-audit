@@ -9,4 +9,3 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
   if (!scan) return NextResponse.json({ error: "No scan exists for this bootstrap" }, { status: 404 });
   return NextResponse.json({ scan });
 }
-

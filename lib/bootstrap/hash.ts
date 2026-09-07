@@ -23,4 +23,3 @@ export function bootstrapHash(value: unknown): string {
 export function stableId(prefix: string, value: unknown, length = 20): string {
   return `${prefix}-${bootstrapHash(value).slice(0, length)}`;
 }
-

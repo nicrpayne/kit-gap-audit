@@ -16,4 +16,3 @@ Every package proposal includes type, human title/statement, why/match basis, re
 Human states: `pending`, `accepted`, `deferred`, `rejected`, `information-only`, `superseded`. Accepted means only “include in a future activation manifest.” Edit stores `reviewedProposal` without modifying `originalProposal`. Manual entries are labelled `operator assertion · no evidence yet`.
 
 Unsupported deterministic compilation becomes a visible gap, not an invented proposal. In particular: lexical relatedness never creates a dependency; a Decision never creates a gate; a person mention never creates Person/Allocation rows; an undated commitment never creates a milestone date.
-

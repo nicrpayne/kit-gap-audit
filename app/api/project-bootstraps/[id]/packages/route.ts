@@ -45,4 +45,3 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   await persistCompiledPackage(scan.id, pkg);
   return NextResponse.json({ ok: true, scanId: scan.id, packageId: pkg.packageId, reused: Boolean(existing) }, { status: existing ? 200 : 201 });
 }
-

@@ -38,4 +38,3 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   if (!bootstrap) return NextResponse.json({ error: "Project bootstrap not found" }, { status: 404 });
   return NextResponse.json({ bootstrap });
 }
-

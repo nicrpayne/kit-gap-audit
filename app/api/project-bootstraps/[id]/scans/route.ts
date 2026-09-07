@@ -16,4 +16,3 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
   after(async () => executeBootstrapScan(scan.id));
   return NextResponse.json({ scan }, { status: 202 });
 }
-

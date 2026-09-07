@@ -9,4 +9,3 @@ Evidence transported by an existing ContextSnapshot keeps its external ref, prod
 Wiki/source refs containing `wiki` or `ke://wiki` are labelled `SYNTHESIS · DERIVED`. Their passage independence is derivative and their raw lineage root, when known, is used for corroboration. Missing lineage remains unknown/zero; it never becomes independent by default.
 
 Evidence attachment state is a review overlay. Detaching a citation leaves the immutable package passage untouched and appends a review event.
-

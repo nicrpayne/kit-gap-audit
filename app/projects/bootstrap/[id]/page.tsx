@@ -6,4 +6,3 @@ export default async function ProjectBootstrapPage({ params }: { params: Promise
   const { id } = await params;
   return <BootstrapWorkspace bootstrapId={id} />;
 }
-

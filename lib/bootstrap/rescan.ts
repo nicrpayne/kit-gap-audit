@@ -30,4 +30,3 @@ export function resolveRefreshDisposition(prior: PriorDisposition | undefined, n
   }
   return { status: "pending", dispositionReason: null, reviewedProposal: null, changedSincePrior: true };
 }
-

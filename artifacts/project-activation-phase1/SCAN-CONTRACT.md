@@ -25,4 +25,3 @@ Package version: `ProjectBootstrapPackage 1.0`.
 - Semantic/vector retrieval is `unavailable`; no vector distance, embedding, or semantic confidence is emitted.
 
 The scanner persists snippets, metadata, stable refs, and package fields. It does not persist raw connector credentials, authorization fields, or secret/token keys. The inbound package route rejects those keys and packages over 5 MB.
-

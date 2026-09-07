@@ -13,4 +13,3 @@ Phase 1 stops before canonical activation. Phase 2 should implement one idempote
 9. Implement merge-to-existing/canonical ancestry before enabling Merge in Review.
 
 Bridge dependency: add generic identity/alias discovery and a `bootstrapId` package mode that does not require resolving a live Scope or SourceRegistration first. Until then, Signal can accept an inbound versioned bootstrap package but can only initiate scans over Signal-held knowledge.
-

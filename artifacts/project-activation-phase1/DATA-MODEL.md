@@ -20,4 +20,3 @@ The package is not a `ContextSnapshot`. ContextSnapshot means accepted active-pr
 ## Migration safety
 
 All tables and indexes are new. No existing column, constraint, data, relation, reader, or forecast input changed. Cascade behavior is confined to deleting the pre-Reality aggregate and its own history.
-

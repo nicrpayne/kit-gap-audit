@@ -39,4 +39,3 @@ export async function POST(req: NextRequest) {
   } });
   return NextResponse.json({ bootstrap }, { status: 201 });
 }
-
