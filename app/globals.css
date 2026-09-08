@@ -250,23 +250,6 @@ body {
   display: none;
 }
 
-.bootstrap-input {
-  width: 100%;
-  border: 1px solid var(--i-border-strong);
-  border-radius: 6px;
-  background: var(--i-recess);
-  color: var(--i-text);
-  padding: 9px 10px;
-  font-size: 12px;
-  line-height: 1.4;
-  outline: none;
-}
-.bootstrap-input:focus {
-  border-color: var(--signal-focus-ring);
-  box-shadow: 0 0 0 2px var(--i-violet-soft);
-}
-.bootstrap-input::placeholder { color: var(--i-text-faint); }
-
 /* A scrolling list that runs past its panel should say so by fading out,
    not by slicing a row through the middle. The mask costs 14px at the foot
    and reads as depth rather than as a rendering fault. */

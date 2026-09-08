@@ -1,4 +1,4 @@
-import type { Prisma, Scope } from "@prisma/client";
+import type { Scope } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { getScopedIssues, type LinearIssueSummary } from "@/lib/linear";
 import {
@@ -386,16 +386,6 @@ export interface PortfolioScopeInput {
       migration debt, never silently presented as roster-backed. */
   capacityContract: CapacityForecastContract;
   forecastSource: ForecastSourceStamp;
-  forecastReadiness: { state: "ready" | "unavailable"; reason: string | null };
-  capabilities: { id: string; name: string; description: string | null; workLinkCount: number; provenance: Prisma.JsonValue }[];
-}
-
-export class ForecastUnavailableError extends Error {
-  readonly code = "FORECAST_UNAVAILABLE";
-  constructor(readonly reason: string) {
-    super(`FORECAST UNAVAILABLE — ${reason}`);
-    this.name = "ForecastUnavailableError";
-  }
 }
 
 export type CapacityBasis =
@@ -462,10 +452,7 @@ export interface PortfolioInputs {
 export async function buildPortfolioInputs(): Promise<PortfolioInputs> {
   const readAt = new Date();
   const [scopes, people, allocations, portfolioSettings] = await Promise.all([
-    prisma.scope.findMany({
-      orderBy: { createdAt: "asc" },
-      include: { capabilities: { where: { status: "accepted" }, include: { workLinks: true }, orderBy: { createdAt: "asc" } } },
-    }),
+    prisma.scope.findMany({ orderBy: { createdAt: "asc" } }),
     prisma.person.findMany({ orderBy: { name: "asc" } }),
     prisma.allocation.findMany(),
     prisma.portfolioSettings.findUnique({ where: { id: "singleton" } }),
@@ -521,13 +508,6 @@ export async function buildPortfolioInputs(): Promise<PortfolioInputs> {
         bundle.inputs.capacitySource
       ),
       forecastSource: sourceStampForIssues(bundle.issues, readAt),
-      forecastReadiness: scope.executionState === "configured"
-        ? { state: "ready", reason: null }
-        : { state: "unavailable", reason: scope.executionState === "not_configured" ? "Missing executable work mapping" : `Execution source is ${scope.executionState}` },
-      capabilities: scope.capabilities.map((capability) => ({
-        id: capability.id, name: capability.name, description: capability.description,
-        workLinkCount: capability.workLinks.length, provenance: capability.provenance,
-      })),
     });
   }
 
@@ -603,9 +583,6 @@ export async function collectDependencyClosure(rootScope: Scope): Promise<Scope[
 // known, deliberate limitation, since making the interactive levers
 // respect dependencies too is Phase 2 territory, not this one.
 export async function computeForecast(scope: Scope): Promise<ForecastResult> {
-  if (scope.executionState !== "configured") {
-    throw new ForecastUnavailableError(scope.executionState === "not_configured" ? "Missing executable work mapping" : `Execution source is ${scope.executionState}`);
-  }
   const readAt = new Date();
   const own = await buildScopeSimInputs(scope);
   const { inputs } = own;

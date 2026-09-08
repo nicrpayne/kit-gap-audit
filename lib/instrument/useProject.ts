@@ -79,8 +79,6 @@ export interface ProjectScope {
     reconciles: boolean;
   };
   forecastSource: { asOf: string; provider: "Linear"; temporalRole: "live"; availability: "available" | "empty" };
-  forecastReadiness: { state: "ready" | "unavailable"; reason: string | null };
-  capabilities: { id: string; name: string; description: string | null; workLinkCount: number; provenance: unknown }[];
 }
 
 export interface ProjectFinding {

@@ -243,13 +243,11 @@ export default function InstrumentRail({
   hidden,
   onToggle,
   onOpenCommand,
-  onAddProject,
 }: {
   pathname: string;
   hidden: boolean;
   onToggle: () => void;
   onOpenCommand: () => void;
-  onAddProject: () => void;
 }) {
   // Racks the user has explicitly shut. Empty by default, so the route
   // decides — this only ever records a deliberate override.
@@ -488,17 +486,6 @@ export default function InstrumentRail({
       </MotionConfig>
 
       <div className="flex-1" />
-
-      <button
-        onClick={onAddProject}
-        title="Add project"
-        aria-label="Add project"
-        data-shoot="global-add-project"
-        className="signal-shell__nav-item flex w-[76px] flex-col items-center gap-[5px] rounded-[8px] py-[9px] transition-colors"
-      >
-        <span className="text-[15px] leading-none">＋</span>
-        <span className="text-[9.5px] leading-none">Project</span>
-      </button>
 
       <button
         onClick={onOpenCommand}

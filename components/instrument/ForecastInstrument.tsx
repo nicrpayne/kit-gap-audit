@@ -109,20 +109,6 @@ export default function ForecastInstrument() {
       </InstrumentShell>
     );
 
-  if (scope.forecastReadiness.state === "unavailable") {
-    return <InstrumentShell stateBar={strip} scopes={m.data.scopes.map((s) => ({ scopeId: s.scopeId, name: s.name }))} onSelectScope={setSelected}>
-      <div className="flex flex-1 items-center justify-center p-8" style={{ background: "var(--i-void)" }}>
-        <section className="max-w-[560px] rounded-xl border p-6 text-center" style={{ background: "var(--i-panel)", borderColor: "var(--i-amber)" }} data-shoot="forecast-unavailable">
-          <div className="i-label" style={{ color: "var(--i-amber)" }}>FORECAST UNAVAILABLE</div>
-          <h1 className="mt-3 text-[22px] font-semibold text-[var(--i-text)]">{scope.name}</h1>
-          <p className="mt-3 text-[13px] text-[var(--i-text-soft)]">{scope.forecastReadiness.reason ?? "Execution truth is incomplete."}</p>
-          <p className="mt-2 text-[11px] leading-relaxed text-[var(--i-text-faint)]">Activation is valid. Signal will show a forecast only after executable work is configured; it will not turn accepted capabilities into invented delivery output.</p>
-          <Link href="/scope" className="signal-control mt-5 inline-block rounded px-4 py-2 text-[10px]">OPEN SCOPE</Link>
-        </section>
-      </div>
-    </InstrumentShell>;
-  }
-
   const base = m.baseline?.get(scope.scopeId) ?? null;
   const res = m.preview?.get(scope.scopeId) ?? base;
   if (!res) return <InstrumentShell stateBar={strip}><div className="flex-1" /></InstrumentShell>;

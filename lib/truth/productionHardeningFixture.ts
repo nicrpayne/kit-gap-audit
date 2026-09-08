@@ -58,8 +58,6 @@ const scope = (
     temporalRole: "live",
     availability: "available",
   },
-  forecastReadiness: { state: "ready", reason: null },
-  capabilities: [],
 });
 
 export const hardeningDecisions: DecisionRow[] = [

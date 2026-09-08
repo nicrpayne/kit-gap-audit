@@ -11,12 +11,7 @@
     "db:seed": "tsx prisma/seed.ts",
     "proof:visual-system": "node scripts/signal-visual-system-token-proof.mjs && npx tsx scripts/signal-primitives-proof.tsx && node scripts/signal-visual-system-proof.mjs",
     "proof:date-contract": "tsx scripts/date-time-contract-proof.ts",
-    "proof:production-hardening-2": "tsx scripts/date-time-contract-proof.ts && tsx scripts/production-hardening-2-proof.tsx && node scripts/production-hardening-2-audit-proof.mjs",
-    "proof:project-activation-phase1": "tsx scripts/project-activation-phase1-proof.ts",
-    "proof:project-activation-phase1-db": "tsx scripts/project-activation-phase1-db-proof.ts",
-    "proof:project-activation-phase2": "tsx scripts/project-activation-phase2-proof.ts",
-    "proof:project-activation-phase2-db": "tsx scripts/project-activation-phase2-db-proof.ts",
-    "proof:project-activation-companion-db": "tsx scripts/project-activation-companion-db-proof.ts"
+    "proof:production-hardening-2": "tsx scripts/date-time-contract-proof.ts && tsx scripts/production-hardening-2-proof.tsx && node scripts/production-hardening-2-audit-proof.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.32",
@@ -42,7 +37,6 @@
     "autoprefixer": "^10",
     "eslint": "^9",
     "eslint-config-next": "^15",
-    "playwright": "^1.62.1",
     "postcss": "^8",
     "prisma": "^6",
     "tailwindcss": "^3",

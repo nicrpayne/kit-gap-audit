@@ -202,18 +202,6 @@ export default function ScopeInstrument() {
       </InstrumentShell>
     );
 
-  if (scope.forecastReadiness.state === "unavailable" && scope.items.length === 0) {
-    return <InstrumentShell stateBar={strip} scopes={m.data.scopes.map((s) => ({ scopeId: s.scopeId, name: s.name }))} onSelectScope={setScopeId}>
-      <div className="flex-1 overflow-y-auto p-6" style={{ background: "var(--i-void)" }} data-shoot="scope-accepted-capabilities">
-        <div className="mx-auto max-w-[880px]"><div className="i-label" style={{ color: "var(--i-signal)" }}>Accepted product shape</div><h1 className="mt-2 text-[22px] font-semibold text-[var(--i-text)]">{scope.name}</h1>
-          <p className="mt-2 text-[11px] text-[var(--i-amber)]">FORECAST UNAVAILABLE · {scope.forecastReadiness.reason}</p>
-          <div className="mt-5 grid grid-cols-2 gap-3">{scope.capabilities.map((capability) => <article key={capability.id} className="rounded-xl border p-4" style={{ background: "var(--i-panel)", borderColor: "var(--i-border)" }}><h2 className="text-[13px] font-medium text-[var(--i-text)]">{capability.name}</h2><p className="mt-2 text-[10px] leading-relaxed text-[var(--i-text-soft)]">{capability.description ?? "No accepted description."}</p><p className="mt-3 text-[9px] uppercase tracking-[0.1em]" style={{ color: capability.workLinkCount ? "var(--i-mint)" : "var(--i-amber)" }}>{capability.workLinkCount ? `${capability.workLinkCount} execution mapping${capability.workLinkCount === 1 ? "" : "s"}` : "Execution mapping missing"}</p></article>)}</div>
-          {scope.capabilities.length === 0 && <div className="mt-5 rounded-xl border border-dashed p-8 text-center text-[11px] text-[var(--i-text-faint)]" style={{ borderColor: "var(--i-border-strong)" }}>No capabilities were accepted at activation. The first Audit records this representation gap.</div>}
-        </div>
-      </div>
-    </InstrumentShell>;
-  }
-
   const startDate = m.startDate;
   const base = m.baseline?.get(scope.scopeId) ?? null;
   const res = m.preview?.get(scope.scopeId) ?? base;

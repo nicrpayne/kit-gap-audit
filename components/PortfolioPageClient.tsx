@@ -42,7 +42,6 @@ import SplitPatchbay from "@/components/portfolio/SplitPatchbay";
 import type { ChannelView } from "@/components/portfolio/MixerChannel";
 import InstrumentRail from "@/components/instrument/InstrumentRail";
 import CommandMenu from "@/components/instrument/CommandMenu";
-import AddProjectSheet from "@/components/bootstrap/AddProjectSheet";
 import { mutateReality } from "@/lib/instrument/reality";
 import type { DependencyDelta, DependentDelta } from "@/lib/portfolio/explain";
 import { contextualHref } from "@/lib/shell/context";
@@ -229,7 +228,6 @@ export default function PortfolioPageClient() {
   const [inspectorOpen, setInspectorOpen] = useState(true);
   const [inspectorFocus, setInspectorFocus] = useState<InspectorFocus>(null);
   const [commandOpen, setCommandOpen] = useState(false);
-  const [addProjectOpen, setAddProjectOpen] = useState(false);
   const [allocationsOpen, setAllocationsOpen] = useState(false);
 
   const [pendingTargets, setPendingTargets] = useState<Map<string, string>>(new Map());
@@ -943,19 +941,17 @@ export default function PortfolioPageClient() {
 
   // ---- render ----------------------------------------------------------
 
-  const shell = (children: React.ReactNode) => (<>
+  const shell = (children: React.ReactNode) => (
     <div className="instrument fixed inset-0 flex overflow-hidden">
       <InstrumentRail
         pathname={pathname}
         hidden={railHidden}
         onToggle={() => setRailHidden((v) => !v)}
         onOpenCommand={() => setCommandOpen(true)}
-        onAddProject={() => setAddProjectOpen(true)}
       />
       {children}
     </div>
-    <AddProjectSheet open={addProjectOpen} onClose={() => setAddProjectOpen(false)} />
-  </>);
+  );
 
   if (loading && !data) {
     return shell(
@@ -1193,7 +1189,6 @@ export default function PortfolioPageClient() {
         onClose={() => setCommandOpen(false)}
         scopes={data.scopes.map((s) => ({ scopeId: s.scopeId, name: s.name }))}
         onSelectScope={setSelectedScopeId}
-        onAddProject={() => setAddProjectOpen(true)}
       />
 
       <SplitPatchbay

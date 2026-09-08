@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { bridgeTransportTokenFor, SESSION_COOKIE, sessionTokenFor } from "@/lib/auth";
+import { SESSION_COOKIE, sessionTokenFor } from "@/lib/auth";
 
 // `/api/version` is here on purpose, and it is the only route on this list
 // that is not part of signing in. It answers ONE question — which commit is
@@ -35,11 +35,6 @@ export async function middleware(req: NextRequest) {
   // of the cookie session. Page routes stay cookie-only.
   if (pathname.startsWith("/api/")) {
     const authHeader = req.headers.get("authorization");
-    if (pathname.startsWith("/api/bridge/")) {
-      const bridgeToken = await bridgeTransportTokenFor(appPassword);
-      if (authHeader === `Bearer ${bridgeToken}`) return NextResponse.next();
-      return NextResponse.json({ error: "Unauthorized bridge transport" }, { status: 401 });
-    }
     if (authHeader === `Bearer ${appPassword}`) {
       return NextResponse.next();
     }

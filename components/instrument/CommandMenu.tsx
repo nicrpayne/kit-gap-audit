@@ -27,13 +27,11 @@ export default function CommandMenu({
   onClose,
   scopes,
   onSelectScope,
-  onAddProject,
 }: {
   open: boolean;
   onClose: () => void;
   scopes: CommandScope[];
   onSelectScope: (scopeId: string) => void;
-  onAddProject: () => void;
 }) {
   const router = useRouter();
   const params = useSearchParams();
@@ -43,12 +41,6 @@ export default function CommandMenu({
 
   const items: Item[] = useMemo(() => {
     const list: Item[] = [
-      {
-        id: "action:add-project",
-        label: "+ Add project",
-        hint: "Create pre-Reality identity",
-        run: onAddProject,
-      },
       ...scopes.map((s) => ({
         id: `scope:${s.scopeId}`,
         label: s.name,
@@ -74,7 +66,7 @@ export default function CommandMenu({
     const needle = q.trim().toLowerCase();
     if (!needle) return list;
     return list.filter((i) => i.label.toLowerCase().includes(needle) || i.hint.toLowerCase().includes(needle));
-  }, [q, scopes, onSelectScope, onAddProject, router, params]);
+  }, [q, scopes, onSelectScope, router, params]);
 
   useEffect(() => {
     if (open) {
