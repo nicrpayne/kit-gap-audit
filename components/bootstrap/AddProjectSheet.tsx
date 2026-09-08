@@ -82,7 +82,7 @@ export default function AddProjectSheet({ open, onClose }: { open: boolean; onCl
           <label className="signal-control flex cursor-pointer items-center justify-between rounded-lg px-3 py-3">
             <span>
               <span className="block text-[12px] font-medium text-[var(--i-text)]">Search existing knowledge</span>
-              <span className="mt-0.5 block text-[10px] text-[var(--i-text-faint)]">Exact + lexical · stored Signal corpus</span>
+              <span className="mt-0.5 block text-[10px] text-[var(--i-text-faint)]">Local KE / Hermes · evidence-preserving companion scan</span>
             </span>
             <input type="checkbox" checked={search} onChange={(e) => setSearch(e.target.checked)} className="h-4 w-4 accent-[var(--i-signal)]" />
           </label>

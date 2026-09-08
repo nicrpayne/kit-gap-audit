@@ -2,11 +2,16 @@ import { after, NextRequest, NextResponse } from "next/server";
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { executeBootstrapScan } from "@/lib/bootstrap/scan";
+import { createCompanionScan } from "@/lib/bootstrap/jobs";
 
 export async function POST(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const bootstrap = await prisma.projectBootstrap.findUnique({ where: { id }, select: { id: true, status: true } });
+  const bootstrap = await prisma.projectBootstrap.findUnique({ where: { id }, select: { id: true, status: true, searchExistingKnowledge: true } });
   if (!bootstrap) return NextResponse.json({ error: "Project bootstrap not found" }, { status: 404 });
+  if (bootstrap.searchExistingKnowledge) {
+    const created = await createCompanionScan(id);
+    return NextResponse.json(created, { status: 202 });
+  }
   const last = await prisma.bootstrapScanRun.findFirst({ where: { bootstrapId: id }, orderBy: { sequence: "desc" }, select: { sequence: true } });
   const scan = await prisma.bootstrapScanRun.create({ data: {
     bootstrapId: id, sequence: (last?.sequence ?? 0) + 1, status: "queued", stage: "queued",

@@ -5,7 +5,7 @@ export async function readBootstrap(bootstrapId: string) {
   const bootstrap = await prisma.projectBootstrap.findUnique({
     where: { id: bootstrapId },
     include: {
-      scans: { orderBy: { sequence: "desc" }, take: 10 },
+      scans: { orderBy: { sequence: "desc" }, take: 10, include: { job: true } },
       candidates: {
         where: { active: true }, orderBy: [{ kind: "asc" }, { createdAt: "asc" }],
         include: { evidenceLinks: true },
@@ -21,6 +21,7 @@ export async function readBootstrap(bootstrapId: string) {
   const firstAudit = bootstrap.activation
     ? await prisma.auditRun.findUnique({ where: { id: bootstrap.activation.firstAuditRunId }, include: { findings: { orderBy: { createdAt: "asc" } } } })
     : null;
+  const companion = await prisma.bootstrapCompanion.findFirst({ orderBy: { lastSeenAt: "desc" } });
   const counts = bootstrap.candidates.reduce<Record<string, number>>((out, candidate) => {
     out[candidate.kind] = (out[candidate.kind] ?? 0) + 1;
     out[candidate.status] = (out[candidate.status] ?? 0) + 1;
@@ -35,6 +36,11 @@ export async function readBootstrap(bootstrapId: string) {
       activation: bootstrap.activation ? { ...bootstrap.activation, firstAudit } : null,
     },
     scans: bootstrap.scans,
+    companion: companion ? {
+      id: companion.id, label: companion.label, version: companion.version, state: companion.state,
+      lastSeenAt: companion.lastSeenAt,
+      online: Date.now() - companion.lastSeenAt.getTime() <= 90_000,
+    } : null,
     activePackage: activePackage
       ? {
           id: activePackage.id, packageId: activePackage.packageId, packageVersion: activePackage.packageVersion,

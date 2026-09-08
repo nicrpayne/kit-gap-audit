@@ -684,6 +684,7 @@ model ProjectBootstrap {
   updatedAt               DateTime @updatedAt
 
   scans        BootstrapScanRun[]
+  scanJobs     BootstrapScanJob[]
   packages     BootstrapPackage[]
   candidates   BootstrapCandidate[]
   reviewEvents BootstrapReviewEvent[]
@@ -735,9 +736,59 @@ model BootstrapScanRun {
   updatedAt        DateTime         @updatedAt
 
   package BootstrapPackage?
+  job     BootstrapScanJob?
 
   @@unique([bootstrapId, sequence])
   @@index([bootstrapId, createdAt])
+}
+
+// Outbound-only local companion work queue. Signal stores identity hints and
+// progress, never a local filesystem path. Claims are leased and bound to the
+// exact pre-Reality review revision that requested the scan.
+model BootstrapScanJob {
+  id                     String           @id @default(cuid())
+  bootstrapId            String
+  bootstrap              ProjectBootstrap @relation(fields: [bootstrapId], references: [id], onDelete: Cascade)
+  scanRunId              String           @unique
+  scanRun                BootstrapScanRun @relation(fields: [scanRunId], references: [id], onDelete: Cascade)
+  revision               Int
+  status                 String           @default("pending") // pending | claimed | running | complete | partial | failed | stale
+  stage                  String           @default("waiting_for_companion")
+  expectedPackageVersion String           @default("1.1")
+  idempotencyKey         String           @unique
+  claimTokenHash         String?
+  claimedBy              String?
+  claimExpiresAt         DateTime?
+  claimedAt              DateTime?
+  lastHeartbeatAt        DateTime?
+  attempts               Int              @default(0)
+  progress               Json
+  error                  String?
+  packageId              String?
+  completedAt            DateTime?
+  createdAt              DateTime         @default(now())
+  updatedAt              DateTime         @updatedAt
+
+  @@index([status, createdAt])
+  @@index([bootstrapId, createdAt])
+  @@index([claimedBy, status])
+}
+
+// Heartbeat projection for the trusted knowledge-side companion. This carries
+// no credential and no corpus location; it exists only so the UI can report
+// online/offline/paused honestly.
+model BootstrapCompanion {
+  id            String   @id
+  label         String
+  version       String
+  state         String   @default("online") // online | scanning | paused | degraded
+  capabilities  Json
+  lastJobId     String?
+  lastSeenAt    DateTime
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([lastSeenAt])
 }
 
 // Immutable, versioned compiler delivery. This is NOT a ContextSnapshot:

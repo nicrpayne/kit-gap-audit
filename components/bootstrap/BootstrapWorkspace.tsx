@@ -33,6 +33,7 @@ interface Candidate {
 interface Scan {
   id: string; sequence: number; status: string; stage: string; providerCoverage: ProviderCoverage[];
   metrics: Record<string, number>; warnings: string[]; error: string | null; startedAt: string | null; completedAt: string | null;
+  job: { id: string; status: string; stage: string; attempts: number; progress: Record<string, unknown>; lastHeartbeatAt: string | null; error: string | null } | null;
 }
 
 interface BootstrapRead {
@@ -42,6 +43,7 @@ interface BootstrapRead {
     activation: { id: string; scopeId: string; contextSnapshotId: string; firstAuditRunId: string; firstAudit: { id: string; findingCount: number; findings: { id: string; title: string; severity: string; type: string }[] } | null } | null;
   };
   scans: Scan[];
+  companion: { id: string; label: string; version: string; state: string; lastSeenAt: string; online: boolean } | null;
   activePackage: { id: string; packageId: string; packageVersion: string; producer: string; compilerVersion: string; packageHash: string; generatedAt: string; package: ProjectBootstrapPackageV1 } | null;
   candidates: Candidate[];
   counts: Record<string, number>;
@@ -319,8 +321,8 @@ function ScanPanel({ data, scan, pkg, onReview, onScan, busy }: { data: Bootstra
   const metrics = scan?.metrics ?? {};
   const coverage = (scan?.providerCoverage?.length ? scan.providerCoverage : pkg?.coverage) ?? [];
   const pipeline = pkg?.discovery.strategies ?? [
-    { id: "identity", state: scan?.stage === "queued" ? "partial" : "complete", detail: "Canonical identity and aliases" },
-    { id: "lexical", state: ["queued", "identity"].includes(scan?.stage ?? "") ? "partial" : "complete", detail: "Exact + lexical retrieval" },
+    { id: "identity", state: ["waiting_for_companion", "companion_claimed"].includes(scan?.stage ?? "") ? "partial" : "complete", detail: "Canonical identity and aliases" },
+    { id: "lexical", state: ["waiting_for_companion", "companion_claimed", "identity"].includes(scan?.stage ?? "") ? "partial" : "complete", detail: "Exact + lexical retrieval" },
     { id: "lineage", state: "partial", detail: "Evidence lineage" }, { id: "semantic", state: "unavailable", detail: "Semantic Search V2 not enabled" },
     { id: "graph", state: "partial", detail: "Bounded graph expansion" }, { id: "compile", state: "partial", detail: "Typed proposal compilation" },
   ];
@@ -330,6 +332,14 @@ function ScanPanel({ data, scan, pkg, onReview, onScan, busy }: { data: Bootstra
         <div><div className="i-label" style={{ color: "var(--i-signal)" }}>Knowledge scan · run {scan?.sequence ?? 0}</div><h1 className="mt-1 text-[19px] font-semibold text-[var(--i-text)]">{data.bootstrap.canonicalName}</h1></div>
         <div className="flex gap-2"><button onClick={onScan} disabled={busy || scan?.status === "running" || scan?.status === "queued"} className="signal-control rounded px-3 py-2 text-[10px]">Rescan</button><button onClick={onReview} disabled={!pkg} data-shoot="enter-review" className="signal-control rounded px-4 py-2 text-[10px] font-semibold disabled:opacity-35">ENTER REVIEW</button></div>
       </div>
+      <section className="flex items-center gap-3 rounded-lg border px-4 py-3" style={{ background: "var(--i-panel)", borderColor: data.companion?.online ? "var(--i-mint)" : "var(--i-amber)" }}>
+        <span className="h-2 w-2 rounded-full" style={{ background: data.companion?.online ? "var(--i-mint)" : "var(--i-amber)" }} />
+        <div className="min-w-0 flex-1">
+          <p className="text-[10.5px] text-[var(--i-text)]">{data.companion?.online ? `Companion online · ${data.companion.state}` : "Waiting for local knowledge companion"}</p>
+          <p className="mt-0.5 text-[9px] text-[var(--i-text-faint)]">{data.companion ? `${data.companion.label} v${data.companion.version} · last seen ${new Date(data.companion.lastSeenAt).toLocaleTimeString()}` : "Open the installed companion on this Mac. Signal will not simulate a local scan."}</p>
+        </div>
+        {scan?.job && <span className="text-[9px] text-[var(--i-text-faint)]">job {scan.job.id.slice(-7)} · attempt {scan.job.attempts}</span>}
+      </section>
       <div className="grid grid-cols-5 gap-px overflow-hidden rounded-lg border" style={{ background: "var(--i-border)", borderColor: "var(--i-border)" }}>
         {[ ["Providers checked", metrics.providersChecked ?? coverage.length], ["Artifacts found", metrics.artifactsFound ?? pkg?.artifacts.length ?? 0], ["Intelligence heads", metrics.intelligenceHeads ?? pkg?.intelligenceHeads.length ?? 0], ["Evidence passages", metrics.evidencePassages ?? pkg?.evidence.length ?? 0], ["Proposals", metrics.proposals ?? pkg?.proposals.length ?? 0] ].map(([label, value]) => <div key={String(label)} className="bg-[var(--i-panel)] px-4 py-3"><div className="i-readout text-[22px] text-[var(--i-text)]">{value}</div><div className="mt-1 text-[9px] uppercase tracking-[0.1em] text-[var(--i-text-faint)]">{label}</div></div>)}
       </div>

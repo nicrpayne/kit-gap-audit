@@ -201,6 +201,10 @@ function rejectGeometry(value: unknown, path = "package") {
   }
 }
 
+function isLocalAbsolutePath(value: unknown): boolean {
+  return typeof value === "string" && (/^\/(Users|home|private|tmp)\//.test(value) || /^[A-Za-z]:\\/.test(value));
+}
+
 export function validateBootstrapPackage(value: unknown, expectedBootstrapId?: string): ProjectBootstrapPackageV1 {
   if (!isObject(value)) throw new BootstrapPackageValidationError("package must be an object");
   rejectGeometry(value);
@@ -241,6 +245,7 @@ export function validateBootstrapPackage(value: unknown, expectedBootstrapId?: s
       throw new BootstrapPackageValidationError(`artifacts[${index}].artifactId is required`);
     }
     if (artifactIds.has(artifact.artifactId)) throw new BootstrapPackageValidationError(`duplicate artifactId ${artifact.artifactId}`);
+    if (isLocalAbsolutePath(artifact.canonicalRef)) throw new BootstrapPackageValidationError(`artifacts[${index}].canonicalRef may not be a local absolute path`);
     artifactIds.add(artifact.artifactId);
   }
   const evidenceIds = new Set<string>();
@@ -255,6 +260,9 @@ export function validateBootstrapPackage(value: unknown, expectedBootstrapId?: s
     }
     if (evidence.passageHash !== undefined && (typeof evidence.passageHash !== "string" || !evidence.passageHash.trim())) {
       throw new BootstrapPackageValidationError(`evidence[${index}].passageHash must be a non-empty string when supplied`);
+    }
+    if (isObject(evidence.locator) && Object.values(evidence.locator).some(isLocalAbsolutePath)) {
+      throw new BootstrapPackageValidationError(`evidence[${index}].locator may not contain a local absolute path`);
     }
   }
   const intelligenceIds = new Set<string>();

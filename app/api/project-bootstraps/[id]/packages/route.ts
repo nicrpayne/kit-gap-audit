@@ -1,10 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import type { Prisma } from "@prisma/client";
-import { prisma } from "@/lib/prisma";
-import { bootstrapHash } from "@/lib/bootstrap/hash";
 import { BootstrapPackageValidationError, validateBootstrapPackage } from "@/lib/bootstrap/contracts";
-import { persistCompiledPackage } from "@/lib/bootstrap/scan";
-import { auditActivatedBootstrapRefresh } from "@/lib/bootstrap/refresh";
+import { ingestBootstrapPackage } from "@/lib/bootstrap/transport";
 
 const SENSITIVE = /^(access_?token|refresh_?token|api_?key|password|client_?secret|authorization)$/i;
 
@@ -30,35 +26,6 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   } catch (error) {
     return NextResponse.json({ error: error instanceof Error ? error.message : "Invalid bootstrap package" }, { status: 400 });
   }
-  const bootstrap = await prisma.projectBootstrap.findUnique({ where: { id }, select: { id: true, activePackageId: true, activation: { select: { id: true } } } });
-  if (!bootstrap) return NextResponse.json({ error: "Project bootstrap not found" }, { status: 404 });
-  const hash = bootstrapHash(pkg);
-  const existing = await prisma.bootstrapPackage.findUnique({ where: { producer_packageId: { producer: pkg.producer, packageId: pkg.packageId } } });
-  if (existing && existing.packageHash !== hash) {
-    return NextResponse.json({ error: "The producer reused packageId for different content" }, { status: 409 });
-  }
-  if (existing && existing.bootstrapId !== id) {
-    return NextResponse.json({ error: "The package identity already belongs to a different bootstrap" }, { status: 409 });
-  }
-  // A response-loss retry of the exact active package is a read of the
-  // original receipt, not a new scan. This keeps both package AND scan state
-  // idempotent and avoids producing a second post-activation refresh Audit.
-  if (existing && bootstrap.activePackageId === existing.id) {
-    return NextResponse.json({
-      ok: true,
-      scanId: existing.scanRunId,
-      packageId: existing.packageId,
-      reused: true,
-      refreshAudit: null,
-    });
-  }
-  const last = await prisma.bootstrapScanRun.findFirst({ where: { bootstrapId: id }, orderBy: { sequence: "desc" }, select: { sequence: true } });
-  const scan = await prisma.bootstrapScanRun.create({ data: {
-    bootstrapId: id, sequence: (last?.sequence ?? 0) + 1, status: "running", stage: "package_validation", startedAt: new Date(),
-    providerCoverage: pkg.coverage as unknown as Prisma.InputJsonValue,
-    metrics: {} as Prisma.InputJsonValue, warnings: pkg.warnings as unknown as Prisma.InputJsonValue,
-  } });
-  await persistCompiledPackage(scan.id, pkg);
-  const refreshAudit = bootstrap.activation ? await auditActivatedBootstrapRefresh(id) : null;
-  return NextResponse.json({ ok: true, scanId: scan.id, packageId: pkg.packageId, reused: Boolean(existing), refreshAudit }, { status: existing ? 200 : 201 });
+  const result = await ingestBootstrapPackage(id, pkg);
+  return NextResponse.json(result.body, { status: result.status });
 }
