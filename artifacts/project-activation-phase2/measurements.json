@@ -5,6 +5,10 @@
   "contractVersion": "1.1",
   "migrationCountApplied": 22,
   "hermesBootstrapBridge": {
+    "repository": "/Users/nicholaspayne/AI-Agents/kit-gap-bridge",
+    "version": "0.2.0",
+    "commit": "d227238a2cb95d4c2ccbae6b8e61f6e20e167543",
+    "remoteConfigured": false,
     "mode": "read-only pre-Scope identity compile",
     "syntheticProof": "pass",
     "realEstateContractSmoke": "pass",

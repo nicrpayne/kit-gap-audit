@@ -30,12 +30,27 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   } catch (error) {
     return NextResponse.json({ error: error instanceof Error ? error.message : "Invalid bootstrap package" }, { status: 400 });
   }
-  const bootstrap = await prisma.projectBootstrap.findUnique({ where: { id }, select: { id: true, activation: { select: { id: true } } } });
+  const bootstrap = await prisma.projectBootstrap.findUnique({ where: { id }, select: { id: true, activePackageId: true, activation: { select: { id: true } } } });
   if (!bootstrap) return NextResponse.json({ error: "Project bootstrap not found" }, { status: 404 });
   const hash = bootstrapHash(pkg);
   const existing = await prisma.bootstrapPackage.findUnique({ where: { producer_packageId: { producer: pkg.producer, packageId: pkg.packageId } } });
   if (existing && existing.packageHash !== hash) {
     return NextResponse.json({ error: "The producer reused packageId for different content" }, { status: 409 });
+  }
+  if (existing && existing.bootstrapId !== id) {
+    return NextResponse.json({ error: "The package identity already belongs to a different bootstrap" }, { status: 409 });
+  }
+  // A response-loss retry of the exact active package is a read of the
+  // original receipt, not a new scan. This keeps both package AND scan state
+  // idempotent and avoids producing a second post-activation refresh Audit.
+  if (existing && bootstrap.activePackageId === existing.id) {
+    return NextResponse.json({
+      ok: true,
+      scanId: existing.scanRunId,
+      packageId: existing.packageId,
+      reused: true,
+      refreshAudit: null,
+    });
   }
   const last = await prisma.bootstrapScanRun.findFirst({ where: { bootstrapId: id }, orderBy: { sequence: "desc" }, select: { sequence: true } });
   const scan = await prisma.bootstrapScanRun.create({ data: {

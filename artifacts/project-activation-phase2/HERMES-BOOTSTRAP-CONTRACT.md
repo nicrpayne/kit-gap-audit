@@ -6,17 +6,20 @@ Revision 1.1 carries requested and detected identity, aliases/collisions/related
 
 No geometry or Forecast outputs are accepted. Semantic similarity may only affect retrieval relevance. Wiki-derived evidence retains its shared lineage root and derivative status, so it cannot increase independent corroboration.
 
-Available now: exact identity/alias, MiniSearch lexical/prefix/fuzzy retrieval over Signal-held packages, current-head matching, evidence tracing, bounded typed relation retention, and producer push. `scripts/hermes-bootstrap-bridge.py` is the read-only pre-Scope producer adapter for the verified local KE/Hermes estate. It reads the compiler allowlist and `is_head` authority, canonical object batches, linked Evidence Passages, raw sources, and derivative project wiki; it can write a package file or push with a bearer token held only in `SIGNAL_APP_PASSWORD`.
+Available now: exact identity/alias, lexical/prefix/fuzzy retrieval, current-head matching, evidence tracing, bounded typed relation retention, and producer transport. The operational producer is `kit-gap-bridge` version `0.2.0`, local commit `d227238a2cb95d4c2ccbae6b8e61f6e20e167543`. It reads the compiler allowlist and `is_head` authority, canonical object batches, linked Evidence Passages, raw sources, and derivative project wiki. It validates the complete package locally, writes a gitignored local artifact, and transports it with a bearer secret read only from `APP_PASSWORD`.
 
 Example compile-only invocation:
 
 ```sh
-python3 scripts/hermes-bootstrap-bridge.py \
-  --bootstrap-id <bootstrap-id> \
+./bin/kit-gap bootstrap \
   --canonical-name "<canonical project name>" \
   --alias "<alias>" \
+  --owner-hint "<optional owner>" \
   --source-hint "<source hint>" \
-  --out /tmp/bootstrap-package.json
+  --ke-root "<local KE root>" \
+  --dry-run
 ```
 
-Add `--signal-url https://<signal-host>` to push to Signal. The adapter does not create or require a Scope. It only proposes a dependency from a typed Hermes dependency object, treats wiki excerpts as derivative, and reports semantic retrieval unavailable. Not available: remote Hermes health orchestration, production-ready semantic embeddings, or live pre-Scope Notion/Figma/Linear collection. Those states are emitted honestly in coverage.
+For live transport, set `KIT_GAP_BASE_URL=https://<signal-host>` and `APP_PASSWORD` in the process environment and omit `--dry-run`. The bridge creates or resolves a ProjectBootstrap through `/api/project-bootstraps`, then posts exactly once to `/api/project-bootstraps/:bootstrapId/packages` with `Authorization: Bearer <APP_PASSWORD>`. The token is not placed in the package, local receipt, command line, or log. The adapter does not create or require a Scope. It only proposes a dependency from a typed Hermes dependency object, treats wiki excerpts as derivative, and reports semantic retrieval unavailable.
+
+The standalone repository has no configured Git remote. It must receive a reviewed remote and immutable distribution/versioning path before production operation.

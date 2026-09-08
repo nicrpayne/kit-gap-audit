@@ -54,7 +54,8 @@ function main() {
   check("Run Audit preserves validation, visible errors, and single-submit protection",
     world.includes('setRunError("Choose a project and provide evidence to compare.")')
       && world.includes('{runError && <p')
-      && world.includes('<button disabled={running} type="submit"')
+      && (world.includes('<button disabled={running} type="submit"')
+        || world.includes('<SignalControl disabled={running} type="submit"'))
       && world.includes('{running ? "Running…" : "Run Audit"}'));
   check("Run Audit copy protects Reality",
     world.includes("New Findings enter review. Reality does not change automatically."));

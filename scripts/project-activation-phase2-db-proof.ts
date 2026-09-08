@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
+import { NextRequest } from "next/server";
 import type { Prisma } from "@prisma/client";
+import { POST as postBootstrapPackage } from "../app/api/project-bootstraps/[id]/packages/route";
 import { prisma } from "../lib/prisma";
 import { activateProjectBootstrap } from "../lib/bootstrap/activation";
 import { auditActivatedBootstrapRefresh } from "../lib/bootstrap/refresh";
@@ -101,6 +103,28 @@ async function seedBootstrap(name: string, candidates: CandidateSeed[], options?
 
 async function main() {
   const before = await counts();
+  const transportBootstrap = await prisma.projectBootstrap.create({ data: {
+    canonicalName: "Transport Retry Synthetic", normalizedName: "transport retry synthetic", aliases: ["TRS"], ownerHint: null,
+    sourceHints: ["synthetic"], searchExistingKnowledge: false, status: "draft",
+  } });
+  const transportPackage = packageFor(transportBootstrap.id, transportBootstrap.canonicalName, [
+    { key: "transport-capability", kind: "capability", title: "Transport safety", status: "pending", payload: { name: "Transport safety" } },
+  ]);
+  const packageRequest = () => new NextRequest(`http://signal.test/api/project-bootstraps/${transportBootstrap.id}/packages`, {
+    method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(transportPackage),
+  });
+  const firstDelivery = await postBootstrapPackage(packageRequest(), { params: Promise.resolve({ id: transportBootstrap.id }) });
+  const firstDeliveryBody = await firstDelivery.json() as { scanId: string; reused: boolean };
+  assert.equal(firstDelivery.status, 201);
+  assert.equal(firstDeliveryBody.reused, false);
+  const retryDelivery = await postBootstrapPackage(packageRequest(), { params: Promise.resolve({ id: transportBootstrap.id }) });
+  const retryDeliveryBody = await retryDelivery.json() as { scanId: string; reused: boolean; refreshAudit: unknown };
+  assert.equal(retryDelivery.status, 200);
+  assert.equal(retryDeliveryBody.reused, true);
+  assert.equal(retryDeliveryBody.scanId, firstDeliveryBody.scanId, "package retry must return the original scan identity");
+  assert.equal(retryDeliveryBody.refreshAudit, null);
+  assert.equal(await prisma.bootstrapScanRun.count({ where: { bootstrapId: transportBootstrap.id } }), 1, "package retry must not duplicate scan state");
+  assert.equal(await prisma.bootstrapPackage.count({ where: { bootstrapId: transportBootstrap.id } }), 1, "package retry must not duplicate package state");
   const upstream = await prisma.scope.create({ data: { name: "Ember Gateway Synthetic", teamKey: "SYN", projectNames: ["Synthetic Gateway"] } });
   const richSeeds: CandidateSeed[] = [
     { key: "source-1", kind: "source", title: "Synthetic transcript", status: "accepted", payload: { provider: "transcript", canonicalRef: "fixture://source/rich" } },
@@ -229,6 +253,7 @@ async function main() {
     sparseFirstAuditFindings: sparseActivation.audit.findings.length,
     contradictoryFirstAuditFindings: contradictoryActivation.audit.findings.length,
     concurrentRetry: { sameScope: true, activationRows: 1 },
+    packageTransportRetry: { sameScan: true, scans: 1, packages: 1 },
     atomicFailure: "zero partial writes",
     after,
   }, null, 2));
