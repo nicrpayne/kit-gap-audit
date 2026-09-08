@@ -1,14 +1,14 @@
 {
-  "recordedAt": "2026-09-08T17:24:00Z",
+  "recordedAt": "2026-09-08T17:52:00Z",
   "startingProductionSha": "bce38dde332fa1d049363fe502c5921326556311",
   "signalOperationalCodeCommit": "931e2dd6d7ecfec20d5be4431459b264ed492c2c",
   "bridge": {
     "version": "0.3.0",
-    "commit": "6f3aef527cf35cd0e0acb9f2336cfc70b1bb8c84",
-    "tree": "8836d16b44412ab226e0634d99bdefeb57b43e48",
+    "commit": "3b8db08ed86596c5cf1c72d820f03ded59555f4b",
+    "tree": "b7b1e8c3ed676441d691880b5abdacf07886f1b7",
     "tag": "v0.3.0",
     "tests": "88/88",
-    "archiveSha256": "808d68827ce67cb64883d9abedfd533512b3454064550972692cc710defb336b",
+    "archiveSha256": "bd902f833b0c15061b493276ac35546a89b84be4ea5d0718ca38f4afeb9ca6ac",
     "remote": null
   },
   "stagingOperatorFlow": {
@@ -61,5 +61,28 @@
     "auditBrowser": "38/38",
     "rubric": "129/129"
   },
-  "production": null
+  "production": {
+    "firstPromotedSha": "7537ffe5dd55f988486cc4d18e5022bc1cf5d6d5",
+    "firstDeploymentId": "e11c6167-6c62-4c99-aa44-26ed1894c7a3",
+    "bootstrapId": "cmtsyqxi80000pq1y0ezh9cu1",
+    "scanRunId": "cmtsyqxpr0002pq1yw46ki50y",
+    "jobId": "cmtsyqxpt0004pq1ybp8z1mrb",
+    "jobCreatedAt": "2026-09-08T17:48:34.482Z",
+    "jobClaimedAt": "2026-09-08T17:48:43.255Z",
+    "jobCompletedAt": "2026-09-08T17:48:47.093Z",
+    "attempts": 1,
+    "packageId": "hermes-bootstrap-81404a857eaf6b3905a2b0f01b78dc3f",
+    "packageHash": "c4e533b2b72d056ef5e6c19aeae9c5fa42ee16a5f9b54cb76efabc4585bec9b9",
+    "artifacts": 53,
+    "evidencePassages": 168,
+    "intelligenceHeads": 177,
+    "relations": 95,
+    "proposals": 135,
+    "exactQuoteCharactersChecked": 265,
+    "scopeCountBefore": 3,
+    "scopeCountAfter": 3,
+    "activation": null,
+    "instrumentRoutes": "9/9",
+    "browserErrors": 0
+  }
 }

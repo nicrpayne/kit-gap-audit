@@ -2,8 +2,8 @@
 
 ## Signal
 
-The forward rollback branch is prepared from the final release candidate by
-reverting the complete range after starting production. Its committed tree must
+The forward rollback branch is prepared from the final release candidate. Its
+committed tree must
 equal starting production tree `bce38dde332fa1d049363fe502c5921326556311^{tree}`
 byte-for-byte before it is accepted. Deployment is a normal forward push—never
 a force push. Additive database tables may remain; the starting application
@@ -15,7 +15,8 @@ read-only instrument smoke.
 
 ## Bridge
 
-Current release: annotated local tag `v0.3.0`.
+Current release: annotated local tag `v0.3.0` at
+`3b8db08ed86596c5cf1c72d820f03ded59555f4b`.
 Prior release commit: `d227238a2cb95d4c2ccbae6b8e61f6e20e167543`.
 
 ```sh

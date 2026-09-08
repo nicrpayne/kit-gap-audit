@@ -18,6 +18,7 @@
 | Audit Search/Inspector/Trace/layout/hover | PASS — 38/38 browser checks |
 | Rubric | PASS — 129/129; protected files byte-identical |
 | Bridge | PASS — 88/88; version 0.3.0 |
+| Production promotion/smoke | PASS — automatic pre-Reality scan; 9/9 read-only instruments; 0 browser errors |
 
 The real staging flow completed in one automatic claim and one package
 delivery. Browser/server reload preserved the accepted disposition,
@@ -25,3 +26,7 @@ ContextSnapshot 01, and 15-finding First Audit with no console errors.
 
 No Monte Carlo, Rubric geometry, Reports/Sites redesign, vector search,
 Dependencies/Timeline overhaul, or project-specific canonical data was added.
+
+No Human Release History/version-manifest implementation is present in this
+production ancestry. The release therefore uses the exact Git/Railway marker
+and leaves Human Release History to its separate outstanding thread.
