@@ -17,6 +17,7 @@ import { AUDIENCE_LABELS, PURPOSE_LABELS, buildBriefRecipe, isBriefRecipeV1, typ
 import { renderAudienceBriefPlainText } from "@/lib/reports/audienceBriefRender";
 import { currentnessLabel, sourceCurrentness } from "@/lib/truth/currentness";
 import { formatDateOnly } from "@/lib/time/dateContract";
+import InteractiveSiteHandoff from "./reports/InteractiveSiteHandoff";
 
 /** The live forecast is a comparison input, not report data. Three states,
     because "we could not resolve it" must be distinguishable from "it
@@ -243,6 +244,7 @@ export default function ReportsPageClient() {
         {selectedBrief && <CopyMarkdownButton markdown={selectedRecipe ? renderAudienceBriefPlainText(selectedBrief, selectedRecipe) : renderDecisionBriefPlainText(selectedBrief)} label="Copy plain text" />}
         {process.env.NODE_ENV !== "production" && <a href="/reports/composer/fixture" className="report-no-print rounded-md border border-[var(--i-border)] px-3 py-1.5 text-xs text-[var(--i-signal)]">Open composer prototype</a>}
         {selected && <a href={`/reports/${encodeURIComponent(selected.id)}/print`} target="_blank" rel="noreferrer" className="report-no-print rounded-md border border-[var(--i-border)] px-3 py-1.5 text-xs text-[var(--i-text-soft)] hover:bg-white/5">Print view</a>}
+        {selectedBrief && selectedRecipe && selected && <InteractiveSiteHandoff reportId={selected.id} />}
         {live?.state === "ready" && (() => {
           const freshness = sourceCurrentness(live.asOf, new Date());
           return <span className="report-no-print ml-auto text-[10px] uppercase tracking-wider" style={{ color: freshness.currentness === "stale" ? "var(--i-amber)" : "var(--i-mint)" }}>

@@ -4,10 +4,8 @@ import { briefPayloadFingerprint } from "./decisionBriefRender";
 import {
   AUDIENCE_LABELS,
   BRIEF_PRESENTATION_VERSION,
-  INTERACTIVE_BRIEF_BUNDLE_VERSION,
   MODULE_CATALOG,
   PURPOSE_LABELS,
-  moduleDefinition,
   normalizeBriefRecipe,
   type AudienceLens,
   type BriefModuleConfig,
@@ -57,27 +55,6 @@ export interface BriefPresentationV1 {
   leadershipAsks: LeadershipAsk[];
   leadershipAskCandidates: LeadershipAsk[];
   signalRead: string;
-}
-
-export interface InteractiveBriefBundleV1 {
-  version: typeof INTERACTIVE_BRIEF_BUNDLE_VERSION;
-  presentationVersion: typeof BRIEF_PRESENTATION_VERSION;
-  snapshotFingerprint: string;
-  briefSnapshot: DecisionBriefV1;
-  recipe: BriefRecipeV1;
-  presentation: BriefPresentationV1;
-  permittedReferences: { label: string; href: string; owner: SourceStamp["owner"] }[];
-  audienceMetadata: {
-    audience: AudienceLens;
-    purpose: BriefPurpose;
-    externalDisclosure: "internal" | "operator-review-required";
-  };
-  security: {
-    liveOwnerAccess: false;
-    databaseCredentials: false;
-    secrets: false;
-    publishAuthorized: false;
-  };
 }
 
 function isoDate(iso: string | null): string {
@@ -215,42 +192,6 @@ export function buildBriefPresentation(brief: DecisionBriefV1, inputRecipe: unkn
     leadershipAskCandidates: asks.candidates,
     signalRead: deterministicSignalRead(brief, drivers),
   };
-}
-
-function permittedReferences(brief: DecisionBriefV1, presentation: BriefPresentationV1) {
-  const enabled = new Set(presentation.modules.map((item) => item.id));
-  const refs: { label: string; href: string; owner: SourceStamp["owner"] }[] = [];
-  if (enabled.has("delivery-outlook") || enabled.has("timeline")) refs.push({ label: "Forecast", href: brief.timeline.currentForecast.value.href, owner: "Forecast" });
-  if (enabled.has("decisions") || enabled.has("leadership-asks")) for (const decision of brief.calls.decisions.value) refs.push({ label: decision.title, href: decision.href, owner: "Decisions" });
-  if (enabled.has("dependencies")) for (const dependency of brief.calls.dependencies.value) refs.push({ label: dependency.name, href: dependency.href, owner: "Dependencies" });
-  if (enabled.has("scope")) refs.push({ label: "Executable Scope", href: brief.movable.scope.value.href, owner: "Scope" });
-  if (enabled.has("capacity")) refs.push({ label: "Capacity", href: brief.movable.capacity.value.href, owner: "Capacity" });
-  if (enabled.has("evidence") || enabled.has("audit-delta")) for (const evidence of brief.evidence.references.value) refs.push({ label: evidence.title, href: evidence.href, owner: "Audit" });
-  return [...new Map(refs.map((item) => [`${item.owner}:${item.href}`, item])).values()];
-}
-
-export function buildInteractiveBriefBundle(brief: DecisionBriefV1, inputRecipe: unknown): InteractiveBriefBundleV1 {
-  const presentation = buildBriefPresentation(brief, inputRecipe);
-  return {
-    version: INTERACTIVE_BRIEF_BUNDLE_VERSION,
-    presentationVersion: BRIEF_PRESENTATION_VERSION,
-    snapshotFingerprint: presentation.snapshotFingerprint,
-    briefSnapshot: structuredClone(brief),
-    recipe: structuredClone(presentation.recipe),
-    presentation: structuredClone(presentation),
-    permittedReferences: permittedReferences(brief, presentation),
-    audienceMetadata: {
-      audience: presentation.audience,
-      purpose: presentation.purpose,
-      externalDisclosure: presentation.audience === "stakeholder-partner" ? "operator-review-required" : "internal",
-    },
-    security: { liveOwnerAccess: false, databaseCredentials: false, secrets: false, publishAuthorized: false },
-  };
-}
-
-export function siteHandoffPrompt(bundle: InteractiveBriefBundleV1): string {
-  const enabled = bundle.presentation.modules.map((item) => moduleDefinition(item.id).label).join(", ");
-  return `Use @Sites to create a private interactive delivery brief website from the attached InteractiveBriefBundleV1 JSON.\n\nAudience: ${bundle.presentation.audienceLabel}\nPurpose: ${bundle.presentation.purposeLabel}\nProject: ${bundle.presentation.projectName}\nSnapshot: ${bundle.snapshotFingerprint}\nModules, in order: ${enabled}\n\nHard constraints:\n- Treat briefSnapshot as immutable truth. Do not fetch live Signal data or invent facts.\n- Preserve likely, target and commitment as distinct concepts.\n- Render only recipe modules and permittedReferences.\n- Keep caveats visible wherever the recipe includes them.\n- Use progressive disclosure and responsive layout.\n- Keep access private for review. Save a version, but do not deploy or publish without explicit approval.\n- Do not add storage, credentials, analytics code, forms or authentication.\n\nReturn a private preview and identify any content that requires operator disclosure review.`;
 }
 
 export const MODULE_IDS = MODULE_CATALOG.map((item) => item.id);

@@ -313,6 +313,39 @@ model Report {
   // full manifest; a Report should reference it, not duplicate it.
   contextSnapshotId String?
   contextSnapshot   ContextSnapshot? @relation(fields: [contextSnapshotId], references: [id])
+  publications      ReportPublication[]
+}
+
+// A governed handoff of one immutable Report snapshot. The bundle bytes are
+// saved exactly once and never regenerated from newer project truth. Status
+// changes describe operator-attested progress in ChatGPT Sites; Signal never
+// claims that a draft or deployment exists without that explicit attestation.
+model ReportPublication {
+  id                  String   @id @default(cuid())
+  reportId            String
+  report              Report   @relation(fields: [reportId], references: [id])
+  briefSnapshotHash   String
+  bundleVersion       String
+  bundleHash          String   @unique
+  audience            String
+  purpose             String
+  destinationType     String   @default("chatgpt_sites")
+  status              String   @default("bundle_ready")
+  operator             String   @default("authenticated_operator")
+  bundleSnapshot       Json
+  excludedMaterial     Json
+  createdAt            DateTime @default(now())
+  handoffOpenedAt      DateTime?
+  draftGeneratedAt     DateTime?
+  previewedAt          DateTime?
+  publishedAt          DateTime?
+  failedAt             DateTime?
+  externalArtifactId  String?
+  externalUrl          String?
+  lastVerifiedAt      DateTime @default(now())
+  lastVerifiedState   String   @default("signal_verified_bundle")
+
+  @@index([reportId, createdAt])
 }
 
 // An AI-produced three-point estimate for one work item, cached by content

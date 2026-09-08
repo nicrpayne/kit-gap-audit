@@ -1,0 +1,28 @@
+Use @Sites to create a private, recipient-facing interactive project brief website from the attached interactive-brief-bundle.v1 JSON.
+
+Audience: Delivery Leadership
+Purpose: Weekly Update
+Project: JSA
+Frozen report: report-healthy-leadership
+Snapshot: dbv1-0031e751
+Bundle SHA-256: 72cff5434a69d07659a5b65ec210022aa76d763b4b86ffe2e99607a441c02627
+Modules, in order: Delivery Outlook (headline), Movement (compact), What Changed (compact), What's Next (compact), Commitment (compact), Why This Date (expanded), Acceleration Levers (expanded), Leadership Asks (compact), Dependencies (compact), Source Health (compact), Missing Inputs (compact)
+
+Truth contract — mandatory:
+- Use only facts present in the bundle. Do not discover, browse for, infer, or refresh project facts.
+- Do not connect to Signal, call Signal APIs, add credentials, or create any mutation path back to Signal.
+- Keep LIKELY, TARGET, and COMMITTED visibly distinct. Never turn likely or target into a commitment.
+- If commitment.status is missing, say “No canonical delivery commitment.”
+- Keep every missing-data, unavailable, stale, unreconciled, and grounding caveat visible where material.
+- AI-written narrative is presentation only; it is not new project truth.
+- Show provenance only from bundle.provenance and references. Do not expose excluded or internal-only identifiers.
+- Implement only interactions listed in presentation.allowedInteractions. Scenario comparison is frozen and read-only.
+
+Product and safety contract:
+- The Site should feel like a calm finished executive/product brief, not like Signal and not like a DAW.
+- Make the first viewport answer: when, why, what can change, what is committed, what changed, what is needed, and what is next.
+- No forms, analytics, persistent storage, authentication, live queries, or external data sources.
+- Keep the Site private for review. Save a reviewable version and return a private preview.
+- Do not deploy, publish, share, change access, invite anyone, or contact anyone without explicit operator approval after preview.
+
+Before returning the preview, reconcile every displayed number, date, decision, ask, milestone, status, and caveat to the bundle and report any mismatch.

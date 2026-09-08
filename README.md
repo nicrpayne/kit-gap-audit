@@ -287,6 +287,6 @@ body.
 - `lib/audit/prompts/audit-v1.ts` — the extraction prompt as a versioned
   template
 - `lib/audit/normalize.ts` — defensive parsing/validation of raw findings
+- `docs/REPORTS-INTERACTIVE-SITE-V1.md` — governed frozen Report → ChatGPT
+  Sites handoff and publication lifecycle
 - `prisma/schema.prisma` — `Scope`, `Source`, `Finding`, `AuditRun`
-- Nav ships with Forecast / Timeline / Reports as placeholders — see
-  `ROADMAP.md` for what they'll become.
