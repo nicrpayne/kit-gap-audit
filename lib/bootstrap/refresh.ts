@@ -6,7 +6,6 @@ import type { PolicyEvaluatedCompleteness } from "@/lib/context/sourcePolicy";
 import { validateProjectContextPackage } from "@/lib/context/validate";
 import type { ProjectBootstrapPackageV1 } from "./contracts";
 import { FIRST_AUDIT_MODEL } from "./activation";
-import { syncRefreshChangeProposals } from "@/lib/audit/changeInbox";
 
 const REFRESH_AUDIT_MODEL = `${FIRST_AUDIT_MODEL}:refresh`;
 
@@ -125,7 +124,7 @@ export async function auditActivatedBootstrapRefresh(bootstrapId: string) {
       ref: `refresh-proposal:${item.proposalId}`,
     })),
   ];
-  const result = await prisma.$transaction(async (tx) => {
+  return prisma.$transaction(async (tx) => {
     const existing = await tx.contextSnapshot.findUnique({ where: { producer_packageId: { producer: context.producer, packageId: context.packageId } } });
     if (existing) {
       if (existing.contextHash !== contextHash) throw new Error("Bootstrap refresh package identity collision");
@@ -148,14 +147,4 @@ export async function auditActivatedBootstrapRefresh(bootstrapId: string) {
     } });
     return { snapshot, audit: await tx.auditRun.findUniqueOrThrow({ where: { id: audit.id }, include: { findings: true } }), reused: false, canonicalWrites: 0 };
   }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
-  if (result.audit) {
-    const inbox = await syncRefreshChangeProposals({
-      scopeId: bootstrap.activation.scopeId,
-      snapshotId: result.snapshot.id,
-      auditRunId: result.audit.id,
-      pkg,
-    });
-    return { ...result, inbox };
-  }
-  return result;
 }

@@ -6,7 +6,6 @@ import { useProjectParam } from "@/lib/shell/useProjectParam";
 import AuditFindingOverlay from "./AuditFindingOverlay";
 import worldStyles from "./AuditWorld.module.css";
 import { SignalControl } from "@/components/instrument/SignalPrimitives";
-import AuditChangeInbox from "./AuditChangeInbox";
 
 interface ScopeOption {
   id: string;
@@ -289,12 +288,6 @@ export default function AuditWorld({
             className="absolute inset-0 h-full w-full border-0"
           />
         )}
-
-        <AuditChangeInbox
-          scopeId={scopeId}
-          fixture={fixture}
-          onTrace={(canonicalId) => traceFinding(canonicalId, true)}
-        />
 
         {contextError && (
           <div className="absolute left-1/2 top-4 z-40 -translate-x-1/2 rounded-md px-4 py-2 text-[11px]" style={{ background: "var(--i-panel)", border: "1px solid var(--i-red)", color: "var(--i-red)" }}>
