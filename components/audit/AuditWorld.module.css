@@ -111,29 +111,6 @@
   max-width: 260px;
 }
 
-.changeSummaryWidget {
-  position: absolute;
-  z-index: 32;
-  top: 12px;
-  left: 12px;
-  width: 292px;
-  overflow: hidden;
-}
-
-.changeInboxSheet {
-  position: absolute;
-  z-index: 46;
-  top: 12px;
-  right: 12px;
-  bottom: 12px;
-  width: min(760px, calc(100% - 24px));
-  overflow: hidden;
-  display: flex;
-  flex-direction: column;
-  background: var(--signal-surface-panel);
-  animation: dock-in 190ms ease-out both;
-}
-
 .traceBadge {
   box-shadow: 0 0 0 1px var(--signal-reality-muted), 0 0 22px var(--signal-reality-soft);
 }
@@ -163,10 +140,6 @@
   .contextWidget {
     top: 56px;
     left: 12px;
-  }
-
-  .changeSummaryWidget {
-    top: 56px;
   }
 }
 

@@ -48,8 +48,6 @@ model Scope {
   dependenciesUpstream    ScopeDependency[]        @relation("DependencyUpstream")
   dependenciesDownstream  ScopeDependency[]        @relation("DependencyDownstream")
   activation              ProjectActivation?
-  auditChanges            AuditChangeProposal[]
-  derivedState            ProjectDerivedState?
 }
 
 // Alternate project identities accepted at activation. Aliases are project
@@ -203,7 +201,6 @@ model ContextSnapshot {
   auditRuns      AuditRun[]
   timelineEvents TimelineEvent[]
   activation     ProjectActivation? @relation("ActivationSnapshot")
-  auditChanges   AuditChangeProposal[]
 
   @@unique([producer, packageId])
 }
@@ -573,97 +570,6 @@ model AuditRun {
   createdAt         DateTime           @default(now())
   findings          Finding[]
   activation        ProjectActivation? @relation("ActivationAudit")
-  changeProposals   AuditChangeProposal[]
-}
-
-// A governed delta discovered by Audit. This ledger is deliberately not an
-// owner of project Reality: accepted rows point at the canonical object that
-// the owning instrument created or updated in the same transaction.
-model AuditChangeProposal {
-  id                String           @id @default(cuid())
-  scopeId           String
-  scope             Scope            @relation(fields: [scopeId], references: [id], onDelete: Cascade)
-  auditRunId        String?
-  auditRun          AuditRun?        @relation(fields: [auditRunId], references: [id], onDelete: SetNull)
-  contextSnapshotId String?
-  contextSnapshot   ContextSnapshot? @relation(fields: [contextSnapshotId], references: [id], onDelete: SetNull)
-
-  // Stable across retries and repeated imports of the same semantic delta.
-  fingerprint String @unique
-  sourceKey   String?
-  supersedesProposalId String?
-  category    String // scope | decision | dependency | milestone | finding | source_health | capacity | information
-  owner       String // owning instrument, never "audit"
-  changeType  String
-  title       String
-  summary     String
-  whyProposed String
-
-  currentState        Json
-  proposedState       Json
-  evidence            Json
-  currentness         String @default("unknown")
-  retrievalBasis      String
-  retrievalConfidence String @default("unknown")
-  forecastEffect      Json?
-
-  relevanceClass  String @default("project_local") // project_local | cross_scope_relevant | neighboring_project_context | irrelevant_bleed
-  relevanceReason String
-  sourceKind      String @default("refresh") // refresh | baseline | setup
-  recommendedAction String @default("review") // accept | edit_accept | confirm | defer | retire | review | information_only
-  targetHref          String?
-  completionRequirements Json @default("[]")
-
-  status              String @default("pending") // pending | accepted | deferred | rejected | information_only | needs_completion
-  dispositionReason   String?
-  canonicalObjectType String?
-  canonicalObjectId   String?
-  beforeState         Json?
-  afterState          Json?
-  acceptedAt          DateTime?
-  createdAt           DateTime @default(now())
-  updatedAt           DateTime @updatedAt
-
-  events AuditChangeEvent[]
-
-  @@index([scopeId, status, category])
-  @@index([scopeId, sourceKind, sourceKey])
-  @@index([contextSnapshotId, createdAt])
-  @@index([auditRunId])
-}
-
-// Append-only human/governance history. idempotencyKey is supplied by the UI
-// for Accept and by the server for one-shot dispositions, making a retry an
-// answer about the first action rather than a second action.
-model AuditChangeEvent {
-  id             String              @id @default(cuid())
-  proposalId     String
-  proposal       AuditChangeProposal @relation(fields: [proposalId], references: [id], onDelete: Cascade)
-  idempotencyKey String              @unique
-  action         String
-  fromStatus     String?
-  toStatus       String?
-  detail         Json
-  createdAt      DateTime            @default(now())
-
-  @@index([proposalId, createdAt])
-}
-
-// Cache-coherence receipt for derived instruments. Owner writes increment
-// realityRevision atomically; the derived pass catches up computedRevision.
-// Forecast/Timeline/Control Room/Reports still own their computations.
-model ProjectDerivedState {
-  scopeId          String   @id
-  scope            Scope    @relation(fields: [scopeId], references: [id], onDelete: Cascade)
-  realityRevision  Int      @default(0)
-  computedRevision Int      @default(0)
-  status           String   @default("current") // current | stale | recomputing | error
-  consumers        Json
-  readiness        Json
-  invalidatedAt    DateTime?
-  recomputedAt     DateTime?
-  error            String?
-  updatedAt        DateTime @updatedAt
 }
 
 // ── TIMELINE ───────────────────────────────────────────────────────────
@@ -881,11 +787,6 @@ model BootstrapCompanion {
   lastSeenAt    DateTime
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
-  // Optional heartbeat extension. Old companions remain valid; newer
-  // companions may announce whether Hermes is ingesting and the completed
-  // knowledge watermark they can compile without exposing manifests or paths.
-  knowledgeState Json?
-  lastKnowledgeAt DateTime?
 
   @@index([lastSeenAt])
 }
