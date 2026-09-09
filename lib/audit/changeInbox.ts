@@ -261,17 +261,27 @@ export async function readKnowledgeStatus(scopeId: string): Promise<KnowledgeSta
   ]);
   const online = Boolean(companion && now.getTime() - companion.lastSeenAt.getTime() <= COMPANION_ONLINE_MS);
   const knowledge = record(companion?.knowledgeState);
+  const completed = record(knowledge.completed);
   const ingestionState = typeof knowledge.state === "string" ? knowledge.state : null;
-  const watermark = iso(knowledge.watermark);
+  const watermark = iso(completed.at) ?? iso(knowledge.watermark);
+  const completedManifestId = typeof completed.manifestId === "string" ? completed.manifestId : null;
   const bootstrap = scope?.activation?.bootstrap;
   const latestScan = bootstrap?.scans[0] ?? null;
   const job = latestScan?.job ?? null;
   const pkg = bootstrap?.packages[0] ?? null;
+  const packageBody = record(pkg?.package);
+  const packageIntelligenceMeta = record(packageBody.intelligenceMeta);
+  const packagedManifests = Array.isArray(packageIntelligenceMeta.manifestsIncluded)
+    ? packageIntelligenceMeta.manifestsIncluded.filter((value): value is string => typeof value === "string")
+    : [];
+  const completedIdentityAlreadyPackaged = Boolean(completedManifestId && packagedManifests.includes(completedManifestId));
   const decision = deriveKnowledgeFreshness({
     activationAvailable: Boolean(scope?.activation), companionOnline: online, ingestionState,
     jobRunning: Boolean(job && !TERMINAL_JOBS.has(job.status)),
     packageAheadOfSnapshot: Boolean(pkg && (!latestSnapshot || !String(latestSnapshot.packageId).includes(pkg.packageId))),
-    watermarkAheadOfPackage: Boolean(watermark && (!pkg || new Date(watermark).getTime() > pkg.generatedAt.getTime())),
+    watermarkAheadOfPackage: Boolean(
+      watermark && !completedIdentityAlreadyPackaged && (!pkg || new Date(watermark).getTime() > pkg.generatedAt.getTime()),
+    ),
   });
   return {
     code: decision.code, label: decision.label, detail: decision.detail, checkedAt: now.toISOString(), canRefresh: decision.canRefresh,

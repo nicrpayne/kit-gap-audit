@@ -14,10 +14,31 @@ export async function POST(req: NextRequest) {
   const knowledge = body?.knowledge && typeof body.knowledge === "object" && !Array.isArray(body.knowledge)
     ? body.knowledge as Record<string, unknown>
     : null;
+  const completed = knowledge?.completed && typeof knowledge.completed === "object" && !Array.isArray(knowledge.completed)
+    ? knowledge.completed as Record<string, unknown>
+    : null;
+  const completedAt = typeof completed?.at === "string" && !Number.isNaN(Date.parse(completed.at))
+    ? new Date(completed.at).toISOString()
+    : typeof knowledge?.watermark === "string" && !Number.isNaN(Date.parse(knowledge.watermark))
+      ? new Date(knowledge.watermark).toISOString()
+      : null;
+  const completedVersion = typeof completed?.version === "string" && /^[a-z0-9:._-]{1,100}$/i.test(completed.version)
+    ? completed.version
+    : typeof knowledge?.version === "string" && /^[a-z0-9:._-]{1,100}$/i.test(knowledge.version)
+      ? knowledge.version
+      : null;
+  const manifestId = typeof completed?.manifestId === "string" && /^[a-z0-9._-]{1,160}$/i.test(completed.manifestId)
+    ? completed.manifestId
+    : typeof knowledge?.manifestId === "string" && /^[a-z0-9._-]{1,160}$/i.test(knowledge.manifestId)
+      ? knowledge.manifestId
+      : null;
   const knowledgeState = knowledge && typeof knowledge.state === "string" && ["current", "ingesting", "running", "degraded"].includes(knowledge.state)
     ? {
         state: knowledge.state,
-        ...(typeof knowledge.watermark === "string" && !Number.isNaN(Date.parse(knowledge.watermark)) ? { watermark: new Date(knowledge.watermark).toISOString() } : {}),
+        ...(completedAt ? { watermark: completedAt } : {}),
+        ...(completedAt && completedVersion && manifestId ? {
+          completed: { at: completedAt, version: completedVersion, manifestId },
+        } : {}),
         ...(typeof knowledge.detail === "string" ? { detail: knowledge.detail.slice(0, 500) } : {}),
       }
     : null;
@@ -27,7 +48,7 @@ export async function POST(req: NextRequest) {
     where: { id },
     create: {
       id, version, label, state, lastSeenAt: now,
-      capabilities: { packageVersions: ["1.1"], transport: "poll-v1", knowledgeWatermark: "optional-v1" } as Prisma.InputJsonValue,
+      capabilities: { packageVersions: ["1.1"], transport: "poll-v1", knowledgeWatermark: "optional-v1", completedKnowledge: "optional-v1" } as Prisma.InputJsonValue,
       ...(knowledgeState ? { knowledgeState: knowledgeState as Prisma.InputJsonValue, lastKnowledgeAt: now } : {}),
     },
     update: {
