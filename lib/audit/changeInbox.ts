@@ -286,7 +286,11 @@ export async function readKnowledgeStatus(scopeId: string): Promise<KnowledgeSta
   return {
     code: decision.code, label: decision.label, detail: decision.detail, checkedAt: now.toISOString(), canRefresh: decision.canRefresh,
     companion: companion ? { state: companion.state, version: companion.version, online, lastSeenAt: companion.lastSeenAt.toISOString() } : null,
-    lastPackageAt: pkg?.generatedAt.toISOString() ?? null,
+    // The 15-minute operational guard is measured from Signal's receipt,
+    // not from the upstream compiler timestamp. A perfectly current KE state
+    // can be hours old when it is packaged; using generatedAt would enqueue a
+    // duplicate scan immediately after a successful refresh.
+    lastPackageAt: pkg?.createdAt.toISOString() ?? null,
     lastAuditAt: latestAudit?.createdAt.toISOString() ?? null,
     activeJob: job && !TERMINAL_JOBS.has(job.status) ? { id: job.id, status: job.status, stage: job.stage, progress: job.progress } : null,
   };
