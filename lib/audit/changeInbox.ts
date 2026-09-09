@@ -271,16 +271,30 @@ export async function readKnowledgeStatus(scopeId: string): Promise<KnowledgeSta
   const pkg = bootstrap?.packages[0] ?? null;
   const packageBody = record(pkg?.package);
   const packageIntelligenceMeta = record(packageBody.intelligenceMeta);
-  const packagedManifests = Array.isArray(packageIntelligenceMeta.manifestsIncluded)
+  const snapshotBody = record(latestSnapshot?.package);
+  const snapshotIntelligenceMeta = record(snapshotBody.intelligenceMeta);
+  const packageManifests = Array.isArray(packageIntelligenceMeta.manifestsIncluded)
     ? packageIntelligenceMeta.manifestsIncluded.filter((value): value is string => typeof value === "string")
     : [];
+  const snapshotManifests = Array.isArray(snapshotIntelligenceMeta.manifestsIncluded)
+    ? snapshotIntelligenceMeta.manifestsIncluded.filter((value): value is string => typeof value === "string")
+    : [];
+  const packagedManifests = packageManifests.length ? packageManifests : snapshotManifests;
   const completedIdentityAlreadyPackaged = Boolean(completedManifestId && packagedManifests.includes(completedManifestId));
+  // Production JSA/iTrack already had accepted external ContextSnapshots
+  // before ProjectActivation existed. Until their first companion refresh,
+  // that accepted snapshot is the comparison baseline; treating the absence
+  // of a BootstrapPackage as automatically newer would request a redundant
+  // scan immediately after the forward-only operational binding migration.
+  const acceptedKnowledgeAt = pkg?.generatedAt
+    ?? (iso(snapshotBody.generatedAt) ? new Date(iso(snapshotBody.generatedAt)!) : latestSnapshot?.createdAt)
+    ?? null;
   const decision = deriveKnowledgeFreshness({
     activationAvailable: Boolean(scope?.activation), companionOnline: online, ingestionState,
     jobRunning: Boolean(job && !TERMINAL_JOBS.has(job.status)),
     packageAheadOfSnapshot: Boolean(pkg && (!latestSnapshot || !String(latestSnapshot.packageId).includes(pkg.packageId))),
     watermarkAheadOfPackage: Boolean(
-      watermark && !completedIdentityAlreadyPackaged && (!pkg || new Date(watermark).getTime() > pkg.generatedAt.getTime()),
+      watermark && !completedIdentityAlreadyPackaged && (!acceptedKnowledgeAt || new Date(watermark).getTime() > acceptedKnowledgeAt.getTime()),
     ),
   });
   return {
@@ -290,7 +304,7 @@ export async function readKnowledgeStatus(scopeId: string): Promise<KnowledgeSta
     // not from the upstream compiler timestamp. A perfectly current KE state
     // can be hours old when it is packaged; using generatedAt would enqueue a
     // duplicate scan immediately after a successful refresh.
-    lastPackageAt: pkg?.createdAt.toISOString() ?? null,
+    lastPackageAt: pkg?.createdAt.toISOString() ?? latestSnapshot?.createdAt.toISOString() ?? null,
     lastAuditAt: latestAudit?.createdAt.toISOString() ?? null,
     activeJob: job && !TERMINAL_JOBS.has(job.status) ? { id: job.id, status: job.status, stage: job.stage, progress: job.progress } : null,
   };
