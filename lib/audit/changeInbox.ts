@@ -335,14 +335,13 @@ export async function requestAuditRefresh(scopeId: string): Promise<
 }
 
 async function reportReadiness(scopeId: string) {
-  const [scope, openGateTests, pendingScope, sourceHealth, reconciliation, namedAllocations, derived] = await Promise.all([
+  const [scope, openGateTests, pendingScope, sourceHealth, namedAllocations, derived] = await Promise.all([
     prisma.scope.findUnique({ where: { id: scopeId } }),
     prisma.decision.count({ where: { scopeId, status: "open", gate: { isNot: null }, OR: [
       { title: { contains: "test", mode: "insensitive" } }, { title: { contains: "address", mode: "insensitive" } },
     ] } }),
     prisma.auditChangeProposal.count({ where: { scopeId, category: "scope", status: { in: ["pending", "needs_completion"] }, relevanceClass: { not: "irrelevant_bleed" } } }),
     prisma.auditChangeProposal.count({ where: { scopeId, category: "source_health", status: { in: ["pending", "needs_completion"] } } }),
-    prisma.capacityReconciliation.findUnique({ where: { scopeId } }),
     prisma.allocation.count({ where: { scopeId, person: { active: true, synthetic: false } } }),
     prisma.projectDerivedState.findUnique({ where: { scopeId } }),
   ]);
@@ -350,7 +349,7 @@ async function reportReadiness(scopeId: string) {
   if (!scope || scope.executionState !== "configured") blockers.push({ code: "execution_truth", label: "Execution truth unavailable", targetHref: `/scope?project=${scopeId}` });
   if (openGateTests) blockers.push({ code: "test_gate", label: "Synthetic/test Decision gate present", targetHref: `/decisions?project=${scopeId}` });
   if (pendingScope) blockers.push({ code: "scope_unreconciled", label: `${pendingScope} Scope proposal${pendingScope === 1 ? "" : "s"} unreconciled`, targetHref: `/audit?project=${scopeId}` });
-  if (!namedAllocations || reconciliation?.status !== "named_exact" || !reconciliation.completenessConfirmed) blockers.push({ code: "capacity_unreconciled", label: "Named capacity unreconciled", targetHref: `/portfolio?project=${scopeId}` });
+  if (!namedAllocations) blockers.push({ code: "capacity_unreconciled", label: "Named capacity unreconciled", targetHref: `/portfolio?project=${scopeId}` });
   if (sourceHealth) blockers.push({ code: "source_health", label: `${sourceHealth} source-health issue${sourceHealth === 1 ? "" : "s"}`, targetHref: `/audit?project=${scopeId}` });
   if (!derived || derived.status !== "current" || derived.computedRevision < derived.realityRevision) blockers.push({ code: "forecast_stale", label: "Forecast consequences unavailable or stale", targetHref: `/forecast?project=${scopeId}` });
   return { ready: blockers.length === 0, label: blockers.length ? `REPORT NOT READY · ${blockers.length} blocker${blockers.length === 1 ? "" : "s"}` : "REPORT READY", blockers };

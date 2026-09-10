@@ -117,17 +117,6 @@ export default function AuditChangeInbox({
     return () => { if (pollRef.current) window.clearTimeout(pollRef.current); };
   }, [load]);
 
-  useEffect(() => {
-    const refresh = () => void load().catch((reason) => setError(reason instanceof Error ? reason.message : "Change Inbox could not be read."));
-    const sources = () => { setTab("sources"); setOpen(true); };
-    window.addEventListener("signal-audit-refresh-complete", refresh);
-    window.addEventListener("signal-audit-open-source-health", sources);
-    return () => {
-      window.removeEventListener("signal-audit-refresh-complete", refresh);
-      window.removeEventListener("signal-audit-open-source-health", sources);
-    };
-  }, [load]);
-
   const selected = payload?.proposals.find((proposal) => proposal.id === selectedId) ?? null;
   const pending = useMemo(() => payload?.proposals.filter((item) => ["pending", "needs_completion", "deferred"].includes(item.status)) ?? [], [payload]);
   const processed = useMemo(() => payload?.proposals.filter((item) => ["accepted", "rejected", "information_only"].includes(item.status)).slice(0, 12) ?? [], [payload]);

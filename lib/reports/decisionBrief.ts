@@ -140,7 +140,7 @@ export interface DecisionBriefOwnerInputs {
   dependencies: { scopeId: string; name: string; likelyDate: string | null; currentness: Currentness }[];
   capacity: {
     source: "allocations" | "explicit" | "inferred";
-    status: "named_exact" | "named_partial" | "aggregate_unreconciled" | "legacy_inferred_unstaffed" | "legacy_explicit_unstaffed";
+    status: "named_exact" | "legacy_inferred_unstaffed" | "legacy_explicit_unstaffed";
     reconciles: boolean;
     workforceFte: number;
     namedRawFte: number;

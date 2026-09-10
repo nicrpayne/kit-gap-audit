@@ -9,7 +9,7 @@
 // what the system believes is true is a different act from asking a
 // hypothetical, and should not be reachable by dragging.
 
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { SimulationResult } from "@/lib/forecast/simulate";
 import { explainScope, type DependencyDelta, type DependentDelta } from "@/lib/portfolio/explain";
 import { switchFactorFor, type CapacityContributor } from "@/lib/capacity/resolve";
@@ -60,6 +60,7 @@ interface ScenarioInspectorProps {
   scenarioCapacity: number;
   capacityBasis: CapacityBasisView;
   capacityContract: CapacityForecastContract;
+  onSaveRealityCapacity: (fte: number) => Promise<void>;
   onManagePeople: () => void;
   switchCostPct: number;
   switchCostScopes: SwitchCostScopeView[];
@@ -87,6 +88,7 @@ export default function ScenarioInspector({
   scenarioCapacity,
   capacityBasis,
   capacityContract,
+  onSaveRealityCapacity,
   onManagePeople,
   switchCostPct,
   switchCostScopes,
@@ -184,10 +186,12 @@ export default function ScenarioInspector({
       <RealitySection
         ref={capacityRef}
         scope={scope}
+        realityCapacity={realityCapacity}
         scenarioCapacity={scenarioCapacity}
         capacityChanged={capacityChanged}
         basis={capacityBasis}
         contract={capacityContract}
+        onSave={onSaveRealityCapacity}
         onManagePeople={onManagePeople}
         highlighted={focus === "capacity"}
       />
@@ -364,22 +368,53 @@ export default function ScenarioInspector({
 const RealitySection = function RealitySection({
   ref,
   scope,
+  realityCapacity,
   scenarioCapacity,
   capacityChanged,
   basis,
   contract,
+  onSave,
   onManagePeople,
   highlighted,
 }: {
   ref: React.RefObject<HTMLElement | null>;
   scope: InspectorScope;
+  realityCapacity: number;
   scenarioCapacity: number;
   capacityChanged: boolean;
   basis: CapacityBasisView;
   contract: CapacityForecastContract;
+  onSave: (fte: number) => Promise<void>;
   onManagePeople: () => void;
   highlighted: boolean;
 }) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(realityCapacity.toFixed(1));
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    setDraft(realityCapacity.toFixed(1));
+  }, [realityCapacity]);
+
+  async function save() {
+    const v = parseFloat(draft);
+    if (!Number.isFinite(v) || v <= 0) {
+      setError("Capacity has to be a number greater than zero.");
+      return;
+    }
+    setSaving(true);
+    setError(null);
+    try {
+      await onSave(v);
+      setEditing(false);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Couldn't save.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
   return (
     <section
       ref={ref}
@@ -470,15 +505,68 @@ const RealitySection = function RealitySection({
       )}
 
       <div className="mt-3 flex items-center gap-2 flex-wrap">
-        <button
-          onClick={onManagePeople}
-          data-shoot="set-actual-team"
-          className="rounded-md px-2.5 py-1.5 text-[10.5px] text-[var(--i-text-soft)] hover:text-[var(--i-text)]"
-          style={{ border: "1px solid var(--i-border-strong)" }}
-        >
-          {basis.kind === "allocations" ? "Edit actual team" : "Set actual team"}
-        </button>
+        {basis.kind === "allocations" ? (
+          <button
+            onClick={onManagePeople}
+            className="rounded-md px-2.5 py-1.5 text-[10.5px] text-[var(--i-text-soft)] hover:text-[var(--i-text)]"
+            style={{ border: "1px solid var(--i-border-strong)" }}
+          >
+            Manage people
+          </button>
+        ) : editing ? (
+          <>
+            <label className="sr-only" htmlFor="reality-capacity">
+              Actual capacity in FTE
+            </label>
+            <input
+              id="reality-capacity"
+              type="number"
+              min={0.1}
+              step={0.1}
+              value={draft}
+              autoFocus
+              onChange={(e) => setDraft(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") save();
+                if (e.key === "Escape") setEditing(false);
+              }}
+              className="w-20 rounded-md px-2 py-1.5 text-[12px] tabular-nums"
+              style={{ background: "var(--i-void)", border: "1px solid var(--i-border-strong)", color: "var(--i-text)" }}
+            />
+            <button
+              onClick={save}
+              disabled={saving}
+              data-shoot="save-reality"
+              className="rounded-md px-2.5 py-1.5 text-[10.5px] font-medium disabled:opacity-40"
+              style={{ background: "var(--i-text)", color: "var(--i-void)" }}
+            >
+              {saving ? "Saving…" : "Set actual capacity"}
+            </button>
+            <button
+              onClick={() => setEditing(false)}
+              className="text-[10.5px] text-[var(--i-text-faint)] hover:text-[var(--i-text-soft)]"
+            >
+              Cancel
+            </button>
+          </>
+        ) : (
+          <button
+            onClick={() => setEditing(true)}
+            data-shoot="edit-reality"
+            className="rounded-md px-2.5 py-1.5 text-[10.5px] text-[var(--i-text-soft)] hover:text-[var(--i-text)]"
+            style={{ border: "1px solid var(--i-border-strong)" }}
+          >
+            Set actual capacity
+          </button>
+        )}
       </div>
+      {error && <div className="mt-2 text-[11px] text-[var(--i-red)]">{error}</div>}
+      {editing && (
+        <p className="mt-2 text-[10.5px] text-[var(--i-text-faint)] leading-relaxed">
+          This changes what the system believes is true — not a hypothetical. {scope.name}&rsquo;s capacity becomes
+          a set number from now on.
+        </p>
+      )}
     </section>
   );
 };

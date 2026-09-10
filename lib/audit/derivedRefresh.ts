@@ -26,14 +26,13 @@ export async function invalidateDerivedReads(tx: Prisma.TransactionClient, scope
 }
 
 async function readinessWithoutDerived(scopeId: string) {
-  const [scope, openTestGates, pendingScope, sourceHealth, reconciliation, namedAllocations] = await Promise.all([
+  const [scope, openTestGates, pendingScope, sourceHealth, namedAllocations] = await Promise.all([
     prisma.scope.findUnique({ where: { id: scopeId } }),
     prisma.decision.count({ where: { scopeId, status: "open", gate: { isNot: null }, OR: [
       { title: { contains: "test", mode: "insensitive" } }, { title: { contains: "address", mode: "insensitive" } },
     ] } }),
     prisma.auditChangeProposal.count({ where: { scopeId, category: "scope", status: { in: ["pending", "needs_completion"] }, relevanceClass: { not: "irrelevant_bleed" } } }),
     prisma.auditChangeProposal.count({ where: { scopeId, category: "source_health", status: { in: ["pending", "needs_completion"] } } }),
-    prisma.capacityReconciliation.findUnique({ where: { scopeId } }),
     prisma.allocation.count({ where: { scopeId, person: { active: true, synthetic: false } } }),
   ]);
   const blockers: string[] = [];
@@ -41,7 +40,7 @@ async function readinessWithoutDerived(scopeId: string) {
   if (openTestGates) blockers.push("A synthetic/test Decision gate is still active.");
   if (pendingScope) blockers.push(`${pendingScope} Scope proposal${pendingScope === 1 ? " is" : "s are"} unreconciled.`);
   if (sourceHealth) blockers.push(`${sourceHealth} source-health issue${sourceHealth === 1 ? " is" : "s are"} open.`);
-  if (!namedAllocations || reconciliation?.status !== "named_exact" || !reconciliation.completenessConfirmed) blockers.push("Named capacity is unreconciled.");
+  if (!namedAllocations) blockers.push("Named capacity is unreconciled.");
   return { ready: blockers.length === 0, blockers };
 }
 

@@ -142,7 +142,7 @@ export default function ScenarioBar({
           className="rounded-md px-2.5 py-1.5 text-[11px] text-[var(--i-text-soft)] hover:text-[var(--i-text)] transition-colors"
           style={{ border: "1px solid var(--i-border-strong)" }}
         >
-          Set actual team
+          People
         </button>
         <button
           onClick={onDiscard}
@@ -164,21 +164,24 @@ export default function ScenarioBar({
         </button>
       </div>
 
-      {/* Scenario play stays available on aggregate capacity. Reality writes
-          route through the deliberate complete-roster conversion. */}
+      {/* Blocked-by-design, not an error: previewing an aggregate total on a
+          people-tracked scope is legitimate; writing it back is not, because
+          a single number can't say which person changed. */}
       {dirty && blockedCapacityScopes.length > 0 && (
         <div
           className="px-4 py-2.5 text-[11px] space-y-1"
           style={{ background: "var(--i-red-soft)", borderTop: "1px solid rgba(239,107,91,0.3)" }}
         >
-          <div className="font-semibold text-[var(--i-red)]">Reality still uses aggregate capacity.</div>
+          <div className="font-semibold text-[var(--i-red)]">Can&rsquo;t commit this capacity change:</div>
           {blockedCapacityScopes.map((s) => (
             <div key={s.scopeId} className="text-[var(--i-text-soft)]">
-              These <strong className="text-[var(--i-text)]">{s.scopeName}</strong> sliders are a scenario. To save named allocations, first establish the complete team roster.{" "}
+              <strong className="text-[var(--i-text)]">{s.scopeName}</strong> is tracked by named people
+              ({s.realityFte.toFixed(1)} FTE). Simulating it at {s.scenarioFte.toFixed(1)} is fine, but saving a
+              total wouldn&rsquo;t say who changed — adjust individual allocations under{" "}
               <button onClick={onOpenAllocations} className="underline underline-offset-2 hover:text-[var(--i-text)]">
-                Set actual team
+                People
               </button>
-              <details className="ml-2 inline"><summary className="inline cursor-pointer text-[var(--i-text-faint)]">Why?</summary><span className="ml-1 text-[var(--i-text-faint)]">The aggregate may represent people not yet named; saving only the visible subset could drop them.</span></details>
+              , or reset the fader to commit everything else.
             </div>
           ))}
         </div>

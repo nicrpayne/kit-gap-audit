@@ -21,8 +21,6 @@ function main() {
 
   const page = read("app/audit/page.tsx");
   const world = read("components/audit/AuditWorld.tsx");
-  const refreshControl = read("components/audit/AuditRefreshControl.tsx");
-  const legacyAuditRoute = read("app/api/audit/route.ts");
   const host = read("public/audit-rubric-phase2/phase2-host.js");
   const route = read("app/audit/rubric-phase3/route.ts");
   const rubricApi = read("app/api/audit/rubric/route.ts");
@@ -38,27 +36,29 @@ function main() {
     host.includes("refreshPreservingSelection('Updating Audit context')")
       && host.includes("window.BrainCore.S.refreshData(message)")
       && !host.includes("fitToView") && !host.includes("resetView"));
-  check("visible Refresh Audit control reflects knowledge state",
-    world.includes("<AuditRefreshControl")
-      && refreshControl.includes('data-shoot="audit-refresh-primary"')
-      && refreshControl.includes('return "Check for updates"')
-      && refreshControl.includes('return "Refresh Audit"'));
-  check("Refresh and secondary actions do not remount the world",
-    refreshControl.includes('signal-audit-refresh-complete')
+  check("visible Run Audit control opens the Audit-local overlay",
+    world.includes('onClick={() => { setRunOpen(true); setRunError(null); }}')
+      && world.includes('{runOpen && !fixture && (')
+      && world.includes('aria-label="Run Audit"')
+      && world.includes('absolute inset-0 z-50'));
+  check("Run Audit close and cancel do not navigate or remount the world",
+    world.match(/type="button" onClick=\{\(\) => setRunOpen\(false\)\}/g)?.length === 2
       && !world.includes("key={scopeId")
       && !world.includes("key={auditId"));
-  check("Refresh Audit uses the companion knowledge pipeline",
-    refreshControl.includes('fetch("/api/audit/knowledge"')
-      && refreshControl.includes('method: "POST"')
-      && refreshControl.includes("Waiting for a completed knowledge package")
+  check("Run Audit uses the existing canonical pipeline",
+    world.includes("event.preventDefault()")
+      && world.includes('fetch("/api/audit"')
+      && world.includes('method: "POST"')
+      && world.includes('body: JSON.stringify({ scopeId, title: runTitle, kind: runKind, content: runContent })')
       && world.includes("sendContext(updated.scope.id, \"\")"));
-  check("Refresh Audit preserves ingestion/offline/single-request protection",
-    refreshControl.includes('"offline", "unavailable", "ingesting", "refreshing"')
-      && refreshControl.includes("if (!scopeId || fixture || requesting")
-      && refreshControl.includes("Refreshing Audit…"));
-  check("direct evidence intake is retired until an upstream handoff exists",
-    refreshControl.includes("Signal does not store a private copy")
-      && legacyAuditRoute.includes("UPSTREAM_KNOWLEDGE_INTAKE_REQUIRED"));
+  check("Run Audit preserves validation, visible errors, and single-submit protection",
+    world.includes('setRunError("Choose a project and provide evidence to compare.")')
+      && world.includes('{runError && <p')
+      && (world.includes('<button disabled={running} type="submit"')
+        || world.includes('<SignalControl disabled={running} type="submit"'))
+      && world.includes('{running ? "Running…" : "Run Audit"}'));
+  check("Run Audit copy protects Reality",
+    world.includes("New Findings enter review. Reality does not change automatically."));
   check("history/current context is exposed and forwarded to the adapter",
     rubricApi.includes('mode === "context"') && rubricApi.includes('position: index === 0 ? "current" : index === 1 ? "prior" : "earlier"')
       && host.includes("if (audit) p.set('audit', audit)"));

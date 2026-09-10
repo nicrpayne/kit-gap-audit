@@ -49,7 +49,6 @@ import { contextualHref } from "@/lib/shell/context";
 import { useProjectParam } from "@/lib/shell/useProjectParam";
 import type { CapacityForecastContract } from "@/lib/capacity/contract";
 import { formatDateOnly } from "@/lib/time/dateContract";
-import ActualTeamDrawer from "@/components/portfolio/ActualTeamDrawer";
 
 // The Instrument. GET /api/portfolio/inputs is the one expensive network
 // call (Linear + findings + context, per Scope), fetched once on mount;
@@ -118,13 +117,6 @@ interface PortfolioInputsResponse {
   people: PersonRow[];
   allocations: AllocationRow[];
   contextSwitchCostPct: number;
-  reconciliations: {
-    scopeId: string;
-    status: string;
-    completenessConfirmed: boolean;
-    legacyAggregateFte: number | null;
-    legacyForecastFte: number | null;
-  }[];
 }
 
 function pairKey(personId: string, scopeId: string): string {
@@ -230,6 +222,9 @@ export default function PortfolioPageClient() {
   const { projectId: selectedScopeId, select: setSelectedScopeId } = useProjectParam(
     data ? data.scopes.map((scope) => scope.scopeId) : null
   );
+  const [removingId, setRemovingId] = useState<string | null>(null);
+  const [removeError, setRemoveError] = useState<string | null>(null);
+
   const [railHidden, setRailHidden] = useState(false);
   const [inspectorOpen, setInspectorOpen] = useState(true);
   const [inspectorFocus, setInspectorFocus] = useState<InspectorFocus>(null);
@@ -715,6 +710,37 @@ export default function PortfolioPageClient() {
     }
   }
 
+  // "Set actual capacity" -- corrects REALITY, not a hypothetical. Writes
+  // straight through the existing PATCH /api/scopes/:id and reloads, so the
+  // Scope's source becomes explicit exactly as it would from Scope settings.
+  async function saveRealityCapacity(scopeId: string, fte: number) {
+    const res = await mutateReality(`/api/scopes/${scopeId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ teamCapacity: fte }),
+    });
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(body.error ?? "Couldn't set the capacity.");
+    await load();
+  }
+
+  async function removePerson(personId: string) {
+    setRemoveError(null);
+    setRemovingId(personId);
+    try {
+      const res = await mutateReality(`/api/people/${personId}`, { method: "DELETE" });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error ?? "Couldn't remove that person.");
+      }
+      await load();
+    } catch (err) {
+      setRemoveError(err instanceof Error ? err.message : "Couldn't remove that person.");
+    } finally {
+      setRemovingId(null);
+    }
+  }
+
   function discard() {
     if (!data) return;
     setScenarioAllocations(null);
@@ -731,19 +757,10 @@ export default function PortfolioPageClient() {
   // not have -- that is useful planning -- but it cannot be written down,
   // because there is nobody to write down. Everything else the mixer can
   // express is a redistribution of humans who exist, and commits cleanly.
-  const rosterRequiredScopes = (data?.scopes ?? []).filter((scope) =>
-    changedScopeIds.has(scope.scopeId) && scope.capacityContract.status !== "named_exact"
-  );
-  const requiresRoster = rosterRequiredScopes.length > 0;
-  const canCommit = overAllocated.length === 0 && (totalRequired <= 1e-6 || requiresRoster);
+  const canCommit = overAllocated.length === 0 && totalRequired <= 1e-6;
 
   async function save() {
     if (!data || !canCommit) return;
-    if (requiresRoster) {
-      setAllocationsOpen(true);
-      setSaveError("Establish the complete actual team before committing this scenario to Reality.");
-      return;
-    }
     setSaving(true);
     setSaveError(null);
     setSaveSummary(null);
@@ -1030,12 +1047,7 @@ export default function PortfolioPageClient() {
           namedTransferCount={changedScopeIds.size}
           switchCostChanged={switchCostChanged}
           aggregateConversions={[]}
-          blockedCapacityScopes={rosterRequiredScopes.map((scope) => ({
-            scopeId: scope.scopeId,
-            scopeName: scope.name,
-            realityFte: scope.teamCapacity,
-            scenarioFte: scenarioCapacityByScope.get(scope.scopeId) ?? scope.teamCapacity,
-          }))}
+          blockedCapacityScopes={[]}
           blockedMoves={
             totalRequired > 1e-6
               ? [
@@ -1155,6 +1167,7 @@ export default function PortfolioPageClient() {
               scenarioCapacity={scenarioCapacityByScope.get(selectedScope.scopeId) ?? selectedScope.teamCapacity}
               capacityBasis={capacityBasis}
               capacityContract={selectedScope.capacityContract}
+              onSaveRealityCapacity={(fte) => saveRealityCapacity(selectedScope.scopeId, fte)}
               onManagePeople={() => setAllocationsOpen(true)}
               switchCostPct={switchCostPct}
               switchCostScopes={switchCostScopes}
@@ -1197,22 +1210,6 @@ export default function PortfolioPageClient() {
           setPatchbayOpen(false);
           setPatchbayError(null);
         }}
-      />
-      <ActualTeamDrawer
-        open={allocationsOpen}
-        onClose={() => setAllocationsOpen(false)}
-        onSaved={load}
-        scopes={data.scopes.map((scope) => ({
-          scopeId: scope.scopeId,
-          name: scope.name,
-          forecastFte: scope.teamCapacity,
-          explicitTeamCapacity: scope.explicitTeamCapacity,
-          capacitySource: scope.capacitySource,
-          reconciliationStatus: data.reconciliations.find((item) => item.scopeId === scope.scopeId)?.status ?? "aggregate_unreconciled",
-        }))}
-        people={data.people}
-        allocations={data.allocations}
-        contextSwitchCostPct={data.contextSwitchCostPct}
       />
     </>
   );

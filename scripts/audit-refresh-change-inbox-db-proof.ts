@@ -121,11 +121,6 @@ async function main() {
   assert.equal(beforeCapacity.readiness.ready, false);
   const person = await prisma.person.create({ data: { name: "Proof owner", synthetic: false } });
   await prisma.allocation.create({ data: { personId: person.id, scopeId: scope.id, fraction: 1 } });
-  await prisma.capacityReconciliation.upsert({
-    where: { scopeId: scope.id },
-    create: { scopeId: scope.id, status: "named_exact", legacySource: "inferred", namedRawFte: 1, namedEffectiveFte: 1, completenessConfirmed: true, provenance: { actor: "proof", contract: "complete-named-roster-v1" }, history: [{ event: "named_roster_reconciled" }], reconciledAt: new Date() },
-    update: { status: "named_exact", namedRawFte: 1, namedEffectiveFte: 1, completenessConfirmed: true, provenance: { actor: "proof", contract: "complete-named-roster-v1" }, history: [{ event: "named_roster_reconciled" }], reconciledAt: new Date() },
-  });
   const afterCapacity = await getAuditChangeInbox(scope.id);
   assert.ok(afterCapacity.readiness.blockers.length < beforeCapacity.readiness.blockers.length);
 

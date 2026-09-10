@@ -1359,7 +1359,7 @@ export default function AuditInstrument({ initialScopeId }: { initialScopeId?: s
           className="rounded-md px-2.5 py-1.5 text-[11px] transition-colors hover:bg-white/[0.04]"
           style={{ border: "1px solid var(--i-border-strong)", color: "var(--i-text-soft)" }}
         >
-          Evidence intake
+          New evidence audit
         </Link>
         <Link href="/audit/history" className="text-[11px]" style={{ color: "var(--i-text-faint)" }}>
           History
