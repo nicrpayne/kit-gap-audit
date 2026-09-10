@@ -233,7 +233,7 @@ check("25 review handoff never remounts Rubric", await frame.locator("#brain-can
 if (!await frame.locator("#brain-panel").isVisible()) await frame.locator("#fab-menu").click({ force: true });
 await frame.locator("#fab-legend").click({ force: true });
 check("26 Menu/Search/Legend/Inspector form the active widget family", await frame.locator("#brain-panel").isVisible() && await frame.locator("#signal-search-widget").isVisible() && await frame.locator("#brain-legend").isVisible() && await frame.locator("#brain-card").isVisible());
-check("27 Run Audit remains in the parent Signal shell", await page.locator('button:has-text("Run Audit")').count() === 1);
+check("27 Refresh Audit remains in the parent Signal shell", await page.locator('[data-shoot="audit-refresh-primary"]').count() === 1);
 await shot("04-widget-family-current-world");
 
 for (let index = 0; index < 180; index++) {

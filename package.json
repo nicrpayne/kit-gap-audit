@@ -18,7 +18,9 @@
     "proof:project-activation-phase2-db": "tsx scripts/project-activation-phase2-db-proof.ts",
     "proof:project-activation-companion-db": "tsx scripts/project-activation-companion-db-proof.ts",
     "proof:audit-change-inbox": "tsx scripts/audit-refresh-change-inbox-proof.ts",
-    "proof:audit-change-inbox-db": "tsx scripts/audit-refresh-change-inbox-db-proof.ts"
+    "proof:audit-change-inbox-db": "tsx scripts/audit-refresh-change-inbox-db-proof.ts",
+    "proof:operator-cleanup": "tsx scripts/operator-cleanup-proof.ts",
+    "proof:operator-cleanup-db": "tsx scripts/operator-cleanup-db-proof.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.32",

@@ -1,6 +1,7 @@
 import { readChannel, workforceFte } from "@/lib/capacity/workforce";
 import type { AllocationLike, PersonLike } from "@/lib/capacity/resolve";
 import type { CapacitySource } from "@/lib/forecast/build";
+import type { CapacityReconciliationStatus } from "@/lib/capacity/reconciliation";
 
 export interface CapacityForecastContract {
   scopeId: string;
@@ -9,7 +10,7 @@ export interface CapacityForecastContract {
   namedEffectiveFte: number;
   forecastEffectiveFte: number;
   source: CapacitySource;
-  status: "named_exact" | "legacy_inferred_unstaffed" | "legacy_explicit_unstaffed";
+  status: "named_exact" | "named_partial" | "aggregate_unreconciled" | "legacy_inferred_unstaffed" | "legacy_explicit_unstaffed";
   reconciles: boolean;
 }
 
@@ -25,10 +26,11 @@ export function capacityForecastContract(
   allocations: AllocationLike[],
   contextSwitchCostPct: number,
   forecastEffectiveFte: number,
-  source: CapacitySource
+  source: CapacitySource,
+  reconciliationStatus?: CapacityReconciliationStatus,
 ): CapacityForecastContract {
   const channel = readChannel({ people, allocations }, scopeId, contextSwitchCostPct);
-  const named = source === "allocations";
+  const named = source === "allocations" && (reconciliationStatus === undefined || reconciliationStatus === "named_exact");
   return {
     scopeId,
     workforceFte: workforceFte(people),
@@ -38,10 +40,13 @@ export function capacityForecastContract(
     source,
     status: named
       ? "named_exact"
+      : source === "allocations"
+        ? "named_partial"
+        : reconciliationStatus === "aggregate_unreconciled"
+          ? "aggregate_unreconciled"
       : source === "explicit"
         ? "legacy_explicit_unstaffed"
         : "legacy_inferred_unstaffed",
     reconciles: named && sameFte(channel.effective, forecastEffectiveFte),
   };
 }
-

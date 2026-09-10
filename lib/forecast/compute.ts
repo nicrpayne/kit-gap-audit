@@ -207,11 +207,14 @@ async function buildScopeSimInputs(scope: Scope): Promise<ScopeSimBundle> {
   // resolveCapacity always returns { capacity: null, source: null },
   // making this whole block a no-op -- scope.teamCapacity flows through
   // exactly as it did before Allocations existed.
-  const [people, allocations, portfolioSettings] = await Promise.all([
+  const [people, allAllocations, portfolioSettings, exactReconciliations] = await Promise.all([
     prisma.person.findMany({ where: { active: true } }),
     prisma.allocation.findMany(),
     prisma.portfolioSettings.findUnique({ where: { id: "singleton" } }),
+    prisma.capacityReconciliation.findMany({ where: { status: "named_exact", completenessConfirmed: true }, select: { scopeId: true } }),
   ]);
+  const exactScopeIds = new Set(exactReconciliations.map((item) => item.scopeId));
+  const allocations = allAllocations.filter((item) => exactScopeIds.has(item.scopeId));
   const resolved = resolveCapacity(scope.id, people, allocations, portfolioSettings?.contextSwitchCostPct ?? 0);
 
   // SERIAL GATES, from the Decision model. A Decision reaches the forecast
@@ -387,7 +390,14 @@ export interface PortfolioScopeInput {
   capacityContract: CapacityForecastContract;
   forecastSource: ForecastSourceStamp;
   forecastReadiness: { state: "ready" | "unavailable"; reason: string | null };
-  capabilities: { id: string; name: string; description: string | null; workLinkCount: number; provenance: Prisma.JsonValue }[];
+  executionState: string;
+  executionDetail: string | null;
+  capabilities: {
+    id: string; name: string; description: string | null; status: string; provenance: Prisma.JsonValue;
+    workLinkCount: number;
+    workLinks: { id: string; provider: string; externalId: string; externalUrl: string | null; state: string }[];
+  }[];
+  openShapeQuestions: { id: string; title: string; rationale: string | null; status: string }[];
 }
 
 export class ForecastUnavailableError extends Error {
@@ -448,6 +458,7 @@ export interface PortfolioInputs {
   people: Awaited<ReturnType<typeof prisma.person.findMany>>;
   allocations: Awaited<ReturnType<typeof prisma.allocation.findMany>>;
   contextSwitchCostPct: number;
+  reconciliations: Awaited<ReturnType<typeof prisma.capacityReconciliation.findMany>>;
 }
 
 // The "expensive, once per page load" half of the Phase 2 performance
@@ -461,15 +472,22 @@ export interface PortfolioInputs {
 // against this payload rather than round-tripping to a server route.
 export async function buildPortfolioInputs(): Promise<PortfolioInputs> {
   const readAt = new Date();
-  const [scopes, people, allocations, portfolioSettings] = await Promise.all([
+  const [scopes, people, allAllocations, portfolioSettings, reconciliations] = await Promise.all([
     prisma.scope.findMany({
       orderBy: { createdAt: "asc" },
-      include: { capabilities: { where: { status: "accepted" }, include: { workLinks: true }, orderBy: { createdAt: "asc" } } },
+      include: {
+        capabilities: { include: { workLinks: true }, orderBy: { createdAt: "asc" } },
+        decisions: { where: { status: "open", gate: { is: null } }, orderBy: { createdAt: "asc" } },
+      },
     }),
     prisma.person.findMany({ orderBy: { name: "asc" } }),
     prisma.allocation.findMany(),
     prisma.portfolioSettings.findUnique({ where: { id: "singleton" } }),
+    prisma.capacityReconciliation.findMany(),
   ]);
+  const reconciliationByScope = new Map(reconciliations.map((item) => [item.scopeId, item]));
+  const exactScopeIds = new Set(reconciliations.filter((item) => item.status === "named_exact" && item.completenessConfirmed).map((item) => item.scopeId));
+  const allocations = allAllocations.filter((item) => exactScopeIds.has(item.scopeId));
 
   const startDate = new Date();
   const scopeInputs: PortfolioScopeInput[] = [];
@@ -518,16 +536,21 @@ export async function buildPortfolioInputs(): Promise<PortfolioInputs> {
         allocations,
         portfolioSettings?.contextSwitchCostPct ?? 0,
         bundle.inputs.teamCapacity,
-        bundle.inputs.capacitySource
+        bundle.inputs.capacitySource,
+        (reconciliationByScope.get(scope.id)?.status ?? "aggregate_unreconciled") as "aggregate_unreconciled" | "named_partial" | "named_exact",
       ),
       forecastSource: sourceStampForIssues(bundle.issues, readAt),
       forecastReadiness: scope.executionState === "configured"
         ? { state: "ready", reason: null }
         : { state: "unavailable", reason: scope.executionState === "not_configured" ? "Missing executable work mapping" : `Execution source is ${scope.executionState}` },
+      executionState: scope.executionState,
+      executionDetail: scope.executionDetail,
       capabilities: scope.capabilities.map((capability) => ({
         id: capability.id, name: capability.name, description: capability.description,
-        workLinkCount: capability.workLinks.length, provenance: capability.provenance,
+        status: capability.status, workLinkCount: capability.workLinks.length, provenance: capability.provenance,
+        workLinks: capability.workLinks.map((link) => ({ id: link.id, provider: link.provider, externalId: link.externalId, externalUrl: link.externalUrl, state: link.state })),
       })),
+      openShapeQuestions: scope.decisions.map((decision) => ({ id: decision.id, title: decision.title, rationale: decision.rationale, status: decision.status })),
     });
   }
 
@@ -556,6 +579,7 @@ export async function buildPortfolioInputs(): Promise<PortfolioInputs> {
     people,
     allocations,
     contextSwitchCostPct: portfolioSettings?.contextSwitchCostPct ?? 0,
+    reconciliations,
   };
 }
 

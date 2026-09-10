@@ -37,6 +37,7 @@ model Scope {
   reports                 Report[]
   contextDocs             ContextDoc[]
   allocations             Allocation[]
+  capacityReconciliation  CapacityReconciliation?
   contextSnapshots        ContextSnapshot[]
   decisions               Decision[]
   gatedBy                 DecisionGate[]           @relation("GatedScope")
@@ -245,6 +246,30 @@ model Allocation {
   scope    Scope  @relation(fields: [scopeId], references: [id], onDelete: Cascade)
 
   @@unique([personId, scopeId])
+}
+
+// Durable boundary between a legacy aggregate Forecast basis and a complete,
+// operator-confirmed named roster. Allocation rows alone never prove that the
+// visible people are the whole team; this receipt is what makes them canonical.
+// Scope.teamCapacity remains untouched as historical/rollback evidence.
+model CapacityReconciliation {
+  id                    String   @id @default(cuid())
+  scopeId               String   @unique
+  scope                 Scope    @relation(fields: [scopeId], references: [id], onDelete: Cascade)
+  status                String   @default("aggregate_unreconciled") // aggregate_unreconciled | named_partial | named_exact
+  legacyAggregateFte    Float?
+  legacyForecastFte     Float?
+  legacySource          String   // explicit | inferred | allocations | unknown
+  namedRawFte           Float?
+  namedEffectiveFte     Float?
+  completenessConfirmed Boolean  @default(false)
+  provenance            Json
+  history               Json
+  reconciledAt          DateTime?
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  @@index([status])
 }
 
 // Single-row settings table for portfolio-wide knobs. Not per-Scope

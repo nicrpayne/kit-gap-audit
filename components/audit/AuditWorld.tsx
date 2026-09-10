@@ -1,12 +1,13 @@
 "use client";
 
 import Link from "@/components/instrument/SignalLink";
-import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useProjectParam } from "@/lib/shell/useProjectParam";
 import AuditFindingOverlay from "./AuditFindingOverlay";
 import worldStyles from "./AuditWorld.module.css";
 import { SignalControl } from "@/components/instrument/SignalPrimitives";
 import AuditChangeInbox from "./AuditChangeInbox";
+import AuditRefreshControl from "./AuditRefreshControl";
 
 interface ScopeOption {
   id: string;
@@ -28,13 +29,6 @@ interface AuditContextPayload {
   scope: ScopeOption;
   audits: AuditOption[];
 }
-
-const AUDIT_KINDS = [
-  { value: "transcript", label: "Meeting transcript" },
-  { value: "notes", label: "Notes" },
-  { value: "estimates", label: "Developer estimates" },
-  { value: "spreadsheet", label: "Spreadsheet / task list" },
-];
 
 function dateLabel(value: string): string {
   return new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric", year: "numeric" }).format(new Date(value));
@@ -59,12 +53,6 @@ export default function AuditWorld({
   const auditRef = useRef(auditId);
   const [worldMounted, setWorldMounted] = useState(false);
   const [worldState, setWorldState] = useState<"loading" | "ready" | "updating">("loading");
-  const [runOpen, setRunOpen] = useState(false);
-  const [runTitle, setRunTitle] = useState("");
-  const [runKind, setRunKind] = useState("transcript");
-  const [runContent, setRunContent] = useState("");
-  const [running, setRunning] = useState(false);
-  const [runError, setRunError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [findingReviewId, setFindingReviewId] = useState<string | null>(null);
 
@@ -165,6 +153,12 @@ export default function AuditWorld({
     sendContext(updated.scope.id, auditRef.current);
   }, [loadContext, sendContext]);
 
+  useEffect(() => {
+    const refreshWorld = () => void loadContext(scopeRef.current).then((updated) => sendContext(updated.scope.id, ""));
+    window.addEventListener("signal-audit-refresh-complete", refreshWorld);
+    return () => window.removeEventListener("signal-audit-refresh-complete", refreshWorld);
+  }, [loadContext, sendContext]);
+
   const selectedAudit = context?.audits.find((audit) => audit.id === auditId) ?? null;
 
   function changeScope(nextScope: string) {
@@ -183,40 +177,6 @@ export default function AuditWorld({
     setAuditId(nextAudit);
     setNotice(null);
     sendContext(scopeId, nextAudit);
-  }
-
-  async function runAudit(event: FormEvent) {
-    event.preventDefault();
-    if (!scopeId || !runContent.trim()) {
-      setRunError("Choose a project and provide evidence to compare.");
-      return;
-    }
-    setRunning(true);
-    setRunError(null);
-    try {
-      const response = await fetch("/api/audit", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ scopeId, title: runTitle, kind: runKind, content: runContent }),
-      });
-      const body = (await response.json().catch(() => ({}))) as {
-        error?: string;
-        source?: { id: string };
-        findings?: unknown[];
-      };
-      if (!response.ok || body.error) throw new Error(body.error ?? "Audit failed.");
-      setAuditId("");
-      setRunOpen(false);
-      setRunTitle("");
-      setRunContent("");
-      const updated = await loadContext(scopeId);
-      sendContext(updated.scope.id, "");
-      setNotice(`Audit complete · ${body.findings?.length ?? 0} finding${body.findings?.length === 1 ? "" : "s"} · world updated`);
-    } catch (error) {
-      setRunError(error instanceof Error ? error.message : "Audit failed.");
-    } finally {
-      setRunning(false);
-    }
   }
 
   return (
@@ -266,18 +226,7 @@ export default function AuditWorld({
         <Link href={`/audit/history${scopeId ? `?scope=${encodeURIComponent(scopeId)}` : ""}`} className="shrink-0 text-[11px]" style={{ color: "var(--i-text-faint)" }}>
           History
         </Link>
-        <SignalControl
-          type="button"
-          onClick={() => { setRunOpen(true); setRunError(null); }}
-          disabled={Boolean(fixture)}
-          status="reality"
-          aria-describedby={fixture ? "audit-run-disabled-reason" : undefined}
-          className="shrink-0 px-3 py-1.5 text-[11.5px] font-medium text-[var(--signal-status-color)]"
-          title={fixture ? "Run Audit is disabled for deterministic fixtures" : "Run Audit through Signal's canonical pipeline"}
-        >
-          Run Audit
-        </SignalControl>
-        {fixture && <span id="audit-run-disabled-reason" className="sr-only">Run Audit is disabled for deterministic fixtures.</span>}
+        <AuditRefreshControl scopeId={scopeId} fixture={fixture} />
       </header>
 
       <div className="relative min-h-0 flex-1" data-shoot="audit-world-viewport">
@@ -299,59 +248,6 @@ export default function AuditWorld({
         {contextError && (
           <div className="absolute left-1/2 top-4 z-40 -translate-x-1/2 rounded-md px-4 py-2 text-[11px]" style={{ background: "var(--i-panel)", border: "1px solid var(--i-red)", color: "var(--i-red)" }}>
             {contextError}
-          </div>
-        )}
-
-        {runOpen && !fixture && (
-          <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/55 p-6" role="presentation">
-            <form
-              onSubmit={(event) => void runAudit(event)}
-              className="signal-widget w-full max-w-[620px] p-5"
-              aria-label="Run Audit"
-            >
-              <div className="flex items-start justify-between gap-4">
-                <div>
-                  <div className="i-label text-[9px] text-[var(--i-signal)]">RUN AUDIT</div>
-                  <h2 className="mt-1 text-[18px] font-medium text-[var(--i-text)]">Compare new evidence with {context?.scope.name ?? "this project"}</h2>
-                  <p className="mt-1 text-[11px] text-[var(--i-text-soft)]">New Findings enter review. Reality does not change automatically.</p>
-                </div>
-                <button type="button" onClick={() => setRunOpen(false)} aria-label="Close Run Audit" className="text-[20px] text-[var(--i-text-faint)]">×</button>
-              </div>
-              <div className="mt-4 grid grid-cols-[1fr_190px] gap-3">
-                <input
-                  value={runTitle}
-                  onChange={(event) => setRunTitle(event.target.value)}
-                  placeholder="Audit title (optional)"
-                  className="signal-meter rounded-md px-3 py-2 text-[12px] outline-none"
-                />
-                <select
-                  value={runKind}
-                  onChange={(event) => setRunKind(event.target.value)}
-                  className="signal-meter rounded-md px-3 py-2 text-[12px] outline-none"
-                >
-                  {AUDIT_KINDS.map((kind) => <option key={kind.value} value={kind.value}>{kind.label}</option>)}
-                </select>
-              </div>
-              <textarea
-                value={runContent}
-                onChange={(event) => setRunContent(event.target.value)}
-                rows={12}
-                placeholder="Paste a transcript, notes, estimates, or task list…"
-                className="signal-meter mt-3 w-full resize-y rounded-md px-3 py-2.5 font-mono text-[11.5px] leading-relaxed outline-none"
-              />
-              {runError && <p className="mt-2 text-[11px]" style={{ color: "var(--i-red)" }}>{runError}</p>}
-              <div className="mt-4 flex items-center justify-between gap-4">
-                <Link href={`/audit/new${scopeId ? `?scope=${encodeURIComponent(scopeId)}` : ""}`} className="text-[10.5px] text-[var(--i-text-faint)] hover:text-[var(--i-text-soft)]">
-                  Need file upload? Open the full Audit form
-                </Link>
-                <div className="flex gap-2">
-                  <SignalControl type="button" onClick={() => setRunOpen(false)} className="px-3 py-1.5 text-[11px]">Cancel</SignalControl>
-                  <SignalControl disabled={running} type="submit" status="reality" className="px-3 py-1.5 text-[11px] font-medium text-[var(--signal-status-color)]">
-                    {running ? "Running…" : "Run Audit"}
-                  </SignalControl>
-                </div>
-              </div>
-            </form>
           </div>
         )}
 

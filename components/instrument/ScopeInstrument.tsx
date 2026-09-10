@@ -65,6 +65,7 @@ import { composeFeatures, type Feature, type ThreePoint } from "@/lib/scope/feat
 import { readDominance } from "@/lib/scope/constraint";
 import { formatCapacity } from "@/lib/capacity/limits";
 import { formatDateOnly } from "@/lib/time/dateContract";
+import { capabilityExecutionState, executionStateLabel, partitionProductShape, type ShapeCapability } from "@/lib/scope/productShape";
 
 const BAY_IN = "bay-in";
 const BAY_OUT = "bay-out";
@@ -202,13 +203,28 @@ export default function ScopeInstrument() {
       </InstrumentShell>
     );
 
-  if (scope.forecastReadiness.state === "unavailable" && scope.items.length === 0) {
+  const productShape = partitionProductShape(scope.capabilities);
+  if (scope.items.length === 0) {
+    const shape = productShape;
     return <InstrumentShell stateBar={strip} scopes={m.data.scopes.map((s) => ({ scopeId: s.scopeId, name: s.name }))} onSelectScope={setScopeId}>
-      <div className="flex-1 overflow-y-auto p-6" style={{ background: "var(--i-void)" }} data-shoot="scope-accepted-capabilities">
-        <div className="mx-auto max-w-[880px]"><div className="i-label" style={{ color: "var(--i-signal)" }}>Accepted product shape</div><h1 className="mt-2 text-[22px] font-semibold text-[var(--i-text)]">{scope.name}</h1>
-          <p className="mt-2 text-[11px] text-[var(--i-amber)]">FORECAST UNAVAILABLE · {scope.forecastReadiness.reason}</p>
-          <div className="mt-5 grid grid-cols-2 gap-3">{scope.capabilities.map((capability) => <article key={capability.id} className="rounded-xl border p-4" style={{ background: "var(--i-panel)", borderColor: "var(--i-border)" }}><h2 className="text-[13px] font-medium text-[var(--i-text)]">{capability.name}</h2><p className="mt-2 text-[10px] leading-relaxed text-[var(--i-text-soft)]">{capability.description ?? "No accepted description."}</p><p className="mt-3 text-[9px] uppercase tracking-[0.1em]" style={{ color: capability.workLinkCount ? "var(--i-mint)" : "var(--i-amber)" }}>{capability.workLinkCount ? `${capability.workLinkCount} execution mapping${capability.workLinkCount === 1 ? "" : "s"}` : "Execution mapping missing"}</p></article>)}</div>
-          {scope.capabilities.length === 0 && <div className="mt-5 rounded-xl border border-dashed p-8 text-center text-[11px] text-[var(--i-text-faint)]" style={{ borderColor: "var(--i-border-strong)" }}>No capabilities were accepted at activation. The first Audit records this representation gap.</div>}
+      <div className="flex-1 overflow-y-auto p-6" style={{ background: "var(--i-void)" }} data-shoot="scope-product-shape">
+        <div className="mx-auto max-w-[980px]">
+          <div className="flex items-start justify-between gap-4"><div><div className="i-label" style={{ color: "var(--i-signal)" }}>PRODUCT SHAPE</div><h1 className="mt-2 text-[22px] font-semibold text-[var(--i-text)]">{scope.name}</h1></div><div className="rounded-md border border-[var(--i-amber)]/30 bg-[var(--i-amber)]/5 px-3 py-2 text-right"><div className="i-label text-[var(--i-amber)]">EXECUTION COVERAGE UNRESOLVED</div><p className="mt-1 max-w-[360px] text-[9.5px] text-[var(--i-text-soft)]">{scope.executionDetail ?? scope.forecastReadiness.reason ?? "No current executable work is mapped."}</p></div></div>
+
+          <section className="mt-5" data-shoot="scope-accepted-capabilities"><div className="i-label text-[var(--i-signal)]">WHAT ARE WE SHIPPING? · ACCEPTED PRODUCT SHAPE</div>
+            <div className="mt-2 grid grid-cols-2 gap-3">{shape.accepted.map((capability) => { const execution = capabilityExecutionState(capability, scope.executionState); return <article key={capability.id} className="rounded-xl border p-4" style={{ background: "var(--i-panel)", borderColor: "var(--i-border)" }}><h2 className="text-[13px] font-medium text-[var(--i-text)]">{capability.name}</h2><p className="mt-2 text-[10px] leading-relaxed text-[var(--i-text-soft)]">{capability.description ?? "Accepted capability; no canonical description supplied."}</p><p className="mt-3 text-[9px] uppercase tracking-[0.1em]" style={{ color: execution === "mapped" ? "var(--i-mint)" : "var(--i-amber)" }}>{executionStateLabel(execution)}</p>{capability.workLinks.length > 0 && <ul className="mt-2 space-y-1">{capability.workLinks.map((link) => <li key={link.id} className="text-[9.5px] text-[var(--i-text-faint)]">{link.provider} · {link.externalId} · {link.state}</li>)}</ul>}</article>; })}</div>
+            {shape.accepted.length === 0 && <div className="mt-2 rounded-xl border border-dashed p-6 text-[11px] text-[var(--i-text-faint)]" style={{ borderColor: "var(--i-border-strong)" }}>No canonical Capability rows are accepted yet. Audit proposals and Findings remain outside Scope until the Scope owner accepts them.</div>}
+          </section>
+
+          <section className="mt-5" data-shoot="scope-outside-release"><div className="i-label">WHAT ARE WE NOT SHIPPING? · OUT OF RELEASE / EXCLUDED / DEFERRED</div>
+            {shape.outsideRelease.length > 0 ? <div className="mt-2 grid grid-cols-2 gap-2">{shape.outsideRelease.map((capability) => <article key={capability.id} className="rounded-lg border border-[var(--i-border)] bg-[var(--i-recess)] p-3"><div className="flex items-start justify-between gap-2"><h2 className="text-[11.5px] text-[var(--i-text-soft)]">{capability.name}</h2><span className="text-[8.5px] uppercase tracking-wide text-[var(--i-amber)]">{capability.status.replaceAll("_", " ")}</span></div><p className="mt-1 text-[9.5px] text-[var(--i-text-faint)]">{capability.description ?? "No canonical explanation supplied."}</p></article>)}</div> : <p className="mt-2 text-[10px] text-[var(--i-text-faint)]">No governed capabilities are explicitly outside this release.</p>}
+          </section>
+
+          <section className="mt-5" data-shoot="scope-open-shape-questions"><div className="i-label">WHAT IS STILL UNRESOLVED? · OPEN SHAPE QUESTIONS</div>
+            {scope.openShapeQuestions.length > 0 ? <div className="mt-2 space-y-2">{scope.openShapeQuestions.map((decision) => <Link key={decision.id} href={`/decisions?project=${encodeURIComponent(scope.scopeId)}&selected=decision%3A${encodeURIComponent(decision.id)}`} className="block rounded-lg border border-[var(--i-amber)]/25 bg-[var(--i-amber)]/[0.035] p-3"><div className="text-[8.5px] uppercase tracking-wide text-[var(--i-amber)]">Open Decision · not promoted into Scope</div><div className="mt-1 text-[11.5px] text-[var(--i-text)]">{decision.title}</div><p className="mt-1 text-[9.5px] text-[var(--i-text-soft)]">{decision.rationale}</p></Link>)}</div> : <p className="mt-2 text-[10px] text-[var(--i-text-faint)]">No open, ungated project Decisions currently define an unresolved boundary.</p>}
+          </section>
+
+          <section className="mt-5 rounded-xl border border-[var(--i-border)] bg-[var(--i-panel)] p-4" data-shoot="scope-execution-work"><div className="i-label">WHAT PART HAS EXECUTION WORK? · EXECUTION WORK</div><p className="mt-2 text-[10.5px] text-[var(--i-amber)]">Zero current Linear work is available for this project. Product shape remains visible; execution coverage is not inferred or fabricated.</p></section>
         </div>
       </div>
     </InstrumentShell>;
@@ -383,6 +399,13 @@ export default function ScopeInstrument() {
                 />
               </div>
 
+              <ProductShapeSummary
+                accepted={productShape.accepted}
+                outsideRelease={productShape.outsideRelease}
+                openQuestions={scope.openShapeQuestions}
+                executionState={scope.executionState}
+              />
+
               {/* ── MAIN: the deck, then the strata it rests on ─────────── */}
               <div className="flex-1 min-h-0 flex flex-col gap-3.5 px-5 pb-3.5">
                 <div className="flex-1 min-h-0 flex gap-3.5">
@@ -549,6 +572,41 @@ export default function ScopeInstrument() {
 
 function nameOf(features: Feature[], id: string | number) {
   return features.find((f) => f.id === id)?.name ?? "capability";
+}
+
+function ProductShapeSummary({
+  accepted,
+  outsideRelease,
+  openQuestions,
+  executionState,
+}: {
+  accepted: ShapeCapability[];
+  outsideRelease: ShapeCapability[];
+  openQuestions: { id: string; title: string; rationale: string | null; status: string }[];
+  executionState: string;
+}) {
+  return (
+    <div className="mx-5 mb-3 grid shrink-0 grid-cols-3 gap-2" data-shoot="scope-product-shape-summary">
+      <div className="min-w-0 rounded-lg border border-[var(--i-border)] bg-[var(--i-panel)] px-3 py-2">
+        <div className="i-label text-[var(--i-signal)]">Accepted product shape</div>
+        <div className="mt-1 flex gap-1 overflow-x-auto pb-0.5">
+          {accepted.map((capability) => {
+            const state = capabilityExecutionState(capability, executionState);
+            return <span key={capability.id} title={`${capability.name} · ${executionStateLabel(state)}`} className="shrink-0 rounded border border-[var(--i-border)] px-1.5 py-1 text-[9px] text-[var(--i-text-soft)]">{capability.name} <span style={{ color: state === "mapped" ? "var(--i-mint)" : "var(--i-amber)" }}>· {executionStateLabel(state)}</span></span>;
+          })}
+          {accepted.length === 0 && <span className="text-[9px] text-[var(--i-text-faint)]">No accepted Capability records</span>}
+        </div>
+      </div>
+      <div className="min-w-0 rounded-lg border border-[var(--i-border)] bg-[var(--i-recess)] px-3 py-2">
+        <div className="i-label">Outside release</div>
+        <div className="mt-1 truncate text-[9px] text-[var(--i-text-faint)]">{outsideRelease.length > 0 ? outsideRelease.map((item) => `${item.name} · ${item.status.replaceAll("_", " ")}`).join("   /   ") : "No governed exclusions or deferrals"}</div>
+      </div>
+      <div className="min-w-0 rounded-lg border border-[var(--i-amber)]/20 bg-[var(--i-amber)]/[0.025] px-3 py-2">
+        <div className="i-label text-[var(--i-amber)]">Open shape questions</div>
+        <div className="mt-1 truncate text-[9px] text-[var(--i-text-faint)]">{openQuestions.length > 0 ? openQuestions.map((item) => item.title).join("   /   ") : "No unresolved boundary Decisions"}</div>
+      </div>
+    </div>
+  );
 }
 
 /** The carried module leans into its own horizontal motion — a couple of

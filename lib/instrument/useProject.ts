@@ -75,12 +75,18 @@ export interface ProjectScope {
     namedEffectiveFte: number;
     forecastEffectiveFte: number;
     source: "allocations" | "explicit" | "inferred";
-    status: "named_exact" | "legacy_inferred_unstaffed" | "legacy_explicit_unstaffed";
+    status: "named_exact" | "named_partial" | "aggregate_unreconciled" | "legacy_inferred_unstaffed" | "legacy_explicit_unstaffed";
     reconciles: boolean;
   };
   forecastSource: { asOf: string; provider: "Linear"; temporalRole: "live"; availability: "available" | "empty" };
   forecastReadiness: { state: "ready" | "unavailable"; reason: string | null };
-  capabilities: { id: string; name: string; description: string | null; workLinkCount: number; provenance: unknown }[];
+  executionState: string;
+  executionDetail: string | null;
+  capabilities: {
+    id: string; name: string; description: string | null; status: string; workLinkCount: number; provenance: unknown;
+    workLinks: { id: string; provider: string; externalId: string; externalUrl: string | null; state: string }[];
+  }[];
+  openShapeQuestions: { id: string; title: string; rationale: string | null; status: string }[];
 }
 
 export interface ProjectFinding {

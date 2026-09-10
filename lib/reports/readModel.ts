@@ -104,7 +104,7 @@ export async function loadDecisionBriefOwnerInputs(
 ): Promise<DecisionBriefOwnerInputs> {
   const generatedAt = new Date().toISOString();
   const forecast = await computeForecast(scope);
-  const [previousReport, audit, decisions, dependencyScopes, people, allocations, settings, timelineEvents, contextSnapshot, kitConstruct] = await Promise.all([
+  const [previousReport, audit, decisions, dependencyScopes, people, allocations, settings, reconciliation, timelineEvents, contextSnapshot, kitConstruct] = await Promise.all([
     prisma.report.findFirst({
       where: { scopeId: scope.id },
       orderBy: { generatedAt: "desc" },
@@ -127,6 +127,7 @@ export async function loadDecisionBriefOwnerInputs(
     prisma.person.findMany({ where: { active: true }, orderBy: { name: "asc" } }),
     prisma.allocation.findMany(),
     prisma.portfolioSettings.findUnique({ where: { id: "singleton" } }),
+    prisma.capacityReconciliation.findUnique({ where: { scopeId: scope.id } }),
     prisma.timelineEvent.findMany({
       where: { scopeId: scope.id },
       orderBy: [{ date: "asc" }, { id: "asc" }],
@@ -147,7 +148,8 @@ export async function loadDecisionBriefOwnerInputs(
     allocations,
     settings?.contextSwitchCostPct ?? 0,
     forecast.breakdown.teamCapacity,
-    forecast.breakdown.capacitySource
+    forecast.breakdown.capacitySource,
+    (reconciliation?.status ?? "aggregate_unreconciled") as "aggregate_unreconciled" | "named_partial" | "named_exact",
   );
   const contributors = forecast.breakdown.capacityContributors.map((contributor) => ({
     personId: contributor.personId,

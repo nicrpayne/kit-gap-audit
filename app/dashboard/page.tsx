@@ -27,7 +27,7 @@ export default async function DashboardPage() {
       eyebrow="Workbench dashboard"
       title="Clarity, at a glance"
       lede="The pre-Signal summary, kept for reference. The Control Room is the current front door."
-      actions={<SurfaceAction href="/audit/new">+ New audit</SurfaceAction>}
+      actions={<SurfaceAction href="/audit">Refresh Audit</SurfaceAction>}
     >
       <div className="mb-10 grid grid-cols-3 gap-3">
         <Count
@@ -52,7 +52,7 @@ export default async function DashboardPage() {
         <SurfaceEmpty>
           No audits yet.{" "}
           <Link href="/audit/new" className="text-[var(--i-signal)] hover:underline">
-            Run your first one
+            Open Audit
           </Link>
           .
         </SurfaceEmpty>

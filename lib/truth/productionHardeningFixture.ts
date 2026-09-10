@@ -59,7 +59,10 @@ const scope = (
     availability: "available",
   },
   forecastReadiness: { state: "ready", reason: null },
-  capabilities: [],
+    capabilities: [],
+    openShapeQuestions: [],
+    executionState: "configured",
+    executionDetail: null,
 });
 
 export const hardeningDecisions: DecisionRow[] = [
