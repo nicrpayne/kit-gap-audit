@@ -50,7 +50,7 @@ export async function GET(req: NextRequest) {
   const previousReport = recentReports[0] ?? null;
 
   let momentum = null;
-  if (previousReport) {
+  if (previousReport && result.forecastCoverage.canonicalForecast) {
     const changes = await computeChangesSince(scope, result, previousReport.generatedAt);
     const m = computeMomentum(
       { generatedAt: new Date(), likelyDate: result.likelyDate, confidenceAtTarget: result.confidenceAtTarget },

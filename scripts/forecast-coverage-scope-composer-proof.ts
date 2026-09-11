@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { evaluateForecastCoverage } from "../lib/forecast/coverage";
+import { evaluateForecastCoverage, inheritDependencyCoverage } from "../lib/forecast/coverage";
 import { runPortfolioSimulation } from "../lib/forecast/portfolio";
 import { composeScopeFeatures } from "../lib/scope/features";
 import { partitionProductShape, type ShapeCapability } from "../lib/scope/productShape";
@@ -67,6 +67,10 @@ const platformCoverage = evaluateForecastCoverage({
   openShapeDecisionCount: 0,
 });
 assert.equal(platformCoverage.state, "forecastable");
+const downstreamCoverage = inheritDependencyCoverage(platformCoverage, [{ name: "iTrack", coverage: iTrackCoverage }]);
+assert.equal(downstreamCoverage.state, "modeled_subset");
+assert.equal(downstreamCoverage.canonicalForecast, false);
+assert.ok(downstreamCoverage.reasons.some((reason) => reason.code === "dependency_coverage_incomplete"));
 
 const capabilities: ShapeCapability[] = [
   { id: "accepted-mapped", name: "Accepted mapped", description: null, status: "accepted", workLinks: [{ id: "link-1", provider: "linear", externalId: "SOF-1", externalUrl: null, state: "active" }] },
@@ -122,11 +126,13 @@ console.log(JSON.stringify({
   coverage: {
     iTrack: iTrackCoverage.state,
     platform: platformCoverage.state,
+    downstreamOfIncompleteProject: downstreamCoverage.state,
     canonicalConfidenceExposedForITrack: iTrackCoverage.canonicalForecast,
   },
   composer: {
     acceptedMapped: mapped?.items.length,
-    acceptedUnmapped: unmappedAccepted?.items.length,
+    acceptedUnmappedCard: Boolean(unmappedAccepted),
+    acceptedUnmappedWorkItems: unmappedAccepted?.items.length,
     noCapabilityYet: noCapability?.items.length,
     outsideRelease: 1,
   },

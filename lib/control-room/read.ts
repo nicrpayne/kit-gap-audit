@@ -447,7 +447,7 @@ export function readControlRoom(i: ControlRoomInput): ControlRoomReading {
       likelyMs = r.likelyDate.getTime();
       gatedByScopeId = s.scopeId;
     }
-    if (s.targetDate && r.likelyDate > new Date(s.targetDate)) scopesPastTarget += 1;
+    if (s.forecastCoverage.canonicalForecast && s.targetDate && r.likelyDate > new Date(s.targetDate)) scopesPastTarget += 1;
   }
   const gatingScope = data.scopes.find((s) => s.scopeId === gatedByScopeId) ?? null;
   const gatingSim = gatedByScopeId ? preview.get(gatedByScopeId) ?? null : null;
@@ -570,6 +570,7 @@ export function readControlRoom(i: ControlRoomInput): ControlRoomReading {
       // Has the backlog stopped being what decides this date? Scope's own
       // reading, reused rather than re-derived.
       const scope = data.scopes.find((s) => s.scopeId === lane.scopeId);
+      const upstreamScope = data.scopes.find((s) => s.scopeId === upId);
       const dom =
         scope && floorByScope
           ? readDominance(
@@ -590,13 +591,17 @@ export function readControlRoom(i: ControlRoomInput): ControlRoomReading {
         // pushing something past its target, or has taken the date away
         // from the backlog, gets the sentence explaining it.
         detail:
-          overrun !== null && overrun > 0
+          !scope?.forecastCoverage.canonicalForecast || !upstreamScope?.forecastCoverage.canonicalForecast
+            ? "Execution coverage is unresolved; the modeled dependency date is not a canonical delivery forecast."
+            : overrun !== null && overrun > 0
             ? `${upName} is not expected until ${formatDateOnly(upSim.likelyDate, { month: "short", day: "numeric" })} — after ${lane.name}'s own target.`
             : dom?.dominated
               ? `${lane.name}'s backlog has stopped deciding its date. What it waits on decides it.`
               : "",
         quantity:
-          overrun !== null && overrun > 0
+          !scope?.forecastCoverage.canonicalForecast || !upstreamScope?.forecastCoverage.canonicalForecast
+            ? "coverage unresolved"
+            : overrun !== null && overrun > 0
             ? `${overrun}d past ${lane.name}'s target`
             : dom?.dominated
               ? "backlog no longer decides"
@@ -753,6 +758,10 @@ export function readControlRoom(i: ControlRoomInput): ControlRoomReading {
       continue;
     }
 
+    // A modeled subset cannot support a delivery-overrun claim. Its target
+    // remains visible elsewhere, but it does not become a canonical risk.
+    if (!s.forecastCoverage.canonicalForecast) continue;
+
     constraints.push({
       id: `late:${s.scopeId}`,
       label: `${s.name} lands after its target`,
@@ -774,7 +783,7 @@ export function readControlRoom(i: ControlRoomInput): ControlRoomReading {
       href: "/audit",
     });
   }
-  if (outcome.spreadDays !== null && outcome.spreadDays > 14) {
+  if (outcome.coverageState === "forecastable" && outcome.spreadDays !== null && outcome.spreadDays > 14) {
     constraints.push({
       id: "spread",
       label: `${outcome.gatedBy} could land across a wide range`,

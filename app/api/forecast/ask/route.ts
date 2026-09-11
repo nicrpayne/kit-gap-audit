@@ -48,6 +48,25 @@ export async function POST(req: NextRequest) {
     );
   }
 
+  if (!forecast.forecastCoverage.canonicalForecast) {
+    return NextResponse.json(
+      {
+        error: forecast.forecastCoverage.label,
+        code: "FORECAST_COVERAGE_INCOMPLETE",
+        forecastCoverage: forecast.forecastCoverage,
+        modeledSubsetOutcome:
+          forecast.forecastCoverage.state === "modeled_subset"
+            ? {
+                likelyDate: forecast.likelyDate,
+                earliestDate: forecast.earliestDate,
+                latestDate: forecast.latestDate,
+              }
+            : null,
+      },
+      { status: 409 }
+    );
+  }
+
   const previousReport = await prisma.report.findFirst({
     where: { scopeId: scope.id },
     orderBy: { generatedAt: "desc" },

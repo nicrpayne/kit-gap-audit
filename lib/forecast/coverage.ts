@@ -15,7 +15,8 @@ export type ForecastCoverageReasonCode =
   | "execution_source_empty"
   | "accepted_scope_unmapped"
   | "accepted_scope_mapping_missing_from_source"
-  | "shape_decisions_open";
+  | "shape_decisions_open"
+  | "dependency_coverage_incomplete";
 
 export interface ForecastCoverageReason {
   code: ForecastCoverageReasonCode;
@@ -35,6 +36,7 @@ export interface ForecastCoverageContract {
     acceptedCapabilityCount: number;
     mappedAcceptedCapabilityCount: number;
     openShapeDecisionCount: number;
+    incompleteDependencyCount: number;
   };
 }
 
@@ -84,6 +86,7 @@ export function evaluateForecastCoverage(input: ForecastCoverageInput): Forecast
     acceptedCapabilityCount: accepted.length,
     mappedAcceptedCapabilityCount: linked.length,
     openShapeDecisionCount: input.openShapeDecisionCount,
+    incompleteDependencyCount: 0,
   };
 
   if (input.executionState === "not_configured") {
@@ -142,6 +145,38 @@ export function evaluateForecastCoverage(input: ForecastCoverageInput): Forecast
     caveat: null,
     reasons: [],
     census,
+  };
+}
+
+/** A delivery claim also inherits the coverage truth of every predecessor
+    whose completion is part of its simulated date. */
+export function inheritDependencyCoverage(
+  own: ForecastCoverageContract,
+  dependencies: { name: string; coverage: ForecastCoverageContract }[],
+): ForecastCoverageContract {
+  const incomplete = dependencies.filter((dependency) => !dependency.coverage.canonicalForecast);
+  if (incomplete.length === 0) return own;
+
+  const unavailableDependency = incomplete.some((dependency) => dependency.coverage.state === "unavailable");
+  const dependencyReason: ForecastCoverageReason = {
+    code: "dependency_coverage_incomplete",
+    label: `${incomplete.length} ${incomplete.length === 1 ? "dependency has" : "dependencies have"} incomplete execution coverage (${incomplete.map((dependency) => dependency.name).join(", ")})`,
+    count: incomplete.length,
+  };
+  const reasons = [...own.reasons, dependencyReason];
+  const state: ForecastCoverageState = own.state === "unavailable" || unavailableDependency ? "unavailable" : "modeled_subset";
+
+  return {
+    ...own,
+    state,
+    canonicalForecast: false,
+    label: state === "unavailable" ? "FORECAST UNAVAILABLE" : "FORECAST INCOMPLETE — EXECUTION COVERAGE UNRESOLVED",
+    reason: reasons.map((reason) => reason.label).join("; "),
+    caveat: state === "unavailable"
+      ? "Signal has no reliable execution input for the full dependency closure."
+      : "Unmapped accepted scope or unresolved execution work is excluded.",
+    reasons,
+    census: { ...own.census, incompleteDependencyCount: incomplete.length },
   };
 }
 

@@ -275,7 +275,8 @@ export default function ProjectField({
 
           {/* ── LANES ─────────────────────────────────────────────── */}
           {lanes.map((l, idx) => {
-            const on = lit(l.scopeId);
+              const on = lit(l.scopeId);
+              const landingTone = l.coverageState === "forecastable" ? forecast : "var(--i-amber)";
             const y = midY(idx);
             const selected = selection?.kind === "lane" && selection.id === l.scopeId;
             const isGating = field.gatingScopeId === l.scopeId;
@@ -402,19 +403,19 @@ export default function ProjectField({
                       width={Math.max(3, x(l.p90 ?? l.p50) - x(l.p10 ?? l.p50))}
                       height={12}
                       rx={6}
-                      fill={forecast}
+                      fill={landingTone}
                       opacity={0.2}
                     />
                     {/* P50, the date the project is reported at. */}
-                    <rect x={x(l.p50) - 1.25} y={y - 9} width={2.5} height={18} rx={1} fill={forecast} />
+                    <rect x={x(l.p50) - 1.25} y={y - 9} width={2.5} height={18} rx={1} fill={landingTone} />
                     <text
                       x={x(l.p90 ?? l.p50) + 7}
                       y={y + 3.5}
                       fontSize={10}
-                      fill={forecast}
+                      fill={landingTone}
                       className="i-readout"
                     >
-                      {dShort(new Date(field.startDate.getTime() + l.p50 * 86400000))}
+                      {l.coverageState === "forecastable" ? dShort(new Date(field.startDate.getTime() + l.p50 * 86400000)) : `subset ~${dShort(new Date(field.startDate.getTime() + l.p50 * 86400000))}`}
                     </text>
 
                     {/* Reality's own landing while a Scenario runs, so the

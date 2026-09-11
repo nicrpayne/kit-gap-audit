@@ -662,7 +662,7 @@ export default function CapabilityTile({
           <div className="relative mt-1 shrink-0 flex items-center justify-between text-[9px] text-[var(--i-text-faint)]">
             <span>
               {f.items.length === 0 && f.done.length === 0
-                ? "no work mapped"
+                ? f.source === "canonical" ? "NO EXECUTION WORK MAPPED" : "no work mapped"
                 : `uncertainty ${uncertaintyLabel(f.uncertainty).toLowerCase()}`}
             </span>
             <span className="flex items-center gap-[3px]" aria-label={mapped > 0 ? `${f.done.length} of ${mapped} done` : undefined}>

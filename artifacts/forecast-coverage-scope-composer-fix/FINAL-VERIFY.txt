@@ -1,0 +1,20 @@
+BASE
+production commit 73e93f045468d9f04a8fcf33e930f64927476d4c
+production tree   034c56f8314abef6f2722458c70c7e7cb61a860f
+live deployment   55da5081-e336-4a00-bff3-18b6def91136
+
+PROTECTED FINAL HASHES (MATCH BASELINE)
+08781ab7374fb7b88394fa68ee83597deec3b235454d0467fc87bea31be0f7a1  lib/forecast/simulate.ts
+a5bc14af9c8547c524e87411c418ff1dcad87193f7d03fd27f9ddd346193e0ee  lib/forecast/portfolio.ts
+efa2678c8c62fe2b85fec8826d7778c6dcecb23543f5426501488ba967caa213  public/audit-rubric-phase1/_core.js
+2fb3e9937a141df8ec9233c851426f845718216c54fb6336752291b539b07496  public/audit-rubric-phase1/_flows2.js
+51797b9f261c03255db8cc660897812f1106d16e4ca1eacaeb7f94de7bc7a06a  public/audit-rubric-phase1/_core.css
+59dfd3e24f8cf7504c05609eb0063c22898950c33f45facea13b92c2b173f48a  public/audit-rubric-phase1/_icons.js
+
+SAFETY
+production reads only
+production governed writes 0
+deployments 0
+protected engine files changed 0
+protected Rubric files changed 0
+disposable local database/container removed

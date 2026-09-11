@@ -16,7 +16,7 @@ import { estimateContentHash, findingContentHash } from "@/lib/estimate/run";
 import { buildReleaseContext } from "@/lib/estimate/context";
 import { resolveCapacity, type CapacityContributor } from "@/lib/capacity/resolve";
 import { capacityForecastContract, type CapacityForecastContract } from "@/lib/capacity/contract";
-import { evaluateForecastCoverage, type ForecastCoverageContract } from "@/lib/forecast/coverage";
+import { evaluateForecastCoverage, inheritDependencyCoverage, type ForecastCoverageContract } from "@/lib/forecast/coverage";
 
 export interface ForecastFinding {
   id: string;
@@ -296,7 +296,21 @@ export async function readForecastCoverage(scope: Scope): Promise<ForecastCovera
       openShapeDecisionCount: 0,
     });
   }
-  return (await buildScopeSimInputs(scope)).forecastCoverage;
+  const own = await buildScopeSimInputs(scope);
+  if (scope.dependsOnScopeIds.length === 0) return own.forecastCoverage;
+
+  const closure = await collectDependencyClosure(scope);
+  const dependencies: { name: string; coverage: ForecastCoverageContract }[] = [];
+  for (const dependency of closure) {
+    if (dependency.id === scope.id) continue;
+    dependencies.push({
+      name: dependency.name,
+      coverage: dependency.executionState === "not_configured" || dependency.executionState === "unavailable"
+        ? evaluateForecastCoverage({ executionState: dependency.executionState, issueIds: [], capabilities: [], openShapeDecisionCount: 0 })
+        : (await buildScopeSimInputs(dependency)).forecastCoverage,
+    });
+  }
+  return inheritDependencyCoverage(own.forecastCoverage, dependencies);
 }
 
 // One modelled work item, plus the provenance the Scope instrument needs to
@@ -619,6 +633,33 @@ export async function buildPortfolioInputs(): Promise<PortfolioInputs> {
     scope.forecastSource = weakestSourceStamp(sourceClosure(scope.scopeId), readAt);
   }
 
+  const coverageMemo = new Map<string, ForecastCoverageContract>();
+  const coverageFor = (scopeId: string, visiting = new Set<string>()): ForecastCoverageContract | null => {
+    const memoized = coverageMemo.get(scopeId);
+    if (memoized) return memoized;
+    const current = scopeById.get(scopeId);
+    if (!current) return null;
+    if (visiting.has(scopeId)) return current.forecastCoverage;
+    const nextVisiting = new Set(visiting).add(scopeId);
+    const inherited = inheritDependencyCoverage(
+      current.forecastCoverage,
+      current.dependsOnScopeIds.flatMap((dependencyId) => {
+        const dependency = scopeById.get(dependencyId);
+        const coverage = coverageFor(dependencyId, nextVisiting);
+        return dependency && coverage ? [{ name: dependency.name, coverage }] : [];
+      }),
+    );
+    coverageMemo.set(scopeId, inherited);
+    return inherited;
+  };
+  for (const scope of scopeInputs) {
+    scope.forecastCoverage = coverageFor(scope.scopeId) ?? scope.forecastCoverage;
+    scope.forecastReadiness = {
+      state: scope.forecastCoverage.state === "forecastable" ? "ready" : scope.forecastCoverage.state,
+      reason: scope.forecastCoverage.reason,
+    };
+  }
+
   return {
     startDate,
     forecastSource: weakestSourceStamp(scopeInputs.map((scope) => scope.forecastSource), readAt),
@@ -685,6 +726,7 @@ export async function computeForecast(scope: Scope): Promise<ForecastResult> {
   let base: SimulationResult;
   let rawScenarios: ForecastScenario[];
   const sourceStamps = [sourceStampForIssues(own.issues, readAt)];
+  const dependencyCoverage: { name: string; coverage: ForecastCoverageContract }[] = [];
 
   if (scope.dependsOnScopeIds.length === 0) {
     const scenarioRun = buildScenarios(inputs, startDate, scope.targetDate);
@@ -695,7 +737,10 @@ export async function computeForecast(scope: Scope): Promise<ForecastResult> {
     const specs: ScopeSimulationSpec[] = [];
     for (const s of closure) {
       const bundle = s.id === scope.id ? own : await buildScopeSimInputs(s);
-      if (s.id !== scope.id) sourceStamps.push(sourceStampForIssues(bundle.issues, readAt));
+      if (s.id !== scope.id) {
+        sourceStamps.push(sourceStampForIssues(bundle.issues, readAt));
+        dependencyCoverage.push({ name: s.name, coverage: bundle.forecastCoverage });
+      }
       specs.push({
         scopeId: s.id,
         items: bundle.inputs.items,
@@ -726,7 +771,7 @@ export async function computeForecast(scope: Scope): Promise<ForecastResult> {
   return {
     forecastSource: weakestSourceStamp(sourceStamps, readAt),
     executionSource: sourceStampForIssues(own.issues, readAt),
-    forecastCoverage: own.forecastCoverage,
+    forecastCoverage: inheritDependencyCoverage(own.forecastCoverage, dependencyCoverage),
     issues: own.issues,
     findings: own.findings,
     notionDocs: own.notionDocs,

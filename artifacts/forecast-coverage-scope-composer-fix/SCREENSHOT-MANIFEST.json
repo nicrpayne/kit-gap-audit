@@ -1,0 +1,41 @@
+{
+  "viewport": { "width": 2048, "height": 1323, "deviceScaleFactor": 1 },
+  "environment": "disposable-local-production-shaped-fixture",
+  "screenshots": [
+    {
+      "file": "screenshots/after/01-jsa-unified-scope-composer.png",
+      "sha256": "66e640da392d18f46e063a33a563a801fadf02bf6a79f5d0227235e2819ed0d4",
+      "assertions": ["original Scope Composer chassis", "2 accepted capability cards", "NO EXECUTION WORK MAPPED", "7 governed outside-release capabilities", "1 open shape Decision"]
+    },
+    {
+      "file": "screenshots/after/02-itrack-unified-scope-composer.png",
+      "sha256": "216033d33b3c884419fc960401f39daa56daf773c2b24ad2f42dc1e3a85ff182",
+      "assertions": ["original Scope Composer chassis", "iTrack Quality provision-only in outside-release rail", "4 open shape Decisions", "zero execution warning"]
+    },
+    {
+      "file": "screenshots/after/03-platform-scope-composer-unchanged-chassis.png",
+      "sha256": "5a9081785c866134a3ec407c05282b4d7825a4a0f0fd179327829907e66c22bf",
+      "assertions": ["original Scope Composer chassis", "NO CAPABILITY YET", "execution coverage complete"]
+    },
+    {
+      "file": "screenshots/after/04-itrack-forecast-modeled-subset.png",
+      "sha256": "abd60e85a2627033aded6bc5e814edefb265baef23d8752469c9ae27c960fd33",
+      "assertions": ["FORECAST INCOMPLETE", "MODELED SUBSET OUTCOME", "no project-level confidence"]
+    },
+    {
+      "file": "screenshots/after/05-control-room-coverage.png",
+      "sha256": "b8146991b01a98c09652d3f31aaa2039a6c7188b71265a7edeeb6f0da37866fe",
+      "assertions": ["Likely Outcome INCOMPLETE", "subset date secondary", "no full-project confidence", "embedded timeline subset labels"]
+    },
+    {
+      "file": "screenshots/after/06-timeline-coverage.png",
+      "sha256": "26857837cc6d848dcdfa79d6c3454a02fb8bee97c4dd7f9bce562a24c2877409",
+      "assertions": ["JSA INCOMPLETE", "iTrack INCOMPLETE", "subset bands explicitly labeled"]
+    },
+    {
+      "file": "screenshots/after/07-reports-coverage.png",
+      "sha256": "aa8241be4da3ec6a3ce6c2a529d9831d539abd72744c6c53cf82a1147731ae1e",
+      "assertions": ["FORECAST INCOMPLETE", "REPORT NOT READY", "modeled subset not promoted"]
+    }
+  ]
+}
