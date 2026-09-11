@@ -148,9 +148,7 @@ function ModuleHead({
   const hasRange = f.items.length > 0 && f.range.high - f.range.low > 0;
   const retuned = !!realityRange && hasRange && Math.abs(realityRange.likely - f.range.likely) > 0.05;
   const source =
-    f.source === "canonical"
-      ? "Scope · accepted capability"
-      : f.source === "linear"
+    f.source === "linear"
       ? "Linear"
       : f.source === "hermes"
         ? f.accepted
@@ -237,13 +235,6 @@ function Overview({ feature: f }: { feature: Feature }) {
   return (
     <div className="px-5 py-4">
       <p className="text-[11.5px] text-[var(--i-text-soft)] leading-relaxed">
-        {f.source === "canonical" && (
-          <>
-            An accepted Capability owned by Scope. {mapped > 0
-              ? `${mapped} execution ${mapped === 1 ? "item is" : "items are"} explicitly linked underneath it.`
-              : "No execution work is mapped yet; no distribution is fabricated."}
-          </>
-        )}
         {f.source === "linear" && (
           <>
             A capability in Linear. {mapped} issue{mapped === 1 ? "" : "s"} hang from it.

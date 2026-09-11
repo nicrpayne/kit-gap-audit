@@ -6,7 +6,6 @@ import { computeForecast } from "@/lib/forecast/compute";
 import { computeChangesSince } from "@/lib/reports/changes";
 import { capacityForecastContract } from "@/lib/capacity/contract";
 import { toDateOnly } from "@/lib/time/dateContract";
-import { ForecastCoverageIncompleteError } from "@/lib/forecast/coverage";
 import type { PolicyEvaluatedCompleteness } from "@/lib/context/sourcePolicy";
 import {
   assembleDecisionBrief,
@@ -105,9 +104,6 @@ export async function loadDecisionBriefOwnerInputs(
 ): Promise<DecisionBriefOwnerInputs> {
   const generatedAt = new Date().toISOString();
   const forecast = await computeForecast(scope);
-  if (!forecast.forecastCoverage.canonicalForecast) {
-    throw new ForecastCoverageIncompleteError(forecast.forecastCoverage);
-  }
   const [previousReport, audit, decisions, dependencyScopes, people, allocations, settings, reconciliation, timelineEvents, contextSnapshot, kitConstruct] = await Promise.all([
     prisma.report.findFirst({
       where: { scopeId: scope.id },

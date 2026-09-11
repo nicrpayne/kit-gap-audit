@@ -24,7 +24,6 @@
 
 import type { ScopeWorkItem } from "@/lib/instrument/useProject";
 import type { CompletedWork } from "@/lib/forecast/compute";
-import type { ShapeCapability } from "@/lib/scope/productShape";
 
 export interface ThreePoint {
   low: number;
@@ -39,7 +38,7 @@ export function expectedDays(r: ThreePoint): number {
   return (r.low + r.likely + r.high) / 3;
 }
 
-export type FeatureSource = "canonical" | "linear" | "hermes" | "manual" | "unmapped";
+export type FeatureSource = "linear" | "hermes" | "manual" | "unmapped";
 
 export interface Feature {
   /** Stable across reloads: the Linear parent identifier, the Finding id, or
@@ -286,87 +285,6 @@ export function composeFeatures(
     peakLoadDays: Math.max(0.001, ...features.map((f) => f.loadDays)),
     totalItems: items.length,
     unmappedItems: buckets.get(UNMAPPED_ID)?.items.length ?? 0,
-  };
-}
-
-/**
- * Seats governed, accepted Capability rows in the original composer while
- * retaining the existing Linear-parent grammar for execution work that has
- * not yet been linked to canonical product shape.
- *
- * CapabilityWorkLinks claim only identifiers actually present in the live
- * owner read. An absent/stale link is therefore visible as no mapped work,
- * never as a fabricated distribution. Unclaimed work continues through the
- * existing composeFeatures path and lands in NO CAPABILITY YET when it has no
- * structural parent.
- */
-export function composeScopeFeatures(
-  items: ScopeWorkItem[],
-  completedWork: CompletedWork[],
-  capabilities: ShapeCapability[],
-  capacity: number,
-  bypassedFeatureIds: Set<string>,
-  estimateOverrides: Record<string, ThreePoint>,
-  drafts: DraftFeature[],
-  acceptedCandidateIds: Set<string> = new Set(),
-): FeatureComposition {
-  const accepted = capabilities.filter((capability) => capability.status === "accepted");
-  const itemById = new Map(items.map((item) => [item.id, item]));
-  const doneById = new Map(completedWork.map((item) => [item.id, item]));
-  const claimedItemIds = new Set<string>();
-  const claimedDoneIds = new Set<string>();
-
-  const canonical = accepted.map((capability) => {
-    const ids = capability.workLinks
-      .filter((link) => link.state === "active" || link.state === "configured")
-      .map((link) => link.externalId);
-    const mappedItems = ids.flatMap((id) => {
-      const item = itemById.get(id);
-      if (!item) return [];
-      claimedItemIds.add(id);
-      return [item];
-    });
-    const mappedDone = ids.flatMap((id) => {
-      const item = doneById.get(id);
-      if (!item) return [];
-      claimedDoneIds.add(id);
-      return [item];
-    });
-    const id = `capability:${capability.id}`;
-    return summarise(
-      id,
-      capability.name,
-      "canonical",
-      mappedItems,
-      mappedDone,
-      capacity,
-      null,
-      null,
-      bypassedFeatureIds.has(id),
-      true,
-      estimateOverrides,
-    );
-  });
-
-  const legacy = composeFeatures(
-    items.filter((item) => !claimedItemIds.has(item.id)),
-    completedWork.filter((item) => !claimedDoneIds.has(item.id)),
-    capacity,
-    bypassedFeatureIds,
-    estimateOverrides,
-    drafts,
-    acceptedCandidateIds,
-  );
-  const features = [...canonical, ...legacy.features];
-  const engaged = features.filter((feature) => !feature.bypassed);
-  return {
-    features,
-    engaged,
-    bypassed: features.filter((feature) => feature.bypassed),
-    loadDays: engaged.reduce((sum, feature) => sum + feature.loadDays, 0),
-    peakLoadDays: Math.max(0.001, ...features.map((feature) => feature.loadDays)),
-    totalItems: items.length,
-    unmappedItems: legacy.unmappedItems,
   };
 }
 

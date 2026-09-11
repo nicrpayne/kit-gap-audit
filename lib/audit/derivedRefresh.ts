@@ -2,7 +2,6 @@ import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { computeForecast } from "@/lib/forecast/compute";
 import { toDateOnly } from "@/lib/time/dateContract";
-import type { ForecastCoverageContract } from "@/lib/forecast/coverage";
 
 function json(value: unknown): Prisma.InputJsonValue {
   return value as Prisma.InputJsonValue;
@@ -26,7 +25,7 @@ export async function invalidateDerivedReads(tx: Prisma.TransactionClient, scope
   });
 }
 
-async function readinessWithoutDerived(scopeId: string, forecastCoverage?: ForecastCoverageContract) {
+async function readinessWithoutDerived(scopeId: string) {
   const [scope, openTestGates, pendingScope, sourceHealth, reconciliation, namedAllocations] = await Promise.all([
     prisma.scope.findUnique({ where: { id: scopeId } }),
     prisma.decision.count({ where: { scopeId, status: "open", gate: { isNot: null }, OR: [
@@ -39,7 +38,6 @@ async function readinessWithoutDerived(scopeId: string, forecastCoverage?: Forec
   ]);
   const blockers: string[] = [];
   if (!scope || scope.executionState !== "configured") blockers.push("Execution truth unavailable.");
-  if (forecastCoverage && !forecastCoverage.canonicalForecast) blockers.push(forecastCoverage.label);
   if (openTestGates) blockers.push("A synthetic/test Decision gate is still active.");
   if (pendingScope) blockers.push(`${pendingScope} Scope proposal${pendingScope === 1 ? " is" : "s are"} unreconciled.`);
   if (sourceHealth) blockers.push(`${sourceHealth} source-health issue${sourceHealth === 1 ? " is" : "s are"} open.`);
@@ -58,13 +56,11 @@ export async function recomputeDerivedReads(scopeId: string) {
   try {
     const scope = await prisma.scope.findUniqueOrThrow({ where: { id: scopeId } });
     const forecast = await computeForecast(scope);
-    const readiness = await readinessWithoutDerived(scopeId, forecast.forecastCoverage);
+    const readiness = await readinessWithoutDerived(scopeId);
     return await prisma.projectDerivedState.update({ where: { scopeId }, data: {
       computedRevision: state.realityRevision, status: "current", recomputedAt: new Date(), error: null,
       consumers: json({
-        forecast: forecast.forecastCoverage.canonicalForecast
-          ? { status: "current", likelyDate: toDateOnly(forecast.likelyDate), confidenceAtTarget: forecast.confidenceAtTarget, coverage: forecast.forecastCoverage }
-          : { status: "modeled_subset", likelyDate: toDateOnly(forecast.likelyDate), confidenceAtTarget: null, coverage: forecast.forecastCoverage },
+        forecast: { status: "current", likelyDate: toDateOnly(forecast.likelyDate), confidenceAtTarget: forecast.confidenceAtTarget },
         timeline: { status: "invalidated", behavior: "dynamic projection reads current owner rows" },
         controlRoom: { status: "invalidated", behavior: "dynamic read uses current owner rows" },
         reports: { status: readiness.ready ? "ready" : "blocked", behavior: "readiness recalculated" },

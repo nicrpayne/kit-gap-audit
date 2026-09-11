@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { generateReport } from "@/lib/reports/generate";
 import { ForecastUnavailableError } from "@/lib/forecast/compute";
-import { ForecastCoverageIncompleteError } from "@/lib/forecast/coverage";
 
 export async function GET(req: NextRequest) {
   const scopeId = req.nextUrl.searchParams.get("scopeId");
@@ -52,14 +51,6 @@ export async function POST(req: NextRequest) {
   } catch (error) {
     if (error instanceof ForecastUnavailableError) {
       return NextResponse.json({ unavailable: true, code: error.code, error: `Report unavailable: ${error.reason}. Signal will not fabricate a delivery brief without a reliable Forecast.` }, { status: 409 });
-    }
-    if (error instanceof ForecastCoverageIncompleteError) {
-      return NextResponse.json({
-        unavailable: true,
-        code: error.code,
-        forecastCoverage: error.coverage,
-        error: `Report not ready: ${error.coverage.reason}. Signal will not promote a modeled subset into a project delivery brief.`,
-      }, { status: 409 });
     }
     return NextResponse.json(
       { error: `Decision Brief generation failed: ${error instanceof Error ? error.message : "unknown error"}` },

@@ -1,6 +1,5 @@
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
-import { readForecastCoverage } from "@/lib/forecast/compute";
 import type { BootstrapProposal, ProjectBootstrapPackageV1 } from "@/lib/bootstrap/contracts";
 import { createCompanionScan, COMPANION_ONLINE_MS } from "@/lib/bootstrap/jobs";
 import {
@@ -349,14 +348,6 @@ async function reportReadiness(scopeId: string) {
   ]);
   const blockers: { code: string; label: string; targetHref: string }[] = [];
   if (!scope || scope.executionState !== "configured") blockers.push({ code: "execution_truth", label: "Execution truth unavailable", targetHref: `/scope?project=${scopeId}` });
-  if (scope?.executionState === "configured") {
-    try {
-      const coverage = await readForecastCoverage(scope);
-      if (!coverage.canonicalForecast) blockers.push({ code: "forecast_coverage", label: coverage.label, targetHref: `/scope?project=${scopeId}` });
-    } catch {
-      blockers.push({ code: "forecast_coverage", label: "Forecast coverage could not be verified", targetHref: `/scope?project=${scopeId}` });
-    }
-  }
   if (openGateTests) blockers.push({ code: "test_gate", label: "Synthetic/test Decision gate present", targetHref: `/decisions?project=${scopeId}` });
   if (pendingScope) blockers.push({ code: "scope_unreconciled", label: `${pendingScope} Scope proposal${pendingScope === 1 ? "" : "s"} unreconciled`, targetHref: `/audit?project=${scopeId}` });
   if (!namedAllocations || reconciliation?.status !== "named_exact" || !reconciliation.completenessConfirmed) blockers.push({ code: "capacity_unreconciled", label: "Named capacity unreconciled", targetHref: `/portfolio?project=${scopeId}` });

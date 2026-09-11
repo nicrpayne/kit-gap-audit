@@ -56,7 +56,6 @@ export function accentFor(material: Material): string {
 }
 
 function classLabel(f: Feature): string | null {
-  if (f.source === "canonical") return "Accepted capability";
   if (f.source === "linear" || f.source === "unmapped") return null;
   if (f.accepted) return f.source === "hermes" ? "Accepted" : "Draft";
   return f.source === "hermes" ? "Candidate" : "Draft";
@@ -662,7 +661,7 @@ export default function CapabilityTile({
           <div className="relative mt-1 shrink-0 flex items-center justify-between text-[9px] text-[var(--i-text-faint)]">
             <span>
               {f.items.length === 0 && f.done.length === 0
-                ? f.source === "canonical" ? "NO EXECUTION WORK MAPPED" : "no work mapped"
+                ? "no work mapped"
                 : `uncertainty ${uncertaintyLabel(f.uncertainty).toLowerCase()}`}
             </span>
             <span className="flex items-center gap-[3px]" aria-label={mapped > 0 ? `${f.done.length} of ${mapped} done` : undefined}>

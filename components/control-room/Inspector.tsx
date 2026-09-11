@@ -52,16 +52,15 @@ export default function Inspector({
 
   if (!selection) {
     const gating = field.gatingScopeId ? laneById.get(field.gatingScopeId) : null;
-    const incomplete = field.lanes.filter((lane) => lane.coverageState !== "forecastable");
     const shared = field.sharedUpstreamIds[0] ? laneById.get(field.sharedUpstreamIds[0]) : null;
     const openGates = field.gates.filter((g) => !g.released);
     body = (
       <>
         <Line
           label="Lands"
-          value={incomplete.length ? "INCOMPLETE" : gating?.p50 != null ? date(gating.p50) : "—"}
-          note={incomplete.length ? `${incomplete.map((lane) => lane.name).join(", ")} execution coverage unresolved` : gating ? `${gating.name} is last` : "nothing simulated"}
-          tone={incomplete.length ? "var(--i-amber)" : "var(--i-signal)"}
+          value={gating?.p50 != null ? date(gating.p50) : "—"}
+          note={gating ? `${gating.name} is last` : "nothing simulated"}
+          tone="var(--i-signal)"
         />
         {/* A DECISION IS NOT A GATE, and the difference is the point. Both
             numbers are stated together because "35 open" without "2 actually
@@ -155,12 +154,12 @@ export default function Inspector({
       ) : (
         <>
           <Line
-            label={l.coverageState === "forecastable" ? "Lands" : "Modeled subset"}
-            value={l.p50 != null ? `${l.coverageState === "forecastable" ? "" : "~"}${date(l.p50)}` : "—"}
+            label="Lands"
+            value={l.p50 != null ? date(l.p50) : "—"}
             note={
-              l.coverageState !== "forecastable" ? "Execution coverage unresolved; not a delivery forecast" : l.p10 != null && l.p90 != null ? `P10 ${date(l.p10)} → P90 ${date(l.p90)}` : "no simulation"
+              l.p10 != null && l.p90 != null ? `P10 ${date(l.p10)} → P90 ${date(l.p90)}` : "no simulation"
             }
-            tone={l.coverageState === "forecastable" ? accent : "var(--i-amber)"}
+            tone={accent}
           />
           {l.targetDays !== null && (
             <Line

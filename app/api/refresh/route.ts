@@ -3,7 +3,6 @@ import { prisma } from "@/lib/prisma";
 import { runAudit, VALID_AUDIT_KINDS } from "@/lib/audit/run";
 import { runEstimationForScope } from "@/lib/estimate/runForScope";
 import { computeForecast } from "@/lib/forecast/compute";
-import { ForecastCoverageIncompleteError } from "@/lib/forecast/coverage";
 import { generateReport } from "@/lib/reports/generate";
 import {
   persistContextSnapshot,
@@ -268,23 +267,19 @@ export async function POST(req: NextRequest) {
       const generated = await generateReport(scope, contextSnapshotId);
       report = { id: generated.report.id, summaryMarkdown: generated.report.summaryMarkdown };
     } catch (error) {
-      const coverageError = error instanceof ForecastCoverageIncompleteError ? error : null;
       return NextResponse.json(
         {
           error: `Report generation failed: ${error instanceof Error ? error.message : "unknown error"}`,
-          code: coverageError?.code,
-          forecastCoverage: coverageError?.coverage,
           contextDocsUpdated,
           contextSnapshotId,
           audit,
           estimate: estimateSummary,
           forecast: {
             likelyDate: forecastResult.likelyDate,
-            confidenceAtTarget: forecastResult.forecastCoverage.canonicalForecast ? forecastResult.confidenceAtTarget : null,
-            forecastCoverage: forecastResult.forecastCoverage,
+            confidenceAtTarget: forecastResult.confidenceAtTarget,
           },
         },
-        { status: coverageError ? 409 : 502 }
+        { status: 502 }
       );
     }
   }
@@ -307,24 +302,7 @@ export async function POST(req: NextRequest) {
       likelyDate: forecastResult.likelyDate,
       earliestDate: forecastResult.earliestDate,
       latestDate: forecastResult.latestDate,
-      confidenceAtTarget: forecastResult.forecastCoverage.canonicalForecast ? forecastResult.confidenceAtTarget : null,
-      forecastCoverage: forecastResult.forecastCoverage,
-      canonicalDeliveryForecast: forecastResult.forecastCoverage.canonicalForecast
-        ? {
-            likelyDate: forecastResult.likelyDate,
-            earliestDate: forecastResult.earliestDate,
-            latestDate: forecastResult.latestDate,
-            confidenceAtTarget: forecastResult.confidenceAtTarget,
-          }
-        : null,
-      modeledSubsetOutcome: forecastResult.forecastCoverage.state === "modeled_subset"
-        ? {
-            likelyDate: forecastResult.likelyDate,
-            earliestDate: forecastResult.earliestDate,
-            latestDate: forecastResult.latestDate,
-            confidenceAtTarget: forecastResult.confidenceAtTarget,
-          }
-        : null,
+      confidenceAtTarget: forecastResult.confidenceAtTarget,
       breakdown: forecastResult.breakdown,
     },
     // False if a configured Notion/Figma source failed to load this run --

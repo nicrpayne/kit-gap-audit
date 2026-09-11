@@ -16,7 +16,6 @@ import { estimateContentHash, findingContentHash } from "@/lib/estimate/run";
 import { buildReleaseContext } from "@/lib/estimate/context";
 import { resolveCapacity, type CapacityContributor } from "@/lib/capacity/resolve";
 import { capacityForecastContract, type CapacityForecastContract } from "@/lib/capacity/contract";
-import { evaluateForecastCoverage, inheritDependencyCoverage, type ForecastCoverageContract } from "@/lib/forecast/coverage";
 
 export interface ForecastFinding {
   id: string;
@@ -43,9 +42,6 @@ export interface ForecastScenario {
 
 export interface ForecastResult {
   forecastSource: ForecastSourceStamp;
-  /** The project's own Linear read, before dependency currentness is folded in. */
-  executionSource: ForecastSourceStamp;
-  forecastCoverage: ForecastCoverageContract;
   issues: LinearIssueSummary[];
   findings: ForecastFinding[];
   notionDocs: { id: string; title: string; chars: number }[];
@@ -129,13 +125,6 @@ interface ScopeSimBundle {
   contextDocs: ForecastResult["contextDocs"];
   contextComplete: boolean;
   contextIssues: string[];
-  capabilities: {
-    id: string;
-    status: string;
-    workLinks: { externalId: string; state: string }[];
-  }[];
-  openShapeDecisionCount: number;
-  forecastCoverage: ForecastCoverageContract;
 }
 
 // Everything needed to simulate ONE Scope: Linear issues + Findings +
@@ -172,14 +161,7 @@ async function buildScopeSimInputs(scope: Scope): Promise<ScopeSimBundle> {
     },
   });
 
-  const [workEstimates, capabilities, openShapeDecisionCount] = await Promise.all([
-    prisma.workEstimate.findMany({ where: { scopeId: scope.id } }),
-    prisma.capability.findMany({
-      where: { scopeId: scope.id },
-      select: { id: true, status: true, workLinks: { select: { externalId: true, state: true } } },
-    }),
-    prisma.decision.count({ where: { scopeId: scope.id, status: "open", gate: { is: null } } }),
-  ]);
+  const workEstimates = await prisma.workEstimate.findMany({ where: { scopeId: scope.id } });
   const estimates = new Map(
     workEstimates.filter((e) => e.source === "linear").map((e) => [e.externalId, e])
   );
@@ -261,13 +243,6 @@ async function buildScopeSimInputs(scope: Scope): Promise<ScopeSimBundle> {
     capacitySource: resolved.source ?? undefined,
   });
 
-  const forecastCoverage = evaluateForecastCoverage({
-    executionState: scope.executionState,
-    issueIds: issues.map((issue) => issue.identifier),
-    capabilities,
-    openShapeDecisionCount,
-  });
-
   return {
     inputs,
     capacityContributors: resolved.contributors,
@@ -280,37 +255,7 @@ async function buildScopeSimInputs(scope: Scope): Promise<ScopeSimBundle> {
     contextDocs: contextDocsInfo,
     contextComplete,
     contextIssues,
-    capabilities,
-    openShapeDecisionCount,
-    forecastCoverage,
   };
-}
-
-/** Read the same coverage contract used by Forecast without running a simulation. */
-export async function readForecastCoverage(scope: Scope): Promise<ForecastCoverageContract> {
-  if (scope.executionState === "not_configured" || scope.executionState === "unavailable") {
-    return evaluateForecastCoverage({
-      executionState: scope.executionState,
-      issueIds: [],
-      capabilities: [],
-      openShapeDecisionCount: 0,
-    });
-  }
-  const own = await buildScopeSimInputs(scope);
-  if (scope.dependsOnScopeIds.length === 0) return own.forecastCoverage;
-
-  const closure = await collectDependencyClosure(scope);
-  const dependencies: { name: string; coverage: ForecastCoverageContract }[] = [];
-  for (const dependency of closure) {
-    if (dependency.id === scope.id) continue;
-    dependencies.push({
-      name: dependency.name,
-      coverage: dependency.executionState === "not_configured" || dependency.executionState === "unavailable"
-        ? evaluateForecastCoverage({ executionState: dependency.executionState, issueIds: [], capabilities: [], openShapeDecisionCount: 0 })
-        : (await buildScopeSimInputs(dependency)).forecastCoverage,
-    });
-  }
-  return inheritDependencyCoverage(own.forecastCoverage, dependencies);
 }
 
 // One modelled work item, plus the provenance the Scope instrument needs to
@@ -444,10 +389,7 @@ export interface PortfolioScopeInput {
       migration debt, never silently presented as roster-backed. */
   capacityContract: CapacityForecastContract;
   forecastSource: ForecastSourceStamp;
-  executionSource: ForecastSourceStamp;
-  forecastCoverage: ForecastCoverageContract;
-  /** Compatibility alias while consumers migrate to forecastCoverage. */
-  forecastReadiness: { state: "ready" | "modeled_subset" | "unavailable"; reason: string | null };
+  forecastReadiness: { state: "ready" | "unavailable"; reason: string | null };
   executionState: string;
   executionDetail: string | null;
   capabilities: {
@@ -598,12 +540,9 @@ export async function buildPortfolioInputs(): Promise<PortfolioInputs> {
         (reconciliationByScope.get(scope.id)?.status ?? "aggregate_unreconciled") as "aggregate_unreconciled" | "named_partial" | "named_exact",
       ),
       forecastSource: sourceStampForIssues(bundle.issues, readAt),
-      executionSource: sourceStampForIssues(bundle.issues, readAt),
-      forecastCoverage: bundle.forecastCoverage,
-      forecastReadiness: {
-        state: bundle.forecastCoverage.state === "forecastable" ? "ready" : bundle.forecastCoverage.state,
-        reason: bundle.forecastCoverage.reason,
-      },
+      forecastReadiness: scope.executionState === "configured"
+        ? { state: "ready", reason: null }
+        : { state: "unavailable", reason: scope.executionState === "not_configured" ? "Missing executable work mapping" : `Execution source is ${scope.executionState}` },
       executionState: scope.executionState,
       executionDetail: scope.executionDetail,
       capabilities: scope.capabilities.map((capability) => ({
@@ -631,33 +570,6 @@ export async function buildPortfolioInputs(): Promise<PortfolioInputs> {
   };
   for (const scope of scopeInputs) {
     scope.forecastSource = weakestSourceStamp(sourceClosure(scope.scopeId), readAt);
-  }
-
-  const coverageMemo = new Map<string, ForecastCoverageContract>();
-  const coverageFor = (scopeId: string, visiting = new Set<string>()): ForecastCoverageContract | null => {
-    const memoized = coverageMemo.get(scopeId);
-    if (memoized) return memoized;
-    const current = scopeById.get(scopeId);
-    if (!current) return null;
-    if (visiting.has(scopeId)) return current.forecastCoverage;
-    const nextVisiting = new Set(visiting).add(scopeId);
-    const inherited = inheritDependencyCoverage(
-      current.forecastCoverage,
-      current.dependsOnScopeIds.flatMap((dependencyId) => {
-        const dependency = scopeById.get(dependencyId);
-        const coverage = coverageFor(dependencyId, nextVisiting);
-        return dependency && coverage ? [{ name: dependency.name, coverage }] : [];
-      }),
-    );
-    coverageMemo.set(scopeId, inherited);
-    return inherited;
-  };
-  for (const scope of scopeInputs) {
-    scope.forecastCoverage = coverageFor(scope.scopeId) ?? scope.forecastCoverage;
-    scope.forecastReadiness = {
-      state: scope.forecastCoverage.state === "forecastable" ? "ready" : scope.forecastCoverage.state,
-      reason: scope.forecastCoverage.reason,
-    };
   }
 
   return {
@@ -726,7 +638,6 @@ export async function computeForecast(scope: Scope): Promise<ForecastResult> {
   let base: SimulationResult;
   let rawScenarios: ForecastScenario[];
   const sourceStamps = [sourceStampForIssues(own.issues, readAt)];
-  const dependencyCoverage: { name: string; coverage: ForecastCoverageContract }[] = [];
 
   if (scope.dependsOnScopeIds.length === 0) {
     const scenarioRun = buildScenarios(inputs, startDate, scope.targetDate);
@@ -737,10 +648,7 @@ export async function computeForecast(scope: Scope): Promise<ForecastResult> {
     const specs: ScopeSimulationSpec[] = [];
     for (const s of closure) {
       const bundle = s.id === scope.id ? own : await buildScopeSimInputs(s);
-      if (s.id !== scope.id) {
-        sourceStamps.push(sourceStampForIssues(bundle.issues, readAt));
-        dependencyCoverage.push({ name: s.name, coverage: bundle.forecastCoverage });
-      }
+      if (s.id !== scope.id) sourceStamps.push(sourceStampForIssues(bundle.issues, readAt));
       specs.push({
         scopeId: s.id,
         items: bundle.inputs.items,
@@ -770,8 +678,6 @@ export async function computeForecast(scope: Scope): Promise<ForecastResult> {
 
   return {
     forecastSource: weakestSourceStamp(sourceStamps, readAt),
-    executionSource: sourceStampForIssues(own.issues, readAt),
-    forecastCoverage: inheritDependencyCoverage(own.forecastCoverage, dependencyCoverage),
     issues: own.issues,
     findings: own.findings,
     notionDocs: own.notionDocs,

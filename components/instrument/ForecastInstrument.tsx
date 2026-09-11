@@ -123,38 +123,6 @@ export default function ForecastInstrument() {
     </InstrumentShell>;
   }
 
-  if (scope.forecastCoverage.state === "modeled_subset") {
-    const modeled = m.baseline?.get(scope.scopeId) ?? null;
-    const ownFreshness = sourceCurrentness(scope.executionSource.asOf, new Date());
-    return <InstrumentShell stateBar={strip} scopes={m.data.scopes.map((s) => ({ scopeId: s.scopeId, name: s.name }))} onSelectScope={setSelected}>
-      <div className="flex flex-1 items-center justify-center p-8" style={{ background: "var(--i-void)" }}>
-        <section className="w-full max-w-[760px] overflow-hidden rounded-2xl border" style={{ background: "linear-gradient(180deg, #10151a 0%, #0b0f12 100%)", borderColor: "var(--i-border)" }} data-shoot="forecast-modeled-subset">
-          <div className="border-b border-[var(--i-amber)]/25 bg-[var(--i-amber)]/[0.04] px-6 py-4">
-            <div className="i-label text-[var(--i-amber)]">{scope.forecastCoverage.label}</div>
-            <h1 className="mt-2 text-[24px] font-semibold text-[var(--i-text)]">{scope.name}</h1>
-          </div>
-          <div className="grid gap-6 px-6 py-6 md:grid-cols-[1fr_260px]">
-            <div>
-              <p className="text-[13px] leading-relaxed text-[var(--i-text-soft)]">Signal has simulated the inputs it can currently see, but that result is not a project delivery forecast.</p>
-              <p className="mt-3 text-[11px] leading-relaxed text-[var(--i-text-faint)]">{scope.forecastCoverage.caveat}</p>
-              <div className="mt-5 space-y-2" data-shoot="forecast-coverage-reasons">
-                {scope.forecastCoverage.reasons.map((reason) => <div key={reason.code} className="flex items-center gap-2 rounded-md border border-[var(--i-border)] bg-black/20 px-3 py-2 text-[10.5px] text-[var(--i-text-soft)]"><span className="h-1.5 w-1.5 shrink-0 rounded-full bg-[var(--i-amber)]" />{reason.label}</div>)}
-              </div>
-              <Link href={`/scope?project=${encodeURIComponent(scope.scopeId)}`} className="signal-control mt-5 inline-block rounded px-4 py-2 text-[10px]">OPEN SCOPE COVERAGE</Link>
-            </div>
-            <div className="rounded-xl border border-[var(--i-border)] bg-[var(--i-recess)] p-5 text-center" data-shoot="modeled-subset-outcome">
-              <div className="i-label text-[var(--i-text-faint)]">MODELED SUBSET OUTCOME</div>
-              <div className="i-readout mt-4 text-[31px] text-[var(--i-text-soft)]">{modeled ? `~${fmtDay(modeled.likelyDate)}` : "—"}</div>
-              {modeled && <div className="mt-2 text-[9.5px] text-[var(--i-text-faint)]">window {fmtDay(modeled.earliestDate)}–{fmtDay(modeled.latestDate)}</div>}
-              <div className="mt-4 border-t border-[var(--i-border)] pt-3 text-[9px] leading-relaxed text-[var(--i-text-faint)]">No project-level target confidence is shown for a subset.</div>
-              <div className="mt-3 text-[8.5px] uppercase tracking-[0.1em] text-[var(--i-text-faint)]">Linear {ownFreshness.currentness} · {scope.executionSource.availability} · as of {fmtFull(new Date(scope.executionSource.asOf))}</div>
-            </div>
-          </div>
-        </section>
-      </div>
-    </InstrumentShell>;
-  }
-
   const base = m.baseline?.get(scope.scopeId) ?? null;
   const res = m.preview?.get(scope.scopeId) ?? base;
   if (!res) return <InstrumentShell stateBar={strip}><div className="flex-1" /></InstrumentShell>;

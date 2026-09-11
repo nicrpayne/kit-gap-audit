@@ -27,7 +27,6 @@ import { readChannel } from "@/lib/capacity/workforce";
 import { readDominance } from "@/lib/scope/constraint";
 import type { ProjectPayload, SuiteScenario } from "@/lib/instrument/useProject";
 import type { DecisionRow } from "@/lib/decisions/model";
-import type { ForecastCoverageState } from "@/lib/forecast/coverage";
 
 const DAY = 86400000;
 
@@ -87,7 +86,6 @@ export interface FieldLane {
   /** P50 − target. Positive = late. Null without a target. */
   gapDays: number | null;
   confidence: number | null;
-  coverageState: ForecastCoverageState;
 
   // WHY IT LANDS THERE.
   /** Where it would still land with EVERY work item cut. */
@@ -277,9 +275,8 @@ export function readProjectField(i: FieldInput): ProjectField {
       p90: sim ? percentileDay(sim.completionDaysSorted, 90) : null,
       realityP50: i.scenarioActive && real ? toDays(real.likelyDate) : null,
       targetDays: target,
-      gapDays: s.forecastCoverage.canonicalForecast && sim && target !== null ? toDays(sim.likelyDate) - target : null,
-      confidence: s.forecastCoverage.canonicalForecast ? sim?.confidenceAtTarget ?? null : null,
-      coverageState: s.forecastCoverage.state,
+      gapDays: sim && target !== null ? toDays(sim.likelyDate) - target : null,
+      confidence: sim?.confidenceAtTarget ?? null,
       floorDays: dom ? dom.floorDays : null,
       headroomDays: dom ? dom.headroomDays : null,
       dominated: dom?.dominated ?? false,

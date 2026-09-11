@@ -396,8 +396,7 @@ function MemoryBand({
   const xT = tT !== null ? xFor(view, tT) : null;
   const h = 26;
   const id = `mem-${snap.id.replace(/[^a-zA-Z0-9_-]/g, "-")}${ghost ? "-g" : ""}`;
-  const incompleteLive = snap.temporalRole === "live" && snap.coverageState !== "forecastable";
-  const accent = incompleteLive || (snap.temporalRole === "live" && snap.currentness === "stale") ? "var(--i-amber)" : snap.temporalRole === "live" ? "var(--i-signal)" : "var(--i-violet)";
+  const accent = snap.temporalRole === "live" && snap.currentness === "stale" ? "var(--i-amber)" : snap.temporalRole === "live" ? "var(--i-signal)" : "var(--i-violet)";
   const op = ghost ? 0.3 : 1;
 
   // ── THE ONE THING A FORECAST AND A TARGET HAVE TO SAY TO EACH OTHER ──
@@ -416,7 +415,7 @@ function MemoryBand({
   const clear = gapDays !== null && gapDays >= 0;
   const tieColor = clear ? "var(--i-mint)" : "var(--i-red)";
   const showTie =
-    !incompleteLive && !ghost && xT !== null && gapDays !== null &&
+    !ghost && xT !== null && gapDays !== null &&
     // Only when both ends are actually on screen; a tie running off the
     // edge to a flag nobody can see explains nothing.
     Math.min(x50, xT) > -40 && Math.max(x50, xT) < view.width + 40 &&
@@ -483,7 +482,7 @@ function MemoryBand({
       <rect x={x50 - 2} y={y - h / 2 - 5} width={4} height={h + 10} rx={1.5} fill="#ffffff" opacity={0.18} />
       {!ghost && (
         <text x={x50} y={y - h / 2 - 9} fontSize={8.5} textAnchor="middle" fill={accent} style={{ letterSpacing: "0.06em" }}>
-          {incompleteLive ? `subset ~${fmtDay(new Date(snap.likelyDate).getTime())}` : fmtDay(new Date(snap.likelyDate).getTime())}
+          {fmtDay(new Date(snap.likelyDate).getTime())}
         </text>
       )}
       {/* THE TIE. Drawn under both objects, from the likely landing to the
@@ -1151,8 +1150,8 @@ export default function TimeField({
                   repeated down eight rows is noise saying nothing. The master
                   display already carries the em dash for these projects. */}
               {rail ? null : mem ? (
-                <span className="i-readout text-[13px] leading-none mt-1" style={{ color: mem.temporalRole === "live" && (mem.coverageState !== "forecastable" || mem.currentness === "stale") ? "var(--i-amber)" : mem.temporalRole === "live" ? "var(--i-signal)" : "var(--i-violet)" }}>
-                  {mem.temporalRole === "live" && mem.coverageState !== "forecastable" ? "INCOMPLETE" : fmtDay(new Date(mem.likelyDate).getTime())}
+                <span className="i-readout text-[13px] leading-none mt-1" style={{ color: mem.temporalRole === "live" && mem.currentness === "stale" ? "var(--i-amber)" : mem.temporalRole === "live" ? "var(--i-signal)" : "var(--i-violet)" }}>
+                  {fmtDay(new Date(mem.likelyDate).getTime())}
                 </span>
               ) : (
                 <span className="text-[9px] mt-1 text-[var(--i-text-faint)]">no snapshot yet</span>
