@@ -11,9 +11,7 @@ import {
   type BriefPurpose,
 } from "../lib/reports/composer";
 import { renderAudienceBriefMarkdown, renderAudienceBriefPlainText } from "../lib/reports/audienceBriefRender";
-import { buildBriefPresentation } from "../lib/reports/presentation";
-import { createInteractiveBriefBundle, validatePublicationReadiness } from "../lib/reports/publication";
-import { siteHandoffPrompt } from "../lib/reports/publicationContract";
+import { buildBriefPresentation, buildInteractiveBriefBundle, siteHandoffPrompt } from "../lib/reports/presentation";
 import { healthyOwnerFixture, missingNamedCapacityFixture, pivotPrototypeFixture } from "./lib/decision-brief-fixtures";
 
 const audiences = Object.keys(AUDIENCE_LABELS) as AudienceLens[];
@@ -63,18 +61,15 @@ for (const href of [
   ...brief.evidence.references.value.map((item) => item.href),
 ]) assert(new URL(href, "https://signal.local").searchParams.get("project"), `project context: ${href}`);
 
-const bundle = createInteractiveBriefBundle("report-fixture", brief, baseRecipe);
-assert.equal(bundle.integrity.snapshotFingerprint, fingerprint);
-assert.equal(bundle.permissions.liveSignalAccess, false);
-assert.equal(bundle.permissions.credentialsIncluded, false);
-assert.equal(bundle.permissions.publishAuthorized, false);
-assert.equal(bundle.content.delivery.commitment.status, "missing");
-assert(validatePublicationReadiness(bundle).ready);
-assert(siteHandoffPrompt(bundle).includes("Do not deploy, publish, share"));
-assert(siteHandoffPrompt(bundle).includes("Do not connect to Signal"));
+const bundle = buildInteractiveBriefBundle(brief, baseRecipe);
+assert.equal(bundle.snapshotFingerprint, fingerprint);
+assert.deepEqual(bundle.security, { liveOwnerAccess: false, databaseCredentials: false, secrets: false, publishAuthorized: false });
+assert.equal(bundle.briefSnapshot.boundaries.findingsForecastEffect.value.modeledBaselineWorkItems, 0);
+assert(siteHandoffPrompt(bundle).includes("do not deploy or publish"));
+assert(siteHandoffPrompt(bundle).includes("Do not fetch live Signal data"));
 
-assert.equal(bundle.integrity.snapshotFingerprint, fingerprint, "screen/Site bundle shares the snapshot identity");
-assert(bundle.presentation.moduleOrder.length === baseRecipe.modules.length, "screen/Site modules come from the same recipe");
+assert.equal(bundle.presentation.snapshotFingerprint, fingerprint, "screen/Site bundle shares the snapshot identity");
+assert(bundle.presentation.modules.length === baseRecipe.modules.length, "screen/Site modules come from the same recipe");
 const timelineRecipe = buildBriefRecipe("operator", "delivery-review", brief);
 assert(renderAudienceBriefMarkdown(brief, timelineRecipe).includes("Live Forecast · CURRENT · as of Sep 4, 2026"));
 assert(renderAudienceBriefMarkdown(brief, baseRecipe).includes("ReportHistory · HISTORICAL"));

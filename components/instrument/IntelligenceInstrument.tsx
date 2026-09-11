@@ -257,7 +257,7 @@ export default function IntelligenceInstrument() {
               className="mt-2 block rounded-md px-2.5 py-2 text-center text-[11px] font-medium"
               style={{ background: "var(--i-violet)", color: "var(--i-void)" }}
             >
-              Run a new audit
+              Add evidence upstream
             </Link>
           </Panel>
 

@@ -222,16 +222,36 @@ export default function CommandWorkspace({
             index={4}
             hue="outcome"
             label="Likely Outcome"
-            question={r.time.forecastCurrentness === "stale" ? `Live owner · Stale ${r.time.forecastAgeDays}d · as of ${dShort(r.time.forecastAsOf)}` : "Live owner · Current"}
-            a={r.outcome.likely ? deliveryDay(r.outcome.likely) : "—"}
-            aLabel={r.outcome.gatedBy ? `${r.outcome.gatedBy} Lands Last` : "Nothing Simulated"}
-            aTone={outcomeHue}
+            question={
+              r.outcome.coverageState !== "forecastable"
+                ? "Execution coverage unresolved"
+                : r.time.forecastCurrentness === "stale"
+                  ? `Live owner · Stale ${r.time.forecastAgeDays}d · as of ${dShort(r.time.forecastAsOf)}`
+                  : "Live owner · Current"
+            }
+            a={r.outcome.coverageState === "forecastable" ? (r.outcome.likely ? deliveryDay(r.outcome.likely) : "—") : "INCOMPLETE"}
+            aLabel={
+              r.outcome.coverageState === "forecastable"
+                ? r.outcome.gatedBy
+                  ? `${r.outcome.gatedBy} Lands Last`
+                  : "Nothing Simulated"
+                : `${r.outcome.coverageScopeNames.join(", ")} Coverage`
+            }
+            aTone={r.outcome.coverageState === "forecastable" ? outcomeHue : "var(--i-amber)"}
             // Confidence is per project, against that project's own target.
             // When the last-landing project has none, this says so rather
             // than borrowing another project's number.
-            b={r.outcome.confidence !== null ? `${r.outcome.confidence}%` : "No target"}
-            bLabel={r.outcome.confidence !== null ? "Confidence" : "to measure against"}
-            bTone={outcomeHue}
+            b={
+              r.outcome.coverageState !== "forecastable"
+                ? r.outcome.likely
+                  ? `~${deliveryDay(r.outcome.likely)}`
+                  : "—"
+                : r.outcome.confidence !== null
+                  ? `${r.outcome.confidence}%`
+                  : "No target"
+            }
+            bLabel={r.outcome.coverageState !== "forecastable" ? "Modeled subset" : r.outcome.confidence !== null ? "Confidence" : "to measure against"}
+            bTone={r.outcome.coverageState === "forecastable" ? outcomeHue : "var(--i-amber)"}
             series={r.outcome.confidenceHistory.find((s) => s.id === r.outcome.gatedByScopeId)?.points ?? null}
             reality={
               scenarioActive && realityLikely
@@ -454,7 +474,24 @@ export default function CommandWorkspace({
                 plotted at each report's own `generatedAt`. A project nobody
                 has reported on is ABSENT, never drawn flat at zero. */}
             <Bottom title="Forecast Confidence" href="/forecast" shoot="cr-surf-forecast" hue={HUE.outcome}>
-              {r.outcome.confidence !== null ? (
+              {r.outcome.coverageState !== "forecastable" ? (
+                <div className="shrink-0">
+                  <p
+                    data-shoot="cr-confidence-now"
+                    className="i-readout leading-none"
+                    style={{ fontSize: 27, letterSpacing: "-0.015em", color: "var(--i-amber)" }}
+                  >
+                    INCOMPLETE
+                  </p>
+                  <p className="pt-[6px] text-[10.5px] leading-[13px]" style={{ color: "var(--i-text-soft)" }}>
+                    Execution coverage is unresolved for {r.outcome.coverageScopeNames.join(", ")}.
+                  </p>
+                  <p className="pt-[2px] text-[10px] leading-[12px]" style={{ color: "var(--i-text-faint)" }}>
+                    {r.outcome.likely ? `Modeled subset lands around ${deliveryDay(r.outcome.likely)}. ` : ""}
+                    No full-project confidence is shown.
+                  </p>
+                </div>
+              ) : r.outcome.confidence !== null ? (
                 <>
                   <p className="flex shrink-0 items-baseline gap-[8px]">
                     <span

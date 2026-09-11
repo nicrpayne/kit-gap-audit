@@ -42,14 +42,14 @@ export default async function AuditHistoryPage({
     <SignalSurface
       eyebrow="Audit · history"
       title="Every audit you've run"
-      lede="Each one compared a source — a transcript, a note, a list of estimates — against the work already tracked, and kept what was missing."
+      lede="The retained source history behind governed findings and changes. New external evidence enters through the knowledge system."
       actions={<SurfaceAction href={`/audit${scope ? `?scope=${encodeURIComponent(scope)}` : ""}`}>← Audit World</SurfaceAction>}
     >
       {sources.length === 0 ? (
         <SurfaceEmpty>
           No audits yet.{" "}
           <Link href="/audit/new" className="text-[var(--i-signal)] hover:underline">
-            Run your first one
+            Open the approved evidence workflow
           </Link>
           .
         </SurfaceEmpty>

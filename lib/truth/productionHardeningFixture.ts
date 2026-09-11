@@ -58,8 +58,26 @@ const scope = (
     temporalRole: "live",
     availability: "available",
   },
+  executionSource: {
+    asOf: PRODUCTION_HARDENING_FIXTURE.forecastAsOf,
+    provider: "Linear",
+    temporalRole: "live",
+    availability: "available",
+  },
+  forecastCoverage: {
+    state: "forecastable",
+    canonicalForecast: true,
+    label: "CANONICAL DELIVERY FORECAST",
+    reason: null,
+    caveat: null,
+    reasons: [],
+    census: { executionIssueCount: 1, acceptedCapabilityCount: 0, mappedAcceptedCapabilityCount: 0, openShapeDecisionCount: 0, incompleteDependencyCount: 0 },
+  },
   forecastReadiness: { state: "ready", reason: null },
-  capabilities: [],
+    capabilities: [],
+    openShapeQuestions: [],
+    executionState: "configured",
+    executionDetail: null,
 });
 
 export const hardeningDecisions: DecisionRow[] = [

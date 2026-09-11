@@ -18,8 +18,7 @@ import {
   type BriefRecipeV1,
   type ModuleDensity,
 } from "@/lib/reports/composer";
-import { buildBriefPresentation, sourceForModule } from "@/lib/reports/presentation";
-import { buildInteractiveBriefBundleDraft } from "@/lib/reports/publicationContract";
+import { buildBriefPresentation, buildInteractiveBriefBundle, siteHandoffPrompt, sourceForModule } from "@/lib/reports/presentation";
 import { renderAudienceBriefMarkdown, renderAudienceBriefPlainText } from "@/lib/reports/audienceBriefRender";
 import AudienceBriefView, { BriefModule } from "./AudienceBriefView";
 import styles from "./ReportsComposer.module.css";
@@ -35,7 +34,7 @@ export default function ReportsComposerPrototype({ brief }: { brief: DecisionBri
   const selected = moduleDefinition(selectedId);
   const active = new Set(recipe.modules.map((item) => item.id));
   const selectedConfig = recipe.modules.find((item) => item.id === selectedId);
-  const bundle = useMemo(() => buildInteractiveBriefBundleDraft("fixture-unsaved", brief, recipe), [brief, recipe]);
+  const bundle = useMemo(() => buildInteractiveBriefBundle(brief, recipe), [brief, recipe]);
 
   function changePreset(audience: AudienceLens, purpose = recipe.purpose) {
     const next = buildBriefRecipe(audience, purpose, brief);
@@ -49,10 +48,11 @@ export default function ReportsComposerPrototype({ brief }: { brief: DecisionBri
     setSelectedId(next.modules[0].id);
   }
 
-  async function copy(kind: "markdown" | "plain" | "bundle") {
+  async function copy(kind: "markdown" | "plain" | "bundle" | "handoff") {
     const value = kind === "markdown" ? renderAudienceBriefMarkdown(brief, recipe)
       : kind === "plain" ? renderAudienceBriefPlainText(brief, recipe)
-      : JSON.stringify(bundle, null, 2);
+      : kind === "bundle" ? JSON.stringify(bundle, null, 2)
+      : siteHandoffPrompt(bundle);
     await navigator.clipboard.writeText(value);
   }
 
@@ -72,6 +72,6 @@ export default function ReportsComposerPrototype({ brief }: { brief: DecisionBri
       </main>
       <aside className={styles.inspector} data-shoot="module-inspector"><div className={styles.railTitle}>Module inspector</div><div className={styles.inspectorTitle}>{selected.label}</div><p className={styles.inspectorCopy}>{selected.description}</p>{selectedConfig && <><div className={styles.density}>{selected.densities.map((density) => <button key={density} data-active={selectedConfig.density === density} onClick={() => setRecipe(setRecipeModuleDensity(recipe, selected.id, density as ModuleDensity))}>{density}</button>)}</div><div className={styles.fact}><div className={styles.label}>Truth owner</div><strong>{selected.owner}</strong></div><div className={styles.fact}><div className={styles.label}>Frozen binding</div>{selected.bindings.map((binding) => <strong key={binding}>{binding}</strong>)}</div><div className={styles.fact}><div className={styles.label}>Can say</div>{selected.facts.map((fact) => <strong key={fact}>{fact}</strong>)}</div><div className={styles.fact}><div className={styles.label}>As-of</div><strong>{sourceForModule(brief, selected.id).asOf} · {sourceForModule(brief, selected.id).currentness}</strong></div></>}{selected.id === "leadership-asks" && <div className={styles.fact}><div className={styles.label}>Promote candidate</div>{brief.calls.decisions.value.map((decision) => <label key={decision.id} className={styles.inspectorCopy} style={{ display: "block" }}><input type="checkbox" checked={recipe.promotedAskIds.includes(decision.id)} onChange={() => setRecipe({ ...recipe, promotedAskIds: recipe.promotedAskIds.includes(decision.id) ? recipe.promotedAskIds.filter((id) => id !== decision.id) : [...recipe.promotedAskIds, decision.id] })} /> {decision.title}</label>)}</div>}<div className={styles.fact}><button className={styles.button} onClick={() => setRecipe(toggleRecipeModule(recipe, selected.id))}>{active.has(selected.id) ? "Remove module" : "Add module"}</button></div></aside>
     </div> : surface === "brief" ? <div><div className={styles.transport}><button className={styles.button} onClick={() => copy("markdown")}>Copy Markdown</button><button className={styles.button} onClick={() => copy("plain")}>Copy plain text</button><a className={styles.button} href="/reports/composer/fixture/print" target="_blank" rel="noreferrer">Print view</a><span className={styles.label} style={{ marginLeft: "auto" }}>Same immutable payload · same module recipe</span></div><AudienceBriefView brief={brief} recipe={recipe} /></div>
-    : <div><div className={styles.transport}><button className={styles.button} onClick={() => copy("bundle")}>Copy unsealed fixture bundle</button><span className={styles.label} style={{ marginLeft: "auto" }}>Save the brief in Reports to create a sealed @Sites handoff</span></div><AudienceBriefView brief={brief} recipe={recipe} sitePreview /></div>}
+    : <div><div className={styles.transport}><button className={styles.button} onClick={() => copy("bundle")}>Copy bundle JSON</button><button className={styles.button} onClick={() => copy("handoff")}>Copy @Sites handoff</button><span className={styles.label} style={{ marginLeft: "auto" }}>Private review · no live access · publishing not authorized</span></div><AudienceBriefView brief={brief} recipe={recipe} sitePreview /></div>}
   </div>;
 }

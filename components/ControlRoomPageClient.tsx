@@ -526,11 +526,11 @@ export default function ControlRoomPageClient() {
                   domain="outcome"
                   label="Likely outcome"
                   question="What we believe will happen"
-                  value={r.outcome.likely ? deliveryDay(r.outcome.likely) : "—"}
-                  unit={r.time.forecastCurrentness === "stale" ? `Stale · ${r.time.forecastAgeDays}d · as of ${dShort(r.time.forecastAsOf)}` : r.outcome.gatedBy ? `${r.outcome.gatedBy} lands last` : "Nothing simulated"}
+                  value={r.outcome.coverageState === "forecastable" ? (r.outcome.likely ? deliveryDay(r.outcome.likely) : "—") : "INCOMPLETE"}
+                  unit={r.outcome.coverageState === "forecastable" ? (r.time.forecastCurrentness === "stale" ? `Stale · ${r.time.forecastAgeDays}d · as of ${dShort(r.time.forecastAsOf)}` : r.outcome.gatedBy ? `${r.outcome.gatedBy} lands last` : "Nothing simulated") : `${r.outcome.coverageScopeNames.join(", ")} execution coverage`}
                   valueTone={forecastTone}
-                  second={r.outcome.confidence !== null ? `${r.outcome.confidence}%` : "No target"}
-                  secondLabel={r.outcome.confidence !== null ? "Confidence" : "to measure against"}
+                  second={r.outcome.coverageState === "modeled_subset" && r.outcome.likely ? `~${deliveryDay(r.outcome.likely)}` : r.outcome.confidence !== null ? `${r.outcome.confidence}%` : "No target"}
+                  secondLabel={r.outcome.coverageState === "modeled_subset" ? "Modeled subset" : r.outcome.confidence !== null ? "Confidence" : "to measure against"}
                   series={gatingConfidence?.points ?? null}
                   // REALITY IS ALWAYS VISIBLE UNDER A SCENARIO. When the
                   // hypothetical did not move the project's date, the chip
@@ -866,10 +866,12 @@ export default function ControlRoomPageClient() {
                           className="i-readout text-[22px] leading-none"
                           style={{ color: r.outcome.confidence === null ? "var(--i-text-faint)" : forecastTone }}
                         >
-                          {r.outcome.confidence !== null ? `${r.outcome.confidence}%` : "No target"}
+                          {r.outcome.coverageState !== "forecastable" ? "INCOMPLETE" : r.outcome.confidence !== null ? `${r.outcome.confidence}%` : "No target"}
                         </span>
                         <span className="min-w-0 truncate text-[9.5px]" style={{ color: "var(--i-text-faint)" }}>
-                          {r.outcome.confidence !== null
+                          {r.outcome.coverageState !== "forecastable"
+                            ? `coverage unresolved for ${r.outcome.coverageScopeNames.join(", ")}`
+                            : r.outcome.confidence !== null
                             ? `for ${r.outcome.gatedBy}`
                             : `for ${r.outcome.gatedBy ?? "the last project"}`}
                         </span>

@@ -17,9 +17,11 @@
     "proof:project-activation-phase2": "tsx scripts/project-activation-phase2-proof.ts",
     "proof:project-activation-phase2-db": "tsx scripts/project-activation-phase2-db-proof.ts",
     "proof:project-activation-companion-db": "tsx scripts/project-activation-companion-db-proof.ts",
-    "proof:reports-interactive-site-v1": "tsx scripts/reports-interactive-site-v1-proof.ts",
-    "proof:reports-interactive-site-v1-db": "tsx scripts/reports-interactive-site-v1-db-proof.ts",
-    "fixtures:reports-interactive-site-v1": "tsx scripts/export-reports-interactive-site-v1-fixtures.ts"
+    "proof:audit-change-inbox": "tsx scripts/audit-refresh-change-inbox-proof.ts",
+    "proof:audit-change-inbox-db": "tsx scripts/audit-refresh-change-inbox-db-proof.ts",
+    "proof:operator-cleanup": "tsx scripts/operator-cleanup-proof.ts",
+    "proof:operator-cleanup-db": "tsx scripts/operator-cleanup-db-proof.ts",
+    "proof:forecast-coverage-scope": "tsx scripts/forecast-coverage-scope-composer-proof.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.32",

@@ -61,10 +61,12 @@ import {
   deltaTone,
   type ProjectScope,
 } from "@/lib/instrument/useProject";
-import { composeFeatures, type Feature, type ThreePoint } from "@/lib/scope/features";
+import { composeScopeFeatures, type Feature, type ThreePoint } from "@/lib/scope/features";
 import { readDominance } from "@/lib/scope/constraint";
 import { formatCapacity } from "@/lib/capacity/limits";
 import { formatDateOnly } from "@/lib/time/dateContract";
+import { partitionProductShape, type ShapeCapability } from "@/lib/scope/productShape";
+import type { ForecastCoverageContract } from "@/lib/forecast/coverage";
 
 const BAY_IN = "bay-in";
 const BAY_OUT = "bay-out";
@@ -202,18 +204,7 @@ export default function ScopeInstrument() {
       </InstrumentShell>
     );
 
-  if (scope.forecastReadiness.state === "unavailable" && scope.items.length === 0) {
-    return <InstrumentShell stateBar={strip} scopes={m.data.scopes.map((s) => ({ scopeId: s.scopeId, name: s.name }))} onSelectScope={setScopeId}>
-      <div className="flex-1 overflow-y-auto p-6" style={{ background: "var(--i-void)" }} data-shoot="scope-accepted-capabilities">
-        <div className="mx-auto max-w-[880px]"><div className="i-label" style={{ color: "var(--i-signal)" }}>Accepted product shape</div><h1 className="mt-2 text-[22px] font-semibold text-[var(--i-text)]">{scope.name}</h1>
-          <p className="mt-2 text-[11px] text-[var(--i-amber)]">FORECAST UNAVAILABLE · {scope.forecastReadiness.reason}</p>
-          <div className="mt-5 grid grid-cols-2 gap-3">{scope.capabilities.map((capability) => <article key={capability.id} className="rounded-xl border p-4" style={{ background: "var(--i-panel)", borderColor: "var(--i-border)" }}><h2 className="text-[13px] font-medium text-[var(--i-text)]">{capability.name}</h2><p className="mt-2 text-[10px] leading-relaxed text-[var(--i-text-soft)]">{capability.description ?? "No accepted description."}</p><p className="mt-3 text-[9px] uppercase tracking-[0.1em]" style={{ color: capability.workLinkCount ? "var(--i-mint)" : "var(--i-amber)" }}>{capability.workLinkCount ? `${capability.workLinkCount} execution mapping${capability.workLinkCount === 1 ? "" : "s"}` : "Execution mapping missing"}</p></article>)}</div>
-          {scope.capabilities.length === 0 && <div className="mt-5 rounded-xl border border-dashed p-8 text-center text-[11px] text-[var(--i-text-faint)]" style={{ borderColor: "var(--i-border-strong)" }}>No capabilities were accepted at activation. The first Audit records this representation gap.</div>}
-        </div>
-      </div>
-    </InstrumentShell>;
-  }
-
+  const productShape = partitionProductShape(scope.capabilities);
   const startDate = m.startDate;
   const base = m.baseline?.get(scope.scopeId) ?? null;
   const res = m.preview?.get(scope.scopeId) ?? base;
@@ -225,16 +216,17 @@ export default function ScopeInstrument() {
     );
 
   const capacity = m.scenario.capacityOverrideByScope[scope.scopeId] ?? scope.teamCapacity;
-  const composition = composeFeatures(
+  const composition = composeScopeFeatures(
     scope.items,
     scope.completedWork,
+    scope.capabilities,
     capacity,
     m.scenario.bypassedFeatureIds,
     m.scenario.estimateOverrideByItemId,
     m.scenario.draftFeatures,
     m.scenario.acceptedCandidateIds
   );
-  const reality = composeFeatures(scope.items, scope.completedWork, scope.teamCapacity, new Set(), {}, []);
+  const reality = composeScopeFeatures(scope.items, scope.completedWork, scope.capabilities, scope.teamCapacity, new Set(), {}, []);
 
   const movedDays = Math.round((res.likelyDate.getTime() - base.likelyDate.getTime()) / 86400000);
   const dom = readDominance(
@@ -376,12 +368,19 @@ export default function ScopeInstrument() {
                   movedDays={movedDays}
                   effortRemoved={effortRemoved}
                   active={m.active}
+                  canonicalForecast={scope.forecastCoverage.canonicalForecast}
                   dominancePhrase={dom?.dominated ? dom.phrase : null}
                   previewRelief={
                     carryingSeated && dragging ? dragging.effortDays / (capacity > 0 ? capacity : 1) : null
                   }
                 />
               </div>
+
+              <ProductShapeSummary
+                accepted={productShape.accepted}
+                coverage={scope.forecastCoverage}
+                executionSource={scope.executionSource}
+              />
 
               {/* ── MAIN: the deck, then the strata it rests on ─────────── */}
               <div className="flex-1 min-h-0 flex flex-col gap-3.5 px-5 pb-3.5">
@@ -402,8 +401,8 @@ export default function ScopeInstrument() {
                       openFindingCount: unrepresentedFindings.length,
                       gateDays: openGates.reduce((sum, gate) => sum + gate.likely, 0),
                       dependencyNames,
-                      forecastAsOf: scope.forecastSource.asOf,
-                      sourceAvailability: scope.forecastSource.availability,
+                      forecastAsOf: scope.executionSource.asOf,
+                      sourceAvailability: scope.executionSource.availability,
                       scopeId: scope.scopeId,
                     }}
                   />
@@ -420,10 +419,11 @@ export default function ScopeInstrument() {
                     pull={shelfPull}
                     armed={acquiringShelf}
                     onOpen={setOpenFeatureId}
+                    governedOutside={productShape.outsideRelease}
                   />
                 </div>
 
-                <ConstraintStrip gates={openGates} dominance={dom} startDate={startDate} />
+                <ConstraintStrip gates={openGates} openQuestions={scope.openShapeQuestions} scopeId={scope.scopeId} dominance={dom} startDate={startDate} />
 
                 <SignalStrip
                   capacityLabel={formatCapacity(capacity)}
@@ -551,6 +551,35 @@ function nameOf(features: Feature[], id: string | number) {
   return features.find((f) => f.id === id)?.name ?? "capability";
 }
 
+function ProductShapeSummary({
+  accepted,
+  coverage,
+  executionSource,
+}: {
+  accepted: ShapeCapability[];
+  coverage: ForecastCoverageContract;
+  executionSource: { asOf: string; availability: "available" | "empty" };
+}) {
+  const tone = coverage.state === "forecastable" ? "var(--i-signal)" : "var(--i-amber)";
+  return (
+    <div className="mx-5 mb-3 grid shrink-0 grid-cols-3 gap-2" data-shoot="scope-product-shape-summary">
+      <div className="min-w-0 rounded-lg border bg-[var(--i-panel)] px-3 py-2" style={{ borderColor: `color-mix(in srgb, ${tone} 35%, var(--i-border))` }} data-shoot="scope-coverage-state">
+        <div className="i-label" style={{ color: tone }}>{coverage.state === "forecastable" ? "EXECUTION COVERAGE COMPLETE" : "EXECUTION COVERAGE UNRESOLVED"}</div>
+        <div className="mt-1 truncate text-[9px] text-[var(--i-text-soft)]">{coverage.reason ?? "Canonical delivery forecast is supported"}</div>
+      </div>
+      <div className="min-w-0 rounded-lg border border-[var(--i-border)] bg-[var(--i-recess)] px-3 py-2">
+        <div className="i-label">Accepted shape mapped</div>
+        <div className="mt-1 text-[9px] text-[var(--i-text-faint)]">{coverage.census.mappedAcceptedCapabilityCount}/{coverage.census.acceptedCapabilityCount} capabilities · {coverage.census.executionIssueCount} execution items</div>
+        {accepted.length === 0 && <div className="mt-0.5 truncate text-[8.5px] text-[var(--i-text-faint)]">No accepted Capability records; legacy execution grammar remains visible</div>}
+      </div>
+      <div className="min-w-0 rounded-lg border border-[var(--i-amber)]/20 bg-[var(--i-amber)]/[0.025] px-3 py-2">
+        <div className="i-label text-[var(--i-text-faint)]">Execution owner read</div>
+        <div className="mt-1 truncate text-[9px] text-[var(--i-text-faint)]">Linear · {executionSource.availability} · as of {formatDateOnly(executionSource.asOf, { month: "short", day: "numeric", year: "numeric" })}</div>
+      </div>
+    </div>
+  );
+}
+
 /** The carried module leans into its own horizontal motion — a couple of
     degrees at most, spring-smoothed, straightening on acquisition. */
 function VelocityLean({
@@ -594,6 +623,7 @@ function MasterDisplay({
   movedDays,
   effortRemoved,
   active,
+  canonicalForecast,
   dominancePhrase,
   previewRelief,
 }: {
@@ -607,6 +637,7 @@ function MasterDisplay({
   movedDays: number;
   effortRemoved: number;
   active: boolean;
+  canonicalForecast: boolean;
   /** Set only when the date is held by something Scope cannot cut. */
   dominancePhrase: string | null;
   /** Live during a carry: what setting this module down would remove. */
@@ -626,7 +657,7 @@ function MasterDisplay({
     >
       {/* LANDING — the loudest thing on the instrument. */}
       <div className="px-6 py-3">
-        <div className="i-label">{scopeName} lands</div>
+        <div className="i-label">{canonicalForecast ? `${scopeName} lands` : "Modeled subset outcome"}</div>
         <div className="mt-1.5 leading-none" style={{ fontSize: 30 }}>
           <motion.span
             key={date}
@@ -636,11 +667,11 @@ function MasterDisplay({
             className="inline-block i-readout"
             style={{ color: moved ? "var(--i-violet)" : "var(--i-text)" }}
           >
-            {date}
+            {canonicalForecast ? date : `~${date}`}
           </motion.span>
         </div>
         <div className="mt-1.5 text-[9.5px] text-[var(--i-text-faint)]">
-          best {best} · worst {worst}
+          {canonicalForecast ? `best ${best} · worst ${worst}` : `subset window ${best} · ${worst}`}
         </div>
       </div>
 
@@ -1030,6 +1061,7 @@ function OutColumn({
   pull,
   armed,
   onOpen,
+  governedOutside,
 }: {
   shelfEl: React.MutableRefObject<HTMLDivElement | null>;
   features: Feature[];
@@ -1040,6 +1072,7 @@ function OutColumn({
   pull: MotionValue<number>;
   armed: boolean;
   onOpen: (id: string) => void;
+  governedOutside: ShapeCapability[];
 }) {
   const { setNodeRef } = useDroppable({ id: BAY_OUT });
   const parkedDays = features.reduce((s, f) => s + f.loadDays, 0);
@@ -1116,6 +1149,24 @@ function OutColumn({
       </motion.span>
 
       <div className="h-full overflow-y-auto px-2.5 pt-7 pb-2.5 flex flex-col gap-2.5">
+        {governedOutside.map((capability) => (
+          <div
+            key={capability.id}
+            className="shrink-0 rounded-lg border px-3 py-3"
+            style={{ borderColor: "#252c30", background: "linear-gradient(180deg, #12171a 0%, #0d1114 100%)" }}
+            data-shoot="governed-outside-capability"
+            data-capability={capability.id}
+          >
+            <div className="flex items-start gap-2">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.22)" strokeWidth="1.6" className="mt-0.5 shrink-0" aria-hidden><path d={sigilPathFor(capability.name)} /></svg>
+              <div className="min-w-0">
+                <div className="text-[9.5px] font-semibold leading-snug text-[var(--i-text-soft)]">{capability.name}</div>
+                <div className="mt-1 text-[7.5px] uppercase tracking-[0.12em] text-[var(--i-amber)]">{capability.status.replaceAll("_", " ")}</div>
+              </div>
+            </div>
+            <p className="mt-2 line-clamp-3 text-[8.5px] leading-relaxed text-[var(--i-text-faint)]">{capability.description ?? "Governed outside the current release."}</p>
+          </div>
+        ))}
         <AnimatePresence initial={false}>
           {features.map((f) => (
             <SeatedModule
@@ -1175,8 +1226,8 @@ function OutColumn({
           </div>
           <div className="mt-1 text-[8.5px] leading-snug text-[var(--i-text-faint)]">
             {features.length === 0
-              ? "nothing taken out"
-              : `${features.length} capabilit${features.length === 1 ? "y" : "ies"} · still in Reality`}
+              ? governedOutside.length > 0 ? `${governedOutside.length} governed outside · 0 scenario cuts` : "nothing taken out"
+              : `${features.length} scenario capabilit${features.length === 1 ? "y" : "ies"} · still in Reality`}
           </div>
         </div>
       </div>
@@ -1198,10 +1249,14 @@ function OutColumn({
 // and inventing that attribution would be a lie the user could act on.
 function ConstraintStrip({
   gates,
+  openQuestions,
+  scopeId,
   dominance,
   startDate,
 }: {
   gates: { id: string; label: string; likely: number }[];
+  openQuestions: { id: string; title: string; rationale: string | null; status: string }[];
+  scopeId: string;
   dominance: ReturnType<typeof readDominance>;
   startDate: Date;
 }) {
@@ -1252,16 +1307,16 @@ function ConstraintStrip({
 
       <div className="shrink-0 flex flex-col justify-center pl-4 pr-3.5">
         <span className="i-label" style={{ color: held ? "var(--i-amber)" : "var(--i-text-faint)", fontSize: 8.5 }}>
-          Locks
+          Locks & questions
         </span>
-        <span className="mt-0.5 text-[8.5px] leading-none text-[var(--i-text-faint)]">serial · owned by Decisions</span>
+        <span className="mt-0.5 text-[8.5px] leading-none text-[var(--i-text-faint)]">read-only · owned by Decisions</span>
       </div>
 
       <div className="flex-1 min-w-0 flex items-center gap-1.5 px-1 overflow-hidden">
-        {gates.length === 0 ? (
+        {gates.length === 0 && openQuestions.length === 0 ? (
           <span className="text-[9.5px] text-[var(--i-text-faint)] px-2">no open decisions under this release</span>
-        ) : (
-          gates.map((g) => (
+        ) : (<>
+          {gates.map((g) => (
             <Link
               key={g.id}
               href="/decisions"
@@ -1290,8 +1345,22 @@ function ConstraintStrip({
                 {g.likely.toFixed(0)}d
               </span>
             </Link>
-          ))
-        )}
+          ))}
+          {openQuestions.map((decision) => (
+            <Link
+              key={decision.id}
+              href={`/decisions?project=${encodeURIComponent(scopeId)}&selected=decision%3A${encodeURIComponent(decision.id)}`}
+              className="group min-w-0 flex items-center gap-1.5 rounded px-2 py-1 transition-colors"
+              style={{ border: "1px solid #23262a", background: "rgba(0,0,0,0.35)" }}
+              title={`${decision.title} · open shape Decision; not Scope`}
+              data-shoot="open-shape-decision"
+            >
+              <span className="h-2 w-2 shrink-0 rounded-full border border-[var(--i-amber)]/70" aria-hidden />
+              <span className="min-w-0 truncate text-[9.5px] text-[var(--i-text-soft)] group-hover:text-[var(--i-text)] transition-colors">{decision.title}</span>
+              <span className="shrink-0 text-[7.5px] uppercase tracking-[0.1em] text-[var(--i-text-faint)]">shape</span>
+            </Link>
+          ))}
+        </>)}
       </div>
 
       {hasFloor && (

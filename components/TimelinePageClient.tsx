@@ -447,9 +447,10 @@ export default function TimelinePageClient({ embedded = false }: { embedded?: bo
     if (!data) return out;
     for (const lane of data.lanes) {
       const sim = project.baseline?.get(lane.scopeId) ?? null;
-      const scopeSource = project.data?.scopes.find((scope) => scope.scopeId === lane.scopeId)?.forecastSource;
+      const projectScope = project.data?.scopes.find((scope) => scope.scopeId === lane.scopeId);
+      const scopeSource = projectScope?.forecastSource;
       const live = sim
-        ? liveForecastReading(lane.scopeId, scopeSource?.asOf ?? data.now, sim, lane.targetDate, data.now)
+        ? liveForecastReading(lane.scopeId, scopeSource?.asOf ?? data.now, sim, lane.targetDate, data.now, projectScope?.forecastCoverage.state ?? "unavailable")
         : null;
       out[lane.scopeId] = forecastReadingForTime(atNow, live, memoryByScope[lane.scopeId] ?? null);
     }
@@ -1148,7 +1149,7 @@ export default function TimelinePageClient({ embedded = false }: { embedded?: bo
                         data-shoot={`memory-likely-${lane.scopeId}`}
                         style={{ fontSize: dense ? 13.5 : 17, color: m.temporalRole === "live" && m.currentness === "stale" ? "var(--i-amber)" : m.temporalRole === "live" ? "var(--i-signal)" : "var(--i-violet)" }}
                       >
-                        {fmtDay(new Date(m.likelyDate).getTime())}
+                        {m.temporalRole === "live" && m.coverageState !== "forecastable" ? "INCOMPLETE" : fmtDay(new Date(m.likelyDate).getTime())}
                       </div>
                       {/* SECONDARY DISCLOSURE. The range, the confidence and
                           how long the belief has been held are all true and
@@ -1160,8 +1161,10 @@ export default function TimelinePageClient({ embedded = false }: { embedded?: bo
                         data-shoot={`memory-detail-${lane.scopeId}`}
                         style={{ color: "var(--i-text-faint)", opacity: live ? 1 : 0 }}
                       >
-                        {fmtDay(new Date(m.earliestDate).getTime())} – {fmtDay(new Date(m.latestDate).getTime())}
-                        {m.confidenceAtTarget !== null && ` · ${m.confidenceAtTarget}%`}
+                        {m.temporalRole === "live" && m.coverageState === "modeled_subset"
+                          ? `modeled subset ~${fmtDay(new Date(m.likelyDate).getTime())}`
+                          : `${fmtDay(new Date(m.earliestDate).getTime())} – ${fmtDay(new Date(m.latestDate).getTime())}`}
+                        {m.coverageState === "forecastable" && m.confidenceAtTarget !== null && ` · ${m.confidenceAtTarget}%`}
                         {m.temporalRole === "live" ? ` · LIVE owner · ${m.currentness === "stale" ? `STALE ${m.ageDays}d` : "CURRENT"} · as of ${fmtDay(new Date(m.asOf).getTime())}` : ` · Report snapshot · as of ${fmtDay(new Date(m.asOf).getTime())}`}
                         {stale !== null && stale > 0 && ` · held ${stale}d`}
                       </div>

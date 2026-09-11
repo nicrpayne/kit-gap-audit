@@ -26,6 +26,7 @@ import type { DecisionRow } from "@/lib/decisions/model";
 import type { TimelineEntry, TimelineCandidate, TimelineLane } from "@/lib/timeline/entries";
 import { sourceCurrentness, type SourceCurrentness } from "@/lib/truth/currentness";
 import { formatDateOnly } from "@/lib/time/dateContract";
+import type { ForecastCoverageState } from "@/lib/forecast/coverage";
 
 const DAY = 86400000;
 const days = (a: Date, b: Date) => (a.getTime() - b.getTime()) / DAY;
@@ -144,6 +145,8 @@ export interface CapacitySummary {
 // ── 4. WHERE ARE WE LIKELY TO LAND ─────────────────────────────────────
 
 export interface OutcomeSummary {
+  coverageState: ForecastCoverageState;
+  coverageScopeNames: string[];
   /** The latest scope P50 — the project is done when the last part is. */
   likely: Date | null;
   /** Which project's completion sets that date. */
@@ -444,12 +447,20 @@ export function readControlRoom(i: ControlRoomInput): ControlRoomReading {
       likelyMs = r.likelyDate.getTime();
       gatedByScopeId = s.scopeId;
     }
-    if (s.targetDate && r.likelyDate > new Date(s.targetDate)) scopesPastTarget += 1;
+    if (s.forecastCoverage.canonicalForecast && s.targetDate && r.likelyDate > new Date(s.targetDate)) scopesPastTarget += 1;
   }
   const gatingScope = data.scopes.find((s) => s.scopeId === gatedByScopeId) ?? null;
   const gatingSim = gatedByScopeId ? preview.get(gatedByScopeId) ?? null : null;
   const gatingReality = gatedByScopeId ? baseline.get(gatedByScopeId) ?? null : null;
   const target = gatingScope?.targetDate ? new Date(gatingScope.targetDate) : null;
+  const unavailableScopes = data.scopes.filter((scope) => scope.forecastCoverage.state === "unavailable");
+  const partialScopes = data.scopes.filter((scope) => scope.forecastCoverage.state === "modeled_subset");
+  const coverageState: ForecastCoverageState = unavailableScopes.length > 0
+    ? "unavailable"
+    : partialScopes.length > 0
+      ? "modeled_subset"
+      : "forecastable";
+  const coverageScopeNames = (unavailableScopes.length > 0 ? unavailableScopes : partialScopes).map((scope) => scope.name);
 
   // WHAT EACH REPORT BELIEVED AT THE TIME IT RAN.
   //
@@ -474,10 +485,12 @@ export function readControlRoom(i: ControlRoomInput): ControlRoomReading {
     gatingPts.length >= 2 ? gatingPts[gatingPts.length - 1].value - gatingPts[gatingPts.length - 2].value : null;
 
   const outcome: OutcomeSummary = {
+    coverageState,
+    coverageScopeNames,
     likely: likelyMs === -Infinity ? null : new Date(likelyMs),
     gatedBy: gatingScope?.name ?? null,
     gatedByScopeId,
-    confidence: gatingSim?.confidenceAtTarget ?? null,
+    confidence: coverageState === "forecastable" ? gatingSim?.confidenceAtTarget ?? null : null,
     target,
     gapDays: gatingSim && target ? Math.round(days(gatingSim.likelyDate, target)) : null,
     p10: gatingSim ? dayToDate(percentileDay(gatingSim.completionDaysSorted, 10)) : null,
@@ -557,6 +570,7 @@ export function readControlRoom(i: ControlRoomInput): ControlRoomReading {
       // Has the backlog stopped being what decides this date? Scope's own
       // reading, reused rather than re-derived.
       const scope = data.scopes.find((s) => s.scopeId === lane.scopeId);
+      const upstreamScope = data.scopes.find((s) => s.scopeId === upId);
       const dom =
         scope && floorByScope
           ? readDominance(
@@ -577,13 +591,17 @@ export function readControlRoom(i: ControlRoomInput): ControlRoomReading {
         // pushing something past its target, or has taken the date away
         // from the backlog, gets the sentence explaining it.
         detail:
-          overrun !== null && overrun > 0
+          !scope?.forecastCoverage.canonicalForecast || !upstreamScope?.forecastCoverage.canonicalForecast
+            ? "Execution coverage is unresolved; the modeled dependency date is not a canonical delivery forecast."
+            : overrun !== null && overrun > 0
             ? `${upName} is not expected until ${formatDateOnly(upSim.likelyDate, { month: "short", day: "numeric" })} — after ${lane.name}'s own target.`
             : dom?.dominated
               ? `${lane.name}'s backlog has stopped deciding its date. What it waits on decides it.`
               : "",
         quantity:
-          overrun !== null && overrun > 0
+          !scope?.forecastCoverage.canonicalForecast || !upstreamScope?.forecastCoverage.canonicalForecast
+            ? "coverage unresolved"
+            : overrun !== null && overrun > 0
             ? `${overrun}d past ${lane.name}'s target`
             : dom?.dominated
               ? "backlog no longer decides"
@@ -740,6 +758,10 @@ export function readControlRoom(i: ControlRoomInput): ControlRoomReading {
       continue;
     }
 
+    // A modeled subset cannot support a delivery-overrun claim. Its target
+    // remains visible elsewhere, but it does not become a canonical risk.
+    if (!s.forecastCoverage.canonicalForecast) continue;
+
     constraints.push({
       id: `late:${s.scopeId}`,
       label: `${s.name} lands after its target`,
@@ -761,7 +783,7 @@ export function readControlRoom(i: ControlRoomInput): ControlRoomReading {
       href: "/audit",
     });
   }
-  if (outcome.spreadDays !== null && outcome.spreadDays > 14) {
+  if (outcome.coverageState === "forecastable" && outcome.spreadDays !== null && outcome.spreadDays > 14) {
     constraints.push({
       id: "spread",
       label: `${outcome.gatedBy} could land across a wide range`,
