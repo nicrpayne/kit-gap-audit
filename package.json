@@ -20,7 +20,8 @@
     "proof:audit-change-inbox": "tsx scripts/audit-refresh-change-inbox-proof.ts",
     "proof:audit-change-inbox-db": "tsx scripts/audit-refresh-change-inbox-db-proof.ts",
     "proof:operator-cleanup": "tsx scripts/operator-cleanup-proof.ts",
-    "proof:operator-cleanup-db": "tsx scripts/operator-cleanup-db-proof.ts"
+    "proof:operator-cleanup-db": "tsx scripts/operator-cleanup-db-proof.ts",
+    "proof:forecast-coverage-scope": "tsx scripts/forecast-coverage-scope-composer-proof.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.32",

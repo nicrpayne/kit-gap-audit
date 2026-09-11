@@ -2,6 +2,7 @@ import type { SimulationResult } from "@/lib/forecast/simulate";
 import type { ForecastSnapshot } from "@/lib/timeline/entries";
 import { sourceCurrentness, type SourceCurrentness } from "@/lib/truth/currentness";
 import { toDateOnly } from "@/lib/time/dateContract";
+import type { ForecastCoverageState } from "@/lib/forecast/coverage";
 
 interface ForecastReadingBase {
   id: string;
@@ -14,6 +15,7 @@ interface ForecastReadingBase {
   confidenceAtTarget: number | null;
   currentness: SourceCurrentness;
   ageDays: number;
+  coverageState: ForecastCoverageState;
 }
 
 export type TimelineForecastReading =
@@ -25,7 +27,8 @@ export function liveForecastReading(
   asOf: string,
   result: SimulationResult,
   targetDate: string | null,
-  now: string = asOf
+  now: string = asOf,
+  coverageState: ForecastCoverageState = "forecastable",
 ): TimelineForecastReading {
   const freshness = sourceCurrentness(asOf, now);
   return {
@@ -38,7 +41,8 @@ export function liveForecastReading(
     likelyDate: toDateOnly(result.likelyDate),
     latestDate: toDateOnly(result.latestDate),
     targetDate: targetDate ? toDateOnly(targetDate) : null,
-    confidenceAtTarget: result.confidenceAtTarget,
+    confidenceAtTarget: coverageState === "forecastable" ? result.confidenceAtTarget : null,
+    coverageState,
     currentness: freshness.currentness,
     ageDays: freshness.ageDays,
   };
@@ -59,6 +63,7 @@ export function historicalForecastReading(snapshot: ForecastSnapshot): TimelineF
     confidenceAtTarget: snapshot.confidenceAtTarget,
     currentness: "current",
     ageDays: 0,
+    coverageState: "forecastable",
   };
 }
 

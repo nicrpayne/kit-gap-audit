@@ -17,6 +17,7 @@ import { computeMomentum } from "@/lib/momentum/compute";
 import { computeMomentumTrend, type MomentumTrend } from "@/lib/momentum/trend";
 import { realityRevision, subscribeReality } from "@/lib/instrument/reality";
 import { formatDateOnly } from "@/lib/time/dateContract";
+import type { ForecastCoverageContract } from "@/lib/forecast/coverage";
 
 // The provenance the Scope instrument reads. Produced by describeItems in
 // lib/forecast/compute.ts by joining each simulated item back to the Linear
@@ -79,7 +80,9 @@ export interface ProjectScope {
     reconciles: boolean;
   };
   forecastSource: { asOf: string; provider: "Linear"; temporalRole: "live"; availability: "available" | "empty" };
-  forecastReadiness: { state: "ready" | "unavailable"; reason: string | null };
+  executionSource: { asOf: string; provider: "Linear"; temporalRole: "live"; availability: "available" | "empty" };
+  forecastCoverage: ForecastCoverageContract;
+  forecastReadiness: { state: "ready" | "modeled_subset" | "unavailable"; reason: string | null };
   executionState: string;
   executionDetail: string | null;
   capabilities: {

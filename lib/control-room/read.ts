@@ -26,6 +26,7 @@ import type { DecisionRow } from "@/lib/decisions/model";
 import type { TimelineEntry, TimelineCandidate, TimelineLane } from "@/lib/timeline/entries";
 import { sourceCurrentness, type SourceCurrentness } from "@/lib/truth/currentness";
 import { formatDateOnly } from "@/lib/time/dateContract";
+import type { ForecastCoverageState } from "@/lib/forecast/coverage";
 
 const DAY = 86400000;
 const days = (a: Date, b: Date) => (a.getTime() - b.getTime()) / DAY;
@@ -144,6 +145,8 @@ export interface CapacitySummary {
 // ── 4. WHERE ARE WE LIKELY TO LAND ─────────────────────────────────────
 
 export interface OutcomeSummary {
+  coverageState: ForecastCoverageState;
+  coverageScopeNames: string[];
   /** The latest scope P50 — the project is done when the last part is. */
   likely: Date | null;
   /** Which project's completion sets that date. */
@@ -450,6 +453,14 @@ export function readControlRoom(i: ControlRoomInput): ControlRoomReading {
   const gatingSim = gatedByScopeId ? preview.get(gatedByScopeId) ?? null : null;
   const gatingReality = gatedByScopeId ? baseline.get(gatedByScopeId) ?? null : null;
   const target = gatingScope?.targetDate ? new Date(gatingScope.targetDate) : null;
+  const unavailableScopes = data.scopes.filter((scope) => scope.forecastCoverage.state === "unavailable");
+  const partialScopes = data.scopes.filter((scope) => scope.forecastCoverage.state === "modeled_subset");
+  const coverageState: ForecastCoverageState = unavailableScopes.length > 0
+    ? "unavailable"
+    : partialScopes.length > 0
+      ? "modeled_subset"
+      : "forecastable";
+  const coverageScopeNames = (unavailableScopes.length > 0 ? unavailableScopes : partialScopes).map((scope) => scope.name);
 
   // WHAT EACH REPORT BELIEVED AT THE TIME IT RAN.
   //
@@ -474,10 +485,12 @@ export function readControlRoom(i: ControlRoomInput): ControlRoomReading {
     gatingPts.length >= 2 ? gatingPts[gatingPts.length - 1].value - gatingPts[gatingPts.length - 2].value : null;
 
   const outcome: OutcomeSummary = {
+    coverageState,
+    coverageScopeNames,
     likely: likelyMs === -Infinity ? null : new Date(likelyMs),
     gatedBy: gatingScope?.name ?? null,
     gatedByScopeId,
-    confidence: gatingSim?.confidenceAtTarget ?? null,
+    confidence: coverageState === "forecastable" ? gatingSim?.confidenceAtTarget ?? null : null,
     target,
     gapDays: gatingSim && target ? Math.round(days(gatingSim.likelyDate, target)) : null,
     p10: gatingSim ? dayToDate(percentileDay(gatingSim.completionDaysSorted, 10)) : null,

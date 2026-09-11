@@ -23,7 +23,7 @@ import { formatDateOnly } from "@/lib/time/dateContract";
     agrees" — collapsing them is how a stale report starts looking current. */
 type LiveForecast =
   | { state: "loading" }
-  | { state: "ready"; likelyDate: string; confidenceAtTarget: number | null; asOf: string }
+  | { state: "ready"; likelyDate: string; confidenceAtTarget: number | null; asOf: string; coverageState: "forecastable" | "modeled_subset" | "unavailable"; coverageLabel: string; coverageReason: string | null }
   | { state: "error"; reason: string };
 
 interface ScopeOption {
@@ -145,7 +145,15 @@ export default function ReportsPageClient() {
       })
       .then((body) => {
         if (cancelled) return;
-        setLive({ state: "ready", likelyDate: body.likelyDate, confidenceAtTarget: body.confidenceAtTarget ?? null, asOf: body.forecastSource.asOf });
+        setLive({
+          state: "ready",
+          likelyDate: body.likelyDate,
+          confidenceAtTarget: body.confidenceAtTarget ?? null,
+          asOf: body.forecastSource.asOf,
+          coverageState: body.forecastCoverage?.state ?? "unavailable",
+          coverageLabel: body.forecastCoverage?.label ?? "FORECAST UNAVAILABLE",
+          coverageReason: body.forecastCoverage?.reason ?? null,
+        });
       })
       .catch((err: unknown) => {
         if (cancelled) return;
@@ -164,11 +172,12 @@ export default function ReportsPageClient() {
     return describeSnapshot({
       generatedAt: new Date(selected.generatedAt),
       snapshotLikelyDate: new Date(selected.likelyDate),
-      liveLikelyDate: live?.state === "ready" ? new Date(live.likelyDate) : null,
-      liveUnavailableReason: live?.state === "error" ? live.reason : live?.state === "loading" ? "still loading" : null,
+      liveLikelyDate: live?.state === "ready" && live.coverageState === "forecastable" ? new Date(live.likelyDate) : null,
+      liveUnavailableReason: live?.state === "error" ? live.reason : live?.state === "loading" ? "still loading" : live?.state === "ready" && live.coverageState !== "forecastable" ? live.coverageLabel : null,
     });
   }, [selected, live]);
   const forecastUnavailable = live?.state === "error" && live.reason.includes("FORECAST UNAVAILABLE");
+  const forecastIncomplete = live?.state === "ready" && live.coverageState !== "forecastable";
 
   async function generate() {
     if (!scopeId) return;
@@ -224,7 +233,7 @@ export default function ReportsPageClient() {
         )}
         <button
           onClick={generate}
-          disabled={generating || !scopeId || forecastUnavailable}
+          disabled={generating || !scopeId || forecastUnavailable || forecastIncomplete}
           className="i-btn-primary px-4 py-2 text-sm"
         >
           {generating ? "Generating…" : "Generate report"}
@@ -245,8 +254,8 @@ export default function ReportsPageClient() {
         {selected && <a href={`/reports/${encodeURIComponent(selected.id)}/print`} target="_blank" rel="noreferrer" className="report-no-print rounded-md border border-[var(--i-border)] px-3 py-1.5 text-xs text-[var(--i-text-soft)] hover:bg-white/5">Print view</a>}
         {live?.state === "ready" && (() => {
           const freshness = sourceCurrentness(live.asOf, new Date());
-          return <span className="report-no-print ml-auto text-[10px] uppercase tracking-wider" style={{ color: freshness.currentness === "stale" ? "var(--i-amber)" : "var(--i-mint)" }}>
-            Live owner · {currentnessLabel(freshness)} · as of {formatTimestampDate(live.asOf)} · likely {formatDateOnly(live.likelyDate, { month: "short", day: "numeric", year: "numeric" })}
+          return <span className="report-no-print ml-auto text-[10px] uppercase tracking-wider" style={{ color: live.coverageState === "forecastable" && freshness.currentness !== "stale" ? "var(--i-mint)" : "var(--i-amber)" }}>
+            {live.coverageState === "forecastable" ? `Live owner · ${currentnessLabel(freshness)} · as of ${formatTimestampDate(live.asOf)} · likely ${formatDateOnly(live.likelyDate, { month: "short", day: "numeric", year: "numeric" })}` : `${live.coverageLabel} · modeled subset ~${formatDateOnly(live.likelyDate, { month: "short", day: "numeric", year: "numeric" })}`}
           </span>;
         })()}
       </div>
@@ -294,7 +303,7 @@ export default function ReportsPageClient() {
             </>
           ) : (
             <div className="text-sm text-[var(--color-ink-soft)] py-8 text-center">
-              {forecastUnavailable ? <><strong className="block text-[var(--i-amber)]">REPORT UNAVAILABLE</strong><span className="mt-2 block">{live.reason}. The project remains selectable; Signal will not fabricate a finished brief from absent execution data.</span></> : <>No reports yet for this scope — click &ldquo;Generate report&rdquo;.</>}
+              {forecastUnavailable ? <><strong className="block text-[var(--i-amber)]">REPORT UNAVAILABLE</strong><span className="mt-2 block">{live.reason}. The project remains selectable; Signal will not fabricate a finished brief from absent execution data.</span></> : forecastIncomplete ? <><strong className="block text-[var(--i-amber)]">REPORT NOT READY</strong><span className="mt-2 block">{live.coverageReason}. The modeled subset is not promoted into a project delivery brief.</span></> : <>No reports yet for this scope — click &ldquo;Generate report&rdquo;.</>}
             </div>
           )}
         </div>

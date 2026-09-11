@@ -16,6 +16,7 @@ import { estimateContentHash, findingContentHash } from "@/lib/estimate/run";
 import { buildReleaseContext } from "@/lib/estimate/context";
 import { resolveCapacity, type CapacityContributor } from "@/lib/capacity/resolve";
 import { capacityForecastContract, type CapacityForecastContract } from "@/lib/capacity/contract";
+import { evaluateForecastCoverage, type ForecastCoverageContract } from "@/lib/forecast/coverage";
 
 export interface ForecastFinding {
   id: string;
@@ -42,6 +43,9 @@ export interface ForecastScenario {
 
 export interface ForecastResult {
   forecastSource: ForecastSourceStamp;
+  /** The project's own Linear read, before dependency currentness is folded in. */
+  executionSource: ForecastSourceStamp;
+  forecastCoverage: ForecastCoverageContract;
   issues: LinearIssueSummary[];
   findings: ForecastFinding[];
   notionDocs: { id: string; title: string; chars: number }[];
@@ -125,6 +129,13 @@ interface ScopeSimBundle {
   contextDocs: ForecastResult["contextDocs"];
   contextComplete: boolean;
   contextIssues: string[];
+  capabilities: {
+    id: string;
+    status: string;
+    workLinks: { externalId: string; state: string }[];
+  }[];
+  openShapeDecisionCount: number;
+  forecastCoverage: ForecastCoverageContract;
 }
 
 // Everything needed to simulate ONE Scope: Linear issues + Findings +
@@ -161,7 +172,14 @@ async function buildScopeSimInputs(scope: Scope): Promise<ScopeSimBundle> {
     },
   });
 
-  const workEstimates = await prisma.workEstimate.findMany({ where: { scopeId: scope.id } });
+  const [workEstimates, capabilities, openShapeDecisionCount] = await Promise.all([
+    prisma.workEstimate.findMany({ where: { scopeId: scope.id } }),
+    prisma.capability.findMany({
+      where: { scopeId: scope.id },
+      select: { id: true, status: true, workLinks: { select: { externalId: true, state: true } } },
+    }),
+    prisma.decision.count({ where: { scopeId: scope.id, status: "open", gate: { is: null } } }),
+  ]);
   const estimates = new Map(
     workEstimates.filter((e) => e.source === "linear").map((e) => [e.externalId, e])
   );
@@ -243,6 +261,13 @@ async function buildScopeSimInputs(scope: Scope): Promise<ScopeSimBundle> {
     capacitySource: resolved.source ?? undefined,
   });
 
+  const forecastCoverage = evaluateForecastCoverage({
+    executionState: scope.executionState,
+    issueIds: issues.map((issue) => issue.identifier),
+    capabilities,
+    openShapeDecisionCount,
+  });
+
   return {
     inputs,
     capacityContributors: resolved.contributors,
@@ -255,7 +280,23 @@ async function buildScopeSimInputs(scope: Scope): Promise<ScopeSimBundle> {
     contextDocs: contextDocsInfo,
     contextComplete,
     contextIssues,
+    capabilities,
+    openShapeDecisionCount,
+    forecastCoverage,
   };
+}
+
+/** Read the same coverage contract used by Forecast without running a simulation. */
+export async function readForecastCoverage(scope: Scope): Promise<ForecastCoverageContract> {
+  if (scope.executionState === "not_configured" || scope.executionState === "unavailable") {
+    return evaluateForecastCoverage({
+      executionState: scope.executionState,
+      issueIds: [],
+      capabilities: [],
+      openShapeDecisionCount: 0,
+    });
+  }
+  return (await buildScopeSimInputs(scope)).forecastCoverage;
 }
 
 // One modelled work item, plus the provenance the Scope instrument needs to
@@ -389,7 +430,10 @@ export interface PortfolioScopeInput {
       migration debt, never silently presented as roster-backed. */
   capacityContract: CapacityForecastContract;
   forecastSource: ForecastSourceStamp;
-  forecastReadiness: { state: "ready" | "unavailable"; reason: string | null };
+  executionSource: ForecastSourceStamp;
+  forecastCoverage: ForecastCoverageContract;
+  /** Compatibility alias while consumers migrate to forecastCoverage. */
+  forecastReadiness: { state: "ready" | "modeled_subset" | "unavailable"; reason: string | null };
   executionState: string;
   executionDetail: string | null;
   capabilities: {
@@ -540,9 +584,12 @@ export async function buildPortfolioInputs(): Promise<PortfolioInputs> {
         (reconciliationByScope.get(scope.id)?.status ?? "aggregate_unreconciled") as "aggregate_unreconciled" | "named_partial" | "named_exact",
       ),
       forecastSource: sourceStampForIssues(bundle.issues, readAt),
-      forecastReadiness: scope.executionState === "configured"
-        ? { state: "ready", reason: null }
-        : { state: "unavailable", reason: scope.executionState === "not_configured" ? "Missing executable work mapping" : `Execution source is ${scope.executionState}` },
+      executionSource: sourceStampForIssues(bundle.issues, readAt),
+      forecastCoverage: bundle.forecastCoverage,
+      forecastReadiness: {
+        state: bundle.forecastCoverage.state === "forecastable" ? "ready" : bundle.forecastCoverage.state,
+        reason: bundle.forecastCoverage.reason,
+      },
       executionState: scope.executionState,
       executionDetail: scope.executionDetail,
       capabilities: scope.capabilities.map((capability) => ({
@@ -678,6 +725,8 @@ export async function computeForecast(scope: Scope): Promise<ForecastResult> {
 
   return {
     forecastSource: weakestSourceStamp(sourceStamps, readAt),
+    executionSource: sourceStampForIssues(own.issues, readAt),
+    forecastCoverage: own.forecastCoverage,
     issues: own.issues,
     findings: own.findings,
     notionDocs: own.notionDocs,

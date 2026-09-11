@@ -89,6 +89,8 @@ export async function GET(req: NextRequest) {
 
   return NextResponse.json({
     forecastSource: result.forecastSource,
+    executionSource: result.executionSource,
+    forecastCoverage: result.forecastCoverage,
     momentum,
     calibration,
     scope: {
@@ -109,7 +111,22 @@ export async function GET(req: NextRequest) {
     likelyDate: toDateOnly(result.likelyDate),
     earliestDate: toDateOnly(result.earliestDate),
     latestDate: toDateOnly(result.latestDate),
-    confidenceAtTarget: result.confidenceAtTarget,
+    // Backward-compatible date fields remain the modeled result. Confidence
+    // fails closed because an older client must not present subset confidence
+    // as confidence in the whole project.
+    confidenceAtTarget: result.forecastCoverage.canonicalForecast ? result.confidenceAtTarget : null,
+    canonicalDeliveryForecast: result.forecastCoverage.canonicalForecast ? {
+      likelyDate: toDateOnly(result.likelyDate),
+      earliestDate: toDateOnly(result.earliestDate),
+      latestDate: toDateOnly(result.latestDate),
+      confidenceAtTarget: result.confidenceAtTarget,
+    } : null,
+    modeledSubsetOutcome: result.forecastCoverage.state === "modeled_subset" ? {
+      likelyDate: toDateOnly(result.likelyDate),
+      earliestDate: toDateOnly(result.earliestDate),
+      latestDate: toDateOnly(result.latestDate),
+      confidenceAtTarget: result.confidenceAtTarget,
+    } : null,
     scenarios: result.scenarios.map((scenario) => ({ ...scenario, likelyDate: toDateOnly(scenario.likelyDate) })),
     breakdown: result.breakdown,
   });

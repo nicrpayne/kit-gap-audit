@@ -56,6 +56,7 @@ export function accentFor(material: Material): string {
 }
 
 function classLabel(f: Feature): string | null {
+  if (f.source === "canonical") return "Accepted capability";
   if (f.source === "linear" || f.source === "unmapped") return null;
   if (f.accepted) return f.source === "hermes" ? "Accepted" : "Draft";
   return f.source === "hermes" ? "Candidate" : "Draft";
