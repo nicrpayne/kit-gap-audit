@@ -20,7 +20,7 @@ The reported branch name is deployment metadata, not the Git branch that current
 
 - The production app is kept open in the Work browser at `/control-room` throughout the documentation pass.
 - `/api/version` and the unauthenticated redirect boundary were verified from the live Railway service.
-- Authenticated visual verification is in progress. The browser automation policy verifier initially denied inspection before page content could be read; no security control was bypassed.
+- Authenticated visual verification is blocked as of the date above. The browser automation policy verifier denied inspection before page content could be read on repeated attempts; no security control was bypassed.
 - All consequential journeys are reserved for fixture/staging evidence. Production is read-only.
 
 ## Current live operator routes
@@ -32,7 +32,7 @@ The reported branch name is deployment metadata, not the Git branch that current
 | Project Activation | `/projects/bootstrap/:id` plus Add Project sheet | Live |
 | Scope | `/scope` | Live |
 | Decisions | `/decisions` | Live |
-| Dependencies | Governed through Scope and Decisions; read in Orbit/Reports | Live capability; no separate primary route |
+| Dependencies / Orbit | `/orbit` (rail label: Dependencies; page title: Orbit) | Present in the live destination contract; naming/status contradiction logged as `SIG-DOC-002` |
 | Portfolio / Capacity | `/portfolio` | Live |
 | Forecast | `/forecast` | Live |
 | Timeline | `/timeline` | Live |
@@ -44,7 +44,7 @@ The reported branch name is deployment metadata, not the Git branch that current
 
 ## Live versus non-live distinctions
 
-- `/orbit` exists as a development route and is intentionally absent from the production rail. It is not documented as an approved standalone instrument.
+- `/orbit` is included in the production destination contract as **Dependencies**, while its page title and code comment still call it **Orbit** and describe it as development-only. The guides describe both visible names and do not resolve the conflict; see `SIG-DOC-002`.
 - Reports' audience/purpose composer is live; its fixture prototype routes are non-production-only.
 - Interactive Site creation is a governed, user-mediated handoff artifact. Signal prepares a bundle; it does not autonomously publish a public site.
 - Audit rubric fixture/subroutes are implementation and proof surfaces, not operator destinations.
@@ -55,4 +55,3 @@ The reported branch name is deployment metadata, not the Git branch that current
 - Branch: `codex/signal-complete-user-guide-training-system`
 - Base: the exact production commit above
 - Product code changes: none intended
-

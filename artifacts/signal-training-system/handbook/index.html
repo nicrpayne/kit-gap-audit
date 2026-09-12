@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Signal Operating Handbook</title>
+  <style>
+    :root{--ink:#152428;--muted:#607479;--paper:#f4f3ed;--card:#fff;--line:#d9dfdc;--teal:#0b6967;--gold:#c78935;--red:#a6483e;--nav:#102d31}
+    *{box-sizing:border-box} body{margin:0;background:var(--paper);color:var(--ink);font:16px/1.55 Inter,ui-sans-serif,system-ui,-apple-system,sans-serif}
+    a{color:var(--teal);text-decoration-thickness:1px;text-underline-offset:3px} a:hover{color:#084b4a}
+    header{background:linear-gradient(125deg,#102d31,#164d50);color:white;padding:56px max(24px,calc((100vw - 1160px)/2)) 48px}
+    header .eyebrow{letter-spacing:.16em;text-transform:uppercase;color:#9ed4cf;font-weight:700;font-size:.78rem}
+    h1{font:700 clamp(2.4rem,6vw,5.6rem)/.95 Georgia,serif;margin:.4rem 0 1rem;max-width:800px}
+    header p{max-width:760px;font-size:1.15rem;color:#d4e3e1}.badge{display:inline-block;border:1px solid #69a6a1;border-radius:999px;padding:.35rem .7rem;margin:.4rem .4rem 0 0;font-size:.82rem}
+    main{max-width:1160px;margin:auto;padding:42px 24px 72px}.alert{border-left:5px solid var(--gold);background:#fff8e8;padding:16px 18px;margin-bottom:34px;border-radius:4px}
+    h2{font:700 2rem/1.1 Georgia,serif;margin:2.2rem 0 1rem}h3{margin:.2rem 0 .35rem;font-size:1.02rem}.lede{font-size:1.12rem;max-width:820px;color:#43565a}
+    .loop{display:grid;grid-template-columns:repeat(6,1fr);gap:8px;margin:22px 0 36px}.loop span{background:var(--nav);color:white;border-radius:6px;padding:15px 10px;text-align:center;font-weight:700;position:relative}.loop span:not(:last-child):after{content:'›';position:absolute;right:-9px;z-index:2;color:var(--gold);font-size:1.5rem;top:8px}
+    .grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}.card{background:var(--card);border:1px solid var(--line);border-radius:9px;padding:18px;box-shadow:0 2px 12px #2436380c}.card p{color:var(--muted);margin:.4rem 0 .8rem}.card .num{font:700 .8rem/1 ui-monospace,monospace;color:var(--gold)}
+    .laws{display:grid;grid-template-columns:1fr 1fr;gap:10px}.law{border:1px solid var(--line);background:#fafbf9;padding:12px 15px;border-radius:6px;font-weight:650}
+    .visual{width:100%;border:1px solid var(--line);border-radius:9px;background:white;margin:10px 0 20px}.path{display:flex;gap:12px;align-items:flex-start;margin:10px 0}.path b{background:var(--teal);color:white;border-radius:999px;min-width:28px;height:28px;text-align:center;line-height:28px}
+    footer{border-top:1px solid var(--line);color:var(--muted);padding-top:24px;margin-top:50px}.danger{color:var(--red)}
+    @media(max-width:800px){.grid{grid-template-columns:1fr}.loop{grid-template-columns:1fr 1fr}.laws{grid-template-columns:1fr}}
+    @media print{header{padding:28px;color:#000;background:#fff}.card{break-inside:avoid}.alert{border:1px solid var(--gold)}a{color:#000}.grid{grid-template-columns:1fr 1fr}}
+  </style>
+</head>
+<body>
+  <header>
+    <div class="eyebrow">Definitive operating + training system</div>
+    <h1>How to play Signal</h1>
+    <p>A human guide to turning fragmented project knowledge into governed delivery truth—and letting consequences update automatically.</p>
+    <span class="badge">Production authority 6c46ce9</span><span class="badge">31–35 minute full training</span><span class="badge">Five-session curriculum</span>
+  </header>
+  <main>
+    <div class="alert"><strong>Recording gate:</strong> source guides and fixture visuals are complete. Fresh authenticated production recapture and the final usability walkthrough remain blocked by browser-policy verification. Fixture images are visibly labeled and must not be presented as current production data.</div>
+
+    <h2>The operating loop</h2>
+    <p class="lede">Signal is not a set of unrelated pages. Each instrument answers a different question in one governed loop.</p>
+    <div class="loop"><span>Knowledge</span><span>Audit</span><span>Govern</span><span>Model</span><span>Forecast</span><span>Communicate</span></div>
+    <img class="visual" src="../screenshots/annotated/00-signal-at-a-glance.svg" alt="Signal at a glance operating loop">
+
+    <h2>Start here</h2>
+    <div class="grid">
+      <article class="card"><span class="num">01</span><h3>Learn the system</h3><p>What Signal is, how truth moves, and the daily/weekly operating rhythm.</p><a href="../../../docs/user-guide/00-HOW-TO-PLAY-SIGNAL.md">Open the master guide →</a></article>
+      <article class="card"><span class="num">02</span><h3>Answer a question</h3><p>Route from your real-world question to the right owner instrument.</p><a href="../../../docs/user-guide/16-WHICH-INSTRUMENT-DO-I-USE.md">Choose an instrument →</a></article>
+      <article class="card"><span class="num">03</span><h3>Act safely</h3><p>Know which controls explore, which write Reality, and what recomputes.</p><a href="../../../docs/user-guide/17-SAFE-VS-CONSEQUENTIAL-ACTIONS.md">See action boundaries →</a></article>
+    </div>
+
+    <h2>The instruments</h2>
+    <div class="grid">
+      <article class="card"><h3>Control Room</h3><p>The current operating picture: outcome, choices, constraints, freshness.</p><a href="../../../docs/user-guide/01-MASTER-CONTROL-ROOM.md">Guide</a> · <a href="../../../docs/user-guide/quick-reference/01-CONTROL-ROOM.md">60-second reference</a></article>
+      <article class="card"><h3>Project Activation</h3><p>Reconstruct dormant knowledge and establish first governed Reality.</p><a href="../../../docs/user-guide/02-PROJECT-ACTIVATION.md">Guide</a> · <a href="../../../docs/user-guide/quick-reference/02-PROJECT-ACTIVATION.md">Reference</a></article>
+      <article class="card"><h3>Audit</h3><p>Discover what changed outside Signal that Reality has not accounted for.</p><a href="../../../docs/user-guide/03-AUDIT.md">Guide</a> · <a href="../../../docs/user-guide/quick-reference/03-AUDIT.md">Reference</a></article>
+      <article class="card"><h3>Scope</h3><p>Govern product shape and its relationship to execution work.</p><a href="../../../docs/user-guide/04-SCOPE.md">Guide</a> · <a href="../../../docs/user-guide/quick-reference/04-SCOPE.md">Reference</a></article>
+      <article class="card"><h3>Decisions</h3><p>Make unresolved organizational tension visible and operable.</p><a href="../../../docs/user-guide/05-DECISIONS.md">Guide</a> · <a href="../../../docs/user-guide/quick-reference/05-DECISIONS.md">Reference</a></article>
+      <article class="card"><h3>Dependencies / Orbit</h3><p>Declare what must happen before what; do not confuse relation with dependency.</p><a href="../../../docs/user-guide/06-DEPENDENCIES.md">Guide</a> · <a href="../../../docs/user-guide/quick-reference/06-DEPENDENCIES.md">Reference</a></article>
+      <article class="card"><h3>Portfolio / Capacity</h3><p>Model who is actually available and test allocation scenarios.</p><a href="../../../docs/user-guide/07-PORTFOLIO-CAPACITY.md">Guide</a> · <a href="../../../docs/user-guide/quick-reference/07-PORTFOLIO-CAPACITY.md">Reference</a></article>
+      <article class="card"><h3>Forecast</h3><p>See modeled consequences: likely outcome, window, coverage, and target tension.</p><a href="../../../docs/user-guide/08-FORECAST.md">Guide</a> · <a href="../../../docs/user-guide/quick-reference/08-FORECAST.md">Reference</a></article>
+      <article class="card"><h3>Timeline</h3><p>Read forward-facing time across planned, projected, committed, and occurred events.</p><a href="../../../docs/user-guide/09-TIMELINE.md">Guide</a> · <a href="../../../docs/user-guide/quick-reference/09-TIMELINE.md">Reference</a></article>
+      <article class="card"><h3>Reports</h3><p>Mix and freeze the right evidence-backed story for an audience.</p><a href="../../../docs/user-guide/10-REPORTS.md">Guide</a> · <a href="../../../docs/user-guide/quick-reference/10-REPORTS.md">Reference</a></article>
+      <article class="card"><h3>Search / Trace / Inspector</h3><p>Find an idea, inspect the object, and follow its provenance.</p><a href="../../../docs/user-guide/11-SEARCH-TRACE-INSPECTOR.md">Guide</a> · <a href="../../../docs/user-guide/quick-reference/11-SEARCH-TRACE-INSPECTOR.md">Reference</a></article>
+      <article class="card"><h3>Whole-product journey</h3><p>Follow one realistic change from meeting evidence to leadership brief.</p><a href="../../../docs/user-guide/12-END-TO-END-WORKFLOW.md">End-to-end workflow →</a></article>
+    </div>
+
+    <h2>Product laws</h2>
+    <div class="laws">
+      <div class="law">Changing Reality is governed. Calculating consequences is automatic.</div>
+      <div class="law">Audit discovers. Owner instruments govern.</div>
+      <div class="law">Likely ≠ target ≠ committed.</div>
+      <div class="law">Live owner ≠ fresh/current.</div>
+      <div class="law">Candidate/proposal ≠ Reality.</div>
+      <div class="law">Semantic relation ≠ dependency.</div>
+      <div class="law">Person mention ≠ staffing.</div>
+      <div class="law">Modeled subset ≠ full-project forecast.</div>
+    </div>
+
+    <h2>First-week learning path</h2>
+    <div class="path"><b>1</b><div><strong>Understand Signal · 30 min</strong><br><a href="../../../docs/training-curriculum/01-UNDERSTAND-SIGNAL.md">Control Room, Reality, Audit, sources, currentness</a></div></div>
+    <div class="path"><b>2</b><div><strong>Operate a project · 45 min</strong><br><a href="../../../docs/training-curriculum/02-OPERATE-A-PROJECT.md">Change Inbox, Scope, Decisions, Dependencies</a></div></div>
+    <div class="path"><b>3</b><div><strong>Play the project · 45 min</strong><br><a href="../../../docs/training-curriculum/03-PLAY-THE-PROJECT.md">Capacity, scenario, Forecast, Timeline</a></div></div>
+    <div class="path"><b>4</b><div><strong>Communicate · 30 min</strong><br><a href="../../../docs/training-curriculum/04-COMMUNICATE.md">Reports, audience, purpose, frozen brief</a></div></div>
+    <div class="path"><b>5</b><div><strong>Start from nothing · 45 min</strong><br><a href="../../../docs/training-curriculum/05-START-A-PROJECT.md">Create & Scan, review, activate, first Audit</a></div></div>
+
+    <h2>Record and maintain</h2>
+    <div class="grid">
+      <article class="card"><h3>Full training</h3><p>A complete spoken narrative with screen, cursor, callout, transition, and fallback direction.</p><a href="../../../docs/training-video/FULL-TRAINING-SCRIPT.md">Open script →</a></article>
+      <article class="card"><h3>Showcase</h3><p>An 8–12 minute professional demonstration—not a compressed manual.</p><a href="../../../docs/training-video/SHOWCASE-SCRIPT.md">Open script →</a></article>
+      <article class="card"><h3>Recording state</h3><p>Deterministic fixtures, expected numbers, reset checks, and no-production-write rules.</p><a href="../../../docs/training-video/DEMO-STATE.md">Open demo state →</a></article>
+      <article class="card"><h3>States and warnings</h3><p>Meaning, concern level, next action, and what not to assume.</p><a href="../../../docs/user-guide/15-STATES-AND-WARNINGS.md">Open catalog →</a></article>
+      <article class="card"><h3>Troubleshooting</h3><p>Recover context, distinguish data from product failure, and find the owner.</p><a href="../../../docs/user-guide/13-TROUBLESHOOTING.md">Open troubleshooting →</a></article>
+      <article class="card"><h3>Release maintenance</h3><p>Authority pinning, screenshot recapture, drift checks, and bug retirement.</p><a href="../../../docs/user-guide/MAINTAINING-THE-GUIDES.md">Open maintenance guide →</a></article>
+    </div>
+
+    <footer>
+      <p><strong>Canonical source:</strong> repository Markdown. <strong>Visual provenance:</strong> <a href="../screenshots/README.md">screenshot index</a>. <strong>Known blocker:</strong> <a class="danger" href="../BUGS-FOUND-DURING-DOCUMENTATION.md">SIG-DOC-001</a>.</p>
+    </footer>
+  </main>
+</body>
+</html>

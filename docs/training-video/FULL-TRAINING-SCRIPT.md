@@ -36,7 +36,7 @@ The rule underneath everything you are about to see is simple: changing Reality 
 
 A wiki is excellent institutional memory. But a wiki page is usually synthesis. It can be thoughtful and current and still be derivative. It should not silently become a staffing plan, a dependency, or a promise.
 
-Hermes changes the equation because it can-lessly? No—because it can read longitudinally. It can connect a meeting today with a design note from last month, surface contradictions, and prepare structured intelligence. That is powerful precisely because Signal does not grant it authority. Hermes owns what was said and understood. Signal owns what is accepted as true about delivery.
+Hermes changes the equation because it can read longitudinally. It can connect a meeting today with a design note from last month, surface contradictions, and prepare structured intelligence. That is powerful precisely because Signal does not grant it authority. Hermes owns what was said and understood. Signal owns what is accepted as true about delivery.
 
 That boundary gives us three honest verbs. Knowledge proposes. A human governs. The model calculates. If the source changes, Audit can tell me. If I accept the implication in the appropriate owner instrument, Forecast can show the consequence. No tool gets to skip the middle step.”
 
@@ -348,4 +348,3 @@ Changing Reality is governed. Calculating consequences is automatic. Audit disco
 - Keep the project/fixture label visible before any number is narrated.
 - Cut rather than improvise if a value differs from `DEMO-STATE.md`.
 - Blur secrets, user identifiers, and unrelated browser chrome.
-
