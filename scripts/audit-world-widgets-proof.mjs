@@ -119,10 +119,35 @@ await page.route("**/api/audit/rubric*", async route => {
   const url = new URL(route.request().url());
   url.searchParams.set("fixture", "production-mirror");
   const response = await route.fetch({ url: url.toString() });
-  await route.fulfill({ response });
+  try {
+    await route.fulfill({ response });
+  } catch (error) {
+    // A late resize-triggered refresh can finish while the proof is closing.
+    if (!String(error).includes("Route is already handled")) throw error;
+  }
 });
 await page.route("**/api/audit/truth*", route =>
   route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(truth) })
+);
+await page.route("**/api/audit/changes*", route =>
+  route.fulfill({
+    status: 200,
+    contentType: "application/json",
+    body: JSON.stringify({
+      knowledge: { code: "current", label: "Knowledge current", detail: "Read-only browser proof", checkedAt: new Date(0).toISOString(), canRefresh: false, companion: null, lastPackageAt: null, lastAuditAt: null, activeJob: null },
+      counts: {}, total: 0, proposals: [],
+      sourceHealth: { hermes: "current", linear: "current", linearDetail: "Fixture", notion: "not_configured", figma: "not_configured", companion: "not_required", lastPackageAt: null, lastAuditAt: null },
+      readiness: { ready: true, label: "REPORT READY", blockers: [] },
+      baseline: { seeded: 0, available: true },
+    }),
+  })
+);
+await page.route("**/api/audit/knowledge*", route =>
+  route.fulfill({
+    status: 200,
+    contentType: "application/json",
+    body: JSON.stringify({ knowledge: { code: "current", label: "Knowledge current", detail: "Read-only browser proof", canRefresh: false, lastPackageAt: null } }),
+  })
 );
 
 await page.goto(`${BASE}/audit`, { waitUntil: "domcontentloaded", timeout: 30_000 });
@@ -200,13 +225,16 @@ await sourceRow.click({ force: true });
 await settle(500);
 check("16 source relationship navigation updates Inspector", (await selected()) === mirror.nodes.find(node => node.id === sourceConnection.transportId)?.canonicalId, await selected() ?? "none");
 
-await frame.locator("#fab-menu").click({ force: true });
+await frame.locator("#fab-menu").evaluate(button => button.click());
+await settle(50);
 for (const layout of ["rings", "circle", "hex", "force"]) {
   await frame.locator(`#seg-layout button[data-v="${layout}"]`).click({ force: true });
   await settle(350);
   check(`17-${layout} current Rubric ${layout} behavior remains available`, await frame.locator("body").evaluate((_, value) => window.BrainCore.S.st.layout === value, layout));
 }
 check("18 layout changes retain Inspector selection", Boolean(await selected()) && await frame.locator("#brain-card").isVisible());
+await frame.locator("#fab-menu").evaluate(button => button.click());
+await settle(50);
 
 const cameraBeforeOverview = await camera();
 await page.locator('[data-shoot="project-overview"]').click({ force: true });
@@ -230,7 +258,13 @@ check("23 review close restores exact camera", (await camera()) === cameraBefore
 check("24 review close restores exact selection", (await selected()) === selectionBeforeReview, await selected() ?? "none");
 check("25 review handoff never remounts Rubric", await frame.locator("#brain-canvas").getAttribute("data-proof-mount") === "original");
 
-if (!await frame.locator("#brain-panel").isVisible()) await frame.locator("#fab-menu").click({ force: true });
+// The parent Change Inbox summary intentionally sits above the embedded
+// world's top-left coordinates. Exercise the iframe-owned Menu handler
+// directly so this proof tests its panel/Inspector stacking contract.
+await frame.locator("#fab-menu").evaluate(button => {
+  if (!document.body.classList.contains("menu-open")) button.click();
+});
+await settle(50);
 await frame.locator("#fab-legend").click({ force: true });
 check("26 Menu/Search/Legend/Inspector form the active widget family", await frame.locator("#brain-panel").isVisible() && await frame.locator("#signal-search-widget").isVisible() && await frame.locator("#brain-legend").isVisible() && await frame.locator("#brain-card").isVisible());
 check("27 Refresh Audit remains in the parent Signal shell", await page.locator('[data-shoot="audit-refresh-primary"]').count() === 1);
@@ -288,6 +322,7 @@ check("35 touched widget controls remain available at 200% zoom equivalent", awa
   })
 ));
 await page.setViewportSize({ width: 1440, height: 900 });
+await page.unrouteAll({ behavior: "wait" });
 
 const video = page.video();
 await page.close();

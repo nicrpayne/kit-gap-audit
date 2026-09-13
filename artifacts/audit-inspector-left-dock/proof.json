@@ -1,0 +1,182 @@
+{
+  "baseline": "http://localhost:3018",
+  "candidate": "http://localhost:3017",
+  "checks": [
+    {
+      "name": "interaction state matches production base",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "camera sequence matches production base within four-world-unit settled-render tolerance",
+      "ok": true,
+      "detail": "{\"selectedCamera\":\"852.144,712.631,1.59578\",\"traceCamera\":\"852.877,713.805,1.60000\",\"traceActive\":\"true\",\"connectionCamera\":\"493.086,504.594,1.60000\",\"connectedSelection\":\"lane:dependencies\",\"connectedTrace\":\"true\",\"afterEscape\":{\"selection\":\"\",\"trace\":\"true\",\"overview\":true,\"card\":false},\"errors\":[]} → {\"selectedCamera\":\"853.910,713.332,1.59947\",\"traceCamera\":\"854.002,713.479,1.60000\",\"traceActive\":\"true\",\"connectionCamera\":\"493.275,505.166,1.60000\",\"connectedSelection\":\"lane:dependencies\",\"connectedTrace\":\"true\",\"afterEscape\":{\"selection\":\"\",\"trace\":\"true\",\"overview\":true,\"card\":false},\"errors\":[]}"
+    },
+    {
+      "name": "Trace remains active while Inspector is open",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "connected selection updates Inspector",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "Escape contract is unchanged",
+      "ok": true,
+      "detail": "{\"selection\":\"\",\"trace\":\"true\",\"overview\":true,\"card\":false}"
+    },
+    {
+      "name": "1024px Inspector is left-docked",
+      "ok": true,
+      "detail": "{\"left\":12,\"top\":112,\"right\":364,\"bottom\":800,\"width\":352,\"height\":688}"
+    },
+    {
+      "name": "1024px world geometry remains full-canvas",
+      "ok": true,
+      "detail": "932×854"
+    },
+    {
+      "name": "1024px essential controls remain clear",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "1024px Menu remains operable over dock",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "1024px Legend remains operable over dock",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "1024px browser console is clean",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "1180px Inspector is left-docked",
+      "ok": true,
+      "detail": "{\"left\":12,\"top\":112,\"right\":364,\"bottom\":800,\"width\":352,\"height\":688}"
+    },
+    {
+      "name": "1180px world geometry remains full-canvas",
+      "ok": true,
+      "detail": "1088×854"
+    },
+    {
+      "name": "1180px essential controls remain clear",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "1180px Menu remains operable over dock",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "1180px Legend remains operable over dock",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "1180px browser console is clean",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "1280px Inspector is left-docked",
+      "ok": true,
+      "detail": "{\"left\":12,\"top\":112,\"right\":404,\"bottom\":800,\"width\":392,\"height\":688}"
+    },
+    {
+      "name": "1280px world geometry remains full-canvas",
+      "ok": true,
+      "detail": "1188×854"
+    },
+    {
+      "name": "1280px essential controls remain clear",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "1280px Menu remains operable over dock",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "1280px Legend remains operable over dock",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "1280px browser console is clean",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "1440px Inspector is left-docked",
+      "ok": true,
+      "detail": "{\"left\":12,\"top\":112,\"right\":404,\"bottom\":800,\"width\":392,\"height\":688}"
+    },
+    {
+      "name": "1440px world geometry remains full-canvas",
+      "ok": true,
+      "detail": "1348×854"
+    },
+    {
+      "name": "1440px essential controls remain clear",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "1440px Menu remains operable over dock",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "1440px Legend remains operable over dock",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "1440px browser console is clean",
+      "ok": true,
+      "detail": ""
+    }
+  ],
+  "failures": 0,
+  "baselineSequence": {
+    "selectedCamera": "852.144,712.631,1.59578",
+    "traceCamera": "852.877,713.805,1.60000",
+    "traceActive": "true",
+    "connectionCamera": "493.086,504.594,1.60000",
+    "connectedSelection": "lane:dependencies",
+    "connectedTrace": "true",
+    "afterEscape": {
+      "selection": "",
+      "trace": "true",
+      "overview": true,
+      "card": false
+    },
+    "errors": []
+  },
+  "candidateSequence": {
+    "selectedCamera": "853.910,713.332,1.59947",
+    "traceCamera": "854.002,713.479,1.60000",
+    "traceActive": "true",
+    "connectionCamera": "493.275,505.166,1.60000",
+    "connectedSelection": "lane:dependencies",
+    "connectedTrace": "true",
+    "afterEscape": {
+      "selection": "",
+      "trace": "true",
+      "overview": true,
+      "card": false
+    },
+    "errors": []
+  }
+}

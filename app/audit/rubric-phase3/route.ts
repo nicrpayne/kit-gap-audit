@@ -77,10 +77,10 @@ export async function GET(req: NextRequest) {
   body.signal-audit-embedded #signal-inspector-overview {
     position: fixed;
     z-index: 74;
-    top: 12px;
-    right: 12px;
-    bottom: 12px;
-    left: auto;
+    top: 112px;
+    right: auto;
+    bottom: 54px;
+    left: 12px;
     width: min(392px, calc(100vw - 24px));
     min-width: 340px;
     max-height: none;
@@ -96,8 +96,10 @@ export async function GET(req: NextRequest) {
   body.signal-audit-embedded #signal-overview-close:hover { color: var(--signal-text-primary); }
   body.signal-audit-embedded #signal-inspector-overview p { margin-top: 10px; color: var(--signal-text-secondary); font: 500 11px/1.55 Outfit,sans-serif; }
   body.signal-audit-embedded #signal-inspector-overview .signal-overview-counts { margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--signal-border-subtle); color: var(--signal-text-secondary); font: 500 11px/1.7 Outfit,sans-serif; }
-  body.signal-audit-embedded #signal-inspector-reopen { position: fixed; z-index: 74; top: 12px; right: 12px; min-height: 32px; padding: 10px 12px; cursor: pointer; color: var(--signal-reality); font: 600 10px/1.2 Outfit,sans-serif; letter-spacing: .12em; text-transform: uppercase; }
+  body.signal-audit-embedded #signal-inspector-reopen { position: fixed; z-index: 74; top: 112px; right: auto; left: 12px; min-height: 32px; padding: 10px 12px; cursor: pointer; color: var(--signal-reality); font: 600 10px/1.2 Outfit,sans-serif; letter-spacing: .12em; text-transform: uppercase; }
   body.signal-audit-embedded[data-signal-trace-active="true"] #brain-card { border-color: var(--signal-reality) !important; }
+  body.signal-audit-embedded.menu-open #brain-panel,
+  body.signal-audit-embedded.lg-open #brain-legend { z-index: 75; }
   body.signal-audit-embedded #brain-search,
   body.signal-audit-embedded .seg button,
   body.signal-audit-embedded .act,
@@ -108,11 +110,14 @@ export async function GET(req: NextRequest) {
   body.signal-audit-embedded:has(#brain-viewer.open) #fab-menu,
   body.signal-audit-embedded:has(#brain-viewer.open) #signal-search-widget { display: none !important; }
   body.signal-audit-embedded #brain-viewer .v-close { margin-right: 32px; }
-  @keyframes signal-dock-in { from { opacity: 0; transform: translateX(12px); } to { opacity: 1; transform: translateX(0); } }
+  @keyframes signal-dock-in { from { opacity: 0; transform: translateX(-12px); } to { opacity: 1; transform: translateX(0); } }
   @media (max-width: 1180px) {
     body.signal-audit-embedded #brain-card,
     body.signal-audit-embedded #signal-inspector-overview { width: 352px; }
     body.signal-audit-embedded #signal-search-widget { right: 376px; width: 258px; min-width: 220px; }
+  }
+  @media (max-width: 1100px) {
+    body.signal-audit-embedded #signal-search-widget { right: 12px; }
   }
   @media (prefers-reduced-motion: reduce) {
     body.signal-audit-embedded #brain-card { animation: none; }
