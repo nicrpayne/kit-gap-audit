@@ -123,13 +123,6 @@ export function chipsFor(
   } else if (itemCount > 0) {
     chips.push({ id: "scope", label: `${itemCount} item${itemCount === 1 ? "" : "s"} out of scope`, href: "/scope" });
   }
-  if (scenario.includedCapabilityIds.size > 0) {
-    chips.push({
-      id: "scope-in",
-      label: `${scenario.includedCapabilityIds.size} capabilit${scenario.includedCapabilityIds.size === 1 ? "y" : "ies"} into this release`,
-      href: "/scope",
-    });
-  }
   if (scenario.draftFeatures.length > 0) {
     chips.push({
       id: "drafts",

@@ -10,9 +10,6 @@ export interface ShapeCapability {
   name: string;
   description: string | null;
   status: string;
-  revision?: number;
-  sortOrder?: number;
-  updatedAt?: string;
   workLinks: { id: string; provider: string; externalId: string; externalUrl: string | null; state: string }[];
 }
 
