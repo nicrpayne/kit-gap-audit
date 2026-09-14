@@ -1,0 +1,11 @@
+{
+  "ok": true,
+  "linkVisibleInB": true,
+  "addVisibleInB": true,
+  "editVisibleInB": true,
+  "scenarioHiddenFromB": true,
+  "scenarioCommitVisibleInB": true,
+  "moveOutVisibleInB": true,
+  "moveInVisibleInB": true,
+  "backForwardStayedCurrent": true
+}

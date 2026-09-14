@@ -481,6 +481,7 @@ export interface PortfolioScopeInput {
   capabilities: {
     id: string; name: string; description: string | null; status: string; provenance: Prisma.JsonValue;
     revision: number; sortOrder: number; updatedAt: Date; workLinkCount: number;
+    events: { id: string; action: string; actor: string; createdAt: Date }[];
     workLinks: { id: string; provider: string; externalId: string; externalUrl: string | null; state: string }[];
   }[];
   openShapeQuestions: { id: string; title: string; rationale: string | null; status: string }[];
@@ -562,7 +563,13 @@ export async function buildPortfolioInputs(): Promise<PortfolioInputs> {
     prisma.scope.findMany({
       orderBy: { createdAt: "asc" },
       include: {
-        capabilities: { include: { workLinks: true }, orderBy: { createdAt: "asc" } },
+        capabilities: {
+          include: {
+            workLinks: true,
+            events: { orderBy: { createdAt: "desc" }, take: 12 },
+          },
+          orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
+        },
         decisions: { where: { status: "open", gate: { is: null } }, orderBy: { createdAt: "asc" } },
       },
     }),
@@ -639,6 +646,7 @@ export async function buildPortfolioInputs(): Promise<PortfolioInputs> {
         id: capability.id, name: capability.name, description: capability.description,
         status: capability.status, revision: capability.revision, sortOrder: capability.sortOrder,
         updatedAt: capability.updatedAt, workLinkCount: capability.workLinks.length, provenance: capability.provenance,
+        events: capability.events.map((event) => ({ id: event.id, action: event.action, actor: event.actor, createdAt: event.createdAt })),
         workLinks: capability.workLinks.map((link) => ({ id: link.id, provider: link.provider, externalId: link.externalId, externalUrl: link.externalUrl, state: link.state })),
       })),
       openShapeQuestions: scope.decisions.map((decision) => ({ id: decision.id, title: decision.title, rationale: decision.rationale, status: decision.status })),

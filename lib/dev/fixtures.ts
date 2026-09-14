@@ -43,6 +43,29 @@ interface TeamFixture {
 }
 
 const TEAMS: Record<string, TeamFixture> = {
+  // Production-shaped cross-device workflow fixture. It intentionally starts
+  // with raw execution that must be explicitly bridged to accepted Scope.
+  JSA: {
+    titles: [
+      "JSA Notifications — rejection alert",
+      "JSA Notifications — crew acknowledgement reminder",
+      "PDF / Docufy — signed JSA output",
+      "PDF / Docufy — compliance packet layout",
+      "Offline — queue and replay field submissions",
+      "Offline — conflict recovery",
+      "Approval flow — supervisor review",
+      "Approval flow — escalation and audit trail",
+      "Crew acknowledgement — signed participation record",
+      "Arc-Angel JSA guidance — contextual hazard prompts",
+    ],
+    assignees: ["Maru Tanaka", "Lucy Bell", "Alex Reyes"],
+    doneCount: 0,
+    unassignedCount: 2,
+    epic: "KIT JSA",
+    // Deliberately no parent-derived features: the tray must show all eight
+    // as execution truth with NO CAPABILITY YET until a human maps them.
+    features: [],
+  },
   // Production Hardening 2: one completed source anchor and no executable
   // work. Its fixed updatedAt (applied below) makes dependency currentness
   // reproducible without inventing a live backlog.
@@ -260,6 +283,7 @@ export function devFixtureIssues(scope: ScopeFilter): LinearIssueSummary[] {
 
     issues.push({
       identifier: identifierFor(scope.teamKey, i),
+      url: `https://linear.app/fixture/issue/${identifierFor(scope.teamKey, i)}`,
       title,
       description: null,
       state: isDone ? "Done" : remainingIndex < fixture.unassignedCount + 2 ? "In Progress" : "Todo",

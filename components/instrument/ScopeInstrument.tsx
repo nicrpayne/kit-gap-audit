@@ -436,11 +436,30 @@ export default function ScopeInstrument() {
       const body = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(body.error ?? "Capability could not be saved.");
       setAdding(false);
+      return true;
     } catch (error) {
       setWriteError(error instanceof Error ? error.message : "Capability could not be saved.");
+      return false;
     } finally {
       setWriting(false);
     }
+  };
+
+  const commitDraft = async (feature: Feature) => {
+    const saved = await saveNewCapability({
+      name: feature.name,
+      description: feature.description ?? "",
+      note: "Committed from a reviewed Scope Scenario.",
+      evidence: [],
+      workItemIds: feature.items.map((item) => item.id),
+      status: "accepted",
+    });
+    if (!saved) return;
+    m.setScenario((prev) => ({
+      ...prev,
+      draftFeatures: prev.draftFeatures.filter((draft) => draft.id !== feature.id),
+    }));
+    setOpenFeatureId(null);
   };
 
   const saveCapabilityEdit = async (input: { name: string; description: string; note: string; evidenceRef: string }) => {
@@ -715,6 +734,7 @@ export default function ScopeInstrument() {
         onUnlinkReality={(capability, linkId, itemLabel) => setPending({
           kind: "unlink", capability, linkId, itemLabel, idempotencyKey: crypto.randomUUID(),
         })}
+        onCommitDraft={commitDraft}
       />
 
       <AddFeature
