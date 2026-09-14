@@ -15,6 +15,7 @@ export type ForecastCoverageReasonCode =
   | "execution_source_empty"
   | "accepted_scope_unmapped"
   | "accepted_scope_mapping_missing_from_source"
+  | "execution_work_unmapped"
   | "shape_decisions_open"
   | "dependency_coverage_incomplete";
 
@@ -33,6 +34,8 @@ export interface ForecastCoverageContract {
   reasons: ForecastCoverageReason[];
   census: {
     executionIssueCount: number;
+    modeledExecutionIssueCount: number;
+    unmappedExecutionIssueCount: number;
     acceptedCapabilityCount: number;
     mappedAcceptedCapabilityCount: number;
     openShapeDecisionCount: number;
@@ -70,6 +73,11 @@ const ACTIVE_LINK_STATES = new Set(["active", "configured"]);
 export function evaluateForecastCoverage(input: ForecastCoverageInput): ForecastCoverageContract {
   const accepted = input.capabilities.filter((capability) => capability.status === "accepted");
   const issueIds = new Set(input.issueIds);
+  const mappedIssueIds = new Set(
+    accepted.flatMap((capability) => capability.workLinks)
+      .filter((link) => ACTIVE_LINK_STATES.has(link.state) && issueIds.has(link.externalId))
+      .map((link) => link.externalId),
+  );
   const linked = accepted.filter((capability) =>
     capability.workLinks.some((link) => ACTIVE_LINK_STATES.has(link.state) && issueIds.has(link.externalId))
   );
@@ -83,6 +91,8 @@ export function evaluateForecastCoverage(input: ForecastCoverageInput): Forecast
 
   const census = {
     executionIssueCount: input.issueIds.length,
+    modeledExecutionIssueCount: accepted.length === 0 ? input.issueIds.length : mappedIssueIds.size,
+    unmappedExecutionIssueCount: accepted.length === 0 ? 0 : input.issueIds.length - mappedIssueIds.size,
     acceptedCapabilityCount: accepted.length,
     mappedAcceptedCapabilityCount: linked.length,
     openShapeDecisionCount: input.openShapeDecisionCount,
@@ -115,6 +125,13 @@ export function evaluateForecastCoverage(input: ForecastCoverageInput): Forecast
       code: "accepted_scope_mapping_missing_from_source",
       label: `${activeButAbsent.length} accepted ${activeButAbsent.length === 1 ? "capability has" : "capabilities have"} mappings absent from the current execution read`,
       count: activeButAbsent.length,
+    });
+  }
+  if (accepted.length > 0 && mappedIssueIds.size < input.issueIds.length) {
+    reasons.push({
+      code: "execution_work_unmapped",
+      label: `${input.issueIds.length - mappedIssueIds.size} current execution ${input.issueIds.length - mappedIssueIds.size === 1 ? "item has" : "items have"} no accepted Capability`,
+      count: input.issueIds.length - mappedIssueIds.size,
     });
   }
   if (input.openShapeDecisionCount > 0) {

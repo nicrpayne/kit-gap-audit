@@ -79,13 +79,38 @@ model Capability {
   name              String
   description       String?
   status            String               @default("accepted")
+  // Optimistic concurrency token. Every governed owner edit increments it;
+  // a second browser editing an older revision receives 409 instead of
+  // silently replacing the first browser's decision.
+  revision          Int                  @default(1)
+  sortOrder         Int                  @default(0)
   provenance        Json
   sourceCandidateId String?              @unique
   createdAt         DateTime             @default(now())
   updatedAt         DateTime             @updatedAt
   workLinks         CapabilityWorkLink[]
+  events            CapabilityEvent[]
 
   @@index([scopeId, status])
+}
+
+// Append-only owner history for manual Scope composition. Audit acceptance
+// keeps its own proposal/event ledger; direct Scope edits need the same
+// durable answer to who changed accepted product shape and why.
+model CapabilityEvent {
+  id             String     @id @default(cuid())
+  capabilityId   String
+  capability     Capability @relation(fields: [capabilityId], references: [id], onDelete: Cascade)
+  scopeId        String
+  idempotencyKey String     @unique
+  action         String
+  beforeState    Json?
+  afterState     Json
+  actor          String     @default("operator")
+  createdAt      DateTime   @default(now())
+
+  @@index([capabilityId, createdAt])
+  @@index([scopeId, createdAt])
 }
 
 model CapabilityWorkLink {

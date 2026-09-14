@@ -119,6 +119,8 @@ export function weakestSourceStamp(stamps: ForecastSourceStamp[], fallback: Date
 
 interface ScopeSimBundle {
   inputs: ForecastInputs;
+  /** Every current Linear item, before accepted Scope chooses the modeled subset. */
+  executionInputs: ForecastInputs;
   capacityContributors: CapacityContributor[];
   issues: LinearIssueSummary[];
   findings: ForecastFinding[];
@@ -251,7 +253,22 @@ async function buildScopeSimInputs(scope: Scope): Promise<ScopeSimBundle> {
     high: g.high,
   }));
 
-  const inputs = buildForecastInputs(issues, findings, resolved.capacity, {
+  // Once accepted product shape exists, explicit CapabilityWorkLink rows are
+  // the bridge into the canonical modeled subset. Linear remains the owner of
+  // execution facts, but an unreviewed ticket is not silently promoted into
+  // accepted Scope. Legacy projects with no Capability rows retain their
+  // historical all-Linear behavior until they adopt the bridge.
+  const acceptedCapabilities = capabilities.filter((capability) => capability.status === "accepted");
+  const modeledIssueIds = new Set(
+    acceptedCapabilities.flatMap((capability) => capability.workLinks)
+      .filter((link) => link.state === "active" || link.state === "configured")
+      .map((link) => link.externalId),
+  );
+  const modeledIssues = acceptedCapabilities.length === 0
+    ? issues
+    : issues.filter((issue) => modeledIssueIds.has(issue.identifier));
+
+  const buildOptions: NonNullable<Parameters<typeof buildForecastInputs>[3]> = {
     gates,
     includeTriage: scope.includeTriage,
     estimates,
@@ -259,7 +276,9 @@ async function buildScopeSimInputs(scope: Scope): Promise<ScopeSimBundle> {
     findingEstimates,
     findingHashFor: (f) => findingContentHash(f, contextHash),
     capacitySource: resolved.source ?? undefined,
-  });
+  };
+  const inputs = buildForecastInputs(modeledIssues, findings, resolved.capacity, buildOptions);
+  const executionInputs = buildForecastInputs(issues, [], resolved.capacity, buildOptions);
 
   const forecastCoverage = evaluateForecastCoverage({
     executionState: scope.executionState,
@@ -270,6 +289,7 @@ async function buildScopeSimInputs(scope: Scope): Promise<ScopeSimBundle> {
 
   return {
     inputs,
+    executionInputs,
     capacityContributors: resolved.contributors,
     issues,
     findings,
@@ -327,6 +347,8 @@ export interface ScopeWorkItem extends SourcedWorkItem {
   kind: "ticket" | "inferred";
   /** Linear workflow state name, e.g. "In Progress". Null for inferred work. */
   state: string | null;
+  externalUrl?: string | null;
+  updatedAt?: string | null;
   assignee: string | null;
   /** The team's own Linear estimate in points, when they gave one. */
   points: number | null;
@@ -367,6 +389,8 @@ function describeItems(bundle: ScopeSimBundle): ScopeWorkItem[] {
         ...item,
         kind: "ticket" as const,
         state: issue.state,
+        externalUrl: issue.url ?? null,
+        updatedAt: issue.updatedAt ?? null,
         assignee: issue.assignee,
         points: issue.estimate,
         quote: null,
@@ -381,6 +405,8 @@ function describeItems(bundle: ScopeSimBundle): ScopeWorkItem[] {
       ...item,
       kind: "inferred" as const,
       state: null,
+      externalUrl: null,
+      updatedAt: null,
       assignee: null,
       points: null,
       quote: finding?.quote ?? null,
@@ -401,6 +427,8 @@ export interface PortfolioScopeInput {
   targetDate: Date | null;
   dependsOnScopeIds: string[];
   items: ScopeWorkItem[];
+  /** Raw Linear owner read for mapping; not necessarily in the modeled subset. */
+  executionItems: ScopeWorkItem[];
   /** Finished work, for coverage only. Never simulated. */
   completedWork: CompletedWork[];
   gates: ForecastInputs["gates"];
@@ -452,7 +480,7 @@ export interface PortfolioScopeInput {
   executionDetail: string | null;
   capabilities: {
     id: string; name: string; description: string | null; status: string; provenance: Prisma.JsonValue;
-    workLinkCount: number;
+    revision: number; sortOrder: number; updatedAt: Date; workLinkCount: number;
     workLinks: { id: string; provider: string; externalId: string; externalUrl: string | null; state: string }[];
   }[];
   openShapeQuestions: { id: string; title: string; rationale: string | null; status: string }[];
@@ -571,6 +599,7 @@ export async function buildPortfolioInputs(): Promise<PortfolioInputs> {
       targetDate: scope.targetDate,
       dependsOnScopeIds: scope.dependsOnScopeIds,
       items: describeItems(bundle),
+      executionItems: describeItems({ ...bundle, inputs: bundle.executionInputs }),
       completedWork: bundle.issues
         .filter((i) => i.completedAt !== null)
         .map((i) => ({
@@ -608,7 +637,8 @@ export async function buildPortfolioInputs(): Promise<PortfolioInputs> {
       executionDetail: scope.executionDetail,
       capabilities: scope.capabilities.map((capability) => ({
         id: capability.id, name: capability.name, description: capability.description,
-        status: capability.status, workLinkCount: capability.workLinks.length, provenance: capability.provenance,
+        status: capability.status, revision: capability.revision, sortOrder: capability.sortOrder,
+        updatedAt: capability.updatedAt, workLinkCount: capability.workLinks.length, provenance: capability.provenance,
         workLinks: capability.workLinks.map((link) => ({ id: link.id, provider: link.provider, externalId: link.externalId, externalUrl: link.externalUrl, state: link.state })),
       })),
       openShapeQuestions: scope.decisions.map((decision) => ({ id: decision.id, title: decision.title, rationale: decision.rationale, status: decision.status })),
