@@ -46,7 +46,6 @@ export interface Feature {
       the client-generated draft id. Used as the scenario's bypass key. */
   id: string;
   name: string;
-  description?: string | null;
   source: FeatureSource;
   /** The Linear Project the work sits in, when the work agrees on one. */
   epic: string | null;
@@ -142,7 +141,6 @@ function summarise(
   return {
     id,
     name,
-    description: null,
     source,
     epic,
     items,
@@ -273,11 +271,6 @@ export function composeFeatures(
     );
   }
 
-  for (const feature of features) {
-    const draft = drafts.find((candidate) => candidate.id === feature.id);
-    if (draft) feature.description = draft.intent || null;
-  }
-
   // Heaviest first, but unmapped work always sits last: it is a gap to close,
   // not a capability to weigh against the others.
   features.sort((a, b) => {
@@ -365,7 +358,6 @@ export function composeScopeFeatures(
       true,
       estimateOverrides,
       ),
-      description: capability.description,
       canonicalCapability: capability,
     };
   });

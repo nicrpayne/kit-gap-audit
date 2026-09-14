@@ -91,7 +91,6 @@ export interface ProjectScope {
   capabilities: {
     id: string; name: string; description: string | null; status: string; revision: number; sortOrder: number;
     updatedAt: string; workLinkCount: number; provenance: unknown;
-    events: { id: string; action: string; actor: string; createdAt: string }[];
     workLinks: { id: string; provider: string; externalId: string; externalUrl: string | null; state: string }[];
   }[];
   openShapeQuestions: { id: string; title: string; rationale: string | null; status: string }[];

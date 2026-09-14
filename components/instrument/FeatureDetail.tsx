@@ -49,7 +49,6 @@ export default function FeatureDetail({
   onClearEstimate,
   onEditReality,
   onUnlinkReality,
-  onCommitDraft,
 }: {
   feature: Feature | null;
   onClose: () => void;
@@ -66,7 +65,6 @@ export default function FeatureDetail({
   onClearEstimate: (id: string) => void;
   onEditReality: (capability: ShapeCapability) => void;
   onUnlinkReality: (capability: ShapeCapability, linkId: string, itemLabel: string) => void;
-  onCommitDraft: (feature: Feature) => void;
 }) {
   const [mode, setMode] = useState<Mode>("overview");
   if (!feature) return null;
@@ -93,9 +91,6 @@ export default function FeatureDetail({
             >
               Edit accepted Reality
             </button>
-          )}
-          {f.source === "manual" && (
-            <button onClick={() => onCommitDraft(f)} data-shoot="commit-draft-reality" className="w-full rounded-md px-3 py-2 text-[11.5px]" style={{ border: "1px solid var(--i-signal)", color: "var(--i-signal)" }}>Commit this draft to Reality</button>
           )}
           <button
             onClick={() => onToggle(!f.bypassed)}
@@ -701,52 +696,38 @@ function EstimatePad({
 // ── HISTORY ──────────────────────────────────────────────────────────────
 
 function History({ feature: f }: { feature: Feature }) {
-  const completed = [...f.done]
+  // Only stored records. There is no feature-level change log in the model,
+  // so this shows the events that genuinely exist -- work completing -- and
+  // says so rather than inventing a narrative.
+  const events = [...f.done]
     .filter((d) => d.completedAt)
     .sort((a, b) => (b.completedAt ?? "").localeCompare(a.completedAt ?? ""));
-  const ownerEvents = f.canonicalCapability?.events ?? [];
 
   return (
     <div className="px-5 py-4">
-      {ownerEvents.length === 0 && completed.length === 0 ? (
+      {events.length === 0 ? (
         <Empty
           title="Nothing recorded yet"
-          body="No governed edit or completed work has been recorded for this capability yet."
+          body="No work under this capability has completed. Governed canonical edits are retained in the Capability owner ledger."
         />
       ) : (
         <>
-          {ownerEvents.length > 0 && <>
-            <div className="i-label mb-2">Governed owner history</div>
-            <ul>
-              {ownerEvents.map((event) => (
-                <li key={event.id} className="py-2 flex items-baseline gap-3" style={{ borderTop: "1px solid var(--i-border)" }}>
-                  <span className="shrink-0 i-readout text-[10px] text-[var(--i-text-faint)]" style={{ width: 46 }}>
-                    {new Date(event.createdAt).toLocaleDateString(undefined, { month: "short", day: "numeric" })}
-                  </span>
-                  <span className="min-w-0 flex-1 text-[11px] text-[var(--i-text-soft)] leading-snug">
-                    {event.action.replaceAll("_", " ")} · {event.actor}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          </>}
-          {completed.length > 0 && <>
-            <div className="i-label mb-2 mt-4">What has completed</div>
-            <ul>
-              {completed.map((d) => (
-                <li key={d.id} className="py-2 flex items-baseline gap-3" style={{ borderTop: "1px solid var(--i-border)" }}>
-                  <span className="shrink-0 i-readout text-[10px] text-[var(--i-text-faint)]" style={{ width: 46 }}>
-                    {new Date(d.completedAt!).toLocaleDateString(undefined, { month: "short", day: "numeric" })}
-                  </span>
-                  <span className="min-w-0 flex-1 text-[11px] text-[var(--i-text-soft)] leading-snug">{d.label}</span>
-                </li>
-              ))}
-            </ul>
-          </>}
+          <div className="i-label mb-2">What has completed</div>
+          <ul>
+            {events.map((d) => (
+              <li key={d.id} className="py-2 flex items-baseline gap-3" style={{ borderTop: "1px solid var(--i-border)" }}>
+                <span className="shrink-0 i-readout text-[10px] text-[var(--i-text-faint)]" style={{ width: 46 }}>
+                  {new Date(d.completedAt!).toLocaleDateString(undefined, { month: "short", day: "numeric" })}
+                </span>
+                <span className="min-w-0 flex-1 text-[11px] text-[var(--i-text-soft)] leading-snug">{d.label}</span>
+              </li>
+            ))}
+          </ul>
         </>
       )}
       <p className="mt-4 text-[10px] text-[var(--i-text-faint)] leading-snug">
-        Reality edits are append-only owner events. Work completion remains Linear execution history.
+        Scope keeps no record of how a capability&apos;s own definition changed over time. When features become
+        first-class, that record becomes possible — and worth having.
       </p>
     </div>
   );
