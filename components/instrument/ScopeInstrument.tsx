@@ -30,7 +30,7 @@
 // Semantics, engine paths and drag mechanics are unchanged from the accepted
 // V3 / material passes.
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import Link from "@/components/instrument/SignalLink";
 import {
   DndContext,
@@ -61,31 +61,16 @@ import {
   deltaTone,
   type ProjectScope,
 } from "@/lib/instrument/useProject";
-import { composeScopeFeatures, expectedDays, type Feature, type ThreePoint } from "@/lib/scope/features";
+import { composeScopeFeatures, type Feature, type ThreePoint } from "@/lib/scope/features";
 import { readDominance } from "@/lib/scope/constraint";
 import { formatCapacity } from "@/lib/capacity/limits";
 import { formatDateOnly } from "@/lib/time/dateContract";
 import { partitionProductShape, type ShapeCapability } from "@/lib/scope/productShape";
 import type { ForecastCoverageContract } from "@/lib/forecast/coverage";
-import { mutateReality } from "@/lib/instrument/reality";
-import type { ScopeWorkItem } from "@/lib/instrument/useProject";
-import ToolWindow from "@/components/instrument/ToolWindow";
 
 const BAY_IN = "bay-in";
 const BAY_OUT = "bay-out";
 const FRAME_BG = "#0c1013";
-type PendingScopeChange =
-  | { kind: "move"; capability: ShapeCapability; status: "accepted" | "outside"; itemIds: string[]; idempotencyKey: string }
-  | { kind: "link"; capability: ShapeCapability; item: ScopeWorkItem; idempotencyKey: string }
-  | { kind: "unlink"; capability: ShapeCapability; linkId: string; itemLabel: string; idempotencyKey: string };
-type DraftCapabilityInput = {
-  name: string;
-  description: string;
-  note: string;
-  evidence: unknown[];
-  workItemIds: string[];
-  status: "accepted" | "outside" | "future";
-};
 // THE DECK LAYS OUT WHAT EXISTS. Cells are exactly: every capability this
 // release has — seated or vacated — plus one reserve bay. There is no
 // grid-completion step, so a small release is a short deck rather than a full
@@ -129,12 +114,6 @@ export default function ScopeInstrument() {
   const [openFeatureId, setOpenFeatureId] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
   const [dragging, setDragging] = useState<Feature | null>(null);
-  const [draggingWork, setDraggingWork] = useState<ScopeWorkItem | null>(null);
-  const [draggingOutside, setDraggingOutside] = useState<ShapeCapability | null>(null);
-  const [pending, setPending] = useState<PendingScopeChange | null>(null);
-  const [editing, setEditing] = useState<ShapeCapability | null>(null);
-  const [writeError, setWriteError] = useState<string | null>(null);
-  const [writing, setWriting] = useState(false);
   const [dragSize, setDragSize] = useState<{ w: number; h: number }>({ w: 250, h: MODULE_H });
   const [over, setOver] = useState<string | null>(null);
 
@@ -237,17 +216,10 @@ export default function ScopeInstrument() {
     );
 
   const capacity = m.scenario.capacityOverrideByScope[scope.scopeId] ?? scope.teamCapacity;
-  const scenarioItems = [
-    ...scope.items,
-    ...scope.executionItems.filter((item) => m.scenario.includedItemIds.has(item.id) && !scope.items.some((baseItem) => baseItem.id === item.id)),
-  ];
-  const scenarioCapabilities = scope.capabilities.map((capability) =>
-    m.scenario.includedCapabilityIds.has(capability.id) ? { ...capability, status: "accepted" } : capability
-  );
   const composition = composeScopeFeatures(
-    scenarioItems,
+    scope.items,
     scope.completedWork,
-    scenarioCapabilities,
+    scope.capabilities,
     capacity,
     m.scenario.bypassedFeatureIds,
     m.scenario.estimateOverrideByItemId,
@@ -255,13 +227,6 @@ export default function ScopeInstrument() {
     m.scenario.acceptedCandidateIds
   );
   const reality = composeScopeFeatures(scope.items, scope.completedWork, scope.capabilities, scope.teamCapacity, new Set(), {}, []);
-
-  const activelyLinkedIds = new Set(
-    scope.capabilities.flatMap((capability) => capability.workLinks)
-      .filter((link) => link.state === "active" || link.state === "configured")
-      .map((link) => link.externalId),
-  );
-  const unmappedExecution = scope.executionItems.filter((item) => !activelyLinkedIds.has(item.id));
 
   const movedDays = Math.round((res.likelyDate.getTime() - base.likelyDate.getTime()) / 86400000);
   const dom = readDominance(
@@ -301,17 +266,6 @@ export default function ScopeInstrument() {
   const acquiringBay = carryingParked && over === BAY_IN;
 
   const onDragStart = (e: DragStartEvent) => {
-    const activeId = String(e.active.id);
-    if (activeId.startsWith("work:")) {
-      setDraggingWork(scope.executionItems.find((item) => item.id === activeId.slice(5)) ?? null);
-      setOpenFeatureId(null);
-      return;
-    }
-    if (activeId.startsWith("outside:")) {
-      setDraggingOutside(scope.capabilities.find((capability) => capability.id === activeId.slice(8)) ?? null);
-      setOpenFeatureId(null);
-      return;
-    }
     const f = composition.features.find((x) => x.id === e.active.id);
     setDragging(f ?? null);
     // The panel is docked over the destination. Picking something up is a
@@ -337,157 +291,17 @@ export default function ScopeInstrument() {
   };
   const endDrag = () => {
     setDragging(null);
-    setDraggingWork(null);
-    setDraggingOutside(null);
     setOver(null);
     shelfPull.set(0);
     tilt.set(0);
   };
   const onDragEnd = (e: DragEndEvent) => {
-    const activeId = String(e.active.id);
-    const target = e.over?.id ? String(e.over.id) : null;
-    if (activeId.startsWith("work:") && target?.startsWith("cap-drop:")) {
-      const item = scope.executionItems.find((candidate) => candidate.id === activeId.slice(5));
-      const capability = scope.capabilities.find((candidate) => candidate.id === target.slice(9));
-      endDrag();
-      if (item && capability) setPending({ kind: "link", capability, item, idempotencyKey: crypto.randomUUID() });
-      return;
-    }
-    if (activeId.startsWith("outside:") && target === BAY_IN) {
-      const capability = scope.capabilities.find((candidate) => candidate.id === activeId.slice(8));
-      endDrag();
-      if (!capability) return;
-      const ids = capability.workLinks.map((link) => link.externalId);
-      m.setScenario((prev) => ({
-        ...prev,
-        includedCapabilityIds: new Set(prev.includedCapabilityIds).add(capability.id),
-        includedItemIds: new Set([...prev.includedItemIds, ...ids]),
-      }));
-      setPending({ kind: "move", capability, status: "accepted", itemIds: ids, idempotencyKey: crypto.randomUUID() });
-      return;
-    }
     const f = composition.features.find((x) => x.id === e.active.id);
+    const target = e.over?.id;
     endDrag();
     if (!f || !target) return;
-    if (target === BAY_OUT && !f.bypassed) {
-      setBypassed(f, true);
-      if (f.canonicalCapability) setPending({ kind: "move", capability: f.canonicalCapability, status: "outside", itemIds: f.items.map((item) => item.id), idempotencyKey: crypto.randomUUID() });
-    }
+    if (target === BAY_OUT && !f.bypassed) setBypassed(f, true);
     if (target === BAY_IN && f.bypassed) setBypassed(f, false);
-  };
-
-  const commitPending = async () => {
-    if (!pending) return;
-    setWriting(true);
-    setWriteError(null);
-    try {
-      const expectedRevision = pending.capability.revision ?? 1;
-      const response = pending.kind === "move"
-        ? await mutateReality(`/api/capabilities/${pending.capability.id}`, {
-            method: "PATCH",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ expectedRevision, status: pending.status, idempotencyKey: pending.idempotencyKey }),
-          })
-        : pending.kind === "link"
-          ? await mutateReality(`/api/capabilities/${pending.capability.id}/work-links`, {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ expectedRevision, workItemIds: [pending.item.id], idempotencyKey: pending.idempotencyKey }),
-            })
-          : await mutateReality(`/api/capabilities/${pending.capability.id}/work-links/${pending.linkId}`, {
-              method: "DELETE",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ expectedRevision, idempotencyKey: pending.idempotencyKey }),
-            });
-      const body = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(body.error ?? "Scope Reality could not be saved.");
-      if (pending.kind === "move") {
-        m.setScenario((prev) => {
-          const bypassedFeatureIds = new Set(prev.bypassedFeatureIds);
-          bypassedFeatureIds.delete(`capability:${pending.capability.id}`);
-          const excludedItemIds = new Set(prev.excludedItemIds);
-          const includedItemIds = new Set(prev.includedItemIds);
-          for (const id of pending.itemIds) {
-            excludedItemIds.delete(id);
-            includedItemIds.delete(id);
-          }
-          const includedCapabilityIds = new Set(prev.includedCapabilityIds);
-          includedCapabilityIds.delete(pending.capability.id);
-          return { ...prev, bypassedFeatureIds, excludedItemIds, includedItemIds, includedCapabilityIds };
-        });
-      }
-      setPending(null);
-    } catch (error) {
-      setWriteError(error instanceof Error ? error.message : "Scope Reality could not be saved.");
-    } finally {
-      setWriting(false);
-    }
-  };
-
-  const saveNewCapability = async (draft: DraftCapabilityInput) => {
-    setWriting(true);
-    setWriteError(null);
-    try {
-      const response = await mutateReality(`/api/scopes/${scope.scopeId}/capabilities`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...draft, idempotencyKey: crypto.randomUUID() }),
-      });
-      const body = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(body.error ?? "Capability could not be saved.");
-      setAdding(false);
-      return true;
-    } catch (error) {
-      setWriteError(error instanceof Error ? error.message : "Capability could not be saved.");
-      return false;
-    } finally {
-      setWriting(false);
-    }
-  };
-
-  const commitDraft = async (feature: Feature) => {
-    const saved = await saveNewCapability({
-      name: feature.name,
-      description: feature.description ?? "",
-      note: "Committed from a reviewed Scope Scenario.",
-      evidence: [],
-      workItemIds: feature.items.map((item) => item.id),
-      status: "accepted",
-    });
-    if (!saved) return;
-    m.setScenario((prev) => ({
-      ...prev,
-      draftFeatures: prev.draftFeatures.filter((draft) => draft.id !== feature.id),
-    }));
-    setOpenFeatureId(null);
-  };
-
-  const saveCapabilityEdit = async (input: { name: string; description: string; note: string; evidenceRef: string }) => {
-    if (!editing) return;
-    setWriting(true);
-    setWriteError(null);
-    try {
-      const response = await mutateReality(`/api/capabilities/${editing.id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          expectedRevision: editing.revision ?? 1,
-          name: input.name,
-          description: input.description,
-          note: input.note,
-          evidence: input.evidenceRef.trim() ? [{ ref: input.evidenceRef.trim(), suppliedBy: "operator" }] : [],
-          idempotencyKey: crypto.randomUUID(),
-        }),
-      });
-      const body = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(body.error ?? "Capability could not be saved.");
-      setEditing(null);
-      setOpenFeatureId(null);
-    } catch (error) {
-      setWriteError(error instanceof Error ? error.message : "Capability could not be saved.");
-    } finally {
-      setWriting(false);
-    }
   };
 
   const announcements: Announcements = {
@@ -609,8 +423,6 @@ export default function ScopeInstrument() {
                   />
                 </div>
 
-                <ExecutionWorkTray items={unmappedExecution} />
-
                 <ConstraintStrip gates={openGates} openQuestions={scope.openShapeQuestions} scopeId={scope.scopeId} dominance={dom} startDate={startDate} />
 
                 <SignalStrip
@@ -684,18 +496,6 @@ export default function ScopeInstrument() {
                 </VelocityLean>
               </motion.div>
             )}
-            {draggingWork && (
-              <div className="w-[260px] rounded-lg border border-[var(--i-amber)]/50 bg-[#10151a] px-3 py-2 shadow-2xl">
-                <div className="i-label text-[var(--i-amber)]">Linear execution</div>
-                <div className="mt-1 truncate text-[11px] text-[var(--i-text)]">{draggingWork.label}</div>
-              </div>
-            )}
-            {draggingOutside && (
-              <div className="w-[220px] rounded-lg border border-[var(--i-violet)]/50 bg-[#10151a] px-3 py-3 shadow-2xl">
-                <div className="i-label text-[var(--i-violet)]">Move into release</div>
-                <div className="mt-1 text-[11px] text-[var(--i-text)]">{draggingOutside.name}</div>
-              </div>
-            )}
           </DragOverlay>
         </DndContext>
       </MotionConfig>
@@ -730,45 +530,18 @@ export default function ScopeInstrument() {
             return { ...prev, estimateOverrideByItemId: next };
           })
         }
-        onEditReality={(capability) => setEditing(capability)}
-        onUnlinkReality={(capability, linkId, itemLabel) => setPending({
-          kind: "unlink", capability, linkId, itemLabel, idempotencyKey: crypto.randomUUID(),
-        })}
-        onCommitDraft={commitDraft}
       />
 
       <AddFeature
         open={adding}
         onClose={() => setAdding(false)}
-        unmappedItems={unmappedExecution}
+        unmappedItems={composition.features.find((f) => f.source === "unmapped")?.items ?? []}
         capacity={capacity}
-        saving={writing}
-        error={writeError}
-        onSaveReality={saveNewCapability}
-        onCreateScenario={(draft) => {
+        onCreate={(draft) => {
           m.setScenario((prev) => ({ ...prev, draftFeatures: [...prev.draftFeatures, draft] }));
           setAdding(false);
           setOpenFeatureId(draft.id);
         }}
-      />
-
-      <CapabilityRealityEditor
-        capability={editing}
-        saving={writing}
-        error={writeError}
-        onClose={() => { setEditing(null); setWriteError(null); }}
-        onSave={saveCapabilityEdit}
-      />
-
-      <ScopeImpactPreview
-        change={pending}
-        scope={scope}
-        baseDate={base.likelyDate}
-        previewDate={res.likelyDate}
-        writing={writing}
-        error={writeError}
-        onKeepScenario={() => { setPending(null); setWriteError(null); }}
-        onCommit={commitPending}
       />
     </InstrumentShell>
   );
@@ -776,141 +549,6 @@ export default function ScopeInstrument() {
 
 function nameOf(features: Feature[], id: string | number) {
   return features.find((f) => f.id === id)?.name ?? "capability";
-}
-
-function ExecutionWorkTray({ items }: { items: ScopeWorkItem[] }) {
-  return (
-    <section
-      className="shrink-0 rounded-xl border border-[var(--i-amber)]/20 bg-[var(--i-amber)]/[0.025] px-3 py-2"
-      data-shoot="unmapped-execution-tray"
-    >
-      <div className="flex items-center gap-2">
-        <span className="i-label text-[var(--i-amber)]">Unmapped execution</span>
-        <span className="text-[9px] text-[var(--i-text-faint)]">Linear truth with no Capability yet · drag onto an accepted capability</span>
-        <span className="ml-auto i-readout text-[11px] text-[var(--i-amber)]">{items.length}</span>
-      </div>
-      {items.length === 0 ? (
-        <div className="mt-1.5 text-[9px] text-[var(--i-text-faint)]">Every current Linear item is explicitly bridged to product shape.</div>
-      ) : (
-        <div className="mt-2 flex gap-2 overflow-x-auto pb-1">
-          {items.map((item) => <ExecutionWorkChip key={item.id} item={item} />)}
-        </div>
-      )}
-    </section>
-  );
-}
-
-function ExecutionWorkChip({ item }: { item: ScopeWorkItem }) {
-  const { setNodeRef, listeners, attributes, isDragging } = useDraggable({ id: `work:${item.id}` });
-  const missingEstimate = item.estimateSource === "issue_placeholder";
-  return (
-    <button
-      ref={setNodeRef}
-      type="button"
-      className="w-[230px] shrink-0 rounded-md border bg-[var(--i-recess)] px-2.5 py-2 text-left touch-none"
-      style={{ borderColor: missingEstimate ? "color-mix(in srgb, var(--i-amber) 42%, var(--i-border))" : "var(--i-border)", opacity: isDragging ? 0.22 : 1, cursor: "grab" }}
-      data-shoot="unmapped-execution-item"
-      data-work-id={item.id}
-      {...listeners}
-      {...attributes}
-    >
-      <div className="truncate text-[10px] font-medium text-[var(--i-text)]">{item.label}</div>
-      <div className="mt-1 flex gap-2 text-[8px] uppercase tracking-[0.08em] text-[var(--i-text-faint)]">
-        <span>{item.state ?? "Unknown"}</span>
-        <span>{missingEstimate ? "Estimate missing" : `${item.low}–${item.likely}–${item.high}d`}</span>
-      </div>
-    </button>
-  );
-}
-
-function CapabilityRealityEditor({
-  capability,
-  saving,
-  error,
-  onClose,
-  onSave,
-}: {
-  capability: ShapeCapability | null;
-  saving: boolean;
-  error: string | null;
-  onClose: () => void;
-  onSave: (input: { name: string; description: string; note: string; evidenceRef: string }) => void;
-}) {
-  const [name, setName] = useState("");
-  const [description, setDescription] = useState("");
-  const [note, setNote] = useState("");
-  const [evidenceRef, setEvidenceRef] = useState("");
-  useEffect(() => {
-    setName(capability?.name ?? "");
-    setDescription(capability?.description ?? "");
-    setNote("");
-    setEvidenceRef("");
-  }, [capability]);
-  if (!capability) return null;
-  return (
-    <ToolWindow open onClose={onClose} title="Scope Reality" subtitle={`Edit · revision ${capability.revision ?? 1}`} width={430} dataShoot="edit-capability-reality">
-      <div className="space-y-3 px-5 py-4">
-        <label className="block"><span className="i-label">Capability</span><input value={name} onChange={(event) => setName(event.target.value)} className="mt-1.5 w-full rounded px-3 py-2 text-[12px]" style={{ background: "var(--i-recess)", border: "1px solid var(--i-border-strong)" }} /></label>
-        <label className="block"><span className="i-label">Outcome / description</span><textarea value={description} onChange={(event) => setDescription(event.target.value)} rows={3} className="mt-1.5 w-full resize-none rounded px-3 py-2 text-[11px]" style={{ background: "var(--i-recess)", border: "1px solid var(--i-border-strong)" }} /></label>
-        <label className="block"><span className="i-label">Change note</span><input value={note} onChange={(event) => setNote(event.target.value)} placeholder="Why accepted Reality is changing" className="mt-1.5 w-full rounded px-3 py-2 text-[11px]" style={{ background: "var(--i-recess)", border: "1px solid var(--i-border-strong)" }} /></label>
-        <label className="block"><span className="i-label">Evidence reference · optional</span><input value={evidenceRef} onChange={(event) => setEvidenceRef(event.target.value)} placeholder="URL, document id, or source reference" className="mt-1.5 w-full rounded px-3 py-2 text-[11px]" style={{ background: "var(--i-recess)", border: "1px solid var(--i-border-strong)" }} /></label>
-        <div className="rounded border border-[var(--i-border)] bg-[var(--i-recess)] px-3 py-2 text-[9.5px] text-[var(--i-text-faint)]">
-          {evidenceRef.trim() ? "Operator assertion · evidence attached" : "Operator assertion · no evidence yet"} · saved server-side with history
-        </div>
-        {error && <div className="text-[10px] text-[var(--i-red)]">{error}</div>}
-        <button disabled={saving || !name.trim()} onClick={() => onSave({ name, description, note, evidenceRef })} className="w-full rounded-md border border-[var(--i-signal)] px-3 py-2 text-[11px] text-[var(--i-signal)] disabled:opacity-40" data-shoot="save-capability-reality">{saving ? "Saving Reality…" : "Save accepted Reality"}</button>
-      </div>
-    </ToolWindow>
-  );
-}
-
-function ScopeImpactPreview({
-  change,
-  scope,
-  baseDate,
-  previewDate,
-  writing,
-  error,
-  onKeepScenario,
-  onCommit,
-}: {
-  change: PendingScopeChange | null;
-  scope: ProjectScope;
-  baseDate: Date;
-  previewDate: Date;
-  writing: boolean;
-  error: string | null;
-  onKeepScenario: () => void;
-  onCommit: () => void;
-}) {
-  if (!change) return null;
-  const isMove = change.kind === "move";
-  const items = isMove
-    ? scope.executionItems.filter((item) => change.itemIds.includes(item.id))
-    : change.kind === "link" ? [change.item] : [];
-  const effort = items.reduce((sum, item) => sum + expectedDays(item), 0);
-  const schedule = effort / (scope.teamCapacity || 1);
-  const dateDelta = Math.round((previewDate.getTime() - baseDate.getTime()) / 86_400_000);
-  const title = change.kind === "link"
-    ? `Link ${change.item.id} → ${change.capability.name}`
-    : change.kind === "unlink"
-      ? `Unlink ${change.itemLabel}`
-      : `Move ${change.capability.name} ${change.status === "accepted" ? "into" : "out of"} release`;
-  return (
-    <ToolWindow open onClose={onKeepScenario} title="Scope impact preview" subtitle={title} width={430} dataShoot="scope-impact-preview">
-      <div className="px-5 py-4">
-        <div className="i-label text-[var(--i-violet)]">Preview · not Reality yet</div>
-        <div className="mt-3 grid grid-cols-2 gap-2">
-          <div className="rounded border border-[var(--i-border)] bg-[var(--i-recess)] px-3 py-2"><div className="i-label">Execution</div><div className="mt-1 i-readout text-[15px]">{change.kind === "unlink" ? "−1" : `${change.kind === "move" && change.status === "outside" ? "−" : "+"}${items.length}`}</div><div className="text-[8.5px] text-[var(--i-text-faint)]">mapped item{items.length === 1 ? "" : "s"}</div></div>
-          <div className="rounded border border-[var(--i-border)] bg-[var(--i-recess)] px-3 py-2"><div className="i-label">Modeled load</div><div className="mt-1 i-readout text-[15px]">{change.kind === "unlink" ? `−${schedule.toFixed(1)}d` : `${change.kind === "move" && change.status === "outside" ? "−" : "+"}${schedule.toFixed(1)}d`}</div><div className="text-[8.5px] text-[var(--i-text-faint)]">deterministic expected load</div></div>
-        </div>
-        {isMove && <div className="mt-2 rounded border border-[var(--i-border)] px-3 py-2 text-[10px] text-[var(--i-text-soft)]">Scenario window: {formatDateOnly(baseDate)} → {formatDateOnly(previewDate)} {dateDelta === 0 ? "(held)" : `(${deltaLabel(dateDelta)})`}</div>}
-        <p className="mt-3 text-[10px] leading-relaxed text-[var(--i-text-faint)]">Commit writes canonical server Reality, increments the derived revision, recomputes Forecast coverage/readiness, and becomes visible to other devices. Keeping the preview leaves Reality unchanged.</p>
-        {error && <div className="mt-2 text-[10px] text-[var(--i-red)]">{error}</div>}
-        <div className="mt-4 flex gap-2"><button onClick={onKeepScenario} disabled={writing} className="flex-1 rounded-md border border-[var(--i-border-strong)] px-3 py-2 text-[11px] text-[var(--i-text-soft)]">{isMove ? "Keep hypothetical" : "Cancel"}</button><button onClick={onCommit} disabled={writing} className="flex-1 rounded-md border border-[var(--i-signal)] px-3 py-2 text-[11px] text-[var(--i-signal)]" data-shoot="commit-scope-reality">{writing ? "Committing…" : "Commit to Reality"}</button></div>
-      </div>
-    </ToolWindow>
-  );
 }
 
 function ProductShapeSummary({
@@ -931,7 +569,7 @@ function ProductShapeSummary({
       </div>
       <div className="min-w-0 rounded-lg border border-[var(--i-border)] bg-[var(--i-recess)] px-3 py-2">
         <div className="i-label">Accepted shape mapped</div>
-        <div className="mt-1 text-[9px] text-[var(--i-text-faint)]">{coverage.census.mappedAcceptedCapabilityCount}/{coverage.census.acceptedCapabilityCount} capabilities · {coverage.census.modeledExecutionIssueCount}/{coverage.census.executionIssueCount} execution items modeled</div>
+        <div className="mt-1 text-[9px] text-[var(--i-text-faint)]">{coverage.census.mappedAcceptedCapabilityCount}/{coverage.census.acceptedCapabilityCount} capabilities · {coverage.census.executionIssueCount} execution items</div>
         {accepted.length === 0 && <div className="mt-0.5 truncate text-[8.5px] text-[var(--i-text-faint)]">No accepted Capability records; legacy execution grammar remains visible</div>}
       </div>
       <div className="min-w-0 rounded-lg border border-[var(--i-amber)]/20 bg-[var(--i-amber)]/[0.025] px-3 py-2">
@@ -1144,10 +782,6 @@ function SeatedModule({
   onOpen: () => void;
 }) {
   const { setNodeRef, listeners, attributes } = useDraggable({ id: feature.id });
-  const { setNodeRef: setDropRef, isOver } = useDroppable({
-    id: `cap-drop:${feature.canonicalCapability?.id ?? feature.id}`,
-    disabled: !feature.canonicalCapability,
-  });
   return (
     <motion.div
       layout
@@ -1156,7 +790,7 @@ function SeatedModule({
       exit={{ opacity: 0, scale: 0.95, transition: { delay: 0.16, duration: 0.26 } }}
       transition={{ type: "spring", stiffness: 330, damping: 33 }}
       className="relative w-full"
-      style={{ ...(compact ? { height: 150 } : { height: "100%" }), outline: isOver ? "1px solid var(--i-amber)" : "none", borderRadius: 12 }}
+      style={compact ? { height: 150 } : { height: "100%" }}
     >
       <Seat />
       {!isDragging && (
@@ -1168,7 +802,7 @@ function SeatedModule({
           ghostRange={ghostRange}
           compact={compact}
           onOpen={onOpen}
-          setNodeRef={(node) => { setNodeRef(node); setDropRef(node); }}
+          setNodeRef={setNodeRef}
           dragHandleProps={{ ...listeners, ...attributes }}
         />
       )}
@@ -1515,7 +1149,24 @@ function OutColumn({
       </motion.span>
 
       <div className="h-full overflow-y-auto px-2.5 pt-7 pb-2.5 flex flex-col gap-2.5">
-        {governedOutside.map((capability) => <OutsideCapability key={capability.id} capability={capability} />)}
+        {governedOutside.map((capability) => (
+          <div
+            key={capability.id}
+            className="shrink-0 rounded-lg border px-3 py-3"
+            style={{ borderColor: "#252c30", background: "linear-gradient(180deg, #12171a 0%, #0d1114 100%)" }}
+            data-shoot="governed-outside-capability"
+            data-capability={capability.id}
+          >
+            <div className="flex items-start gap-2">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.22)" strokeWidth="1.6" className="mt-0.5 shrink-0" aria-hidden><path d={sigilPathFor(capability.name)} /></svg>
+              <div className="min-w-0">
+                <div className="text-[9.5px] font-semibold leading-snug text-[var(--i-text-soft)]">{capability.name}</div>
+                <div className="mt-1 text-[7.5px] uppercase tracking-[0.12em] text-[var(--i-amber)]">{capability.status.replaceAll("_", " ")}</div>
+              </div>
+            </div>
+            <p className="mt-2 line-clamp-3 text-[8.5px] leading-relaxed text-[var(--i-text-faint)]">{capability.description ?? "Governed outside the current release."}</p>
+          </div>
+        ))}
         <AnimatePresence initial={false}>
           {features.map((f) => (
             <SeatedModule
@@ -1581,31 +1232,6 @@ function OutColumn({
         </div>
       </div>
     </motion.div>
-  );
-}
-
-function OutsideCapability({ capability }: { capability: ShapeCapability }) {
-  const { setNodeRef, listeners, attributes, isDragging } = useDraggable({ id: `outside:${capability.id}` });
-  return (
-    <div
-      ref={setNodeRef}
-      className="shrink-0 rounded-lg border px-3 py-3 touch-none"
-      style={{ borderColor: "#252c30", background: "linear-gradient(180deg, #12171a 0%, #0d1114 100%)", opacity: isDragging ? 0.25 : 1, cursor: "grab" }}
-      data-shoot="governed-outside-capability"
-      data-capability={capability.id}
-      {...listeners}
-      {...attributes}
-    >
-      <div className="flex items-start gap-2">
-        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.22)" strokeWidth="1.6" className="mt-0.5 shrink-0" aria-hidden><path d={sigilPathFor(capability.name)} /></svg>
-        <div className="min-w-0">
-          <div className="text-[9.5px] font-semibold leading-snug text-[var(--i-text-soft)]">{capability.name}</div>
-          <div className="mt-1 text-[7.5px] uppercase tracking-[0.12em] text-[var(--i-amber)]">{capability.status.replaceAll("_", " ")}</div>
-        </div>
-      </div>
-      <p className="mt-2 line-clamp-3 text-[8.5px] leading-relaxed text-[var(--i-text-faint)]">{capability.description ?? "Governed outside the current release."}</p>
-      <div className="mt-2 text-[8px] text-[var(--i-text-faint)]">{capability.workLinks.length} linked item{capability.workLinks.length === 1 ? "" : "s"} · drag into release</div>
-    </div>
   );
 }
 

@@ -22,7 +22,6 @@ export interface ScopeFilter {
 
 export interface LinearIssueSummary {
   identifier: string;
-  url?: string | null;
   title: string;
   description: string | null;
   state: string;
@@ -70,7 +69,6 @@ const SCOPED_ISSUES_QUERY = `
       pageInfo { hasNextPage endCursor }
       nodes {
         identifier
-        url
         title
         description
         estimate
@@ -91,7 +89,6 @@ interface ScopedIssuesQueryData {
     pageInfo: { hasNextPage: boolean; endCursor: string | null };
     nodes: {
       identifier: string;
-      url: string;
       title: string;
       description: string | null;
       estimate: number | null;
@@ -171,7 +168,6 @@ export async function getScopedIssues(scope: ScopeFilter): Promise<LinearIssueSu
     for (const node of page.nodes) {
       issues.push({
         identifier: node.identifier,
-        url: node.url ?? null,
         title: node.title,
         description: node.description ? node.description.slice(0, 500) : null,
         state: node.state?.name ?? "Unknown",

@@ -15,8 +15,8 @@
 //            engine already counts its work (see buildForecastInputs) -- what
 //            is unsettled is whether it is a capability of its own. It is
 //            therefore a CANDIDATE, never accepted Reality.
-//   MANUAL   A capability drafted in Scenario. Accepted manual capabilities
-//            arrive through the canonical Capability owner rows below.
+//   MANUAL   A capability Nic declares directly. Session-local in this pass:
+//            there is no Feature table yet (see docs/SCOPE-INSTRUMENT.md).
 //
 // And one thing that is not a source at all: work with no parent. That is a
 // real coverage gap, and it gets its own visibly-unmapped module rather than
@@ -46,7 +46,6 @@ export interface Feature {
       the client-generated draft id. Used as the scenario's bypass key. */
   id: string;
   name: string;
-  description?: string | null;
   source: FeatureSource;
   /** The Linear Project the work sits in, when the work agrees on one. */
   epic: string | null;
@@ -70,8 +69,6 @@ export interface Feature {
   bypassed: boolean;
   /** A Hermes candidate the user has seated by hand, in this Scenario only. */
   accepted: boolean;
-  /** Present only when this module is owned by canonical server Reality. */
-  canonicalCapability?: ShapeCapability;
 }
 
 export interface FeatureComposition {
@@ -142,7 +139,6 @@ function summarise(
   return {
     id,
     name,
-    description: null,
     source,
     epic,
     items,
@@ -273,11 +269,6 @@ export function composeFeatures(
     );
   }
 
-  for (const feature of features) {
-    const draft = drafts.find((candidate) => candidate.id === feature.id);
-    if (draft) feature.description = draft.intent || null;
-  }
-
   // Heaviest first, but unmapped work always sits last: it is a gap to close,
   // not a capability to weigh against the others.
   features.sort((a, b) => {
@@ -325,17 +316,6 @@ export function composeScopeFeatures(
   const claimedItemIds = new Set<string>();
   const claimedDoneIds = new Set<string>();
 
-  // Any explicit link owns its item even when the owning Capability is parked
-  // outside the release. Otherwise that item would fall back through the
-  // legacy Linear grammar and reappear on the in-release deck.
-  for (const capability of capabilities) {
-    for (const link of capability.workLinks) {
-      if (link.state !== "active" && link.state !== "configured") continue;
-      if (itemById.has(link.externalId)) claimedItemIds.add(link.externalId);
-      if (doneById.has(link.externalId)) claimedDoneIds.add(link.externalId);
-    }
-  }
-
   const canonical = accepted.map((capability) => {
     const ids = capability.workLinks
       .filter((link) => link.state === "active" || link.state === "configured")
@@ -343,16 +323,17 @@ export function composeScopeFeatures(
     const mappedItems = ids.flatMap((id) => {
       const item = itemById.get(id);
       if (!item) return [];
+      claimedItemIds.add(id);
       return [item];
     });
     const mappedDone = ids.flatMap((id) => {
       const item = doneById.get(id);
       if (!item) return [];
+      claimedDoneIds.add(id);
       return [item];
     });
     const id = `capability:${capability.id}`;
-    return {
-      ...summarise(
+    return summarise(
       id,
       capability.name,
       "canonical",
@@ -364,10 +345,7 @@ export function composeScopeFeatures(
       bypassedFeatureIds.has(id),
       true,
       estimateOverrides,
-      ),
-      description: capability.description,
-      canonicalCapability: capability,
-    };
+    );
   });
 
   const legacy = composeFeatures(

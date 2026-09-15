@@ -84,8 +84,5 @@ export async function GET() {
     }),
   ]);
 
-  return NextResponse.json(
-    { ...portfolio, sources, findings, reports },
-    { headers: { "Cache-Control": "private, no-store, max-age=0, must-revalidate" } },
-  );
+  return NextResponse.json({ ...portfolio, sources, findings, reports });
 }

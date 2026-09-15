@@ -23,7 +23,6 @@ import { DistributionDisplay, accentFor, materialOf } from "@/components/instrum
 import { Prototype } from "@/components/instrument/Panel";
 import { expectedDays, uncertaintyLabel, type Feature, type ThreePoint, type DraftFeature } from "@/lib/scope/features";
 import type { ScopeWorkItem } from "@/lib/instrument/useProject";
-import type { ShapeCapability } from "@/lib/scope/productShape";
 
 type Mode = "overview" | "work" | "evidence" | "estimate" | "history";
 
@@ -47,9 +46,6 @@ export default function FeatureDetail({
   onAccept,
   onSetEstimate,
   onClearEstimate,
-  onEditReality,
-  onUnlinkReality,
-  onCommitDraft,
 }: {
   feature: Feature | null;
   onClose: () => void;
@@ -64,9 +60,6 @@ export default function FeatureDetail({
   onAccept: (id: string) => void;
   onSetEstimate: (id: string, range: ThreePoint) => void;
   onClearEstimate: (id: string) => void;
-  onEditReality: (capability: ShapeCapability) => void;
-  onUnlinkReality: (capability: ShapeCapability, linkId: string, itemLabel: string) => void;
-  onCommitDraft: (feature: Feature) => void;
 }) {
   const [mode, setMode] = useState<Mode>("overview");
   if (!feature) return null;
@@ -84,19 +77,6 @@ export default function FeatureDetail({
       hero={<ModuleHead feature={f} capacity={capacity} releaseLoadDays={releaseLoadDays} realityRange={realityRange} maxSpread={maxSpread} />}
       footer={
         <div className="px-5 py-3 space-y-1.5">
-          {f.canonicalCapability && (
-            <button
-              onClick={() => onEditReality(f.canonicalCapability!)}
-              data-shoot="edit-capability-reality"
-              className="w-full rounded-md px-3 py-2 text-[11.5px] transition-colors"
-              style={{ border: "1px solid var(--i-signal)", color: "var(--i-signal)" }}
-            >
-              Edit accepted Reality
-            </button>
-          )}
-          {f.source === "manual" && (
-            <button onClick={() => onCommitDraft(f)} data-shoot="commit-draft-reality" className="w-full rounded-md px-3 py-2 text-[11.5px]" style={{ border: "1px solid var(--i-signal)", color: "var(--i-signal)" }}>Commit this draft to Reality</button>
-          )}
           <button
             onClick={() => onToggle(!f.bypassed)}
             data-shoot="detail-toggle"
@@ -133,7 +113,7 @@ export default function FeatureDetail({
       {mode === "overview" && (
         <Overview feature={f} />
       )}
-      {mode === "work" && <Work feature={f} capacity={capacity} onUnlinkReality={onUnlinkReality} />}
+      {mode === "work" && <Work feature={f} capacity={capacity} />}
       {mode === "evidence" && <Evidence feature={f} onAccept={onAccept} />}
       {mode === "estimate" && (
         <Estimate feature={f} capacity={capacity} onSetEstimate={onSetEstimate} onClearEstimate={onClearEstimate} />
@@ -278,8 +258,8 @@ function Overview({ feature: f }: { feature: Feature }) {
         )}
         {f.source === "manual" && (
           <>
-            Declared in this Scenario. <strong className="text-[var(--i-violet)]">Not saved</strong> — use the
-            Reality action in Add Capability when it should be accepted across devices.
+            Declared in this session. <strong className="text-[var(--i-violet)]">Not saved</strong> — Scope has no
+            Feature table yet.
           </>
         )}
         {f.source === "unmapped" && (
@@ -352,7 +332,7 @@ function Overview({ feature: f }: { feature: Feature }) {
 
 // ── WORK ─────────────────────────────────────────────────────────────────
 
-function Work({ feature: f, capacity, onUnlinkReality }: { feature: Feature; capacity: number; onUnlinkReality: (capability: ShapeCapability, linkId: string, itemLabel: string) => void }) {
+function Work({ feature: f, capacity }: { feature: Feature; capacity: number }) {
   if (f.items.length === 0 && f.done.length === 0)
     return (
       <Empty
@@ -391,10 +371,6 @@ function Work({ feature: f, capacity, onUnlinkReality }: { feature: Feature; cap
                 </span>
               )}
             </div>
-            {f.canonicalCapability && (() => {
-              const link = f.canonicalCapability.workLinks.find((candidate) => candidate.externalId === i.id);
-              return link ? <button onClick={() => onUnlinkReality(f.canonicalCapability!, link.id, i.label)} className="mt-1.5 text-[9px] text-[var(--i-amber)] hover:underline" data-shoot="unlink-work">Unlink from capability</button> : null;
-            })()}
           </li>
         ))}
       </ul>
@@ -453,13 +429,13 @@ function Evidence({ feature: f, onAccept }: { feature: Feature; onAccept: (id: s
             k="Accepted as a capability"
             v={f.accepted ? "Yes — in this Scenario" : "Not yet"}
             tone="var(--i-violet)"
-            note={f.accepted ? "seated by hand in this Scenario" : "this is a candidate"}
+            note={f.accepted ? "seated by hand; not written anywhere" : "this is a candidate"}
           />
         </div>
 
         <div className="mt-3 rounded px-3 py-3" style={{ background: "var(--i-recess)" }}>
           <div className="flex items-center gap-2">
-            <Prototype note="Candidate seating is hypothetical until accepted through the governed owner workflow." />
+            <Prototype note="There is no Feature table yet, so acceptance is not written anywhere." />
             <span className="i-label">Seat it into the release</span>
           </div>
           <p className="mt-1.5 text-[10px] text-[var(--i-text-faint)] leading-snug">
@@ -701,52 +677,38 @@ function EstimatePad({
 // ── HISTORY ──────────────────────────────────────────────────────────────
 
 function History({ feature: f }: { feature: Feature }) {
-  const completed = [...f.done]
+  // Only stored records. There is no feature-level change log in the model,
+  // so this shows the events that genuinely exist -- work completing -- and
+  // says so rather than inventing a narrative.
+  const events = [...f.done]
     .filter((d) => d.completedAt)
     .sort((a, b) => (b.completedAt ?? "").localeCompare(a.completedAt ?? ""));
-  const ownerEvents = f.canonicalCapability?.events ?? [];
 
   return (
     <div className="px-5 py-4">
-      {ownerEvents.length === 0 && completed.length === 0 ? (
+      {events.length === 0 ? (
         <Empty
           title="Nothing recorded yet"
-          body="No governed edit or completed work has been recorded for this capability yet."
+          body="No work under this capability has completed, and the model keeps no history of a capability's own shape — there is no Feature table to record changes against."
         />
       ) : (
         <>
-          {ownerEvents.length > 0 && <>
-            <div className="i-label mb-2">Governed owner history</div>
-            <ul>
-              {ownerEvents.map((event) => (
-                <li key={event.id} className="py-2 flex items-baseline gap-3" style={{ borderTop: "1px solid var(--i-border)" }}>
-                  <span className="shrink-0 i-readout text-[10px] text-[var(--i-text-faint)]" style={{ width: 46 }}>
-                    {new Date(event.createdAt).toLocaleDateString(undefined, { month: "short", day: "numeric" })}
-                  </span>
-                  <span className="min-w-0 flex-1 text-[11px] text-[var(--i-text-soft)] leading-snug">
-                    {event.action.replaceAll("_", " ")} · {event.actor}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          </>}
-          {completed.length > 0 && <>
-            <div className="i-label mb-2 mt-4">What has completed</div>
-            <ul>
-              {completed.map((d) => (
-                <li key={d.id} className="py-2 flex items-baseline gap-3" style={{ borderTop: "1px solid var(--i-border)" }}>
-                  <span className="shrink-0 i-readout text-[10px] text-[var(--i-text-faint)]" style={{ width: 46 }}>
-                    {new Date(d.completedAt!).toLocaleDateString(undefined, { month: "short", day: "numeric" })}
-                  </span>
-                  <span className="min-w-0 flex-1 text-[11px] text-[var(--i-text-soft)] leading-snug">{d.label}</span>
-                </li>
-              ))}
-            </ul>
-          </>}
+          <div className="i-label mb-2">What has completed</div>
+          <ul>
+            {events.map((d) => (
+              <li key={d.id} className="py-2 flex items-baseline gap-3" style={{ borderTop: "1px solid var(--i-border)" }}>
+                <span className="shrink-0 i-readout text-[10px] text-[var(--i-text-faint)]" style={{ width: 46 }}>
+                  {new Date(d.completedAt!).toLocaleDateString(undefined, { month: "short", day: "numeric" })}
+                </span>
+                <span className="min-w-0 flex-1 text-[11px] text-[var(--i-text-soft)] leading-snug">{d.label}</span>
+              </li>
+            ))}
+          </ul>
         </>
       )}
       <p className="mt-4 text-[10px] text-[var(--i-text-faint)] leading-snug">
-        Reality edits are append-only owner events. Work completion remains Linear execution history.
+        Scope keeps no record of how a capability&apos;s own definition changed over time. When features become
+        first-class, that record becomes possible — and worth having.
       </p>
     </div>
   );
@@ -768,24 +730,16 @@ export function AddFeature({
   onClose,
   unmappedItems,
   capacity,
-  saving,
-  error,
-  onSaveReality,
-  onCreateScenario,
+  onCreate,
 }: {
   open: boolean;
   onClose: () => void;
   unmappedItems: ScopeWorkItem[];
   capacity: number;
-  saving: boolean;
-  error: string | null;
-  onSaveReality: (draft: { name: string; description: string; note: string; evidence: unknown[]; workItemIds: string[]; status: "accepted" | "outside" | "future" }) => void;
-  onCreateScenario: (draft: DraftFeature) => void;
+  onCreate: (draft: DraftFeature) => void;
 }) {
   const [name, setName] = useState("");
   const [intent, setIntent] = useState("");
-  const [note, setNote] = useState("");
-  const [evidenceRef, setEvidenceRef] = useState("");
   const [picked, setPicked] = useState<Set<string>>(new Set());
   if (!open) return null;
 
@@ -826,8 +780,8 @@ export function AddFeature({
           <>
             <div className="i-label mt-4">Claim work that is not mapped yet</div>
             <p className="mt-1 text-[10px] text-[var(--i-text-faint)] leading-snug">
-              Optional. In Reality this explicitly brings selected Linear work into the accepted modeled subset;
-              in Scenario it remains a local attribution preview.
+              Optional. This moves the work out of Unmapped and under this capability — the release load does not
+              change, only where it is attributed.
             </p>
             <ul className="mt-2 max-h-[186px] overflow-y-auto">
               {unmappedItems.map((i) => {
@@ -865,38 +819,33 @@ export function AddFeature({
           </>
         )}
 
-        <label className="i-label mt-4 block" htmlFor="feature-note">Acceptance note · optional</label>
-        <input id="feature-note" value={note} onChange={(event) => setNote(event.target.value)} placeholder="Why this belongs in accepted product shape" className="mt-1.5 w-full rounded px-3 py-2 text-[11px]" style={{ background: "var(--i-recess)", border: "1px solid var(--i-border-strong)", color: "var(--i-text)" }} />
-        <label className="i-label mt-3 block" htmlFor="feature-evidence">Evidence reference · optional</label>
-        <input id="feature-evidence" value={evidenceRef} onChange={(event) => setEvidenceRef(event.target.value)} placeholder="URL, document id, or source reference" className="mt-1.5 w-full rounded px-3 py-2 text-[11px]" style={{ background: "var(--i-recess)", border: "1px solid var(--i-border-strong)", color: "var(--i-text)" }} />
-
-        <div className="mt-3 rounded border border-[var(--i-border)] bg-[var(--i-recess)] px-3 py-2 text-[9.5px] text-[var(--i-text-faint)]">
-          {evidenceRef.trim() ? "Operator assertion · evidence attached" : "Operator assertion · no evidence yet"} · explicit server save
+        <div className="mt-4 rounded px-3 py-2.5" style={{ background: "var(--i-recess)" }}>
+          <div className="flex items-center gap-2">
+            <Prototype note="There is no Feature table yet, so this is not written anywhere." />
+            <span className="text-[10.5px] text-[var(--i-text-soft)]">Not saved — lives with this Scenario</span>
+          </div>
+          <p className="mt-1.5 text-[10px] text-[var(--i-text-faint)] leading-snug">
+            A capability you declare here is real to the instrument and disappears when the Scenario is discarded.
+            Making it durable needs one small migration, described in docs/SCOPE-INSTRUMENT.md.
+          </p>
         </div>
 
-        {error && <div className="mt-2 text-[10px] text-[var(--i-red)]">{error}</div>}
-
         <button
-          disabled={name.trim().length === 0 || saving}
-          onClick={() => onSaveReality({
-            name: name.trim(), description: intent.trim(), note: note.trim(),
-            evidence: evidenceRef.trim() ? [{ ref: evidenceRef.trim(), suppliedBy: "operator" }] : [],
-            workItemIds: [...picked], status: "accepted",
-          })}
-          data-shoot="create-feature-reality"
+          disabled={name.trim().length === 0}
+          onClick={() =>
+            onCreate({
+              id: `draft-${Date.now().toString(36)}`,
+              name: name.trim(),
+              intent: intent.trim(),
+              itemIds: [...picked],
+            })
+          }
+          data-shoot="create-feature"
           className="mt-4 w-full rounded-md px-3 py-2.5 text-[12px] transition-colors disabled:opacity-30"
-          style={{ border: "1px solid var(--i-signal)", color: "var(--i-signal)" }}
+          style={{ border: "1px solid var(--i-violet)", color: "var(--i-violet)" }}
         >
-          {saving ? "Saving Reality…" : `Add ${name.trim() || "capability"} to Reality`}
+          Add {name.trim() || "capability"}
           {picked.size > 0 && ` with ${picked.size} item${picked.size === 1 ? "" : "s"} · ${pickedDays.toFixed(1)}d`}
-        </button>
-        <button
-          disabled={name.trim().length === 0 || saving}
-          onClick={() => onCreateScenario({ id: `draft-${Date.now().toString(36)}`, name: name.trim(), intent: intent.trim(), itemIds: [...picked] })}
-          data-shoot="create-feature-scenario"
-          className="mt-2 w-full rounded-md border border-[var(--i-violet)] px-3 py-2 text-[10.5px] text-[var(--i-violet)] disabled:opacity-30"
-        >
-          Preview in Scenario only
         </button>
       </div>
     </ToolWindow>

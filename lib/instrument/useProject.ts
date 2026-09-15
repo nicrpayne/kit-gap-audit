@@ -26,8 +26,6 @@ export interface ScopeWorkItem extends WorkItem {
   estimateSource: "ai" | "points" | "issue_placeholder" | "hint" | "finding_placeholder";
   kind: "ticket" | "inferred";
   state: string | null;
-  externalUrl?: string | null;
-  updatedAt?: string | null;
   assignee: string | null;
   points: number | null;
   quote: string | null;
@@ -44,7 +42,6 @@ export interface ProjectScope {
   targetDate: string | null;
   dependsOnScopeIds: string[];
   items: ScopeWorkItem[];
-  executionItems: ScopeWorkItem[];
   completedWork: {
     id: string;
     label: string;
@@ -89,9 +86,7 @@ export interface ProjectScope {
   executionState: string;
   executionDetail: string | null;
   capabilities: {
-    id: string; name: string; description: string | null; status: string; revision: number; sortOrder: number;
-    updatedAt: string; workLinkCount: number; provenance: unknown;
-    events: { id: string; action: string; actor: string; createdAt: string }[];
+    id: string; name: string; description: string | null; status: string; workLinkCount: number; provenance: unknown;
     workLinks: { id: string; provider: string; externalId: string; externalUrl: string | null; state: string }[];
   }[];
   openShapeQuestions: { id: string; title: string; rationale: string | null; status: string }[];
@@ -160,8 +155,6 @@ export interface SuiteScenario {
   capacityOverrideByScope: Record<string, number>;
   /** Work item ids excluded from the simulation -- real: items simply drop. */
   excludedItemIds: Set<string>;
-  /** Execution items added by a Scope release-state preview. */
-  includedItemIds: Set<string>;
   /** Gate ids treated as resolved -- real: the serial delay disappears. */
   resolvedGateIds: Set<string>;
   /** Item id -> a hypothetical three-point range to simulate INSTEAD of the
@@ -178,14 +171,17 @@ export interface SuiteScenario {
   // can say "Offline Capture is out of this release" instead of "3 items out
   // of scope". Scope writes both together, and is the only writer of this one.
   bypassedFeatureIds: Set<string>;
-  /** Canonical outside/future capabilities previewed as accepted. */
-  includedCapabilityIds: Set<string>;
-  // Capabilities drafted in this Scenario. Canonical capabilities have a
-  // server owner; these remain hypothetical until Scope explicitly commits.
+  // Capabilities declared by hand in this session. There is no Feature table
+  // yet, so a draft lives here and dies with the Scenario -- the honest
+  // behaviour for something that was never saved. See docs/SCOPE-INSTRUMENT.md
+  // for the migration this stands in for.
   draftFeatures: { id: string; name: string; intent: string; itemIds: string[] }[];
   // Hermes candidates the user has seated into the release by hand. Session-
-  // local until the owner explicitly commits the Scenario. Seating one changes
-  // no simulation input because the candidate work was already counted.
+  // local for the same reason drafts are: accepting a candidate means writing a
+  // capability down, and there is no Feature table to write it to yet. Seating
+  // one changes NO simulation input -- the candidate's work was already being
+  // counted -- so this is purely a statement about what we accept as a
+  // capability, and the surface says so.
   acceptedCandidateIds: Set<string>;
   contextSwitchCostPct: number | null;
 }
@@ -193,11 +189,9 @@ export interface SuiteScenario {
 export const EMPTY_SCENARIO: SuiteScenario = {
   capacityOverrideByScope: {},
   excludedItemIds: new Set(),
-  includedItemIds: new Set(),
   resolvedGateIds: new Set(),
   estimateOverrideByItemId: {},
   bypassedFeatureIds: new Set(),
-  includedCapabilityIds: new Set(),
   draftFeatures: [],
   acceptedCandidateIds: new Set(),
   contextSwitchCostPct: null,
@@ -207,11 +201,9 @@ export function scenarioIsActive(s: SuiteScenario): boolean {
   return (
     Object.keys(s.capacityOverrideByScope).length > 0 ||
     s.excludedItemIds.size > 0 ||
-    s.includedItemIds.size > 0 ||
     s.resolvedGateIds.size > 0 ||
     Object.keys(s.estimateOverrideByItemId).length > 0 ||
     s.bypassedFeatureIds.size > 0 ||
-    s.includedCapabilityIds.size > 0 ||
     s.draftFeatures.length > 0 ||
     s.acceptedCandidateIds.size > 0 ||
     s.contextSwitchCostPct !== null
@@ -411,25 +403,6 @@ export function useProject(): ProjectModel {
     void load(false);
   }, []);
 
-  // Cross-device coherence cannot use the in-document revision bus: Browser B
-  // has a different JavaScript realm. Revalidate when it becomes visible or
-  // focused, and gently while it remains open. Scenario stays local because
-  // load(false) swaps only server Reality underneath it.
-  useEffect(() => {
-    const revalidate = () => void load(false);
-    const onVisibility = () => {
-      if (document.visibilityState === "visible") revalidate();
-    };
-    window.addEventListener("focus", revalidate);
-    document.addEventListener("visibilitychange", onVisibility);
-    const interval = window.setInterval(revalidate, 15_000);
-    return () => {
-      window.removeEventListener("focus", revalidate);
-      document.removeEventListener("visibilitychange", onVisibility);
-      window.clearInterval(interval);
-    };
-  }, []);
-
   const startDate = useMemo(() => (data ? new Date(data.startDate) : null), [data]);
 
   const scenarioScopes: ScenarioInputScope[] | null = useMemo(() => {
@@ -492,11 +465,7 @@ export function useProject(): ProjectModel {
             items:
               s.scopeId === emptyScopeId
                 ? []
-                : [
-                    ...s.items,
-                    ...(data.scopes.find((scope) => scope.scopeId === s.scopeId)?.executionItems ?? [])
-                      .filter((item) => scenario.includedItemIds.has(item.id) && !s.items.some((base) => base.id === item.id)),
-                  ]
+                : s.items
                     .filter((i) => !scenario.excludedItemIds.has(i.id))
                     .map((i) => {
                       const o = scenario.estimateOverrideByItemId[i.id];

@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { parseNotionPageId } from "@/lib/notion";
 import { parseFigmaUrl, figmaRefKey } from "@/lib/figma";
-import { invalidateDerivedReads, recomputeDerivedReads } from "@/lib/audit/derivedRefresh";
 
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -128,10 +127,9 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     body.dependsOnScopeIds = deduped;
   }
 
-  const scope = await prisma.$transaction(async (tx) => {
-    const updated = await tx.scope.update({
-      where: { id },
-      data: {
+  const scope = await prisma.scope.update({
+    where: { id },
+    data: {
       ...(body.name !== undefined ? { name: body.name } : {}),
       ...(body.teamKey !== undefined ? { teamKey: body.teamKey } : {}),
       ...(body.projectNames !== undefined
@@ -151,14 +149,10 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       ...(notionPageIds !== undefined ? { notionPageIds } : {}),
       ...(figmaRefs !== undefined ? { figmaRefs } : {}),
       ...(body.dependsOnScopeIds !== undefined ? { dependsOnScopeIds: body.dependsOnScopeIds } : {}),
-      },
-    });
-    await invalidateDerivedReads(tx, id, "Scope owner configuration changed");
-    return updated;
+    },
   });
-  const derived = await recomputeDerivedReads(id);
 
-  return NextResponse.json({ scope, derived });
+  return NextResponse.json({ scope });
 }
 
 // Report, Source, WorkEstimate, and ContextDoc all reference Scope
