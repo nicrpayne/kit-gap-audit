@@ -577,7 +577,7 @@ export default function ScopeInstrument() {
   const stageConfidentProposals = () => {
     if (!proposal) return;
     for (const item of proposal.items) {
-      if (item.confidence !== "high" || item.action === "none" || item.status === "committed") continue;
+      if (item.reconciliationState !== "aligned" || item.confidence !== "high" || item.action === "none" || item.status === "committed") continue;
       stageProposalItem(item, item.targetCapabilityId, item.releaseSignal === "likely_out" ? "outside" : "accepted");
     }
   };
@@ -716,23 +716,6 @@ export default function ScopeInstrument() {
                     selectedId={openFeatureId}
                   />
 
-                  {/* The destination is subordinate: it flanks the deck only,
-                      and stops where the deck stops. */}
-                  <OutColumn
-                    shelfEl={shelfEl}
-                    features={composition.bypassed}
-                    shareOf={realityShareOf}
-                    maxSpread={maxSpread}
-                    ghostRangeOf={realityRangeOf}
-                    dragging={dragging}
-                    pull={shelfPull}
-                    armed={acquiringShelf}
-                    onOpen={setOpenFeatureId}
-                    governedOutside={scenarioProductShape.outsideRelease}
-                    selectedId={openFeatureId}
-                    onOpenOutside={setEditing}
-                  />
-
                   <ScopeReconciliation
                     proposal={proposal}
                     loading={proposalLoading}
@@ -752,6 +735,21 @@ export default function ScopeInstrument() {
                     onCommit={commitProposalSelections}
                   />
                 </div>
+
+                <OutColumn
+                  shelfEl={shelfEl}
+                  features={composition.bypassed}
+                  shareOf={realityShareOf}
+                  maxSpread={maxSpread}
+                  ghostRangeOf={realityRangeOf}
+                  dragging={dragging}
+                  pull={shelfPull}
+                  armed={acquiringShelf}
+                  onOpen={setOpenFeatureId}
+                  governedOutside={scenarioProductShape.outsideRelease}
+                  selectedId={openFeatureId}
+                  onOpenOutside={setEditing}
+                />
 
                 <ConstraintStrip gates={openGates} openQuestions={scope.openShapeQuestions} scopeId={scope.scopeId} dominance={dom} startDate={startDate} truthReady={scope.forecastCoverage.canonicalForecast && scope.capacityContract.reconciles} />
 
@@ -1553,12 +1551,7 @@ function OutColumn({
   const { setNodeRef } = useDroppable({ id: BAY_OUT });
   const parkedDays = features.reduce((s, f) => s + f.loadDays, 0);
   const wake = useSpring(pull, { stiffness: 190, damping: 28 });
-
-  // Everything below is driven by ONE real quantity: how close the carried
-  // module actually is. Nothing here is a hover state.
-  const railOpacity = useTransform(wake, [0.06, 0.85], [0, 1]);
   const seatOpacity = useTransform(wake, [0.18, 0.8], [0, 1]);
-  const seatLift = useTransform(wake, [0.18, 0.9], [7, 0]);
   const labelTone = useTransform(wake, [0.2, 1], ["var(--i-text-faint)", "var(--i-violet)"]);
   const bodyLift = useTransform(wake, [0, 1], ["#080b0d", "#0d0c15"]);
 
@@ -1570,83 +1563,30 @@ function OutColumn({
       }}
       data-shoot="bay-out"
       data-armed={armed ? "true" : "false"}
-      className="relative shrink-0 rounded-xl overflow-hidden"
+      className="relative h-[168px] shrink-0 overflow-hidden rounded-xl"
       style={{
-        width: 172,
         border: "1px solid var(--i-border)",
-        // A bay cut into the chassis. It sleeps here — no dashed perimeter,
-        // no instruction, nothing shouting "drop zone".
         background: bodyLift,
         boxShadow: "inset 0 3px 12px rgba(0,0,0,0.62), inset 0 -1px 0 rgba(255,255,255,0.028)",
       }}
     >
-      <span aria-hidden className="absolute inset-0 pointer-events-none">
-        {[10, 161].map((x) => (
-          <span
-            key={x}
-            className="absolute"
-            style={{
-              left: x,
-              top: 26,
-              bottom: 52,
-              width: 1,
-              background:
-                "linear-gradient(180deg, transparent, rgba(255,255,255,0.055) 16%, rgba(255,255,255,0.055) 84%, transparent)",
-            }}
-          />
-        ))}
-      </span>
-
-      {/* THE GUIDE RAILS — the mechanism lighting up as a module approaches.
-          Driven by real pointer distance, not by hover. */}
-      <motion.span aria-hidden className="absolute inset-0 pointer-events-none" style={{ opacity: railOpacity }}>
-        {[10, 161].map((x) => (
-          <span
-            key={x}
-            className="absolute"
-            style={{
-              left: x,
-              top: 26,
-              bottom: 52,
-              width: 1,
-              background:
-                "linear-gradient(180deg, transparent, color-mix(in srgb, var(--i-violet) 60%, transparent) 18%, color-mix(in srgb, var(--i-violet) 60%, transparent) 82%, transparent)",
-              boxShadow: "0 0 7px color-mix(in srgb, var(--i-violet) 34%, transparent)",
-            }}
-          />
-        ))}
-      </motion.span>
-
       <motion.span
-        className="absolute top-2 left-3 right-3 i-label whitespace-nowrap z-10"
-        style={{ letterSpacing: "0.16em", color: labelTone, fontSize: 8.5 }}
+        className="absolute left-4 top-3 z-10 whitespace-nowrap text-[10px] font-semibold uppercase tracking-[0.16em]"
+        style={{ color: labelTone }}
       >
-        Out of this release
+        Out / later bank
       </motion.span>
 
-      <div className="h-full overflow-y-auto px-2.5 pt-7 pb-2.5 flex flex-col gap-2.5">
-        {governedOutside.map((capability) => <OutsideCapability key={capability.id} capability={capability} onOpen={() => onOpenOutside(capability)} />)}
+      <div className="flex h-full items-stretch gap-2.5 overflow-x-auto px-3.5 pb-3 pt-9">
+        {governedOutside.map((capability) => <div key={capability.id} className="w-[230px] shrink-0"><OutsideCapability capability={capability} onOpen={() => onOpenOutside(capability)} /></div>)}
         <AnimatePresence initial={false}>
           {features.map((f) => (
-            <SeatedModule
-              key={f.id}
-              feature={f}
-              share={shareOf(f)}
-              maxSpread={maxSpread}
-              ghostRange={ghostRangeOf(f)}
-              isDragging={dragging?.id === f.id}
-              compact
-              selected={selectedId === f.id}
-              onOpen={() => onOpen(f.id)}
-            />
+            <div key={f.id} className="w-[230px] shrink-0"><SeatedModule feature={f} share={shareOf(f)} maxSpread={maxSpread} ghostRange={ghostRangeOf(f)} isDragging={dragging?.id === f.id} compact selected={selectedId === f.id} onOpen={() => onOpen(f.id)} /></div>
           ))}
         </AnimatePresence>
-
-        {/* THE RECEIVING SEAT — depth opens only as far as the approach
-            warrants, so crossing the boundary is progressively intentional. */}
         <motion.div
-          className="relative shrink-0 rounded-lg"
-          style={{ height: 116, opacity: seatOpacity, y: seatLift }}
+          className="relative w-[210px] shrink-0 rounded-lg"
+          style={{ opacity: features.length || governedOutside.length ? seatOpacity : 1 }}
           aria-hidden
         >
           <motion.span
@@ -1663,33 +1603,14 @@ function OutColumn({
             transition={{ duration: 0.18, ease: "easeOut" }}
           />
           <motion.span
-            className="absolute inset-x-0 bottom-3 text-center text-[9px] leading-snug px-3"
+            className="absolute inset-0 flex items-center justify-center px-5 text-center text-[10px] leading-relaxed"
             initial={false}
-            animate={{ opacity: armed ? 1 : 0, color: "var(--i-violet)" }}
+            animate={{ opacity: armed ? 1 : 0.7, color: armed ? "var(--i-violet)" : "var(--i-text-faint)" }}
             transition={{ duration: 0.16 }}
           >
-            release — out of this release
+            {armed ? "Release here — move out / later" : governedOutside.length || features.length ? `${governedOutside.length + features.length} outside · ${parkedDays.toFixed(1)}d scenario load` : "Drag a capability here to model it out / later"}
           </motion.span>
         </motion.div>
-
-        <div className="flex-1 min-h-0" />
-
-        {/* A real zero is still a readout. It anchors the bay when the release
-            is whole, and it is the honest number when it is not. */}
-        <div className="shrink-0 px-1 pt-1.5 text-center" style={{ borderTop: "1px solid rgba(255,255,255,0.05)" }}>
-          <div
-            className="i-readout text-[15px] leading-none"
-            style={{ color: features.length > 0 ? "var(--i-violet)" : "var(--i-text-faint)" }}
-          >
-            {parkedDays.toFixed(1)}
-            <span className="text-[9px] font-normal">d</span>
-          </div>
-          <div className="mt-1 text-[8.5px] leading-snug text-[var(--i-text-faint)]">
-            {features.length === 0
-              ? governedOutside.length > 0 ? `${governedOutside.length} governed outside · 0 scenario cuts` : "nothing taken out"
-              : `${features.length} scenario capabilit${features.length === 1 ? "y" : "ies"} · still in Reality`}
-          </div>
-        </div>
       </div>
     </motion.div>
   );

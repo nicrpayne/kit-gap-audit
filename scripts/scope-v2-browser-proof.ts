@@ -57,12 +57,12 @@ const clusters = [
 ] as const;
 const proposal = {
   id: "proposal-jsa", scopeId: "visual-jsa", status: "active", generatedAt: "2026-09-15T19:00:00.000Z", stale: false,
-  sourceWatermark: { linearAsOf: "2026-09-15T18:30:00.000Z", linearIssueCount: 26, contextSnapshotId: "snapshot-jsa", contextGeneratedAt: "2026-09-15T18:40:00.000Z", contextAcceptedAt: "2026-09-15T18:45:00.000Z", contextProducer: "Hermes", completeness: { status: "complete" } },
-  summary: { likelyIn: 4, likelyOut: 0, boundaryReview: 0, confidentlyMatched: 4, suggested: 4, unresolved: 0 },
+  sourceWatermark: { linearAsOf: "2026-09-15T18:30:00.000Z", linearIssueCount: 26, linearClusterCount: 4, contextSnapshotId: "snapshot-jsa", contextGeneratedAt: "2026-09-15T18:40:00.000Z", contextAcceptedAt: "2026-09-15T18:45:00.000Z", contextProducer: "Hermes", contextRefCount: 12, realityCapabilityCount: 7, completeness: { status: "complete" } },
+  summary: { likelyIn: 4, likelyOut: 0, boundaryReview: 0, confidentlyMatched: 4, suggested: 4, unresolved: 0, aligned: 4, noExecution: 2, executionExceptions: 1, conflicts: 0 },
   items: clusters.map(([id, title, targetCapabilityId, ids, parent]) => ({
-    id, title, description: `${title} release capability`, releaseSignal: "likely_in", confidence: "high", confidenceScore: 92, matchState: "confidently_matched", action: "link_existing", targetCapabilityId, targetRevision: 3,
+    id, title, description: `${title} release capability`, origins: ["knowledge", "reality", "linear"], reconciliationState: "aligned", conflicts: [], releaseSignal: "likely_in", confidence: "high", confidenceScore: 92, matchState: "confidently_matched", action: "link_existing", targetCapabilityId, targetRevision: 3,
     workItemIds: [...ids], alreadyLinkedItemIds: [], rationale: { headline: `Propose ${ids.length} missing work links to ${title}.`, signals: [`${ids.length} executable items follow Linear parent ${parent}.`, "Structured context corroborates this cluster."], cautions: [] },
-    provenance: { linearParent: { identifier: parent, title }, linearItems: ids.map((identifier) => ({ identifier, state: "Todo", projectName: "JSA", updatedAt: "2026-09-15T18:30:00.000Z" })), contextSnapshotId: "snapshot-jsa", contextRefs: [{ kind: "release_requirement", id: `claim-${parent}`, statement: `${title} is in beta scope`, evidenceRefs: [`linear:${parent}`] }], method: "scope-proposal-deterministic-1.0" }, status: "suggested",
+    provenance: { linearParent: { identifier: parent, title }, linearParents: [{ identifier: parent, title }], linearItems: ids.map((identifier) => ({ identifier, state: "Todo", projectName: "JSA", updatedAt: "2026-09-15T18:30:00.000Z" })), contextSnapshotId: "snapshot-jsa", contextRefs: [{ kind: "release_requirement", id: `claim-${parent}`, statement: `${title} is confirmed in scope for V1`, evidenceRefs: [`linear:${parent}`], topicTags: [targetCapabilityId], candidateTitle: title }], realityCapability: { id: targetCapabilityId, name: title, status: "future", revision: 3 }, method: "scope-reconciler-three-source-2.0" }, status: "suggested",
   })),
 };
 
@@ -83,7 +83,7 @@ async function main() {
   await page.goto(`${baseURL}/scope?project=visual-jsa`);
   await page.locator('[data-shoot="reconciliation-workspace"]').waitFor();
   await page.waitForTimeout(700);
-  await page.screenshot({ path: resolve(deliverableOut, "scope-v2-1728x1117.png") });
+  await page.screenshot({ path: resolve(deliverableOut, "scope-v2-overview-1728x1117.png") });
 
   assert.equal(await page.getByText("Forecast not ready", { exact: true }).count(), 1);
   assert.equal(await page.getByText("Forecast not ready", { exact: true }).isVisible(), true);
@@ -91,10 +91,21 @@ async function main() {
   assert.equal(await page.locator('[data-shoot="unmapped-execution-tray"]').count(), 0, "raw horizontal ticket tray is removed");
   assert.equal(await page.locator('[data-shoot="proposal-card"]').count(), 4);
 
-  await page.locator('[data-shoot="governed-outside-capability"]', { hasText: "Notifications" }).click();
-  await page.getByRole("dialog", { name: "Scope Reality" }).waitFor();
-  assert.equal(await page.getByRole("dialog", { name: "Scope Reality" }).locator("input").first().inputValue(), "Notifications");
-  await page.getByRole("dialog", { name: "Scope Reality" }).getByRole("button", { name: "Close" }).click();
+  await page.locator('[data-capability="capability:crew"]').click();
+  await page.locator('[data-shoot="feature-detail"]').waitFor();
+  await page.locator('[data-shoot="mode-evidence"]').click();
+  assert.equal(await page.locator('[data-capability="capability:crew"][data-selected="true"]').count(), 1, "selected capability remains unmistakable behind Focus");
+  await page.screenshot({ path: resolve(deliverableOut, "scope-v2-capability-focus.png") });
+  await page.locator('[data-shoot="feature-detail"]').getByRole("button", { name: "Close" }).click();
+
+  await page.locator('[data-proposal-item="proposal-notifications"]').click();
+  await page.locator('[data-shoot="reconciliation-focus"]').waitFor();
+  assert.equal(await page.locator('[data-shoot="proposal-evidence-inspection"]').isVisible(), true);
+  await page.waitForTimeout(250);
+  await page.screenshot({ path: resolve(deliverableOut, "scope-v2-proposal-evidence-focus.png") });
+  await page.locator('[data-shoot="stage-focused-proposal"]').click();
+  await page.locator('[data-shoot="reconciliation-focus"]').getByRole("button", { name: "Close" }).click();
+  await page.screenshot({ path: resolve(deliverableOut, "scope-v2-scenario-staged.png") });
 
   await drag(page, page.locator('[data-shoot="governed-outside-capability"]', { hasText: "PDF / Docufy output" }), page.locator('[data-shoot="capability"]', { hasText: "Crew acknowledgment" }));
   await page.locator('[data-shoot="scope-impact-preview"]').waitFor();
@@ -102,19 +113,12 @@ async function main() {
   await page.screenshot({ path: resolve(deliverableOut, "scope-v2-nested-drop-preview.png") });
   await page.getByRole("button", { name: "Keep hypothetical" }).click();
 
-  await page.locator('[data-proposal-item="proposal-notifications"]').getByRole("button", { name: "Stage proposal" }).click();
-  await page.getByText("Notifications", { exact: true }).first().click();
-  await page.locator('[data-shoot="feature-detail"]').waitFor();
-  assert.equal(await page.locator('[data-capability="capability:notifications"][data-selected="true"]').count(), 1, "selected module keeps a strong persistent state");
-  await page.locator('[data-shoot="feature-detail"]').getByRole("button", { name: "Close" }).click().catch(() => page.keyboard.press("Escape"));
-  await page.screenshot({ path: resolve(deliverableOut, "scope-v2-staged-proposal-1728x1117.png") });
-
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.screenshot({ path: resolve(deliverableOut, "scope-v2-1440x900.png") });
   const overflow = await page.evaluate(() => ({ body: document.body.scrollWidth - innerWidth, root: document.documentElement.scrollWidth - innerWidth }));
   assert.ok(overflow.body <= 1 && overflow.root <= 1, `page should not overflow horizontally: ${JSON.stringify(overflow)}`);
 
-  const result = { ok: true, proposalCards: 4, governedOutsideClickable: true, nestedChildDropOpenedPreview: true, selectedStatePersistent: true, truthBoundary: "forecast-not-ready/no-floor", horizontalOverflow: overflow };
+  const result = { ok: true, proposalCards: 4, overviewMode: true, capabilityFocus: true, proposalEvidenceFocus: true, scenarioStaged: true, nestedChildDropOpenedPreview: true, selectedStatePersistent: true, truthBoundary: "forecast-not-ready/no-floor", horizontalOverflow: overflow };
   writeFileSync(resolve(repoOut, "browser-proof.json"), JSON.stringify(result, null, 2));
   console.log(JSON.stringify(result, null, 2));
   await browser.close();

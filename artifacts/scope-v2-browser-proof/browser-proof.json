@@ -1,7 +1,10 @@
 {
   "ok": true,
   "proposalCards": 4,
-  "governedOutsideClickable": true,
+  "overviewMode": true,
+  "capabilityFocus": true,
+  "proposalEvidenceFocus": true,
+  "scenarioStaged": true,
   "nestedChildDropOpenedPreview": true,
   "selectedStatePersistent": true,
   "truthBoundary": "forecast-not-ready/no-floor",

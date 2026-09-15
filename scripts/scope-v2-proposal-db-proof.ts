@@ -19,18 +19,18 @@ async function main() {
     } });
     const proposal = await prisma.scopeProposal.create({ data: {
       scopeId: scope.id,
-      compilerVersion: "scope-proposal-deterministic-1.0",
+      compilerVersion: "scope-reconciler-three-source-2.0",
       fingerprint: "db-proof-1",
       sourceWatermark: { linearAsOf: "2026-09-15T18:00:00.000Z" },
       summary: { likelyIn: 2, likelyOut: 0, boundaryReview: 0, confidentlyMatched: 2, suggested: 2, unresolved: 0 },
       items: { create: [
         {
-          candidateKey: "linear-parent:PRF-1", title: "Notifications", releaseSignal: "likely_in", confidence: "high", confidenceScore: 95,
+          candidateKey: "reality:notifications", title: "Notifications", origins: ["knowledge", "reality", "linear"], reconciliationState: "aligned", conflicts: [], releaseSignal: "likely_in", confidence: "high", confidenceScore: 95,
           matchState: "confidently_matched", action: "link_existing", targetCapabilityId: capability.id, targetRevision: 1,
           workItemIds: ["PRF-2", "PRF-3"], rationale: { headline: "proof" }, provenance: { refs: ["proof"] },
         },
         {
-          candidateKey: "linear-parent:PRF-10", title: "Offline support", releaseSignal: "likely_in", confidence: "high", confidenceScore: 90,
+          candidateKey: "knowledge:offline", title: "Offline support", origins: ["knowledge", "linear"], reconciliationState: "aligned", conflicts: [], releaseSignal: "likely_in", confidence: "high", confidenceScore: 90,
           matchState: "confidently_matched", action: "create_capability", workItemIds: ["PRF-11"],
           rationale: { headline: "proof" }, provenance: { refs: ["proof"] },
         },
@@ -52,9 +52,9 @@ async function main() {
     assert.equal((await prisma.scopeProposal.findUniqueOrThrow({ where: { id: proposal.id } })).status, "committed");
 
     const conflicting = await prisma.scopeProposal.create({ data: {
-      scopeId: scope.id, compilerVersion: "scope-proposal-deterministic-1.0", fingerprint: "db-proof-2",
+      scopeId: scope.id, compilerVersion: "scope-reconciler-three-source-2.0", fingerprint: "db-proof-2",
       sourceWatermark: {}, summary: {}, items: { create: {
-        candidateKey: "linear-parent:PRF-20", title: "Notifications", releaseSignal: "likely_in", confidence: "high", confidenceScore: 90,
+        candidateKey: "reality:notifications:stale", title: "Notifications", origins: ["knowledge", "reality", "linear"], reconciliationState: "aligned", conflicts: [], releaseSignal: "likely_in", confidence: "high", confidenceScore: 90,
         matchState: "confidently_matched", action: "link_existing", targetCapabilityId: capability.id, targetRevision: 1,
         workItemIds: ["PRF-21"], rationale: {}, provenance: {},
       } },

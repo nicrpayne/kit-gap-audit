@@ -1,0 +1,505 @@
+{
+  "proof": "read_only_current_production_inputs",
+  "productionWrites": 0,
+  "capturedFrom": [
+    "GET /api/instrument/project",
+    "GET /api/audit/graph?scope=<redacted>&slice=detail"
+  ],
+  "scope": {
+    "name": "JSA",
+    "idHash": "53da34a5102f"
+  },
+  "sourceWatermarks": {
+    "linearAsOf": "2026-09-15T20:48:46.219Z",
+    "linearIssueCount": 77,
+    "linearClusterCount": 22,
+    "snapshotIdHash": "245e3f79a90f",
+    "contextAcceptedAt": "2026-09-09T15:15:19.653Z",
+    "contextObjectCount": 172,
+    "contextObjectIdSetHash": "d809be14899f615abdbded566565282a1ec08f822c1ef445070ae460f4186018",
+    "realityCapabilityCount": 9
+  },
+  "census": {
+    "proposalItems": 29,
+    "likelyIn": 3,
+    "likelyOut": 1,
+    "boundaryReview": 25,
+    "confidentlyMatched": 0,
+    "suggested": 0,
+    "unresolved": 25,
+    "aligned": 0,
+    "noExecution": 3,
+    "executionExceptions": 14,
+    "conflicts": 11,
+    "unmatchedExecutionClusters": 14
+  },
+  "requestedShapes": [
+    {
+      "key": "notifications",
+      "title": "JSA notifications",
+      "origins": [
+        "knowledge",
+        "reality",
+        "linear"
+      ],
+      "reconciliationState": "conflict",
+      "releaseSignal": "boundary",
+      "confidence": {
+        "band": "low",
+        "score": 44
+      },
+      "action": "none",
+      "linear": {
+        "parentIds": [
+          "SOF-904"
+        ],
+        "workItemIds": [
+          "SOF-717",
+          "SOF-823",
+          "SOF-824",
+          "SOF-825",
+          "SOF-826",
+          "SOF-915",
+          "SOF-982",
+          "SOF-983"
+        ],
+        "alreadyLinked": 2
+      },
+      "knowledge": {
+        "referenceCount": 20,
+        "kinds": [
+          "commitment",
+          "decision",
+          "dependency",
+          "observation",
+          "risk",
+          "unknown"
+        ],
+        "referenceHashes": [
+          "145377672694",
+          "1a41dee00ebc",
+          "1b341cc1949c",
+          "39f90d670340",
+          "3a24140d8f6d",
+          "4362228d1b58",
+          "5499b043e2aa",
+          "5804f96d51a9",
+          "666f709c27ef",
+          "a861aa836060",
+          "b69c22e9b78d",
+          "b6b3a6dd8911",
+          "b6b9bcedcf3f",
+          "b9fe8759982f",
+          "c09e7eaceddb",
+          "c9ba635dcfd4",
+          "ccefdd031b4b",
+          "d285e31a1890",
+          "d2e860d8b8a2",
+          "e3b45d09dfc6"
+        ]
+      },
+      "reality": {
+        "idHash": "c955071a385d",
+        "name": "JSA notifications",
+        "status": "accepted",
+        "revision": 4
+      },
+      "rationale": {
+        "headline": "Signals disagree; accepted Reality remains authoritative until an operator resolves the boundary.",
+        "signals": [
+          "Knowledge contributes 20 current, cited signals.",
+          "Accepted Scope Reality contributes “JSA notifications” at revision 4.",
+          "Linear contributes 8 executable items under SOF-904."
+        ],
+        "cautions": [
+          "Release evidence disagrees across Knowledge, accepted Reality, or Linear labels.",
+          "Knowledge carries an out/deferred signal while accepted Scope Reality remains in release.",
+          "One or more executable items have no Linear estimate."
+        ]
+      },
+      "conflicts": [
+        "Release evidence disagrees across Knowledge, accepted Reality, or Linear labels.",
+        "Knowledge carries an out/deferred signal while accepted Scope Reality remains in release."
+      ]
+    },
+    {
+      "key": "pdf_docufy",
+      "title": "PDF / Docufy output",
+      "origins": [
+        "knowledge",
+        "reality",
+        "linear"
+      ],
+      "reconciliationState": "conflict",
+      "releaseSignal": "boundary",
+      "confidence": {
+        "band": "low",
+        "score": 44
+      },
+      "action": "none",
+      "linear": {
+        "parentIds": [
+          "SOF-747"
+        ],
+        "workItemIds": [
+          "SOF-589",
+          "SOF-748",
+          "SOF-917",
+          "SOF-918",
+          "SOF-919"
+        ],
+        "alreadyLinked": 0
+      },
+      "knowledge": {
+        "referenceCount": 15,
+        "kinds": [
+          "commitment",
+          "dependency",
+          "observation",
+          "risk",
+          "unknown"
+        ],
+        "referenceHashes": [
+          "20cb576b7700",
+          "4362228d1b58",
+          "4689e060a848",
+          "5499b043e2aa",
+          "77ad93e92f8e",
+          "8333137f1803",
+          "90bed6021c84",
+          "96a033e63fde",
+          "9980dbcf5d79",
+          "b9fe8759982f",
+          "c055a4587221",
+          "cf6e680abbd5",
+          "e3b45d09dfc6",
+          "ed547406cf52",
+          "fd2d47c379f6"
+        ]
+      },
+      "reality": {
+        "idHash": "45e9024bd1b0",
+        "name": "PDF / Docufy output",
+        "status": "accepted",
+        "revision": 2
+      },
+      "rationale": {
+        "headline": "Signals disagree; accepted Reality remains authoritative until an operator resolves the boundary.",
+        "signals": [
+          "Knowledge contributes 15 current, cited signals.",
+          "Accepted Scope Reality contributes “PDF / Docufy output” at revision 2.",
+          "Linear contributes 5 executable items under SOF-747."
+        ],
+        "cautions": [
+          "Release evidence disagrees across Knowledge, accepted Reality, or Linear labels.",
+          "Knowledge carries an out/deferred signal while accepted Scope Reality remains in release.",
+          "One or more executable items have no Linear estimate."
+        ]
+      },
+      "conflicts": [
+        "Release evidence disagrees across Knowledge, accepted Reality, or Linear labels.",
+        "Knowledge carries an out/deferred signal while accepted Scope Reality remains in release."
+      ]
+    },
+    {
+      "key": "offline",
+      "title": "Offline support",
+      "origins": [
+        "knowledge",
+        "reality",
+        "linear"
+      ],
+      "reconciliationState": "conflict",
+      "releaseSignal": "boundary",
+      "confidence": {
+        "band": "low",
+        "score": 44
+      },
+      "action": "none",
+      "linear": {
+        "parentIds": [
+          "SOF-796",
+          "SOF-857"
+        ],
+        "workItemIds": [
+          "SOF-730",
+          "SOF-838",
+          "SOF-839",
+          "SOF-840",
+          "SOF-920",
+          "SOF-921",
+          "SOF-922",
+          "SOF-923",
+          "SOF-924",
+          "SOF-925",
+          "SOF-927"
+        ],
+        "alreadyLinked": 0
+      },
+      "knowledge": {
+        "referenceCount": 8,
+        "kinds": [
+          "commitment",
+          "observation",
+          "risk",
+          "unknown"
+        ],
+        "referenceHashes": [
+          "4362228d1b58",
+          "624a35893702",
+          "6fea4d08e818",
+          "808e7465675e",
+          "8125eefba03a",
+          "9852a223b3df",
+          "b9fe8759982f",
+          "e3b45d09dfc6"
+        ]
+      },
+      "reality": {
+        "idHash": "7f3f84ae3aec",
+        "name": "Offline support",
+        "status": "accepted",
+        "revision": 3
+      },
+      "rationale": {
+        "headline": "Signals disagree; accepted Reality remains authoritative until an operator resolves the boundary.",
+        "signals": [
+          "Knowledge contributes 8 current, cited signals.",
+          "Accepted Scope Reality contributes “Offline support” at revision 3.",
+          "Linear contributes 11 executable items under SOF-796, SOF-857."
+        ],
+        "cautions": [
+          "Release evidence disagrees across Knowledge, accepted Reality, or Linear labels.",
+          "Knowledge carries an out/deferred signal while accepted Scope Reality remains in release.",
+          "One or more executable items have no Linear estimate."
+        ]
+      },
+      "conflicts": [
+        "Release evidence disagrees across Knowledge, accepted Reality, or Linear labels.",
+        "Knowledge carries an out/deferred signal while accepted Scope Reality remains in release."
+      ]
+    },
+    {
+      "key": "submission_job_lead_approvals",
+      "title": "Submission and job-lead approvals",
+      "origins": [
+        "knowledge",
+        "reality",
+        "linear"
+      ],
+      "reconciliationState": "conflict",
+      "releaseSignal": "boundary",
+      "confidence": {
+        "band": "low",
+        "score": 44
+      },
+      "action": "none",
+      "linear": {
+        "parentIds": [
+          "SOF-903"
+        ],
+        "workItemIds": [
+          "SOF-518",
+          "SOF-782",
+          "SOF-831",
+          "SOF-868",
+          "SOF-907",
+          "SOF-908",
+          "SOF-909",
+          "SOF-910",
+          "SOF-911"
+        ],
+        "alreadyLinked": 0
+      },
+      "knowledge": {
+        "referenceCount": 4,
+        "kinds": [
+          "observation",
+          "risk"
+        ],
+        "referenceHashes": [
+          "0e03a091f778",
+          "733ab0745c7c",
+          "e3b45d09dfc6",
+          "eb98cc26faba"
+        ]
+      },
+      "reality": {
+        "idHash": "cc0e5df2b141",
+        "name": "Submission and job-lead approvals",
+        "status": "accepted",
+        "revision": 2
+      },
+      "rationale": {
+        "headline": "Signals disagree; accepted Reality remains authoritative until an operator resolves the boundary.",
+        "signals": [
+          "Knowledge contributes 4 current, cited signals.",
+          "Accepted Scope Reality contributes “Submission and job-lead approvals” at revision 2.",
+          "Linear contributes 9 executable items under SOF-903."
+        ],
+        "cautions": [
+          "Release evidence disagrees across Knowledge, accepted Reality, or Linear labels.",
+          "Knowledge carries an out/deferred signal while accepted Scope Reality remains in release.",
+          "One or more executable items have no Linear estimate."
+        ]
+      },
+      "conflicts": [
+        "Release evidence disagrees across Knowledge, accepted Reality, or Linear labels.",
+        "Knowledge carries an out/deferred signal while accepted Scope Reality remains in release."
+      ]
+    }
+  ],
+  "unmatchedExecution": [
+    {
+      "parentId": "SOF-869",
+      "workItemIds": [
+        "SOF-849",
+        "SOF-870"
+      ],
+      "titleHash": "71f1dd699d81",
+      "confidence": "low",
+      "reason": "Linear work has no grounded product-shape candidate yet."
+    },
+    {
+      "parentId": "SOF-728",
+      "workItemIds": [
+        "SOF-510"
+      ],
+      "titleHash": "6e4c862f80fe",
+      "confidence": "low",
+      "reason": "Linear work has no grounded product-shape candidate yet."
+    },
+    {
+      "parentId": "SOF-905",
+      "workItemIds": [
+        "SOF-384",
+        "SOF-561",
+        "SOF-743",
+        "SOF-786",
+        "SOF-793",
+        "SOF-833",
+        "SOF-852",
+        "SOF-864",
+        "SOF-871",
+        "SOF-928",
+        "SOF-929",
+        "SOF-932"
+      ],
+      "titleHash": "64b2288c445a",
+      "confidence": "low",
+      "reason": "Linear work has no grounded product-shape candidate yet."
+    },
+    {
+      "parentId": "SOF-665",
+      "workItemIds": [
+        "SOF-724"
+      ],
+      "titleHash": "a6e4bc4464e7",
+      "confidence": "low",
+      "reason": "Linear work has no grounded product-shape candidate yet."
+    },
+    {
+      "parentId": "SOF-906",
+      "workItemIds": [
+        "SOF-934",
+        "SOF-936",
+        "SOF-937",
+        "SOF-938"
+      ],
+      "titleHash": "bd338a740a34",
+      "confidence": "low",
+      "reason": "Linear work has no grounded product-shape candidate yet."
+    },
+    {
+      "parentId": "SOF-735",
+      "workItemIds": [
+        "SOF-752",
+        "SOF-753",
+        "SOF-754",
+        "SOF-755",
+        "SOF-756",
+        "SOF-757"
+      ],
+      "titleHash": "468a30c7a9d8",
+      "confidence": "low",
+      "reason": "Linear work has no grounded product-shape candidate yet."
+    },
+    {
+      "parentId": "SOF-930",
+      "workItemIds": [
+        "SOF-986",
+        "SOF-987",
+        "SOF-988"
+      ],
+      "titleHash": "7fbb745123fb",
+      "confidence": "low",
+      "reason": "Linear work has no grounded product-shape candidate yet."
+    },
+    {
+      "parentId": null,
+      "workItemIds": [
+        "SOF-167"
+      ],
+      "titleHash": "9f90e3e01882",
+      "confidence": "low",
+      "reason": "Linear work has no grounded product-shape candidate yet."
+    },
+    {
+      "parentId": null,
+      "workItemIds": [
+        "SOF-729"
+      ],
+      "titleHash": "e99590415d5b",
+      "confidence": "low",
+      "reason": "Linear work has no grounded product-shape candidate yet."
+    },
+    {
+      "parentId": null,
+      "workItemIds": [
+        "SOF-700"
+      ],
+      "titleHash": "309e862a4050",
+      "confidence": "low",
+      "reason": "Linear work has no grounded product-shape candidate yet."
+    },
+    {
+      "parentId": null,
+      "workItemIds": [
+        "SOF-894"
+      ],
+      "titleHash": "d535391aa232",
+      "confidence": "low",
+      "reason": "Linear work has no grounded product-shape candidate yet."
+    },
+    {
+      "parentId": null,
+      "workItemIds": [
+        "SOF-776"
+      ],
+      "titleHash": "bbb6edb76ad9",
+      "confidence": "low",
+      "reason": "Linear work has no grounded product-shape candidate yet."
+    },
+    {
+      "parentId": null,
+      "workItemIds": [
+        "SOF-979"
+      ],
+      "titleHash": "f3c265736c1b",
+      "confidence": "low",
+      "reason": "Linear work has no grounded product-shape candidate yet."
+    },
+    {
+      "parentId": null,
+      "workItemIds": [
+        "SOF-783"
+      ],
+      "titleHash": "0c81413cf15d",
+      "confidence": "low",
+      "reason": "Linear work has no grounded product-shape candidate yet."
+    }
+  ],
+  "method": "scope-reconciler-three-source-2.0",
+  "fingerprint": "b0fa87497b4fa982746d33350e627e7fca99c14eb116e3d0572ed8cc993ae47e",
+  "privacy": "Statements and personal names are omitted. Context object and Reality capability identifiers are hashed; Linear identifiers are retained as execution-system keys."
+}

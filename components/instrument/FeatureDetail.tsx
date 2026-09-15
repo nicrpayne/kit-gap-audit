@@ -78,7 +78,7 @@ export default function FeatureDetail({
       onClose={onClose}
       title={`${scopeName} · feature detail`}
       subtitle={f.name}
-      width={352}
+      width={640}
       docked
       dataShoot="feature-detail"
       hero={<ModuleHead feature={f} capacity={capacity} releaseLoadDays={releaseLoadDays} realityRange={realityRange} maxSpread={maxSpread} />}

@@ -163,6 +163,9 @@ model ScopeProposalItem {
   candidateKey          String
   title                 String
   description           String?
+  origins               String[]
+  reconciliationState   String
+  conflicts             Json
   releaseSignal         String // likely_in | likely_out | boundary
   confidence            String // high | medium | low
   confidenceScore       Int
