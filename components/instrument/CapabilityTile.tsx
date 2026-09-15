@@ -408,6 +408,7 @@ export default function CapabilityTile({
   ghostRange,
   lifted,
   compact,
+  selected,
   onOpen,
   dragHandleProps,
   setNodeRef,
@@ -423,6 +424,8 @@ export default function CapabilityTile({
   lifted?: boolean;
   /** Cassette form: shorter, powered down. */
   compact?: boolean;
+  /** Strong persistent identity while the detail workspace is open. */
+  selected?: boolean;
   onOpen?: () => void;
   dragHandleProps?: Record<string, unknown>;
   setNodeRef?: (el: HTMLElement | null) => void;
@@ -487,7 +490,9 @@ export default function CapabilityTile({
         // through it. This is what makes it unmistakable without the word.
         backdropFilter: spectral ? "blur(1.5px)" : undefined,
         border: `1px ${spectral ? "dashed" : "solid"} ${edge}`,
-        boxShadow: lifted
+        boxShadow: selected
+          ? `0 0 0 2px color-mix(in srgb, ${accent} 72%, white), 0 0 24px color-mix(in srgb, ${accent} 28%, transparent), inset 0 1px 0 rgba(255,255,255,0.12)`
+          : lifted
           ? // Off the deck: cast shadow separates, face catches more light.
             `0 30px 60px rgba(0,0,0,0.66), 0 8px 18px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.11), 0 0 34px color-mix(in srgb, ${accent} 20%, transparent)`
           : out
@@ -502,6 +507,7 @@ export default function CapabilityTile({
       data-shoot="capability"
       data-material={material}
       data-capability={f.id}
+      data-selected={selected ? "true" : "false"}
     >
       {/* THE SPECULAR EDGE — the top facet catching the room's light, and the
           module's identity colour. It is the first thing to answer a pointer. */}
@@ -627,36 +633,29 @@ export default function CapabilityTile({
           </div>
         )}
 
-        <div className={`relative flex items-baseline gap-2 ${compact ? "mt-1" : "mt-1.5"}`}>
-          <span
-            className="i-readout leading-none"
-            style={{ fontSize: compact ? 15 : 22, color: out ? "var(--i-text-soft)" : "var(--i-text)" }}
-          >
-            {f.loadDays.toFixed(1)}
-            <span className="text-[10px] font-normal">d</span>
-          </span>
-          <span className="text-[9.5px] text-[var(--i-text-faint)]">
-            {out ? "not carried" : `${(share * 100).toFixed(0)}% of load`}
-          </span>
-        </div>
+        {f.items.length > 0 ? (
+          <div className={`relative flex items-baseline gap-2 ${compact ? "mt-1" : "mt-1.5"}`}>
+            <span className="i-readout leading-none" style={{ fontSize: compact ? 15 : 22, color: out ? "var(--i-text-soft)" : "var(--i-text)" }}>
+              {f.loadDays.toFixed(1)}<span className="text-[10px] font-normal">d</span>
+            </span>
+            <span className="text-[9.5px] text-[var(--i-text-faint)]">{out ? "not carried" : `${(share * 100).toFixed(0)}% of load`}</span>
+          </div>
+        ) : (
+          <div className={`relative ${compact ? "mt-1" : "mt-2"}`}>
+            <div className="text-[10px] font-medium text-[var(--i-amber)]">Mapping needed</div>
+            <div className="mt-0.5 text-[8.5px] text-[var(--i-text-faint)]">Declared shape · no executable work linked</div>
+          </div>
+        )}
 
         {/* THE DISPLAY — cut into the faceplate, filling the module's body. */}
-        <div className={`relative flex-1 min-h-0 flex flex-col justify-end ${compact ? "mt-1.5" : "mt-2"}`}>
-          <div className="relative flex-1 min-h-[30px]" style={compact ? { maxHeight: 62 } : undefined}>
-            <DistributionDisplay
-              range={f.range}
-              hasItems={f.items.length > 0}
-              maxSpread={maxSpread}
-              accent={accent}
-              ghost={ghostRange}
-              dim={out}
-              showLikelyLabel={!compact}
-            />
+        {f.items.length > 0 && (
+          <div className={`relative flex-1 min-h-0 flex flex-col justify-end ${compact ? "mt-1.5" : "mt-2"}`}>
+            <div className="relative flex-1 min-h-[30px]" style={compact ? { maxHeight: 62 } : undefined}>
+              <DistributionDisplay range={f.range} hasItems maxSpread={maxSpread} accent={accent} ghost={ghostRange} dim={out} showLikelyLabel={!compact} />
+            </div>
+            {hasRange && !compact && <DayScale range={f.range} geom={geom} tone="var(--i-text-faint)" />}
           </div>
-          {hasRange && !compact && (
-            <DayScale range={f.range} geom={geom} tone="var(--i-text-faint)" />
-          )}
-        </div>
+        )}
 
         {!compact && (
           <div className="relative mt-1 shrink-0 flex items-center justify-between text-[9px] text-[var(--i-text-faint)]">

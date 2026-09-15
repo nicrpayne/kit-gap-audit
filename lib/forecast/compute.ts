@@ -478,6 +478,12 @@ export interface PortfolioScopeInput {
   forecastReadiness: { state: "ready" | "modeled_subset" | "unavailable"; reason: string | null };
   executionState: string;
   executionDetail: string | null;
+  realityState: {
+    realityRevision: number;
+    computedRevision: number;
+    status: string;
+    readiness: Prisma.JsonValue | null;
+  };
   capabilities: {
     id: string; name: string; description: string | null; status: string; provenance: Prisma.JsonValue;
     revision: number; sortOrder: number; updatedAt: Date; workLinkCount: number;
@@ -571,6 +577,7 @@ export async function buildPortfolioInputs(): Promise<PortfolioInputs> {
           orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
         },
         decisions: { where: { status: "open", gate: { is: null } }, orderBy: { createdAt: "asc" } },
+        derivedState: true,
       },
     }),
     prisma.person.findMany({ orderBy: { name: "asc" } }),
@@ -642,6 +649,14 @@ export async function buildPortfolioInputs(): Promise<PortfolioInputs> {
       },
       executionState: scope.executionState,
       executionDetail: scope.executionDetail,
+      realityState: scope.derivedState
+        ? {
+            realityRevision: scope.derivedState.realityRevision,
+            computedRevision: scope.derivedState.computedRevision,
+            status: scope.derivedState.status,
+            readiness: scope.derivedState.readiness,
+          }
+        : { realityRevision: 0, computedRevision: 0, status: "current", readiness: null },
       capabilities: scope.capabilities.map((capability) => ({
         id: capability.id, name: capability.name, description: capability.description,
         status: capability.status, revision: capability.revision, sortOrder: capability.sortOrder,

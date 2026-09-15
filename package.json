@@ -21,7 +21,10 @@
     "proof:audit-change-inbox-db": "tsx scripts/audit-refresh-change-inbox-db-proof.ts",
     "proof:operator-cleanup": "tsx scripts/operator-cleanup-proof.ts",
     "proof:operator-cleanup-db": "tsx scripts/operator-cleanup-db-proof.ts",
-    "proof:forecast-coverage-scope": "tsx scripts/forecast-coverage-scope-composer-proof.ts"
+    "proof:forecast-coverage-scope": "tsx scripts/forecast-coverage-scope-composer-proof.ts",
+    "proof:scope-v2": "tsx scripts/scope-v2-proposal-proof.ts",
+    "proof:scope-v2-db": "tsx scripts/scope-v2-proposal-db-proof.ts",
+    "proof:scope-v2-browser": "tsx scripts/scope-v2-browser-proof.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.32",

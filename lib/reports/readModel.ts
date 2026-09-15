@@ -4,7 +4,7 @@ import type { Scope } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { computeForecast } from "@/lib/forecast/compute";
 import { computeChangesSince } from "@/lib/reports/changes";
-import { capacityForecastContract } from "@/lib/capacity/contract";
+import { capacityForecastContract, CapacityReconciliationIncompleteError } from "@/lib/capacity/contract";
 import { toDateOnly } from "@/lib/time/dateContract";
 import { ForecastCoverageIncompleteError } from "@/lib/forecast/coverage";
 import type { PolicyEvaluatedCompleteness } from "@/lib/context/sourcePolicy";
@@ -155,6 +155,7 @@ export async function loadDecisionBriefOwnerInputs(
     forecast.breakdown.capacitySource,
     (reconciliation?.status ?? "aggregate_unreconciled") as "aggregate_unreconciled" | "named_partial" | "named_exact",
   );
+  if (!capacityContract.reconciles) throw new CapacityReconciliationIncompleteError(capacityContract);
   const contributors = forecast.breakdown.capacityContributors.map((contributor) => ({
     personId: contributor.personId,
     name: contributor.name,

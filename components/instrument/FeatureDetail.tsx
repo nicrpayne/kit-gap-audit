@@ -198,17 +198,9 @@ function ModuleHead({
         )}
       </div>
 
-      <div className="mt-2.5 h-[96px]">
-        <DistributionDisplay
-          range={f.range}
-          hasItems={f.items.length > 0}
-          maxSpread={maxSpread}
-          accent={accent}
-          ghost={realityRange}
-          dim={f.bypassed}
-          scale={2}
-        />
-      </div>
+      {f.items.length > 0 ? <div className="mt-2.5 h-[96px]">
+        <DistributionDisplay range={f.range} hasItems maxSpread={maxSpread} accent={accent} ghost={realityRange} dim={f.bypassed} scale={2} />
+      </div> : <div className="mt-3 rounded-md px-3 py-4 text-center" style={{ border: "1px solid var(--i-border)", background: "var(--i-recess)" }}><div className="text-[10px] font-medium text-[var(--i-amber)]">Mapping needed</div><div className="mt-1 text-[8.5px] text-[var(--i-text-faint)]">No chart or effort value is fabricated for an empty capability.</div></div>}
       {hasRange ? (
         <div className="mt-1 flex items-baseline justify-between text-[8.5px] tabular-nums text-[var(--i-text-faint)]">
           <span>{f.range.low.toFixed(1)}d</span>
@@ -222,7 +214,7 @@ function ModuleHead({
       )}
 
       <div className="mt-3 flex items-start gap-5">
-        <HeadStat k="Load" v={`${f.loadDays.toFixed(1)}d`} n={`÷ ${capacity.toFixed(2)} FTE`} />
+        <HeadStat k="Load" v={f.items.length > 0 ? `${f.loadDays.toFixed(1)}d` : "—"} n={f.items.length > 0 ? `÷ ${capacity.toFixed(2)} FTE` : "no mapped work"} />
         <HeadStat
           k="Share"
           v={releaseLoadDays > 0 && !f.bypassed ? `${((f.loadDays / releaseLoadDays) * 100).toFixed(0)}%` : "—"}
@@ -432,6 +424,34 @@ function Work({ feature: f, capacity, onUnlinkReality }: { feature: Feature; cap
 // ── EVIDENCE ─────────────────────────────────────────────────────────────
 
 function Evidence({ feature: f, onAccept }: { feature: Feature; onAccept: (id: string) => void }) {
+  if (f.canonicalCapability) {
+    const ownerEvents = f.canonicalCapability.events ?? [];
+    const provenance = f.canonicalCapability.provenance && typeof f.canonicalCapability.provenance === "object" && !Array.isArray(f.canonicalCapability.provenance)
+      ? f.canonicalCapability.provenance as Record<string, unknown>
+      : {};
+    const evidence = Array.isArray(provenance.evidence) ? provenance.evidence : [];
+    const source = typeof provenance.source === "string" ? provenance.source.replaceAll("_", " ") : "operator-governed Scope";
+    const assertion = typeof provenance.assertion === "string" ? provenance.assertion : null;
+    return (
+      <div className="px-5 py-4">
+        <div className="i-label" style={{ color: "var(--i-signal)" }}>Accepted truth and provenance</div>
+        <p className="mt-2 text-[11px] leading-relaxed text-[var(--i-text-soft)]">{assertion ?? "This capability is accepted Scope Reality and its work is connected through explicit CapabilityWorkLink records."}</p>
+        <div className="mt-3">
+          <Row k="Authority" v={typeof provenance.authority === "string" ? provenance.authority : "Scope"} note={`source · ${source}`} />
+          <Row k="Reality revision" v={`r${f.canonicalCapability.revision}`} note={`${ownerEvents.length} recent event${ownerEvents.length === 1 ? "" : "s"} retained`} />
+          <Row k="Execution evidence" v={`${f.canonicalCapability.workLinks.length} explicit link${f.canonicalCapability.workLinks.length === 1 ? "" : "s"}`} note="current Linear facts remain owned by Linear" />
+          <Row k="Attached evidence" v={evidence.length ? `${evidence.length} reference${evidence.length === 1 ? "" : "s"}` : "None recorded"} note={evidence.length ? "stored on the accepted assertion" : "absence is shown, not inferred"} />
+        </div>
+        <div className="i-label mt-4 mb-2">Recent governed history</div>
+        {ownerEvents.length ? ownerEvents.slice(0, 6).map((event) => (
+          <div key={event.id} className="flex items-baseline gap-2 py-1.5" style={{ borderTop: "1px solid var(--i-border)" }}>
+            <span className="min-w-0 flex-1 truncate text-[10px] text-[var(--i-text-soft)]">{event.action.replaceAll("_", " ")}</span>
+            <span className="text-[8.5px] text-[var(--i-text-faint)]">{event.actor} · {new Date(event.createdAt).toLocaleDateString(undefined, { month: "short", day: "numeric" })}</span>
+          </div>
+        )) : <p className="text-[9.5px] text-[var(--i-text-faint)]">No event rows are available for this accepted record.</p>}
+      </div>
+    );
+  }
   if (f.source === "hermes" && f.evidence)
     return (
       <div className="px-5 py-4">

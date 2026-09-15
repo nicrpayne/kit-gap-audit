@@ -88,6 +88,7 @@ export interface ProjectScope {
   forecastReadiness: { state: "ready" | "modeled_subset" | "unavailable"; reason: string | null };
   executionState: string;
   executionDetail: string | null;
+  realityState: { realityRevision: number; computedRevision: number; status: string; readiness: unknown };
   capabilities: {
     id: string; name: string; description: string | null; status: string; revision: number; sortOrder: number;
     updatedAt: string; workLinkCount: number; provenance: unknown;
@@ -187,6 +188,20 @@ export interface SuiteScenario {
   // local until the owner explicitly commits the Scenario. Seating one changes
   // no simulation input because the candidate work was already counted.
   acceptedCandidateIds: Set<string>;
+  /** Persisted Scope proposals explicitly staged by the operator. Proposal
+      state is server-owned; this selection remains local and hypothetical
+      until the governed commit endpoint succeeds. */
+  scopeProposalSelections: {
+    scopeId: string;
+    proposalId: string;
+    itemId: string;
+    title: string;
+    description: string | null;
+    targetCapabilityId: string | null;
+    expectedRevision: number | null;
+    itemIds: string[];
+    releaseStatus: "accepted" | "outside";
+  }[];
   contextSwitchCostPct: number | null;
 }
 
@@ -200,6 +215,7 @@ export const EMPTY_SCENARIO: SuiteScenario = {
   includedCapabilityIds: new Set(),
   draftFeatures: [],
   acceptedCandidateIds: new Set(),
+  scopeProposalSelections: [],
   contextSwitchCostPct: null,
 };
 
@@ -214,6 +230,7 @@ export function scenarioIsActive(s: SuiteScenario): boolean {
     s.includedCapabilityIds.size > 0 ||
     s.draftFeatures.length > 0 ||
     s.acceptedCandidateIds.size > 0 ||
+    s.scopeProposalSelections.length > 0 ||
     s.contextSwitchCostPct !== null
   );
 }
@@ -487,23 +504,34 @@ export function useProject(): ProjectModel {
       // backlog is, by definition, what cutting scope cannot reach.
       const specsFor = (emptyScopeId?: string) =>
         applyScenarioInputDelta(
-          scenarioScopes.map((s) => ({
-            ...s,
-            items:
-              s.scopeId === emptyScopeId
-                ? []
-                : [
-                    ...s.items,
-                    ...(data.scopes.find((scope) => scope.scopeId === s.scopeId)?.executionItems ?? [])
-                      .filter((item) => scenario.includedItemIds.has(item.id) && !s.items.some((base) => base.id === item.id)),
-                  ]
-                    .filter((i) => !scenario.excludedItemIds.has(i.id))
-                    .map((i) => {
-                      const o = scenario.estimateOverrideByItemId[i.id];
-                      return o ? { ...i, low: o.low, likely: o.likely, high: o.high } : i;
-                    }),
-            gates: s.gates.filter((g) => !scenario.resolvedGateIds.has(g.id)),
-          })),
+          scenarioScopes.map((s) => {
+            const fullScope = data.scopes.find((scope) => scope.scopeId === s.scopeId);
+            const proposed = scenario.scopeProposalSelections.filter((selection) => selection.scopeId === s.scopeId);
+            const proposalIncludedIds = new Set(proposed.flatMap((selection) => selection.itemIds));
+            const proposalExcludedIds = new Set(proposed.filter((selection) => selection.releaseStatus === "outside").flatMap((selection) => [
+              ...selection.itemIds,
+              ...(selection.targetCapabilityId
+                ? fullScope?.capabilities.find((capability) => capability.id === selection.targetCapabilityId)?.workLinks.map((link) => link.externalId) ?? []
+                : []),
+            ]));
+            return {
+              ...s,
+              items:
+                s.scopeId === emptyScopeId
+                  ? []
+                  : [
+                      ...s.items,
+                      ...(fullScope?.executionItems ?? [])
+                        .filter((item) => (scenario.includedItemIds.has(item.id) || proposalIncludedIds.has(item.id)) && !s.items.some((base) => base.id === item.id)),
+                    ]
+                      .filter((i) => !scenario.excludedItemIds.has(i.id) && !proposalExcludedIds.has(i.id))
+                      .map((i) => {
+                        const o = scenario.estimateOverrideByItemId[i.id];
+                        return o ? { ...i, low: o.low, likely: o.likely, high: o.high } : i;
+                      }),
+              gates: s.gates.filter((g) => !scenario.resolvedGateIds.has(g.id)),
+            };
+          }),
           data.people,
           delta
         );

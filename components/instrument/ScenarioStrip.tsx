@@ -137,6 +137,13 @@ export function chipsFor(
       href: "/scope",
     });
   }
+  if (scenario.scopeProposalSelections.length > 0) {
+    chips.push({
+      id: "scope-proposals",
+      label: `${scenario.scopeProposalSelections.length} intelligence ${scenario.scopeProposalSelections.length === 1 ? "proposal" : "proposals"} staged`,
+      href: "/scope",
+    });
+  }
   if (gateCount > 0) {
     chips.push({
       id: "gates",

@@ -1,0 +1,12 @@
+{
+  "ok": true,
+  "proposalCards": 4,
+  "governedOutsideClickable": true,
+  "nestedChildDropOpenedPreview": true,
+  "selectedStatePersistent": true,
+  "truthBoundary": "forecast-not-ready/no-floor",
+  "horizontalOverflow": {
+    "body": 0,
+    "root": 0
+  }
+}

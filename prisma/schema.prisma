@@ -46,6 +46,7 @@ model Scope {
   timelineEventCandidates TimelineEventCandidate[]
   aliases                 ScopeAlias[]
   capabilities            Capability[]
+  scopeProposals          ScopeProposal[]
   dependenciesUpstream    ScopeDependency[]        @relation("DependencyUpstream")
   dependenciesDownstream  ScopeDependency[]        @relation("DependencyDownstream")
   activation              ProjectActivation?
@@ -90,6 +91,8 @@ model Capability {
   updatedAt         DateTime             @updatedAt
   workLinks         CapabilityWorkLink[]
   events            CapabilityEvent[]
+  proposalTargets   ScopeProposalItem[]  @relation("ScopeProposalTarget")
+  proposalCommits   ScopeProposalItem[]  @relation("ScopeProposalCommit")
 
   @@index([scopeId, status])
 }
@@ -126,6 +129,77 @@ model CapabilityWorkLink {
 
   @@unique([capabilityId, provider, externalId])
   @@index([provider, externalId])
+}
+
+// A persisted, pre-Reality composition compiled from the latest accepted
+// ContextSnapshot and the current Linear owner read. It is deliberately not a
+// Capability and cannot affect Forecast until an operator previews and commits
+// selected items through the governed Scope boundary.
+model ScopeProposal {
+  id                String               @id @default(cuid())
+  scopeId           String
+  scope             Scope                @relation(fields: [scopeId], references: [id], onDelete: Cascade)
+  contextSnapshotId String?
+  contextSnapshot   ContextSnapshot?     @relation(fields: [contextSnapshotId], references: [id], onDelete: SetNull)
+  contractVersion   String               @default("1.0")
+  compilerVersion   String
+  fingerprint       String
+  sourceWatermark   Json
+  summary           Json
+  status            String               @default("active") // active | stale | superseded | committed
+  generatedAt       DateTime             @default(now())
+  supersededAt      DateTime?
+  items             ScopeProposalItem[]
+  events            ScopeProposalEvent[]
+
+  @@unique([scopeId, fingerprint])
+  @@index([scopeId, status, generatedAt])
+}
+
+model ScopeProposalItem {
+  id                    String        @id @default(cuid())
+  proposalId            String
+  proposal              ScopeProposal @relation(fields: [proposalId], references: [id], onDelete: Cascade)
+  candidateKey          String
+  title                 String
+  description           String?
+  releaseSignal         String // likely_in | likely_out | boundary
+  confidence            String // high | medium | low
+  confidenceScore       Int
+  matchState            String // confidently_matched | suggested | unresolved | corroborated
+  action                String // link_existing | create_capability | none
+  targetCapabilityId    String?
+  targetCapability      Capability?   @relation("ScopeProposalTarget", fields: [targetCapabilityId], references: [id], onDelete: SetNull)
+  targetRevision        Int?
+  workItemIds           String[]
+  alreadyLinkedItemIds  String[]      @default([])
+  rationale             Json
+  provenance            Json
+  status                String        @default("suggested") // suggested | committed | dismissed | stale
+  committedCapabilityId String?
+  committedCapability   Capability?   @relation("ScopeProposalCommit", fields: [committedCapabilityId], references: [id], onDelete: SetNull)
+  committedAt           DateTime?
+  createdAt             DateTime      @default(now())
+
+  @@unique([proposalId, candidateKey])
+  @@index([proposalId, status])
+  @@index([targetCapabilityId])
+}
+
+// Append-only record of a governed batch crossing from proposal to Reality.
+// CapabilityEvent remains the detailed per-capability owner history.
+model ScopeProposalEvent {
+  id              String        @id @default(cuid())
+  proposalId      String
+  proposal        ScopeProposal @relation(fields: [proposalId], references: [id], onDelete: Cascade)
+  idempotencyKey  String        @unique
+  action          String
+  selectedItemIds String[]
+  result          Json
+  actor           String        @default("operator")
+  createdAt       DateTime      @default(now())
+
+  @@index([proposalId, createdAt])
 }
 
 // Evidence-bearing project dependency. dependsOnScopeIds remains populated
@@ -230,6 +304,7 @@ model ContextSnapshot {
   timelineEvents TimelineEvent[]
   activation     ProjectActivation? @relation("ActivationSnapshot")
   auditChanges   AuditChangeProposal[]
+  scopeProposals ScopeProposal[]
 
   @@unique([producer, packageId])
 }

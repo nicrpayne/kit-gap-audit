@@ -70,6 +70,7 @@ import type { ForecastCoverageContract } from "@/lib/forecast/coverage";
 import { mutateReality } from "@/lib/instrument/reality";
 import type { ScopeWorkItem } from "@/lib/instrument/useProject";
 import ToolWindow from "@/components/instrument/ToolWindow";
+import ScopeReconciliation, { type ScopeProposalItemView, type ScopeProposalView } from "@/components/instrument/ScopeReconciliation";
 
 const BAY_IN = "bay-in";
 const BAY_OUT = "bay-out";
@@ -137,6 +138,13 @@ export default function ScopeInstrument() {
   const [writing, setWriting] = useState(false);
   const [dragSize, setDragSize] = useState<{ w: number; h: number }>({ w: 250, h: MODULE_H });
   const [over, setOver] = useState<string | null>(null);
+  const [proposal, setProposal] = useState<ScopeProposalView | null>(null);
+  const [proposalLoading, setProposalLoading] = useState(false);
+  const [proposalWarning, setProposalWarning] = useState<string | null>(null);
+  const [proposalError, setProposalError] = useState<string | null>(null);
+  const [proposalCommitting, setProposalCommitting] = useState(false);
+  const [proposalCommitError, setProposalCommitError] = useState<string | null>(null);
+  const [proposalCommitted, setProposalCommitted] = useState(false);
 
   // The out column's waking signal: 0 at rest, 1 with the pointer at its edge.
   // Continuous, from real pointer geometry — approach, not hover.
@@ -161,6 +169,31 @@ export default function ScopeInstrument() {
     if (!m.data) return null;
     return m.data.scopes.find((s) => s.scopeId === scopeId) ?? m.data.scopes[0] ?? null;
   }, [m.data, scopeId]);
+
+  const refreshProposal = useCallback(async () => {
+    if (!scope?.scopeId) return;
+    setProposalLoading(true);
+    setProposalError(null);
+    setProposalWarning(null);
+    setProposalCommitted(false);
+    try {
+      const response = await fetch(`/api/scopes/${scope.scopeId}/proposal`, { method: "POST", cache: "no-store" });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok && !body.proposal) throw new Error(body.error ?? "Scope proposal could not be composed.");
+      setProposal(body.proposal ? { ...body.proposal, stale: Boolean(body.stale) } : null);
+      setProposalWarning(body.warning ?? null);
+    } catch (error) {
+      setProposalError(error instanceof Error ? error.message : "Scope proposal could not be composed.");
+    } finally {
+      setProposalLoading(false);
+    }
+  }, [scope?.scopeId]);
+
+  useEffect(() => {
+    setProposal(null);
+    setProposalCommitError(null);
+    void refreshProposal();
+  }, [refreshProposal]);
 
   // Unchanged from V3 — the model is frozen. Both halves of the truth are
   // written together so they can never disagree.
@@ -237,21 +270,41 @@ export default function ScopeInstrument() {
     );
 
   const capacity = m.scenario.capacityOverrideByScope[scope.scopeId] ?? scope.teamCapacity;
+  const proposalSelections = m.scenario.scopeProposalSelections.filter((selection) => selection.scopeId === scope.scopeId);
+  const stagedWorkIds = new Set(proposalSelections.flatMap((selection) => selection.itemIds));
   const scenarioItems = [
     ...scope.items,
-    ...scope.executionItems.filter((item) => m.scenario.includedItemIds.has(item.id) && !scope.items.some((baseItem) => baseItem.id === item.id)),
+    ...scope.executionItems.filter((item) => (m.scenario.includedItemIds.has(item.id) || stagedWorkIds.has(item.id)) && !scope.items.some((baseItem) => baseItem.id === item.id)),
   ];
-  const scenarioCapabilities = scope.capabilities.map((capability) =>
-    m.scenario.includedCapabilityIds.has(capability.id) ? { ...capability, status: "accepted" } : capability
-  );
+  const scenarioCapabilities = scope.capabilities.map((capability) => {
+    const staged = proposalSelections.filter((selection) => selection.targetCapabilityId === capability.id);
+    const stagedStatus = staged.at(-1)?.releaseStatus;
+    const additionalLinks = staged.flatMap((selection) => selection.itemIds)
+      .filter((id) => !capability.workLinks.some((link) => link.externalId === id))
+      .map((externalId) => ({ id: `proposal-link:${capability.id}:${externalId}`, provider: "linear", externalId, externalUrl: null, state: "active" }));
+    return {
+      ...capability,
+      status: stagedStatus ?? (m.scenario.includedCapabilityIds.has(capability.id) ? "accepted" : capability.status),
+      workLinks: [...capability.workLinks, ...additionalLinks],
+    };
+  });
+  const scenarioProductShape = partitionProductShape(scenarioCapabilities);
+  const proposalDrafts = proposalSelections
+    .filter((selection) => !selection.targetCapabilityId)
+    .map((selection) => ({ id: `proposal:${selection.itemId}`, name: selection.title, intent: selection.description ?? "Proposed from current Linear hierarchy and structured context.", itemIds: selection.itemIds }));
+  const proposalBypassed = new Set(m.scenario.bypassedFeatureIds);
+  for (const selection of proposalSelections) {
+    if (selection.releaseStatus !== "outside") continue;
+    proposalBypassed.add(selection.targetCapabilityId ? `capability:${selection.targetCapabilityId}` : `proposal:${selection.itemId}`);
+  }
   const composition = composeScopeFeatures(
     scenarioItems,
     scope.completedWork,
     scenarioCapabilities,
     capacity,
-    m.scenario.bypassedFeatureIds,
+    proposalBypassed,
     m.scenario.estimateOverrideByItemId,
-    m.scenario.draftFeatures,
+    [...m.scenario.draftFeatures, ...proposalDrafts],
     m.scenario.acceptedCandidateIds
   );
   const reality = composeScopeFeatures(scope.items, scope.completedWork, scope.capabilities, scope.teamCapacity, new Set(), {}, []);
@@ -298,7 +351,7 @@ export default function ScopeInstrument() {
   const carryingSeated = !!dragging && !dragging.bypassed;
   const carryingParked = !!dragging && dragging.bypassed;
   const acquiringShelf = carryingSeated && over === BAY_OUT;
-  const acquiringBay = carryingParked && over === BAY_IN;
+  const acquiringBay = carryingParked && (over === BAY_IN || Boolean(over?.startsWith("cap-drop:")));
 
   const onDragStart = (e: DragStartEvent) => {
     const activeId = String(e.active.id);
@@ -353,7 +406,7 @@ export default function ScopeInstrument() {
       if (item && capability) setPending({ kind: "link", capability, item, idempotencyKey: crypto.randomUUID() });
       return;
     }
-    if (activeId.startsWith("outside:") && target === BAY_IN) {
+    if (activeId.startsWith("outside:") && (target === BAY_IN || Boolean(target?.startsWith("cap-drop:")))) {
       const capability = scope.capabilities.find((candidate) => candidate.id === activeId.slice(8));
       endDrag();
       if (!capability) return;
@@ -490,6 +543,74 @@ export default function ScopeInstrument() {
     }
   };
 
+  const stageProposalItem = (item: ScopeProposalItemView, targetCapabilityId: string | null, releaseStatus: "accepted" | "outside") => {
+    if (!proposal) return;
+    const expectedRevision = targetCapabilityId
+      ? scope.capabilities.find((capability) => capability.id === targetCapabilityId)?.revision ?? null
+      : null;
+    m.setScenario((prev) => ({
+      ...prev,
+      scopeProposalSelections: [
+        ...prev.scopeProposalSelections.filter((selection) => !(selection.scopeId === scope.scopeId && selection.itemId === item.id)),
+        {
+          scopeId: scope.scopeId,
+          proposalId: proposal.id,
+          itemId: item.id,
+          title: item.title,
+          description: item.description,
+          targetCapabilityId,
+          expectedRevision,
+          itemIds: item.workItemIds,
+          releaseStatus,
+        },
+      ],
+    }));
+    setProposalCommitError(null);
+    setProposalCommitted(false);
+  };
+
+  const unstageProposalItem = (itemId: string) => m.setScenario((prev) => ({
+    ...prev,
+    scopeProposalSelections: prev.scopeProposalSelections.filter((selection) => !(selection.scopeId === scope.scopeId && selection.itemId === itemId)),
+  }));
+
+  const stageConfidentProposals = () => {
+    if (!proposal) return;
+    for (const item of proposal.items) {
+      if (item.confidence !== "high" || item.action === "none" || item.status === "committed") continue;
+      stageProposalItem(item, item.targetCapabilityId, item.releaseSignal === "likely_out" ? "outside" : "accepted");
+    }
+  };
+
+  const commitProposalSelections = async () => {
+    if (!proposal || proposalSelections.length === 0) return;
+    setProposalCommitting(true);
+    setProposalCommitError(null);
+    try {
+      const response = await mutateReality(`/api/scopes/${scope.scopeId}/proposal/commit`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          proposalId: proposal.id,
+          idempotencyKey: crypto.randomUUID(),
+          selections: proposalSelections.map(({ itemId, targetCapabilityId, expectedRevision, releaseStatus }) => ({ itemId, targetCapabilityId, expectedRevision, releaseStatus })),
+        }),
+      });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(body.error ?? "Reconciled Scope could not be committed.");
+      m.setScenario((prev) => ({
+        ...prev,
+        scopeProposalSelections: prev.scopeProposalSelections.filter((selection) => selection.scopeId !== scope.scopeId),
+      }));
+      await refreshProposal();
+      setProposalCommitted(true);
+    } catch (error) {
+      setProposalCommitError(error instanceof Error ? error.message : "Reconciled Scope could not be committed.");
+    } finally {
+      setProposalCommitting(false);
+    }
+  };
+
   const announcements: Announcements = {
     onDragStart: ({ active }) => `Picked up ${nameOf(composition.features, active.id)}.`,
     onDragOver: ({ over: o }) =>
@@ -554,7 +675,7 @@ export default function ScopeInstrument() {
                   movedDays={movedDays}
                   effortRemoved={effortRemoved}
                   active={m.active}
-                  canonicalForecast={scope.forecastCoverage.canonicalForecast}
+                  canonicalForecast={scope.forecastCoverage.canonicalForecast && scope.capacityContract.reconciles}
                   dominancePhrase={dom?.dominated ? dom.phrase : null}
                   previewRelief={
                     carryingSeated && dragging ? dragging.effortDays / (capacity > 0 ? capacity : 1) : null
@@ -566,6 +687,7 @@ export default function ScopeInstrument() {
                 accepted={productShape.accepted}
                 coverage={scope.forecastCoverage}
                 executionSource={scope.executionSource}
+                capacityReconciles={scope.capacityContract.reconciles}
               />
 
               {/* ── MAIN: the deck, then the strata it rests on ─────────── */}
@@ -591,6 +713,7 @@ export default function ScopeInstrument() {
                       sourceAvailability: scope.executionSource.availability,
                       scopeId: scope.scopeId,
                     }}
+                    selectedId={openFeatureId}
                   />
 
                   {/* The destination is subordinate: it flanks the deck only,
@@ -605,13 +728,32 @@ export default function ScopeInstrument() {
                     pull={shelfPull}
                     armed={acquiringShelf}
                     onOpen={setOpenFeatureId}
-                    governedOutside={productShape.outsideRelease}
+                    governedOutside={scenarioProductShape.outsideRelease}
+                    selectedId={openFeatureId}
+                    onOpenOutside={setEditing}
+                  />
+
+                  <ScopeReconciliation
+                    proposal={proposal}
+                    loading={proposalLoading}
+                    warning={proposalWarning}
+                    error={proposalError}
+                    realityRevision={scope.realityState?.realityRevision ?? 0}
+                    capabilities={scope.capabilities.map(({ id, name, revision }) => ({ id, name, revision }))}
+                    unmapped={unmappedExecution}
+                    selections={proposalSelections}
+                    committing={proposalCommitting}
+                    commitError={proposalCommitError}
+                    committed={proposalCommitted}
+                    onRefresh={refreshProposal}
+                    onStage={stageProposalItem}
+                    onUnstage={unstageProposalItem}
+                    onStageConfident={stageConfidentProposals}
+                    onCommit={commitProposalSelections}
                   />
                 </div>
 
-                <ExecutionWorkTray items={unmappedExecution} />
-
-                <ConstraintStrip gates={openGates} openQuestions={scope.openShapeQuestions} scopeId={scope.scopeId} dominance={dom} startDate={startDate} />
+                <ConstraintStrip gates={openGates} openQuestions={scope.openShapeQuestions} scopeId={scope.scopeId} dominance={dom} startDate={startDate} truthReady={scope.forecastCoverage.canonicalForecast && scope.capacityContract.reconciles} />
 
                 <SignalStrip
                   capacityLabel={formatCapacity(capacity)}
@@ -778,51 +920,6 @@ function nameOf(features: Feature[], id: string | number) {
   return features.find((f) => f.id === id)?.name ?? "capability";
 }
 
-function ExecutionWorkTray({ items }: { items: ScopeWorkItem[] }) {
-  return (
-    <section
-      className="shrink-0 rounded-xl border border-[var(--i-amber)]/20 bg-[var(--i-amber)]/[0.025] px-3 py-2"
-      data-shoot="unmapped-execution-tray"
-    >
-      <div className="flex items-center gap-2">
-        <span className="i-label text-[var(--i-amber)]">Unmapped execution</span>
-        <span className="text-[9px] text-[var(--i-text-faint)]">Linear truth with no Capability yet · drag onto an accepted capability</span>
-        <span className="ml-auto i-readout text-[11px] text-[var(--i-amber)]">{items.length}</span>
-      </div>
-      {items.length === 0 ? (
-        <div className="mt-1.5 text-[9px] text-[var(--i-text-faint)]">Every current Linear item is explicitly bridged to product shape.</div>
-      ) : (
-        <div className="mt-2 flex gap-2 overflow-x-auto pb-1">
-          {items.map((item) => <ExecutionWorkChip key={item.id} item={item} />)}
-        </div>
-      )}
-    </section>
-  );
-}
-
-function ExecutionWorkChip({ item }: { item: ScopeWorkItem }) {
-  const { setNodeRef, listeners, attributes, isDragging } = useDraggable({ id: `work:${item.id}` });
-  const missingEstimate = item.estimateSource === "issue_placeholder";
-  return (
-    <button
-      ref={setNodeRef}
-      type="button"
-      className="w-[230px] shrink-0 rounded-md border bg-[var(--i-recess)] px-2.5 py-2 text-left touch-none"
-      style={{ borderColor: missingEstimate ? "color-mix(in srgb, var(--i-amber) 42%, var(--i-border))" : "var(--i-border)", opacity: isDragging ? 0.22 : 1, cursor: "grab" }}
-      data-shoot="unmapped-execution-item"
-      data-work-id={item.id}
-      {...listeners}
-      {...attributes}
-    >
-      <div className="truncate text-[10px] font-medium text-[var(--i-text)]">{item.label}</div>
-      <div className="mt-1 flex gap-2 text-[8px] uppercase tracking-[0.08em] text-[var(--i-text-faint)]">
-        <span>{item.state ?? "Unknown"}</span>
-        <span>{missingEstimate ? "Estimate missing" : `${item.low}–${item.likely}–${item.high}d`}</span>
-      </div>
-    </button>
-  );
-}
-
 function CapabilityRealityEditor({
   capability,
   saving,
@@ -917,17 +1014,20 @@ function ProductShapeSummary({
   accepted,
   coverage,
   executionSource,
+  capacityReconciles,
 }: {
   accepted: ShapeCapability[];
   coverage: ForecastCoverageContract;
   executionSource: { asOf: string; availability: "available" | "empty" };
+  capacityReconciles: boolean;
 }) {
-  const tone = coverage.state === "forecastable" ? "var(--i-signal)" : "var(--i-amber)";
+  const ready = coverage.state === "forecastable" && capacityReconciles;
+  const tone = ready ? "var(--i-signal)" : "var(--i-amber)";
   return (
     <div className="mx-5 mb-3 grid shrink-0 grid-cols-3 gap-2" data-shoot="scope-product-shape-summary">
       <div className="min-w-0 rounded-lg border bg-[var(--i-panel)] px-3 py-2" style={{ borderColor: `color-mix(in srgb, ${tone} 35%, var(--i-border))` }} data-shoot="scope-coverage-state">
-        <div className="i-label" style={{ color: tone }}>{coverage.state === "forecastable" ? "EXECUTION COVERAGE COMPLETE" : "EXECUTION COVERAGE UNRESOLVED"}</div>
-        <div className="mt-1 truncate text-[9px] text-[var(--i-text-soft)]">{coverage.reason ?? "Canonical delivery forecast is supported"}</div>
+        <div className="i-label" style={{ color: tone }}>{ready ? "DELIVERY CLAIM READY" : "FORECAST READINESS BLOCKED"}</div>
+        <div className="mt-1 truncate text-[9px] text-[var(--i-text-soft)]">{!capacityReconciles ? "Named capacity has not been reconciled to forecast capacity" : coverage.reason ?? "Canonical delivery forecast is supported"}</div>
       </div>
       <div className="min-w-0 rounded-lg border border-[var(--i-border)] bg-[var(--i-recess)] px-3 py-2">
         <div className="i-label">Accepted shape mapped</div>
@@ -1017,23 +1117,23 @@ function MasterDisplay({
           "inset 0 2px 7px rgba(0,0,0,0.66), inset 0 -1px 0 rgba(255,255,255,0.03), inset 0 0 0 1px rgba(255,255,255,0.035)",
       }}
     >
-      {/* LANDING — the loudest thing on the instrument. */}
-      <div className="px-6 py-3">
-        <div className="i-label">{canonicalForecast ? `${scopeName} lands` : "Modeled subset outcome"}</div>
-        <div className="mt-1.5 leading-none" style={{ fontSize: 30 }}>
+      {/* LANDING is dominant only when coverage and named capacity reconcile. */}
+      <div className="px-6 py-3 min-w-[225px]">
+        <div className="i-label">{canonicalForecast ? `${scopeName} lands` : "Forecast boundary"}</div>
+        <div className="mt-1.5 leading-none" style={{ fontSize: canonicalForecast ? 30 : 17 }}>
           <motion.span
-            key={date}
-            initial={{ opacity: 0, y: 5 }}
+            key={`${date}-${canonicalForecast}`}
+            initial={false}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.3, delay: STAGE.date, ease: [0.22, 1, 0.36, 1] }}
             className="inline-block i-readout"
-            style={{ color: moved ? "var(--i-violet)" : "var(--i-text)" }}
+            style={{ color: canonicalForecast ? (moved ? "var(--i-violet)" : "var(--i-text)") : "var(--i-amber)" }}
           >
-            {canonicalForecast ? date : `~${date}`}
+            {canonicalForecast ? date : "Forecast not ready"}
           </motion.span>
         </div>
         <div className="mt-1.5 text-[9.5px] text-[var(--i-text-faint)]">
-          {canonicalForecast ? `best ${best} · worst ${worst}` : `subset window ${best} · ${worst}`}
+          {canonicalForecast ? `best ${best} · worst ${worst}` : `Modeled subset consequence ~${date} · not a delivery claim`}
         </div>
       </div>
 
@@ -1045,7 +1145,7 @@ function MasterDisplay({
         <div className="mt-1.5 leading-none" style={{ fontSize: 21 }}>
           <motion.span
             key={loadDays.toFixed(1)}
-            initial={{ opacity: 0, y: 4 }}
+            initial={false}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.26, delay: STAGE.load }}
             className="inline-block i-readout"
@@ -1133,6 +1233,7 @@ function SeatedModule({
   ghostRange,
   isDragging,
   compact,
+  selected,
   onOpen,
 }: {
   feature: Feature;
@@ -1141,6 +1242,7 @@ function SeatedModule({
   ghostRange?: ThreePoint | null;
   isDragging: boolean;
   compact?: boolean;
+  selected?: boolean;
   onOpen: () => void;
 }) {
   const { setNodeRef, listeners, attributes } = useDraggable({ id: feature.id });
@@ -1167,6 +1269,7 @@ function SeatedModule({
           maxSpread={maxSpread}
           ghostRange={ghostRange}
           compact={compact}
+          selected={selected}
           onOpen={onOpen}
           setNodeRef={(node) => { setNodeRef(node); setDropRef(node); }}
           dragHandleProps={{ ...listeners, ...attributes }}
@@ -1308,6 +1411,7 @@ function ReleaseRack({
   unmappedItems,
   totalItems,
   emptyTruth,
+  selectedId,
 }: {
   /** EVERY capability in this release, in the deck's canonical order. */
   features: Feature[];
@@ -1323,6 +1427,7 @@ function ReleaseRack({
   unmappedItems: number;
   totalItems: number;
   emptyTruth: { openFindingCount: number; gateDays: number; dependencyNames: string[]; forecastAsOf: string; sourceAvailability: "available" | "empty"; scopeId: string };
+  selectedId: string | null;
 }) {
   const { setNodeRef } = useDroppable({ id: BAY_IN });
 
@@ -1348,6 +1453,7 @@ function ReleaseRack({
         maxSpread={maxSpread}
         ghostRange={ghostRangeOf(f)}
         isDragging={dragging?.id === f.id}
+        selected={selectedId === f.id}
         onOpen={() => onOpen(f.id)}
       />
     )
@@ -1428,6 +1534,8 @@ function OutColumn({
   armed,
   onOpen,
   governedOutside,
+  selectedId,
+  onOpenOutside,
 }: {
   shelfEl: React.MutableRefObject<HTMLDivElement | null>;
   features: Feature[];
@@ -1439,6 +1547,8 @@ function OutColumn({
   armed: boolean;
   onOpen: (id: string) => void;
   governedOutside: ShapeCapability[];
+  selectedId: string | null;
+  onOpenOutside: (capability: ShapeCapability) => void;
 }) {
   const { setNodeRef } = useDroppable({ id: BAY_OUT });
   const parkedDays = features.reduce((s, f) => s + f.loadDays, 0);
@@ -1515,7 +1625,7 @@ function OutColumn({
       </motion.span>
 
       <div className="h-full overflow-y-auto px-2.5 pt-7 pb-2.5 flex flex-col gap-2.5">
-        {governedOutside.map((capability) => <OutsideCapability key={capability.id} capability={capability} />)}
+        {governedOutside.map((capability) => <OutsideCapability key={capability.id} capability={capability} onOpen={() => onOpenOutside(capability)} />)}
         <AnimatePresence initial={false}>
           {features.map((f) => (
             <SeatedModule
@@ -1526,6 +1636,7 @@ function OutColumn({
               ghostRange={ghostRangeOf(f)}
               isDragging={dragging?.id === f.id}
               compact
+              selected={selectedId === f.id}
               onOpen={() => onOpen(f.id)}
             />
           ))}
@@ -1584,7 +1695,7 @@ function OutColumn({
   );
 }
 
-function OutsideCapability({ capability }: { capability: ShapeCapability }) {
+function OutsideCapability({ capability, onOpen }: { capability: ShapeCapability; onOpen: () => void }) {
   const { setNodeRef, listeners, attributes, isDragging } = useDraggable({ id: `outside:${capability.id}` });
   return (
     <div
@@ -1595,6 +1706,10 @@ function OutsideCapability({ capability }: { capability: ShapeCapability }) {
       data-capability={capability.id}
       {...listeners}
       {...attributes}
+      onClick={onOpen}
+      role="button"
+      tabIndex={0}
+      onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") onOpen(); }}
     >
       <div className="flex items-start gap-2">
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.22)" strokeWidth="1.6" className="mt-0.5 shrink-0" aria-hidden><path d={sigilPathFor(capability.name)} /></svg>
@@ -1627,16 +1742,18 @@ function ConstraintStrip({
   scopeId,
   dominance,
   startDate,
+  truthReady,
 }: {
   gates: { id: string; label: string; likely: number }[];
   openQuestions: { id: string; title: string; rationale: string | null; status: string }[];
   scopeId: string;
   dominance: ReturnType<typeof readDominance>;
   startDate: Date;
+  truthReady: boolean;
 }) {
   const dom = dominance;
   const held = !!dom?.dominated;
-  const hasFloor = !!dom && dom.floorDays > 0.5;
+  const hasFloor = truthReady && !!dom && dom.floorDays > 0.5;
   const conductor = held
     ? "linear-gradient(90deg, transparent, var(--i-amber) 6%, var(--i-amber) 94%, transparent)"
     : "linear-gradient(90deg, transparent, color-mix(in srgb, var(--i-amber) 34%, transparent) 6%, color-mix(in srgb, var(--i-amber) 34%, transparent) 94%, transparent)";

@@ -310,3 +310,146 @@ export async function unlinkCanonicalWork(
   }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }));
   return { capability: result.capability, changed: result.changed, ...(await finish(result.scopeId, result.changed)) };
 }
+
+export interface ScopeProposalCommitSelection {
+  itemId: string;
+  /** Optional reviewed correction. Null creates a new capability. */
+  targetCapabilityId?: string | null;
+  expectedRevision?: number | null;
+  releaseStatus: "accepted" | "outside";
+}
+
+/**
+ * One serializable, idempotent crossing from persisted proposal to Reality.
+ * The proposal remains inspectable history; each affected capability also
+ * receives its normal append-only owner event.
+ */
+export async function commitScopeProposal(
+  scopeId: string,
+  proposalId: string,
+  selections: ScopeProposalCommitSelection[],
+  currentWork: OwnerWorkItem[],
+  idempotencyKey: string,
+) {
+  const key = required(idempotencyKey, "idempotencyKey");
+  if (!selections.length) throw new ScopeRealityInputError("Choose at least one proposal to commit.");
+  const byWorkId = new Map(currentWork.map((item) => [item.externalId, item]));
+
+  const result = await retrySerializable(() => prisma.$transaction(async (tx) => {
+    const prior = await tx.scopeProposalEvent.findUnique({ where: { idempotencyKey: key } });
+    if (prior) return { result: plain(prior.result), changed: false };
+
+    const proposal = await tx.scopeProposal.findFirst({
+      where: { id: proposalId, scopeId },
+      include: { items: true },
+    });
+    if (!proposal) throw new ScopeRealityInputError("Scope proposal not found.");
+    if (proposal.status !== "active") {
+      throw new ScopeRealityConflictError("This proposal is stale or already committed. Refresh Scope before saving.");
+    }
+    const proposalItems = new Map(proposal.items.map((item) => [item.id, item]));
+    if (new Set(selections.map((selection) => selection.itemId)).size !== selections.length) {
+      throw new ScopeRealityInputError("The same proposal item cannot be committed twice.");
+    }
+
+    const claimedWork = new Set<string>();
+    for (const selection of selections) {
+      const item = proposalItems.get(selection.itemId);
+      if (!item || item.status !== "suggested") throw new ScopeRealityConflictError("A selected proposal item is no longer available.");
+      if (item.action === "none") throw new ScopeRealityInputError(`“${item.title}” has no safe Reality action yet.`);
+      for (const workId of item.workItemIds) {
+        if (!byWorkId.has(workId)) throw new ScopeRealityConflictError(`${workId} is no longer present in the current Linear owner read.`);
+        if (claimedWork.has(workId)) throw new ScopeRealityInputError(`${workId} appears in more than one selected cluster.`);
+        claimedWork.add(workId);
+      }
+    }
+
+    const committed: { itemId: string; capabilityId: string; action: string; workItemIds: string[] }[] = [];
+    for (const selection of selections) {
+      const item = proposalItems.get(selection.itemId)!;
+      const work = item.workItemIds.map((id) => byWorkId.get(id)!);
+      const targetCapabilityId = selection.targetCapabilityId === undefined ? item.targetCapabilityId : selection.targetCapabilityId;
+      let capabilityId: string;
+
+      if (targetCapabilityId) {
+        const before = await tx.capability.findUniqueOrThrow({ where: { id: targetCapabilityId }, include: { workLinks: true } });
+        if (before.scopeId !== scopeId) throw new ScopeRealityInputError("The corrected capability belongs to a different Scope.");
+        const expected = selection.expectedRevision ?? item.targetRevision;
+        if (!Number.isInteger(expected) || expected !== before.revision) {
+          throw new ScopeRealityConflictError(`“${before.name}” changed in another session (current revision ${before.revision}). Refresh before committing.`);
+        }
+        await assertWorkAvailable(tx, scopeId, before.id, work);
+        const active = new Set(before.workLinks.filter((link) => ["active", "configured"].includes(link.state)).map((link) => link.externalId));
+        const additions = work.filter((entry) => !active.has(entry.externalId));
+        if (additions.length) await createLinks(tx, before.id, additions);
+        const statusChanged = before.status !== selection.releaseStatus;
+        if (additions.length || statusChanged) {
+          await tx.capability.update({ where: { id: before.id }, data: { revision: { increment: 1 }, status: selection.releaseStatus } });
+          const after = await tx.capability.findUniqueOrThrow({ where: { id: before.id }, include: { workLinks: true } });
+          await tx.capabilityEvent.create({ data: {
+            capabilityId: before.id,
+            scopeId,
+            idempotencyKey: `${key}:${item.id}`,
+            action: "accept_scope_proposal",
+            beforeState: json(plain(before)),
+            afterState: json(plain(after)),
+          } });
+        }
+        capabilityId = before.id;
+      } else {
+        await assertNoScopeDuplicate(tx, scopeId, item.title);
+        await assertWorkAvailable(tx, scopeId, null, work);
+        const max = await tx.capability.aggregate({ where: { scopeId, status: selection.releaseStatus }, _max: { sortOrder: true } });
+        const capability = await tx.capability.create({ data: {
+          scopeId,
+          name: item.title,
+          description: item.description,
+          status: selection.releaseStatus,
+          sortOrder: (max._max.sortOrder ?? -1) + 1,
+          provenance: json({
+            authority: "Scope",
+            actor: "operator",
+            source: "scope_proposal",
+            assertion: "Operator accepted a persisted intelligence proposal",
+            proposalId,
+            proposalItemId: item.id,
+            proposalFingerprint: proposal.fingerprint,
+            evidence: item.provenance,
+            acceptedAt: new Date().toISOString(),
+          }),
+        } });
+        await createLinks(tx, capability.id, work);
+        const after = await tx.capability.findUniqueOrThrow({ where: { id: capability.id }, include: { workLinks: true } });
+        await tx.capabilityEvent.create({ data: {
+          capabilityId: capability.id,
+          scopeId,
+          idempotencyKey: `${key}:${item.id}`,
+          action: "accept_scope_proposal",
+          afterState: json(plain(after)),
+        } });
+        capabilityId = capability.id;
+      }
+
+      await tx.scopeProposalItem.update({
+        where: { id: item.id },
+        data: { status: "committed", committedCapabilityId: capabilityId, committedAt: new Date() },
+      });
+      committed.push({ itemId: item.id, capabilityId, action: targetCapabilityId ? "link_existing" : "create_capability", workItemIds: item.workItemIds });
+    }
+
+    const remaining = await tx.scopeProposalItem.count({ where: { proposalId, status: "suggested", action: { not: "none" } } });
+    if (remaining === 0) await tx.scopeProposal.update({ where: { id: proposalId }, data: { status: "committed" } });
+    const eventResult = { scopeId, proposalId, committed };
+    await tx.scopeProposalEvent.create({ data: {
+      proposalId,
+      idempotencyKey: key,
+      action: "commit_selected",
+      selectedItemIds: selections.map((selection) => selection.itemId),
+      result: json(eventResult),
+    } });
+    await invalidateDerivedReads(tx, scopeId, `Scope proposal ${proposalId} committed to Reality.`);
+    return { result: eventResult, changed: true };
+  }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }));
+
+  return { ...result, ...(await finish(scopeId, result.changed)) };
+}

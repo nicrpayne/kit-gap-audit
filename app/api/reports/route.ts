@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { generateReport } from "@/lib/reports/generate";
 import { ForecastUnavailableError } from "@/lib/forecast/compute";
 import { ForecastCoverageIncompleteError } from "@/lib/forecast/coverage";
+import { CapacityReconciliationIncompleteError } from "@/lib/capacity/contract";
 
 export async function GET(req: NextRequest) {
   const scopeId = req.nextUrl.searchParams.get("scopeId");
@@ -59,6 +60,14 @@ export async function POST(req: NextRequest) {
         code: error.code,
         forecastCoverage: error.coverage,
         error: `Report not ready: ${error.coverage.reason}. Signal will not promote a modeled subset into a project delivery brief.`,
+      }, { status: 409 });
+    }
+    if (error instanceof CapacityReconciliationIncompleteError) {
+      return NextResponse.json({
+        unavailable: true,
+        code: error.code,
+        capacityContract: error.contract,
+        error: "Report not ready: named capacity is not reconciled to Forecast capacity. Signal will not publish a delivery brief from an unowned staffing assumption.",
       }, { status: 409 });
     }
     return NextResponse.json(

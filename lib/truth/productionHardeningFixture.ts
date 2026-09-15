@@ -53,6 +53,7 @@ const scope = (
   reportHistory: [],
   capacityBasis: { kind: "inferred", value: 1, assignees: [], remainingIssueCount: 0, unassignedCount: 0 },
   capacityContract: { ...EMPTY_CAPACITY_CONTRACT, scopeId },
+  realityState: { realityRevision: 0, computedRevision: 0, status: "current", readiness: null },
   forecastSource: {
     asOf: PRODUCTION_HARDENING_FIXTURE.forecastAsOf,
     provider: "Linear",

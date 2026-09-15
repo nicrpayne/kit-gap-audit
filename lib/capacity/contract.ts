@@ -14,6 +14,14 @@ export interface CapacityForecastContract {
   reconciles: boolean;
 }
 
+export class CapacityReconciliationIncompleteError extends Error {
+  readonly code = "CAPACITY_RECONCILIATION_INCOMPLETE";
+  constructor(readonly contract: CapacityForecastContract) {
+    super("Named capacity has not been reconciled to the capacity used by Forecast.");
+    this.name = "CapacityReconciliationIncompleteError";
+  }
+}
+
 const sameFte = (a: number, b: number) => Math.abs(a - b) <= 1e-9;
 
 /** One audit-ready statement of Capacity -> Forecast. Named allocations
