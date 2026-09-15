@@ -35,7 +35,7 @@
     "graphology": "^0.26.0",
     "minisearch": "^7.2.0",
     "motion": "^13.1.0",
-    "next": "^15",
+    "next": "15.5.24",
     "react": "^19",
     "react-dom": "^19"
   },
