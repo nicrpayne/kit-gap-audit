@@ -19,7 +19,7 @@ async function main() {
     } });
     const proposal = await prisma.scopeProposal.create({ data: {
       scopeId: scope.id,
-      compilerVersion: "scope-reconciler-three-source-2.0",
+      compilerVersion: "scope-reconciler-three-source-2.1",
       fingerprint: "db-proof-1",
       sourceWatermark: { linearAsOf: "2026-09-15T18:00:00.000Z" },
       summary: { likelyIn: 2, likelyOut: 0, boundaryReview: 0, confidentlyMatched: 2, suggested: 2, unresolved: 0 },
@@ -52,7 +52,7 @@ async function main() {
     assert.equal((await prisma.scopeProposal.findUniqueOrThrow({ where: { id: proposal.id } })).status, "committed");
 
     const conflicting = await prisma.scopeProposal.create({ data: {
-      scopeId: scope.id, compilerVersion: "scope-reconciler-three-source-2.0", fingerprint: "db-proof-2",
+      scopeId: scope.id, compilerVersion: "scope-reconciler-three-source-2.1", fingerprint: "db-proof-2",
       sourceWatermark: {}, summary: {}, items: { create: {
         candidateKey: "reality:notifications:stale", title: "Notifications", origins: ["knowledge", "reality", "linear"], reconciliationState: "aligned", conflicts: [], releaseSignal: "likely_in", confidence: "high", confidenceScore: 90,
         matchState: "confidently_matched", action: "link_existing", targetCapabilityId: capability.id, targetRevision: 1,

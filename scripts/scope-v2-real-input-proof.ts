@@ -102,6 +102,10 @@ const shapes = requested.map(({ key, pattern }) => {
   assert.deepEqual(item.origins, ["knowledge", "reality", "linear"], `${key} did not preserve all three source origins`);
   assert.ok(item.provenance.contextRefs.length > 0, `${key} has no current Knowledge references`);
   assert.ok(item.provenance.linearParents.length > 0 && item.workItemIds.length > 0, `${key} has no corroborating Linear cluster`);
+  assert.equal(item.releaseSignal, "likely_in", `${key} was not interpreted for the active V1 boundary`);
+  assert.equal(item.reconciliationState, "aligned", `${key} retained a false cross-boundary conflict`);
+  assert.equal(item.conflicts.length, 0, `${key} retained a release conflict without same-boundary opposition`);
+  assert.equal(item.action, "link_existing", `${key} did not expose its missing work links for review`);
   return {
     key,
     title: item.title,
@@ -112,6 +116,15 @@ const shapes = requested.map(({ key, pattern }) => {
     action: item.action,
     linear: { parentIds: item.provenance.linearParents.map((parent) => parent.identifier), workItemIds: item.workItemIds, alreadyLinked: item.alreadyLinkedItemIds.length },
     knowledge: { referenceCount: item.provenance.contextRefs.length, kinds: [...new Set(item.provenance.contextRefs.map((ref) => ref.kind))].sort(), referenceHashes: item.provenance.contextRefs.map((ref) => hash(ref.id)).sort() },
+    releaseInterpretation: {
+      activeRelease: item.provenance.releaseInterpretation.activeRelease,
+      activeReleaseSource: item.provenance.releaseInterpretation.activeReleaseSource,
+      policy: item.provenance.releaseInterpretation.policy,
+      effectiveClaims: item.provenance.releaseInterpretation.effectiveClaims.map((claim) => ({ ...claim, evidenceIdHash: hash(claim.evidenceId), evidenceId: undefined })),
+      supersededClaims: item.provenance.releaseInterpretation.supersededClaims.map((claim) => ({ ...claim, evidenceIdHash: hash(claim.evidenceId), evidenceId: undefined })),
+      otherBoundaryClaims: item.provenance.releaseInterpretation.otherBoundaryClaims.map((claim) => ({ ...claim, evidenceIdHash: hash(claim.evidenceId), evidenceId: undefined })),
+      genericClaims: item.provenance.releaseInterpretation.genericClaims.map((claim) => ({ ...claim, evidenceIdHash: hash(claim.evidenceId), evidenceId: undefined })),
+    },
     reality: item.provenance.realityCapability ? {
       idHash: hash(item.provenance.realityCapability.id),
       name: item.provenance.realityCapability.name,
@@ -129,6 +142,27 @@ const unmatched = compiled.items.filter((item) => item.reconciliationState === "
   confidence: item.confidence,
   reason: item.rationale.headline,
 }));
+const remainingConflicts = compiled.items.filter((item) => item.reconciliationState === "conflict").map((item) => {
+  const interpretation = item.provenance.releaseInterpretation;
+  const inClaims = interpretation.effectiveClaims.filter((claim) => claim.direction === "in");
+  const outClaims = interpretation.effectiveClaims.filter((claim) => claim.direction === "out");
+  const realityStatus = item.provenance.realityCapability?.status ?? null;
+  assert.ok(interpretation.activeRelease, `${item.title} conflict has no resolved active release`);
+  assert.ok(
+    (inClaims.length > 0 && outClaims.length > 0)
+      || (realityStatus === "accepted" && outClaims.length > 0)
+      || (["outside", "future", "removed"].includes(realityStatus ?? "") && inClaims.length > 0),
+    `${item.title} conflict lacks same-boundary opposing evidence`,
+  );
+  assert.ok(interpretation.effectiveClaims.every((claim) => claim.normalizedBoundary === compiled.sourceWatermark.activeRelease.normalizedName), `${item.title} conflict includes another release boundary`);
+  return {
+    title: item.title,
+    activeRelease: interpretation.activeRelease,
+    reality: item.provenance.realityCapability ? { status: item.provenance.realityCapability.status, revision: item.provenance.realityCapability.revision } : null,
+    effectiveClaims: interpretation.effectiveClaims.map((claim) => ({ direction: claim.direction, boundary: claim.boundary, observedAt: claim.observedAt, evidenceIdHash: hash(claim.evidenceId) })),
+    rule: inClaims.length && outClaims.length ? "opposing_current_same_boundary_claims" : "accepted_reality_opposes_current_same_boundary_claim",
+  };
+});
 const artifact = {
   proof: "read_only_current_production_inputs",
   productionWrites: 0,
@@ -143,9 +177,11 @@ const artifact = {
     contextObjectCount: intelligenceObjects.length,
     contextObjectIdSetHash: contextHash,
     realityCapabilityCount: capabilities.length,
+    activeRelease: compiled.sourceWatermark.activeRelease,
   },
   census: { proposalItems: compiled.items.length, ...compiled.summary, unmatchedExecutionClusters: unmatched.length },
   requestedShapes: shapes,
+  remainingConflicts,
   unmatchedExecution: unmatched,
   method: compiled.compilerVersion,
   fingerprint: compiled.fingerprint,

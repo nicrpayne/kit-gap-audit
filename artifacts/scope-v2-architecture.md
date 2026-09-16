@@ -54,11 +54,13 @@ accepted ContextSnapshot     accepted Scope Reality      current Linear project
 
 ## Current JSA read-only result
 
-The captured production inputs contained 172 current Knowledge objects, 9 Reality capabilities, and 77 Linear issues in 22 clusters. Notifications, PDF / Docufy, offline support, and submission/job-lead approvals each reconciled from all three origins. All four correctly surfaced as conflicts because current Knowledge carries an out/deferred signal while accepted Reality remains in-release. Fourteen unmatched Linear clusters remain explicit execution exceptions rather than invented capabilities.
+The captured production inputs contained 172 current Knowledge objects, 9 Reality capabilities, and 77 Linear issues in 22 clusters. Notifications, PDF / Docufy, offline support, and submission/job-lead approvals each reconciled from all three origins for the active `KIT JSA v1` execution boundary. Their historical Beta exclusions remain preserved as other-boundary evidence, while the explicit later V1 inclusion is applied. All four are aligned, in-scope V1 shapes with missing work links available for review; none is auto-committed. Fourteen unmatched Linear clusters remain explicit execution exceptions rather than invented capabilities.
+
+Release evidence is boundary-qualified and temporal. The compiler derives one active boundary from governed Scope project configuration, falling back only to a single unambiguous current Linear execution owner. Named claims about another release cannot move that boundary. For the active boundary, the latest dated explicit claims take precedence while superseded, generic, and other-boundary claims remain in provenance. If no single boundary can be resolved, the result is unknown rather than an invented in/out decision.
 
 ## Verification gates
 
-- Compiler proof covers aligned, Knowledge-only/no-execution, accepted Reality/no-execution, Linear-only exception, deferred, boundary conflict, deterministic ordering, and parent/child de-duplication.
+- Compiler proof covers aligned, Knowledge-only/no-execution, accepted Reality/no-execution, Linear-only exception, deferred, same-boundary conflict, deterministic ordering, parent/child de-duplication, cross-release sentences, unresolved target boundaries, and temporal precedence.
 - Browser proof covers overview, capability Focus, reconciliation/evidence Focus, scenario staging, governed nested drag preview, selected-state persistence, forecast truth boundary, and 1440px horizontal overflow.
 - Type checking and optimized production build pass.
 - The redacted current-input artifact is reproducible from saved read-only endpoint responses; no identifiers are embedded in compiler behavior.

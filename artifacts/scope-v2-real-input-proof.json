@@ -17,20 +17,32 @@
     "contextAcceptedAt": "2026-09-09T15:15:19.653Z",
     "contextObjectCount": 172,
     "contextObjectIdSetHash": "d809be14899f615abdbded566565282a1ec08f822c1ef445070ae460f4186018",
-    "realityCapabilityCount": 9
+    "realityCapabilityCount": 9,
+    "activeRelease": {
+      "name": "KIT JSA v1",
+      "normalizedName": "kit jsa v1",
+      "aliases": [
+        "kit jsa v1",
+        "v1"
+      ],
+      "source": "linear_execution_owner",
+      "candidates": [
+        "KIT JSA v1"
+      ]
+    }
   },
   "census": {
-    "proposalItems": 29,
-    "likelyIn": 3,
-    "likelyOut": 1,
-    "boundaryReview": 25,
-    "confidentlyMatched": 0,
-    "suggested": 0,
-    "unresolved": 25,
-    "aligned": 0,
-    "noExecution": 3,
+    "proposalItems": 28,
+    "likelyIn": 7,
+    "likelyOut": 2,
+    "boundaryReview": 19,
+    "confidentlyMatched": 5,
+    "suggested": 5,
+    "unresolved": 14,
+    "aligned": 5,
+    "noExecution": 5,
     "executionExceptions": 14,
-    "conflicts": 11,
+    "conflicts": 0,
     "unmatchedExecutionClusters": 14
   },
   "requestedShapes": [
@@ -42,13 +54,13 @@
         "reality",
         "linear"
       ],
-      "reconciliationState": "conflict",
-      "releaseSignal": "boundary",
+      "reconciliationState": "aligned",
+      "releaseSignal": "likely_in",
       "confidence": {
-        "band": "low",
-        "score": 44
+        "band": "high",
+        "score": 96
       },
-      "action": "none",
+      "action": "link_existing",
       "linear": {
         "parentIds": [
           "SOF-904"
@@ -98,6 +110,58 @@
           "e3b45d09dfc6"
         ]
       },
+      "releaseInterpretation": {
+        "activeRelease": "KIT JSA v1",
+        "activeReleaseSource": "linear_execution_owner",
+        "policy": "latest_explicit_same_boundary",
+        "effectiveClaims": [
+          {
+            "direction": "in",
+            "boundary": "KIT JSA v1",
+            "normalizedBoundary": "kit jsa v1",
+            "specificity": "named",
+            "observedAt": "2026-09-03",
+            "evidenceIdHash": "e3b45d09dfc6"
+          }
+        ],
+        "supersededClaims": [],
+        "otherBoundaryClaims": [
+          {
+            "direction": "out",
+            "boundary": "Beta",
+            "normalizedBoundary": "beta",
+            "specificity": "named",
+            "observedAt": "2026-08-24",
+            "evidenceIdHash": "4362228d1b58"
+          },
+          {
+            "direction": "in",
+            "boundary": "Production",
+            "normalizedBoundary": "production",
+            "specificity": "named",
+            "observedAt": "2026-08-24",
+            "evidenceIdHash": "4362228d1b58"
+          },
+          {
+            "direction": "out",
+            "boundary": "Beta",
+            "normalizedBoundary": "beta",
+            "specificity": "named",
+            "observedAt": "2026-09-03",
+            "evidenceIdHash": "e3b45d09dfc6"
+          }
+        ],
+        "genericClaims": [
+          {
+            "direction": "out",
+            "boundary": null,
+            "normalizedBoundary": null,
+            "specificity": "generic",
+            "observedAt": "2026-08-04",
+            "evidenceIdHash": "b69c22e9b78d"
+          }
+        ]
+      },
       "reality": {
         "idHash": "c955071a385d",
         "name": "JSA notifications",
@@ -105,22 +169,17 @@
         "revision": 4
       },
       "rationale": {
-        "headline": "Signals disagree; accepted Reality remains authoritative until an operator resolves the boundary.",
+        "headline": "Propose 6 reviewed work links to JSA notifications.",
         "signals": [
           "Knowledge contributes 20 current, cited signals.",
           "Accepted Scope Reality contributes “JSA notifications” at revision 4.",
           "Linear contributes 8 executable items under SOF-904."
         ],
         "cautions": [
-          "Release evidence disagrees across Knowledge, accepted Reality, or Linear labels.",
-          "Knowledge carries an out/deferred signal while accepted Scope Reality remains in release.",
           "One or more executable items have no Linear estimate."
         ]
       },
-      "conflicts": [
-        "Release evidence disagrees across Knowledge, accepted Reality, or Linear labels.",
-        "Knowledge carries an out/deferred signal while accepted Scope Reality remains in release."
-      ]
+      "conflicts": []
     },
     {
       "key": "pdf_docufy",
@@ -130,13 +189,13 @@
         "reality",
         "linear"
       ],
-      "reconciliationState": "conflict",
-      "releaseSignal": "boundary",
+      "reconciliationState": "aligned",
+      "releaseSignal": "likely_in",
       "confidence": {
-        "band": "low",
-        "score": 44
+        "band": "high",
+        "score": 96
       },
-      "action": "none",
+      "action": "link_existing",
       "linear": {
         "parentIds": [
           "SOF-747"
@@ -177,6 +236,65 @@
           "fd2d47c379f6"
         ]
       },
+      "releaseInterpretation": {
+        "activeRelease": "KIT JSA v1",
+        "activeReleaseSource": "linear_execution_owner",
+        "policy": "latest_explicit_same_boundary",
+        "effectiveClaims": [
+          {
+            "direction": "in",
+            "boundary": "KIT JSA v1",
+            "normalizedBoundary": "kit jsa v1",
+            "specificity": "named",
+            "observedAt": "2026-09-03",
+            "evidenceIdHash": "e3b45d09dfc6"
+          }
+        ],
+        "supersededClaims": [],
+        "otherBoundaryClaims": [
+          {
+            "direction": "out",
+            "boundary": "Beta",
+            "normalizedBoundary": "beta",
+            "specificity": "named",
+            "observedAt": "2026-08-24",
+            "evidenceIdHash": "ed547406cf52"
+          },
+          {
+            "direction": "out",
+            "boundary": "Beta",
+            "normalizedBoundary": "beta",
+            "specificity": "named",
+            "observedAt": "2026-08-24",
+            "evidenceIdHash": "4362228d1b58"
+          },
+          {
+            "direction": "in",
+            "boundary": "Production",
+            "normalizedBoundary": "production",
+            "specificity": "named",
+            "observedAt": "2026-08-24",
+            "evidenceIdHash": "4362228d1b58"
+          },
+          {
+            "direction": "out",
+            "boundary": "Beta",
+            "normalizedBoundary": "beta",
+            "specificity": "named",
+            "observedAt": "2026-09-03",
+            "evidenceIdHash": "e3b45d09dfc6"
+          },
+          {
+            "direction": "out",
+            "boundary": "Beta",
+            "normalizedBoundary": "beta",
+            "specificity": "named",
+            "observedAt": "2026-08-24",
+            "evidenceIdHash": "8333137f1803"
+          }
+        ],
+        "genericClaims": []
+      },
       "reality": {
         "idHash": "45e9024bd1b0",
         "name": "PDF / Docufy output",
@@ -184,22 +302,17 @@
         "revision": 2
       },
       "rationale": {
-        "headline": "Signals disagree; accepted Reality remains authoritative until an operator resolves the boundary.",
+        "headline": "Propose 5 reviewed work links to PDF / Docufy output.",
         "signals": [
           "Knowledge contributes 15 current, cited signals.",
           "Accepted Scope Reality contributes “PDF / Docufy output” at revision 2.",
           "Linear contributes 5 executable items under SOF-747."
         ],
         "cautions": [
-          "Release evidence disagrees across Knowledge, accepted Reality, or Linear labels.",
-          "Knowledge carries an out/deferred signal while accepted Scope Reality remains in release.",
           "One or more executable items have no Linear estimate."
         ]
       },
-      "conflicts": [
-        "Release evidence disagrees across Knowledge, accepted Reality, or Linear labels.",
-        "Knowledge carries an out/deferred signal while accepted Scope Reality remains in release."
-      ]
+      "conflicts": []
     },
     {
       "key": "offline",
@@ -209,13 +322,13 @@
         "reality",
         "linear"
       ],
-      "reconciliationState": "conflict",
-      "releaseSignal": "boundary",
+      "reconciliationState": "aligned",
+      "releaseSignal": "likely_in",
       "confidence": {
-        "band": "low",
-        "score": 44
+        "band": "high",
+        "score": 96
       },
-      "action": "none",
+      "action": "link_existing",
       "linear": {
         "parentIds": [
           "SOF-796",
@@ -255,6 +368,49 @@
           "e3b45d09dfc6"
         ]
       },
+      "releaseInterpretation": {
+        "activeRelease": "KIT JSA v1",
+        "activeReleaseSource": "linear_execution_owner",
+        "policy": "latest_explicit_same_boundary",
+        "effectiveClaims": [
+          {
+            "direction": "in",
+            "boundary": "KIT JSA v1",
+            "normalizedBoundary": "kit jsa v1",
+            "specificity": "named",
+            "observedAt": "2026-09-03",
+            "evidenceIdHash": "e3b45d09dfc6"
+          }
+        ],
+        "supersededClaims": [],
+        "otherBoundaryClaims": [
+          {
+            "direction": "out",
+            "boundary": "Beta",
+            "normalizedBoundary": "beta",
+            "specificity": "named",
+            "observedAt": "2026-08-24",
+            "evidenceIdHash": "4362228d1b58"
+          },
+          {
+            "direction": "in",
+            "boundary": "Production",
+            "normalizedBoundary": "production",
+            "specificity": "named",
+            "observedAt": "2026-08-24",
+            "evidenceIdHash": "4362228d1b58"
+          },
+          {
+            "direction": "out",
+            "boundary": "Beta",
+            "normalizedBoundary": "beta",
+            "specificity": "named",
+            "observedAt": "2026-09-03",
+            "evidenceIdHash": "e3b45d09dfc6"
+          }
+        ],
+        "genericClaims": []
+      },
       "reality": {
         "idHash": "7f3f84ae3aec",
         "name": "Offline support",
@@ -262,22 +418,17 @@
         "revision": 3
       },
       "rationale": {
-        "headline": "Signals disagree; accepted Reality remains authoritative until an operator resolves the boundary.",
+        "headline": "Propose 11 reviewed work links to Offline support.",
         "signals": [
           "Knowledge contributes 8 current, cited signals.",
           "Accepted Scope Reality contributes “Offline support” at revision 3.",
           "Linear contributes 11 executable items under SOF-796, SOF-857."
         ],
         "cautions": [
-          "Release evidence disagrees across Knowledge, accepted Reality, or Linear labels.",
-          "Knowledge carries an out/deferred signal while accepted Scope Reality remains in release.",
           "One or more executable items have no Linear estimate."
         ]
       },
-      "conflicts": [
-        "Release evidence disagrees across Knowledge, accepted Reality, or Linear labels.",
-        "Knowledge carries an out/deferred signal while accepted Scope Reality remains in release."
-      ]
+      "conflicts": []
     },
     {
       "key": "submission_job_lead_approvals",
@@ -287,13 +438,13 @@
         "reality",
         "linear"
       ],
-      "reconciliationState": "conflict",
-      "releaseSignal": "boundary",
+      "reconciliationState": "aligned",
+      "releaseSignal": "likely_in",
       "confidence": {
-        "band": "low",
-        "score": 44
+        "band": "high",
+        "score": 96
       },
-      "action": "none",
+      "action": "link_existing",
       "linear": {
         "parentIds": [
           "SOF-903"
@@ -324,6 +475,33 @@
           "eb98cc26faba"
         ]
       },
+      "releaseInterpretation": {
+        "activeRelease": "KIT JSA v1",
+        "activeReleaseSource": "linear_execution_owner",
+        "policy": "latest_explicit_same_boundary",
+        "effectiveClaims": [
+          {
+            "direction": "in",
+            "boundary": "KIT JSA v1",
+            "normalizedBoundary": "kit jsa v1",
+            "specificity": "named",
+            "observedAt": "2026-09-03",
+            "evidenceIdHash": "e3b45d09dfc6"
+          }
+        ],
+        "supersededClaims": [],
+        "otherBoundaryClaims": [
+          {
+            "direction": "out",
+            "boundary": "Beta",
+            "normalizedBoundary": "beta",
+            "specificity": "named",
+            "observedAt": "2026-09-03",
+            "evidenceIdHash": "e3b45d09dfc6"
+          }
+        ],
+        "genericClaims": []
+      },
       "reality": {
         "idHash": "cc0e5df2b141",
         "name": "Submission and job-lead approvals",
@@ -331,24 +509,20 @@
         "revision": 2
       },
       "rationale": {
-        "headline": "Signals disagree; accepted Reality remains authoritative until an operator resolves the boundary.",
+        "headline": "Propose 9 reviewed work links to Submission and job-lead approvals.",
         "signals": [
           "Knowledge contributes 4 current, cited signals.",
           "Accepted Scope Reality contributes “Submission and job-lead approvals” at revision 2.",
           "Linear contributes 9 executable items under SOF-903."
         ],
         "cautions": [
-          "Release evidence disagrees across Knowledge, accepted Reality, or Linear labels.",
-          "Knowledge carries an out/deferred signal while accepted Scope Reality remains in release.",
           "One or more executable items have no Linear estimate."
         ]
       },
-      "conflicts": [
-        "Release evidence disagrees across Knowledge, accepted Reality, or Linear labels.",
-        "Knowledge carries an out/deferred signal while accepted Scope Reality remains in release."
-      ]
+      "conflicts": []
     }
   ],
+  "remainingConflicts": [],
   "unmatchedExecution": [
     {
       "parentId": "SOF-869",
@@ -499,7 +673,7 @@
       "reason": "Linear work has no grounded product-shape candidate yet."
     }
   ],
-  "method": "scope-reconciler-three-source-2.0",
-  "fingerprint": "b0fa87497b4fa982746d33350e627e7fca99c14eb116e3d0572ed8cc993ae47e",
+  "method": "scope-reconciler-three-source-2.1",
+  "fingerprint": "ff59eddd929f7f2c34e3362412414b43316fabf5cc337537331f47ce826178b0",
   "privacy": "Statements and personal names are omitted. Context object and Reality capability identifiers are hashed; Linear identifiers are retained as execution-system keys."
 }

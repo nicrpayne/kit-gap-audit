@@ -3,8 +3,8 @@ import type { LinearIssueSummary } from "@/lib/linear";
 import { remainingIssuesFor } from "@/lib/forecast/build";
 import type { ProjectContextPackage } from "@/lib/context/package";
 
-export const SCOPE_PROPOSAL_CONTRACT_VERSION = "2.0" as const;
-export const SCOPE_PROPOSAL_COMPILER_VERSION = "scope-reconciler-three-source-2.0" as const;
+export const SCOPE_PROPOSAL_CONTRACT_VERSION = "2.1" as const;
+export const SCOPE_PROPOSAL_COMPILER_VERSION = "scope-reconciler-three-source-2.1" as const;
 
 export type ScopeProposalReleaseSignal = "likely_in" | "likely_out" | "boundary";
 export type ScopeProposalConfidence = "high" | "medium" | "low";
@@ -12,6 +12,26 @@ export type ScopeProposalMatchState = "confidently_matched" | "suggested" | "unr
 export type ScopeProposalAction = "link_existing" | "create_capability" | "none";
 export type ScopeProposalOrigin = "knowledge" | "reality" | "linear";
 export type ScopeProposalReconciliationState = "aligned" | "knowledge_no_execution" | "reality_no_execution" | "execution_exception" | "deferred" | "boundary" | "conflict";
+export type ReleaseBoundarySource = "governed_scope_project" | "linear_execution_owner" | "ambiguous" | "unresolved";
+
+export interface ProposalReleaseClaim {
+  direction: "in" | "out";
+  boundary: string | null;
+  normalizedBoundary: string | null;
+  specificity: "named" | "generic";
+  observedAt: string | null;
+  evidenceId: string;
+}
+
+export interface ProposalReleaseInterpretation {
+  activeRelease: string | null;
+  activeReleaseSource: ReleaseBoundarySource;
+  policy: "latest_explicit_same_boundary";
+  effectiveClaims: ProposalReleaseClaim[];
+  supersededClaims: ProposalReleaseClaim[];
+  otherBoundaryClaims: ProposalReleaseClaim[];
+  genericClaims: ProposalReleaseClaim[];
+}
 
 export interface ProposalCapability {
   id: string;
@@ -40,6 +60,8 @@ export interface ProposalContextRef {
   evidenceRefs: string[];
   topicTags: string[];
   candidateTitle: string | null;
+  observedAt: string | null;
+  releaseClaims: ProposalReleaseClaim[];
 }
 
 export interface CompiledScopeProposalItem {
@@ -66,6 +88,7 @@ export interface CompiledScopeProposalItem {
     contextSnapshotId: string | null;
     contextRefs: ProposalContextRef[];
     realityCapability: { id: string; name: string; status: string; revision: number } | null;
+    releaseInterpretation: ProposalReleaseInterpretation;
     method: typeof SCOPE_PROPOSAL_COMPILER_VERSION;
   };
 }
@@ -85,6 +108,13 @@ export interface CompiledScopeProposal {
     contextProducer: string | null;
     contextRefCount: number;
     realityCapabilityCount: number;
+    activeRelease: {
+      name: string | null;
+      normalizedName: string | null;
+      aliases: string[];
+      source: ReleaseBoundarySource;
+      candidates: string[];
+    };
     completeness: unknown;
   };
   summary: {
@@ -179,6 +209,83 @@ interface ContextRefInternal extends ProposalContextRef {
   explicitCandidate: boolean;
 }
 
+interface ResolvedReleaseBoundary {
+  name: string | null;
+  normalizedName: string | null;
+  aliases: string[];
+  source: ReleaseBoundarySource;
+  candidates: string[];
+}
+
+function normalizeBoundary(value: string): string {
+  return value.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+}
+
+function boundaryAliases(name: string): string[] {
+  const normalized = normalizeBoundary(name);
+  const version = normalized.match(/\bv\d+\b/)?.[0];
+  return [...new Set([normalized, ...(version ? [version] : [])])].sort((a, b) => b.length - a.length);
+}
+
+function resolveActiveRelease(configuredNames: string[] | undefined, issues: LinearIssueSummary[]): ResolvedReleaseBoundary {
+  const configured = [...new Set((configuredNames ?? []).map((name) => name.trim()).filter(Boolean))].sort();
+  if (configured.length === 1) {
+    return { name: configured[0], normalizedName: normalizeBoundary(configured[0]), aliases: boundaryAliases(configured[0]), source: "governed_scope_project", candidates: configured };
+  }
+  if (configured.length > 1) return { name: null, normalizedName: null, aliases: [], source: "ambiguous", candidates: configured };
+  const executionOwners = [...new Set(issues.map((issue) => issue.projectName?.trim()).filter((name): name is string => Boolean(name)))].sort();
+  if (executionOwners.length === 1) {
+    return { name: executionOwners[0], normalizedName: normalizeBoundary(executionOwners[0]), aliases: boundaryAliases(executionOwners[0]), source: "linear_execution_owner", candidates: executionOwners };
+  }
+  return { name: null, normalizedName: null, aliases: [], source: executionOwners.length > 1 ? "ambiguous" : "unresolved", candidates: executionOwners };
+}
+
+function namedBoundary(clause: string, active: ResolvedReleaseBoundary): { name: string; normalized: string } | null {
+  const normalized = normalizeBoundary(clause);
+  if (active.name) {
+    const matchingAlias = active.aliases.find((alias) => new RegExp(`(?:^|\\s)${alias.replace(/ /g, "\\s+")}(?:$|\\s)`).test(normalized));
+    if (matchingAlias) return { name: active.name, normalized: active.normalizedName! };
+  }
+  if (/\bbeta\b/.test(normalized)) return { name: "Beta", normalized: "beta" };
+  const kitVersion = normalized.match(/\bkit(?: [a-z0-9]+){1,4} v\d+\b/)?.[0];
+  if (kitVersion) return { name: titleCase(kitVersion), normalized: kitVersion };
+  const version = normalized.match(/\bv\d+\b/)?.[0];
+  if (version) return { name: version.toUpperCase(), normalized: version };
+  if (/\bproduction\b|\bprod\b/.test(normalized)) return { name: "Production", normalized: "production" };
+  return null;
+}
+
+function releaseDirections(clause: string): ("in" | "out")[] {
+  const normalized = normalizeBoundary(clause);
+  const directions: ("in" | "out")[] = [];
+  if (/\bslated for\b|\bconfirmed in\b|\bin scope\b|\bmust ship\b|\brelease requirement\b|\bapproved for\b/.test(normalized)) directions.push("in");
+  if (/\bout of\b|\bconfirmed out\b|\bnot in\b|\bnot (?:[a-z0-9]+ ){0,3}requirements?\b|\bdefer(?:red)?\b|\bfirst thing to cut\b/.test(normalized)) directions.push("out");
+  return [...new Set(directions)];
+}
+
+function parseReleaseClaims(value: string, evidenceId: string, observedAt: string | null, active: ResolvedReleaseBoundary): ProposalReleaseClaim[] {
+  const clauses = value.replace(/[—–]/g, ";").split(/(?:[.;]|\b(?:and|but|while)\b)/i).map((part) => part.trim()).filter(Boolean);
+  const claims: ProposalReleaseClaim[] = [];
+  for (const clause of clauses) {
+    const boundary = namedBoundary(clause, active);
+    for (const direction of releaseDirections(clause)) {
+      claims.push({
+        direction,
+        boundary: boundary?.name ?? (normalizeBoundary(clause).includes("this release") && active.name ? active.name : null),
+        normalizedBoundary: boundary?.normalized ?? (normalizeBoundary(clause).includes("this release") ? active.normalizedName : null),
+        specificity: boundary ? "named" : "generic",
+        observedAt,
+        evidenceId,
+      });
+    }
+  }
+  return claims.filter((claim, index) => claims.findIndex((other) => other.direction === claim.direction && other.normalizedBoundary === claim.normalizedBoundary) === index);
+}
+
+function hasReleaseLanguage(value: string): boolean {
+  return releaseDirections(value).length > 0;
+}
+
 function candidateTitle(fields: Record<string, unknown>, extra: Record<string, unknown>): string | null {
   for (const key of CANDIDATE_FIELDS) {
     const value = fields[key] ?? extra[key];
@@ -187,7 +294,7 @@ function candidateTitle(fields: Record<string, unknown>, extra: Record<string, u
   return null;
 }
 
-function contextRefs(snapshot: ProposalSnapshot | null): ContextRefInternal[] {
+function contextRefs(snapshot: ProposalSnapshot | null, active: ResolvedReleaseBoundary): ContextRefInternal[] {
   if (!snapshot) return [];
   const pkg = snapshot.package as ProjectContextPackage;
   const refs: ContextRefInternal[] = [];
@@ -196,9 +303,11 @@ function contextRefs(snapshot: ProposalSnapshot | null): ContextRefInternal[] {
     const fields = record(extra.fields);
     const title = candidateTitle(fields, extra);
     const topicTags = strings(extra.scope);
+    const observedAt = typeof extra.observedDate === "string" ? extra.observedDate : typeof extra.observedAt === "string" ? extra.observedAt : null;
     refs.push({
       kind: claim.kind, id: claim.id, statement: claim.statement, evidenceRefs: claim.evidenceRefs,
-      topicTags, candidateTitle: title,
+      topicTags, candidateTitle: title, observedAt,
+      releaseClaims: parseReleaseClaims(`${claim.statement} ${typeof extra.disposition === "string" ? extra.disposition : ""}`, claim.id, observedAt, active),
       current: extra.current !== false && extra.isCurrent !== false,
       disposition: typeof extra.disposition === "string" ? extra.disposition : null,
       searchable: [claim.statement, claim.kind, JSON.stringify(extra), ...topicTags].join(" "),
@@ -210,9 +319,12 @@ function contextRefs(snapshot: ProposalSnapshot | null): ContextRefInternal[] {
     const extra = record(object.extra);
     const title = candidateTitle(fields, extra);
     const topicTags = object.scope ?? [];
+    const observedAt = object.observedDate ?? null;
     refs.push({
       kind: object.intelligenceType, id: object.id, statement: object.statement, evidenceRefs: object.evidenceRefs ?? [],
-      topicTags, candidateTitle: title, current: object.isCurrent, disposition: object.status ?? null,
+      topicTags, candidateTitle: title, observedAt,
+      releaseClaims: parseReleaseClaims(`${object.statement} ${object.status ?? ""}`, object.id, observedAt, active),
+      current: object.isCurrent, disposition: object.status ?? null,
       searchable: [object.statement, object.statementBasis ?? "", JSON.stringify(fields), JSON.stringify(extra), ...topicTags].join(" "),
       explicitCandidate: Boolean(title),
     });
@@ -220,17 +332,14 @@ function contextRefs(snapshot: ProposalSnapshot | null): ContextRefInternal[] {
   return refs.filter((ref) => ref.current).sort((a, b) => a.id.localeCompare(b.id));
 }
 
-function releaseEvidence(refs: ContextRefInternal[], issues: LinearIssueSummary[]) {
-  const inRefs: string[] = [];
-  const outRefs: string[] = [];
-  const scan = (id: string, value: string) => {
-    const text = normalize(value);
-    if (/\b(in scope|accepted|must ship|release requirement|beta scope|v1 scope|in scope for prod|slated for .* v1|approved for .* release|confirmed in)\b/.test(text)) inRefs.push(id);
-    if (/\b(out of scope|defer|deferred|future|later|postbeta|not in release|out of .* beta|first thing to cut|confirmed out)\b/.test(text)) outRefs.push(id);
+function latestClaims(claims: ProposalReleaseClaim[]): { effective: ProposalReleaseClaim[]; superseded: ProposalReleaseClaim[] } {
+  const timestamps = claims.map((claim) => claim.observedAt ? Date.parse(claim.observedAt) : Number.NaN).filter(Number.isFinite);
+  if (!timestamps.length) return { effective: claims, superseded: [] };
+  const latest = Math.max(...timestamps);
+  return {
+    effective: claims.filter((claim) => claim.observedAt && Date.parse(claim.observedAt) === latest),
+    superseded: claims.filter((claim) => !claim.observedAt || Date.parse(claim.observedAt) !== latest),
   };
-  for (const ref of refs) scan(ref.id, `${ref.statement} ${ref.disposition ?? ""}`);
-  for (const issue of issues) scan(issue.identifier, issue.labels.join(" "));
-  return { inRefs: [...new Set(inRefs)], outRefs: [...new Set(outRefs)] };
 }
 
 interface LinearGroup {
@@ -277,6 +386,60 @@ function mergeCandidate(candidates: Candidate[], title: string, description: str
   return created;
 }
 
+function releaseClaimIsAboutCandidate(candidate: Candidate, ref: ContextRefInternal): boolean {
+  if (ref.candidateTitle && similarity(candidate.title, ref.candidateTitle).score >= 0.58) return true;
+  if (similarity(candidate.title, ref.statement).score >= 0.58) return true;
+  return ref.topicTags.some((topic) => !BROAD_TOPICS.has(normalize(topic)) && similarity(candidate.title, topic).score >= 0.8);
+}
+
+function assessRelease(
+  candidate: Candidate,
+  linearIssues: LinearIssueSummary[],
+  target: ProposalCapability | null,
+  active: ResolvedReleaseBoundary,
+) {
+  const knowledgeClaims = candidate.knowledgeRefs.filter((ref) => releaseClaimIsAboutCandidate(candidate, ref)).flatMap((ref) => ref.releaseClaims);
+  const linearClaims = linearIssues.flatMap((issue) => issue.labels.flatMap((label, index) => parseReleaseClaims(label, `${issue.identifier}:label:${index}`, issue.updatedAt ?? null, active)));
+  const allClaims = [...knowledgeClaims, ...linearClaims];
+  const sameBoundary = active.normalizedName
+    ? allClaims.filter((claim) => claim.specificity === "named" && claim.normalizedBoundary === active.normalizedName)
+    : [];
+  const otherBoundaryClaims = allClaims.filter((claim) => claim.specificity === "named" && (!active.normalizedName || claim.normalizedBoundary !== active.normalizedName));
+  const genericClaims = allClaims.filter((claim) => claim.specificity === "generic");
+  const { effective: effectiveClaims, superseded: supersededClaims } = latestClaims(sameBoundary);
+  const { effective: effectiveGeneric } = latestClaims(genericClaims);
+  const inClaims = effectiveClaims.filter((claim) => claim.direction === "in");
+  const outClaims = effectiveClaims.filter((claim) => claim.direction === "out");
+  const genericIn = effectiveGeneric.some((claim) => claim.direction === "in");
+  const genericOut = effectiveGeneric.some((claim) => claim.direction === "out");
+  const realitySignal = active.name && target
+    ? target.status === "accepted" ? "in" : ["outside", "future", "removed"].includes(target.status) ? "out" : null
+    : null;
+  const conflicts: string[] = [];
+  const ids = (claims: ProposalReleaseClaim[]) => claims.map((claim) => claim.evidenceId).sort().join(", ");
+  if (inClaims.length && outClaims.length) conflicts.push(`Opposing current claims for ${active.name}: in [${ids(inClaims)}] versus out [${ids(outClaims)}].`);
+  if (realitySignal === "in" && outClaims.length && !inClaims.length) conflicts.push(`Accepted Reality is in ${active.name}, but current same-boundary evidence says out [${ids(outClaims)}].`);
+  if (realitySignal === "out" && inClaims.length && !outClaims.length) conflicts.push(`Accepted Reality is out of ${active.name}, but current same-boundary evidence says in [${ids(inClaims)}].`);
+  let releaseSignal: ScopeProposalReleaseSignal = "boundary";
+  if (!conflicts.length && active.name) {
+    if (inClaims.length && !outClaims.length) releaseSignal = "likely_in";
+    else if (outClaims.length && !inClaims.length) releaseSignal = "likely_out";
+    else if (realitySignal === "in") releaseSignal = "likely_in";
+    else if (realitySignal === "out") releaseSignal = "likely_out";
+    else if (!target && genericIn !== genericOut) releaseSignal = genericIn ? "likely_in" : "likely_out";
+  }
+  const interpretation: ProposalReleaseInterpretation = {
+    activeRelease: active.name,
+    activeReleaseSource: active.source,
+    policy: "latest_explicit_same_boundary",
+    effectiveClaims,
+    supersededClaims,
+    otherBoundaryClaims,
+    genericClaims,
+  };
+  return { releaseSignal, conflicts, interpretation, effectiveClaims };
+}
+
 function digest(value: unknown): string {
   return createHash("sha256").update(JSON.stringify(value)).digest("hex");
 }
@@ -291,6 +454,7 @@ export function compileScopeProposal(input: {
   issues: LinearIssueSummary[];
   capabilities: ProposalCapability[];
   snapshot: ProposalSnapshot | null;
+  activeReleaseNames?: string[];
   generatedAt?: Date;
 }): CompiledScopeProposal {
   const allById = new Map(input.issues.map((issue) => [issue.identifier, issue]));
@@ -304,7 +468,8 @@ export function compileScopeProposal(input: {
     grouped.set(key, group);
   }
   const linearGroups = [...grouped.values()].sort((a, b) => a.key.localeCompare(b.key));
-  const refs = contextRefs(input.snapshot);
+  const activeRelease = resolveActiveRelease(input.activeReleaseNames, input.issues);
+  const refs = contextRefs(input.snapshot, activeRelease);
 
   // Ledger one: governed Reality always gets a seat, even with no work.
   const candidates: Candidate[] = [...input.capabilities].sort((a, b) => a.id.localeCompare(b.id)).map((capability) => ({
@@ -330,7 +495,7 @@ export function compileScopeProposal(input: {
     }
   }
   for (const [topic, topicRefs] of [...topicGroups].sort(([a], [b]) => a.localeCompare(b))) {
-    const hasShapeSignal = topicRefs.some((ref) => ["decision", "opportunity"].includes(normalize(ref.kind)) || releaseEvidence([ref], []).inRefs.length > 0 || releaseEvidence([ref], []).outRefs.length > 0);
+    const hasShapeSignal = topicRefs.some((ref) => ["decision", "opportunity"].includes(normalize(ref.kind)) || hasReleaseLanguage(`${ref.statement} ${ref.disposition ?? ""}`));
     if (topicRefs.length < 2 || !hasShapeSignal) continue;
     const candidate = mergeCandidate(candidates, titleCase(topic), topicRefs[0].statement, `knowledge-topic:${topic}`, false);
     for (const ref of topicRefs) if (!candidate.knowledgeRefs.some((item) => item.id === ref.id)) candidate.knowledgeRefs.push(ref);
@@ -373,16 +538,7 @@ export function compileScopeProposal(input: {
       ...(target ? ["reality" as const] : []),
       ...(linearIssues.length ? ["linear" as const] : []),
     ];
-    const knowledgeRelease = releaseEvidence(candidate.knowledgeRefs, []);
-    const linearRelease = releaseEvidence([], linearIssues);
-    const realitySignal = target ? (target.status === "accepted" ? "in" : ["outside", "future", "removed"].includes(target.status) ? "out" : null) : null;
-    const hasIn = knowledgeRelease.inRefs.length > 0 || linearRelease.inRefs.length > 0 || realitySignal === "in";
-    const hasOut = knowledgeRelease.outRefs.length > 0 || linearRelease.outRefs.length > 0 || realitySignal === "out";
-    const conflicts: string[] = [];
-    if (hasIn && hasOut) conflicts.push("Release evidence disagrees across Knowledge, accepted Reality, or Linear labels.");
-    if (target?.status === "accepted" && knowledgeRelease.outRefs.length) conflicts.push("Knowledge carries an out/deferred signal while accepted Scope Reality remains in release.");
-    if (realitySignal === "out" && knowledgeRelease.inRefs.length) conflicts.push("Knowledge carries an in-release signal while accepted Scope Reality remains out/later.");
-    const releaseSignal: ScopeProposalReleaseSignal = hasIn && hasOut ? "boundary" : hasIn ? "likely_in" : hasOut ? "likely_out" : "boundary";
+    const { releaseSignal, conflicts, interpretation, effectiveClaims } = assessRelease(candidate, linearIssues, target, activeRelease);
     const linearOnly = origins.length === 1 && origins[0] === "linear";
     const realityNoExecution = Boolean(target && activeLinks.length === 0 && workItemIds.length === 0);
     const knowledgeNoExecution = Boolean(!target && candidate.knowledgeRefs.length && workItemIds.length === 0);
@@ -400,7 +556,7 @@ export function compileScopeProposal(input: {
     if (origins.includes("knowledge")) confidenceScore += candidate.explicitKnowledge ? 28 : 20;
     if (origins.includes("reality")) confidenceScore += 30;
     if (origins.includes("linear")) confidenceScore += candidate.linearGroups.every((group) => Boolean(group.parent)) ? 24 : 12;
-    if (knowledgeRelease.inRefs.length || knowledgeRelease.outRefs.length) confidenceScore += 8;
+    if (effectiveClaims.length) confidenceScore += 8;
     if (linearOnly) confidenceScore = Math.min(confidenceScore, 38);
     if (reconciliationState === "boundary") confidenceScore = Math.min(confidenceScore, 55);
     if (conflicts.length) confidenceScore = Math.min(confidenceScore, 44);
@@ -439,8 +595,9 @@ export function compileScopeProposal(input: {
         linearParents,
         linearItems: linearIssues.map((issue) => ({ identifier: issue.identifier, state: issue.state, projectName: issue.projectName, updatedAt: issue.updatedAt ?? null })),
         contextSnapshotId: input.snapshot?.id ?? null,
-        contextRefs: candidate.knowledgeRefs.map((ref) => ({ kind: ref.kind, id: ref.id, statement: ref.statement, evidenceRefs: ref.evidenceRefs, topicTags: ref.topicTags, candidateTitle: ref.candidateTitle })),
+        contextRefs: candidate.knowledgeRefs.map((ref) => ({ kind: ref.kind, id: ref.id, statement: ref.statement, evidenceRefs: ref.evidenceRefs, topicTags: ref.topicTags, candidateTitle: ref.candidateTitle, observedAt: ref.observedAt, releaseClaims: ref.releaseClaims })),
         realityCapability: target ? { id: target.id, name: target.name, status: target.status, revision: target.revision } : null,
+        releaseInterpretation: interpretation,
         method: SCOPE_PROPOSAL_COMPILER_VERSION,
       },
     };
@@ -462,6 +619,7 @@ export function compileScopeProposal(input: {
     contextProducer: input.snapshot?.producer ?? null,
     contextRefCount: refs.length,
     realityCapabilityCount: input.capabilities.length,
+    activeRelease,
     completeness: input.snapshot?.completenessSummary ?? null,
   };
   const summary = {

@@ -57,12 +57,12 @@ const clusters = [
 ] as const;
 const proposal = {
   id: "proposal-jsa", scopeId: "visual-jsa", status: "active", generatedAt: "2026-09-15T19:00:00.000Z", stale: false,
-  sourceWatermark: { linearAsOf: "2026-09-15T18:30:00.000Z", linearIssueCount: 26, linearClusterCount: 4, contextSnapshotId: "snapshot-jsa", contextGeneratedAt: "2026-09-15T18:40:00.000Z", contextAcceptedAt: "2026-09-15T18:45:00.000Z", contextProducer: "Hermes", contextRefCount: 12, realityCapabilityCount: 7, completeness: { status: "complete" } },
+  sourceWatermark: { linearAsOf: "2026-09-15T18:30:00.000Z", linearIssueCount: 26, linearClusterCount: 4, contextSnapshotId: "snapshot-jsa", contextGeneratedAt: "2026-09-15T18:40:00.000Z", contextAcceptedAt: "2026-09-15T18:45:00.000Z", contextProducer: "Hermes", contextRefCount: 12, realityCapabilityCount: 7, activeRelease: { name: "KIT JSA v1", normalizedName: "kit jsa v1", aliases: ["kit jsa v1", "v1"], source: "governed_scope_project", candidates: ["KIT JSA v1"] }, completeness: { status: "complete" } },
   summary: { likelyIn: 4, likelyOut: 0, boundaryReview: 0, confidentlyMatched: 4, suggested: 4, unresolved: 0, aligned: 4, noExecution: 2, executionExceptions: 1, conflicts: 0 },
   items: clusters.map(([id, title, targetCapabilityId, ids, parent]) => ({
     id, title, description: `${title} release capability`, origins: ["knowledge", "reality", "linear"], reconciliationState: "aligned", conflicts: [], releaseSignal: "likely_in", confidence: "high", confidenceScore: 92, matchState: "confidently_matched", action: "link_existing", targetCapabilityId, targetRevision: 3,
     workItemIds: [...ids], alreadyLinkedItemIds: [], rationale: { headline: `Propose ${ids.length} missing work links to ${title}.`, signals: [`${ids.length} executable items follow Linear parent ${parent}.`, "Structured context corroborates this cluster."], cautions: [] },
-    provenance: { linearParent: { identifier: parent, title }, linearParents: [{ identifier: parent, title }], linearItems: ids.map((identifier) => ({ identifier, state: "Todo", projectName: "JSA", updatedAt: "2026-09-15T18:30:00.000Z" })), contextSnapshotId: "snapshot-jsa", contextRefs: [{ kind: "release_requirement", id: `claim-${parent}`, statement: `${title} is confirmed in scope for V1`, evidenceRefs: [`linear:${parent}`], topicTags: [targetCapabilityId], candidateTitle: title }], realityCapability: { id: targetCapabilityId, name: title, status: "future", revision: 3 }, method: "scope-reconciler-three-source-2.0" }, status: "suggested",
+    provenance: { linearParent: { identifier: parent, title }, linearParents: [{ identifier: parent, title }], linearItems: ids.map((identifier) => ({ identifier, state: "Todo", projectName: "KIT JSA v1", updatedAt: "2026-09-15T18:30:00.000Z" })), contextSnapshotId: "snapshot-jsa", contextRefs: [{ kind: "release_requirement", id: `claim-${parent}`, statement: `${title} is confirmed in scope for KIT JSA V1`, evidenceRefs: [`linear:${parent}`], topicTags: [targetCapabilityId], candidateTitle: title, observedAt: "2026-09-15", releaseClaims: [{ direction: "in", boundary: "KIT JSA v1", normalizedBoundary: "kit jsa v1", specificity: "named", observedAt: "2026-09-15", evidenceId: `claim-${parent}` }] }], realityCapability: { id: targetCapabilityId, name: title, status: "future", revision: 3 }, releaseInterpretation: { activeRelease: "KIT JSA v1", activeReleaseSource: "governed_scope_project", policy: "latest_explicit_same_boundary", effectiveClaims: [{ direction: "in", boundary: "KIT JSA v1", normalizedBoundary: "kit jsa v1", specificity: "named", observedAt: "2026-09-15", evidenceId: `claim-${parent}` }], supersededClaims: [], otherBoundaryClaims: [], genericClaims: [] }, method: "scope-reconciler-three-source-2.1" }, status: "suggested",
   })),
 };
 
@@ -90,6 +90,7 @@ async function main() {
   assert.equal(await page.getByText("Floor", { exact: true }).count(), 0, "noncanonical floor must not render");
   assert.equal(await page.locator('[data-shoot="unmapped-execution-tray"]').count(), 0, "raw horizontal ticket tray is removed");
   assert.equal(await page.locator('[data-shoot="proposal-card"]').count(), 4);
+  assert.match(await page.locator('[data-shoot="active-release-boundary"]').innerText(), /KIT JSA v1.*governed Scope project/i);
 
   await page.locator('[data-capability="capability:crew"]').click();
   await page.locator('[data-shoot="feature-detail"]').waitFor();
@@ -101,6 +102,7 @@ async function main() {
   await page.locator('[data-proposal-item="proposal-notifications"]').click();
   await page.locator('[data-shoot="reconciliation-focus"]').waitFor();
   assert.equal(await page.locator('[data-shoot="proposal-evidence-inspection"]').isVisible(), true);
+  assert.match(await page.locator('[data-shoot="focus-release-boundary"]').innerText(), /Interpreted for KIT JSA v1/i);
   await page.waitForTimeout(250);
   await page.screenshot({ path: resolve(deliverableOut, "scope-v2-proposal-evidence-focus.png") });
   await page.locator('[data-shoot="stage-focused-proposal"]').click();
@@ -118,7 +120,7 @@ async function main() {
   const overflow = await page.evaluate(() => ({ body: document.body.scrollWidth - innerWidth, root: document.documentElement.scrollWidth - innerWidth }));
   assert.ok(overflow.body <= 1 && overflow.root <= 1, `page should not overflow horizontally: ${JSON.stringify(overflow)}`);
 
-  const result = { ok: true, proposalCards: 4, overviewMode: true, capabilityFocus: true, proposalEvidenceFocus: true, scenarioStaged: true, nestedChildDropOpenedPreview: true, selectedStatePersistent: true, truthBoundary: "forecast-not-ready/no-floor", horizontalOverflow: overflow };
+  const result = { ok: true, proposalCards: 4, overviewMode: true, capabilityFocus: true, proposalEvidenceFocus: true, activeReleaseBoundary: "KIT JSA v1/governed_scope_project", releaseEvidenceInterpretationVisible: true, scenarioStaged: true, nestedChildDropOpenedPreview: true, selectedStatePersistent: true, truthBoundary: "forecast-not-ready/no-floor", horizontalOverflow: overflow };
   writeFileSync(resolve(repoOut, "browser-proof.json"), JSON.stringify(result, null, 2));
   console.log(JSON.stringify(result, null, 2));
   await browser.close();

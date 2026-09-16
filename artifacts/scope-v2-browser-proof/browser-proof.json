@@ -4,6 +4,8 @@
   "overviewMode": true,
   "capabilityFocus": true,
   "proposalEvidenceFocus": true,
+  "activeReleaseBoundary": "KIT JSA v1/governed_scope_project",
+  "releaseEvidenceInterpretationVisible": true,
   "scenarioStaged": true,
   "nestedChildDropOpenedPreview": true,
   "selectedStatePersistent": true,

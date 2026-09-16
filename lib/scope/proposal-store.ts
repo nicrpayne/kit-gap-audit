@@ -30,6 +30,7 @@ export async function refreshScopeProposal(scopeId: string) {
       revision: capability.revision,
       workLinks: capability.workLinks.map((link) => ({ externalId: link.externalId, state: link.state })),
     })),
+    activeReleaseNames: scope.projectNames,
     snapshot: latestSnapshot,
   });
 

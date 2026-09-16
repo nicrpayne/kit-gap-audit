@@ -20,6 +20,13 @@ export interface ScopeProposalView {
     contextProducer: string | null;
     contextRefCount: number;
     realityCapabilityCount: number;
+    activeRelease?: {
+      name: string | null;
+      normalizedName: string | null;
+      aliases: string[];
+      source: "governed_scope_project" | "linear_execution_owner" | "ambiguous" | "unresolved";
+      candidates: string[];
+    };
     completeness?: unknown;
   };
   summary: {
@@ -59,11 +66,29 @@ export interface ScopeProposalItemView {
     linearParents: { identifier: string; title: string }[];
     linearItems: { identifier: string; state: string; projectName: string | null; updatedAt: string | null }[];
     contextSnapshotId: string | null;
-    contextRefs: { kind: string; id: string; statement: string; evidenceRefs: string[]; topicTags: string[]; candidateTitle: string | null }[];
+    contextRefs: { kind: string; id: string; statement: string; evidenceRefs: string[]; topicTags: string[]; candidateTitle: string | null; observedAt?: string | null; releaseClaims?: ReleaseClaimView[] }[];
     realityCapability: { id: string; name: string; status: string; revision: number } | null;
+    releaseInterpretation?: {
+      activeRelease: string | null;
+      activeReleaseSource: "governed_scope_project" | "linear_execution_owner" | "ambiguous" | "unresolved";
+      policy: "latest_explicit_same_boundary";
+      effectiveClaims: ReleaseClaimView[];
+      supersededClaims: ReleaseClaimView[];
+      otherBoundaryClaims: ReleaseClaimView[];
+      genericClaims: ReleaseClaimView[];
+    };
     method: string;
   };
   status: string;
+}
+
+interface ReleaseClaimView {
+  direction: "in" | "out";
+  boundary: string | null;
+  normalizedBoundary: string | null;
+  specificity: "named" | "generic";
+  observedAt: string | null;
+  evidenceId: string;
 }
 
 type Selection = SuiteScenario["scopeProposalSelections"][number];
@@ -117,6 +142,9 @@ export default function ScopeReconciliation(props: {
             <Freshness label="Linear" value={proposal?.sourceWatermark.linearAsOf ? shortDate(proposal.sourceWatermark.linearAsOf) : "no rows"} />
             <Freshness label="Reality" value={`r${realityRevision}`} />
           </div>
+          {proposal && <div className="mt-2 rounded-md px-2.5 py-2 text-[9px] leading-snug text-[var(--i-text-soft)]" style={{ border: "1px solid var(--i-border)", background: "var(--i-recess)" }} data-shoot="active-release-boundary">
+            Interpreted for <span className="font-medium text-[var(--i-text)]">{proposal.sourceWatermark.activeRelease?.name ?? "unresolved release"}</span> · {releaseSourceLabel(proposal.sourceWatermark.activeRelease?.source ?? "unresolved")}
+          </div>}
           {proposal && <div className="mt-2 grid grid-cols-4 gap-1.5">
             <Count label="aligned" value={proposal.summary.aligned} />
             <Count label="no work" value={proposal.summary.noExecution} caution />
@@ -184,6 +212,7 @@ function ReconciliationFocus({ item, selection, capabilities, committing, onClos
     setRelease(selection?.releaseStatus ?? (item.releaseSignal === "likely_out" ? "outside" : "accepted"));
   }, [identity, item, selection]);
   if (!item) return null;
+  const releaseInterpretation = item.provenance.releaseInterpretation ?? { activeRelease: null, activeReleaseSource: "unresolved" as const, policy: "latest_explicit_same_boundary" as const, effectiveClaims: [], supersededClaims: [], otherBoundaryClaims: [], genericClaims: [] };
   const actionable = item.action !== "none" && item.status !== "committed" && item.reconciliationState !== "conflict";
   const chosenTarget = target === "new" ? null : target;
   const applyCorrection = (nextTarget = chosenTarget, nextRelease = release) => { if (selection) onStage(item, nextTarget, nextRelease); };
@@ -211,7 +240,17 @@ function ReconciliationFocus({ item, selection, capabilities, committing, onClos
 
       <section className="p-6" style={{ borderRight: "1px solid var(--i-border)" }} data-shoot="proposal-evidence-inspection">
         <FocusHeading eyebrow="Structured evidence" title={`${item.provenance.contextRefs.length} current references`} />
-        <div className="mt-4 space-y-2.5">{item.provenance.contextRefs.length ? item.provenance.contextRefs.slice(0, 8).map((ref) => <div key={ref.id} className="rounded-lg p-3.5" style={{ border: "1px solid var(--i-border)", background: "var(--i-recess)" }}><div className="flex items-center gap-2"><span className="text-[9px] uppercase tracking-[0.12em] text-[var(--i-signal)]">{ref.kind.replaceAll("_", " ")}</span><span className="ml-auto text-[9px] text-[var(--i-text-faint)]">{ref.evidenceRefs.length} citations</span></div><p className="mt-2 text-[10.5px] leading-relaxed text-[var(--i-text-soft)]">{ref.statement}</p>{ref.topicTags.length > 0 && <div className="mt-2 text-[9px] text-[var(--i-text-faint)]">topics · {ref.topicTags.join(" · ")}</div>}</div>) : <EmptyBlock>Knowledge contains no safe candidate match. This absence is preserved.</EmptyBlock>}</div>
+        <div className="mt-4 rounded-lg p-3.5" style={{ border: "1px solid color-mix(in srgb, var(--i-signal) 35%, var(--i-border))", background: "color-mix(in srgb, var(--i-signal) 5%, var(--i-recess))" }} data-shoot="focus-release-boundary">
+          <div className="text-[9px] uppercase tracking-[0.14em] text-[var(--i-signal)]">Release interpretation</div>
+          <div className="mt-1.5 text-[12px] font-medium text-[var(--i-text)]">{releaseInterpretation.activeRelease ? `Interpreted for ${releaseInterpretation.activeRelease}` : "Active release unresolved"}</div>
+          <div className="mt-1 text-[9.5px] leading-relaxed text-[var(--i-text-faint)]">{releaseSourceLabel(releaseInterpretation.activeReleaseSource)} · latest explicit same-boundary evidence wins; other release claims remain visible but do not move this boundary.</div>
+        </div>
+        <div className="mt-3 space-y-2.5">{item.provenance.contextRefs.length ? item.provenance.contextRefs.slice(0, 8).map((ref) => <div key={ref.id} className="rounded-lg p-3.5" style={{ border: "1px solid var(--i-border)", background: "var(--i-recess)" }}>
+          <div className="flex items-center gap-2"><span className="text-[9px] uppercase tracking-[0.12em] text-[var(--i-signal)]">{ref.kind.replaceAll("_", " ")}</span><span className="ml-auto text-[9px] text-[var(--i-text-faint)]">{ref.observedAt ? shortDate(ref.observedAt) : `${ref.evidenceRefs.length} citations`}</span></div>
+          <p className="mt-2 text-[10.5px] leading-relaxed text-[var(--i-text-soft)]">{ref.statement}</p>
+          {(ref.releaseClaims?.length ?? 0) > 0 && <div className="mt-2 flex flex-wrap gap-1">{ref.releaseClaims!.map((claim, index) => <ReleaseClaimChip key={`${claim.direction}:${claim.normalizedBoundary}:${index}`} claim={claim} activeRelease={releaseInterpretation.activeRelease} effective={releaseInterpretation.effectiveClaims.some((effectiveClaim) => effectiveClaim.evidenceId === ref.id && effectiveClaim.direction === claim.direction && effectiveClaim.normalizedBoundary === claim.normalizedBoundary)} superseded={releaseInterpretation.supersededClaims.some((supersededClaim) => supersededClaim.evidenceId === ref.id && supersededClaim.direction === claim.direction && supersededClaim.normalizedBoundary === claim.normalizedBoundary)} />)}</div>}
+          {ref.topicTags.length > 0 && <div className="mt-2 text-[9px] text-[var(--i-text-faint)]">topics · {ref.topicTags.join(" · ")}</div>}
+        </div>) : <EmptyBlock>Knowledge contains no safe candidate match. This absence is preserved.</EmptyBlock>}</div>
       </section>
 
       <section className="p-6">
@@ -236,9 +275,11 @@ function ReconciliationFocus({ item, selection, capabilities, committing, onClos
 function WorkBank({ items, query }: { items: ScopeWorkItem[]; query: string }) { const visible = items.filter((item) => !query || `${item.id} ${item.label}`.toLowerCase().includes(query.toLowerCase())); return <div className="space-y-2" data-shoot="execution-work-finder">{visible.slice(0, 80).map((item) => <div key={item.id} className="rounded-lg px-3.5 py-3" style={{ border: "1px solid var(--i-border)", background: "var(--i-recess)" }}><div className="text-[10.5px] font-medium leading-snug text-[var(--i-text)]">{item.label}</div><div className="mt-1.5 text-[9px] text-[var(--i-text-faint)]">{item.state ?? "unknown"} · {item.estimateSource === "issue_placeholder" ? "estimate missing" : `${item.low}–${item.likely}–${item.high}d`}</div></div>)}{visible.length === 0 && <State title="No matching work" body="Try another identifier or title." shoot="work-no-matches" />}</div>; }
 function BankButton({ active, onClick, label }: { active: boolean; onClick: () => void; label: string }) { return <button role="tab" aria-selected={active} onClick={onClick} className="rounded-md px-2 py-2 text-[9.5px] font-medium" style={{ border: `1px solid ${active ? "var(--i-violet)" : "var(--i-border)"}`, color: active ? "var(--i-text)" : "var(--i-text-faint)", background: active ? "color-mix(in srgb, var(--i-violet) 7%, transparent)" : "transparent" }}>{label}</button>; }
 function Origin({ value }: { value: string }) { const tone = value === "knowledge" ? "var(--i-signal)" : value === "reality" ? "var(--i-mint)" : "var(--i-amber)"; return <span className="rounded-full px-2 py-0.5 text-[8.5px] uppercase tracking-[0.09em]" style={{ border: `1px solid color-mix(in srgb, ${tone} 38%, var(--i-border))`, color: tone }}>{value}</span>; }
+function ReleaseClaimChip({ claim, activeRelease, effective, superseded }: { claim: ReleaseClaimView; activeRelease: string | null; effective: boolean; superseded: boolean }) { const sameNamedBoundary = Boolean(activeRelease && claim.boundary?.toLowerCase() === activeRelease.toLowerCase()); const relation = effective ? "applied" : superseded ? "superseded" : claim.specificity === "generic" ? "unqualified" : sameNamedBoundary ? "context only" : "other boundary"; const tone = effective ? "var(--i-mint)" : superseded ? "var(--i-text-faint)" : "var(--i-amber)"; return <span className="rounded-full px-2 py-0.5 text-[8px] uppercase tracking-[0.08em]" title={activeRelease ? `Interpreted for ${activeRelease}` : "Active release unresolved"} style={{ border: `1px solid color-mix(in srgb, ${tone} 38%, var(--i-border))`, color: tone }}>{claim.direction} · {claim.boundary ?? "unspecified"} · {relation}</span>; }
 function FocusHeading({ eyebrow, title }: { eyebrow: string; title: string }) { return <div><div className="text-[10px] uppercase tracking-[0.16em] text-[var(--i-text-faint)]">{eyebrow}</div><div className="mt-1.5 text-[16px] font-semibold leading-tight text-[var(--i-text)]">{title}</div></div>; }
 function EmptyBlock({ children }: { children: React.ReactNode }) { return <div className="rounded-lg border border-[var(--i-border)] bg-[var(--i-recess)] p-4 text-[10.5px] leading-relaxed text-[var(--i-text-faint)]">{children}</div>; }
 function Freshness({ label, value }: { label: string; value: string }) { return <div className="rounded-md px-2 py-2" style={{ background: "var(--i-recess)" }}><div className="text-[8px] uppercase tracking-[0.08em] text-[var(--i-text-faint)]">{label}</div><div className="mt-1 truncate text-[10px] text-[var(--i-text-soft)]">{value}</div></div>; }
 function Count({ label, value, caution, danger }: { label: string; value: number; caution?: boolean; danger?: boolean }) { return <div className="rounded-md px-2 py-2" style={{ border: "1px solid var(--i-border)" }}><div className="i-readout text-[15px]" style={{ color: danger && value ? "var(--i-red)" : caution && value ? "var(--i-amber)" : "var(--i-text)" }}>{value}</div><div className="mt-0.5 text-[7.5px] uppercase tracking-[0.06em] text-[var(--i-text-faint)]">{label}</div></div>; }
 function State({ title, body, shoot }: { title: string; body: string; shoot: string }) { return <div className="rounded-lg px-4 py-5 text-center" style={{ border: "1px solid var(--i-border)", background: "var(--i-recess)" }} data-shoot={shoot}><div className="text-[11px] font-medium text-[var(--i-text-soft)]">{title}</div><p className="mt-2 text-[10px] leading-relaxed text-[var(--i-text-faint)]">{body}</p></div>; }
 function shortDate(value: string) { const date = new Date(value); return Number.isFinite(date.getTime()) ? date.toLocaleDateString(undefined, { month: "short", day: "numeric" }) : "unknown"; }
+function releaseSourceLabel(source: "governed_scope_project" | "linear_execution_owner" | "ambiguous" | "unresolved") { return source === "governed_scope_project" ? "governed Scope project" : source === "linear_execution_owner" ? "current Linear execution owner" : source === "ambiguous" ? "multiple release candidates" : "no safe release identity"; }
