@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import type { LinearIssueSummary } from "../lib/linear";
 import { compileScopeProposal, type ProposalCapability } from "../lib/scope/proposal";
+import { bulkStageEligibleItems, isBulkStageEligible } from "../lib/scope/proposalEligibility";
 
 const updatedAt = "2026-09-15T18:30:00.000Z";
 const issue = (identifier: string, title: string, parentIdentifier: string | null = null, parentTitle: string | null = null): LinearIssueSummary => ({
@@ -65,6 +66,13 @@ const input = {
 };
 const compiled = compileScopeProposal(input);
 const byTarget = (id: string) => compiled.items.find((item) => item.targetCapabilityId === id);
+const stagedCandidateItems = compiled.items.map((item) => ({ ...item, id: item.candidateKey, status: "suggested" }));
+const bulkEligible = bulkStageEligibleItems(stagedCandidateItems, new Set());
+assert.deepEqual(bulkEligible.map((item) => item.targetCapabilityId).sort(), ["approvals", "notifications", "offline", "pdf"]);
+assert.equal(bulkStageEligibleItems(stagedCandidateItems, new Set(bulkEligible.map((item) => item.id))).length, 0, "already staged candidates must not be advertised as a bulk-stage action");
+assert.equal(isBulkStageEligible({ ...bulkEligible[0], confidence: "medium" }), false);
+assert.equal(isBulkStageEligible({ ...bulkEligible[0], action: "none" }), false);
+assert.equal(isBulkStageEligible({ ...bulkEligible[0], status: "committed" }), false);
 
 for (const expected of expectedClusters) {
   const proposal = byTarget(expected.target);
@@ -203,5 +211,6 @@ console.log(JSON.stringify({
     crossCapabilityLeak: capabilityLeakGuard?.conflicts.length,
   },
   parentChildDoubleCount: false,
+  bulkStageEligibility: { eligible: bulkEligible.length, excludesAlreadyStaged: true, excludesMediumNoneAndCommitted: true },
   deterministicFingerprint: compiled.fingerprint,
 }, null, 2));

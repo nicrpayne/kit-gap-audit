@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import ToolWindow from "@/components/instrument/ToolWindow";
 import type { ScopeWorkItem, SuiteScenario } from "@/lib/instrument/useProject";
+import { bulkStageEligibleItems, isBulkStageEligible } from "@/lib/scope/proposalEligibility";
 
 export interface ScopeProposalView {
   id: string;
@@ -125,10 +126,20 @@ export default function ScopeReconciliation(props: {
   const reviewItems = (proposal?.items ?? []).filter((item) => item.reconciliationState !== "deferred");
   const laterItems = (proposal?.items ?? []).filter((item) => item.reconciliationState === "deferred");
   const visibleItems = (bank === "later" ? laterItems : reviewItems).filter((item) => !query || `${item.title} ${item.workItemIds.join(" ")} ${item.rationale.headline}`.toLowerCase().includes(query.toLowerCase()));
+  const stagedItemIds = new Set(selections.map((selection) => selection.itemId));
+  const bulkEligible = bulkStageEligibleItems(proposal?.items ?? [], stagedItemIds);
+  const bulkEligibleTotal = (proposal?.items ?? []).filter(isBulkStageEligible).length;
+  const bulkExplanation = !proposal
+    ? "A current proposal is required before aligned candidates can be staged."
+    : bulkEligible.length > 0
+      ? `${bulkEligible.length} aligned, high-confidence ${bulkEligible.length === 1 ? "candidate is" : "candidates are"} ready to stage in Scenario.`
+      : bulkEligibleTotal > 0
+        ? `All ${bulkEligibleTotal} eligible aligned ${bulkEligibleTotal === 1 ? "candidate is" : "candidates are"} already staged in this Scenario.`
+        : "No candidates qualify. Bulk staging requires aligned, high-confidence, actionable, uncommitted candidates.";
 
   return (
     <>
-      <aside className="flex min-h-0 w-[360px] shrink-0 flex-col overflow-hidden rounded-xl" style={{ border: "1px solid var(--i-border)", background: "linear-gradient(180deg, #11171b, #0b1013)" }} data-shoot={committed ? "reconciliation-commit-success" : warning ? "reconciliation-stale" : partial ? "reconciliation-partial" : "reconciliation-workspace"}>
+      <aside className="flex h-full min-h-0 w-[360px] shrink-0 flex-col overflow-hidden rounded-xl" style={{ border: "1px solid var(--i-border)", background: "linear-gradient(180deg, #11171b, #0b1013)" }} data-shoot={committed ? "reconciliation-commit-success" : warning ? "reconciliation-stale" : partial ? "reconciliation-partial" : "reconciliation-workspace"}>
         <div className="shrink-0 px-4 pb-3 pt-3.5" style={{ borderBottom: "1px solid var(--i-border)" }}>
           <div className="flex items-center gap-2">
             <div>
@@ -158,10 +169,11 @@ export default function ScopeReconciliation(props: {
             <BankButton active={bank === "later"} onClick={() => setBank("later")} label={`Out / later ${laterItems.length}`} />
             <BankButton active={bank === "work"} onClick={() => setBank("work")} label={`Work ${unmapped.length}`} />
           </div>
-          <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Find capability or work" className="mt-2.5 w-full rounded-md px-3 py-2 text-[10.5px] outline-none" style={{ border: "1px solid var(--i-border)", background: "var(--i-recess)", color: "var(--i-text)" }} />
+          <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Find capability or work" aria-label="Find reconciliation candidate" className="mt-2.5 w-full rounded-md px-3 py-2 text-[10.5px] outline-none" style={{ border: "1px solid var(--i-border)", background: "var(--i-recess)", color: "var(--i-text)" }} />
+          <p id="candidate-path-help" className="mt-2 text-[9px] leading-snug text-[var(--i-text-faint)]">Browse the candidates below. Open one to inspect evidence and stage a reviewed change.</p>
         </div>
 
-        <div className="min-h-0 flex-1 overflow-y-auto p-3">
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-3 focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--i-violet)]" tabIndex={0} role="region" aria-label="Reconciliation candidates" aria-describedby="candidate-path-help" data-shoot="candidate-scroll-region">
           {loading && !proposal && <State title="Composing current truth" body="Reading the latest accepted snapshot, accepted Scope Reality, and current Linear execution." shoot="reconciliation-loading" />}
           {!loading && !proposal && <State title="No proposal available" body="Reality is unchanged. Refresh when Knowledge and Linear are available." shoot="reconciliation-empty" />}
           {bank === "work" ? <WorkBank items={unmapped} query={query} /> : <div className="space-y-2">
@@ -172,9 +184,11 @@ export default function ScopeReconciliation(props: {
 
         <div className="shrink-0 p-3.5" style={{ borderTop: "1px solid var(--i-border)" }}>
           <div className="flex gap-2">
-            <button onClick={onStageConfident} disabled={!proposal || committing} className="flex-1 rounded-md px-3 py-2.5 text-[10px] text-[var(--i-text-soft)] disabled:opacity-30" style={{ border: "1px solid var(--i-border-strong)" }}>Stage aligned</button>
-            <button onClick={onCommit} disabled={selections.length === 0 || committing || Boolean(proposal?.stale)} className="flex-1 rounded-md px-3 py-2.5 text-[10px] font-medium disabled:opacity-30" style={{ border: "1px solid var(--i-signal)", color: "var(--i-signal)", background: "color-mix(in srgb, var(--i-signal) 6%, transparent)" }} data-shoot="commit-reconciled-scope">{committing ? "Committing…" : `Commit ${selections.length || "reviewed"}`}</button>
+            <button onClick={onStageConfident} disabled={bulkEligible.length === 0 || committing} aria-describedby="bulk-stage-explanation" className="flex-1 rounded-md px-3 py-2.5 text-[10px] text-[var(--i-text-soft)] disabled:cursor-not-allowed disabled:opacity-30" style={{ border: "1px solid var(--i-border-strong)" }} data-shoot="stage-aligned">{`Stage ${bulkEligible.length} aligned`}</button>
+            <button onClick={onCommit} disabled={selections.length === 0 || committing || Boolean(proposal?.stale)} className="flex-1 rounded-md px-3 py-2.5 text-[10px] font-medium disabled:opacity-30" style={{ border: "1px solid var(--i-signal)", color: "var(--i-signal)", background: "color-mix(in srgb, var(--i-signal) 6%, transparent)" }} data-shoot="commit-reconciled-scope">{committing ? "Committing…" : selections.length > 0 ? `Commit ${selections.length} to Reality` : "Commit staged to Reality"}</button>
           </div>
+          <p id="bulk-stage-explanation" className="mt-2 text-[9px] leading-snug text-[var(--i-text-faint)]" data-shoot="bulk-stage-explanation">{bulkExplanation}</p>
+          {selections.length > 0 && <div className="mt-2 rounded-md px-2.5 py-2 text-[10px] font-medium text-[var(--i-violet)]" style={{ border: "1px solid color-mix(in srgb, var(--i-violet) 45%, var(--i-border))", background: "color-mix(in srgb, var(--i-violet) 8%, var(--i-recess))" }} role="status" aria-live="polite" data-shoot="reconciliation-scenario-feedback">Scenario · {selections.length} reviewed {selections.length === 1 ? "change" : "changes"} staged. Reality is unchanged.</div>}
           {commitError && <p className="mt-2 text-[10px] leading-snug text-[var(--i-red)]" data-shoot="reconciliation-conflict">{commitError}</p>}
           {committed && <p className="mt-2 text-[10px] text-[var(--i-mint)]">Reality committed and derived truth refreshed.</p>}
           <p className="mt-2 text-[9px] leading-snug text-[var(--i-text-faint)]">Open any candidate to inspect evidence, execution, corrections, and modeled consequence together.</p>
@@ -195,7 +209,7 @@ function CandidateRow({ item, selected, onOpen }: { item: ScopeProposalItemView;
         <div className="text-[11.5px] font-semibold leading-snug text-[var(--i-text)]">{item.title}</div>
         <div className="mt-1.5 flex flex-wrap gap-1">{item.origins.map((origin) => <Origin key={origin} value={origin} />)}</div>
       </div>
-      <span className="text-[10px] text-[var(--i-text-faint)] group-hover:text-[var(--i-text)]">Open →</span>
+      <span className="text-[10px] text-[var(--i-text-faint)] group-hover:text-[var(--i-text)]">Review →</span>
     </div>
     <p className="mt-2.5 line-clamp-2 text-[10px] leading-relaxed text-[var(--i-text-soft)]">{item.rationale.headline}</p>
     <div className="mt-2 flex items-center gap-2 text-[9px] text-[var(--i-text-faint)]"><span>{item.workItemIds.length} work</span><span>·</span><span>{item.provenance.contextRefs.length} evidence</span><span>·</span><span>{item.confidenceScore}%</span>{selected && <><span>·</span><span className="text-[var(--i-violet)]">staged</span></>}</div>

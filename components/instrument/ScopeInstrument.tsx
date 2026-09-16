@@ -71,6 +71,7 @@ import { mutateReality } from "@/lib/instrument/reality";
 import type { ScopeWorkItem } from "@/lib/instrument/useProject";
 import ToolWindow from "@/components/instrument/ToolWindow";
 import ScopeReconciliation, { type ScopeProposalItemView, type ScopeProposalView } from "@/components/instrument/ScopeReconciliation";
+import { bulkStageEligibleItems } from "@/lib/scope/proposalEligibility";
 
 const BAY_IN = "bay-in";
 const BAY_OUT = "bay-out";
@@ -576,8 +577,8 @@ export default function ScopeInstrument() {
 
   const stageConfidentProposals = () => {
     if (!proposal) return;
-    for (const item of proposal.items) {
-      if (item.reconciliationState !== "aligned" || item.confidence !== "high" || item.action === "none" || item.status === "committed") continue;
+    const alreadyStaged = new Set(proposalSelections.map((selection) => selection.itemId));
+    for (const item of bulkStageEligibleItems(proposal.items, alreadyStaged)) {
       stageProposalItem(item, item.targetCapabilityId, item.releaseSignal === "likely_out" ? "outside" : "accepted");
     }
   };
@@ -691,8 +692,8 @@ export default function ScopeInstrument() {
               />
 
               {/* ── MAIN: the deck, then the strata it rests on ─────────── */}
-              <div className="flex-1 min-h-0 flex flex-col gap-3.5 px-5 pb-3.5">
-                <div className="flex-1 min-h-0 flex gap-3.5">
+              <div className="flex-1 min-h-0 flex flex-col gap-3.5 overflow-y-auto overscroll-contain px-5 pb-3.5" data-shoot="scope-workspace-scroll">
+                <div className="h-[620px] shrink-0 flex gap-3.5">
                   <ReleaseRack
                     features={composition.features}
                     dragging={dragging}

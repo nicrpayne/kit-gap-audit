@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { chromium, type Locator, type Page } from "playwright";
+import { chromium, webkit, type BrowserContext, type Page } from "playwright";
 
 const baseURL = process.env.SIGNAL_PROOF_URL ?? "http://localhost:3311";
 const repoOut = resolve("artifacts/scope-v2-browser-proof");
@@ -66,31 +66,69 @@ const proposal = {
   })),
 };
 
-async function drag(page: Page, source: Locator, target: Locator) {
-  const from = await source.boundingBox(); const to = await target.boundingBox();
-  assert.ok(from && to);
-  await page.mouse.move(from.x + from.width / 2, from.y + from.height / 2); await page.mouse.down();
-  await page.mouse.move(from.x + from.width / 2 + 12, from.y + from.height / 2, { steps: 3 });
-  await page.mouse.move(to.x + to.width / 2, to.y + to.height / 2, { steps: 18 }); await page.mouse.up();
+const longProposal = {
+  ...proposal,
+  summary: { ...proposal.summary, aligned: 16, suggested: 16 },
+  items: [
+    ...proposal.items,
+    ...Array.from({ length: 12 }, (_, index) => ({
+      ...proposal.items[index % proposal.items.length],
+      id: `review-only-${index + 1}`,
+      title: `Review-only candidate ${index + 1}`,
+      confidence: "medium",
+      confidenceScore: 72,
+    })),
+  ],
+};
+
+async function installFixtures(page: Page, candidateProposal = longProposal) {
+  await page.route("**/api/instrument/project", (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(payload) }));
+  await page.route("**/api/scopes/visual-jsa/proposal", (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ proposal: candidateProposal, stale: false }) }));
+}
+
+function trackProposalRequests(context: BrowserContext, requests: string[]) {
+  context.on("request", (request) => {
+    const pathname = new URL(request.url()).pathname;
+    if (pathname.includes("/proposal")) requests.push(`${request.method()} ${pathname}`);
+  });
 }
 
 async function main() {
   const browser = await chromium.launch({ headless: true });
-  const context = await browser.newContext({ viewport: { width: 1728, height: 1117 }, colorScheme: "dark" });
+  const requests: string[] = [];
+  const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, colorScheme: "dark" });
+  trackProposalRequests(context, requests);
   const page = await context.newPage();
-  await page.route("**/api/instrument/project", (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(payload) }));
-  await page.route("**/api/scopes/visual-jsa/proposal", (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ proposal, stale: false }) }));
+  await installFixtures(page);
   await page.goto(`${baseURL}/scope?project=visual-jsa`);
   await page.locator('[data-shoot="reconciliation-workspace"]').waitFor();
   await page.waitForTimeout(700);
-  await page.screenshot({ path: resolve(deliverableOut, "scope-v2-overview-1728x1117.png") });
+  await page.screenshot({ path: resolve(deliverableOut, "scope-v2-candidate-path-1440x900.png") });
 
   assert.equal(await page.getByText("Forecast not ready", { exact: true }).count(), 1);
   assert.equal(await page.getByText("Forecast not ready", { exact: true }).isVisible(), true);
   assert.equal(await page.getByText("Floor", { exact: true }).count(), 0, "noncanonical floor must not render");
   assert.equal(await page.locator('[data-shoot="unmapped-execution-tray"]').count(), 0, "raw horizontal ticket tray is removed");
-  assert.equal(await page.locator('[data-shoot="proposal-card"]').count(), 4);
+  assert.equal(await page.locator('[data-shoot="proposal-card"]').count(), 16);
   assert.match(await page.locator('[data-shoot="active-release-boundary"]').innerText(), /KIT JSA v1.*governed Scope project/i);
+  const candidateRegion = page.locator('[data-shoot="candidate-scroll-region"]');
+  const candidateGeometry = await candidateRegion.evaluate((region) => {
+    const row = region.querySelector<HTMLElement>('[data-shoot="proposal-card"]');
+    return { clientHeight: region.clientHeight, scrollHeight: region.scrollHeight, rowHeight: row?.getBoundingClientRect().height ?? 0 };
+  });
+  assert.ok(candidateGeometry.clientHeight >= candidateGeometry.rowHeight, `at least one complete candidate must be visible: ${JSON.stringify(candidateGeometry)}`);
+  assert.ok(candidateGeometry.scrollHeight > candidateGeometry.clientHeight, "candidate list should expose its own pointer-scroll range");
+  await candidateRegion.hover();
+  await page.mouse.wheel(0, 380);
+  await page.waitForTimeout(150);
+  const pointerScrollTop = await candidateRegion.evaluate((region) => region.scrollTop);
+  assert.ok(pointerScrollTop > 0, "pointer scrolling should move the candidate list");
+  await candidateRegion.evaluate((region) => { region.scrollTop = 0; });
+  await candidateRegion.focus();
+  await page.keyboard.press("Tab");
+  assert.equal(await page.locator('[data-proposal-item="proposal-notifications"]').evaluate((element) => document.activeElement === element), true, "candidate is keyboard reachable after the named list region");
+  assert.equal(await page.locator('[data-shoot="stage-aligned"]').innerText(), "Stage 4 aligned");
+  assert.equal(await page.locator('[data-shoot="stage-aligned"]').isEnabled(), true);
 
   await page.locator('[data-capability="capability:crew"]').click();
   await page.locator('[data-shoot="feature-detail"]').waitFor();
@@ -107,20 +145,77 @@ async function main() {
   await page.screenshot({ path: resolve(deliverableOut, "scope-v2-proposal-evidence-focus.png") });
   await page.locator('[data-shoot="stage-focused-proposal"]').click();
   await page.locator('[data-shoot="reconciliation-focus"]').getByRole("button", { name: "Close" }).click();
-  await page.screenshot({ path: resolve(deliverableOut, "scope-v2-scenario-staged.png") });
+  assert.match(await page.locator('[data-shoot="scenario-strip"]').innerText(), /Scenario[\s\S]*1 intelligence proposal staged[\s\S]*Back to Reality/i);
+  assert.match(await page.locator('[data-shoot="reconciliation-scenario-feedback"]').innerText(), /Scenario[\s\S]*1 reviewed change staged[\s\S]*Reality is unchanged/i);
+  assert.match(await page.locator('[data-proposal-item="proposal-notifications"]').innerText(), /staged/i);
+  await page.screenshot({ path: resolve(deliverableOut, "scope-v2-visible-staging-result-1440x900.png") });
 
-  await drag(page, page.locator('[data-shoot="governed-outside-capability"]', { hasText: "PDF / Docufy output" }), page.locator('[data-shoot="capability"]', { hasText: "Crew acknowledgment" }));
-  await page.locator('[data-shoot="scope-impact-preview"]').waitFor();
-  await page.waitForTimeout(500);
-  await page.screenshot({ path: resolve(deliverableOut, "scope-v2-nested-drop-preview.png") });
-  await page.getByRole("button", { name: "Keep hypothetical" }).click();
+  await page.locator('[data-proposal-item="proposal-notifications"]').click();
+  await page.locator('[data-shoot="stage-focused-proposal"]').getByText("Unstage change", { exact: true }).click();
+  await page.locator('[data-shoot="reconciliation-focus"]').getByRole("button", { name: "Close" }).click();
+  assert.match(await page.locator('[data-shoot="scenario-strip"]').innerText(), /Reality/);
+  assert.equal(await page.locator('[data-shoot="reconciliation-scenario-feedback"]').count(), 0);
 
-  await page.setViewportSize({ width: 1440, height: 900 });
-  await page.screenshot({ path: resolve(deliverableOut, "scope-v2-1440x900.png") });
+  await page.locator('[data-shoot="stage-aligned"]').click();
+  assert.match(await page.locator('[data-shoot="reconciliation-scenario-feedback"]').innerText(), /Scenario[\s\S]*4 reviewed changes staged[\s\S]*Reality is unchanged/i);
+  assert.equal(await page.locator('[data-shoot="stage-aligned"]').innerText(), "Stage 0 aligned");
+  assert.equal(await page.locator('[data-shoot="stage-aligned"]').isDisabled(), true);
+  assert.match(await page.locator('[data-shoot="bulk-stage-explanation"]').innerText(), /All 4 eligible aligned candidates are already staged/i);
+  await page.locator('[data-shoot="discard"]').click();
+  assert.match(await page.locator('[data-shoot="scenario-strip"]').innerText(), /Reality/);
+  assert.equal(await page.locator('[data-shoot="reconciliation-scenario-feedback"]').count(), 0);
+
+  await page.locator('[data-shoot="stage-aligned"]').click();
+  await page.reload();
+  await page.locator('[data-shoot="reconciliation-workspace"]').waitFor();
+  assert.match(await page.locator('[data-shoot="scenario-strip"]').innerText(), /Reality/);
+  assert.equal(await page.locator('[data-shoot="reconciliation-scenario-feedback"]').count(), 0, "reload returns to persisted Reality; local Scenario is not persisted");
+
+  const isolatedContext = await browser.newContext({ viewport: { width: 1440, height: 900 }, colorScheme: "dark" });
+  trackProposalRequests(isolatedContext, requests);
+  const isolatedPage = await isolatedContext.newPage();
+  await installFixtures(isolatedPage);
+  await isolatedPage.goto(`${baseURL}/scope?project=visual-jsa`);
+  await isolatedPage.locator('[data-shoot="reconciliation-workspace"]').waitFor();
+  assert.match(await isolatedPage.locator('[data-shoot="scenario-strip"]').innerText(), /Reality/);
+  assert.equal(await isolatedPage.locator('[data-shoot="reconciliation-scenario-feedback"]').count(), 0, "an independent browser never sees another browser's local Scenario");
+  await isolatedContext.close();
+
+  const zeroContext = await browser.newContext({ viewport: { width: 1440, height: 900 }, colorScheme: "dark" });
+  trackProposalRequests(zeroContext, requests);
+  const zeroPage = await zeroContext.newPage();
+  const zeroEligibleProposal = { ...longProposal, items: longProposal.items.map((item) => ({ ...item, confidence: "medium" })) };
+  await installFixtures(zeroPage, zeroEligibleProposal);
+  await zeroPage.goto(`${baseURL}/scope?project=visual-jsa`);
+  await zeroPage.locator('[data-shoot="reconciliation-workspace"]').waitFor();
+  assert.equal(await zeroPage.locator('[data-shoot="stage-aligned"]').innerText(), "Stage 0 aligned");
+  assert.equal(await zeroPage.locator('[data-shoot="stage-aligned"]').isDisabled(), true);
+  assert.match(await zeroPage.locator('[data-shoot="bulk-stage-explanation"]').innerText(), /No candidates qualify.*aligned, high-confidence, actionable, uncommitted/i);
+  await zeroContext.close();
+
   const overflow = await page.evaluate(() => ({ body: document.body.scrollWidth - innerWidth, root: document.documentElement.scrollWidth - innerWidth }));
   assert.ok(overflow.body <= 1 && overflow.root <= 1, `page should not overflow horizontally: ${JSON.stringify(overflow)}`);
 
-  const result = { ok: true, proposalCards: 4, overviewMode: true, capabilityFocus: true, proposalEvidenceFocus: true, activeReleaseBoundary: "KIT JSA v1/governed_scope_project", releaseEvidenceInterpretationVisible: true, scenarioStaged: true, nestedChildDropOpenedPreview: true, selectedStatePersistent: true, truthBoundary: "forecast-not-ready/no-floor", horizontalOverflow: overflow };
+  const safari = await webkit.launch({ headless: true });
+  const safariContext = await safari.newContext({ viewport: { width: 1728, height: 1117 }, colorScheme: "dark" });
+  trackProposalRequests(safariContext, requests);
+  const safariPage = await safariContext.newPage();
+  await installFixtures(safariPage);
+  await safariPage.goto(`${baseURL}/scope?project=visual-jsa`);
+  await safariPage.locator('[data-shoot="reconciliation-workspace"]').waitFor();
+  await safariPage.locator('[data-proposal-item="proposal-notifications"]').waitFor();
+  const safariCandidateVisible = await safariPage.locator('[data-proposal-item="proposal-notifications"]').isVisible();
+  assert.equal(safariCandidateVisible, true);
+  await safariPage.locator('[data-shoot="candidate-scroll-region"]').hover();
+  await safariPage.mouse.wheel(0, 320);
+  await safariPage.waitForTimeout(150);
+  assert.ok(await safariPage.locator('[data-shoot="candidate-scroll-region"]').evaluate((region) => region.scrollTop) > 0, "Safari-like pointer scrolling should move the candidate list");
+  await safariPage.screenshot({ path: resolve(deliverableOut, "scope-v2-safari-wide-1728x1117.png") });
+  await safari.close();
+
+  const proposalCommitRequests = requests.filter((request) => request.endsWith("/proposal/commit"));
+  assert.deepEqual(proposalCommitRequests, [], "verification must never commit a proposal");
+  const result = { ok: true, proposalCards: 16, overviewMode: true, capabilityFocus: true, proposalEvidenceFocus: true, activeReleaseBoundary: "KIT JSA v1/governed_scope_project", releaseEvidenceInterpretationVisible: true, candidateGeometry, pointerScrollTop, keyboardCandidateAccess: true, manualStageAndUnstage: true, bulkEligibleCount: 4, zeroEligibleDisabledWithReason: true, scenarioFeedback: true, backToReality: true, reloadRealityPersistence: true, independentBrowserIsolation: true, safariLikeViewport: "1728x1117", safariCandidateVisible, truthBoundary: "forecast-not-ready/no-floor", horizontalOverflow: overflow, proposalCommitRequests: proposalCommitRequests.length };
   writeFileSync(resolve(repoOut, "browser-proof.json"), JSON.stringify(result, null, 2));
   console.log(JSON.stringify(result, null, 2));
   await browser.close();

@@ -1,17 +1,31 @@
 {
   "ok": true,
-  "proposalCards": 4,
+  "proposalCards": 16,
   "overviewMode": true,
   "capabilityFocus": true,
   "proposalEvidenceFocus": true,
   "activeReleaseBoundary": "KIT JSA v1/governed_scope_project",
   "releaseEvidenceInterpretationVisible": true,
-  "scenarioStaged": true,
-  "nestedChildDropOpenedPreview": true,
-  "selectedStatePersistent": true,
+  "candidateGeometry": {
+    "clientHeight": 157,
+    "scrollHeight": 2038,
+    "rowHeight": 114.3125
+  },
+  "pointerScrollTop": 380,
+  "keyboardCandidateAccess": true,
+  "manualStageAndUnstage": true,
+  "bulkEligibleCount": 4,
+  "zeroEligibleDisabledWithReason": true,
+  "scenarioFeedback": true,
+  "backToReality": true,
+  "reloadRealityPersistence": true,
+  "independentBrowserIsolation": true,
+  "safariLikeViewport": "1728x1117",
+  "safariCandidateVisible": true,
   "truthBoundary": "forecast-not-ready/no-floor",
   "horizontalOverflow": {
     "body": 0,
     "root": 0
-  }
+  },
+  "proposalCommitRequests": 0
 }
