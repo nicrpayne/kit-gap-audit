@@ -10,6 +10,9 @@ export interface ScopeRow {
   projectNames: string[];
   labelFilter: string | null;
   dependsOnScopeIds: string[];
+  executionState: string;
+  executionDetail: string | null;
+  realityRevision: number;
 }
 
 interface LinearTeam {
@@ -306,11 +309,13 @@ function EditScopeRow({
           projectNames: value.projectNames,
           labelFilter: value.labelFilter || null,
           dependsOnScopeIds: value.dependsOnScopeIds,
+          expectedRealityRevision: scope.realityRevision,
+          idempotencyKey: `scope-owner-binding:${scope.id}:${scope.realityRevision}`,
         }),
       });
       const body = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(body.error ?? "Couldn't save that.");
-      onSaved(body.scope);
+      onSaved({ ...body.scope, realityRevision: body.derived?.realityRevision ?? scope.realityRevision });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Couldn't save that.");
     } finally {
@@ -320,7 +325,7 @@ function EditScopeRow({
 
   return (
     <tr className="border-b border-[var(--color-line)] last:border-0 bg-[var(--color-accent-soft)]/30">
-      <td colSpan={6} className="px-4 py-4">
+      <td colSpan={7} className="px-4 py-4">
         <ScopeFormFields
           teams={teams}
           teamsError={teamsError}
@@ -359,6 +364,8 @@ export default function ScopesManager({ initialScopes }: { initialScopes: ScopeR
   const [error, setError] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [archive, setArchive] = useState<{ scope: ScopeRow; confirmName: string; reason: string } | null>(null);
+  const [archiving, setArchiving] = useState(false);
 
   const { teams, teamsError, teamsLoading } = useLinearTeams();
 
@@ -374,7 +381,7 @@ export default function ScopesManager({ initialScopes }: { initialScopes: ScopeR
       });
       const body = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(body.error ?? "Failed to create scope.");
-      let scope: ScopeRow = body.scope;
+      let scope: ScopeRow = { ...body.scope, realityRevision: 0 };
       if (form.dependsOnScopeIds.length > 0) {
         const patchRes = await fetch(`/api/scopes/${scope.id}`, {
           method: "PATCH",
@@ -383,7 +390,7 @@ export default function ScopesManager({ initialScopes }: { initialScopes: ScopeR
         });
         const patchBody = await patchRes.json().catch(() => ({}));
         if (!patchRes.ok) throw new Error(patchBody.error ?? "Scope created, but couldn't set its dependencies.");
-        scope = patchBody.scope;
+        scope = { ...patchBody.scope, realityRevision: patchBody.derived?.realityRevision ?? 0 };
       }
       setScopes((prev) => [...prev, scope]);
       setForm(EMPTY_FORM);
@@ -395,15 +402,25 @@ export default function ScopesManager({ initialScopes }: { initialScopes: ScopeR
     }
   }
 
-  async function onDelete(id: string) {
+  async function onArchive() {
+    if (!archive) return;
+    setArchiving(true);
     setDeleteError(null);
-    const res = await fetch(`/api/scopes/${id}`, { method: "DELETE" });
+    const res = await fetch(`/api/scopes/${archive.scope.id}/archive`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ confirmName: archive.confirmName, reason: archive.reason, expectedRealityRevision: archive.scope.realityRevision }),
+    });
     if (!res.ok) {
       const body = await res.json().catch(() => ({}));
-      setDeleteError(body.error ?? "Couldn't remove that scope.");
+      setDeleteError(body.error ?? "Couldn't archive that project.");
+      setArchiving(false);
       return;
     }
-    setScopes((prev) => prev.filter((s) => s.id !== id));
+    const body = await res.json();
+    setScopes((prev) => prev.map((scope) => scope.id === archive.scope.id ? { ...body.scope, realityRevision: body.derived?.realityRevision ?? scope.realityRevision } : scope));
+    setArchive(null);
+    setArchiving(false);
     router.refresh();
   }
 
@@ -423,13 +440,14 @@ export default function ScopesManager({ initialScopes }: { initialScopes: ScopeR
               <th className="px-4 py-3 font-medium">Project filter</th>
               <th className="px-4 py-3 font-medium">Label filter</th>
               <th className="px-4 py-3 font-medium">Depends on</th>
+              <th className="px-4 py-3 font-medium">Execution</th>
               <th className="px-4 py-3 font-medium" />
             </tr>
           </thead>
           <tbody>
             {scopes.length === 0 && (
               <tr>
-                <td colSpan={6} className="px-4 py-6 text-center text-[var(--color-ink-soft)]">
+                <td colSpan={7} className="px-4 py-6 text-center text-[var(--color-ink-soft)]">
                   No scopes yet — add one below.
                 </td>
               </tr>
@@ -461,6 +479,7 @@ export default function ScopesManager({ initialScopes }: { initialScopes: ScopeR
                     {scope.labelFilter || <span className="italic">none</span>}
                   </td>
                   <td className="px-4 py-3 text-[var(--color-ink-soft)]">{scopeNames(scope.dependsOnScopeIds)}</td>
+                  <td className="px-4 py-3 text-[var(--color-ink-soft)]"><span className={scope.executionState === "configured" ? "text-[var(--i-mint)]" : "text-[var(--i-amber)]"}>{scope.executionState.replaceAll("_", " ")}</span><span className="mt-1 block text-[10px]">Reality r{scope.realityRevision}</span></td>
                   <td className="px-4 py-3 text-right whitespace-nowrap">
                     <button
                       onClick={() => setEditingId(scope.id)}
@@ -469,10 +488,10 @@ export default function ScopesManager({ initialScopes }: { initialScopes: ScopeR
                       Edit
                     </button>
                     <button
-                      onClick={() => onDelete(scope.id)}
+                      onClick={() => setArchive({ scope, confirmName: "", reason: "Staging acceptance lifecycle complete" })}
                       className="text-[var(--color-danger)] hover:underline text-xs"
                     >
-                      Remove
+                      Archive
                     </button>
                   </td>
                 </tr>
@@ -486,6 +505,16 @@ export default function ScopesManager({ initialScopes }: { initialScopes: ScopeR
           </div>
         )}
       </div>
+
+      {archive && <section className="rounded-xl border border-[var(--color-danger)] bg-[var(--color-card)] p-5" aria-labelledby="archive-title">
+        <h2 id="archive-title" className="font-display text-lg">Archive {archive.scope.name}</h2>
+        <p className="mt-2 text-sm text-[var(--color-ink-soft)]">This detaches live Linear ownership, staffing, and dependencies. Immutable activation, knowledge, audit, forecast, and report history remains available. Type the exact project name to confirm.</p>
+        <div className="mt-4 grid grid-cols-2 gap-3">
+          <input aria-label="Exact project name" value={archive.confirmName} onChange={(event) => setArchive({ ...archive, confirmName: event.target.value })} placeholder={archive.scope.name} className={inputClass} />
+          <input aria-label="Archive reason" value={archive.reason} onChange={(event) => setArchive({ ...archive, reason: event.target.value })} className={inputClass} />
+        </div>
+        <div className="mt-4 flex gap-2"><button type="button" onClick={() => void onArchive()} disabled={archiving || archive.confirmName !== archive.scope.name} className="rounded-md bg-[var(--color-danger)] px-4 py-2 text-sm text-white disabled:opacity-40">{archiving ? "Archiving…" : "Archive and retain history"}</button><button type="button" onClick={() => setArchive(null)} disabled={archiving} className="rounded-md border border-[var(--color-line)] px-4 py-2 text-sm">Cancel</button></div>
+      </section>}
 
       <form
         onSubmit={onCreate}

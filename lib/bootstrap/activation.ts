@@ -5,6 +5,7 @@ import { hashProjectContextPackage } from "@/lib/context/hash";
 import type { JsonValue, ProjectContextPackage } from "@/lib/context/package";
 import type { PolicyEvaluatedCompleteness } from "@/lib/context/sourcePolicy";
 import { validateProjectContextPackage } from "@/lib/context/validate";
+import { LinearBoundaryValidationError, validateLinearBoundary } from "@/lib/linear";
 import { bootstrapHash } from "./hash";
 import type { ProjectBootstrapPackageV1 } from "./contracts";
 
@@ -171,6 +172,15 @@ export function buildActivationManifest(bootstrap: BootstrapForManifest, request
   const execution = executionFor(request);
   if (execution.state === "configured" && !execution.teamKey) {
     blockers.push({ id: "execution-team-key", summary: "Configured execution requires an explicit team key.", acknowledged: false });
+  }
+  if (execution.state === "configured" && execution.projectNames.length !== 1) {
+    blockers.push({
+      id: "execution-project-boundary",
+      summary: execution.projectNames.length === 0
+        ? "Configured execution requires one explicit active Linear project; an empty boundary would include the whole team."
+        : "Configured execution requires exactly one active Linear project.",
+      acknowledged: false,
+    });
   }
   const capabilities = canonical.filter((item) => item.kind === "capability");
   return {
@@ -610,6 +620,32 @@ async function readCompletedActivation(bootstrapId: string, expectedRevision: nu
  * simultaneous clicks converge on the one committed activation result.
  */
 export async function activateProjectBootstrap(bootstrapId: string, request: ActivationRequest) {
+  const completed = await readCompletedActivation(bootstrapId, request.expectedRevision);
+  if (completed) return completed;
+
+  if (request.execution?.state !== "configured") {
+    throw new ActivationValidationError(
+      "Configure and validate one Linear team/project boundary before activation. Signal will not activate a delivery project with an unresolved execution source."
+    );
+  }
+  try {
+    const boundary = await validateLinearBoundary(request.execution.teamKey, request.execution.projectNames);
+    request = {
+      ...request,
+      execution: {
+        ...request.execution,
+        state: "configured",
+        teamKey: boundary.teamKey,
+        projectNames: boundary.projectNames,
+        detail: boundary.detail,
+      },
+    };
+  } catch (error) {
+    if (error instanceof LinearBoundaryValidationError) {
+      throw new ActivationValidationError(error.message);
+    }
+    throw error;
+  }
   for (let attempt = 0; attempt < 3; attempt += 1) {
     try {
       return await runActivationTransaction(bootstrapId, request);

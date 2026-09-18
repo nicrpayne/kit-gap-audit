@@ -108,7 +108,7 @@ export async function loadDecisionBriefOwnerInputs(
   if (!forecast.forecastCoverage.canonicalForecast) {
     throw new ForecastCoverageIncompleteError(forecast.forecastCoverage);
   }
-  const [previousReport, audit, decisions, dependencyScopes, people, allocations, settings, reconciliation, timelineEvents, contextSnapshot, kitConstruct] = await Promise.all([
+  const [previousReport, audit, decisions, dependencyScopes, people, allocations, settings, reconciliation, timelineEvents, contextSnapshot, kitConstruct, derivedState] = await Promise.all([
     prisma.report.findFirst({
       where: { scopeId: scope.id },
       orderBy: { generatedAt: "desc" },
@@ -141,6 +141,7 @@ export async function loadDecisionBriefOwnerInputs(
       ? prisma.contextSnapshot.findFirst({ where: { id: options.contextSnapshotId, scopeId: scope.id } })
       : prisma.contextSnapshot.findFirst({ where: { scopeId: scope.id }, orderBy: { createdAt: "desc" } }),
     prisma.scope.findFirst({ where: { name: { contains: "KIT Construct", mode: "insensitive" } }, select: { id: true } }),
+    prisma.projectDerivedState.findUnique({ where: { scopeId: scope.id }, select: { realityRevision: true } }),
   ]);
   const changes = await computeChangesSince(scope, forecast, previousReport?.generatedAt ?? null);
   const contextHealth = completeness(contextSnapshot?.completenessSummary);
@@ -168,7 +169,7 @@ export async function loadDecisionBriefOwnerInputs(
     generatedAt,
     mode: options?.mode ?? "reality",
     scenarioId: options?.scenarioId ?? null,
-    project: { id: scope.id, name: scope.name, targetDate: scope.targetDate ? toDateOnly(scope.targetDate) : null, asOf: generatedAt },
+    project: { id: scope.id, name: scope.name, targetDate: scope.targetDate ? toDateOnly(scope.targetDate) : null, asOf: generatedAt, realityRevision: derivedState?.realityRevision ?? 0 },
     context: {
       snapshotId: contextSnapshot?.id ?? null,
       packageId: contextSnapshot?.packageId ?? null,

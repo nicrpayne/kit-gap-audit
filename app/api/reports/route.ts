@@ -4,6 +4,7 @@ import { generateReport } from "@/lib/reports/generate";
 import { ForecastUnavailableError } from "@/lib/forecast/compute";
 import { ForecastCoverageIncompleteError } from "@/lib/forecast/coverage";
 import { CapacityReconciliationIncompleteError } from "@/lib/capacity/contract";
+import { ScenarioReportValidationError } from "@/lib/reports/scenario";
 
 export async function GET(req: NextRequest) {
   const scopeId = req.nextUrl.searchParams.get("scopeId");
@@ -31,10 +32,8 @@ export async function POST(req: NextRequest) {
   if (body.mode && body.mode !== "reality" && body.mode !== "scenario") {
     return NextResponse.json({ error: "mode must be reality or scenario" }, { status: 400 });
   }
-  if (body.mode === "scenario") {
-    return NextResponse.json({
-      error: "Scenario Decision Brief generation is UNAVAILABLE until a canonical server-owned scenario read model provides the complete window and provenance. Reports will not relabel live Reality as Scenario.",
-    }, { status: 409 });
+  if (body.mode === "scenario" && (!body.scenarioId || !body.scenarioSnapshot)) {
+    return NextResponse.json({ error: "scenarioId and a complete scenarioSnapshot are required for a Scenario report." }, { status: 400 });
   }
 
   const scope = await prisma.scope.findUnique({ where: { id: body.scopeId } });
@@ -69,6 +68,9 @@ export async function POST(req: NextRequest) {
         capacityContract: error.contract,
         error: "Report not ready: named capacity is not reconciled to Forecast capacity. Signal will not publish a delivery brief from an unowned staffing assumption.",
       }, { status: 409 });
+    }
+    if (error instanceof ScenarioReportValidationError) {
+      return NextResponse.json({ unavailable: true, code: "SCENARIO_STALE_OR_INVALID", error: error.message }, { status: error.status });
     }
     return NextResponse.json(
       { error: `Decision Brief generation failed: ${error instanceof Error ? error.message : "unknown error"}` },

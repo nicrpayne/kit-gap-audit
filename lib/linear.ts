@@ -205,6 +205,65 @@ export interface LinearProjectSummary {
   name: string;
 }
 
+export interface ValidatedLinearBoundary {
+  teamKey: string;
+  projectNames: [string];
+  projectId: string;
+  detail: string;
+}
+
+export class LinearBoundaryValidationError extends Error {
+  readonly status = 409;
+}
+
+export function resolveLinearBoundary(
+  teamKeyInput: string | undefined,
+  projectNamesInput: string[] | undefined,
+  projects: LinearProjectSummary[]
+): ValidatedLinearBoundary {
+  const teamKey = teamKeyInput?.trim() ?? "";
+  const projectNames = [...new Set((projectNamesInput ?? []).map((name) => name.trim()).filter(Boolean))];
+  if (!teamKey) throw new LinearBoundaryValidationError("Choose a Linear team before saving execution setup.");
+  if (projectNames.length !== 1) {
+    throw new LinearBoundaryValidationError(projectNames.length === 0
+      ? "Choose one active Linear project. Signal will not silently expand an empty boundary to the whole team."
+      : "Choose exactly one active Linear project. Represent shared work with a separate dependent Scope.");
+  }
+  const requested = projectNames[0];
+  const exact = projects.filter((project) => project.name === requested);
+  if (exact.length !== 1) {
+    const caseInsensitive = projects.filter((project) => project.name.toLocaleLowerCase() === requested.toLocaleLowerCase());
+    if (caseInsensitive.length === 1) throw new LinearBoundaryValidationError(`Linear project names are exact. Select “${caseInsensitive[0].name}” and retry.`);
+    throw new LinearBoundaryValidationError(`“${requested}” is not one current project on Linear team ${teamKey}. Refresh the project list and choose an active project.`);
+  }
+  return { teamKey, projectNames: [exact[0].name], projectId: exact[0].id, detail: `Validated Linear boundary: team ${teamKey} · project ${exact[0].name} (${exact[0].id}).` };
+}
+
+/**
+ * Resolve the execution owner boundary without widening it. Signal requires
+ * one explicit, currently visible Linear project: an empty list means "all
+ * projects" to the issue query and is therefore never a valid owner binding.
+ */
+export async function validateLinearBoundary(
+  teamKeyInput: string | undefined,
+  projectNamesInput: string[] | undefined
+): Promise<ValidatedLinearBoundary> {
+  const teamKey = teamKeyInput?.trim() ?? "";
+  const projectNames = [...new Set((projectNamesInput ?? []).map((name) => name.trim()).filter(Boolean))];
+  // Validate local shape before making a provider call.
+  if (!teamKey || projectNames.length !== 1) return resolveLinearBoundary(teamKeyInput, projectNamesInput, []);
+
+  let projects: LinearProjectSummary[];
+  try {
+    projects = await listTeamProjects(teamKey);
+  } catch (error) {
+    throw new LinearBoundaryValidationError(
+      `Signal could not validate Linear team ${teamKey}: ${error instanceof Error ? error.message : "provider unavailable"}. Retry when Linear is available.`
+    );
+  }
+  return resolveLinearBoundary(teamKey, projectNames, projects);
+}
+
 // Powers the Scope form's dropdowns so team key / project name can't be
 // mistyped -- both are exact-match filters in getScopedIssues above.
 export async function listTeams(): Promise<LinearTeamSummary[]> {

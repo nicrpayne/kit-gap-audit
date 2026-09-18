@@ -51,7 +51,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   const terminalStatus = pkg.discovery.partial ? "partial" : "complete";
   await prisma.$transaction([
     prisma.bootstrapScanJob.update({ where: { id }, data: { status: terminalStatus, stage: terminalStatus, packageId: pkg.packageId, completedAt: now, lastHeartbeatAt: now, progress: { message: "Bootstrap Review ready" } } }),
-    prisma.bootstrapScanRun.update({ where: { id: job.scanRunId }, data: { status: terminalStatus, stage: terminalStatus } }),
+    prisma.bootstrapScanRun.update({ where: { id: job.scanRunId }, data: { status: terminalStatus, stage: terminalStatus, completedAt: now } }),
     ...(job.claimedBy ? [prisma.bootstrapCompanion.update({ where: { id: job.claimedBy }, data: { state: "online", lastSeenAt: now, lastJobId: id } })] : []),
   ]);
   return NextResponse.json({ ...result.body, jobId: id }, { status: result.status });

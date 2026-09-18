@@ -99,6 +99,7 @@ export interface DecisionBriefOwnerInputs {
     name: string;
     targetDate: string | null;
     asOf: string;
+    realityRevision?: number;
   };
   context: {
     snapshotId: string | null;
@@ -171,6 +172,7 @@ export interface DecisionBriefV1 {
     generatedAt: string;
     mode: BriefMode;
     scenarioId: string | null;
+    realityRevision: number;
     sourceSnapshots: SourceStamp[];
   };
   headline: {
@@ -404,6 +406,7 @@ export function assembleDecisionBrief(input: DecisionBriefOwnerInputs): Decision
       generatedAt: input.generatedAt,
       mode: input.mode,
       scenarioId: input.scenarioId,
+      realityRevision: input.project.realityRevision ?? 0,
       sourceSnapshots: [scopeSource, forecastSource, auditSource, decisionsSource, dependencySource, capacitySource, timelineSource, contextSource, reportHistorySource],
     },
     headline: {

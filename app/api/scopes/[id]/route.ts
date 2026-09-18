@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { parseNotionPageId } from "@/lib/notion";
 import { parseFigmaUrl, figmaRefKey } from "@/lib/figma";
 import { invalidateDerivedReads, recomputeDerivedReads } from "@/lib/audit/derivedRefresh";
+import { LinearBoundaryValidationError, validateLinearBoundary } from "@/lib/linear";
 
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -18,7 +19,12 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     notionPageUrls?: string[]; // page URLs or raw IDs; normalized server-side
     figmaUrls?: string[]; // design URLs with a node-id selected; normalized server-side
     dependsOnScopeIds?: string[]; // other Scope ids this Scope's forecast can't finish ahead of
+    expectedRealityRevision?: number;
+    idempotencyKey?: string;
   };
+
+  const current = await prisma.scope.findUnique({ where: { id }, include: { derivedState: true } });
+  if (!current) return NextResponse.json({ error: "Scope not found" }, { status: 404 });
 
   let notionPageIds: string[] | undefined;
   if (body.notionPageUrls !== undefined) {
@@ -128,14 +134,72 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     body.dependsOnScopeIds = deduped;
   }
 
+  const requestedTeamKey = body.teamKey?.trim() ?? current.teamKey;
+  const requestedProjectNames = body.projectNames !== undefined
+    ? [...new Set(body.projectNames.map((name) => name.trim()).filter(Boolean))]
+    : current.projectNames;
+  const requestedLabelFilter = body.labelFilter !== undefined ? body.labelFilter?.trim() || null : current.labelFilter;
+  const boundaryChanged =
+    requestedTeamKey !== current.teamKey ||
+    requestedLabelFilter !== current.labelFilter ||
+    requestedProjectNames.length !== current.projectNames.length ||
+    requestedProjectNames.some((name, index) => name !== current.projectNames[index]) ||
+    current.executionState !== "configured";
+
+  const sameStrings = (left: string[], right: string[]) => left.length === right.length && left.every((value, index) => value === right[index]);
+  const requestedTargetTime = body.targetDate === undefined ? undefined : body.targetDate ? new Date(body.targetDate).getTime() : null;
+  const currentTargetTime = current.targetDate?.getTime() ?? null;
+  const requestedEstimationContext = body.estimationContext === undefined ? undefined : body.estimationContext?.trim() || null;
+  const noRequestedChange =
+    (body.name === undefined || body.name === current.name) &&
+    (body.teamKey === undefined || requestedTeamKey === current.teamKey) &&
+    (body.projectNames === undefined || sameStrings(requestedProjectNames, current.projectNames)) &&
+    (body.labelFilter === undefined || requestedLabelFilter === current.labelFilter) &&
+    (body.targetDate === undefined || requestedTargetTime === currentTargetTime) &&
+    (body.teamCapacity === undefined || (body.teamCapacity && body.teamCapacity > 0 ? body.teamCapacity : null) === current.teamCapacity) &&
+    (body.includeTriage === undefined || body.includeTriage === current.includeTriage) &&
+    (body.estimationContext === undefined || requestedEstimationContext === current.estimationContext) &&
+    (body.dependsOnScopeIds === undefined || sameStrings(body.dependsOnScopeIds, current.dependsOnScopeIds)) &&
+    notionPageIds === undefined && figmaRefs === undefined;
+  if (noRequestedChange && current.executionState === "configured") {
+    const { derivedState, ...scope } = current;
+    return NextResponse.json({ scope, derived: derivedState, reused: true });
+  }
+
+  let validatedBoundary: Awaited<ReturnType<typeof validateLinearBoundary>> | null = null;
+  if (boundaryChanged && (body.teamKey !== undefined || body.projectNames !== undefined || body.labelFilter !== undefined)) {
+    const currentRevision = current.derivedState?.realityRevision ?? 0;
+    if (!Number.isInteger(body.expectedRealityRevision)) {
+      return NextResponse.json({ error: "expectedRealityRevision is required when changing the Linear owner boundary", currentRealityRevision: currentRevision }, { status: 428 });
+    }
+    if (body.expectedRealityRevision !== currentRevision) {
+      return NextResponse.json({ error: `Reality changed: expected revision ${body.expectedRealityRevision}, current ${currentRevision}. Reload before retrying.`, currentRealityRevision: currentRevision }, { status: 409 });
+    }
+    try {
+      validatedBoundary = await validateLinearBoundary(requestedTeamKey, requestedProjectNames);
+    } catch (error) {
+      if (error instanceof LinearBoundaryValidationError) {
+        return NextResponse.json({ error: error.message, recovery: "Refresh Linear teams/projects and choose exactly one current project." }, { status: error.status });
+      }
+      throw error;
+    }
+  }
+
   const scope = await prisma.$transaction(async (tx) => {
+    if (validatedBoundary) {
+      const latest = await tx.projectDerivedState.findUnique({ where: { scopeId: id }, select: { realityRevision: true } });
+      const latestRevision = latest?.realityRevision ?? 0;
+      if (latestRevision !== body.expectedRealityRevision) {
+        throw new Error(`STALE_REALITY:${latestRevision}`);
+      }
+    }
     const updated = await tx.scope.update({
       where: { id },
       data: {
       ...(body.name !== undefined ? { name: body.name } : {}),
-      ...(body.teamKey !== undefined ? { teamKey: body.teamKey } : {}),
+      ...(body.teamKey !== undefined ? { teamKey: validatedBoundary?.teamKey ?? body.teamKey.trim() } : {}),
       ...(body.projectNames !== undefined
-        ? { projectNames: body.projectNames.filter((p) => p.trim()) }
+        ? { projectNames: validatedBoundary?.projectNames ?? requestedProjectNames }
         : {}),
       ...(body.labelFilter !== undefined ? { labelFilter: body.labelFilter || null } : {}),
       ...(body.targetDate !== undefined
@@ -151,11 +215,19 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       ...(notionPageIds !== undefined ? { notionPageIds } : {}),
       ...(figmaRefs !== undefined ? { figmaRefs } : {}),
       ...(body.dependsOnScopeIds !== undefined ? { dependsOnScopeIds: body.dependsOnScopeIds } : {}),
+      ...(validatedBoundary ? { executionState: "configured", executionDetail: validatedBoundary.detail } : {}),
       },
     });
     await invalidateDerivedReads(tx, id, "Scope owner configuration changed");
     return updated;
+  }).catch((error) => {
+    if (error instanceof Error && error.message.startsWith("STALE_REALITY:")) return null;
+    throw error;
   });
+  if (!scope) {
+    const latest = await prisma.projectDerivedState.findUnique({ where: { scopeId: id }, select: { realityRevision: true } });
+    return NextResponse.json({ error: "Reality changed while this edit was being saved. Reload before retrying.", currentRealityRevision: latest?.realityRevision ?? 0 }, { status: 409 });
+  }
   const derived = await recomputeDerivedReads(id);
 
   return NextResponse.json({ scope, derived });

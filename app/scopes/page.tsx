@@ -5,7 +5,11 @@ import SignalSurface from "@/components/instrument/SignalSurface";
 export const dynamic = "force-dynamic";
 
 export default async function ScopesPage() {
-  const scopes = await prisma.scope.findMany({ orderBy: { createdAt: "asc" } });
+  const rows = await prisma.scope.findMany({ include: { derivedState: true }, orderBy: { createdAt: "asc" } });
+  const scopes = rows.map(({ derivedState, ...scope }) => ({
+    ...scope,
+    realityRevision: derivedState?.realityRevision ?? 0,
+  }));
 
   return (
     <SignalSurface

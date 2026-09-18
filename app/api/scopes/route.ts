@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { LinearBoundaryValidationError, validateLinearBoundary } from "@/lib/linear";
 
 export async function GET() {
   const scopes = await prisma.scope.findMany({ orderBy: { createdAt: "asc" } });
@@ -18,6 +19,14 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "name and teamKey are required" }, { status: 400 });
   }
 
+  let boundary;
+  try {
+    boundary = await validateLinearBoundary(body.teamKey, body.projectNames);
+  } catch (error) {
+    if (error instanceof LinearBoundaryValidationError) return NextResponse.json({ error: error.message }, { status: error.status });
+    throw error;
+  }
+
   // Nothing else stopped two Scopes from sharing a name -- the portfolio
   // view renders Scopes keyed by id but LABELED by name, so a duplicate
   // silently produces two indistinguishable rows and nonsensical
@@ -34,9 +43,11 @@ export async function POST(req: NextRequest) {
   const scope = await prisma.scope.create({
     data: {
       name: body.name,
-      teamKey: body.teamKey,
-      projectNames: body.projectNames?.filter((p) => p.trim()) ?? [],
+      teamKey: boundary.teamKey,
+      projectNames: boundary.projectNames,
       labelFilter: body.labelFilter || null,
+      executionState: "configured",
+      executionDetail: boundary.detail,
     },
   });
 

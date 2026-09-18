@@ -17,6 +17,7 @@ import { AUDIENCE_LABELS, PURPOSE_LABELS, buildBriefRecipe, isBriefRecipeV1, typ
 import { renderAudienceBriefPlainText } from "@/lib/reports/audienceBriefRender";
 import { currentnessLabel, sourceCurrentness } from "@/lib/truth/currentness";
 import { formatDateOnly } from "@/lib/time/dateContract";
+import { useProject } from "@/lib/instrument/useProject";
 
 /** The live forecast is a comparison input, not report data. Three states,
     because "we could not resolve it" must be distinguishable from "it
@@ -48,6 +49,7 @@ interface ReportRow {
   recipeVersion: string | null;
   briefRecipe: unknown;
   presentationVersion: string | null;
+  scenarioSnapshot: unknown;
 }
 
 function formatTimestampDate(iso: string): string {
@@ -55,6 +57,7 @@ function formatTimestampDate(iso: string): string {
 }
 
 export default function ReportsPageClient() {
+  const project = useProject();
   const [scopes, setScopes] = useState<ScopeOption[] | null>(null);
   // The URL owns the selection (lib/shell/useProjectParam), so refresh,
   // back/forward and a pasted link all reproduce it.
@@ -76,6 +79,11 @@ export default function ReportsPageClient() {
     () => selected && isBriefRecipeV1(selected.briefRecipe) ? selected.briefRecipe : null,
     [selected]
   );
+  const comparison = useMemo(() => {
+    const reality = reports?.find((report) => report.mode === "reality" && isDecisionBriefV1(report.briefSnapshot)) ?? null;
+    const scenario = reports?.find((report) => report.mode === "scenario" && isDecisionBriefV1(report.briefSnapshot)) ?? null;
+    return reality && scenario ? { reality, scenario, realityBrief: reality.briefSnapshot as DecisionBriefV1, scenarioBrief: scenario.briefSnapshot as DecisionBriefV1 } : null;
+  }, [reports]);
 
   // Momentum for the selected report: comparison is against the report
   // immediately BEFORE it chronologically (`reports` is sorted newest
@@ -199,6 +207,48 @@ export default function ReportsPageClient() {
     }
   }
 
+  async function generateScenario() {
+    if (!scopeId || !project.active) return;
+    const scope = project.data?.scopes.find((candidate) => candidate.scopeId === scopeId);
+    if (!scope) {
+      setError("Scenario owner state is still loading. Retry in a moment.");
+      return;
+    }
+    const supportedLeverCount = project.scenario.excludedItemIds.size + project.scenario.includedItemIds.size + project.scenario.resolvedGateIds.size + Object.keys(project.scenario.estimateOverrideByItemId).length + Object.keys(project.scenario.capacityOverrideByScope).length + (project.scenario.contextSwitchCostPct === null ? 0 : 1);
+    if (supportedLeverCount === 0) {
+      setError("This scenario has no reportable forecast lever. Knowledge-only drafts remain unmodeled until mapped to work or governed effort.");
+      return;
+    }
+    setGenerating(true);
+    setError(null);
+    const scenarioId = `scenario-${scopeId.slice(-6)}-r${scope.realityState.realityRevision}-${Date.now()}`;
+    const scenarioSnapshot = {
+      version: "scenario-report.v1",
+      scenarioId,
+      baseRealityRevision: scope.realityState.realityRevision,
+      excludedItemIds: [...project.scenario.excludedItemIds],
+      includedItemIds: [...project.scenario.includedItemIds],
+      resolvedGateIds: [...project.scenario.resolvedGateIds],
+      estimateOverrideByItemId: project.scenario.estimateOverrideByItemId,
+      capacityOverrideByScope: project.scenario.capacityOverrideByScope,
+      contextSwitchCostPct: project.scenario.contextSwitchCostPct,
+    };
+    try {
+      const response = await fetch("/api/reports", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ scopeId, mode: "scenario", scenarioId, scenarioSnapshot, recipe: buildBriefRecipe(audience, purpose) }),
+      });
+      const body = await response.json();
+      if (!response.ok) throw new Error(body.error ?? "Couldn't generate Scenario report.");
+      await loadReports(scopeId);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Couldn't generate Scenario report.");
+    } finally {
+      setGenerating(false);
+    }
+  }
+
   if (scopes === null) {
     return <div className="text-sm text-[var(--color-ink-soft)]">Loading…</div>;
   }
@@ -238,6 +288,9 @@ export default function ReportsPageClient() {
         >
           {generating ? "Generating…" : "Generate report"}
         </button>
+        <button onClick={() => void generateScenario()} disabled={generating || !scopeId || !project.active || forecastUnavailable || forecastIncomplete} className="rounded-md border border-[var(--i-violet)] px-4 py-2 text-sm text-[var(--i-violet)] disabled:opacity-35">
+          {generating ? "Generating…" : "Generate Scenario report"}
+        </button>
         <select value={audience} onChange={(event) => setAudience(event.target.value as AudienceLens)} className="rounded-md border border-[var(--i-border)] bg-[var(--i-panel)] px-3 py-2 text-xs text-[var(--i-text)]" aria-label="Brief audience">
           {Object.entries(AUDIENCE_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
         </select>
@@ -261,6 +314,13 @@ export default function ReportsPageClient() {
       </div>
 
       {error && <div className="text-sm text-[var(--i-red)] mb-4">{error}</div>}
+
+      {comparison && <section className="report-no-print mb-6 rounded-xl border border-[var(--i-border)] bg-[var(--i-panel)] p-4" aria-label="Reality versus Scenario comparison">
+        <div className="mb-3 flex items-center justify-between"><div><div className="i-label" style={{ color: "var(--i-signal)" }}>Persisted comparison</div><h2 className="mt-1 text-lg font-semibold text-[var(--i-text)]">Reality r{comparison.realityBrief.identity.realityRevision} versus {comparison.scenarioBrief.identity.scenarioId}</h2></div><span className="text-[10px] uppercase tracking-wider text-[var(--i-violet)]">Reality unchanged · Scenario hypothetical</span></div>
+        <div className="grid grid-cols-2 gap-3">
+          {[comparison.realityBrief, comparison.scenarioBrief].map((brief) => <button key={`${brief.identity.mode}-${brief.identity.generatedAt}`} onClick={() => setSelected(brief.identity.mode === "reality" ? comparison.reality : comparison.scenario)} className="rounded-lg border p-4 text-left" style={{ borderColor: brief.identity.mode === "reality" ? "var(--i-mint)" : "var(--i-violet)", background: "var(--i-recess)" }}><div className="text-[9px] font-semibold uppercase tracking-[0.12em]" style={{ color: brief.identity.mode === "reality" ? "var(--i-mint)" : "var(--i-violet)" }}>{brief.identity.mode}</div><div className="mt-2 i-readout text-xl text-[var(--i-text)]">{formatDateOnly(brief.headline.likelyWindow.value.likely, { month: "short", day: "numeric", year: "numeric" })}</div><div className="mt-1 text-xs text-[var(--i-text-soft)]">{formatDateOnly(brief.headline.likelyWindow.value.earliest, { month: "short", day: "numeric" })}–{formatDateOnly(brief.headline.likelyWindow.value.latest, { month: "short", day: "numeric" })} · {brief.headline.confidenceAtTarget.value ?? "—"}% at target</div><p className="mt-3 text-xs leading-relaxed text-[var(--i-text-faint)]">{brief.headline.keyReason.value}</p></button>)}
+        </div>
+      </section>}
 
       <div className="grid grid-cols-[minmax(0,1fr)_18rem] gap-6 items-start reports-layout">
         <div className="border border-[var(--i-border)] rounded-xl bg-[var(--i-panel)] p-6">

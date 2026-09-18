@@ -71,6 +71,14 @@ interface ActivationResult {
   links: { auditWorld: string; scope: string; reports: string };
 }
 
+interface LinearTeam { key: string; name: string }
+interface LinearProject { id: string; name: string }
+type CandidateEditor =
+  | { mode: "edit"; candidate: Candidate; title: string }
+  | { mode: "reject"; candidate: Candidate; reason: string }
+  | { mode: "manual"; kind: string; title: string }
+  | null;
+
 export default function BootstrapWorkspace({ bootstrapId }: { bootstrapId: string }) {
   const params = useSearchParams();
   const [data, setData] = useState<BootstrapRead | null>(null);
@@ -85,6 +93,12 @@ export default function BootstrapWorkspace({ bootstrapId }: { bootstrapId: strin
   const [manifest, setManifest] = useState<ActivationManifestV1 | null>(null);
   const [acknowledged, setAcknowledged] = useState(false);
   const [activationResult, setActivationResult] = useState<ActivationResult | null>(null);
+  const [activationTeamKey, setActivationTeamKey] = useState("");
+  const [activationProjectName, setActivationProjectName] = useState("");
+  const [linearTeams, setLinearTeams] = useState<LinearTeam[]>([]);
+  const [linearProjects, setLinearProjects] = useState<LinearProject[]>([]);
+  const [linearLoading, setLinearLoading] = useState(false);
+  const [editor, setEditor] = useState<CandidateEditor>(null);
 
   const load = useCallback(async () => {
     const response = await fetch(`/api/project-bootstraps/${bootstrapId}`, { cache: "no-store" });
@@ -140,42 +154,90 @@ export default function BootstrapWorkspace({ bootstrapId }: { bootstrapId: strin
 
   async function edit(candidate: Candidate) {
     const current = candidate.reviewedProposal ?? ((candidate.originalProposal as BootstrapProposal).payload ?? {});
-    const title = window.prompt("Reviewed title", String(current.title ?? current.name ?? current.question ?? candidate.title));
-    if (title === null || !title.trim()) return;
-    await updateCandidate(candidate, { reviewedProposal: { ...current, title: title.trim(), operatorEdited: true } });
+    setEditor({ mode: "edit", candidate, title: String(current.title ?? current.name ?? current.question ?? candidate.title) });
   }
 
   async function reject(candidate: Candidate) {
-    const reason = window.prompt("Reason for rejection", candidate.dispositionReason ?? "Wrong project");
-    if (reason === null || !reason.trim()) return;
-    await updateCandidate(candidate, { status: "rejected", reason });
+    setEditor({ mode: "reject", candidate, reason: candidate.dispositionReason ?? "Wrong project" });
   }
 
   async function addManual() {
     const defaultKind = section.kinds[0] === "missing_information" ? "unknown" : section.kinds[0];
-    const title = window.prompt(`Add ${section.label.toLowerCase()} candidate`);
-    if (!title?.trim()) return;
+    setEditor({ mode: "manual", kind: defaultKind, title: "" });
+  }
+
+  async function submitEditor() {
+    if (!editor) return;
+    if (editor.mode === "edit") {
+      if (!editor.title.trim()) return;
+      const current = editor.candidate.reviewedProposal ?? ((editor.candidate.originalProposal as BootstrapProposal).payload ?? {});
+      setEditor(null);
+      await updateCandidate(editor.candidate, { reviewedProposal: { ...current, title: editor.title.trim(), operatorEdited: true } });
+      return;
+    }
+    if (editor.mode === "reject") {
+      if (!editor.reason.trim()) return;
+      setEditor(null);
+      await updateCandidate(editor.candidate, { status: "rejected", reason: editor.reason.trim() });
+      return;
+    }
+    if (!editor.title.trim()) return;
     setBusy("manual");
     try {
       const response = await fetch(`/api/project-bootstraps/${bootstrapId}/candidates`, {
         method: "POST", headers: { "content-type": "application/json" },
-        body: JSON.stringify({ kind: defaultKind, title, payload: { title, operatorAssertion: true } }),
+        body: JSON.stringify({ kind: editor.kind, title: editor.title.trim(), payload: { title: editor.title.trim(), operatorAssertion: true } }),
       });
       const body = await response.json();
       if (!response.ok) throw new Error(body.error ?? "Could not add candidate");
       setSelectedId(body.candidate.id);
+      setEditor(null);
       await load();
     } catch (cause) { setError(cause instanceof Error ? cause.message : "Could not add candidate"); }
     finally { setBusy(null); }
   }
 
+  useEffect(() => {
+    if (surface !== "activate" || linearTeams.length > 0) return;
+    setLinearLoading(true);
+    fetch("/api/linear/teams", { cache: "no-store" })
+      .then(async (response) => {
+        const body = await response.json();
+        if (!response.ok) throw new Error(body.error ?? "Could not load Linear teams");
+        setLinearTeams(body.teams ?? []);
+      })
+      .catch((cause) => setError(cause instanceof Error ? cause.message : "Could not load Linear teams"))
+      .finally(() => setLinearLoading(false));
+  }, [surface, linearTeams.length]);
+
+  useEffect(() => {
+    setActivationProjectName("");
+    setLinearProjects([]);
+    if (!activationTeamKey) return;
+    setLinearLoading(true);
+    fetch(`/api/linear/teams/${encodeURIComponent(activationTeamKey)}/projects`, { cache: "no-store" })
+      .then(async (response) => {
+        const body = await response.json();
+        if (!response.ok) throw new Error(body.error ?? "Could not load Linear projects");
+        setLinearProjects(body.projects ?? []);
+      })
+      .catch((cause) => setError(cause instanceof Error ? cause.message : "Could not load Linear projects"))
+      .finally(() => setLinearLoading(false));
+  }, [activationTeamKey]);
+
   const loadManifest = useCallback(async () => {
     if (!data) return;
-    const response = await fetch(`/api/project-bootstraps/${bootstrapId}/activation-manifest?revision=${data.bootstrap.reviewRevision}`, { cache: "no-store" });
+    const query = new URLSearchParams({ revision: String(data.bootstrap.reviewRevision) });
+    if (activationTeamKey && activationProjectName) {
+      query.set("executionState", "configured");
+      query.set("teamKey", activationTeamKey);
+      query.append("projectName", activationProjectName);
+    }
+    const response = await fetch(`/api/project-bootstraps/${bootstrapId}/activation-manifest?${query}`, { cache: "no-store" });
     const body = await response.json();
     if (!response.ok) throw new Error(body.error ?? "Could not prepare activation manifest");
     setManifest(body.manifest);
-  }, [bootstrapId, data]);
+  }, [activationProjectName, activationTeamKey, bootstrapId, data]);
 
   useEffect(() => {
     if (surface === "activate") loadManifest().catch((cause) => setError(cause instanceof Error ? cause.message : "Could not prepare activation manifest"));
@@ -191,7 +253,7 @@ export default function BootstrapWorkspace({ bootstrapId }: { bootstrapId: strin
           expectedRevision: data.bootstrap.reviewRevision,
           acknowledgeProviderGaps: acknowledged,
           acknowledgedBlockerIds: acknowledged ? manifest.blockers.map((blocker) => blocker.id).filter((id) => id !== "provider-gaps") : [],
-          execution: { state: "not_configured" },
+          execution: { state: "configured", teamKey: activationTeamKey, projectNames: [activationProjectName] },
         }),
       });
       const body = await response.json();
@@ -225,8 +287,9 @@ export default function BootstrapWorkspace({ bootstrapId }: { bootstrapId: strin
         {surface === "identity" ? <IdentityPanel data={data} onScan={rescan} busy={busy === "scan"} />
           : surface === "scan" ? <ScanPanel data={data} scan={latest} pkg={pkg} onReview={() => setSurface("review")} onScan={rescan} busy={busy === "scan"} />
           : surface === "review" ? <ReviewPanel data={data} pkg={pkg} section={section} visible={visible} selected={selected} setSection={setSectionId} setSelected={setSelectedId} busy={busy} update={updateCandidate} edit={edit} reject={reject} addManual={addManual} onRescan={rescan} />
-          : surface === "activate" ? <ManifestPanel manifest={manifest} acknowledged={acknowledged} setAcknowledged={setAcknowledged} activate={activate} busy={busy === "activate"} alreadyActivated={Boolean(data.bootstrap.activation)} />
+          : surface === "activate" ? <ManifestPanel manifest={manifest} acknowledged={acknowledged} setAcknowledged={setAcknowledged} activate={activate} busy={busy === "activate"} alreadyActivated={Boolean(data.bootstrap.activation)} teams={linearTeams} projects={linearProjects} loading={linearLoading} teamKey={activationTeamKey} projectName={activationProjectName} setTeamKey={setActivationTeamKey} setProjectName={setActivationProjectName} />
           : <FirstAuditPanel result={activationResult} activation={data.bootstrap.activation} />}
+        {editor && <CandidateEditorDialog editor={editor} setEditor={setEditor} submit={submitEditor} busy={Boolean(busy)} />}
       </div>
     </InstrumentShell>
   );
@@ -254,9 +317,11 @@ function Lifecycle({ surface, setSurface, reviewReady, activated }: { surface: S
   </div>;
 }
 
-function ManifestPanel({ manifest, acknowledged, setAcknowledged, activate, busy, alreadyActivated }: {
+function ManifestPanel({ manifest, acknowledged, setAcknowledged, activate, busy, alreadyActivated, teams, projects, loading, teamKey, projectName, setTeamKey, setProjectName }: {
   manifest: ActivationManifestV1 | null; acknowledged: boolean; setAcknowledged: (value: boolean) => void;
   activate: () => void; busy: boolean; alreadyActivated: boolean;
+  teams: LinearTeam[]; projects: LinearProject[]; loading: boolean; teamKey: string; projectName: string;
+  setTeamKey: (value: string) => void; setProjectName: (value: string) => void;
 }) {
   if (!manifest) return <main className="flex flex-1 items-center justify-center text-[12px] text-[var(--i-text-faint)]">Preparing activation manifest…</main>;
   const canonical = [
@@ -278,9 +343,28 @@ function ManifestPanel({ manifest, acknowledged, setAcknowledged, activate, busy
         ]} empty="No external review items." />
       </div>
       <section className="rounded-lg border p-4" style={{ background: "var(--i-panel)", borderColor: "var(--i-border)" }}>
+        <div className="i-label" style={{ color: "var(--i-signal)" }}>Linear execution owner</div>
+        <p className="mt-1 text-[10px] text-[var(--i-text-soft)]">Choose one current project. Signal validates the exact team/project pair and never widens an empty selection to the whole team.</p>
+        <div className="mt-3 grid grid-cols-2 gap-3">
+          <label className="text-[9px] uppercase tracking-[0.1em] text-[var(--i-text-faint)]">Team
+            <select value={teamKey} onChange={(event) => setTeamKey(event.target.value)} disabled={loading || alreadyActivated} className="mt-1 block w-full rounded border px-3 py-2 text-[11px] normal-case tracking-normal text-[var(--i-text)]" style={{ background: "var(--i-recess)", borderColor: "var(--i-border)" }}>
+              <option value="">Select a Linear team</option>
+              {teams.map((team) => <option key={team.key} value={team.key}>{team.name} ({team.key})</option>)}
+            </select>
+          </label>
+          <label className="text-[9px] uppercase tracking-[0.1em] text-[var(--i-text-faint)]">Active project / release
+            <select value={projectName} onChange={(event) => setProjectName(event.target.value)} disabled={loading || !teamKey || alreadyActivated} className="mt-1 block w-full rounded border px-3 py-2 text-[11px] normal-case tracking-normal text-[var(--i-text)]" style={{ background: "var(--i-recess)", borderColor: "var(--i-border)" }}>
+              <option value="">{teamKey ? "Select exactly one active project" : "Select a team first"}</option>
+              {projects.map((project) => <option key={project.id} value={project.name}>{project.name}</option>)}
+            </select>
+          </label>
+        </div>
+        {!loading && teamKey && projects.length === 0 && <p className="mt-2 text-[10px] text-[var(--i-red)]">No current projects were returned for this team. Refresh Linear or choose another team; activation is blocked.</p>}
+      </section>
+      <section className="rounded-lg border p-4" style={{ background: "var(--i-panel)", borderColor: "var(--i-border)" }}>
         <div className="grid grid-cols-3 gap-4 text-[10px]"><div><span className="i-label">Execution</span><p className="mt-1 text-[var(--i-text)]">{manifest.execution.state.replaceAll("_", " ")}</p></div><div><span className="i-label">Forecast</span><p className="mt-1 text-[var(--i-amber)]">{manifest.forecast.state} · {manifest.forecast.reason}</p></div><div><span className="i-label">First Audit</span><p className="mt-1 text-[var(--i-text)]">Runs atomically after the frozen snapshot is created.</p></div></div>
         {(manifest.blockers.length > 0 || manifest.willRemainExternal.providerGaps.length > 0) && <label className="mt-4 flex items-start gap-2 text-[10px] text-[var(--i-text-soft)]"><input type="checkbox" checked={acknowledged} onChange={(event) => setAcknowledged(event.target.checked)} /><span>I acknowledge the provider gaps and unresolved ambiguities shown above. Activation does not resolve or certify them.</span></label>}
-        <div className="mt-4 flex justify-end"><button data-shoot="activate-project" onClick={activate} disabled={busy || alreadyActivated || ((manifest.blockers.length > 0 || manifest.willRemainExternal.providerGaps.length > 0) && !acknowledged)} className="signal-control rounded px-5 py-2 text-[10px] font-semibold disabled:opacity-35">{alreadyActivated ? "PROJECT ACTIVATED" : busy ? "ACTIVATING…" : "ACTIVATE PROJECT"}</button></div>
+        <div className="mt-4 flex justify-end"><button data-shoot="activate-project" onClick={activate} disabled={busy || alreadyActivated || !teamKey || !projectName || ((manifest.blockers.length > 0 || manifest.willRemainExternal.providerGaps.length > 0) && !acknowledged)} className="signal-control rounded px-5 py-2 text-[10px] font-semibold disabled:opacity-35">{alreadyActivated ? "PROJECT ACTIVATED" : busy ? "ACTIVATING…" : "ACTIVATE PROJECT"}</button></div>
       </section>
     </div>
   </main>;
@@ -319,6 +403,7 @@ function IdentityPanel({ data, onScan, busy }: { data: BootstrapRead; onScan: ()
 
 function ScanPanel({ data, scan, pkg, onReview, onScan, busy }: { data: BootstrapRead; scan: Scan | null; pkg: ProjectBootstrapPackageV1 | null; onReview: () => void; onScan: () => void; busy: boolean }) {
   const metrics = scan?.metrics ?? {};
+  const terminal = scan?.status === "complete" || scan?.status === "partial";
   const coverage = (scan?.providerCoverage?.length ? scan.providerCoverage : pkg?.coverage) ?? [];
   const pipeline = pkg?.discovery.strategies ?? [
     { id: "identity", state: ["waiting_for_companion", "companion_claimed"].includes(scan?.stage ?? "") ? "partial" : "complete", detail: "Canonical identity and aliases" },
@@ -332,11 +417,11 @@ function ScanPanel({ data, scan, pkg, onReview, onScan, busy }: { data: Bootstra
         <div><div className="i-label" style={{ color: "var(--i-signal)" }}>Knowledge scan · run {scan?.sequence ?? 0}</div><h1 className="mt-1 text-[19px] font-semibold text-[var(--i-text)]">{data.bootstrap.canonicalName}</h1></div>
         <div className="flex gap-2"><button onClick={onScan} disabled={busy || scan?.status === "running" || scan?.status === "queued"} className="signal-control rounded px-3 py-2 text-[10px]">Rescan</button><button onClick={onReview} disabled={!pkg} data-shoot="enter-review" className="signal-control rounded px-4 py-2 text-[10px] font-semibold disabled:opacity-35">ENTER REVIEW</button></div>
       </div>
-      <section className="flex items-center gap-3 rounded-lg border px-4 py-3" style={{ background: "var(--i-panel)", borderColor: data.companion?.online ? "var(--i-mint)" : "var(--i-amber)" }}>
-        <span className="h-2 w-2 rounded-full" style={{ background: data.companion?.online ? "var(--i-mint)" : "var(--i-amber)" }} />
+      <section className="flex items-center gap-3 rounded-lg border px-4 py-3" style={{ background: "var(--i-panel)", borderColor: terminal || data.companion?.online ? "var(--i-mint)" : "var(--i-amber)" }}>
+        <span className="h-2 w-2 rounded-full" style={{ background: terminal || data.companion?.online ? "var(--i-mint)" : "var(--i-amber)" }} />
         <div className="min-w-0 flex-1">
-          <p className="text-[10.5px] text-[var(--i-text)]">{data.companion?.online ? `Companion online · ${data.companion.state}` : "Waiting for local knowledge companion"}</p>
-          <p className="mt-0.5 text-[9px] text-[var(--i-text-faint)]">{data.companion ? `${data.companion.label} v${data.companion.version} · last seen ${new Date(data.companion.lastSeenAt).toLocaleTimeString()}` : "Open the installed companion on this Mac. Signal will not simulate a local scan."}</p>
+          <p className="text-[10.5px] text-[var(--i-text)]">{terminal ? `Knowledge refresh ${scan?.status} · review package ready` : data.companion?.online ? `Companion online · ${data.companion.state}` : "Waiting for local knowledge companion"}</p>
+          <p className="mt-0.5 text-[9px] text-[var(--i-text-faint)]">{terminal ? `Completed ${scan?.completedAt ? new Date(scan.completedAt).toLocaleString() : "successfully"}. Companion presence no longer affects this result.` : data.companion ? `${data.companion.label} v${data.companion.version} · last seen ${new Date(data.companion.lastSeenAt).toLocaleTimeString()}` : "Open the installed companion on this Mac. Signal will not simulate a local scan."}</p>
         </div>
         {scan?.job && <span className="text-[9px] text-[var(--i-text-faint)]">job {scan.job.id.slice(-7)} · attempt {scan.job.attempts}</span>}
       </section>
@@ -425,7 +510,7 @@ function Inspector({ candidate, pkg, update, busy }: { candidate: Candidate | nu
       return <div key={item.evidenceId} className="mt-3 rounded-lg border p-3" style={{ borderColor: "var(--i-border)", background: "var(--i-panel)" }}>
         <div className="flex items-center justify-between"><span className="text-[9px] font-semibold uppercase tracking-[0.1em]" style={{ color: item.independence === "derivative" ? "var(--i-amber)" : "var(--i-silver)" }}>{item.independence === "derivative" ? "DERIVED PASSAGE" : "EVIDENCE PASSAGE"}</span><button disabled={busy} onClick={() => update(candidate, { evidenceId: item.evidenceId, linkState: detached ? "attached" : "detached" })} className="text-[8.5px] text-[var(--i-text-soft)]">{detached ? "ATTACH" : "DETACH"}</button></div>
         <blockquote className={`mt-2 text-[10px] leading-[1.5] text-[var(--i-text)] ${detached ? "opacity-40 line-through" : ""}`}>“{item.exactQuote}”</blockquote>
-        <pre className="mt-2 whitespace-pre-wrap break-words text-[8px] leading-[1.4] text-[var(--i-text-faint)]">{JSON.stringify(item.locator, null, 2)}</pre>
+        <p className="mt-2 text-[8.5px] leading-[1.45] text-[var(--i-text-faint)]">{describeLocator(item.locator)}</p>
         {artifact && <div className="mt-3 border-t pt-2" style={{ borderColor: "var(--i-border)" }}><div className="flex items-center justify-between gap-2"><span className="text-[9.5px] text-[var(--i-text-soft)]">{artifact.title}</span>{artifact.derivativeOfArtifactIds.length > 0 && <Badge tone="amber">SYNTHESIS · DERIVED</Badge>}</div><div className="mt-1 break-all text-[8.5px] text-[var(--i-text-faint)]">{artifact.canonicalRef}</div>{artifact.deepLink ? <a href={artifact.deepLink} className="mt-2 inline-block text-[9px] text-[var(--i-signal)]">OPEN SOURCE ↗</a> : <p className="mt-2 text-[8.5px] text-[var(--i-amber)]">Exact deep link unavailable · strongest stable locator shown above</p>}</div>}
       </div>;
     })}
@@ -434,5 +519,32 @@ function Inspector({ candidate, pkg, update, busy }: { candidate: Candidate | nu
 }
 
 function TraceStep({ index, label, detail }: { index: string; label: string; detail: string }) { return <div className="mt-3 flex gap-3"><span className="i-readout flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[8px] text-[var(--i-text-faint)]" style={{ border: "1px solid var(--i-border-strong)" }}>{index}</span><span><span className="block text-[9px] font-semibold uppercase tracking-[0.1em] text-[var(--i-text-soft)]">{label}</span><span className="mt-0.5 block text-[9px] leading-[1.4] text-[var(--i-text-faint)]">{detail}</span></span></div>; }
+function describeLocator(locator: Record<string, unknown>): string {
+  const fields = [
+    ["Page", locator.pageTitle ?? locator.title],
+    ["Section", locator.section ?? locator.heading],
+    ["Location", locator.path ?? locator.blockId ?? locator.nodeId],
+    ["Reference", locator.externalRef],
+  ].filter((entry): entry is [string, string] => typeof entry[1] === "string" && Boolean(entry[1].trim()));
+  return fields.length ? fields.map(([label, value]) => `${label}: ${value}`).join(" · ") : "Stable source locator recorded; no human-readable page location was supplied.";
+}
+
+function CandidateEditorDialog({ editor, setEditor, submit, busy }: { editor: Exclude<CandidateEditor, null>; setEditor: (value: CandidateEditor) => void; submit: () => Promise<void>; busy: boolean }) {
+  const value = editor.mode === "reject" ? editor.reason : editor.title;
+  const label = editor.mode === "reject" ? "Rejection reason" : editor.mode === "manual" ? "Candidate title" : "Reviewed title";
+  return <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/65 p-5" role="dialog" aria-modal="true" aria-labelledby="candidate-editor-title">
+    <div className="w-full max-w-[520px] rounded-xl border p-5 shadow-2xl" style={{ background: "var(--i-panel)", borderColor: "var(--i-border-strong)" }}>
+      <div className="i-label" style={{ color: "var(--i-signal)" }}>Governed review action</div>
+      <h2 id="candidate-editor-title" className="mt-2 text-[17px] font-semibold text-[var(--i-text)]">{editor.mode === "manual" ? "Add an operator-authored candidate" : editor.mode === "reject" ? "Reject candidate" : "Edit candidate"}</h2>
+      <label className="mt-4 block text-[10px] uppercase tracking-[0.1em] text-[var(--i-text-faint)]">{label}
+        {editor.mode === "reject"
+          ? <textarea autoFocus rows={4} value={value} onChange={(event) => setEditor({ ...editor, reason: event.target.value })} className="mt-2 block w-full rounded border px-3 py-2 text-[12px] normal-case tracking-normal text-[var(--i-text)]" style={{ background: "var(--i-recess)", borderColor: "var(--i-border)" }} />
+          : <input autoFocus value={value} onChange={(event) => setEditor({ ...editor, title: event.target.value })} onKeyDown={(event) => { if (event.key === "Enter") void submit(); }} className="mt-2 block w-full rounded border px-3 py-2 text-[12px] normal-case tracking-normal text-[var(--i-text)]" style={{ background: "var(--i-recess)", borderColor: "var(--i-border)" }} />}
+      </label>
+      {editor.mode === "manual" && <p className="mt-2 text-[9.5px] text-[var(--i-amber)]">Recorded as an operator assertion. It is not external evidence and becomes Reality only through activation.</p>}
+      <div className="mt-5 flex justify-end gap-2"><button type="button" onClick={() => setEditor(null)} disabled={busy} className="signal-control rounded px-4 py-2 text-[10px]">CANCEL</button><button type="button" onClick={() => void submit()} disabled={busy || !value.trim()} className="signal-control rounded px-4 py-2 text-[10px] font-semibold disabled:opacity-35">{busy ? "SAVING…" : "SAVE"}</button></div>
+    </div>
+  </div>;
+}
 function Badge({ children, tone }: { children: React.ReactNode; tone?: "amber" | "mint" | "violet" }) { const color = tone === "amber" ? "var(--i-amber)" : tone === "mint" ? "var(--i-mint)" : tone === "violet" ? "var(--i-violet)" : "var(--i-text-soft)"; return <span className="rounded px-1.5 py-0.5 text-[8px] font-semibold uppercase tracking-[0.08em]" style={{ color, background: `color-mix(in srgb, ${color} 10%, transparent)` }}>{children}</span>; }
 function Action({ label, active, disabled, onClick }: { label: string; active?: boolean; disabled?: boolean; onClick: () => void }) { return <button disabled={disabled} onClick={onClick} className="rounded px-2 py-1 text-[8.5px] font-medium disabled:opacity-40" style={{ color: active ? "var(--signal-reality-contrast)" : "var(--i-text-soft)", background: active ? "var(--i-signal)" : "var(--i-panel-raised)", border: "1px solid var(--i-border)" }}>{label}</button>; }

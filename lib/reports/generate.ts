@@ -7,6 +7,7 @@ import { normalizeBriefRecipe } from "./composer";
 import { buildBriefPresentation } from "./presentation";
 import { renderAudienceBriefMarkdown } from "./audienceBriefRender";
 import { assertGeneratedReportProse } from "./legacySanitization";
+import { buildScenarioDecisionBriefReadModel, scenarioSnapshotJson } from "./scenario";
 
 export interface GeneratedReport {
   report: Report;
@@ -27,13 +28,13 @@ export async function generateReport(
   contextSnapshotId?: string | null,
   options?: { mode?: BriefMode; scenarioId?: string | null; scenarioSnapshot?: Prisma.InputJsonValue | null; recipe?: unknown }
 ): Promise<GeneratedReport> {
-  if (options?.mode === "scenario") {
-    throw new Error("Scenario Decision Brief generation requires a canonical server-owned scenario read model; live Reality cannot be relabeled as Scenario.");
-  }
-  const assembled = await buildDecisionBriefReadModel(scope, {
+  const scenarioRead = options?.mode === "scenario"
+    ? await buildScenarioDecisionBriefReadModel(scope, options.scenarioSnapshot, contextSnapshotId)
+    : null;
+  const assembled = scenarioRead?.brief ?? await buildDecisionBriefReadModel(scope, {
     contextSnapshotId,
-    mode: options?.mode ?? "reality",
-    scenarioId: options?.scenarioId ?? null,
+    mode: "reality",
+    scenarioId: null,
   });
   // JSONB is the immutable source model. Normalize through the same JSON
   // boundary before rendering so floating-point representations cannot make
@@ -70,7 +71,7 @@ export async function generateReport(
       briefRecipe: recipe as unknown as Prisma.InputJsonValue,
       presentationVersion: BRIEF_PRESENTATION_VERSION,
       mode: brief.identity.mode,
-      scenarioSnapshot: options?.scenarioSnapshot ?? undefined,
+      scenarioSnapshot: scenarioRead ? scenarioSnapshotJson(scenarioRead.scenarioSnapshot) : undefined,
     },
   });
   return { report, brief, recipe, presentation };
