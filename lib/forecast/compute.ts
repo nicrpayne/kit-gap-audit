@@ -16,7 +16,7 @@ import { estimateContentHash, findingContentHash } from "@/lib/estimate/run";
 import { buildReleaseContext } from "@/lib/estimate/context";
 import { resolveCapacity, type CapacityContributor } from "@/lib/capacity/resolve";
 import { capacityForecastContract, type CapacityForecastContract } from "@/lib/capacity/contract";
-import { evaluateForecastCoverage, inheritDependencyCoverage, type ForecastCoverageContract } from "@/lib/forecast/coverage";
+import { deliveryRelevantIssueIds, evaluateForecastCoverage, inheritDependencyCoverage, type ForecastCoverageContract } from "@/lib/forecast/coverage";
 
 export interface ForecastFinding {
   id: string;
@@ -282,7 +282,12 @@ async function buildScopeSimInputs(scope: Scope): Promise<ScopeSimBundle> {
 
   const forecastCoverage = evaluateForecastCoverage({
     executionState: scope.executionState,
-    issueIds: issues.map((issue) => issue.identifier),
+    // Coverage is a gate on work that can still move delivery. Historical
+    // completed/cancelled rows remain in the execution census and report
+    // history, but requiring every shipped ticket to be adopted into today's
+    // accepted Capability graph makes a bounded active release impossible to
+    // govern (and recreates the legacy "clean up the whole backlog" trap).
+    issueIds: deliveryRelevantIssueIds(issues),
     capabilities,
     openShapeDecisionCount,
   });

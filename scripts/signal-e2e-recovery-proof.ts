@@ -4,6 +4,7 @@ import { resolveLinearBoundary, LinearBoundaryValidationError } from "../lib/lin
 import { jobIsIdentityCompatible, selectCurrentClaimCandidate } from "../lib/bootstrap/jobs";
 import { applyScenarioInputDelta } from "../lib/scenario/inputDelta";
 import { runPortfolioSimulation } from "../lib/forecast/portfolio";
+import { deliveryRelevantIssueIds } from "../lib/forecast/coverage";
 
 const projects = [{ id: "project-1", name: "Signal Golden Path" }];
 const boundary = resolveLinearBoundary(" SIG ", ["Signal Golden Path", "Signal Golden Path"], projects);
@@ -43,6 +44,15 @@ const scenario = runPortfolioSimulation(applyScenarioInputDelta([{ ...realitySco
 assert.ok(scenario.likelyDate.getTime() < reality.likelyDate.getTime(), "legitimate work/gate removals must move the forecast earlier");
 assert.equal(realityScopes[0].items.length, 2, "scenario transforms must not mutate Reality");
 
+assert.deepEqual(
+  deliveryRelevantIssueIds([
+    { identifier: "OPEN-1", completedAt: null },
+    { identifier: "SHIPPED-1", completedAt: "2026-09-17T00:00:00.000Z" },
+  ]),
+  ["OPEN-1"],
+  "forecast coverage must not require shipped history to be adopted into current Capability scope",
+);
+
 const bootstrapUi = readFileSync(new URL("../components/bootstrap/BootstrapWorkspace.tsx", import.meta.url), "utf8");
 assert.doesNotMatch(bootstrapUi, /window\.prompt/);
 assert.doesNotMatch(bootstrapUi, /JSON\.stringify\(item\.locator/);
@@ -60,4 +70,4 @@ assert.match(scenarioModel, /baseRealityRevision/);
 assert.match(scenarioModel, /canonical Reality.*was not mutated/);
 
 console.log("signal e2e recovery proof: PASS");
-console.log("validated: exact Linear boundary, stale/current queue selection, reversible forecast scenario, in-app editor, governed archive, server-owned Scenario report");
+console.log("validated: exact Linear boundary, stale/current queue selection, active-work-only coverage, reversible forecast scenario, in-app editor, governed archive, server-owned Scenario report");

@@ -65,6 +65,13 @@ export interface ForecastCoverageInput {
 
 const ACTIVE_LINK_STATES = new Set(["active", "configured"]);
 
+/** Coverage governs unresolved delivery work, not historical shipped rows. */
+export function deliveryRelevantIssueIds(
+  issues: { identifier: string; completedAt: string | null }[],
+): string[] {
+  return issues.filter((issue) => issue.completedAt === null).map((issue) => issue.identifier);
+}
+
 /**
  * Deterministic and threshold-free. It reuses governed Scope rows,
  * CapabilityWorkLinks, open boundary Decisions, and the configured execution
