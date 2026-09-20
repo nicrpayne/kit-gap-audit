@@ -3,6 +3,8 @@
   "proposalCards": 16,
   "overviewMode": true,
   "capabilityFocus": true,
+  "uncertaintyLabel": true,
+  "attachedEvidenceInspectable": true,
   "proposalEvidenceFocus": true,
   "activeReleaseBoundary": "KIT JSA v1/governed_scope_project",
   "releaseEvidenceInterpretationVisible": true,

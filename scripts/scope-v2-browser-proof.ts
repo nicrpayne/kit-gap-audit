@@ -132,7 +132,13 @@ async function main() {
 
   await page.locator('[data-capability="capability:crew"]').click();
   await page.locator('[data-shoot="feature-detail"]').waitFor();
+  assert.equal(await page.locator('[data-shoot="feature-detail"]').getByText("Uncertainty", { exact: true }).count(), 1, "the range metric must be named uncertainty");
+  assert.equal(await page.locator('[data-shoot="feature-detail"]').getByText("Certainty", { exact: true }).count(), 0, "the inverse certainty label must not render");
   await page.locator('[data-shoot="mode-evidence"]').click();
+  const attachedEvidence = page.locator('[data-shoot="attached-evidence"]');
+  assert.equal(await attachedEvidence.getByText("1 reference", { exact: false }).count(), 1, "accepted evidence count should remain visible");
+  await attachedEvidence.locator("summary").click();
+  assert.equal(await page.locator('[data-shoot="attached-evidence-list"]').getByText("context:jsa", { exact: true }).isVisible(), true, "the stored evidence reference should be inspectable");
   assert.equal(await page.locator('[data-capability="capability:crew"][data-selected="true"]').count(), 1, "selected capability remains unmistakable behind Focus");
   await page.screenshot({ path: resolve(deliverableOut, "scope-v2-capability-focus.png") });
   await page.locator('[data-shoot="feature-detail"]').getByRole("button", { name: "Close" }).click();
@@ -215,7 +221,7 @@ async function main() {
 
   const proposalCommitRequests = requests.filter((request) => request.endsWith("/proposal/commit"));
   assert.deepEqual(proposalCommitRequests, [], "verification must never commit a proposal");
-  const result = { ok: true, proposalCards: 16, overviewMode: true, capabilityFocus: true, proposalEvidenceFocus: true, activeReleaseBoundary: "KIT JSA v1/governed_scope_project", releaseEvidenceInterpretationVisible: true, candidateGeometry, pointerScrollTop, keyboardCandidateAccess: true, manualStageAndUnstage: true, bulkEligibleCount: 4, zeroEligibleDisabledWithReason: true, scenarioFeedback: true, backToReality: true, reloadRealityPersistence: true, independentBrowserIsolation: true, safariLikeViewport: "1728x1117", safariCandidateVisible, truthBoundary: "forecast-not-ready/no-floor", horizontalOverflow: overflow, proposalCommitRequests: proposalCommitRequests.length };
+  const result = { ok: true, proposalCards: 16, overviewMode: true, capabilityFocus: true, uncertaintyLabel: true, attachedEvidenceInspectable: true, proposalEvidenceFocus: true, activeReleaseBoundary: "KIT JSA v1/governed_scope_project", releaseEvidenceInterpretationVisible: true, candidateGeometry, pointerScrollTop, keyboardCandidateAccess: true, manualStageAndUnstage: true, bulkEligibleCount: 4, zeroEligibleDisabledWithReason: true, scenarioFeedback: true, backToReality: true, reloadRealityPersistence: true, independentBrowserIsolation: true, safariLikeViewport: "1728x1117", safariCandidateVisible, truthBoundary: "forecast-not-ready/no-floor", horizontalOverflow: overflow, proposalCommitRequests: proposalCommitRequests.length };
   writeFileSync(resolve(repoOut, "browser-proof.json"), JSON.stringify(result, null, 2));
   console.log(JSON.stringify(result, null, 2));
   await browser.close();

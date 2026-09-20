@@ -221,7 +221,7 @@ function ModuleHead({
           n={f.bypassed ? "not carried" : `of ${releaseLoadDays.toFixed(1)}d`}
         />
         <HeadStat
-          k="Certainty"
+          k="Uncertainty"
           v={uncertaintyLabel(f.uncertainty)}
           n={f.placeholderCount > 0 ? `${f.placeholderCount} unestimated` : "all sized"}
         />
@@ -423,13 +423,95 @@ function Work({ feature: f, capacity, onUnlinkReality }: { feature: Feature; cap
 
 // ── EVIDENCE ─────────────────────────────────────────────────────────────
 
+function evidenceReferences(value: unknown): unknown[] {
+  if (Array.isArray(value)) return value;
+  if (!value || typeof value !== "object") return value == null ? [] : [value];
+
+  const record = value as Record<string, unknown>;
+  if (Array.isArray(record.contextRefs)) return record.contextRefs;
+  if (Array.isArray(record.evidenceRefs)) return record.evidenceRefs;
+  return [value];
+}
+
+function evidenceString(record: Record<string, unknown>, keys: string[]): string | null {
+  for (const key of keys) {
+    const value = record[key];
+    if (typeof value === "string" && value.trim()) return value.trim();
+  }
+  return null;
+}
+
+function EvidenceReference({ value, index }: { value: unknown; index: number }) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return (
+      <li className="rounded px-3 py-2" style={{ background: "var(--i-recess)", border: "1px solid var(--i-border)" }}>
+        <div className="i-label">Reference {index + 1}</div>
+        <div className="mt-1 break-words text-[10.5px] leading-relaxed text-[var(--i-text-soft)]">{String(value)}</div>
+      </li>
+    );
+  }
+
+  const record = value as Record<string, unknown>;
+  const statement = evidenceString(record, ["statement", "quote", "excerpt", "title", "label", "name"]);
+  const reference = evidenceString(record, ["ref", "url", "externalUrl", "sourceRef", "evidenceId", "id"]);
+  const kind = evidenceString(record, ["kind", "type"]);
+  const observedAt = evidenceString(record, ["observedAt", "observedDate", "createdAt"]);
+  const suppliedBy = evidenceString(record, ["suppliedBy", "actor", "source"]);
+  const nestedIds = Array.isArray(record.evidenceRefs)
+    ? record.evidenceRefs.filter((item): item is string => typeof item === "string")
+    : [];
+  const href = reference && /^https?:\/\//i.test(reference) ? reference : null;
+  const fallback = !statement && !reference ? JSON.stringify(record) : null;
+  const metadata = [kind, observedAt, suppliedBy].filter(Boolean).join(" · ");
+
+  return (
+    <li className="rounded px-3 py-2" style={{ background: "var(--i-recess)", border: "1px solid var(--i-border)" }}>
+      <div className="i-label">Reference {index + 1}{kind ? ` · ${kind}` : ""}</div>
+      {statement && <div className="mt-1 break-words text-[10.5px] leading-relaxed text-[var(--i-text-soft)]">{statement}</div>}
+      {reference && (href ? (
+        <a href={href} target="_blank" rel="noreferrer" className="mt-1 block break-all text-[9.5px] text-[var(--i-signal)] hover:underline">
+          {reference}
+        </a>
+      ) : (
+        <div className="mt-1 break-all text-[9.5px] text-[var(--i-text-faint)]">{reference}</div>
+      ))}
+      {nestedIds.length > 0 && (
+        <div className="mt-1 break-words text-[9px] text-[var(--i-text-faint)]">Evidence IDs · {nestedIds.join(", ")}</div>
+      )}
+      {metadata && <div className="mt-1 text-[9px] text-[var(--i-text-faint)]">{metadata}</div>}
+      {fallback && <div className="mt-1 break-words text-[9.5px] leading-relaxed text-[var(--i-text-faint)]">{fallback}</div>}
+    </li>
+  );
+}
+
+function AttachedEvidence({ evidence }: { evidence: unknown[] }) {
+  if (evidence.length === 0) {
+    return <Row k="Attached evidence" v="None recorded" note="absence is shown, not inferred" />;
+  }
+
+  return (
+    <details className="group py-2" style={{ borderTop: "1px solid var(--i-border)" }} data-shoot="attached-evidence">
+      <summary className="flex cursor-pointer list-none items-baseline justify-between gap-4 rounded-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--i-signal)]">
+        <span className="i-label">Attached evidence</span>
+        <span className="text-right text-[11px] font-semibold text-[var(--i-text)]">
+          {evidence.length} reference{evidence.length === 1 ? "" : "s"} <span aria-hidden className="ml-1 text-[var(--i-text-faint)] group-open:hidden">▸</span><span aria-hidden className="ml-1 hidden text-[var(--i-text-faint)] group-open:inline">▾</span>
+        </span>
+      </summary>
+      <p className="mt-1 text-right text-[8.5px] text-[var(--i-text-faint)]">Stored on the accepted assertion</p>
+      <ul className="mt-2 space-y-2" data-shoot="attached-evidence-list">
+        {evidence.map((item, index) => <EvidenceReference key={index} value={item} index={index} />)}
+      </ul>
+    </details>
+  );
+}
+
 function Evidence({ feature: f, onAccept }: { feature: Feature; onAccept: (id: string) => void }) {
   if (f.canonicalCapability) {
     const ownerEvents = f.canonicalCapability.events ?? [];
     const provenance = f.canonicalCapability.provenance && typeof f.canonicalCapability.provenance === "object" && !Array.isArray(f.canonicalCapability.provenance)
       ? f.canonicalCapability.provenance as Record<string, unknown>
       : {};
-    const evidence = Array.isArray(provenance.evidence) ? provenance.evidence : [];
+    const evidence = evidenceReferences(provenance.evidence);
     const source = typeof provenance.source === "string" ? provenance.source.replaceAll("_", " ") : "operator-governed Scope";
     const assertion = typeof provenance.assertion === "string" ? provenance.assertion : null;
     return (
@@ -440,7 +522,7 @@ function Evidence({ feature: f, onAccept }: { feature: Feature; onAccept: (id: s
           <Row k="Authority" v={typeof provenance.authority === "string" ? provenance.authority : "Scope"} note={`source · ${source}`} />
           <Row k="Reality revision" v={`r${f.canonicalCapability.revision}`} note={`${ownerEvents.length} recent event${ownerEvents.length === 1 ? "" : "s"} retained`} />
           <Row k="Execution evidence" v={`${f.canonicalCapability.workLinks.length} explicit link${f.canonicalCapability.workLinks.length === 1 ? "" : "s"}`} note="current Linear facts remain owned by Linear" />
-          <Row k="Attached evidence" v={evidence.length ? `${evidence.length} reference${evidence.length === 1 ? "" : "s"}` : "None recorded"} note={evidence.length ? "stored on the accepted assertion" : "absence is shown, not inferred"} />
+          <AttachedEvidence evidence={evidence} />
         </div>
         <div className="i-label mt-4 mb-2">Recent governed history</div>
         {ownerEvents.length ? ownerEvents.slice(0, 6).map((event) => (
