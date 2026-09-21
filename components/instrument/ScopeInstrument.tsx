@@ -1472,7 +1472,8 @@ function ReleaseRack({
       }}
     >
       <span
-        className="absolute -top-[8px] left-4 px-2 i-label whitespace-nowrap z-10"
+        className="absolute top-2 left-4 px-2 i-label whitespace-nowrap z-10"
+        data-shoot="release-rack-title"
         style={{ background: FRAME_BG, color: "var(--i-text-soft)", letterSpacing: "0.18em" }}
       >
         In this release · {scopeName}

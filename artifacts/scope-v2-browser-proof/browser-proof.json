@@ -5,6 +5,13 @@
   "capabilityFocus": true,
   "uncertaintyLabel": true,
   "attachedEvidenceInspectable": true,
+  "releaseTitleVisible": true,
+  "releaseTitleGeometry": {
+    "titleTop": 238.25,
+    "titleBottom": 248.25,
+    "rackTop": 229.25,
+    "rackBottom": 849.25
+  },
   "proposalEvidenceFocus": true,
   "activeReleaseBoundary": "KIT JSA v1/governed_scope_project",
   "releaseEvidenceInterpretationVisible": true,

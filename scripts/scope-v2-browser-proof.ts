@@ -109,6 +109,15 @@ async function main() {
   assert.equal(await page.getByText("Forecast not ready", { exact: true }).isVisible(), true);
   assert.equal(await page.getByText("Floor", { exact: true }).count(), 0, "noncanonical floor must not render");
   assert.equal(await page.locator('[data-shoot="unmapped-execution-tray"]').count(), 0, "raw horizontal ticket tray is removed");
+  const workspaceScroll = page.locator('[data-shoot="scope-workspace-scroll"]');
+  await workspaceScroll.evaluate((element) => { element.scrollTop = 0; });
+  const releaseTitleGeometry = await page.locator('[data-shoot="release-rack-title"]').evaluate((title) => {
+    const titleRect = title.getBoundingClientRect();
+    const rackRect = title.closest('[data-shoot="bay-in"]')!.getBoundingClientRect();
+    return { titleTop: titleRect.top, titleBottom: titleRect.bottom, rackTop: rackRect.top, rackBottom: rackRect.bottom };
+  });
+  assert.ok(releaseTitleGeometry.titleTop >= releaseTitleGeometry.rackTop, `release title must not be clipped above its rack: ${JSON.stringify(releaseTitleGeometry)}`);
+  assert.ok(releaseTitleGeometry.titleBottom <= releaseTitleGeometry.rackBottom, `release title must remain inside its rack: ${JSON.stringify(releaseTitleGeometry)}`);
   assert.equal(await page.locator('[data-shoot="proposal-card"]').count(), 16);
   assert.match(await page.locator('[data-shoot="active-release-boundary"]').innerText(), /KIT JSA v1.*governed Scope project/i);
   const candidateRegion = page.locator('[data-shoot="candidate-scroll-region"]');
@@ -221,7 +230,7 @@ async function main() {
 
   const proposalCommitRequests = requests.filter((request) => request.endsWith("/proposal/commit"));
   assert.deepEqual(proposalCommitRequests, [], "verification must never commit a proposal");
-  const result = { ok: true, proposalCards: 16, overviewMode: true, capabilityFocus: true, uncertaintyLabel: true, attachedEvidenceInspectable: true, proposalEvidenceFocus: true, activeReleaseBoundary: "KIT JSA v1/governed_scope_project", releaseEvidenceInterpretationVisible: true, candidateGeometry, pointerScrollTop, keyboardCandidateAccess: true, manualStageAndUnstage: true, bulkEligibleCount: 4, zeroEligibleDisabledWithReason: true, scenarioFeedback: true, backToReality: true, reloadRealityPersistence: true, independentBrowserIsolation: true, safariLikeViewport: "1728x1117", safariCandidateVisible, truthBoundary: "forecast-not-ready/no-floor", horizontalOverflow: overflow, proposalCommitRequests: proposalCommitRequests.length };
+  const result = { ok: true, proposalCards: 16, overviewMode: true, capabilityFocus: true, uncertaintyLabel: true, attachedEvidenceInspectable: true, releaseTitleVisible: true, releaseTitleGeometry, proposalEvidenceFocus: true, activeReleaseBoundary: "KIT JSA v1/governed_scope_project", releaseEvidenceInterpretationVisible: true, candidateGeometry, pointerScrollTop, keyboardCandidateAccess: true, manualStageAndUnstage: true, bulkEligibleCount: 4, zeroEligibleDisabledWithReason: true, scenarioFeedback: true, backToReality: true, reloadRealityPersistence: true, independentBrowserIsolation: true, safariLikeViewport: "1728x1117", safariCandidateVisible, truthBoundary: "forecast-not-ready/no-floor", horizontalOverflow: overflow, proposalCommitRequests: proposalCommitRequests.length };
   writeFileSync(resolve(repoOut, "browser-proof.json"), JSON.stringify(result, null, 2));
   console.log(JSON.stringify(result, null, 2));
   await browser.close();
