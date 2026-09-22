@@ -17,6 +17,13 @@ async function main() {
       status: "accepted",
       provenance: { authority: "Scope", source: "proof" },
     } });
+    await prisma.capabilityWorkLink.createMany({ data: ["PRF-1", "PRF-2"].map((externalId) => ({
+      capabilityId: capability.id,
+      provider: "linear",
+      externalId,
+      state: "active",
+      provenance: { authority: "Linear", source: "proof" },
+    })) });
     const proposal = await prisma.scopeProposal.create({ data: {
       scopeId: scope.id,
       compilerVersion: "scope-reconciler-three-source-2.1",
@@ -27,7 +34,7 @@ async function main() {
         {
           candidateKey: "reality:notifications", title: "Notifications", origins: ["knowledge", "reality", "linear"], reconciliationState: "aligned", conflicts: [], releaseSignal: "likely_in", confidence: "high", confidenceScore: 95,
           matchState: "confidently_matched", action: "link_existing", targetCapabilityId: capability.id, targetRevision: 1,
-          workItemIds: ["PRF-2", "PRF-3"], rationale: { headline: "proof" }, provenance: { refs: ["proof"] },
+          workItemIds: ["PRF-1", "PRF-2", "PRF-3"], alreadyLinkedItemIds: ["PRF-1", "PRF-2"], rationale: { headline: "proof" }, provenance: { refs: ["proof"] },
         },
         {
           candidateKey: "knowledge:offline", title: "Offline support", origins: ["knowledge", "linear"], reconciliationState: "aligned", conflicts: [], releaseSignal: "likely_in", confidence: "high", confidenceScore: 90,
@@ -36,8 +43,14 @@ async function main() {
         },
       ] },
     }, include: { items: true } });
-    const work = ["PRF-2", "PRF-3", "PRF-11"].map((externalId) => ({ externalId, externalUrl: null, title: externalId, state: "Todo", updatedAt: "2026-09-15T18:00:00.000Z" }));
-    const selections = proposal.items.map((item) => ({ itemId: item.id, targetCapabilityId: item.targetCapabilityId, expectedRevision: item.targetRevision, releaseStatus: "accepted" as const }));
+    const work = ["PRF-1", "PRF-2", "PRF-3", "PRF-11"].map((externalId) => ({ externalId, externalUrl: null, title: externalId, state: "Todo", updatedAt: "2026-09-15T18:00:00.000Z" }));
+    const selections = proposal.items.map((item) => ({
+      itemId: item.id,
+      targetCapabilityId: item.targetCapabilityId,
+      expectedRevision: item.targetRevision,
+      workItemIds: item.targetCapabilityId ? ["PRF-2", "PRF-3"] : item.workItemIds,
+      releaseStatus: "accepted" as const,
+    }));
 
     const first = await commitScopeProposal(scope.id, proposal.id, selections, work, "scope-v2-db-proof-commit");
     assert.equal(first.changed, true);
@@ -47,6 +60,7 @@ async function main() {
     const reality = await prisma.capability.findMany({ where: { scopeId: scope.id }, include: { workLinks: true, events: true }, orderBy: { name: "asc" } });
     assert.deepEqual(reality.map((item) => item.name), ["Notifications", "Offline support"]);
     assert.equal(reality.flatMap((item) => item.workLinks).length, 3);
+    assert.deepEqual(reality.find((item) => item.id === capability.id)?.workLinks.map((link) => link.externalId).sort(), ["PRF-2", "PRF-3"], "reviewed subset must remove deselected existing work and add only selected work");
     assert.equal(reality.reduce((count, item) => count + item.events.length, 0), 2);
     assert.equal(await prisma.scopeProposalEvent.count({ where: { proposalId: proposal.id } }), 1);
     assert.equal((await prisma.scopeProposal.findUniqueOrThrow({ where: { id: proposal.id } })).status, "committed");
@@ -64,7 +78,7 @@ async function main() {
       ScopeRealityConflictError,
     );
 
-    console.log(JSON.stringify({ ok: true, idempotentReplay: true, optimisticConflictRejected: true, capabilityCount: reality.length, workLinkCount: 3, eventCount: 2 }, null, 2));
+    console.log(JSON.stringify({ ok: true, idempotentReplay: true, reviewedSubsetApplied: true, optimisticConflictRejected: true, capabilityCount: reality.length, workLinkCount: 3, eventCount: 2 }, null, 2));
   } finally {
     await prisma.scope.delete({ where: { id: scope.id } });
     await prisma.$disconnect();

@@ -13,6 +13,7 @@
     "rackBottom": 849.25
   },
   "proposalEvidenceFocus": true,
+  "ticketLevelReconciliation": true,
   "activeReleaseBoundary": "KIT JSA v1/governed_scope_project",
   "releaseEvidenceInterpretationVisible": true,
   "candidateGeometry": {

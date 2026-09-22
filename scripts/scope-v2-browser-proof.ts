@@ -156,6 +156,10 @@ async function main() {
   await page.locator('[data-shoot="reconciliation-focus"]').waitFor();
   assert.equal(await page.locator('[data-shoot="proposal-evidence-inspection"]').isVisible(), true);
   assert.match(await page.locator('[data-shoot="focus-release-boundary"]').innerText(), /Interpreted for KIT JSA v1/i);
+  const workChoices = page.locator('[data-shoot="proposal-work-choice"]');
+  assert.equal(await workChoices.count(), 5, "review focus must expose every ticket in the execution cluster");
+  await workChoices.first().getByRole("checkbox").uncheck();
+  assert.match(await page.locator('[data-shoot="reconciliation-focus"]').innerText(), /4 of 5 Linear items selected/i);
   await page.waitForTimeout(250);
   await page.screenshot({ path: resolve(deliverableOut, "scope-v2-proposal-evidence-focus.png") });
   await page.locator('[data-shoot="stage-focused-proposal"]').click();
@@ -166,6 +170,8 @@ async function main() {
   await page.screenshot({ path: resolve(deliverableOut, "scope-v2-visible-staging-result-1440x900.png") });
 
   await page.locator('[data-proposal-item="proposal-notifications"]').click();
+  assert.equal(await page.locator('[data-shoot="proposal-work-choice"]').first().getByRole("checkbox").isChecked(), false, "ticket selection must persist in the local Scenario");
+  assert.match(await page.locator('[data-shoot="reconciliation-focus"]').innerText(), /4 selected items included in the active Scope Scenario/i);
   await page.locator('[data-shoot="stage-focused-proposal"]').getByText("Unstage change", { exact: true }).click();
   await page.locator('[data-shoot="reconciliation-focus"]').getByRole("button", { name: "Close" }).click();
   assert.match(await page.locator('[data-shoot="scenario-strip"]').innerText(), /Reality/);
@@ -230,7 +236,7 @@ async function main() {
 
   const proposalCommitRequests = requests.filter((request) => request.endsWith("/proposal/commit"));
   assert.deepEqual(proposalCommitRequests, [], "verification must never commit a proposal");
-  const result = { ok: true, proposalCards: 16, overviewMode: true, capabilityFocus: true, uncertaintyLabel: true, attachedEvidenceInspectable: true, releaseTitleVisible: true, releaseTitleGeometry, proposalEvidenceFocus: true, activeReleaseBoundary: "KIT JSA v1/governed_scope_project", releaseEvidenceInterpretationVisible: true, candidateGeometry, pointerScrollTop, keyboardCandidateAccess: true, manualStageAndUnstage: true, bulkEligibleCount: 4, zeroEligibleDisabledWithReason: true, scenarioFeedback: true, backToReality: true, reloadRealityPersistence: true, independentBrowserIsolation: true, safariLikeViewport: "1728x1117", safariCandidateVisible, truthBoundary: "forecast-not-ready/no-floor", horizontalOverflow: overflow, proposalCommitRequests: proposalCommitRequests.length };
+  const result = { ok: true, proposalCards: 16, overviewMode: true, capabilityFocus: true, uncertaintyLabel: true, attachedEvidenceInspectable: true, releaseTitleVisible: true, releaseTitleGeometry, proposalEvidenceFocus: true, ticketLevelReconciliation: true, activeReleaseBoundary: "KIT JSA v1/governed_scope_project", releaseEvidenceInterpretationVisible: true, candidateGeometry, pointerScrollTop, keyboardCandidateAccess: true, manualStageAndUnstage: true, bulkEligibleCount: 4, zeroEligibleDisabledWithReason: true, scenarioFeedback: true, backToReality: true, reloadRealityPersistence: true, independentBrowserIsolation: true, safariLikeViewport: "1728x1117", safariCandidateVisible, truthBoundary: "forecast-not-ready/no-floor", horizontalOverflow: overflow, proposalCommitRequests: proposalCommitRequests.length };
   writeFileSync(resolve(repoOut, "browser-proof.json"), JSON.stringify(result, null, 2));
   console.log(JSON.stringify(result, null, 2));
   await browser.close();

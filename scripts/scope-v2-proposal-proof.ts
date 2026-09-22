@@ -98,7 +98,9 @@ assert.equal(acceptedNoWork?.action, "none");
 const linearOnly = compiled.items.find((item) => item.provenance.linearParent?.identifier === "LIN-100");
 assert.deepEqual(linearOnly?.origins, ["linear"]);
 assert.equal(linearOnly?.reconciliationState, "execution_exception");
-assert.equal(linearOnly?.action, "none", "Linear hierarchy alone must never create product shape");
+assert.equal(linearOnly?.action, "create_capability", "a parent-backed Linear cluster should be reviewable by an operator");
+assert.equal(linearOnly?.confidence, "low", "Linear-only shape must remain low-confidence");
+assert.equal(isBulkStageEligible({ ...linearOnly!, id: linearOnly!.candidateKey, status: "suggested" }), false, "Linear-only shape must never enter bulk staging");
 
 const deferred = compiled.items.find((item) => item.title === "Advanced analytics");
 assert.equal(deferred?.releaseSignal, "likely_out");

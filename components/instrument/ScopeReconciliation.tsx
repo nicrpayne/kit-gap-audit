@@ -65,7 +65,7 @@ export interface ScopeProposalItemView {
   provenance: {
     linearParent: { identifier: string; title: string } | null;
     linearParents: { identifier: string; title: string }[];
-    linearItems: { identifier: string; state: string; projectName: string | null; updatedAt: string | null }[];
+    linearItems: { identifier: string; title?: string; state: string; projectName: string | null; updatedAt: string | null }[];
     contextSnapshotId: string | null;
     contextRefs: { kind: string; id: string; statement: string; evidenceRefs: string[]; topicTags: string[]; candidateTitle: string | null; observedAt?: string | null; releaseClaims?: ReleaseClaimView[] }[];
     realityCapability: { id: string; name: string; status: string; revision: number } | null;
@@ -108,7 +108,7 @@ export default function ScopeReconciliation(props: {
   commitError: string | null;
   committed: boolean;
   onRefresh: () => void;
-  onStage: (item: ScopeProposalItemView, targetCapabilityId: string | null, releaseStatus: "accepted" | "outside") => void;
+  onStage: (item: ScopeProposalItemView, targetCapabilityId: string | null, releaseStatus: "accepted" | "outside", itemIds?: string[]) => void;
   onUnstage: (itemId: string) => void;
   onStageConfident: () => void;
   onCommit: () => void;
@@ -216,23 +216,38 @@ function CandidateRow({ item, selected, onOpen }: { item: ScopeProposalItemView;
   </button>;
 }
 
-function ReconciliationFocus({ item, selection, capabilities, committing, onClose, onStage, onUnstage }: { item: ScopeProposalItemView | null; selection?: Selection; capabilities: { id: string; name: string; revision: number }[]; committing: boolean; onClose: () => void; onStage: (item: ScopeProposalItemView, targetCapabilityId: string | null, releaseStatus: "accepted" | "outside") => void; onUnstage: (itemId: string) => void }) {
+function ReconciliationFocus({ item, selection, capabilities, committing, onClose, onStage, onUnstage }: { item: ScopeProposalItemView | null; selection?: Selection; capabilities: { id: string; name: string; revision: number }[]; committing: boolean; onClose: () => void; onStage: (item: ScopeProposalItemView, targetCapabilityId: string | null, releaseStatus: "accepted" | "outside", itemIds?: string[]) => void; onUnstage: (itemId: string) => void }) {
   const [target, setTarget] = useState("new");
   const [release, setRelease] = useState<"accepted" | "outside">("accepted");
-  const identity = item ? `${item.id}:${selection?.targetCapabilityId ?? item.targetCapabilityId ?? "new"}:${selection?.releaseStatus ?? item.releaseSignal}` : "none";
+  const [selectedWorkIds, setSelectedWorkIds] = useState<string[]>([]);
+  const identity = item ? `${item.id}:${selection?.targetCapabilityId ?? item.targetCapabilityId ?? "new"}:${selection?.releaseStatus ?? item.releaseSignal}:${selection?.itemIds.join(",") ?? "default"}` : "none";
   useEffect(() => {
     if (!item) return;
     setTarget(selection?.targetCapabilityId ?? item.targetCapabilityId ?? "new");
     setRelease(selection?.releaseStatus ?? (item.releaseSignal === "likely_out" ? "outside" : "accepted"));
+    setSelectedWorkIds(selection?.itemIds ?? item.workItemIds);
   }, [identity, item, selection]);
   if (!item) return null;
   const releaseInterpretation = item.provenance.releaseInterpretation ?? { activeRelease: null, activeReleaseSource: "unresolved" as const, policy: "latest_explicit_same_boundary" as const, effectiveClaims: [], supersededClaims: [], otherBoundaryClaims: [], genericClaims: [] };
   const actionable = item.action !== "none" && item.status !== "committed" && item.reconciliationState !== "conflict";
   const chosenTarget = target === "new" ? null : target;
-  const applyCorrection = (nextTarget = chosenTarget, nextRelease = release) => { if (selection) onStage(item, nextTarget, nextRelease); };
+  const canRemoveAllExisting = Boolean(item.targetCapabilityId && chosenTarget === item.targetCapabilityId && item.alreadyLinkedItemIds.length);
+  const hasReviewedEffect = selectedWorkIds.length > 0 || canRemoveAllExisting;
+  const applyCorrection = (nextTarget = chosenTarget, nextRelease = release, nextWorkIds = selectedWorkIds) => { if (selection) onStage(item, nextTarget, nextRelease, nextWorkIds); };
+  const toggleWork = (workId: string) => {
+    const next = selectedWorkIds.includes(workId)
+      ? selectedWorkIds.filter((id) => id !== workId)
+      : [...selectedWorkIds, workId];
+    setSelectedWorkIds(next);
+    applyCorrection(chosenTarget, release, next);
+  };
+  const chooseWork = (next: string[]) => {
+    setSelectedWorkIds(next);
+    applyCorrection(chosenTarget, release, next);
+  };
   return <ToolWindow open onClose={onClose} title="Scope reconciliation" subtitle={item.title} width={980} dataShoot="reconciliation-focus" footer={<div className="flex items-center gap-3 px-6 py-4">
-    <div className="min-w-0 flex-1 text-[10px] leading-relaxed text-[var(--i-text-faint)]">Staging is local and reversible. Commit remains the only crossing into shared Reality.</div>
-    <button disabled={!actionable || committing} onClick={() => selection ? onUnstage(item.id) : onStage(item, chosenTarget, release)} className="min-w-[180px] rounded-md px-4 py-2.5 text-[11px] font-medium disabled:opacity-30" style={{ border: `1px solid ${selection ? "var(--i-violet)" : "var(--i-signal)"}`, color: selection ? "var(--i-violet)" : "var(--i-signal)" }} data-shoot="stage-focused-proposal">{item.status === "committed" ? "Committed" : item.reconciliationState === "conflict" ? "Resolve conflict first" : item.action === "none" ? "Judgment required" : selection ? "Unstage change" : "Stage reviewed change"}</button>
+    <div className="min-w-0 flex-1 text-[10px] leading-relaxed text-[var(--i-text-faint)]">{selectedWorkIds.length} of {item.workItemIds.length} Linear items selected. Staging is local and reversible; Commit is the only crossing into shared Reality.</div>
+    <button disabled={!actionable || committing || !hasReviewedEffect} onClick={() => selection ? onUnstage(item.id) : onStage(item, chosenTarget, release, selectedWorkIds)} className="min-w-[180px] rounded-md px-4 py-2.5 text-[11px] font-medium disabled:opacity-30" style={{ border: `1px solid ${selection ? "var(--i-violet)" : "var(--i-signal)"}`, color: selection ? "var(--i-violet)" : "var(--i-signal)" }} data-shoot="stage-focused-proposal">{item.status === "committed" ? "Committed" : item.reconciliationState === "conflict" ? "Resolve conflict first" : item.action === "none" ? "Judgment required" : selection ? "Unstage change" : "Stage selected work"}</button>
   </div>}>
     <div className="grid min-h-full grid-cols-[1.05fr_1fr_0.9fr]">
       <section className="p-6" style={{ borderRight: "1px solid var(--i-border)" }}>
@@ -272,13 +287,20 @@ function ReconciliationFocus({ item, selection, capabilities, committing, onClos
         <div className="mt-4 rounded-lg p-4" style={{ border: "1px solid var(--i-border)", background: "var(--i-recess)" }}>
           <div className="text-[10px] uppercase tracking-[0.12em] text-[var(--i-text-faint)]">Linear boundary</div>
           <div className="mt-2 text-[12px] font-medium text-[var(--i-text)]">{item.provenance.linearParent ? `${item.provenance.linearParent.identifier} · ${item.provenance.linearParent.title}` : "No safe parent boundary"}</div>
-          <div className="mt-2 text-[10px] text-[var(--i-text-faint)]">{item.alreadyLinkedItemIds.length}/{item.workItemIds.length} already linked · {item.workItemIds.length - item.alreadyLinkedItemIds.length} proposed</div>
+          <div className="mt-2 flex items-center gap-2 text-[10px] text-[var(--i-text-faint)]"><span>{item.alreadyLinkedItemIds.length}/{item.workItemIds.length} already linked · {item.workItemIds.length - item.alreadyLinkedItemIds.length} proposed</span><span className="ml-auto flex gap-1"><button type="button" disabled={!actionable || committing} onClick={() => chooseWork(item.workItemIds)} className="rounded px-2 py-1 disabled:opacity-30" style={{ border: "1px solid var(--i-border-strong)" }}>All</button><button type="button" disabled={!actionable || committing} onClick={() => chooseWork([])} className="rounded px-2 py-1 disabled:opacity-30" style={{ border: "1px solid var(--i-border-strong)" }}>None</button></span></div>
         </div>
-        <div className="mt-3 max-h-[290px] space-y-1.5 overflow-y-auto">{item.provenance.linearItems.length ? item.provenance.linearItems.map((work) => <div key={work.identifier} className="flex items-center gap-2 rounded-md px-3 py-2.5" style={{ border: "1px solid var(--i-border)" }}><span className="text-[10.5px] font-medium text-[var(--i-text)]">{work.identifier}</span><span className="ml-auto text-[9px] text-[var(--i-text-faint)]">{work.state}</span></div>) : <EmptyBlock>No current executable Linear work matched this capability.</EmptyBlock>}</div>
+        <div className="mt-3 max-h-[290px] space-y-1.5 overflow-y-auto">{item.provenance.linearItems.length ? item.provenance.linearItems.map((work) => {
+          const checked = selectedWorkIds.includes(work.identifier);
+          const linked = item.alreadyLinkedItemIds.includes(work.identifier);
+          return <label key={work.identifier} className="flex cursor-pointer items-start gap-2 rounded-md px-3 py-2.5" style={{ border: `1px solid ${checked ? "color-mix(in srgb, var(--i-violet) 55%, var(--i-border))" : "var(--i-border)"}`, background: checked ? "color-mix(in srgb, var(--i-violet) 6%, transparent)" : "transparent" }} data-shoot="proposal-work-choice">
+            <input type="checkbox" checked={checked} disabled={!actionable || committing} onChange={() => toggleWork(work.identifier)} className="mt-0.5 accent-[var(--i-violet)]" />
+            <span className="min-w-0 flex-1"><span className="block text-[10.5px] font-medium text-[var(--i-text)]">{work.identifier}{work.title ? ` · ${work.title}` : ""}</span><span className="mt-1 block text-[9px] text-[var(--i-text-faint)]">{work.state}{linked ? " · linked in Reality" : " · proposed"}</span></span>
+          </label>;
+        }) : <EmptyBlock>No current executable Linear work matched this capability.</EmptyBlock>}</div>
         <div className="mt-5 rounded-lg p-4" style={{ border: "1px solid var(--i-border-strong)", background: "#0c1215" }}>
           <div className="text-[10px] uppercase tracking-[0.12em] text-[var(--i-text-faint)]">Modeled consequence</div>
-          <div className="mt-2 text-[12px] font-medium text-[var(--i-text)]">{selection ? "Included in the active Scope Scenario" : item.action === "none" ? "No safe simulation input yet" : "Available to stage in Scenario"}</div>
-          <p className="mt-2 text-[10px] leading-relaxed text-[var(--i-text-faint)]">Forecast uses the existing engine only after work is staged. Missing estimates remain visible; no effort is fabricated here.</p>
+          <div className="mt-2 text-[12px] font-medium text-[var(--i-text)]">{selection ? `${selectedWorkIds.length} selected items included in the active Scope Scenario` : item.action === "none" ? "No safe simulation input yet" : "Select the work that belongs, then stage it"}</div>
+          <p className="mt-2 text-[10px] leading-relaxed text-[var(--i-text-faint)]">Unchecking an item already linked to this capability previews removing that association. Moving selected work to another capability previews the reassignment. Missing estimates remain visible; no effort is fabricated here.</p>
         </div>
         {item.rationale.cautions.length > 0 && <div className="mt-4"><div className="text-[10px] uppercase tracking-[0.12em] text-[var(--i-amber)]">Cautions</div>{item.rationale.cautions.map((caution) => <p key={caution} className="mt-2 text-[10px] leading-relaxed text-[var(--i-text-soft)]">{caution}</p>)}</div>}
       </section>

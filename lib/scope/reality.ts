@@ -316,6 +316,9 @@ export interface ScopeProposalCommitSelection {
   /** Optional reviewed correction. Null creates a new capability. */
   targetCapabilityId?: string | null;
   expectedRevision?: number | null;
+  /** Reviewed subset of the proposal cluster. Omitted means the full cluster
+      for backwards compatibility with earlier clients. */
+  workItemIds?: string[];
   releaseStatus: "accepted" | "outside";
 }
 
@@ -357,7 +360,16 @@ export async function commitScopeProposal(
       const item = proposalItems.get(selection.itemId);
       if (!item || item.status !== "suggested") throw new ScopeRealityConflictError("A selected proposal item is no longer available.");
       if (item.action === "none") throw new ScopeRealityInputError(`“${item.title}” has no safe Reality action yet.`);
-      for (const workId of item.workItemIds) {
+      const selectedWorkIds = selection.workItemIds ?? item.workItemIds;
+      const selectedTargetId = selection.targetCapabilityId === undefined ? item.targetCapabilityId : selection.targetCapabilityId;
+      const removesAllExisting = Boolean(item.targetCapabilityId && selectedTargetId === item.targetCapabilityId && item.alreadyLinkedItemIds.length);
+      if (!selectedWorkIds.length && !removesAllExisting) throw new ScopeRealityInputError(`Choose at least one Linear item for “${item.title}”.`);
+      if (new Set(selectedWorkIds).size !== selectedWorkIds.length) {
+        throw new ScopeRealityInputError(`The same Linear item cannot be selected twice for “${item.title}”.`);
+      }
+      const available = new Set(item.workItemIds);
+      for (const workId of selectedWorkIds) {
+        if (!available.has(workId)) throw new ScopeRealityConflictError(`${workId} is not part of the reviewed proposal cluster.`);
         if (!byWorkId.has(workId)) throw new ScopeRealityConflictError(`${workId} is no longer present in the current Linear owner read.`);
         if (claimedWork.has(workId)) throw new ScopeRealityInputError(`${workId} appears in more than one selected cluster.`);
         claimedWork.add(workId);
@@ -367,8 +379,11 @@ export async function commitScopeProposal(
     const committed: { itemId: string; capabilityId: string; action: string; workItemIds: string[] }[] = [];
     for (const selection of selections) {
       const item = proposalItems.get(selection.itemId)!;
-      const work = item.workItemIds.map((id) => byWorkId.get(id)!);
+      const selectedWorkIds = selection.workItemIds ?? item.workItemIds;
+      const selectedWorkIdSet = new Set(selectedWorkIds);
+      const work = selectedWorkIds.map((id) => byWorkId.get(id)!);
       const targetCapabilityId = selection.targetCapabilityId === undefined ? item.targetCapabilityId : selection.targetCapabilityId;
+      const sourceCapabilityId = item.targetCapabilityId;
       let capabilityId: string;
 
       if (targetCapabilityId) {
@@ -378,18 +393,47 @@ export async function commitScopeProposal(
         if (!Number.isInteger(expected) || expected !== before.revision) {
           throw new ScopeRealityConflictError(`“${before.name}” changed in another session (current revision ${before.revision}). Refresh before committing.`);
         }
+        if (sourceCapabilityId && sourceCapabilityId !== before.id) {
+          const source = await tx.capability.findUniqueOrThrow({ where: { id: sourceCapabilityId }, include: { workLinks: true } });
+          if (source.scopeId !== scopeId) throw new ScopeRealityInputError("The proposal source belongs to a different Scope.");
+          if (!Number.isInteger(item.targetRevision) || source.revision !== item.targetRevision) {
+            throw new ScopeRealityConflictError(`“${source.name}” changed in another session (current revision ${source.revision}). Refresh before committing.`);
+          }
+          const movedLinkIds = source.workLinks
+            .filter((link) => ["active", "configured"].includes(link.state) && selectedWorkIdSet.has(link.externalId))
+            .map((link) => link.id);
+          if (movedLinkIds.length) {
+            await tx.capabilityWorkLink.deleteMany({ where: { id: { in: movedLinkIds } } });
+            await tx.capability.update({ where: { id: source.id }, data: { revision: { increment: 1 } } });
+            const sourceAfter = await tx.capability.findUniqueOrThrow({ where: { id: source.id }, include: { workLinks: true } });
+            await tx.capabilityEvent.create({ data: {
+              capabilityId: source.id,
+              scopeId,
+              idempotencyKey: `${key}:${item.id}:source`,
+              action: "unlink_work",
+              beforeState: json(plain(source)),
+              afterState: json(plain(sourceAfter)),
+            } });
+          }
+        }
         await assertWorkAvailable(tx, scopeId, before.id, work);
         const active = new Set(before.workLinks.filter((link) => ["active", "configured"].includes(link.state)).map((link) => link.externalId));
         const additions = work.filter((entry) => !active.has(entry.externalId));
+        const removals = sourceCapabilityId === before.id
+          ? before.workLinks.filter((link) => ["active", "configured"].includes(link.state)
+            && item.alreadyLinkedItemIds.includes(link.externalId)
+            && !selectedWorkIdSet.has(link.externalId))
+          : [];
+        if (removals.length) await tx.capabilityWorkLink.deleteMany({ where: { id: { in: removals.map((link) => link.id) } } });
         if (additions.length) await createLinks(tx, before.id, additions);
         const statusChanged = before.status !== selection.releaseStatus;
-        if (additions.length || statusChanged) {
+        if (additions.length || removals.length || statusChanged) {
           await tx.capability.update({ where: { id: before.id }, data: { revision: { increment: 1 }, status: selection.releaseStatus } });
           const after = await tx.capability.findUniqueOrThrow({ where: { id: before.id }, include: { workLinks: true } });
           await tx.capabilityEvent.create({ data: {
             capabilityId: before.id,
             scopeId,
-            idempotencyKey: `${key}:${item.id}`,
+            idempotencyKey: `${key}:${item.id}:target`,
             action: "accept_scope_proposal",
             beforeState: json(plain(before)),
             afterState: json(plain(after)),
@@ -397,6 +441,29 @@ export async function commitScopeProposal(
         }
         capabilityId = before.id;
       } else {
+        if (sourceCapabilityId) {
+          const source = await tx.capability.findUniqueOrThrow({ where: { id: sourceCapabilityId }, include: { workLinks: true } });
+          if (source.scopeId !== scopeId) throw new ScopeRealityInputError("The proposal source belongs to a different Scope.");
+          if (!Number.isInteger(item.targetRevision) || source.revision !== item.targetRevision) {
+            throw new ScopeRealityConflictError(`“${source.name}” changed in another session (current revision ${source.revision}). Refresh before committing.`);
+          }
+          const movedLinkIds = source.workLinks
+            .filter((link) => ["active", "configured"].includes(link.state) && selectedWorkIdSet.has(link.externalId))
+            .map((link) => link.id);
+          if (movedLinkIds.length) {
+            await tx.capabilityWorkLink.deleteMany({ where: { id: { in: movedLinkIds } } });
+            await tx.capability.update({ where: { id: source.id }, data: { revision: { increment: 1 } } });
+            const sourceAfter = await tx.capability.findUniqueOrThrow({ where: { id: source.id }, include: { workLinks: true } });
+            await tx.capabilityEvent.create({ data: {
+              capabilityId: source.id,
+              scopeId,
+              idempotencyKey: `${key}:${item.id}:source`,
+              action: "unlink_work",
+              beforeState: json(plain(source)),
+              afterState: json(plain(sourceAfter)),
+            } });
+          }
+        }
         await assertNoScopeDuplicate(tx, scopeId, item.title);
         await assertWorkAvailable(tx, scopeId, null, work);
         const max = await tx.capability.aggregate({ where: { scopeId, status: selection.releaseStatus }, _max: { sortOrder: true } });
@@ -423,7 +490,7 @@ export async function commitScopeProposal(
         await tx.capabilityEvent.create({ data: {
           capabilityId: capability.id,
           scopeId,
-          idempotencyKey: `${key}:${item.id}`,
+          idempotencyKey: `${key}:${item.id}:target`,
           action: "accept_scope_proposal",
           afterState: json(plain(after)),
         } });
@@ -434,7 +501,7 @@ export async function commitScopeProposal(
         where: { id: item.id },
         data: { status: "committed", committedCapabilityId: capabilityId, committedAt: new Date() },
       });
-      committed.push({ itemId: item.id, capabilityId, action: targetCapabilityId ? "link_existing" : "create_capability", workItemIds: item.workItemIds });
+      committed.push({ itemId: item.id, capabilityId, action: targetCapabilityId ? "link_existing" : "create_capability", workItemIds: selectedWorkIds });
     }
 
     const remaining = await tx.scopeProposalItem.count({ where: { proposalId, status: "suggested", action: { not: "none" } } });

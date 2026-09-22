@@ -280,13 +280,19 @@ export default function ScopeInstrument() {
   const scenarioCapabilities = scope.capabilities.map((capability) => {
     const staged = proposalSelections.filter((selection) => selection.targetCapabilityId === capability.id);
     const stagedStatus = staged.at(-1)?.releaseStatus;
+    const removedLinkIds = new Set(proposalSelections.flatMap((selection) => {
+      if (selection.sourceCapabilityId !== capability.id) return [];
+      if (selection.targetCapabilityId !== capability.id) return selection.itemIds;
+      const selected = new Set(selection.itemIds);
+      return selection.sourceAlreadyLinkedItemIds.filter((id) => !selected.has(id));
+    }));
     const additionalLinks = staged.flatMap((selection) => selection.itemIds)
       .filter((id) => !capability.workLinks.some((link) => link.externalId === id))
       .map((externalId) => ({ id: `proposal-link:${capability.id}:${externalId}`, provider: "linear", externalId, externalUrl: null, state: "active" }));
     return {
       ...capability,
       status: stagedStatus ?? (m.scenario.includedCapabilityIds.has(capability.id) ? "accepted" : capability.status),
-      workLinks: [...capability.workLinks, ...additionalLinks],
+      workLinks: [...capability.workLinks.filter((link) => !removedLinkIds.has(link.externalId)), ...additionalLinks],
     };
   });
   const scenarioProductShape = partitionProductShape(scenarioCapabilities);
@@ -544,7 +550,7 @@ export default function ScopeInstrument() {
     }
   };
 
-  const stageProposalItem = (item: ScopeProposalItemView, targetCapabilityId: string | null, releaseStatus: "accepted" | "outside") => {
+  const stageProposalItem = (item: ScopeProposalItemView, targetCapabilityId: string | null, releaseStatus: "accepted" | "outside", itemIds: string[] = item.workItemIds) => {
     if (!proposal) return;
     const expectedRevision = targetCapabilityId
       ? scope.capabilities.find((capability) => capability.id === targetCapabilityId)?.revision ?? null
@@ -559,9 +565,11 @@ export default function ScopeInstrument() {
           itemId: item.id,
           title: item.title,
           description: item.description,
+          sourceCapabilityId: item.targetCapabilityId,
+          sourceAlreadyLinkedItemIds: item.alreadyLinkedItemIds,
           targetCapabilityId,
           expectedRevision,
-          itemIds: item.workItemIds,
+          itemIds,
           releaseStatus,
         },
       ],
@@ -594,7 +602,7 @@ export default function ScopeInstrument() {
         body: JSON.stringify({
           proposalId: proposal.id,
           idempotencyKey: crypto.randomUUID(),
-          selections: proposalSelections.map(({ itemId, targetCapabilityId, expectedRevision, releaseStatus }) => ({ itemId, targetCapabilityId, expectedRevision, releaseStatus })),
+          selections: proposalSelections.map(({ itemId, targetCapabilityId, expectedRevision, itemIds, releaseStatus }) => ({ itemId, targetCapabilityId, expectedRevision, workItemIds: itemIds, releaseStatus })),
         }),
       });
       const body = await response.json().catch(() => ({}));

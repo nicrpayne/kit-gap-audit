@@ -4,7 +4,7 @@ import { remainingIssuesFor } from "@/lib/forecast/build";
 import type { ProjectContextPackage } from "@/lib/context/package";
 
 export const SCOPE_PROPOSAL_CONTRACT_VERSION = "2.1" as const;
-export const SCOPE_PROPOSAL_COMPILER_VERSION = "scope-reconciler-three-source-2.1" as const;
+export const SCOPE_PROPOSAL_COMPILER_VERSION = "scope-reconciler-three-source-2.2" as const;
 
 export type ScopeProposalReleaseSignal = "likely_in" | "likely_out" | "boundary";
 export type ScopeProposalConfidence = "high" | "medium" | "low";
@@ -84,7 +84,7 @@ export interface CompiledScopeProposalItem {
   provenance: {
     linearParent: { identifier: string; title: string } | null;
     linearParents: { identifier: string; title: string }[];
-    linearItems: { identifier: string; state: string; projectName: string | null; updatedAt: string | null }[];
+    linearItems: { identifier: string; title: string; state: string; projectName: string | null; updatedAt: string | null }[];
     contextSnapshotId: string | null;
     contextRefs: ProposalContextRef[];
     realityCapability: { id: string; name: string; status: string; revision: number } | null;
@@ -447,7 +447,9 @@ function digest(value: unknown): string {
 /**
  * Deterministic three-ledger reconciliation. Current structured intelligence
  * may propose shape, accepted Scope Reality is the governed baseline, and
- * Linear corroborates execution but can never become product shape alone.
+ * Linear corroborates execution. A parent-backed Linear-only cluster may be
+ * offered for explicit operator review, but is deliberately low-confidence
+ * and therefore never eligible for bulk staging.
  */
 export function compileScopeProposal(input: {
   includeTriage: boolean;
@@ -549,8 +551,14 @@ export function compileScopeProposal(input: {
             : knowledgeNoExecution ? "knowledge_no_execution"
               : releaseSignal === "boundary" ? "boundary" : "aligned";
     let action: ScopeProposalAction = "none";
-    if (!conflicts.length && target && missing.length) action = "link_existing";
+    if (!conflicts.length && target && workItemIds.length) action = "link_existing";
     if (!conflicts.length && !target && candidate.explicitKnowledge && releaseSignal !== "boundary") action = "create_capability";
+    if (
+      !conflicts.length
+      && linearOnly
+      && workItemIds.length > 0
+      && candidate.linearGroups.every((group) => Boolean(group.parent))
+    ) action = "create_capability";
     const corroborated = Boolean(target && workItemIds.length > 0 && missing.length === 0);
     let confidenceScore = 18;
     if (origins.includes("knowledge")) confidenceScore += candidate.explicitKnowledge ? 28 : 20;
@@ -577,13 +585,14 @@ export function compileScopeProposal(input: {
       ...(releaseSignal === "boundary" && !conflicts.length ? ["Available evidence does not establish a single in/out release decision."] : []),
     ];
     const headline = reconciliationState === "conflict" ? "Signals disagree; accepted Reality remains authoritative until an operator resolves the boundary."
-      : reconciliationState === "execution_exception" ? "Linear work has no grounded product-shape candidate yet."
+      : reconciliationState === "execution_exception" && action === "create_capability" ? `Linear contains ${workItemIds.length} current ${workItemIds.length === 1 ? "item" : "items"} under ${candidate.linearGroups[0]?.parent?.identifier}. Review whether to create a capability, attach selected work to an existing one, or defer it.`
+        : reconciliationState === "execution_exception" ? "Linear work has no grounded product-shape candidate yet."
         : reconciliationState === "reality_no_execution" ? "Accepted product shape currently has no active execution mapped."
           : reconciliationState === "knowledge_no_execution" ? "Structured knowledge proposes product shape, but current execution is absent."
             : reconciliationState === "deferred" ? "Current evidence places this capability out or later."
-              : action === "link_existing" ? `Propose ${missing.length} reviewed work ${missing.length === 1 ? "link" : "links"} to ${target!.name}.`
-                : action === "create_capability" ? "Propose a new capability from an explicit structured-knowledge field."
-                  : corroborated ? "Knowledge, accepted Reality, and Linear currently corroborate one another."
+              : action === "link_existing" && missing.length ? `Propose ${missing.length} reviewed work ${missing.length === 1 ? "link" : "links"} to ${target!.name}.`
+                : action === "create_capability" ? (linearOnly ? "Propose a reviewed capability from a parent-backed Linear execution cluster." : "Propose a new capability from an explicit structured-knowledge field.")
+                  : corroborated ? "Knowledge, accepted Reality, and Linear currently corroborate one another; open this candidate to review individual ticket membership."
                     : "This boundary is visible for operator judgment; no automatic Reality write is proposed.";
     const linearParents = candidate.linearGroups.flatMap((group) => group.parent ? [{ identifier: group.parent.identifier, title: group.parent.title }] : []);
     return {
@@ -593,7 +602,7 @@ export function compileScopeProposal(input: {
       provenance: {
         linearParent: linearParents[0] ?? null,
         linearParents,
-        linearItems: linearIssues.map((issue) => ({ identifier: issue.identifier, state: issue.state, projectName: issue.projectName, updatedAt: issue.updatedAt ?? null })),
+        linearItems: linearIssues.map((issue) => ({ identifier: issue.identifier, title: issue.title, state: issue.state, projectName: issue.projectName, updatedAt: issue.updatedAt ?? null })),
         contextSnapshotId: input.snapshot?.id ?? null,
         contextRefs: candidate.knowledgeRefs.map((ref) => ({ kind: ref.kind, id: ref.id, statement: ref.statement, evidenceRefs: ref.evidenceRefs, topicTags: ref.topicTags, candidateTitle: ref.candidateTitle, observedAt: ref.observedAt, releaseClaims: ref.releaseClaims })),
         realityCapability: target ? { id: target.id, name: target.name, status: target.status, revision: target.revision } : null,

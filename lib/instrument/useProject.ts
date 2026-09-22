@@ -197,6 +197,10 @@ export interface SuiteScenario {
     itemId: string;
     title: string;
     description: string | null;
+    /** Persisted proposal target before the operator's correction. */
+    sourceCapabilityId: string | null;
+    /** Work already linked to that source when the proposal was compiled. */
+    sourceAlreadyLinkedItemIds: string[];
     targetCapabilityId: string | null;
     expectedRevision: number | null;
     itemIds: string[];
@@ -508,12 +512,20 @@ export function useProject(): ProjectModel {
             const fullScope = data.scopes.find((scope) => scope.scopeId === s.scopeId);
             const proposed = scenario.scopeProposalSelections.filter((selection) => selection.scopeId === s.scopeId);
             const proposalIncludedIds = new Set(proposed.flatMap((selection) => selection.itemIds));
-            const proposalExcludedIds = new Set(proposed.filter((selection) => selection.releaseStatus === "outside").flatMap((selection) => [
-              ...selection.itemIds,
-              ...(selection.targetCapabilityId
-                ? fullScope?.capabilities.find((capability) => capability.id === selection.targetCapabilityId)?.workLinks.map((link) => link.externalId) ?? []
-                : []),
-            ]));
+            const proposalExcludedIds = new Set(proposed.flatMap((selection) => {
+              const selected = new Set(selection.itemIds);
+              const deselectedFromSameCapability = selection.sourceCapabilityId && selection.sourceCapabilityId === selection.targetCapabilityId
+                ? selection.sourceAlreadyLinkedItemIds.filter((id) => !selected.has(id))
+                : [];
+              if (selection.releaseStatus !== "outside") return deselectedFromSameCapability;
+              return [
+                ...deselectedFromSameCapability,
+                ...selection.itemIds,
+                ...(selection.targetCapabilityId
+                  ? fullScope?.capabilities.find((capability) => capability.id === selection.targetCapabilityId)?.workLinks.map((link) => link.externalId) ?? []
+                  : []),
+              ];
+            }));
             return {
               ...s,
               items:

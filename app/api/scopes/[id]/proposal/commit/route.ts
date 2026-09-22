@@ -30,6 +30,11 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
         itemId: value.itemId,
         targetCapabilityId: value.targetCapabilityId === null || typeof value.targetCapabilityId === "string" ? value.targetCapabilityId : undefined,
         expectedRevision: value.expectedRevision === null || typeof value.expectedRevision === "number" ? value.expectedRevision : undefined,
+        workItemIds: value.workItemIds === undefined
+          ? undefined
+          : Array.isArray(value.workItemIds) && value.workItemIds.every((item) => typeof item === "string")
+            ? value.workItemIds
+            : (() => { throw new ScopeRealityInputError("workItemIds must be an array of Linear identifiers."); })(),
         releaseStatus: value.releaseStatus,
       };
     });

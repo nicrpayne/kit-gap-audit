@@ -4,6 +4,8 @@ export interface BulkStageCandidate {
   confidence: string;
   action: string;
   status: string;
+  workItemIds: string[];
+  alreadyLinkedItemIds: string[];
 }
 
 /**
@@ -15,6 +17,7 @@ export function isBulkStageEligible(item: BulkStageCandidate): boolean {
   return item.reconciliationState === "aligned"
     && item.confidence === "high"
     && item.action !== "none"
+    && item.workItemIds.length > item.alreadyLinkedItemIds.length
     && item.status !== "committed";
 }
 
