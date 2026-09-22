@@ -125,7 +125,12 @@ export default function ScopeReconciliation(props: {
   const knowledgeDate = proposal?.sourceWatermark.contextAcceptedAt ?? proposal?.sourceWatermark.contextGeneratedAt;
   const reviewItems = (proposal?.items ?? []).filter((item) => item.reconciliationState !== "deferred");
   const laterItems = (proposal?.items ?? []).filter((item) => item.reconciliationState === "deferred");
-  const visibleItems = (bank === "later" ? laterItems : reviewItems).filter((item) => !query || `${item.title} ${item.workItemIds.join(" ")} ${item.rationale.headline}`.toLowerCase().includes(query.toLowerCase()));
+  const visibleItems = (bank === "later" ? laterItems : reviewItems).filter((item) => !query || [
+    item.title,
+    item.workItemIds.join(" "),
+    item.rationale.headline,
+    ...item.provenance.linearItems.flatMap((work) => [work.identifier, work.title ?? ""]),
+  ].join(" ").toLowerCase().includes(query.toLowerCase()));
   const stagedItemIds = new Set(selections.map((selection) => selection.itemId));
   const bulkEligible = bulkStageEligibleItems(proposal?.items ?? [], stagedItemIds);
   const bulkEligibleTotal = (proposal?.items ?? []).filter(isBulkStageEligible).length;

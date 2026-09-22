@@ -121,8 +121,8 @@ export async function PUT(req: NextRequest) {
     for (let index = 0; index < body.people!.length; index += 1) {
       const draft = body.people![index];
       const person = draft.id
-        ? await tx.person.update({ where: { id: draft.id }, data: { name: draft.name.trim(), fte: draft.fte, active: true, synthetic: false } })
-        : await tx.person.create({ data: { name: draft.name.trim(), fte: draft.fte, active: true, synthetic: false } });
+        ? await tx.person.update({ where: { id: draft.id }, data: { name: draft.name.trim(), fte: draft.fte, externalCommitmentFte: draft.externalCommitmentFte ?? 0, active: true, synthetic: false } })
+        : await tx.person.create({ data: { name: draft.name.trim(), fte: draft.fte, externalCommitmentFte: draft.externalCommitmentFte ?? 0, active: true, synthetic: false } });
       idByDraft.set(index, person.id);
     }
 
@@ -150,6 +150,7 @@ export async function PUT(req: NextRequest) {
         at: now.toISOString(), event: exact ? "named_roster_reconciled" : "aggregate_left_unreconciled",
         legacyAggregateFte: scope.teamCapacity, legacyForecastFte: basis?.forecastFte ?? null,
         namedRawFte: reading.raw, namedEffectiveFte: reading.effective,
+        externalCommitmentFte: body.people!.reduce((sum, person) => sum + (person.externalCommitmentFte ?? 0), 0),
         rosterPersonIds: rosterIds, removedPersonIds: replacedIds,
       };
       const priorHistory = Array.isArray(prior?.history) ? prior.history : [];
@@ -183,7 +184,7 @@ export async function PUT(req: NextRequest) {
   const derived = [];
   for (const scope of scopes) derived.push(await recomputeDerivedReads(scope.id));
   return NextResponse.json({
-    status: "named_exact", workforceFte: readings.workforceFte, freeFte: readings.freeFte,
+    status: "named_exact", workforceFte: readings.workforceFte, externalCommitmentFte: body.people.reduce((sum, person) => sum + (person.externalCommitmentFte ?? 0), 0), freeFte: readings.freeFte,
     scopes: scopes.map((scope) => ({ scopeId: scope.id, scopeName: scope.name, ...readings.byScope.get(scope.id) })),
     ...outcome, derived: derived.map((item) => item ? { scopeId: item.scopeId, status: item.status, revision: item.computedRevision } : null),
   });

@@ -7,7 +7,7 @@ export async function GET() {
 }
 
 export async function POST(req: NextRequest) {
-  let body: { name?: string; fte?: number; active?: boolean };
+  let body: { name?: string; fte?: number; externalCommitmentFte?: number; active?: boolean };
   try {
     body = await req.json();
   } catch {
@@ -20,11 +20,15 @@ export async function POST(req: NextRequest) {
   if (body.fte !== undefined && (typeof body.fte !== "number" || body.fte <= 0 || body.fte > 1)) {
     return NextResponse.json({ error: "fte must be a number between 0 (exclusive) and 1" }, { status: 400 });
   }
+  if (body.externalCommitmentFte !== undefined && (typeof body.externalCommitmentFte !== "number" || body.externalCommitmentFte < 0 || body.externalCommitmentFte > (body.fte ?? 1))) {
+    return NextResponse.json({ error: "externalCommitmentFte must be between 0 and the person's available FTE" }, { status: 400 });
+  }
 
   const person = await prisma.person.create({
     data: {
       name: body.name.trim(),
       fte: body.fte ?? 1.0,
+      externalCommitmentFte: body.externalCommitmentFte ?? 0,
       active: body.active ?? true,
     },
   });

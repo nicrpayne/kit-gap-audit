@@ -116,7 +116,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: `Duplicate hypotheticalPeople id: ${id}` }, { status: 400 });
     }
     hypotheticalIds.add(id);
-    hypotheticalPeople.push({ id, name: p.name!.trim(), fte: p.fte ?? 1.0, active: true });
+    hypotheticalPeople.push({ id, name: p.name!.trim(), fte: p.fte ?? 1.0, externalCommitmentFte: 0, active: true });
   }
 
   const scopeIds = new Set(scopeIdRows.map((s) => s.id));

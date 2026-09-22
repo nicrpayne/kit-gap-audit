@@ -22,6 +22,13 @@ assert.equal(readings.byScope.get("jsa")?.effective, 0.45);
 assert.equal(readings.byScope.get("itrack")?.raw, 0.5);
 assert.equal(readings.freeFte, 0);
 assert.equal(validateRosterDraft([{ name: "Person A", fte: 1, allocations: [{ scopeId: "jsa", fte: 0.7 }, { scopeId: "itrack", fte: 0.4 }] }], scopes)[0]?.code, "overallocated");
+const outside = [{ name: "James", fte: 1, externalCommitmentFte: 0.5, allocations: [{ scopeId: "jsa", fte: 0.5 }] }];
+assert.deepEqual(validateRosterDraft(outside, scopes), []);
+const outsideReadings = rosterReadings(outside, [...scopes], 10);
+assert.equal(outsideReadings.workforceFte, 1);
+assert.equal(outsideReadings.byScope.get("jsa")?.raw, 0.5);
+assert.equal(outsideReadings.freeFte, 0);
+assert.equal(validateRosterDraft([{ name: "James", fte: 1, externalCommitmentFte: 0.6, allocations: [{ scopeId: "jsa", fte: 0.5 }] }], scopes)[0]?.code, "overallocated");
 assert.equal(validateRosterDraft([{ name: "Person A", fte: 1, allocations: [] }, { name: " person  a ", fte: 1, allocations: [] }], scopes)[0]?.code, "duplicate_name");
 
 const shape = partitionProductShape([
@@ -36,4 +43,4 @@ assert.equal(capabilityExecutionState(shape.accepted[0], "not_configured"), "sou
 assert.equal(capabilityExecutionState({ ...shape.accepted[0], workLinks: [{ id: "w", provider: "linear", externalId: "JSA-1", externalUrl: null, state: "configured" }] }, "configured"), "mapped");
 assert.equal(capabilityExecutionState({ ...shape.accepted[0], workLinks: [{ id: "w", provider: "linear", externalId: "JSA-1", externalUrl: null, state: "configured" }] }, "unavailable"), "source_unavailable");
 
-console.log(JSON.stringify({ ok: true, auditStates: [current.code, available.code, ingesting.code, refreshing.code, offline.code], roster: { raw: 0.5, effective: 0.45, conserved: true }, scopeShape: { accepted: 1, outsideRelease: 2, findingsPromoted: 0 } }, null, 2));
+console.log(JSON.stringify({ ok: true, auditStates: [current.code, available.code, ingesting.code, refreshing.code, offline.code], roster: { raw: 0.5, effective: 0.45, outsideCommitment: 0.5, conserved: true }, scopeShape: { accepted: 1, outsideRelease: 2, findingsPromoted: 0 } }, null, 2));

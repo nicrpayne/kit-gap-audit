@@ -8,6 +8,10 @@ export interface PersonLike {
   id: string;
   name: string;
   fte: number;
+  /** Absolute FTE already committed beyond the Scopes Signal currently
+      tracks. This is unavailable to the mixer, but the person remains part
+      of the real workforce. Optional keeps historical fixtures compatible. */
+  externalCommitmentFte?: number;
   active: boolean;
 }
 
@@ -136,7 +140,11 @@ export interface OverAllocation {
 // never silently clamp or normalize it away, since that would quietly
 // misreport how much of someone's time is actually committed.
 export function validateAllocations(people: PersonLike[], allocations: AllocationLike[]): OverAllocation[] {
-  const totals = new Map<string, number>();
+  const peopleById = new Map(people.map((p) => [p.id, p]));
+  const totals = new Map<string, number>(people.map((person) => [
+    person.id,
+    person.fte > EPSILON ? Math.max(0, person.externalCommitmentFte ?? 0) / person.fte : 0,
+  ]));
   for (const a of allocations) {
     if (a.fraction < 0) {
       throw new Error(`Allocation fraction cannot be negative (person ${a.personId})`);
@@ -144,7 +152,6 @@ export function validateAllocations(people: PersonLike[], allocations: Allocatio
     totals.set(a.personId, (totals.get(a.personId) ?? 0) + a.fraction);
   }
 
-  const peopleById = new Map(people.map((p) => [p.id, p]));
   const errors: OverAllocation[] = [];
   for (const [personId, totalFraction] of totals) {
     if (totalFraction > 1 + EPSILON) {
@@ -166,7 +173,10 @@ export interface UnallocatedPerson {
 // rather than silently absorbed, per the brief ("you have 1.5 FTE not
 // assigned to anything").
 export function unallocatedCapacity(people: PersonLike[], allocations: AllocationLike[]): UnallocatedPerson[] {
-  const allocatedByPerson = new Map<string, number>();
+  const allocatedByPerson = new Map<string, number>(people.map((person) => [
+    person.id,
+    person.fte > EPSILON ? Math.max(0, person.externalCommitmentFte ?? 0) / person.fte : 0,
+  ]));
   for (const a of allocations) {
     if (a.fraction <= 0) continue;
     allocatedByPerson.set(a.personId, (allocatedByPerson.get(a.personId) ?? 0) + a.fraction);

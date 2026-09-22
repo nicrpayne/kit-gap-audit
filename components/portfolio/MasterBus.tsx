@@ -199,6 +199,17 @@ export default function MasterBus({
           color={deficit ? "var(--i-red)" : "var(--i-violet)"}
           shoot="master-allocated"
         />
+        {reading.external > 1e-6 && (
+          <Meter
+            label="Outside Signal"
+            value={reading.external.toFixed(1)}
+            suffix="FTE"
+            fraction={reading.workforce > 0 ? reading.external / reading.workforce : 0}
+            color="var(--i-text-soft)"
+            shoot="master-external"
+            detail="Committed beyond tracked projects"
+          />
+        )}
         <Meter
           label="Effective"
           value={reading.effective.toFixed(2)}

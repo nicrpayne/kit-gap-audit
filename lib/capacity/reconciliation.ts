@@ -11,6 +11,7 @@ export interface RosterPersonDraft {
   id?: string;
   name: string;
   fte: number;
+  externalCommitmentFte?: number;
   allocations: RosterAllocationDraft[];
 }
 
@@ -38,6 +39,10 @@ export function validateRosterDraft(people: RosterPersonDraft[], scopeIds: Set<s
     if (!name || !Number.isFinite(person.fte) || person.fte <= 0 || person.fte > 1) {
       issues.push({ code: "invalid_fte", personName: name, message: `${name || "Each person"} needs available FTE above 0 and at most 1.0.` });
     }
+    const externalCommitmentFte = person.externalCommitmentFte ?? 0;
+    if (!Number.isFinite(externalCommitmentFte) || externalCommitmentFte < 0) {
+      issues.push({ code: "invalid_fte", personName: name, message: `${name || "Each person"} needs outside-Signal FTE of zero or more.` });
+    }
     const seen = new Set<string>();
     let allocated = 0;
     for (const allocation of person.allocations) {
@@ -52,8 +57,9 @@ export function validateRosterDraft(people: RosterPersonDraft[], scopeIds: Set<s
         issues.push({ code: "invalid_fte", personName: name, message: `${name || "A person"} has an invalid project allocation.` });
       } else allocated += allocation.fte;
     }
-    if (allocated > person.fte + EPS) {
-      issues.push({ code: "overallocated", personName: name, message: `${name || "A person"} is allocated ${allocated.toFixed(2)} FTE but only ${person.fte.toFixed(2)} FTE is available.` });
+    const totalCommitted = allocated + Math.max(0, externalCommitmentFte);
+    if (totalCommitted > person.fte + EPS) {
+      issues.push({ code: "overallocated", personName: name, message: `${name || "A person"} is committed ${totalCommitted.toFixed(2)} FTE including work outside Signal but only ${person.fte.toFixed(2)} FTE is available.` });
     }
   }
   return issues;
@@ -65,7 +71,7 @@ export function rosterReadings(
   contextSwitchCostPct: number,
 ): { workforceFte: number; byScope: Map<string, { raw: number; effective: number }>; freeFte: number } {
   const workforce: WorkforceState = {
-    people: people.map((person, index) => ({ id: person.id ?? `draft-${index}`, name: person.name, fte: person.fte, active: true })),
+    people: people.map((person, index) => ({ id: person.id ?? `draft-${index}`, name: person.name, fte: person.fte, externalCommitmentFte: person.externalCommitmentFte ?? 0, active: true })),
     allocations: people.flatMap((person, index) => person.allocations
       .filter((allocation) => allocation.fte > EPS && person.fte > EPS)
       .map((allocation) => ({
@@ -78,7 +84,7 @@ export function rosterReadings(
     const reading = readChannel(workforce, scopeId, contextSwitchCostPct);
     return [scopeId, { raw: reading.raw, effective: reading.effective }];
   }));
-  const allocated = people.reduce((total, person) => total + person.allocations.reduce((sum, item) => sum + Math.max(0, item.fte), 0), 0);
+  const allocated = people.reduce((total, person) => total + person.allocations.reduce((sum, item) => sum + Math.max(0, item.fte), 0) + Math.max(0, person.externalCommitmentFte ?? 0), 0);
   return {
     workforceFte: people.reduce((total, person) => total + Math.max(0, person.fte), 0),
     byScope,

@@ -222,5 +222,22 @@ console.log("\n── J. CONSERVATION ──────────────
   );
 }
 
+console.log("\n── K. OUTSIDE-SIGNAL COMMITMENT ──────────────────────────────");
+{
+  const james: WorkforceState = {
+    people: [{ id: "james", name: "James", fte: 1, externalCommitmentFte: 0.5, active: true }],
+    allocations: [{ personId: "james", scopeId: "jsa", fraction: 0.5 }],
+  };
+  const master = readMaster(james, SCOPES, 0);
+  check("James remains a 1.0-FTE person", near(master.workforce, 1), `${f(master.workforce)} FTE workforce`);
+  check("His tracked JSA contribution is 0.5 FTE", near(master.allocated, 0.5), `${f(master.allocated)} FTE tracked`);
+  check("His other 0.5 FTE is visibly outside Signal", near(master.external, 0.5), `${f(master.external)} FTE outside`);
+  check("None of his committed time is falsely free", near(master.free, 0) && near(master.overUnder, 0), `${f(master.free)} FTE free`);
+  const attempted = setChannelRaw(james, "jsa", 1);
+  check("The mixer cannot pull outside work into JSA", near(attempted.achievedRaw, 0.5) && near(attempted.required, 0.5), `${f(attempted.achievedRaw)} achieved, ${f(attempted.required)} required`);
+  const split = setPersonSplit(james, "james", [{ scopeId: "jsa", fraction: 1 }]);
+  check("A split cannot overwrite outside commitments", split.error !== null, split.error ?? "");
+}
+
 console.log(failures === 0 ? "\nALL PROOFS PASS" : `\n${failures} FAILED`);
 process.exit(failures === 0 ? 0 : 1);

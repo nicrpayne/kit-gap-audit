@@ -18,6 +18,7 @@ interface TeamPerson {
   id: string;
   name: string;
   fte: number;
+  externalCommitmentFte?: number;
   active: boolean;
   synthetic?: boolean;
 }
@@ -47,6 +48,7 @@ export default function ActualTeamDrawer({
       id: person.id,
       name: person.name,
       fte: person.fte,
+      externalCommitmentFte: person.externalCommitmentFte ?? 0,
       allocations: scopes.map((scope) => ({
         scopeId: scope.scopeId,
         fte: (allocations.find((item) => item.personId === person.id && item.scopeId === scope.scopeId)?.fraction ?? 0) * person.fte,
@@ -88,7 +90,7 @@ export default function ActualTeamDrawer({
 
   function removePerson(index: number) {
     const person = draft[index];
-    const active = person.allocations.reduce((sum, item) => sum + item.fte, 0);
+    const active = person.allocations.reduce((sum, item) => sum + item.fte, 0) + (person.externalCommitmentFte ?? 0);
     const message = active > 1e-6
       ? `${person.name} currently carries ${active.toFixed(2)} FTE. Removing them also removes those allocations. Continue?`
       : `Remove ${person.name} from the tracked roster?`;
@@ -137,7 +139,7 @@ export default function ActualTeamDrawer({
         <div className="min-w-0 flex-1">
           <div className="i-label text-[var(--i-signal)]">SET ACTUAL TEAM</div>
           <h2 className="mt-1 text-[17px] font-medium text-[var(--i-text)]">Reconcile the complete named roster</h2>
-          <p className="mt-1 text-[10.5px] text-[var(--i-text-soft)]">Approximate capacity allocation, not ticket assignment. 0.5 FTE means roughly half-time.</p>
+          <p className="mt-1 text-[10.5px] text-[var(--i-text-soft)]">Approximate capacity allocation, not ticket assignment. Use Outside Signal for committed work such as Construct that is not a tracked project yet.</p>
         </div>
         <span className="rounded-full px-2.5 py-1 text-[9.5px] uppercase tracking-wide" style={{ background: complete ? "var(--i-signal-soft)" : "var(--i-amber-soft)", color: complete ? "var(--i-signal)" : "var(--i-amber)" }}>
           {complete ? "ready to reconcile" : "named partial · draft only"}
@@ -158,11 +160,12 @@ export default function ActualTeamDrawer({
         <div className="mt-4 overflow-x-auto rounded-md border border-[var(--i-border)]">
           <table className="w-full min-w-[900px] text-[10.5px]">
             <thead className="bg-[var(--i-panel)] text-left text-[9px] uppercase tracking-wide text-[var(--i-text-faint)]">
-              <tr><th className="px-3 py-2">Person</th><th className="px-2 py-2">Available</th>{scopes.map((scope) => <th key={scope.scopeId} className="px-2 py-2">{scope.name}</th>)}<th className="px-2 py-2">Allocated / free</th><th className="px-2 py-2">Switch effect</th><th /></tr>
+              <tr><th className="px-3 py-2">Person</th><th className="px-2 py-2">Available</th>{scopes.map((scope) => <th key={scope.scopeId} className="px-2 py-2">{scope.name}</th>)}<th className="px-2 py-2">Outside Signal</th><th className="px-2 py-2">Committed / free</th><th className="px-2 py-2">Switch effect</th><th /></tr>
             </thead>
             <tbody>
               {draft.map((person, index) => {
-                const total = person.allocations.reduce((sum, item) => sum + item.fte, 0);
+                const tracked = person.allocations.reduce((sum, item) => sum + item.fte, 0);
+                const total = tracked + (person.externalCommitmentFte ?? 0);
                 const scopeCount = person.allocations.filter((item) => item.fte > 1e-6).length;
                 const factor = switchFactorFor(contextSwitchCostPct, scopeCount);
                 return <tr key={person.id ?? `new-${index}`} className="border-t border-[var(--i-border)]">
@@ -172,6 +175,7 @@ export default function ActualTeamDrawer({
                     const value = person.allocations.find((item) => item.scopeId === scope.scopeId)?.fte ?? 0;
                     return <td key={scope.scopeId} className="px-2 py-2"><div className="flex items-center gap-1"><input aria-label={`${person.name || `Person ${index + 1}`} ${scope.name} allocation`} type="range" min="0" max={Math.max(0.1, person.fte)} step="0.05" value={Math.min(value, person.fte)} onChange={(event) => updateAllocation(index, scope.scopeId, Number(event.target.value))} className="w-14 accent-[var(--i-violet)]" /><input type="number" min="0" max={person.fte} step="0.05" value={value} onChange={(event) => updateAllocation(index, scope.scopeId, Number(event.target.value))} className="signal-meter w-14 rounded px-1.5 py-1 tabular-nums" /></div></td>;
                   })}
+                  <td className="px-2 py-2"><input aria-label={`${person.name || `Person ${index + 1}`} outside Signal commitment`} type="number" min="0" max={person.fte} step="0.05" value={person.externalCommitmentFte ?? 0} onChange={(event) => updatePerson(index, { externalCommitmentFte: Math.max(0, Number(event.target.value)) })} className="signal-meter w-16 rounded px-2 py-1.5 tabular-nums" /></td>
                   <td className="px-2 py-2 tabular-nums"><div className={total > person.fte + 1e-6 ? "text-[var(--i-red)]" : "text-[var(--i-text)]"}>{total.toFixed(2)} / {Math.max(0, person.fte - total).toFixed(2)}</div></td>
                   <td className="px-2 py-2"><div className="text-[var(--i-text-soft)]">{scopeCount} project{scopeCount === 1 ? "" : "s"}</div><div className="text-[9px] text-[var(--i-text-faint)]">{Math.round(factor * 100)}% effective</div></td>
                   <td className="px-2 py-2"><button onClick={() => removePerson(index)} className="text-[var(--i-red)]">Remove</button></td>
@@ -179,11 +183,11 @@ export default function ActualTeamDrawer({
               })}
             </tbody>
             <tfoot className="border-t-2 border-[var(--i-border-strong)] bg-[var(--i-recess)]">
-              <tr><td className="px-3 py-2 font-medium text-[var(--i-text-soft)]">Proposed named team</td><td className="px-2 py-2 i-readout">{readings.workforceFte.toFixed(2)}</td>{scopes.map((scope) => { const value = readings.byScope.get(scope.scopeId); return <td key={scope.scopeId} className="px-2 py-2"><div className="i-readout text-[var(--i-text)]">{value?.raw.toFixed(2)} raw</div><div className="text-[9px] text-[var(--i-text-faint)]">{value?.effective.toFixed(2)} effective</div></td>; })}<td className="px-2 py-2 text-[var(--i-text-soft)]">{readings.freeFte.toFixed(2)} free</td><td /><td /></tr>
+              <tr><td className="px-3 py-2 font-medium text-[var(--i-text-soft)]">Proposed named team</td><td className="px-2 py-2 i-readout">{readings.workforceFte.toFixed(2)}</td>{scopes.map((scope) => { const value = readings.byScope.get(scope.scopeId); return <td key={scope.scopeId} className="px-2 py-2"><div className="i-readout text-[var(--i-text)]">{value?.raw.toFixed(2)} raw</div><div className="text-[9px] text-[var(--i-text-faint)]">{value?.effective.toFixed(2)} effective</div></td>; })}<td className="px-2 py-2 i-readout text-[var(--i-text-soft)]">{draft.reduce((sum, person) => sum + (person.externalCommitmentFte ?? 0), 0).toFixed(2)}</td><td className="px-2 py-2 text-[var(--i-text-soft)]">{readings.freeFte.toFixed(2)} free</td><td /><td /></tr>
             </tfoot>
           </table>
         </div>
-        <button onClick={() => setDraft((current) => [...current, { name: "", fte: 1, allocations: scopes.map((scope) => ({ scopeId: scope.scopeId, fte: 0 })) }])} className="mt-3 rounded border border-[var(--i-border-strong)] px-3 py-1.5 text-[10.5px] text-[var(--i-text-soft)]">+ Add person</button>
+        <button onClick={() => setDraft((current) => [...current, { name: "", fte: 1, externalCommitmentFte: 0, allocations: scopes.map((scope) => ({ scopeId: scope.scopeId, fte: 0 })) }])} className="mt-3 rounded border border-[var(--i-border-strong)] px-3 py-1.5 text-[10.5px] text-[var(--i-text-soft)]">+ Add person</button>
 
         {issues.length > 0 && <div className="mt-3 rounded border border-[var(--i-red)]/35 bg-[var(--i-red)]/10 px-3 py-2 text-[10.5px] text-[var(--i-red)]">{issues.map((issue) => <div key={`${issue.code}-${issue.message}`}>{issue.message}</div>)}</div>}
 

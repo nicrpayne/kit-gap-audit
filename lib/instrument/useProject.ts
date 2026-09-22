@@ -146,7 +146,7 @@ export interface ProjectPayload {
   startDate: string;
   forecastSource: { asOf: string; provider: "Linear"; temporalRole: "live"; availability: "available" | "empty" };
   scopes: ProjectScope[];
-  people: { id: string; name: string; fte: number; active: boolean }[];
+  people: { id: string; name: string; fte: number; externalCommitmentFte?: number; active: boolean }[];
   allocations: { id: string; personId: string; scopeId: string; fraction: number }[];
   contextSwitchCostPct: number;
   sources: ProjectSource[];

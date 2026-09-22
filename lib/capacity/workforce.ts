@@ -64,6 +64,8 @@ export interface MasterReading {
   workforce: number;
   /** Physically allocated across every channel. */
   allocated: number;
+  /** Real capacity committed beyond Signal's currently tracked channels. */
+  external: number;
   /** Workforce not yet allocated anywhere. Never negative. */
   free: number;
   /** Delivery capacity after context-switch friction, across every channel. */
@@ -82,8 +84,11 @@ export function workforceFte(people: PersonLike[]): number {
 }
 
 /** How much of each person's own time is committed, 0..1. */
-export function committedFractionByPerson(allocations: AllocationLike[]): Map<string, number> {
-  const out = new Map<string, number>();
+export function committedFractionByPerson(allocations: AllocationLike[], people: PersonLike[] = []): Map<string, number> {
+  const out = new Map<string, number>(people.map((person) => [
+    person.id,
+    person.fte > EPS ? Math.max(0, person.externalCommitmentFte ?? 0) / person.fte : 0,
+  ]));
   for (const a of allocations) {
     if (a.fraction <= EPS) continue;
     out.set(a.personId, (out.get(a.personId) ?? 0) + a.fraction);
@@ -105,7 +110,7 @@ export function scopeCountByPerson(allocations: AllocationLike[]): Map<string, n
 
 /** Unallocated capacity in the pool, in FTE. */
 export function freeFte(state: WorkforceState): number {
-  const committed = committedFractionByPerson(state.allocations);
+  const committed = committedFractionByPerson(state.allocations, state.people);
   return state.people
     .filter((p) => p.active)
     .reduce((t, p) => t + Math.max(0, 1 - (committed.get(p.id) ?? 0)) * p.fte, 0);
@@ -157,15 +162,19 @@ export function readMaster(
   const channels = scopeIds.map((id) => readChannel(state, id, contextSwitchCostPct, requiredByScope[id] ?? 0));
   const required = channels.reduce((t, c) => t + c.required, 0);
   const allocated = channels.reduce((t, c) => t + c.raw, 0);
+  const external = state.people
+    .filter((person) => person.active)
+    .reduce((total, person) => total + Math.min(person.fte, Math.max(0, person.externalCommitmentFte ?? 0)), 0);
   const effective = channels.reduce((t, c) => t + c.effective, 0);
   return {
     workforce,
     allocated,
+    external,
     // Allocation beyond the workforce is a deficit, not negative free space.
-    free: Math.max(0, workforce - allocated),
+    free: freeFte(state),
     effective,
     required,
-    overUnder: workforce - allocated,
+    overUnder: workforce - allocated - external,
   };
 }
 
@@ -263,7 +272,7 @@ export function setChannelRaw(
   if (Math.abs(delta) <= EPS) return { allocations, achievedRaw: current, required: 0 };
 
   if (delta > 0) {
-    const committed = committedFractionByPerson(allocations);
+    const committed = committedFractionByPerson(allocations, state.people);
     for (const candidate of acquisitionOrder({ ...state, allocations }, scopeId, committed)) {
       if (delta <= EPS) break;
       const availableFte = candidate.freeFraction * candidate.person.fte;
@@ -405,10 +414,11 @@ export function setPersonSplit(
 
   const kept = lines.filter((l) => l.fraction > EPS);
   const total = kept.reduce((t, l) => t + l.fraction, 0);
-  if (total > 1 + EPS) {
+  const externalFraction = person.fte > EPS ? Math.max(0, person.externalCommitmentFte ?? 0) / person.fte : 0;
+  if (total + externalFraction > 1 + EPS) {
     return {
       allocations: state.allocations,
-      error: `That commits ${Math.round(total * 100)}% of one person. Nobody has more than 100% of themselves.`,
+      error: `That commits ${Math.round((total + externalFraction) * 100)}% of one person including work outside Signal. Nobody has more than 100% of themselves.`,
     };
   }
 
