@@ -186,6 +186,17 @@ export default function ReportsPageClient() {
   }, [selected, live]);
   const forecastUnavailable = live?.state === "error" && live.reason.includes("FORECAST UNAVAILABLE");
   const forecastIncomplete = live?.state === "ready" && live.coverageState !== "forecastable";
+  const scenarioReportBlockedReason = generating
+    ? "Report generation is already in progress."
+    : !scopeId
+      ? "Choose a project first."
+      : !project.active
+        ? "Stage at least one Scope, estimate, staffing, Capacity, or decision lever in Scenario first."
+        : forecastUnavailable
+          ? live.reason
+          : forecastIncomplete
+            ? `${live.coverageReason ?? live.coverageLabel}. Reconcile execution coverage in Scope before publishing a Reality versus Scenario delivery brief.`
+            : null;
 
   async function generate() {
     if (!scopeId) return;
@@ -296,12 +307,19 @@ export default function ReportsPageClient() {
         <button
           onClick={generate}
           disabled={generating || !scopeId || forecastUnavailable || forecastIncomplete}
+          title={forecastIncomplete ? `${live.coverageReason ?? live.coverageLabel}. Reconcile execution coverage in Scope before publishing a delivery brief.` : undefined}
           className="i-btn-primary px-4 py-2 text-sm"
         >
-          {generating ? "Generating…" : "Generate report"}
+          {generating ? "Generating…" : forecastIncomplete ? "Resolve coverage to report" : "Generate report"}
         </button>
-        <button onClick={() => void generateScenario()} disabled={generating || !scopeId || !project.active || forecastUnavailable || forecastIncomplete} className="rounded-md border border-[var(--i-violet)] px-4 py-2 text-sm text-[var(--i-violet)] disabled:opacity-35">
-          {generating ? "Generating…" : "Generate Reality + Scenario"}
+        <button
+          onClick={() => void generateScenario()}
+          disabled={scenarioReportBlockedReason !== null}
+          title={scenarioReportBlockedReason ?? "Generate and persist an immutable Reality versus Scenario comparison."}
+          aria-describedby={scenarioReportBlockedReason ? "scenario-report-blocked-reason" : undefined}
+          className="rounded-md border border-[var(--i-violet)] px-4 py-2 text-sm text-[var(--i-violet)] disabled:opacity-35"
+        >
+          {generating ? "Generating…" : forecastIncomplete ? "Resolve coverage to compare" : "Generate Reality + Scenario"}
         </button>
         <select value={audience} onChange={(event) => setAudience(event.target.value as AudienceLens)} className="rounded-md border border-[var(--i-border)] bg-[var(--i-panel)] px-3 py-2 text-xs text-[var(--i-text)]" aria-label="Brief audience">
           {Object.entries(AUDIENCE_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
@@ -324,6 +342,13 @@ export default function ReportsPageClient() {
           </span>;
         })()}
       </div>
+
+      {scenarioReportBlockedReason && project.active && !generating && (
+        <div id="scenario-report-blocked-reason" className="report-no-print mb-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-[var(--i-amber)] bg-[var(--i-amber-soft)] px-4 py-3 text-xs text-[var(--i-text-soft)]">
+          <span><strong className="text-[var(--i-amber)]">Scenario comparison is not publishable yet.</strong> {scenarioReportBlockedReason}</span>
+          {forecastIncomplete && <Link href={`/scope?project=${encodeURIComponent(scopeId ?? "")}`} className="shrink-0 text-[var(--i-signal)] hover:underline">Open Scope reconciliation →</Link>}
+        </div>
+      )}
 
       {error && <div className="text-sm text-[var(--i-red)] mb-4">{error}</div>}
 
