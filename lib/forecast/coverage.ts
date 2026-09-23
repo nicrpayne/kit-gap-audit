@@ -35,6 +35,7 @@ export interface ForecastCoverageContract {
   census: {
     executionIssueCount: number;
     modeledExecutionIssueCount: number;
+    outsideExecutionIssueCount: number;
     unmappedExecutionIssueCount: number;
     acceptedCapabilityCount: number;
     mappedAcceptedCapabilityCount: number;
@@ -79,6 +80,8 @@ export function deliveryRelevantIssueIds(
  */
 export function evaluateForecastCoverage(input: ForecastCoverageInput): ForecastCoverageContract {
   const accepted = input.capabilities.filter((capability) => capability.status === "accepted");
+  const outside = input.capabilities.filter((capability) => capability.status !== "accepted");
+  const hasGovernedShape = input.capabilities.length > 0;
   const issueIds = new Set(input.issueIds);
   const mappedIssueIds = new Set(
     accepted.flatMap((capability) => capability.workLinks)
@@ -95,11 +98,18 @@ export function evaluateForecastCoverage(input: ForecastCoverageInput): Forecast
   const withoutActiveLink = accepted.filter((capability) =>
     !capability.workLinks.some((link) => ACTIVE_LINK_STATES.has(link.state))
   );
+  const outsideIssueIds = new Set(
+    outside.flatMap((capability) => capability.workLinks)
+      .filter((link) => ACTIVE_LINK_STATES.has(link.state) && issueIds.has(link.externalId))
+      .map((link) => link.externalId),
+  );
+  const classifiedIssueIds = new Set([...mappedIssueIds, ...outsideIssueIds]);
 
   const census = {
     executionIssueCount: input.issueIds.length,
-    modeledExecutionIssueCount: accepted.length === 0 ? input.issueIds.length : mappedIssueIds.size,
-    unmappedExecutionIssueCount: accepted.length === 0 ? 0 : input.issueIds.length - mappedIssueIds.size,
+    modeledExecutionIssueCount: hasGovernedShape ? mappedIssueIds.size : input.issueIds.length,
+    outsideExecutionIssueCount: hasGovernedShape ? outsideIssueIds.size : 0,
+    unmappedExecutionIssueCount: hasGovernedShape ? input.issueIds.length - classifiedIssueIds.size : 0,
     acceptedCapabilityCount: accepted.length,
     mappedAcceptedCapabilityCount: linked.length,
     openShapeDecisionCount: input.openShapeDecisionCount,
@@ -134,11 +144,11 @@ export function evaluateForecastCoverage(input: ForecastCoverageInput): Forecast
       count: activeButAbsent.length,
     });
   }
-  if (accepted.length > 0 && mappedIssueIds.size < input.issueIds.length) {
+  if (hasGovernedShape && classifiedIssueIds.size < input.issueIds.length) {
     reasons.push({
       code: "execution_work_unmapped",
-      label: `${input.issueIds.length - mappedIssueIds.size} current execution ${input.issueIds.length - mappedIssueIds.size === 1 ? "item has" : "items have"} no accepted Capability`,
-      count: input.issueIds.length - mappedIssueIds.size,
+      label: `${input.issueIds.length - classifiedIssueIds.size} current execution ${input.issueIds.length - classifiedIssueIds.size === 1 ? "item is" : "items are"} not classified as in or out of this release`,
+      count: input.issueIds.length - classifiedIssueIds.size,
     });
   }
   if (input.openShapeDecisionCount > 0) {
@@ -155,7 +165,7 @@ export function evaluateForecastCoverage(input: ForecastCoverageInput): Forecast
       canonicalForecast: false,
       label: "FORECAST INCOMPLETE — EXECUTION COVERAGE UNRESOLVED",
       reason: reasons.map((item) => item.label).join("; "),
-      caveat: "Unmapped accepted scope or unresolved execution work is excluded.",
+      caveat: "Unmapped accepted scope or unclassified execution work is excluded.",
       reasons,
       census,
     };

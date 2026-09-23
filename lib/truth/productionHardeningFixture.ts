@@ -73,7 +73,7 @@ const scope = (
     reason: null,
     caveat: null,
     reasons: [],
-    census: { executionIssueCount: 1, modeledExecutionIssueCount: 1, unmappedExecutionIssueCount: 0, acceptedCapabilityCount: 0, mappedAcceptedCapabilityCount: 0, openShapeDecisionCount: 0, incompleteDependencyCount: 0 },
+    census: { executionIssueCount: 1, modeledExecutionIssueCount: 1, outsideExecutionIssueCount: 0, unmappedExecutionIssueCount: 0, acceptedCapabilityCount: 0, mappedAcceptedCapabilityCount: 0, openShapeDecisionCount: 0, incompleteDependencyCount: 0 },
   },
   forecastReadiness: { state: "ready", reason: null },
     capabilities: [],

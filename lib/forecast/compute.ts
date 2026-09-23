@@ -266,7 +266,7 @@ async function buildScopeSimInputs(scope: Scope): Promise<ScopeSimBundle> {
       .filter((link) => link.state === "active" || link.state === "configured")
       .map((link) => link.externalId),
   );
-  const modeledIssues = acceptedCapabilities.length === 0
+  const modeledIssues = capabilities.length === 0
     ? issues
     : issues.filter((issue) => modeledIssueIds.has(issue.identifier));
 

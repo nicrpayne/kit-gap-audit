@@ -67,6 +67,20 @@ const platformCoverage = evaluateForecastCoverage({
   openShapeDecisionCount: 0,
 });
 assert.equal(platformCoverage.state, "forecastable");
+const classifiedBoundaryCoverage = evaluateForecastCoverage({
+  executionState: "configured",
+  issueIds: ["SOF-IN", "SOF-LATER"],
+  capabilities: [
+    { status: "accepted", workLinks: [{ externalId: "SOF-IN", state: "active" }] },
+    { status: "outside", workLinks: [{ externalId: "SOF-LATER", state: "active" }] },
+  ],
+  openShapeDecisionCount: 0,
+});
+assert.equal(classifiedBoundaryCoverage.state, "forecastable");
+assert.equal(classifiedBoundaryCoverage.canonicalForecast, true);
+assert.equal(classifiedBoundaryCoverage.census.modeledExecutionIssueCount, 1);
+assert.equal(classifiedBoundaryCoverage.census.outsideExecutionIssueCount, 1);
+assert.equal(classifiedBoundaryCoverage.census.unmappedExecutionIssueCount, 0);
 const downstreamCoverage = inheritDependencyCoverage(platformCoverage, [{ name: "iTrack", coverage: iTrackCoverage }]);
 assert.equal(downstreamCoverage.state, "modeled_subset");
 assert.equal(downstreamCoverage.canonicalForecast, false);

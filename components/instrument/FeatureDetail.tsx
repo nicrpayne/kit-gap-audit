@@ -1135,6 +1135,7 @@ export function AddFeature({
   const [note, setNote] = useState("");
   const [evidenceRef, setEvidenceRef] = useState("");
   const [picked, setPicked] = useState<Set<string>>(new Set());
+  const [releaseStatus, setReleaseStatus] = useState<"accepted" | "outside">("accepted");
   if (!open) return null;
 
   const pickedDays = unmappedItems
@@ -1170,11 +1171,25 @@ export function AddFeature({
           style={{ background: "var(--i-recess)", border: "1px solid var(--i-border-strong)", color: "var(--i-text)" }}
         />
 
+        <label className="i-label mt-3.5 block" htmlFor="feature-release-status">
+          Release boundary
+        </label>
+        <select
+          id="feature-release-status"
+          value={releaseStatus}
+          onChange={(event) => setReleaseStatus(event.target.value as "accepted" | "outside")}
+          className="mt-1.5 w-full rounded px-3 py-2 text-[12px]"
+          style={{ background: "var(--i-recess)", border: "1px solid var(--i-border-strong)", color: "var(--i-text)" }}
+        >
+          <option value="accepted">In this release</option>
+          <option value="outside">Out / later</option>
+        </select>
+
         {unmappedItems.length > 0 && (
           <>
             <div className="i-label mt-4">Claim work that is not mapped yet</div>
             <p className="mt-1 text-[10px] text-[var(--i-text-faint)] leading-snug">
-              Optional. In Reality this explicitly brings selected Linear work into the accepted modeled subset;
+              Optional. In Reality this classifies selected Linear work as either modeled in this release or governed out/later;
               in Scenario it remains a local attribution preview.
             </p>
             <ul className="mt-2 max-h-[186px] overflow-y-auto">
@@ -1229,13 +1244,13 @@ export function AddFeature({
           onClick={() => onSaveReality({
             name: name.trim(), description: intent.trim(), note: note.trim(),
             evidence: evidenceRef.trim() ? [{ ref: evidenceRef.trim(), suppliedBy: "operator" }] : [],
-            workItemIds: [...picked], status: "accepted",
+            workItemIds: [...picked], status: releaseStatus,
           })}
           data-shoot="create-feature-reality"
           className="mt-4 w-full rounded-md px-3 py-2.5 text-[12px] transition-colors disabled:opacity-30"
           style={{ border: "1px solid var(--i-signal)", color: "var(--i-signal)" }}
         >
-          {saving ? "Saving Reality…" : `Add ${name.trim() || "capability"} to Reality`}
+          {saving ? "Saving Reality…" : `Add ${name.trim() || "capability"} to Reality · ${releaseStatus === "accepted" ? "In" : "Out / later"}`}
           {picked.size > 0 && ` with ${picked.size} item${picked.size === 1 ? "" : "s"} · ${pickedDays.toFixed(1)}d`}
         </button>
         <button

@@ -35,7 +35,7 @@ const capabilities = [
 const coverage = {
   state: "modeled_subset", canonicalForecast: false, label: "Execution coverage unresolved", reason: "22 current execution items are not mapped to accepted product shape.",
   reasons: [{ code: "unmapped_execution", message: "22 current execution items are unmapped." }],
-  census: { executionIssueCount: 24, modeledExecutionIssueCount: 2, acceptedCapabilityCount: 3, mappedAcceptedCapabilityCount: 1, unmappedExecutionIssueCount: 22, openShapeDecisionCount: 0 },
+  census: { executionIssueCount: 24, modeledExecutionIssueCount: 2, outsideExecutionIssueCount: 0, acceptedCapabilityCount: 3, mappedAcceptedCapabilityCount: 1, unmappedExecutionIssueCount: 22, openShapeDecisionCount: 0 },
 };
 const payload = {
   startDate: "2026-09-15T00:00:00.000Z", forecastSource: { asOf: "2026-09-15T18:30:00.000Z", provider: "Linear", temporalRole: "live", availability: "available" },

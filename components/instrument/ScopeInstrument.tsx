@@ -868,7 +868,19 @@ export default function ScopeInstrument() {
               availableFte: contributor.effectiveFte,
             }))
           : []}
-        onToggle={(out) => openFeature && setBypassed(openFeature, out)}
+        onToggle={(out) => {
+          if (!openFeature) return;
+          setBypassed(openFeature, out);
+          if (openFeature.canonicalCapability) {
+            setPending({
+              kind: "move",
+              capability: openFeature.canonicalCapability,
+              status: out ? "outside" : "accepted",
+              itemIds: openFeature.items.map((item) => item.id),
+              idempotencyKey: crypto.randomUUID(),
+            });
+          }
+        }}
         onAccept={(id) =>
           m.setScenario((prev) => {
             const next = new Set(prev.acceptedCandidateIds);
@@ -1080,7 +1092,7 @@ function ProductShapeSummary({
       </div>
       <div className="min-w-0 rounded-lg border border-[var(--i-border)] bg-[var(--i-recess)] px-3 py-2">
         <div className="i-label">Accepted shape mapped</div>
-        <div className="mt-1 text-[9px] text-[var(--i-text-faint)]">{coverage.census.mappedAcceptedCapabilityCount}/{coverage.census.acceptedCapabilityCount} capabilities · {coverage.census.modeledExecutionIssueCount}/{coverage.census.executionIssueCount} execution items modeled</div>
+        <div className="mt-1 text-[9px] text-[var(--i-text-faint)]">{coverage.census.mappedAcceptedCapabilityCount}/{coverage.census.acceptedCapabilityCount} capabilities · {coverage.census.modeledExecutionIssueCount} modeled · {coverage.census.outsideExecutionIssueCount} out/later · {coverage.census.unmappedExecutionIssueCount} unresolved</div>
         {accepted.length === 0 && <div className="mt-0.5 truncate text-[8.5px] text-[var(--i-text-faint)]">No accepted Capability records; legacy execution grammar remains visible</div>}
       </div>
       <div className="min-w-0 rounded-lg border border-[var(--i-amber)]/20 bg-[var(--i-amber)]/[0.025] px-3 py-2">
