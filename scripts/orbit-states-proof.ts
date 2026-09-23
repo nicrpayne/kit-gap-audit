@@ -67,6 +67,9 @@ const feature = (id: string, name: string, loadDays: number): Feature => ({
   evidence: null,
   bypassed: false,
   accepted: false,
+  knowledgeEstimates: [],
+  activeKnowledgeEstimate: null,
+  estimateBasis: "work_rollup",
 });
 
 const composition = (engaged: Feature[]): FeatureComposition => ({

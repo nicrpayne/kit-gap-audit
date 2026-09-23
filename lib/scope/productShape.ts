@@ -16,6 +16,7 @@ export interface ShapeCapability {
   provenance?: unknown;
   events?: { id: string; action: string; actor: string; createdAt: string }[];
   workLinks: { id: string; provider: string; externalId: string; externalUrl: string | null; state: string }[];
+  knowledgeEstimates?: import("@/lib/scope/knowledgeEstimates").CapabilityKnowledgeEstimate[];
 }
 
 export function capabilityExecutionState(

@@ -62,6 +62,9 @@ const feature = (id: string, name: string, loadDays: number, source: Feature["so
   evidence: source === "hermes" ? { quote: "we still need offline capture", rationale: "reads like scope" } : null,
   bypassed: false,
   accepted,
+  knowledgeEstimates: [],
+  activeKnowledgeEstimate: null,
+  estimateBasis: "work_rollup",
 });
 
 const composition = (engaged: Feature[]): FeatureComposition => ({

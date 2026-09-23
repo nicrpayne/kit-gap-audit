@@ -17,6 +17,8 @@ import { buildReleaseContext } from "@/lib/estimate/context";
 import { resolveCapacity, type CapacityContributor } from "@/lib/capacity/resolve";
 import { capacityForecastContract, type CapacityForecastContract } from "@/lib/capacity/contract";
 import { deliveryRelevantIssueIds, evaluateForecastCoverage, inheritDependencyCoverage, type ForecastCoverageContract } from "@/lib/forecast/coverage";
+import type { ProjectContextPackage } from "@/lib/context/package";
+import { capabilityKnowledgeEstimates, type CapabilityKnowledgeEstimate } from "@/lib/scope/knowledgeEstimates";
 
 export interface ForecastFinding {
   id: string;
@@ -494,6 +496,7 @@ export interface PortfolioScopeInput {
     revision: number; sortOrder: number; updatedAt: Date; workLinkCount: number;
     events: { id: string; action: string; actor: string; createdAt: Date }[];
     workLinks: { id: string; provider: string; externalId: string; externalUrl: string | null; state: string }[];
+    knowledgeEstimates: CapabilityKnowledgeEstimate[];
   }[];
   openShapeQuestions: { id: string; title: string; rationale: string | null; status: string }[];
 }
@@ -570,7 +573,7 @@ export interface PortfolioInputs {
 // against this payload rather than round-tripping to a server route.
 export async function buildPortfolioInputs(): Promise<PortfolioInputs> {
   const readAt = new Date();
-  const [scopes, people, allAllocations, portfolioSettings, reconciliations] = await Promise.all([
+  const [scopes, people, allAllocations, portfolioSettings, reconciliations, contextSnapshots] = await Promise.all([
     prisma.scope.findMany({
       orderBy: { createdAt: "asc" },
       include: {
@@ -589,15 +592,35 @@ export async function buildPortfolioInputs(): Promise<PortfolioInputs> {
     prisma.allocation.findMany(),
     prisma.portfolioSettings.findUnique({ where: { id: "singleton" } }),
     prisma.capacityReconciliation.findMany(),
+    prisma.contextSnapshot.findMany({
+      orderBy: { createdAt: "desc" },
+      select: { id: true, scopeId: true, package: true, createdAt: true },
+    }),
   ]);
   const reconciliationByScope = new Map(reconciliations.map((item) => [item.scopeId, item]));
   const exactScopeIds = new Set(reconciliations.filter((item) => item.status === "named_exact" && item.completenessConfirmed).map((item) => item.scopeId));
   const allocations = allAllocations.filter((item) => exactScopeIds.has(item.scopeId));
+  const latestSnapshotByScope = new Map<string, (typeof contextSnapshots)[number]>();
+  for (const snapshot of contextSnapshots) {
+    if (!latestSnapshotByScope.has(snapshot.scopeId)) latestSnapshotByScope.set(snapshot.scopeId, snapshot);
+  }
 
   const startDate = new Date();
   const scopeInputs: PortfolioScopeInput[] = [];
   for (const scope of scopes) {
     const bundle = await buildScopeSimInputs(scope);
+    const latestSnapshot = latestSnapshotByScope.get(scope.id) ?? null;
+    const knowledgeEstimates = capabilityKnowledgeEstimates(
+      latestSnapshot?.package as unknown as ProjectContextPackage | undefined,
+      latestSnapshot?.id,
+      scope.capabilities.map((capability) => ({ id: capability.id, name: capability.name })),
+    );
+    const estimatesByCapability = new Map<string, typeof knowledgeEstimates>();
+    for (const estimate of knowledgeEstimates) {
+      const bucket = estimatesByCapability.get(estimate.capabilityId) ?? [];
+      bucket.push(estimate);
+      estimatesByCapability.set(estimate.capabilityId, bucket);
+    }
     const recentReports = await prisma.report.findMany({
       where: { scopeId: scope.id },
       orderBy: { generatedAt: "desc" },
@@ -668,6 +691,7 @@ export async function buildPortfolioInputs(): Promise<PortfolioInputs> {
         updatedAt: capability.updatedAt, workLinkCount: capability.workLinks.length, provenance: capability.provenance,
         events: capability.events.map((event) => ({ id: event.id, action: event.action, actor: event.actor, createdAt: event.createdAt })),
         workLinks: capability.workLinks.map((link) => ({ id: link.id, provider: link.provider, externalId: link.externalId, externalUrl: link.externalUrl, state: link.state })),
+        knowledgeEstimates: estimatesByCapability.get(capability.id) ?? [],
       })),
       openShapeQuestions: scope.decisions.map((decision) => ({ id: decision.id, title: decision.title, rationale: decision.rationale, status: decision.status })),
     });

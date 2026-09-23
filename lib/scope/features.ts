@@ -25,6 +25,7 @@
 import type { ScopeWorkItem } from "@/lib/instrument/useProject";
 import type { CompletedWork } from "@/lib/forecast/compute";
 import type { ShapeCapability } from "@/lib/scope/productShape";
+import type { CapabilityKnowledgeEstimate } from "@/lib/scope/knowledgeEstimates";
 
 export interface ThreePoint {
   low: number;
@@ -72,6 +73,13 @@ export interface Feature {
   accepted: boolean;
   /** Present only when this module is owned by canonical server Reality. */
   canonicalCapability?: ShapeCapability;
+  /** Source-attributed top-down estimates from the current immutable
+      knowledge snapshot. Inert until one is explicitly staged. */
+  knowledgeEstimates: CapabilityKnowledgeEstimate[];
+  /** The knowledge estimate replacing this capability's ticket rollup in
+      the current Scenario, if any. */
+  activeKnowledgeEstimate: CapabilityKnowledgeEstimate | null;
+  estimateBasis: "work_rollup" | "knowledge_provisional";
 }
 
 export interface FeatureComposition {
@@ -159,6 +167,9 @@ function summarise(
     evidence,
     bypassed,
     accepted,
+    knowledgeEstimates: [],
+    activeKnowledgeEstimate: null,
+    estimateBasis: "work_rollup",
   };
 }
 
@@ -318,6 +329,7 @@ export function composeScopeFeatures(
   estimateOverrides: Record<string, ThreePoint>,
   drafts: DraftFeature[],
   acceptedCandidateIds: Set<string> = new Set(),
+  knowledgeEstimateOverrides: Record<string, { estimateId: string; contextSnapshotId: string; low: number; likely: number; high: number }> = {},
 ): FeatureComposition {
   const accepted = capabilities.filter((capability) => capability.status === "accepted");
   const itemById = new Map(items.map((item) => [item.id, item]));
@@ -351,8 +363,7 @@ export function composeScopeFeatures(
       return [item];
     });
     const id = `capability:${capability.id}`;
-    return {
-      ...summarise(
+    const base = summarise(
       id,
       capability.name,
       "canonical",
@@ -364,9 +375,27 @@ export function composeScopeFeatures(
       bypassedFeatureIds.has(id),
       true,
       estimateOverrides,
-      ),
+    );
+    const override = knowledgeEstimateOverrides[capability.id];
+    const activeKnowledgeEstimate = override
+      ? capability.knowledgeEstimates?.find((estimate) => estimate.id === override.estimateId && estimate.contextSnapshotId === override.contextSnapshotId) ?? null
+      : null;
+    const range = activeKnowledgeEstimate
+      ? { low: override.low, likely: override.likely, high: override.high }
+      : base.range;
+    const effortDays = expectedDays(range);
+    return {
+      ...base,
       description: capability.description,
       canonicalCapability: capability,
+      knowledgeEstimates: capability.knowledgeEstimates ?? [],
+      activeKnowledgeEstimate,
+      estimateBasis: activeKnowledgeEstimate ? "knowledge_provisional" as const : "work_rollup" as const,
+      range,
+      effortDays,
+      loadDays: effortDays / (capacity > 0 ? capacity : 1),
+      uncertainty: effortDays > 0 ? (range.high - range.low) / effortDays : 0,
+      placeholderCount: activeKnowledgeEstimate ? 0 : base.placeholderCount,
     };
   });
 

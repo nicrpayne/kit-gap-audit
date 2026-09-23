@@ -24,6 +24,7 @@ import { Prototype } from "@/components/instrument/Panel";
 import { expectedDays, uncertaintyLabel, type Feature, type ThreePoint, type DraftFeature } from "@/lib/scope/features";
 import type { ScopeWorkItem } from "@/lib/instrument/useProject";
 import type { ShapeCapability } from "@/lib/scope/productShape";
+import type { CapabilityKnowledgeEstimate } from "@/lib/scope/knowledgeEstimates";
 
 type Mode = "overview" | "work" | "evidence" | "estimate" | "history";
 
@@ -47,6 +48,8 @@ export default function FeatureDetail({
   onAccept,
   onSetEstimate,
   onClearEstimate,
+  onStageKnowledgeEstimate,
+  onClearKnowledgeEstimate,
   onEditReality,
   onUnlinkReality,
   onCommitDraft,
@@ -64,6 +67,8 @@ export default function FeatureDetail({
   onAccept: (id: string) => void;
   onSetEstimate: (id: string, range: ThreePoint) => void;
   onClearEstimate: (id: string) => void;
+  onStageKnowledgeEstimate: (capabilityId: string, estimate: CapabilityKnowledgeEstimate) => void;
+  onClearKnowledgeEstimate: (capabilityId: string) => void;
   onEditReality: (capability: ShapeCapability) => void;
   onUnlinkReality: (capability: ShapeCapability, linkId: string, itemLabel: string) => void;
   onCommitDraft: (feature: Feature) => void;
@@ -134,9 +139,9 @@ export default function FeatureDetail({
         <Overview feature={f} />
       )}
       {mode === "work" && <Work feature={f} capacity={capacity} onUnlinkReality={onUnlinkReality} />}
-      {mode === "evidence" && <Evidence feature={f} onAccept={onAccept} />}
+      {mode === "evidence" && <Evidence feature={f} onAccept={onAccept} onStageKnowledgeEstimate={onStageKnowledgeEstimate} onClearKnowledgeEstimate={onClearKnowledgeEstimate} />}
       {mode === "estimate" && (
-        <Estimate feature={f} capacity={capacity} onSetEstimate={onSetEstimate} onClearEstimate={onClearEstimate} />
+        <Estimate feature={f} capacity={capacity} onSetEstimate={onSetEstimate} onClearEstimate={onClearEstimate} onStageKnowledgeEstimate={onStageKnowledgeEstimate} onClearKnowledgeEstimate={onClearKnowledgeEstimate} />
       )}
       {mode === "history" && <History feature={f} />}
     </ToolWindow>
@@ -165,7 +170,8 @@ function ModuleHead({
 }) {
   const material = materialOf(f);
   const accent = accentFor(material);
-  const hasRange = f.items.length > 0 && f.range.high - f.range.low > 0;
+  const hasEstimate = f.items.length > 0 || f.activeKnowledgeEstimate !== null;
+  const hasRange = hasEstimate && f.range.high - f.range.low > 0;
   const retuned = !!realityRange && hasRange && Math.abs(realityRange.likely - f.range.likely) > 0.05;
   const source =
     f.source === "canonical"
@@ -198,7 +204,7 @@ function ModuleHead({
         )}
       </div>
 
-      {f.items.length > 0 ? <div className="mt-2.5 h-[96px]">
+      {hasEstimate ? <div className="mt-2.5 h-[96px]">
         <DistributionDisplay range={f.range} hasItems maxSpread={maxSpread} accent={accent} ghost={realityRange} dim={f.bypassed} scale={2} />
       </div> : <div className="mt-3 rounded-md px-3 py-4 text-center" style={{ border: "1px solid var(--i-border)", background: "var(--i-recess)" }}><div className="text-[10px] font-medium text-[var(--i-amber)]">Mapping needed</div><div className="mt-1 text-[8.5px] text-[var(--i-text-faint)]">No chart or effort value is fabricated for an empty capability.</div></div>}
       {hasRange ? (
@@ -214,7 +220,7 @@ function ModuleHead({
       )}
 
       <div className="mt-3 flex items-start gap-5">
-        <HeadStat k="Load" v={f.items.length > 0 ? `${f.loadDays.toFixed(1)}d` : "—"} n={f.items.length > 0 ? `÷ ${capacity.toFixed(2)} FTE` : "no mapped work"} />
+        <HeadStat k="Load" v={hasEstimate ? `${f.loadDays.toFixed(1)}d` : "—"} n={f.activeKnowledgeEstimate ? `provisional · ÷ ${capacity.toFixed(2)} FTE` : hasEstimate ? `÷ ${capacity.toFixed(2)} FTE` : "no mapped work"} />
         <HeadStat
           k="Share"
           v={releaseLoadDays > 0 && !f.bypassed ? `${((f.loadDays / releaseLoadDays) * 100).toFixed(0)}%` : "—"}
@@ -223,7 +229,7 @@ function ModuleHead({
         <HeadStat
           k="Uncertainty"
           v={uncertaintyLabel(f.uncertainty)}
-          n={f.placeholderCount > 0 ? `${f.placeholderCount} unestimated` : "all sized"}
+          n={f.activeKnowledgeEstimate ? "meeting evidence" : f.placeholderCount > 0 ? `${f.placeholderCount} unestimated` : "all sized"}
         />
       </div>
     </div>
@@ -296,8 +302,12 @@ function Overview({ feature: f }: { feature: Feature }) {
         />
         <Row
           k="Effort"
-          v={`${expectedDays(f.range).toFixed(1)}d`}
-          note={`expected, before capacity · ${f.range.low.toFixed(0)}–${f.range.high.toFixed(0)}d range`}
+          v={f.items.length > 0 || f.activeKnowledgeEstimate ? `${expectedDays(f.range).toFixed(1)}d` : "—"}
+          note={f.activeKnowledgeEstimate
+            ? `provisional meeting range · ${f.range.low.toFixed(0)}–${f.range.high.toFixed(0)} developer-days`
+            : f.items.length > 0
+              ? `expected, before capacity · ${f.range.low.toFixed(0)}–${f.range.high.toFixed(0)}d range`
+              : "no mapped work or staged estimate"}
         />
       </div>
 
@@ -505,7 +515,17 @@ function AttachedEvidence({ evidence }: { evidence: unknown[] }) {
   );
 }
 
-function Evidence({ feature: f, onAccept }: { feature: Feature; onAccept: (id: string) => void }) {
+function Evidence({
+  feature: f,
+  onAccept,
+  onStageKnowledgeEstimate,
+  onClearKnowledgeEstimate,
+}: {
+  feature: Feature;
+  onAccept: (id: string) => void;
+  onStageKnowledgeEstimate: (capabilityId: string, estimate: CapabilityKnowledgeEstimate) => void;
+  onClearKnowledgeEstimate: (capabilityId: string) => void;
+}) {
   if (f.canonicalCapability) {
     const ownerEvents = f.canonicalCapability.events ?? [];
     const provenance = f.canonicalCapability.provenance && typeof f.canonicalCapability.provenance === "object" && !Array.isArray(f.canonicalCapability.provenance)
@@ -524,6 +544,7 @@ function Evidence({ feature: f, onAccept }: { feature: Feature; onAccept: (id: s
           <Row k="Execution evidence" v={`${f.canonicalCapability.workLinks.length} explicit link${f.canonicalCapability.workLinks.length === 1 ? "" : "s"}`} note="current Linear facts remain owned by Linear" />
           <AttachedEvidence evidence={evidence} />
         </div>
+        <KnowledgeEstimateEvidence feature={f} onStage={onStageKnowledgeEstimate} onClear={onClearKnowledgeEstimate} />
         <div className="i-label mt-4 mb-2">Recent governed history</div>
         {ownerEvents.length ? ownerEvents.slice(0, 6).map((event) => (
           <div key={event.id} className="flex items-baseline gap-2 py-1.5" style={{ borderTop: "1px solid var(--i-border)" }}>
@@ -630,22 +651,29 @@ function Estimate({
   capacity,
   onSetEstimate,
   onClearEstimate,
+  onStageKnowledgeEstimate,
+  onClearKnowledgeEstimate,
 }: {
   feature: Feature;
   capacity: number;
   onSetEstimate: (id: string, range: ThreePoint) => void;
   onClearEstimate: (id: string) => void;
+  onStageKnowledgeEstimate: (capabilityId: string, estimate: CapabilityKnowledgeEstimate) => void;
+  onClearKnowledgeEstimate: (capabilityId: string) => void;
 }) {
   const [tuning, setTuning] = useState<string | null>(null);
-  if (f.items.length === 0)
-    return <Empty title="Nothing to estimate" body="No open work is mapped to this capability, so it carries no range." />;
+  if (f.items.length === 0 && f.knowledgeEstimates.length === 0)
+    return <Empty title="Nothing to estimate" body="No open work is mapped and the current knowledge snapshot carries no developer estimate for this capability." />;
 
   const tuned = f.items.find((i) => i.id === tuning) ?? null;
   return (
     <div className="px-5 py-4">
+      <KnowledgeEstimateEvidence feature={f} onStage={onStageKnowledgeEstimate} onClear={onClearKnowledgeEstimate} />
+      {f.items.length > 0 ? <>
       <p className="text-[11px] text-[var(--i-text-soft)] leading-relaxed">
-        The display above is the sum of these {f.items.length} range{f.items.length === 1 ? "" : "s"}. Re-estimating
-        one moves it, in this Scenario only.
+        {f.activeKnowledgeEstimate
+          ? "The staged meeting estimate is replacing this ticket rollup in Scenario, so the same work is not counted twice. Remove it to return to the ranges below."
+          : `The display above is the sum of these ${f.items.length} range${f.items.length === 1 ? "" : "s"}. Re-estimating one moves it, in this Scenario only.`}
       </p>
 
       <div className="i-label mt-4 mb-2">Where each number comes from</div>
@@ -682,8 +710,69 @@ function Estimate({
         />
       )}
 
+      </> : (
+        <p className="mt-3 text-[10px] text-[var(--i-text-faint)] leading-snug">
+          There are no linked Linear items yet. A usable meeting range can stand in for the whole capability in Scenario; it does not create tickets or change accepted Reality.
+        </p>
+      )}
+
       <p className="mt-3 text-[10px] text-[var(--i-text-faint)] leading-snug">
         The stored estimate is never written.
+      </p>
+    </div>
+  );
+}
+
+function KnowledgeEstimateEvidence({
+  feature,
+  onStage,
+  onClear,
+}: {
+  feature: Feature;
+  onStage: (capabilityId: string, estimate: CapabilityKnowledgeEstimate) => void;
+  onClear: (capabilityId: string) => void;
+}) {
+  const capability = feature.canonicalCapability;
+  if (!capability || feature.knowledgeEstimates.length === 0) return null;
+  return (
+    <div className="mt-4 rounded-md px-3 py-3" style={{ border: "1px solid color-mix(in srgb, var(--i-violet) 45%, var(--i-border))", background: "var(--i-recess)" }} data-shoot="knowledge-estimate-evidence">
+      <div className="flex items-baseline justify-between gap-3">
+        <span className="i-label" style={{ color: "var(--i-violet)" }}>Developer estimate evidence</span>
+        <span className="text-[8.5px] text-[var(--i-text-faint)]">from current knowledge snapshot</span>
+      </div>
+      <div className="mt-2 space-y-2">
+        {feature.knowledgeEstimates.slice(0, 3).map((estimate) => {
+          const active = feature.activeKnowledgeEstimate?.id === estimate.id;
+          const attribution = [estimate.speaker ?? estimate.owner, estimate.observedAt, estimate.sourceRef].filter(Boolean).join(" · ");
+          return (
+            <div key={estimate.id} className="rounded px-2.5 py-2" style={{ border: "1px solid var(--i-border)" }}>
+              <div className="flex items-baseline gap-2">
+                <span className="min-w-0 flex-1 text-[10.5px] text-[var(--i-text-soft)]">{estimate.statement}</span>
+                <span className="shrink-0 i-readout text-[10.5px] text-[var(--i-text)]">{estimate.rawEstimate}</span>
+              </div>
+              {attribution && <div className="mt-1 text-[8.5px] text-[var(--i-text-faint)]">{attribution}</div>}
+              {estimate.excerpt && <div className="mt-1.5 text-[9.5px] italic leading-relaxed text-[var(--i-text-faint)]">&ldquo;{estimate.excerpt}&rdquo;</div>}
+              {estimate.range ? (
+                <button
+                  type="button"
+                  onClick={() => active ? onClear(capability.id) : onStage(capability.id, estimate)}
+                  className="mt-2 w-full rounded px-2 py-1.5 text-[9.5px]"
+                  style={{ border: "1px solid var(--i-violet)", color: "var(--i-violet)" }}
+                  data-shoot={active ? "clear-knowledge-estimate" : "stage-knowledge-estimate"}
+                >
+                  {active ? "Remove provisional estimate from Scenario" : "Use provisionally in Scenario"}
+                </button>
+              ) : (
+                <div className="mt-2 text-[9px] leading-snug text-[var(--i-amber)]">
+                  Evidence only. Signal will not convert sprints, story points, or an unbounded statement into developer-days.
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+      <p className="mt-2 text-[9px] leading-snug text-[var(--i-text-faint)]">
+        Staging replaces this capability&apos;s ticket rollup in the hypothetical. It never adds both totals, never writes to Linear, and never changes Reality.
       </p>
     </div>
   );

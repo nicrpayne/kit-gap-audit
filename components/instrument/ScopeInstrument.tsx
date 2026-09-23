@@ -312,7 +312,8 @@ export default function ScopeInstrument() {
     proposalBypassed,
     m.scenario.estimateOverrideByItemId,
     [...m.scenario.draftFeatures, ...proposalDrafts],
-    m.scenario.acceptedCandidateIds
+    m.scenario.acceptedCandidateIds,
+    m.scenario.knowledgeEstimateByCapabilityId,
   );
   const reality = composeScopeFeatures(scope.items, scope.completedWork, scope.capabilities, scope.teamCapacity, new Set(), {}, []);
 
@@ -877,6 +878,24 @@ export default function ScopeInstrument() {
             const next = { ...prev.estimateOverrideByItemId };
             delete next[id];
             return { ...prev, estimateOverrideByItemId: next };
+          })
+        }
+        onStageKnowledgeEstimate={(capabilityId, estimate) => {
+          const range = estimate.range;
+          if (!range) return;
+          m.setScenario((prev) => ({
+            ...prev,
+            knowledgeEstimateByCapabilityId: {
+              ...prev.knowledgeEstimateByCapabilityId,
+              [capabilityId]: { estimateId: estimate.id, contextSnapshotId: estimate.contextSnapshotId, ...range },
+            },
+          }));
+        }}
+        onClearKnowledgeEstimate={(capabilityId) =>
+          m.setScenario((prev) => {
+            const next = { ...prev.knowledgeEstimateByCapabilityId };
+            delete next[capabilityId];
+            return { ...prev, knowledgeEstimateByCapabilityId: next };
           })
         }
         onEditReality={(capability) => setEditing(capability)}

@@ -18,6 +18,7 @@ import { computeMomentumTrend, type MomentumTrend } from "@/lib/momentum/trend";
 import { realityRevision, subscribeReality } from "@/lib/instrument/reality";
 import { formatDateOnly } from "@/lib/time/dateContract";
 import type { ForecastCoverageContract } from "@/lib/forecast/coverage";
+import { substituteCapabilityKnowledgeEstimates, type CapabilityKnowledgeEstimate } from "@/lib/scope/knowledgeEstimates";
 
 // The provenance the Scope instrument reads. Produced by describeItems in
 // lib/forecast/compute.ts by joining each simulated item back to the Linear
@@ -94,6 +95,7 @@ export interface ProjectScope {
     updatedAt: string; workLinkCount: number; provenance: unknown;
     events: { id: string; action: string; actor: string; createdAt: string }[];
     workLinks: { id: string; provider: string; externalId: string; externalUrl: string | null; state: string }[];
+    knowledgeEstimates: CapabilityKnowledgeEstimate[];
   }[];
   openShapeQuestions: { id: string; title: string; rationale: string | null; status: string }[];
 }
@@ -171,6 +173,16 @@ export interface SuiteScenario {
       is a pure input change on the existing path -- no new math, and the
       stored WorkEstimate is never touched. Scope owns this lever. */
   estimateOverrideByItemId: Record<string, { low: number; likely: number; high: number }>;
+  /** Top-down developer estimate explicitly staged from immutable knowledge
+      evidence. It replaces that capability's ticket rollup in Scenario so
+      the same work is never counted twice. */
+  knowledgeEstimateByCapabilityId: Record<string, {
+    estimateId: string;
+    contextSnapshotId: string;
+    low: number;
+    likely: number;
+    high: number;
+  }>;
   // WHICH CAPABILITIES ARE OUT, as opposed to which work items are.
   //
   // excludedItemIds above stays the engine's truth -- the simulation only
@@ -215,6 +227,7 @@ export const EMPTY_SCENARIO: SuiteScenario = {
   includedItemIds: new Set(),
   resolvedGateIds: new Set(),
   estimateOverrideByItemId: {},
+  knowledgeEstimateByCapabilityId: {},
   bypassedFeatureIds: new Set(),
   includedCapabilityIds: new Set(),
   draftFeatures: [],
@@ -230,6 +243,7 @@ export function scenarioIsActive(s: SuiteScenario): boolean {
     s.includedItemIds.size > 0 ||
     s.resolvedGateIds.size > 0 ||
     Object.keys(s.estimateOverrideByItemId).length > 0 ||
+    Object.keys(s.knowledgeEstimateByCapabilityId).length > 0 ||
     s.bypassedFeatureIds.size > 0 ||
     s.includedCapabilityIds.size > 0 ||
     s.draftFeatures.length > 0 ||
@@ -523,24 +537,46 @@ export function useProject(): ProjectModel {
                 ...selection.itemIds,
                 ...(selection.targetCapabilityId
                   ? fullScope?.capabilities.find((capability) => capability.id === selection.targetCapabilityId)?.workLinks.map((link) => link.externalId) ?? []
-                  : []),
+                : []),
               ];
             }));
+            const knowledgeSubstitutions = Object.entries(scenario.knowledgeEstimateByCapabilityId)
+              .flatMap(([capabilityId, estimate]) => {
+                const capability = fullScope?.capabilities.find((candidate) => candidate.id === capabilityId);
+                const currentEvidence = capability?.knowledgeEstimates.find((candidate) =>
+                  candidate.id === estimate.estimateId && candidate.contextSnapshotId === estimate.contextSnapshotId
+                );
+                if (!capability || !currentEvidence?.range || scenario.bypassedFeatureIds.has(`capability:${capabilityId}`)) return [];
+                const proposedIds = proposed
+                  .filter((selection) => selection.targetCapabilityId === capabilityId)
+                  .flatMap((selection) => selection.itemIds);
+                return [{
+                  capabilityId,
+                  estimateId: estimate.estimateId,
+                  range: { low: estimate.low, likely: estimate.likely, high: estimate.high },
+                  replacedItemIds: [
+                    ...capability.workLinks.map((link) => link.externalId),
+                    ...proposedIds,
+                  ],
+                  capabilityName: capability.name,
+                }];
+              });
+            const baseItems = [
+              ...s.items,
+              ...(fullScope?.executionItems ?? [])
+                .filter((item) => (scenario.includedItemIds.has(item.id) || proposalIncludedIds.has(item.id)) && !s.items.some((base) => base.id === item.id)),
+            ]
+              .filter((i) => !scenario.excludedItemIds.has(i.id) && !proposalExcludedIds.has(i.id))
+              .map((i) => {
+                const o = scenario.estimateOverrideByItemId[i.id];
+                return o ? { ...i, low: o.low, likely: o.likely, high: o.high } : i;
+              });
             return {
               ...s,
               items:
                 s.scopeId === emptyScopeId
                   ? []
-                  : [
-                      ...s.items,
-                      ...(fullScope?.executionItems ?? [])
-                        .filter((item) => (scenario.includedItemIds.has(item.id) || proposalIncludedIds.has(item.id)) && !s.items.some((base) => base.id === item.id)),
-                    ]
-                      .filter((i) => !scenario.excludedItemIds.has(i.id) && !proposalExcludedIds.has(i.id))
-                      .map((i) => {
-                        const o = scenario.estimateOverrideByItemId[i.id];
-                        return o ? { ...i, low: o.low, likely: o.likely, high: o.high } : i;
-                      }),
+                  : substituteCapabilityKnowledgeEstimates(baseItems, knowledgeSubstitutions),
               gates: s.gates.filter((g) => !scenario.resolvedGateIds.has(g.id)),
             };
           }),

@@ -435,7 +435,8 @@ export default function CapabilityTile({
   const spectral = material === "spectral";
   const raw = material === "raw";
   const accent = accentFor(material);
-  const hasRange = f.items.length > 0 && f.range.high - f.range.low > 0;
+  const hasEstimate = f.items.length > 0 || f.activeKnowledgeEstimate !== null;
+  const hasRange = hasEstimate && f.range.high - f.range.low > 0;
   const geom = tracePaths(f.range, f.items.length > 0, maxSpread, 200, 30);
   const mapped = f.items.length + f.done.length;
   const dotTotal = Math.min(6, mapped);
@@ -610,7 +611,7 @@ export default function CapabilityTile({
           </span>
         </div>
 
-        {(classLabel(f) || raw || out) && (
+        {(classLabel(f) || raw || out || f.activeKnowledgeEstimate) && (
           <div className="relative mt-1 flex items-center gap-1.5" style={{ minHeight: 12 }}>
             {classLabel(f) && (
               <span
@@ -630,10 +631,15 @@ export default function CapabilityTile({
                 not in this release
               </span>
             )}
+            {f.activeKnowledgeEstimate && (
+              <span className="text-[8px] font-semibold uppercase tracking-[0.1em]" style={{ color: "var(--i-violet)" }}>
+                provisional estimate
+              </span>
+            )}
           </div>
         )}
 
-        {f.items.length > 0 ? (
+        {hasEstimate ? (
           <div className={`relative flex items-baseline gap-2 ${compact ? "mt-1" : "mt-1.5"}`}>
             <span className="i-readout leading-none" style={{ fontSize: compact ? 15 : 22, color: out ? "var(--i-text-soft)" : "var(--i-text)" }}>
               {f.loadDays.toFixed(1)}<span className="text-[10px] font-normal">d</span>
@@ -648,7 +654,7 @@ export default function CapabilityTile({
         )}
 
         {/* THE DISPLAY — cut into the faceplate, filling the module's body. */}
-        {f.items.length > 0 && (
+        {hasEstimate && (
           <div className={`relative flex-1 min-h-0 flex flex-col justify-end ${compact ? "mt-1.5" : "mt-2"}`}>
             <div className="relative flex-1 min-h-[30px]" style={compact ? { maxHeight: 62 } : undefined}>
               <DistributionDisplay range={f.range} hasItems maxSpread={maxSpread} accent={accent} ghost={ghostRange} dim={out} showLikelyLabel={!compact} />
@@ -660,7 +666,9 @@ export default function CapabilityTile({
         {!compact && (
           <div className="relative mt-1 shrink-0 flex items-center justify-between text-[9px] text-[var(--i-text-faint)]">
             <span>
-              {f.items.length === 0 && f.done.length === 0
+              {f.activeKnowledgeEstimate
+                ? "MEETING ESTIMATE · SCENARIO"
+                : f.items.length === 0 && f.done.length === 0
                 ? f.source === "canonical" ? "NO EXECUTION WORK MAPPED" : "no work mapped"
                 : `uncertainty ${uncertaintyLabel(f.uncertainty).toLowerCase()}`}
             </span>
