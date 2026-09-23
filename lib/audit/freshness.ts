@@ -26,7 +26,7 @@ export function deriveKnowledgeFreshness(input: FreshnessInput): FreshnessDecisi
   if (!input.activationAvailable) return { code: "unavailable", label: "Knowledge refresh unavailable", detail: "This project has no activation/companion identity.", canRefresh: false };
   if (!input.companionOnline) return { code: "offline", label: "Knowledge companion offline", detail: "Refresh is unavailable until the local companion checks in.", canRefresh: false };
   if (input.ingestionState === "running" || input.ingestionState === "ingesting") return { code: "ingesting", label: "Hermes ingestion in progress · waiting", detail: "Signal will not request a package from a split-brain partial state.", canRefresh: false };
-  if (input.jobRunning) return { code: "refreshing", label: "Refreshing Audit…", detail: "The companion is compiling the latest completed project knowledge.", canRefresh: false };
+  if (input.jobRunning) return { code: "refreshing", label: "Refreshing Signal…", detail: "The companion is compiling the latest completed project knowledge before Signal refreshes Audit, Linear, Scope, and downstream readiness.", canRefresh: false };
   if (input.packageAheadOfSnapshot || input.watermarkAheadOfPackage) return { code: "new_available", label: "New intelligence available · Refresh", detail: input.packageAheadOfSnapshot ? "A completed package is newer than the last frozen ContextSnapshot." : "The companion reports a newer completed Hermes knowledge watermark.", canRefresh: true };
-  return { code: "current", label: "Knowledge · Current", detail: "The latest completed package and ContextSnapshot agree.", canRefresh: false };
+  return { code: "current", label: "Knowledge synchronized", detail: "Signal has processed the latest completed package. This sync state is separate from the age of the evidence inside it.", canRefresh: false };
 }

@@ -6,6 +6,7 @@ import { SignalControl } from "@/components/instrument/SignalPrimitives";
 import styles from "./AuditWorld.module.css";
 
 type Json = Record<string, unknown>;
+type RefreshStage = { status?: string; at?: string | null; detail?: string | null; linearAsOf?: string | null; linearIssueCount?: number | null } & Json;
 
 interface Proposal {
   id: string;
@@ -40,7 +41,13 @@ interface InboxPayload {
     code: string; label: string; detail: string; checkedAt: string; canRefresh: boolean;
     companion: { state: string; version: string; online: boolean; lastSeenAt: string } | null;
     lastPackageAt: string | null; lastAuditAt: string | null;
+    evidenceObservedAt: { oldest: string | null; newest: string | null };
     activeJob: { id: string; status: string; stage: string; progress: unknown } | null;
+    latestRun: {
+      scanId: string; sequence: number; status: string; stage: string;
+      requestedAt: string; startedAt: string | null; completedAt: string | null; error: string | null;
+      stages: { knowledge: RefreshStage; audit: RefreshStage; scope: RefreshStage; derived: RefreshStage };
+    } | null;
   };
   counts: Record<string, number>;
   total: number;
@@ -64,6 +71,13 @@ function ago(value: string | null): string {
 
 function words(value: string): string {
   return value.replaceAll("_", " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
+function stageTone(status: string | undefined): string {
+  if (["complete", "current"].includes(status ?? "")) return "var(--i-signal)";
+  if (["error", "failed"].includes(status ?? "")) return "var(--i-red)";
+  if (["stale", "partial", "skipped"].includes(status ?? "")) return "var(--i-amber)";
+  return "var(--i-text-faint)";
 }
 
 function StateView({ value }: { value: Json }) {
@@ -101,6 +115,7 @@ export default function AuditChangeInbox({
   const [confirmed, setConfirmed] = useState(false);
   const [completionFields, setCompletionFields] = useState<Json>({});
   const pollRef = useRef<number | null>(null);
+  const dismissedScopeRef = useRef<string | null>(null);
 
   const load = useCallback(async () => {
     if (!scopeId || fixture) return;
@@ -113,6 +128,7 @@ export default function AuditChangeInbox({
 
   useEffect(() => {
     setPayload(null); setSelectedId(null); setNotice(null);
+    setOpen(false); dismissedScopeRef.current = null;
     void load().catch((reason) => setError(reason instanceof Error ? reason.message : "Change Inbox could not be read."));
     return () => { if (pollRef.current) window.clearTimeout(pollRef.current); };
   }, [load]);
@@ -132,6 +148,13 @@ export default function AuditChangeInbox({
   const pending = useMemo(() => payload?.proposals.filter((item) => ["pending", "needs_completion", "deferred"].includes(item.status)) ?? [], [payload]);
   const processed = useMemo(() => payload?.proposals.filter((item) => ["accepted", "rejected", "information_only"].includes(item.status)).slice(0, 12) ?? [], [payload]);
 
+  useEffect(() => {
+    if (!payload?.total || dismissedScopeRef.current === scopeId) return;
+    setTab("changes");
+    setOpen(true);
+    setSelectedId((current) => current ?? pending[0]?.id ?? null);
+  }, [payload?.total, pending, scopeId]);
+
   async function requestRefresh() {
     if (!scopeId || busy) return;
     setBusy("refresh"); setError(null); setNotice(null);
@@ -140,7 +163,12 @@ export default function AuditChangeInbox({
       const body = await response.json().catch(() => ({})) as { status?: string; reason?: string; error?: string };
       if (!response.ok && response.status !== 409) throw new Error(body.error ?? body.reason ?? "Refresh could not start.");
       if (body.status === "blocked") throw new Error(body.reason ?? "Refresh is waiting.");
-      if (body.status === "current") { setNotice(body.reason ?? "Knowledge is current."); await load(); return; }
+      if (body.status === "current") {
+        setNotice(body.reason ?? "Knowledge is current.");
+        await load();
+        window.dispatchEvent(new CustomEvent("signal-audit-refresh-complete"));
+        return;
+      }
       setNotice(body.status === "already_running" ? "Refresh already in progress." : "Refresh requested. Signal will wait for a complete package.");
       const poll = async () => {
         const next = await load();
@@ -209,10 +237,10 @@ export default function AuditChangeInbox({
 
   return <>
     <div className={`${styles.worldWidget} ${styles.changeSummaryWidget}`} data-shoot="audit-change-summary">
-      <button type="button" className="flex w-full items-center gap-2 px-3 py-2 text-left" onClick={() => payload?.knowledge.canRefresh ? void requestRefresh() : setOpen(true)}>
+      <button type="button" className="flex w-full items-center gap-2 px-3 py-2 text-left" onClick={() => { setTab("sources"); setOpen(true); }}>
         <span className="h-1.5 w-1.5 rounded-full" style={{ background: knowledgeTone }} />
         <span className="min-w-0 flex-1 truncate text-[10.5px] font-medium text-[var(--i-text)]">{payload?.knowledge.label ?? "Checking knowledge…"}</span>
-        <span className="text-[9.5px] text-[var(--i-text-faint)]">{ago(payload?.knowledge.lastPackageAt ?? null)}</span>
+        <span className="text-[9.5px] text-[var(--i-text-faint)]">package {ago(payload?.knowledge.lastPackageAt ?? null)}</span>
       </button>
       <div className="grid grid-cols-2 border-t border-[var(--i-border)]">
         <button type="button" className="px-3 py-2 text-left hover:bg-white/[0.03]" onClick={() => { setTab("changes"); setOpen(true); }}>
@@ -228,8 +256,8 @@ export default function AuditChangeInbox({
 
     {open && <aside className={`${styles.worldWidget} ${styles.changeInboxSheet}`} aria-label="Audit Change Inbox" data-shoot="audit-change-inbox">
       <header className="flex items-start justify-between gap-3 border-b border-[var(--i-border)] px-4 py-3">
-        <div><div className="i-label text-[9px] text-[var(--i-signal)]">CHANGES SINCE LAST AUDIT</div><h2 className="mt-1 text-[16px] font-medium text-[var(--i-text)]">Govern meaningful deltas</h2><p className="mt-1 text-[10.5px] text-[var(--i-text-faint)]">Audit proposes. Owner instruments accept Reality.</p></div>
-        <button type="button" onClick={() => setOpen(false)} aria-label="Close Change Inbox" className="text-[20px] text-[var(--i-text-faint)]">×</button>
+        <div><div className="i-label text-[9px] text-[var(--i-signal)]">AUDIT INBOX · {payload?.total ?? "—"} TO REVIEW</div><h2 className="mt-1 text-[16px] font-medium text-[var(--i-text)]">Review what changed</h2><p className="mt-1 text-[10.5px] text-[var(--i-text-faint)]">Compare fresh evidence with accepted Reality. Nothing changes until you accept it.</p></div>
+        <button type="button" onClick={() => { dismissedScopeRef.current = scopeId; setOpen(false); }} aria-label="Explore project world" className="shrink-0 rounded border border-[var(--i-border)] px-2.5 py-1.5 text-[10px] text-[var(--i-text-soft)]">Explore world</button>
       </header>
       <div className="flex border-b border-[var(--i-border)] px-3 py-2">
         {(["changes", "sources", "readiness"] as const).map((item) => <button key={item} type="button" onClick={() => setTab(item)} className={`rounded px-3 py-1.5 text-[10.5px] ${tab === item ? "bg-[var(--i-panel-raised)] text-[var(--i-text)]" : "text-[var(--i-text-faint)]"}`}>{item === "sources" ? "Source health" : words(item)}</button>)}
@@ -280,7 +308,45 @@ export default function AuditChangeInbox({
         </div>
       </div>}
 
-      {tab === "sources" && <div className="min-h-0 flex-1 overflow-y-auto p-4" data-shoot="source-health"><div className="grid grid-cols-2 gap-2">{payload?.sourceHealth && Object.entries(payload.sourceHealth).filter(([key]) => !key.endsWith("At") && key !== "linearDetail").map(([key, value]) => <div key={key} className="rounded-md border border-[var(--i-border)] bg-white/[0.02] p-3"><div className="i-label text-[8.5px] text-[var(--i-text-faint)]">{words(key)}</div><div className="mt-1 text-[12px] text-[var(--i-text)]">{words(String(value))}</div>{key === "linear" && <p className="mt-1 text-[9.5px] text-[var(--i-text-faint)]">{payload.sourceHealth.linearDetail}</p>}{["linear", "notion", "figma"].includes(key) && <Link href={`/scope?project=${encodeURIComponent(scopeId)}`} className="mt-2 inline-block text-[9.5px] text-[var(--i-signal)]">Open project setup ↗</Link>}</div>)}</div><div className="mt-3 rounded-md border border-[var(--i-border)] p-3 text-[10px] text-[var(--i-text-soft)]">Last package · {ago(payload?.sourceHealth.lastPackageAt ?? null)}<br />Last Audit · {ago(payload?.sourceHealth.lastAuditAt ?? null)}<br />{payload?.knowledge.detail}</div></div>}
+      {tab === "sources" && <div className="min-h-0 flex-1 overflow-y-auto p-4" data-shoot="source-health">
+        <section className="rounded-md border border-[var(--i-border)] bg-white/[0.015] p-4" data-shoot="refresh-run-receipt">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <div className="i-label text-[8.5px] text-[var(--i-signal)]">LATEST SIGNAL REFRESH</div>
+              <div className="mt-1 text-[13px] text-[var(--i-text)]">{payload?.knowledge.latestRun ? `Run ${payload.knowledge.latestRun.sequence} · ${words(payload.knowledge.latestRun.status)}` : "No refresh run yet"}</div>
+              <p className="mt-1 text-[9.5px] text-[var(--i-text-faint)]">{payload?.knowledge.latestRun?.completedAt ? `Completed ${ago(payload.knowledge.latestRun.completedAt)}` : payload?.knowledge.activeJob ? `In progress · ${words(payload.knowledge.activeJob.stage)}` : "Run Refresh Signal to create a complete receipt."}</p>
+            </div>
+            <SignalControl type="button" disabled={Boolean(busy) || ["offline", "unavailable", "ingesting", "refreshing"].includes(payload?.knowledge.code ?? "")} onClick={() => void requestRefresh()} status="reality" className="px-3 py-1.5 text-[10px]">{busy === "refresh" ? "Refreshing…" : "Refresh Signal"}</SignalControl>
+          </div>
+          {payload?.knowledge.latestRun && <div className="mt-4 grid grid-cols-2 gap-2">
+            {([
+              ["Knowledge package", payload.knowledge.latestRun.stages.knowledge],
+              ["Audit comparison", payload.knowledge.latestRun.stages.audit],
+              ["Linear + Scope", payload.knowledge.latestRun.stages.scope],
+              ["Forecast + readiness", payload.knowledge.latestRun.stages.derived],
+            ] as [string, RefreshStage][]).map(([label, stage]) => <div key={label} className="rounded border border-[var(--i-border)] bg-black/10 p-3">
+              <div className="flex items-center gap-2"><span className="h-1.5 w-1.5 rounded-full" style={{ background: stageTone(stage.status) }} /><span className="text-[10.5px] font-medium text-[var(--i-text)]">{label}</span><span className="ml-auto text-[8.5px] uppercase tracking-wide" style={{ color: stageTone(stage.status) }}>{words(stage.status ?? "pending")}</span></div>
+              <p className="mt-1.5 text-[9px] leading-relaxed text-[var(--i-text-faint)]">{stage.detail ? String(stage.detail) : stage.at ? `Updated ${ago(stage.at)}` : "Waiting for this stage."}{label === "Linear + Scope" && typeof stage.linearIssueCount === "number" ? ` · ${stage.linearIssueCount} Linear items read` : ""}</p>
+            </div>)}
+          </div>}
+          {payload?.knowledge.latestRun?.error && <p className="mt-3 rounded border border-[var(--i-red)]/35 bg-[var(--i-red)]/5 px-3 py-2 text-[9.5px] text-[var(--i-red)]">{payload.knowledge.latestRun.error}</p>}
+        </section>
+
+        <section className="mt-3 rounded-md border border-[var(--i-border)] p-4">
+          <div className="i-label text-[8.5px] text-[var(--i-text-faint)]">SYNC IS NOT EVIDENCE AGE</div>
+          <div className="mt-2 grid grid-cols-3 gap-2 text-[10px]">
+            <div><div className="text-[var(--i-text-faint)]">Package received</div><div className="mt-1 text-[var(--i-text)]">{ago(payload?.knowledge.lastPackageAt ?? null)}</div></div>
+            <div><div className="text-[var(--i-text-faint)]">Newest source read</div><div className="mt-1 text-[var(--i-text)]">{ago(payload?.knowledge.evidenceObservedAt.newest ?? null)}</div></div>
+            <div><div className="text-[var(--i-text-faint)]">Oldest source read</div><div className="mt-1 text-[var(--i-text)]">{ago(payload?.knowledge.evidenceObservedAt.oldest ?? null)}</div></div>
+          </div>
+          <p className="mt-3 text-[9.5px] leading-relaxed text-[var(--i-text-faint)]">{payload?.knowledge.detail}</p>
+        </section>
+
+        <section className="mt-3">
+          <div className="i-label mb-2 text-[8.5px] text-[var(--i-text-faint)]">SOURCE CONNECTIONS</div>
+          <div className="grid grid-cols-2 gap-2">{payload?.sourceHealth && Object.entries(payload.sourceHealth).filter(([key]) => !key.endsWith("At") && key !== "linearDetail").map(([key, value]) => <div key={key} className="rounded-md border border-[var(--i-border)] bg-white/[0.02] p-3"><div className="i-label text-[8.5px] text-[var(--i-text-faint)]">{words(key)}</div><div className="mt-1 text-[12px] text-[var(--i-text)]">{words(String(value))}</div>{key === "linear" && <p className="mt-1 text-[9.5px] text-[var(--i-text-faint)]">{payload.sourceHealth.linearDetail}</p>}{["linear", "notion", "figma"].includes(key) && <Link href={`/scope?project=${encodeURIComponent(scopeId)}`} className="mt-2 inline-block text-[9.5px] text-[var(--i-signal)]">Open project setup ↗</Link>}</div>)}</div>
+        </section>
+      </div>}
 
       {tab === "readiness" && <div className="min-h-0 flex-1 overflow-y-auto p-4" data-shoot="report-readiness"><div className="rounded-md border p-4" style={{ borderColor: payload?.readiness.ready ? "var(--i-signal)" : "var(--i-amber)" }}><div className="i-label text-[9px]" style={{ color: payload?.readiness.ready ? "var(--i-signal)" : "var(--i-amber)" }}>{payload?.readiness.label}</div>{payload?.readiness.blockers.length ? <div className="mt-3 space-y-2">{payload.readiness.blockers.map((blocker) => <Link key={blocker.code} href={blocker.targetHref} className="flex items-center justify-between rounded bg-white/[0.025] px-3 py-2 text-[10.5px] text-[var(--i-text-soft)]"><span>{blocker.label}</span><span className="text-[var(--i-signal)]">Open ↗</span></Link>)}</div> : <p className="mt-2 text-[11px] text-[var(--i-text-soft)]">Current execution, Scope, capacity, source health, and Forecast checks are safe for reporting.</p>}{payload?.readiness.ready && <Link href={`/reports?project=${encodeURIComponent(scopeId)}`} className="mt-4 inline-flex rounded border border-[var(--i-signal)]/40 px-3 py-1.5 text-[10.5px] text-[var(--i-signal)]">Open Reports</Link>}</div></div>}
     </aside>}

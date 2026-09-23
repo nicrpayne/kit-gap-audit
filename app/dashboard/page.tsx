@@ -27,7 +27,7 @@ export default async function DashboardPage() {
       eyebrow="Workbench dashboard"
       title="Clarity, at a glance"
       lede="The pre-Signal summary, kept for reference. The Control Room is the current front door."
-      actions={<SurfaceAction href="/audit">Refresh Audit</SurfaceAction>}
+      actions={<SurfaceAction href="/audit">Refresh Signal</SurfaceAction>}
     >
       <div className="mb-10 grid grid-cols-3 gap-3">
         <Count

@@ -22,6 +22,8 @@ function main() {
   const page = read("app/audit/page.tsx");
   const world = read("components/audit/AuditWorld.tsx");
   const refreshControl = read("components/audit/AuditRefreshControl.tsx");
+  const refreshPipeline = read("lib/bootstrap/refresh.ts");
+  const changeInbox = read("components/audit/AuditChangeInbox.tsx");
   const legacyAuditRoute = read("app/api/audit/route.ts");
   const host = read("public/audit-rubric-phase2/phase2-host.js");
   const route = read("app/audit/rubric-phase3/route.ts");
@@ -38,24 +40,32 @@ function main() {
     host.includes("refreshPreservingSelection('Updating Audit context')")
       && host.includes("window.BrainCore.S.refreshData(message)")
       && !host.includes("fitToView") && !host.includes("resetView"));
-  check("visible Refresh Audit control reflects knowledge state",
+  check("visible Refresh Signal control reflects knowledge state",
     world.includes("<AuditRefreshControl")
       && refreshControl.includes('data-shoot="audit-refresh-primary"')
-      && refreshControl.includes('return "Check for updates"')
-      && refreshControl.includes('return "Refresh Audit"'));
+      && refreshControl.includes('return "Refresh Signal"')
+      && refreshControl.includes('return "Refreshing Signal…"'));
   check("Refresh and secondary actions do not remount the world",
     refreshControl.includes('signal-audit-refresh-complete')
       && !world.includes("key={scopeId")
       && !world.includes("key={auditId"));
-  check("Refresh Audit uses the companion knowledge pipeline",
+  check("Refresh Signal uses the companion knowledge pipeline",
     refreshControl.includes('fetch("/api/audit/knowledge"')
       && refreshControl.includes('method: "POST"')
-      && refreshControl.includes("Waiting for a completed knowledge package")
+      && refreshControl.includes("knowledge, Audit, Linear, Scope, and downstream readiness")
       && world.includes("sendContext(updated.scope.id, \"\")"));
-  check("Refresh Audit preserves ingestion/offline/single-request protection",
+  check("Refresh Signal preserves ingestion/offline/single-request protection",
     refreshControl.includes('"offline", "unavailable", "ingesting", "refreshing"')
       && refreshControl.includes("if (!scopeId || fixture || requesting")
-      && refreshControl.includes("Refreshing Audit…"));
+      && refreshControl.includes("Refreshing Signal…"));
+  check("one refresh crosses Audit, Linear/Scope, and downstream readiness",
+    refreshPipeline.includes("refreshScopeProposal")
+      && refreshPipeline.includes("recomputeDerivedReads")
+      && refreshPipeline.includes("signalRefresh"));
+  check("Audit Inbox opens reviewable changes and exposes a refresh receipt",
+    changeInbox.includes('setOpen(true)')
+      && changeInbox.includes('data-shoot="refresh-run-receipt"')
+      && changeInbox.includes("SYNC IS NOT EVIDENCE AGE"));
   check("direct evidence intake is retired until an upstream handoff exists",
     refreshControl.includes("Signal does not store a private copy")
       && legacyAuditRoute.includes("UPSTREAM_KNOWLEDGE_INTAKE_REQUIRED"));

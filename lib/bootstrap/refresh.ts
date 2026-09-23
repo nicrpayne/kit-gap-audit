@@ -7,8 +7,18 @@ import { validateProjectContextPackage } from "@/lib/context/validate";
 import type { ProjectBootstrapPackageV1 } from "./contracts";
 import { FIRST_AUDIT_MODEL } from "./activation";
 import { syncRefreshChangeProposals } from "@/lib/audit/changeInbox";
+import { refreshScopeProposal } from "@/lib/scope/proposal-store";
+import { recomputeDerivedReads } from "@/lib/audit/derivedRefresh";
 
 const REFRESH_AUDIT_MODEL = `${FIRST_AUDIT_MODEL}:refresh`;
+
+function object(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message.slice(0, 2_000) : "Refresh stage failed";
+}
 
 function toContextPackage(scopeId: string, pkg: ProjectBootstrapPackageV1): ProjectContextPackage {
   const refreshRef = `signal://bootstrap-refresh/${pkg.bootstrapId}/${pkg.packageId}`;
@@ -155,7 +165,69 @@ export async function auditActivatedBootstrapRefresh(bootstrapId: string) {
       auditRunId: result.audit.id,
       pkg,
     });
-    return { ...result, inbox };
+    const completedAt = new Date().toISOString();
+    const pipeline: Record<string, unknown> = {
+      knowledge: {
+        status: "complete",
+        at: result.snapshot.createdAt.toISOString(),
+        contextSnapshotId: result.snapshot.id,
+      },
+      audit: {
+        status: "complete",
+        at: result.audit.createdAt.toISOString(),
+        auditRunId: result.audit.id,
+        proposalsCreated: inbox.created,
+        proposalsSuppressed: inbox.suppressed,
+      },
+    };
+
+    // A completed external package is now the single refresh boundary for
+    // the rest of Signal. Scope performs a fresh Linear owner read and then
+    // every downstream dynamic surface receives a derived-state receipt.
+    // These stages cannot invalidate an already accepted knowledge package;
+    // a failure is retained in the run receipt and surfaced for recovery.
+    try {
+      const scopeRefresh = await refreshScopeProposal(bootstrap.activation.scopeId);
+      const watermark = object(scopeRefresh?.proposal.sourceWatermark);
+      pipeline.scope = scopeRefresh ? {
+        status: "complete",
+        at: scopeRefresh.proposal.generatedAt.toISOString(),
+        proposalId: scopeRefresh.proposal.id,
+        contextSnapshotId: scopeRefresh.proposal.contextSnapshotId,
+        linearAsOf: typeof watermark.linearAsOf === "string" ? watermark.linearAsOf : null,
+        linearIssueCount: typeof watermark.linearIssueCount === "number" ? watermark.linearIssueCount : scopeRefresh.issues.length,
+      } : { status: "skipped", detail: "The activated Scope no longer exists." };
+    } catch (error) {
+      pipeline.scope = { status: "error", at: completedAt, detail: errorMessage(error) };
+    }
+
+    try {
+      const derived = await recomputeDerivedReads(bootstrap.activation.scopeId);
+      pipeline.derived = derived ? {
+        status: derived.status,
+        at: derived.recomputedAt?.toISOString() ?? derived.updatedAt.toISOString(),
+        realityRevision: derived.realityRevision,
+        computedRevision: derived.computedRevision,
+        detail: derived.error,
+      } : { status: "skipped", detail: "No derived-state ledger exists for this project." };
+    } catch (error) {
+      pipeline.derived = { status: "error", at: completedAt, detail: errorMessage(error) };
+    }
+
+    const scan = await prisma.bootstrapScanRun.findUnique({
+      where: { id: packageRow.scanRunId },
+      select: { metrics: true },
+    });
+    await prisma.bootstrapScanRun.update({
+      where: { id: packageRow.scanRunId },
+      data: {
+        metrics: {
+          ...object(scan?.metrics),
+          signalRefresh: { completedAt, ...pipeline },
+        } as Prisma.InputJsonValue,
+      },
+    });
+    return { ...result, inbox, pipeline };
   }
   return result;
 }

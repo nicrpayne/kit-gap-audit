@@ -21,7 +21,7 @@ export default async function NewAuditPage({
       back={{ href: `/audit${scope ? `?scope=${encodeURIComponent(scope)}` : ""}`, label: "Back to Audit" }}
     >
       <SurfaceEmpty>
-        File transcripts, notes, estimates, and task lists through the approved KE intake and Wiki Update workflow. After the compiler and Hermes finish, return to Audit and choose <strong>Refresh Audit</strong>. Direct paste remains disabled until Signal has a safe upstream handoff.
+        File transcripts, notes, estimates, and task lists through the approved KE intake and Wiki Update workflow. After the compiler and Hermes finish, return to Audit and choose <strong>Refresh Signal</strong>. That one action refreshes the knowledge comparison, Linear owner read, Scope reconciliation, and downstream readiness. Direct paste remains disabled until Signal has a safe upstream handoff.
         <div className="mt-4"><Link href={`/audit${scope ? `?scope=${encodeURIComponent(scope)}` : ""}`} className="text-[var(--i-signal)] hover:underline">Return to Audit →</Link></div>
       </SurfaceEmpty>
     </SignalSurface>

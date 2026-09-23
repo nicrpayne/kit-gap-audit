@@ -10,13 +10,13 @@ interface KnowledgeStatus {
   detail: string;
   canRefresh: boolean;
   lastPackageAt: string | null;
+  latestRun: { status: string; error: string | null } | null;
 }
 
 function actionLabel(status: KnowledgeStatus | null, requesting: boolean): string {
   if (!status) return "Checking knowledge…";
-  if (requesting || status.code === "refreshing") return "Refreshing Audit…";
-  if (status.code === "new_available") return "Refresh Audit";
-  if (status.code === "current") return "Check for updates";
+  if (requesting || status.code === "refreshing") return "Refreshing Signal…";
+  if (status.code === "new_available" || status.code === "current") return "Refresh Signal";
   if (status.code === "ingesting") return "Ingestion in progress";
   if (status.code === "offline") return "Companion offline";
   return "Refresh unavailable";
@@ -57,9 +57,11 @@ export default function AuditRefreshControl({ scopeId, fixture }: { scopeId: str
       if (body.status === "blocked") throw new Error(body.reason ?? "Refresh is waiting.");
       if (body.status === "current") {
         setNotice(body.reason ?? "Knowledge is current.");
-        await load(); setRequesting(false); return;
+        await load(); setRequesting(false);
+        window.dispatchEvent(new CustomEvent("signal-audit-refresh-complete"));
+        return;
       }
-      setNotice(body.status === "already_running" ? "Refresh already in progress." : "Refresh requested. Waiting for a completed knowledge package.");
+      setNotice(body.status === "already_running" ? "Refresh already in progress." : "Refresh requested. Signal will refresh knowledge, Audit, Linear, Scope, and downstream readiness.");
       const poll = async () => {
         try {
           const next = await load();
@@ -98,7 +100,7 @@ export default function AuditRefreshControl({ scopeId, fixture }: { scopeId: str
     </SignalControl>
     <SignalControl type="button" aria-label="Audit actions" aria-expanded={menuOpen} onClick={() => setMenuOpen((value) => !value)} className="px-2 py-1.5 text-[11px]">•••</SignalControl>
     {menuOpen && <div className="absolute right-0 top-9 z-[70] w-64 rounded-md border border-[var(--i-border-strong)] bg-[var(--i-panel)] p-1 shadow-2xl" data-shoot="audit-secondary-menu">
-      <button type="button" onClick={() => void refresh()} disabled={disabled} className="block w-full rounded px-3 py-2 text-left text-[10.5px] text-[var(--i-text-soft)] hover:bg-white/[0.04] disabled:opacity-35">{status?.code === "current" ? "Check for updates" : "Refresh Audit"}</button>
+      <button type="button" onClick={() => void refresh()} disabled={disabled} className="block w-full rounded px-3 py-2 text-left text-[10.5px] text-[var(--i-text-soft)] hover:bg-white/[0.04] disabled:opacity-35">Refresh Signal</button>
       <button type="button" onClick={() => { setMenuOpen(false); window.dispatchEvent(new CustomEvent("signal-audit-refresh-complete")); setNotice("Current snapshot reloaded. No package or Reality writes were made."); }} className="block w-full rounded px-3 py-2 text-left text-[10.5px] text-[var(--i-text-soft)] hover:bg-white/[0.04]">Re-check current snapshot <span className="text-[var(--i-text-faint)]">· diagnostic</span></button>
       <button type="button" onClick={() => { setMenuOpen(false); setEvidenceOpen(true); }} className="block w-full rounded px-3 py-2 text-left text-[10.5px] text-[var(--i-text-soft)] hover:bg-white/[0.04]">Add evidence to knowledge system</button>
       <Link href={`/audit/history${scopeId ? `?scope=${encodeURIComponent(scopeId)}` : ""}`} className="block rounded px-3 py-2 text-[10.5px] text-[var(--i-text-soft)] hover:bg-white/[0.04]">Audit history</Link>

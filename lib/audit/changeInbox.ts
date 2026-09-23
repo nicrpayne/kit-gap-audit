@@ -3,6 +3,8 @@ import { prisma } from "@/lib/prisma";
 import { readForecastCoverage } from "@/lib/forecast/compute";
 import type { BootstrapProposal, ProjectBootstrapPackageV1 } from "@/lib/bootstrap/contracts";
 import { createCompanionScan, COMPANION_ONLINE_MS } from "@/lib/bootstrap/jobs";
+import { refreshScopeProposal } from "@/lib/scope/proposal-store";
+import { recomputeDerivedReads } from "./derivedRefresh";
 import {
   auditChangeFingerprint,
   defaultTargetHref,
@@ -243,7 +245,24 @@ export interface KnowledgeStatus {
   companion: { state: string; version: string; online: boolean; lastSeenAt: string } | null;
   lastPackageAt: string | null;
   lastAuditAt: string | null;
+  evidenceObservedAt: { oldest: string | null; newest: string | null };
   activeJob: { id: string; status: string; stage: string; progress: unknown } | null;
+  latestRun: {
+    scanId: string;
+    sequence: number;
+    status: string;
+    stage: string;
+    requestedAt: string;
+    startedAt: string | null;
+    completedAt: string | null;
+    error: string | null;
+    stages: {
+      knowledge: Record<string, unknown>;
+      audit: Record<string, unknown>;
+      scope: Record<string, unknown>;
+      derived: Record<string, unknown>;
+    };
+  } | null;
 }
 
 export async function readKnowledgeStatus(scopeId: string): Promise<KnowledgeStatus> {
@@ -255,10 +274,12 @@ export async function readKnowledgeStatus(scopeId: string): Promise<KnowledgeSta
       packages: { orderBy: { createdAt: "desc" }, take: 1 },
     } } } } },
   });
-  const [companion, latestSnapshot, latestAudit] = await Promise.all([
+  const [companion, latestSnapshot, latestAudit, latestScopeProposal, derived] = await Promise.all([
     prisma.bootstrapCompanion.findFirst({ orderBy: { lastSeenAt: "desc" } }),
     prisma.contextSnapshot.findFirst({ where: { scopeId }, orderBy: { createdAt: "desc" } }),
     prisma.auditRun.findFirst({ where: { contextSnapshot: { scopeId } }, orderBy: { createdAt: "desc" } }),
+    prisma.scopeProposal.findFirst({ where: { scopeId }, orderBy: { generatedAt: "desc" } }),
+    prisma.projectDerivedState.findUnique({ where: { scopeId } }),
   ]);
   const online = Boolean(companion && now.getTime() - companion.lastSeenAt.getTime() <= COMPANION_ONLINE_MS);
   const knowledge = record(companion?.knowledgeState);
@@ -298,8 +319,53 @@ export async function readKnowledgeStatus(scopeId: string): Promise<KnowledgeSta
       watermark && !completedIdentityAlreadyPackaged && (!acceptedKnowledgeAt || new Date(watermark).getTime() > acceptedKnowledgeAt.getTime()),
     ),
   });
+  const observedTimes = Array.isArray(snapshotBody.sources)
+    ? snapshotBody.sources
+      .map((source) => iso(record(source).observedAt))
+      .filter((value): value is string => Boolean(value))
+      .sort()
+    : [];
+  const scanMetrics = record(latestScan?.metrics);
+  const storedPipeline = record(scanMetrics.signalRefresh);
+  const proposalWatermark = record(latestScopeProposal?.sourceWatermark);
+  const fallbackStages = {
+    knowledge: latestSnapshot ? {
+      status: "complete", at: latestSnapshot.createdAt.toISOString(), contextSnapshotId: latestSnapshot.id,
+    } : { status: "pending", detail: "No accepted ContextSnapshot exists." },
+    audit: latestAudit ? {
+      status: latestSnapshot && latestAudit.contextSnapshotId !== latestSnapshot.id ? "stale" : "complete",
+      at: latestAudit.createdAt.toISOString(), auditRunId: latestAudit.id,
+    } : { status: "pending", detail: "No Audit comparison exists." },
+    scope: latestScopeProposal ? {
+      status: latestSnapshot && latestScopeProposal.contextSnapshotId !== latestSnapshot.id ? "stale" : "complete",
+      at: latestScopeProposal.generatedAt.toISOString(), proposalId: latestScopeProposal.id,
+      contextSnapshotId: latestScopeProposal.contextSnapshotId,
+      linearAsOf: iso(proposalWatermark.linearAsOf),
+      linearIssueCount: typeof proposalWatermark.linearIssueCount === "number" ? proposalWatermark.linearIssueCount : null,
+    } : { status: "pending", detail: "Scope has not reconciled the current owner read." },
+    derived: derived ? {
+      status: derived.status,
+      at: derived.recomputedAt?.toISOString() ?? derived.updatedAt.toISOString(),
+      realityRevision: derived.realityRevision,
+      computedRevision: derived.computedRevision,
+      detail: derived.error,
+    } : { status: "pending", detail: "No downstream recompute receipt exists." },
+  };
+  const stage = (key: keyof typeof fallbackStages) => {
+    const stored = record(storedPipeline[key]);
+    const fallback = fallbackStages[key];
+    const storedAt = iso(stored.at);
+    const fallbackAt = iso(record(fallback).at);
+    if (fallbackAt && (!storedAt || Date.parse(fallbackAt) > Date.parse(storedAt))) return fallback;
+    return Object.keys(stored).length ? stored : fallback;
+  };
   return {
-    code: decision.code, label: decision.label, detail: decision.detail, checkedAt: now.toISOString(), canRefresh: decision.canRefresh,
+    code: decision.code,
+    label: decision.code === "current" ? "Knowledge synchronized" : decision.label,
+    detail: decision.code === "current"
+      ? "Signal has processed the latest completed package. Source observation dates below show how old the underlying evidence actually is."
+      : decision.detail,
+    checkedAt: now.toISOString(), canRefresh: decision.canRefresh,
     companion: companion ? { state: companion.state, version: companion.version, online, lastSeenAt: companion.lastSeenAt.toISOString() } : null,
     // The 15-minute operational guard is measured from Signal's receipt,
     // not from the upstream compiler timestamp. A perfectly current KE state
@@ -307,7 +373,27 @@ export async function readKnowledgeStatus(scopeId: string): Promise<KnowledgeSta
     // duplicate scan immediately after a successful refresh.
     lastPackageAt: pkg?.createdAt.toISOString() ?? latestSnapshot?.createdAt.toISOString() ?? null,
     lastAuditAt: latestAudit?.createdAt.toISOString() ?? null,
+    evidenceObservedAt: {
+      oldest: observedTimes[0] ?? null,
+      newest: observedTimes.at(-1) ?? null,
+    },
     activeJob: job && !TERMINAL_JOBS.has(job.status) ? { id: job.id, status: job.status, stage: job.stage, progress: job.progress } : null,
+    latestRun: latestScan ? {
+      scanId: latestScan.id,
+      sequence: latestScan.sequence,
+      status: latestScan.status,
+      stage: latestScan.stage,
+      requestedAt: latestScan.createdAt.toISOString(),
+      startedAt: latestScan.startedAt?.toISOString() ?? null,
+      completedAt: latestScan.completedAt?.toISOString() ?? null,
+      error: latestScan.error,
+      stages: {
+        knowledge: stage("knowledge"),
+        audit: stage("audit"),
+        scope: stage("scope"),
+        derived: stage("derived"),
+      },
+    } : null,
   };
 }
 
@@ -326,7 +412,17 @@ export async function requestAuditRefresh(scopeId: string): Promise<
     return { status: "already_running", scanId: scan?.scanRunId ?? "", jobId: knowledge.activeJob.id };
   }
   if (knowledge.code === "current" && knowledge.lastPackageAt && Date.now() - new Date(knowledge.lastPackageAt).getTime() < AUDIT_FRESHNESS_TTL_MS) {
-    return { status: "current", reason: "The completed package is within the freshness window; no expensive rescan was started." };
+    // Do not burn a second knowledge scan when the immutable package was just
+    // accepted, but do honor the operator's one-button refresh: read Linear
+    // again, rebuild Scope reconciliation, and refresh downstream readiness.
+    const scope = await refreshScopeProposal(scopeId);
+    const derived = await recomputeDerivedReads(scopeId);
+    return {
+      status: "current",
+      reason: scope
+        ? `Knowledge was already synchronized; Linear and Scope were refreshed${derived ? ", followed by Forecast and report readiness" : ""}.`
+        : "Knowledge was already synchronized; the project no longer exists for owner refresh.",
+    };
   }
   const activation = await prisma.projectActivation.findUnique({ where: { scopeId }, select: { bootstrapId: true } });
   if (!activation) return { status: "blocked", reason: "This project has no active companion identity." };
