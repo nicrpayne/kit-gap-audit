@@ -201,6 +201,7 @@ export async function updateCanonicalCapability(
     status?: CapabilityStatus;
     note?: string | null;
     evidence?: unknown[];
+    work?: OwnerWorkItem[];
     idempotencyKey: string;
   },
 ) {
@@ -217,6 +218,14 @@ export async function updateCanonicalCapability(
     }
     const name = input.name === undefined ? before.name : required(input.name, "name");
     await assertNoScopeDuplicate(tx, before.scopeId, name, before.id);
+    const activeBefore = new Set(before.workLinks
+      .filter((link) => ["active", "configured"].includes(link.state))
+      .map((link) => link.externalId));
+    const additions = (input.work ?? []).filter((item) => !activeBefore.has(item.externalId));
+    if (additions.length > 0) {
+      await assertWorkAvailable(tx, before.scopeId, capabilityId, additions);
+      await createLinks(tx, capabilityId, additions);
+    }
     const updated = await tx.capability.updateMany({
       where: { id: capabilityId, revision: input.expectedRevision },
       data: {
@@ -233,7 +242,7 @@ export async function updateCanonicalCapability(
       capabilityId,
       scopeId: before.scopeId,
       idempotencyKey,
-      action: before.status !== after.status ? "move_release_state" : "edit",
+      action: before.status !== after.status ? "move_release_state" : additions.length > 0 ? "link_work" : "edit",
       beforeState: json(plain(before)),
       afterState: json(plain(after)),
     } });

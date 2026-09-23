@@ -69,5 +69,15 @@ assert.doesNotMatch(reportRoute, /Scenario Decision Brief generation is UNAVAILA
 assert.match(scenarioModel, /baseRealityRevision/);
 assert.match(scenarioModel, /canonical Reality.*was not mutated/);
 
+const featureDetail = readFileSync(new URL("../components/instrument/FeatureDetail.tsx", import.meta.url), "utf8");
+const scopeInstrument = readFileSync(new URL("../components/instrument/ScopeInstrument.tsx", import.meta.url), "utf8");
+const capabilityRoute = readFileSync(new URL("../app/api/capabilities/[id]/route.ts", import.meta.url), "utf8");
+const scopeReality = readFileSync(new URL("../lib/scope/reality.ts", import.meta.url), "utf8");
+assert.match(featureDetail, /if \(open\) return;[\s\S]*setPicked\(new Set\(\)\)/, "closing Add Capability must clear stale work selection");
+assert.match(scopeInstrument, /edit-capability-claim-item/, "accepted capabilities must expose an unmapped-work picker");
+assert.match(scopeInstrument, /workItemIds: \[\.\.\.picked\]/, "accepted-capability edits must submit reviewed work links");
+assert.match(capabilityRoute, /currentOwnerWork\(capability\.scopeId, body\.workItemIds\)/, "the server must revalidate selected work against the current execution owner");
+assert.match(scopeReality, /await assertWorkAvailable\(tx, before\.scopeId, capabilityId, additions\)/, "capability edits must preserve exclusive work ownership");
+
 console.log("signal e2e recovery proof: PASS");
-console.log("validated: exact Linear boundary, stale/current queue selection, active-work-only coverage, reversible forecast scenario, in-app editor, governed archive, server-owned Scenario report");
+console.log("validated: exact Linear boundary, stale/current queue selection, active-work-only coverage, reversible forecast scenario, reset-safe add flow, atomic existing-capability work linking, governed archive, server-owned Scenario report");

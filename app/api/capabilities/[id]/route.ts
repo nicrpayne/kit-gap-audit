@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { updateCanonicalCapability, type CapabilityStatus } from "@/lib/scope/reality";
-import { scopeRealityError } from "@/lib/scope/http";
+import { currentOwnerWork, scopeRealityError } from "@/lib/scope/http";
 
 export const dynamic = "force-dynamic";
 
@@ -26,9 +26,14 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       status?: CapabilityStatus;
       note?: string | null;
       evidence?: unknown[];
+      workItemIds?: string[];
       idempotencyKey: string;
     };
-    return NextResponse.json(await updateCanonicalCapability(id, body));
+    const capability = await prisma.capability.findUniqueOrThrow({ where: { id }, select: { scopeId: true } });
+    const work = body.workItemIds?.length
+      ? await currentOwnerWork(capability.scopeId, body.workItemIds)
+      : undefined;
+    return NextResponse.json(await updateCanonicalCapability(id, { ...body, work }));
   } catch (error) {
     return scopeRealityError(error);
   }

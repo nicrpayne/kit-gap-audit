@@ -526,7 +526,7 @@ export default function ScopeInstrument() {
     setOpenFeatureId(null);
   };
 
-  const saveCapabilityEdit = async (input: { name: string; description: string; note: string; evidenceRef: string }) => {
+  const saveCapabilityEdit = async (input: { name: string; description: string; note: string; evidenceRef: string; workItemIds: string[] }) => {
     if (!editing) return;
     setWriting(true);
     setWriteError(null);
@@ -540,6 +540,7 @@ export default function ScopeInstrument() {
           description: input.description,
           note: input.note,
           evidence: input.evidenceRef.trim() ? [{ ref: input.evidenceRef.trim(), suppliedBy: "operator" }] : [],
+          workItemIds: input.workItemIds,
           idempotencyKey: crypto.randomUUID(),
         }),
       });
@@ -957,6 +958,7 @@ export default function ScopeInstrument() {
 
       <CapabilityRealityEditor
         capability={editing}
+        unmappedItems={unmappedExecution}
         saving={writing}
         error={writeError}
         onClose={() => { setEditing(null); setWriteError(null); }}
@@ -983,26 +985,30 @@ function nameOf(features: Feature[], id: string | number) {
 
 function CapabilityRealityEditor({
   capability,
+  unmappedItems,
   saving,
   error,
   onClose,
   onSave,
 }: {
   capability: ShapeCapability | null;
+  unmappedItems: ScopeWorkItem[];
   saving: boolean;
   error: string | null;
   onClose: () => void;
-  onSave: (input: { name: string; description: string; note: string; evidenceRef: string }) => void;
+  onSave: (input: { name: string; description: string; note: string; evidenceRef: string; workItemIds: string[] }) => void;
 }) {
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [note, setNote] = useState("");
   const [evidenceRef, setEvidenceRef] = useState("");
+  const [picked, setPicked] = useState<Set<string>>(new Set());
   useEffect(() => {
     setName(capability?.name ?? "");
     setDescription(capability?.description ?? "");
     setNote("");
     setEvidenceRef("");
+    setPicked(new Set());
   }, [capability]);
   if (!capability) return null;
   return (
@@ -1010,13 +1016,32 @@ function CapabilityRealityEditor({
       <div className="space-y-3 px-5 py-4">
         <label className="block"><span className="i-label">Capability</span><input value={name} onChange={(event) => setName(event.target.value)} className="mt-1.5 w-full rounded px-3 py-2 text-[12px]" style={{ background: "var(--i-recess)", border: "1px solid var(--i-border-strong)" }} /></label>
         <label className="block"><span className="i-label">Outcome / description</span><textarea value={description} onChange={(event) => setDescription(event.target.value)} rows={3} className="mt-1.5 w-full resize-none rounded px-3 py-2 text-[11px]" style={{ background: "var(--i-recess)", border: "1px solid var(--i-border-strong)" }} /></label>
+        {unmappedItems.length > 0 && <div>
+          <div className="i-label">Link unmapped Linear work</div>
+          <p className="mt-1 text-[9.5px] leading-snug text-[var(--i-text-faint)]">Choose only tickets that implement this accepted capability. Saving updates Reality and coverage together.</p>
+          <ul className="mt-2 max-h-[190px] overflow-y-auto rounded border border-[var(--i-border)] px-2">
+            {unmappedItems.map((item) => {
+              const selected = picked.has(item.id);
+              return <li key={item.id} style={{ borderTop: "1px solid var(--i-border)" }}>
+                <button type="button" onClick={() => setPicked((previous) => {
+                  const next = new Set(previous);
+                  if (selected) next.delete(item.id); else next.add(item.id);
+                  return next;
+                })} className="flex w-full items-center gap-2.5 py-2 text-left" data-shoot="edit-capability-claim-item">
+                  <span aria-hidden className="shrink-0 rounded-sm" style={{ width: 13, height: 13, border: `1px solid ${selected ? "var(--i-signal)" : "var(--i-border-strong)"}`, background: selected ? "var(--i-signal)" : "transparent" }} />
+                  <span className="min-w-0 flex-1 truncate text-[10.5px] text-[var(--i-text-soft)]">{item.label}</span>
+                </button>
+              </li>;
+            })}
+          </ul>
+        </div>}
         <label className="block"><span className="i-label">Change note</span><input value={note} onChange={(event) => setNote(event.target.value)} placeholder="Why accepted Reality is changing" className="mt-1.5 w-full rounded px-3 py-2 text-[11px]" style={{ background: "var(--i-recess)", border: "1px solid var(--i-border-strong)" }} /></label>
         <label className="block"><span className="i-label">Evidence reference · optional</span><input value={evidenceRef} onChange={(event) => setEvidenceRef(event.target.value)} placeholder="URL, document id, or source reference" className="mt-1.5 w-full rounded px-3 py-2 text-[11px]" style={{ background: "var(--i-recess)", border: "1px solid var(--i-border-strong)" }} /></label>
         <div className="rounded border border-[var(--i-border)] bg-[var(--i-recess)] px-3 py-2 text-[9.5px] text-[var(--i-text-faint)]">
           {evidenceRef.trim() ? "Operator assertion · evidence attached" : "Operator assertion · no evidence yet"} · saved server-side with history
         </div>
         {error && <div className="text-[10px] text-[var(--i-red)]">{error}</div>}
-        <button disabled={saving || !name.trim()} onClick={() => onSave({ name, description, note, evidenceRef })} className="w-full rounded-md border border-[var(--i-signal)] px-3 py-2 text-[11px] text-[var(--i-signal)] disabled:opacity-40" data-shoot="save-capability-reality">{saving ? "Saving Reality…" : "Save accepted Reality"}</button>
+        <button disabled={saving || !name.trim()} onClick={() => onSave({ name, description, note, evidenceRef, workItemIds: [...picked] })} className="w-full rounded-md border border-[var(--i-signal)] px-3 py-2 text-[11px] text-[var(--i-signal)] disabled:opacity-40" data-shoot="save-capability-reality">{saving ? "Saving Reality…" : `Save accepted Reality${picked.size > 0 ? ` · link ${picked.size} item${picked.size === 1 ? "" : "s"}` : ""}`}</button>
       </div>
     </ToolWindow>
   );

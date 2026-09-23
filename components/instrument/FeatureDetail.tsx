@@ -1136,6 +1136,15 @@ export function AddFeature({
   const [evidenceRef, setEvidenceRef] = useState("");
   const [picked, setPicked] = useState<Set<string>>(new Set());
   const [releaseStatus, setReleaseStatus] = useState<"accepted" | "outside">("accepted");
+  useEffect(() => {
+    if (open) return;
+    setName("");
+    setIntent("");
+    setNote("");
+    setEvidenceRef("");
+    setPicked(new Set());
+    setReleaseStatus("accepted");
+  }, [open]);
   if (!open) return null;
 
   const pickedDays = unmappedItems
