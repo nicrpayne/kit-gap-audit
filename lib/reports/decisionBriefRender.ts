@@ -92,6 +92,14 @@ export function renderDecisionBriefMarkdown(brief: DecisionBriefV1): string {
   out.push("## What can move");
   const scope = brief.movable.scope.value;
   out.push(`Executable Scope: ${scope.executableItemCount} canonical work item${scope.executableItemCount === 1 ? "" : "s"}; ${n(scope.remainingEffortDays.low)} / ${n(scope.remainingEffortDays.likely)} / ${n(scope.remainingEffortDays.high)} days low / likely / high. [Open Scope](${scope.href})`);
+  if (scope.capabilityOutlooks?.length) {
+    out.push("Isolated capability outlooks");
+    for (const outlook of scope.capabilityOutlooks) {
+      const people = outlook.contributors.map((person) => `${person.name} ${n(person.fte)} FTE`).join(" + ");
+      out.push(`- **${outlook.name}** · likely ${date(outlook.likelyDate)} (${date(outlook.earliestDate)}–${date(outlook.latestDate)}) · ${people} · ${outlook.estimateBasis === "knowledge_provisional" ? "provisional meeting estimate" : "mapped-work rollup"}`);
+    }
+    out.push("  - These are isolated card-level what-ifs, not a claim that the same people can execute several cards simultaneously.");
+  }
   const capacity = brief.movable.capacity.value;
   if (capacity.availability !== "available") {
     out.push(`**Named Capacity: ${capacity.availability.toUpperCase()}** · ${capacity.status}. Forecast currently uses ${n(capacity.forecastEffectiveFte)} FTE from ${capacity.source}; this is not a named-staffing claim.`);

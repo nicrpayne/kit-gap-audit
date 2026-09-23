@@ -65,6 +65,8 @@ const feature = (id: string, name: string, loadDays: number, source: Feature["so
   knowledgeEstimates: [],
   activeKnowledgeEstimate: null,
   estimateBasis: "work_rollup",
+  staffingPlan: null,
+  capabilityForecast: null,
 });
 
 const composition = (engaged: Feature[]): FeatureComposition => ({

@@ -26,6 +26,11 @@ import type { ScopeWorkItem } from "@/lib/instrument/useProject";
 import type { CompletedWork } from "@/lib/forecast/compute";
 import type { ShapeCapability } from "@/lib/scope/productShape";
 import type { CapabilityKnowledgeEstimate } from "@/lib/scope/knowledgeEstimates";
+import {
+  forecastCapability,
+  type CapabilityForecastOutlook,
+  type CapabilityStaffingPlan,
+} from "@/lib/scope/capabilityForecast";
 
 export interface ThreePoint {
   low: number;
@@ -80,6 +85,9 @@ export interface Feature {
       the current Scenario, if any. */
   activeKnowledgeEstimate: CapabilityKnowledgeEstimate | null;
   estimateBasis: "work_rollup" | "knowledge_provisional";
+  /** Scenario-only named focus assumption and its isolated card outlook. */
+  staffingPlan: CapabilityStaffingPlan | null;
+  capabilityForecast: CapabilityForecastOutlook | null;
 }
 
 export interface FeatureComposition {
@@ -170,6 +178,8 @@ function summarise(
     knowledgeEstimates: [],
     activeKnowledgeEstimate: null,
     estimateBasis: "work_rollup",
+    staffingPlan: null,
+    capabilityForecast: null,
   };
 }
 
@@ -330,6 +340,9 @@ export function composeScopeFeatures(
   drafts: DraftFeature[],
   acceptedCandidateIds: Set<string> = new Set(),
   knowledgeEstimateOverrides: Record<string, { estimateId: string; contextSnapshotId: string; low: number; likely: number; high: number }> = {},
+  capabilityStaffingById: Record<string, CapabilityStaffingPlan> = {},
+  startDate: Date | null = null,
+  targetDate: Date | null = null,
 ): FeatureComposition {
   const accepted = capabilities.filter((capability) => capability.status === "accepted");
   const itemById = new Map(items.map((item) => [item.id, item]));
@@ -384,6 +397,7 @@ export function composeScopeFeatures(
       ? { low: override.low, likely: override.likely, high: override.high }
       : base.range;
     const effortDays = expectedDays(range);
+    const staffingPlan = capabilityStaffingById[capability.id] ?? null;
     return {
       ...base,
       description: capability.description,
@@ -396,6 +410,10 @@ export function composeScopeFeatures(
       loadDays: effortDays / (capacity > 0 ? capacity : 1),
       uncertainty: effortDays > 0 ? (range.high - range.low) / effortDays : 0,
       placeholderCount: activeKnowledgeEstimate ? 0 : base.placeholderCount,
+      staffingPlan,
+      capabilityForecast: staffingPlan && startDate
+        ? forecastCapability(capability.id, range, staffingPlan, startDate, targetDate)
+        : null,
     };
   });
 

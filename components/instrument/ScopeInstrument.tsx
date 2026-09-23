@@ -314,6 +314,9 @@ export default function ScopeInstrument() {
     [...m.scenario.draftFeatures, ...proposalDrafts],
     m.scenario.acceptedCandidateIds,
     m.scenario.knowledgeEstimateByCapabilityId,
+    m.scenario.capabilityStaffingById,
+    startDate,
+    scope.targetDate ? new Date(scope.targetDate) : null,
   );
   const reality = composeScopeFeatures(scope.items, scope.completedWork, scope.capabilities, scope.teamCapacity, new Set(), {}, []);
 
@@ -858,6 +861,13 @@ export default function ScopeInstrument() {
         releaseLoadDays={composition.loadDays}
         realityRange={openFeature ? realityRangeOf(openFeature) : null}
         maxSpread={maxSpread}
+        staffingOptions={scope.capacityBasis.kind === "allocations"
+          ? (scope.capacityBasis.contributors ?? []).map((contributor) => ({
+              personId: contributor.personId,
+              name: contributor.name,
+              availableFte: contributor.effectiveFte,
+            }))
+          : []}
         onToggle={(out) => openFeature && setBypassed(openFeature, out)}
         onAccept={(id) =>
           m.setScenario((prev) => {
@@ -896,6 +906,19 @@ export default function ScopeInstrument() {
             const next = { ...prev.knowledgeEstimateByCapabilityId };
             delete next[capabilityId];
             return { ...prev, knowledgeEstimateByCapabilityId: next };
+          })
+        }
+        onSetCapabilityStaffing={(capabilityId, plan) =>
+          m.setScenario((prev) => ({
+            ...prev,
+            capabilityStaffingById: { ...prev.capabilityStaffingById, [capabilityId]: plan },
+          }))
+        }
+        onClearCapabilityStaffing={(capabilityId) =>
+          m.setScenario((prev) => {
+            const next = { ...prev.capabilityStaffingById };
+            delete next[capabilityId];
+            return { ...prev, capabilityStaffingById: next };
           })
         }
         onEditReality={(capability) => setEditing(capability)}

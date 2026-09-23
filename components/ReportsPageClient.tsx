@@ -214,7 +214,7 @@ export default function ReportsPageClient() {
       setError("Scenario owner state is still loading. Retry in a moment.");
       return;
     }
-    const supportedLeverCount = project.scenario.excludedItemIds.size + project.scenario.includedItemIds.size + project.scenario.resolvedGateIds.size + Object.keys(project.scenario.estimateOverrideByItemId).length + Object.keys(project.scenario.capacityOverrideByScope).length + (project.scenario.contextSwitchCostPct === null ? 0 : 1);
+    const supportedLeverCount = project.scenario.excludedItemIds.size + project.scenario.includedItemIds.size + project.scenario.resolvedGateIds.size + Object.keys(project.scenario.estimateOverrideByItemId).length + Object.keys(project.scenario.knowledgeEstimateByCapabilityId).length + Object.keys(project.scenario.capabilityStaffingById).length + Object.keys(project.scenario.capacityOverrideByScope).length + (project.scenario.contextSwitchCostPct === null ? 0 : 1);
     if (supportedLeverCount === 0) {
       setError("This scenario has no reportable forecast lever. Knowledge-only drafts remain unmodeled until mapped to work or governed effort.");
       return;
@@ -230,17 +230,29 @@ export default function ReportsPageClient() {
       includedItemIds: [...project.scenario.includedItemIds],
       resolvedGateIds: [...project.scenario.resolvedGateIds],
       estimateOverrideByItemId: project.scenario.estimateOverrideByItemId,
+      excludedCapabilityIds: [...project.scenario.bypassedFeatureIds]
+        .filter((id) => id.startsWith("capability:"))
+        .map((id) => id.slice("capability:".length)),
+      knowledgeEstimateByCapabilityId: project.scenario.knowledgeEstimateByCapabilityId,
+      capabilityStaffingById: project.scenario.capabilityStaffingById,
       capacityOverrideByScope: project.scenario.capacityOverrideByScope,
       contextSwitchCostPct: project.scenario.contextSwitchCostPct,
     };
     try {
+      const realityResponse = await fetch("/api/reports", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ scopeId, mode: "reality", recipe: buildBriefRecipe(audience, purpose) }),
+      });
+      const realityBody = await realityResponse.json();
+      if (!realityResponse.ok) throw new Error(realityBody.error ?? "Couldn't generate the Reality side of the comparison.");
       const response = await fetch("/api/reports", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ scopeId, mode: "scenario", scenarioId, scenarioSnapshot, recipe: buildBriefRecipe(audience, purpose) }),
       });
       const body = await response.json();
-      if (!response.ok) throw new Error(body.error ?? "Couldn't generate Scenario report.");
+      if (!response.ok) throw new Error(body.error ?? "Reality was saved, but the Scenario side of the comparison could not be generated.");
       await loadReports(scopeId);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Couldn't generate Scenario report.");
@@ -289,7 +301,7 @@ export default function ReportsPageClient() {
           {generating ? "Generating…" : "Generate report"}
         </button>
         <button onClick={() => void generateScenario()} disabled={generating || !scopeId || !project.active || forecastUnavailable || forecastIncomplete} className="rounded-md border border-[var(--i-violet)] px-4 py-2 text-sm text-[var(--i-violet)] disabled:opacity-35">
-          {generating ? "Generating…" : "Generate Scenario report"}
+          {generating ? "Generating…" : "Generate Reality + Scenario"}
         </button>
         <select value={audience} onChange={(event) => setAudience(event.target.value as AudienceLens)} className="rounded-md border border-[var(--i-border)] bg-[var(--i-panel)] px-3 py-2 text-xs text-[var(--i-text)]" aria-label="Brief audience">
           {Object.entries(AUDIENCE_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
@@ -318,7 +330,19 @@ export default function ReportsPageClient() {
       {comparison && <section className="report-no-print mb-6 rounded-xl border border-[var(--i-border)] bg-[var(--i-panel)] p-4" aria-label="Reality versus Scenario comparison">
         <div className="mb-3 flex items-center justify-between"><div><div className="i-label" style={{ color: "var(--i-signal)" }}>Persisted comparison</div><h2 className="mt-1 text-lg font-semibold text-[var(--i-text)]">Reality r{comparison.realityBrief.identity.realityRevision} versus {comparison.scenarioBrief.identity.scenarioId}</h2></div><span className="text-[10px] uppercase tracking-wider text-[var(--i-violet)]">Reality unchanged · Scenario hypothetical</span></div>
         <div className="grid grid-cols-2 gap-3">
-          {[comparison.realityBrief, comparison.scenarioBrief].map((brief) => <button key={`${brief.identity.mode}-${brief.identity.generatedAt}`} onClick={() => setSelected(brief.identity.mode === "reality" ? comparison.reality : comparison.scenario)} className="rounded-lg border p-4 text-left" style={{ borderColor: brief.identity.mode === "reality" ? "var(--i-mint)" : "var(--i-violet)", background: "var(--i-recess)" }}><div className="text-[9px] font-semibold uppercase tracking-[0.12em]" style={{ color: brief.identity.mode === "reality" ? "var(--i-mint)" : "var(--i-violet)" }}>{brief.identity.mode}</div><div className="mt-2 i-readout text-xl text-[var(--i-text)]">{formatDateOnly(brief.headline.likelyWindow.value.likely, { month: "short", day: "numeric", year: "numeric" })}</div><div className="mt-1 text-xs text-[var(--i-text-soft)]">{formatDateOnly(brief.headline.likelyWindow.value.earliest, { month: "short", day: "numeric" })}–{formatDateOnly(brief.headline.likelyWindow.value.latest, { month: "short", day: "numeric" })} · {brief.headline.confidenceAtTarget.value ?? "—"}% at target</div><p className="mt-3 text-xs leading-relaxed text-[var(--i-text-faint)]">{brief.headline.keyReason.value}</p></button>)}
+          {[comparison.realityBrief, comparison.scenarioBrief].map((brief) => {
+            const outlooks = brief.movable.scope.value.capabilityOutlooks ?? [];
+            return <button key={`${brief.identity.mode}-${brief.identity.generatedAt}`} onClick={() => setSelected(brief.identity.mode === "reality" ? comparison.reality : comparison.scenario)} className="rounded-lg border p-4 text-left" style={{ borderColor: brief.identity.mode === "reality" ? "var(--i-mint)" : "var(--i-violet)", background: "var(--i-recess)" }}>
+              <div className="text-[9px] font-semibold uppercase tracking-[0.12em]" style={{ color: brief.identity.mode === "reality" ? "var(--i-mint)" : "var(--i-violet)" }}>{brief.identity.mode}</div>
+              <div className="mt-2 i-readout text-xl text-[var(--i-text)]">{formatDateOnly(brief.headline.likelyWindow.value.likely, { month: "short", day: "numeric", year: "numeric" })}</div>
+              <div className="mt-1 text-xs text-[var(--i-text-soft)]">{formatDateOnly(brief.headline.likelyWindow.value.earliest, { month: "short", day: "numeric" })}–{formatDateOnly(brief.headline.likelyWindow.value.latest, { month: "short", day: "numeric" })} · {brief.headline.confidenceAtTarget.value ?? "—"}% at target</div>
+              <p className="mt-3 text-xs leading-relaxed text-[var(--i-text-faint)]">{brief.headline.keyReason.value}</p>
+              {outlooks.length > 0 && <div className="mt-3 space-y-1.5 border-t border-[var(--i-border)] pt-3">
+                <div className="text-[8px] font-semibold uppercase tracking-wider text-[var(--i-violet)]">Isolated capability outlooks</div>
+                {outlooks.map((outlook) => <div key={outlook.capabilityId} className="flex items-baseline justify-between gap-3 text-[9.5px]"><span className="truncate text-[var(--i-text-soft)]">{outlook.name} · {outlook.staffingFte.toFixed(2)} FTE</span><strong className="shrink-0 text-[var(--i-text)]">{formatDateOnly(outlook.likelyDate, { month: "short", day: "numeric" })}</strong></div>)}
+              </div>}
+            </button>;
+          })}
         </div>
       </section>}
 

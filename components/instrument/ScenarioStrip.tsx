@@ -159,6 +159,22 @@ export function chipsFor(
       href: "/scope",
     });
   }
+  const knowledgeEstimated = Object.keys(scenario.knowledgeEstimateByCapabilityId).length;
+  if (knowledgeEstimated > 0) {
+    chips.push({
+      id: "knowledge-estimates",
+      label: `${knowledgeEstimated} meeting estimate${knowledgeEstimated === 1 ? "" : "s"} staged`,
+      href: "/scope",
+    });
+  }
+  const staffedCapabilities = Object.keys(scenario.capabilityStaffingById).length;
+  if (staffedCapabilities > 0) {
+    chips.push({
+      id: "capability-staffing",
+      label: `${staffedCapabilities} capability staffing ${staffedCapabilities === 1 ? "plan" : "plans"}`,
+      href: "/scope",
+    });
+  }
   if (scenario.contextSwitchCostPct !== null) {
     chips.push({ id: "switch", label: `switch cost ${scenario.contextSwitchCostPct}%`, href: "/portfolio" });
   }

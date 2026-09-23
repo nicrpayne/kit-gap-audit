@@ -213,6 +213,20 @@ export interface DecisionBriefV1 {
       executableItemCount: number;
       remainingEffortDays: { low: number; likely: number; high: number };
       href: string;
+      /** Present on Scenario briefs that carry explicit named focus for a
+          capability. Older immutable V1 reports legitimately omit it. */
+      capabilityOutlooks?: {
+        capabilityId: string;
+        name: string;
+        estimateBasis: "work_rollup" | "knowledge_provisional";
+        effortDays: { low: number; likely: number; high: number };
+        contributors: { personId: string; name: string; fte: number }[];
+        staffingFte: number;
+        earliestDate: string;
+        likelyDate: string;
+        latestDate: string;
+        confidenceAtTarget: number | null;
+      }[];
     }>;
     capacity: Sourced<{
       availability: "available" | "missing" | "unavailable";

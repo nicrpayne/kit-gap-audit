@@ -27,6 +27,7 @@
     "proof:scope-v2-db": "tsx scripts/scope-v2-proposal-db-proof.ts",
     "proof:scope-v2-browser": "tsx scripts/scope-v2-browser-proof.ts",
     "proof:scope-knowledge-estimates": "tsx scripts/scope-knowledge-estimate-proof.ts",
+    "proof:scope-capability-forecast": "tsx scripts/scope-capability-forecast-proof.ts",
     "proof:signal-e2e-recovery": "tsx scripts/signal-e2e-recovery-proof.ts"
   },
   "dependencies": {

@@ -146,6 +146,18 @@ export default function DecisionBriefView({ brief }: { brief: DecisionBriefV1 })
           <div className="text-[9px] font-semibold uppercase tracking-wider text-[var(--i-text-faint)]">Executable canonical Scope</div>
           <div className="mt-1">{brief.movable.scope.value.executableItemCount} work item{brief.movable.scope.value.executableItemCount === 1 ? "" : "s"} · {fte(brief.movable.scope.value.remainingEffortDays.low)} / {fte(brief.movable.scope.value.remainingEffortDays.likely)} / {fte(brief.movable.scope.value.remainingEffortDays.high)} days</div>
           <Link href={brief.movable.scope.value.href} className="mt-2 inline-block text-xs text-[var(--i-signal)] hover:underline">Open Scope →</Link>
+          {!!brief.movable.scope.value.capabilityOutlooks?.length && (
+            <div className="mt-4 border-t border-[var(--i-border)] pt-3">
+              <div className="text-[9px] font-semibold uppercase tracking-wider text-[var(--i-text-faint)]">Isolated capability outlooks</div>
+              {brief.movable.scope.value.capabilityOutlooks.map((outlook) => (
+                <div key={outlook.capabilityId} className="mt-2 flex flex-wrap items-baseline justify-between gap-2 text-xs">
+                  <span>{outlook.name}<span className="ml-2 text-[var(--i-text-faint)]">{outlook.contributors.map((person) => `${person.name} ${fte(person.fte)} FTE`).join(" · ")}</span></span>
+                  <span className="tabular-nums">likely {date(outlook.likelyDate)}</span>
+                </div>
+              ))}
+              <p className="mt-2 text-[10px] text-[var(--i-text-faint)]">Each date assumes those people stay focused on that card. It does not assert simultaneous execution across cards.</p>
+            </div>
+          )}
         </div>
         {capacity.availability === "available" ? (
           <div>

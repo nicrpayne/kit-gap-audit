@@ -95,6 +95,12 @@ function moduleMarkdown(id: BriefModuleId, density: ModuleDensity, brief: Decisi
       heading("Executable Scope");
       const scope = brief.movable.scope.value;
       out.push(`**${scope.executableItemCount} canonical work items · ${number(scope.remainingEffortDays.low)}/${number(scope.remainingEffortDays.likely)}/${number(scope.remainingEffortDays.high)} effort days** · [Open Scope](${scope.href})`);
+      if (scope.capabilityOutlooks?.length) {
+        out.push("", "Isolated capability outlooks — each assumes its named contributors stay focused on that card:");
+        for (const outlook of scope.capabilityOutlooks) {
+          out.push(`- **${outlook.name}** — likely ${date(outlook.likelyDate)} (${date(outlook.earliestDate)}–${date(outlook.latestDate)}) · ${number(outlook.staffingFte)} FTE · ${outlook.contributors.map((person) => `${person.name} ${number(person.fte)}`).join(", ")} · ${outlook.estimateBasis === "knowledge_provisional" ? "provisional meeting estimate" : "ticket rollup"}`);
+        }
+      }
       break;
     }
     case "capacity": {

@@ -16,7 +16,7 @@
 // says plainly that the model holds nothing. There is no mode here that is
 // filled out with plausible-looking material.
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "@/components/instrument/SignalLink";
 import ToolWindow, { RailButton, Row } from "@/components/instrument/ToolWindow";
 import { DistributionDisplay, accentFor, materialOf } from "@/components/instrument/CapabilityTile";
@@ -25,8 +25,16 @@ import { expectedDays, uncertaintyLabel, type Feature, type ThreePoint, type Dra
 import type { ScopeWorkItem } from "@/lib/instrument/useProject";
 import type { ShapeCapability } from "@/lib/scope/productShape";
 import type { CapabilityKnowledgeEstimate } from "@/lib/scope/knowledgeEstimates";
+import type { CapabilityStaffingPlan } from "@/lib/scope/capabilityForecast";
+import { formatDateOnly } from "@/lib/time/dateContract";
 
 type Mode = "overview" | "work" | "evidence" | "estimate" | "history";
+
+interface StaffingOption {
+  personId: string;
+  name: string;
+  availableFte: number;
+}
 
 const ESTIMATE_SOURCE: Record<string, string> = {
   ai: "Estimated by the model from the ticket's own content",
@@ -50,6 +58,9 @@ export default function FeatureDetail({
   onClearEstimate,
   onStageKnowledgeEstimate,
   onClearKnowledgeEstimate,
+  staffingOptions,
+  onSetCapabilityStaffing,
+  onClearCapabilityStaffing,
   onEditReality,
   onUnlinkReality,
   onCommitDraft,
@@ -69,6 +80,9 @@ export default function FeatureDetail({
   onClearEstimate: (id: string) => void;
   onStageKnowledgeEstimate: (capabilityId: string, estimate: CapabilityKnowledgeEstimate) => void;
   onClearKnowledgeEstimate: (capabilityId: string) => void;
+  staffingOptions: StaffingOption[];
+  onSetCapabilityStaffing: (capabilityId: string, plan: CapabilityStaffingPlan) => void;
+  onClearCapabilityStaffing: (capabilityId: string) => void;
   onEditReality: (capability: ShapeCapability) => void;
   onUnlinkReality: (capability: ShapeCapability, linkId: string, itemLabel: string) => void;
   onCommitDraft: (feature: Feature) => void;
@@ -141,7 +155,7 @@ export default function FeatureDetail({
       {mode === "work" && <Work feature={f} capacity={capacity} onUnlinkReality={onUnlinkReality} />}
       {mode === "evidence" && <Evidence feature={f} onAccept={onAccept} onStageKnowledgeEstimate={onStageKnowledgeEstimate} onClearKnowledgeEstimate={onClearKnowledgeEstimate} />}
       {mode === "estimate" && (
-        <Estimate feature={f} capacity={capacity} onSetEstimate={onSetEstimate} onClearEstimate={onClearEstimate} onStageKnowledgeEstimate={onStageKnowledgeEstimate} onClearKnowledgeEstimate={onClearKnowledgeEstimate} />
+        <Estimate feature={f} capacity={capacity} onSetEstimate={onSetEstimate} onClearEstimate={onClearEstimate} onStageKnowledgeEstimate={onStageKnowledgeEstimate} onClearKnowledgeEstimate={onClearKnowledgeEstimate} staffingOptions={staffingOptions} onSetCapabilityStaffing={onSetCapabilityStaffing} onClearCapabilityStaffing={onClearCapabilityStaffing} />
       )}
       {mode === "history" && <History feature={f} />}
     </ToolWindow>
@@ -220,7 +234,15 @@ function ModuleHead({
       )}
 
       <div className="mt-3 flex items-start gap-5">
-        <HeadStat k="Load" v={hasEstimate ? `${f.loadDays.toFixed(1)}d` : "—"} n={f.activeKnowledgeEstimate ? `provisional · ÷ ${capacity.toFixed(2)} FTE` : hasEstimate ? `÷ ${capacity.toFixed(2)} FTE` : "no mapped work"} />
+        <HeadStat
+          k={f.capabilityForecast ? "Card schedule" : "Load"}
+          v={hasEstimate ? `${(f.capabilityForecast?.likelyScheduleDays ?? f.loadDays).toFixed(1)}d` : "—"}
+          n={f.capabilityForecast
+            ? `${f.capabilityForecast.staffingFte.toFixed(2)} named FTE · isolated`
+            : f.activeKnowledgeEstimate
+              ? `provisional · ÷ ${capacity.toFixed(2)} FTE`
+              : hasEstimate ? `÷ ${capacity.toFixed(2)} FTE` : "no mapped work"}
+        />
         <HeadStat
           k="Share"
           v={releaseLoadDays > 0 && !f.bypassed ? `${((f.loadDays / releaseLoadDays) * 100).toFixed(0)}%` : "—"}
@@ -231,6 +253,13 @@ function ModuleHead({
           v={uncertaintyLabel(f.uncertainty)}
           n={f.activeKnowledgeEstimate ? "meeting evidence" : f.placeholderCount > 0 ? `${f.placeholderCount} unestimated` : "all sized"}
         />
+        {f.capabilityForecast && (
+          <HeadStat
+            k="Likely landing"
+            v={formatDateOnly(f.capabilityForecast.likelyDate, { month: "short", day: "numeric" })}
+            n={`${formatDateOnly(f.capabilityForecast.earliestDate, { month: "short", day: "numeric" })}–${formatDateOnly(f.capabilityForecast.latestDate, { month: "short", day: "numeric" })}`}
+          />
+        )}
       </div>
     </div>
   );
@@ -653,6 +682,9 @@ function Estimate({
   onClearEstimate,
   onStageKnowledgeEstimate,
   onClearKnowledgeEstimate,
+  staffingOptions,
+  onSetCapabilityStaffing,
+  onClearCapabilityStaffing,
 }: {
   feature: Feature;
   capacity: number;
@@ -660,6 +692,9 @@ function Estimate({
   onClearEstimate: (id: string) => void;
   onStageKnowledgeEstimate: (capabilityId: string, estimate: CapabilityKnowledgeEstimate) => void;
   onClearKnowledgeEstimate: (capabilityId: string) => void;
+  staffingOptions: StaffingOption[];
+  onSetCapabilityStaffing: (capabilityId: string, plan: CapabilityStaffingPlan) => void;
+  onClearCapabilityStaffing: (capabilityId: string) => void;
 }) {
   const [tuning, setTuning] = useState<string | null>(null);
   if (f.items.length === 0 && f.knowledgeEstimates.length === 0)
@@ -669,6 +704,12 @@ function Estimate({
   return (
     <div className="px-5 py-4">
       <KnowledgeEstimateEvidence feature={f} onStage={onStageKnowledgeEstimate} onClear={onClearKnowledgeEstimate} />
+      <CapabilityStaffingEditor
+        feature={f}
+        options={staffingOptions}
+        onSave={onSetCapabilityStaffing}
+        onClear={onClearCapabilityStaffing}
+      />
       {f.items.length > 0 ? <>
       <p className="text-[11px] text-[var(--i-text-soft)] leading-relaxed">
         {f.activeKnowledgeEstimate
@@ -718,6 +759,122 @@ function Estimate({
 
       <p className="mt-3 text-[10px] text-[var(--i-text-faint)] leading-snug">
         The stored estimate is never written.
+      </p>
+    </div>
+  );
+}
+
+function CapabilityStaffingEditor({
+  feature,
+  options,
+  onSave,
+  onClear,
+}: {
+  feature: Feature;
+  options: StaffingOption[];
+  onSave: (capabilityId: string, plan: CapabilityStaffingPlan) => void;
+  onClear: (capabilityId: string) => void;
+}) {
+  const capability = feature.canonicalCapability;
+  const [draft, setDraft] = useState<Record<string, number>>({});
+
+  useEffect(() => {
+    setDraft(Object.fromEntries((feature.staffingPlan?.contributors ?? []).map((person) => [person.personId, person.fte])));
+  }, [feature.id, feature.staffingPlan]);
+
+  if (!capability) return null;
+  if (options.length === 0) {
+    return (
+      <div className="mt-4 rounded-md px-3 py-3" style={{ border: "1px solid var(--i-border)", background: "var(--i-recess)" }}>
+        <div className="i-label">Capability staffing</div>
+        <p className="mt-1.5 text-[9.5px] leading-relaxed text-[var(--i-amber)]">
+          Named project capacity is not reconciled, so Signal cannot honestly assign people to this card yet.
+        </p>
+      </div>
+    );
+  }
+
+  const selected = options.flatMap((option) => {
+    const fte = draft[option.personId] ?? 0;
+    return fte > 0 ? [{ personId: option.personId, name: option.name, fte }] : [];
+  });
+  const total = selected.reduce((sum, person) => sum + person.fte, 0);
+  const suggested = feature.activeKnowledgeEstimate?.owner ?? feature.knowledgeEstimates[0]?.owner ?? null;
+
+  return (
+    <div className="mt-4 rounded-md px-3 py-3" style={{ border: "1px solid color-mix(in srgb, var(--i-signal) 35%, var(--i-border))", background: "var(--i-recess)" }} data-shoot="capability-staffing">
+      <div className="flex items-baseline justify-between gap-3">
+        <span className="i-label" style={{ color: "var(--i-signal)" }}>Who stays focused here?</span>
+        <span className="text-[8.5px] text-[var(--i-text-faint)]">{total.toFixed(2)} FTE selected</span>
+      </div>
+      {suggested && <div className="mt-1.5 text-[9px] text-[var(--i-text-faint)]">Meeting evidence names {suggested}; confirm it below rather than accepting it automatically.</div>}
+      <div className="mt-2 space-y-1.5">
+        {options.map((option) => {
+          const active = (draft[option.personId] ?? 0) > 0;
+          return (
+            <div key={option.personId} className="flex items-center gap-2 rounded px-2 py-1.5" style={{ border: "1px solid var(--i-border)" }}>
+              <input
+                type="checkbox"
+                checked={active}
+                onChange={(event) => setDraft((current) => ({
+                  ...current,
+                  [option.personId]: event.target.checked ? option.availableFte : 0,
+                }))}
+                aria-label={`Use ${option.name} on this capability`}
+              />
+              <span className="min-w-0 flex-1 text-[10.5px] text-[var(--i-text-soft)]">{option.name}</span>
+              <input
+                type="number"
+                min={0.05}
+                max={option.availableFte}
+                step={0.05}
+                disabled={!active}
+                value={active ? draft[option.personId] : option.availableFte}
+                onChange={(event) => {
+                  const value = Number(event.target.value);
+                  setDraft((current) => ({
+                    ...current,
+                    [option.personId]: Number.isFinite(value) ? Math.min(option.availableFte, Math.max(0.05, value)) : 0,
+                  }));
+                }}
+                className="w-16 rounded border border-[var(--i-border)] bg-[var(--i-panel)] px-1.5 py-1 text-right text-[10px] text-[var(--i-text)] disabled:opacity-35"
+                aria-label={`${option.name} FTE on this capability`}
+              />
+              <span className="w-16 text-right text-[8.5px] text-[var(--i-text-faint)]">of {option.availableFte.toFixed(2)}</span>
+            </div>
+          );
+        })}
+      </div>
+      <div className="mt-2 flex gap-2">
+        <button
+          type="button"
+          disabled={selected.length === 0}
+          onClick={() => onSave(capability.id, { contributors: selected })}
+          className="flex-1 rounded px-2 py-1.5 text-[9.5px] disabled:opacity-35"
+          style={{ border: "1px solid var(--i-signal)", color: "var(--i-signal)" }}
+          data-shoot="stage-capability-staffing"
+        >
+          Forecast this card in Scenario
+        </button>
+        {feature.staffingPlan && (
+          <button type="button" onClick={() => onClear(capability.id)} className="rounded px-2 py-1.5 text-[9.5px] text-[var(--i-text-faint)]" style={{ border: "1px solid var(--i-border)" }}>
+            Clear
+          </button>
+        )}
+      </div>
+      {feature.capabilityForecast && (
+        <div className="mt-2 rounded px-2.5 py-2" style={{ background: "var(--i-panel)" }}>
+          <div className="flex items-baseline justify-between gap-3">
+            <span className="text-[9.5px] text-[var(--i-text-soft)]">Isolated likely landing</span>
+            <strong className="i-readout text-[12px] text-[var(--i-text)]">{formatDateOnly(feature.capabilityForecast.likelyDate, { month: "short", day: "numeric", year: "numeric" })}</strong>
+          </div>
+          <div className="mt-1 text-[8.5px] text-[var(--i-text-faint)]">
+            {formatDateOnly(feature.capabilityForecast.earliestDate, { month: "short", day: "numeric" })}–{formatDateOnly(feature.capabilityForecast.latestDate, { month: "short", day: "numeric" })} · assumes these people stay focused here
+          </div>
+        </div>
+      )}
+      <p className="mt-2 text-[8.5px] leading-relaxed text-[var(--i-text-faint)]">
+        This is a card-level what-if, not a promise and not a new project Allocation. Reusing the same person on several cards does not mean they can execute those cards simultaneously.
       </p>
     </div>
   );

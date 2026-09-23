@@ -35,6 +35,7 @@
 
 import { motion } from "motion/react";
 import { uncertaintyLabel, type Feature, type ThreePoint } from "@/lib/scope/features";
+import { formatDateOnly } from "@/lib/time/dateContract";
 
 export type Material = "seated" | "spectral" | "raw" | "out";
 
@@ -442,6 +443,7 @@ export default function CapabilityTile({
   const dotTotal = Math.min(6, mapped);
   const dotDone = mapped > 0 ? Math.round((f.done.length / mapped) * dotTotal) : 0;
   const restY = spectral && !lifted ? -7 : 0;
+  const displayDays = f.capabilityForecast?.likelyScheduleDays ?? f.loadDays;
 
   // ── FACE MATERIAL ─────────────────────────────────────────────────────
   // Graphite in every state. The accent lives in the edge, the sigil and the
@@ -572,7 +574,7 @@ export default function CapabilityTile({
         {...dragHandleProps}
         className={`absolute inset-0 flex flex-col text-left ${compact ? "px-3 pt-2.5 pb-2" : "px-3.5 pt-3 pb-2.5"}`}
         style={{ cursor: "inherit", touchAction: "none", borderRadius: 12, overflow: "hidden" }}
-        aria-label={`${f.name}, ${f.loadDays.toFixed(1)} days of load${out ? ", out of this release" : ""}. Drag to move, or click to open.`}
+        aria-label={`${f.name}, ${displayDays.toFixed(1)} days${f.capabilityForecast ? " of isolated card schedule" : " of load"}${out ? ", out of this release" : ""}. Drag to move, or click to open.`}
       >
         {raw && <span aria-hidden className="absolute inset-0 i-hatch" style={{ opacity: 0.4 }} />}
 
@@ -642,9 +644,15 @@ export default function CapabilityTile({
         {hasEstimate ? (
           <div className={`relative flex items-baseline gap-2 ${compact ? "mt-1" : "mt-1.5"}`}>
             <span className="i-readout leading-none" style={{ fontSize: compact ? 15 : 22, color: out ? "var(--i-text-soft)" : "var(--i-text)" }}>
-              {f.loadDays.toFixed(1)}<span className="text-[10px] font-normal">d</span>
+              {displayDays.toFixed(1)}<span className="text-[10px] font-normal">d</span>
             </span>
-            <span className="text-[9.5px] text-[var(--i-text-faint)]">{out ? "not carried" : `${(share * 100).toFixed(0)}% of load`}</span>
+            <span className="text-[9.5px] text-[var(--i-text-faint)]">
+              {out
+                ? "not carried"
+                : f.capabilityForecast
+                  ? `likely ${formatDateOnly(f.capabilityForecast.likelyDate, { month: "short", day: "numeric" })} · ${f.capabilityForecast.staffingFte.toFixed(2)} FTE`
+                  : `${(share * 100).toFixed(0)}% of load`}
+            </span>
           </div>
         ) : (
           <div className={`relative ${compact ? "mt-1" : "mt-2"}`}>
@@ -667,7 +675,9 @@ export default function CapabilityTile({
           <div className="relative mt-1 shrink-0 flex items-center justify-between text-[9px] text-[var(--i-text-faint)]">
             <span>
               {f.activeKnowledgeEstimate
-                ? "MEETING ESTIMATE · SCENARIO"
+                ? f.capabilityForecast ? "MEETING ESTIMATE + STAFFING · SCENARIO" : "MEETING ESTIMATE · SCENARIO"
+                : f.capabilityForecast
+                ? "CAPABILITY FORECAST · SCENARIO"
                 : f.items.length === 0 && f.done.length === 0
                 ? f.source === "canonical" ? "NO EXECUTION WORK MAPPED" : "no work mapped"
                 : `uncertainty ${uncertaintyLabel(f.uncertainty).toLowerCase()}`}

@@ -19,6 +19,7 @@ import { realityRevision, subscribeReality } from "@/lib/instrument/reality";
 import { formatDateOnly } from "@/lib/time/dateContract";
 import type { ForecastCoverageContract } from "@/lib/forecast/coverage";
 import { substituteCapabilityKnowledgeEstimates, type CapabilityKnowledgeEstimate } from "@/lib/scope/knowledgeEstimates";
+import type { CapabilityStaffingPlan } from "@/lib/scope/capabilityForecast";
 
 // The provenance the Scope instrument reads. Produced by describeItems in
 // lib/forecast/compute.ts by joining each simulated item back to the Linear
@@ -183,6 +184,10 @@ export interface SuiteScenario {
     likely: number;
     high: number;
   }>;
+  /** Named project capacity assumed to remain focused on one capability.
+      This powers an isolated per-card outlook; it is not a project Allocation
+      and does not silently change the release's aggregate capacity. */
+  capabilityStaffingById: Record<string, CapabilityStaffingPlan>;
   // WHICH CAPABILITIES ARE OUT, as opposed to which work items are.
   //
   // excludedItemIds above stays the engine's truth -- the simulation only
@@ -228,6 +233,7 @@ export const EMPTY_SCENARIO: SuiteScenario = {
   resolvedGateIds: new Set(),
   estimateOverrideByItemId: {},
   knowledgeEstimateByCapabilityId: {},
+  capabilityStaffingById: {},
   bypassedFeatureIds: new Set(),
   includedCapabilityIds: new Set(),
   draftFeatures: [],
@@ -244,6 +250,7 @@ export function scenarioIsActive(s: SuiteScenario): boolean {
     s.resolvedGateIds.size > 0 ||
     Object.keys(s.estimateOverrideByItemId).length > 0 ||
     Object.keys(s.knowledgeEstimateByCapabilityId).length > 0 ||
+    Object.keys(s.capabilityStaffingById).length > 0 ||
     s.bypassedFeatureIds.size > 0 ||
     s.includedCapabilityIds.size > 0 ||
     s.draftFeatures.length > 0 ||
