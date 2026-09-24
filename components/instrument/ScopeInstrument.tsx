@@ -63,6 +63,7 @@ import {
 } from "@/lib/instrument/useProject";
 import { composeScopeFeatures, expectedDays, type Feature, type ThreePoint } from "@/lib/scope/features";
 import { readDominance } from "@/lib/scope/constraint";
+import { forecastDateAtDay } from "@/lib/forecast/simulate";
 import { formatCapacity } from "@/lib/capacity/limits";
 import { formatDateOnly } from "@/lib/time/dateContract";
 import { partitionProductShape, type ShapeCapability } from "@/lib/scope/productShape";
@@ -1912,7 +1913,7 @@ function ConstraintStrip({
             </span>
           </div>
           <span className="i-readout text-[16px] leading-none" style={{ color: "var(--i-amber)" }}>
-            {fmtDay(new Date(startDate.getTime() + dom.floorDays * 86400000))}
+            {fmtDay(forecastDateAtDay(startDate, dom.floorDays))}
           </span>
         </motion.div>
       )}

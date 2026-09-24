@@ -31,6 +31,7 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react
 import type { ProjectField as Field, Selection } from "@/lib/control-room/field";
 import { reachOf } from "@/lib/control-room/field";
 import { formatDateOnly } from "@/lib/time/dateContract";
+import { forecastDateAtDay } from "@/lib/forecast/simulate";
 
 const HEAD = 168; // the fixed label column, in px
 const AXIS = 26; // room for the date rule at the foot
@@ -415,7 +416,7 @@ export default function ProjectField({
                       fill={landingTone}
                       className="i-readout"
                     >
-                      {l.coverageState === "forecastable" ? dShort(new Date(field.startDate.getTime() + l.p50 * 86400000)) : `subset ~${dShort(new Date(field.startDate.getTime() + l.p50 * 86400000))}`}
+                      {l.coverageState === "forecastable" ? dShort(forecastDateAtDay(field.startDate, l.p50)) : `subset ~${dShort(forecastDateAtDay(field.startDate, l.p50))}`}
                     </text>
 
                     {/* Reality's own landing while a Scenario runs, so the

@@ -26,7 +26,7 @@ import LivingForecast, { type GateMark } from "@/components/instrument/LivingFor
 import ForecastDetail from "@/components/instrument/ForecastDetail";
 import { GateDetail, TargetDetail, ContextDetail, RealityDetail } from "@/components/instrument/ForecastTools";
 import { useProject, EMPTY_SCENARIO, fmtDay, fmtFull, deltaLabel, deltaTone } from "@/lib/instrument/useProject";
-import { confidenceAtDay } from "@/lib/forecast/simulate";
+import { confidenceAtDay, forecastDateAtDay } from "@/lib/forecast/simulate";
 import { formatCapacity } from "@/lib/capacity/limits";
 import { currentnessLabel, sourceCurrentness } from "@/lib/truth/currentness";
 import { formatDateOnly } from "@/lib/time/dateContract";
@@ -293,8 +293,8 @@ export default function ForecastInstrument() {
               style={{ textShadow: "0 2px 16px var(--i-void)" }}
             >
               <span className="i-readout text-[12px] text-[var(--i-text-soft)]">
-                {fmtDay(new Date(m.startDate.getTime() + res.percentiles.p10 * 86400000))} —{" "}
-                {fmtDay(new Date(m.startDate.getTime() + res.percentiles.p90 * 86400000))}
+                {fmtDay(forecastDateAtDay(m.startDate, res.percentiles.p10))} —{" "}
+                {fmtDay(forecastDateAtDay(m.startDate, res.percentiles.p90))}
               </span>
               {moved !== 0 && (
                 <span className="i-readout text-[12px]" style={{ color: deltaTone(moved) }}>
@@ -329,7 +329,7 @@ export default function ForecastInstrument() {
         {overridden && (
           <div className="absolute top-4 left-5 text-[9.5px]" style={{ color: "var(--i-violet)" }}>
             {savedTargetDay !== null
-              ? `evaluating a moved target — saved ${fmtDay(new Date(m.startDate.getTime() + savedTargetDay * 86400000))}`
+              ? `evaluating a moved target — saved ${fmtDay(forecastDateAtDay(m.startDate, savedTargetDay))}`
               : "evaluating a hypothetical target"}
           </div>
         )}

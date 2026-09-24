@@ -8,6 +8,7 @@ import {
   toDateOnly,
   toInstant,
 } from "../lib/time/dateContract";
+import { forecastDateAtDay, summarizeCompletionDays } from "../lib/forecast/simulate";
 
 const timezones = [
   "America/Chicago",
@@ -78,6 +79,23 @@ assert.match(chicago, /09\/17\/2026/);
 assert.match(tokyo, /09\/18\/2026/);
 assert.throws(() => toDateOnly("2026-09-18T03:30:00"), /offset-bearing/);
 assert.throws(() => toInstant("2026-09-18T03:30:00"), /explicit UTC offset/);
+
+// Percentile outcomes are fractional day counts. All forecast surfaces must
+// display the same rounded DateOnly that the simulation publishes.
+const forecastStart = new Date("2026-09-23T00:00:00.000Z");
+const fractionalP50 = 58.6;
+const forecastSummary = summarizeCompletionDays(
+  [57.1, fractionalP50, 63.4],
+  [],
+  [],
+  forecastStart
+);
+assert.equal(forecastSummary.percentiles.p50, fractionalP50);
+assert.equal(
+  toDateOnly(forecastDateAtDay(forecastStart, forecastSummary.percentiles.p50)),
+  toDateOnly(forecastSummary.likelyDate),
+  "fractional P50 display agrees with the published likely date"
+);
 
 // Guard the real production surfaces, not only the helper. Each owner
 // consumer must import the suite-wide date-only formatter.

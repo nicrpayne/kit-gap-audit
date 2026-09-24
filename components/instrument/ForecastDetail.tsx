@@ -24,7 +24,7 @@
 import { useMemo, useState } from "react";
 import Link from "@/components/instrument/SignalLink";
 import ToolWindow, { RailButton, Row } from "@/components/instrument/ToolWindow";
-import type { SimulationResult } from "@/lib/forecast/simulate";
+import { forecastDateAtDay, type SimulationResult } from "@/lib/forecast/simulate";
 import type { ProjectScope, SuiteScenario } from "@/lib/instrument/useProject";
 import { fmtDay, fmtFull, deltaLabel, deltaTone, confidenceTone } from "@/lib/instrument/useProject";
 import type { MomentumTrend } from "@/lib/momentum/trend";
@@ -139,7 +139,7 @@ function RangeGauge({
   const span = hi - lo + pad * 2;
   const x = (day: number) => ((day - lo + pad) / span) * 100;
   const core = scenarioActive ? "var(--i-violet)" : "#5ec8d8";
-  const day = (d: number) => fmtDay(new Date(startDate.getTime() + d * 86400000));
+  const day = (d: number) => fmtDay(forecastDateAtDay(startDate, d));
   return (
     <div>
       <div className="i-meter relative h-10 rounded-md overflow-hidden">
@@ -253,11 +253,11 @@ function Histogram({
         </svg>
       </div>
       <div className="mt-1 flex justify-between text-[9.5px] text-[var(--i-text-faint)]">
-        <span>{fmtDay(new Date(startDate.getTime() + lo * 86400000))}</span>
+        <span>{fmtDay(forecastDateAtDay(startDate, lo))}</span>
         <span>
           P10 · P50 · P90{targetIn ? " · miss region hatched" : ""}
         </span>
-        <span>{fmtDay(new Date(startDate.getTime() + hi * 86400000))}</span>
+        <span>{fmtDay(forecastDateAtDay(startDate, hi))}</span>
       </div>
     </div>
   );
@@ -350,7 +350,7 @@ export default function ForecastDetail({
   const [mode, setMode] = useState<Mode>("summary");
   if (!open) return null;
 
-  const d = (days: number) => fmtFull(new Date(startDate.getTime() + days * 86400000));
+  const d = (days: number) => fmtFull(forecastDateAtDay(startDate, days));
   const day = (iso: string) => fmtDay(new Date(iso));
   const moved = reality ? Math.round((result.likelyDate.getTime() - reality.likelyDate.getTime()) / 86400000) : 0;
   const openGates = scope.gates.filter((g) => !scenario.resolvedGateIds.has(g.id));
@@ -423,7 +423,7 @@ export default function ForecastDetail({
               {targetDay !== null ? (
                 <Stat
                   k="Target"
-                  v={`${fmtDay(new Date(startDate.getTime() + targetDay * 86400000))} · ${confidence}%`}
+                  v={`${fmtDay(forecastDateAtDay(startDate, targetDay))} · ${confidence}%`}
                   tone={confidenceTone(confidence)}
                   note={`${confidence} of 100 runs land on or before it`}
                 />
@@ -557,7 +557,7 @@ export default function ForecastDetail({
                 <div key={label} className="i-meter rounded px-1.5 py-2 text-center">
                   <div className="i-label">{label}</div>
                   <div className="i-readout mt-1 text-[11px] text-[var(--i-text)]">
-                    {fmtDay(new Date(startDate.getTime() + value * 86400000))}
+                    {fmtDay(forecastDateAtDay(startDate, value))}
                   </div>
                   {note && <div className="mt-0.5 text-[8px] text-[var(--i-text-faint)] leading-tight">{note}</div>}
                 </div>

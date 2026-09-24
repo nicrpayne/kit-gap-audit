@@ -16,7 +16,7 @@ import InstrumentShell from "@/components/instrument/InstrumentShell";
 import ScenarioStrip, { chipsFor } from "@/components/instrument/ScenarioStrip";
 import { Panel, Prototype } from "@/components/instrument/Panel";
 import { useProject, EMPTY_SCENARIO, fmtDay, confidenceTone } from "@/lib/instrument/useProject";
-import { confidenceAtDay } from "@/lib/forecast/simulate";
+import { confidenceAtDay, forecastDateAtDay } from "@/lib/forecast/simulate";
 
 const NAME_W = 168;
 const ROW_H = 74;
@@ -187,8 +187,8 @@ export default function TimelineInstrument() {
                           background: m.active ? "var(--i-violet)" : "var(--i-text)",
                           opacity: 0.18,
                         }}
-                        title={`${fmtDay(new Date(m.startDate!.getTime() + r.percentiles.p10 * 86400000))} – ${fmtDay(
-                          new Date(m.startDate!.getTime() + r.percentiles.p90 * 86400000)
+                        title={`${fmtDay(forecastDateAtDay(m.startDate!, r.percentiles.p10))} – ${fmtDay(
+                          forecastDateAtDay(m.startDate!, r.percentiles.p90)
                         )}`}
                       />
                       <div

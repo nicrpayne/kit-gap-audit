@@ -1,6 +1,7 @@
 "use client";
 
 import { formatDateOnly } from "@/lib/time/dateContract";
+import { forecastDateAtDay } from "@/lib/forecast/simulate";
 
 // THE LIVING FORECAST — the delivery outcome as an object rather than a chart.
 //
@@ -758,7 +759,7 @@ export default function LivingForecast({
             {reality.percentiles.p50 > dHi ? "Reality →" : "← Reality"}
           </div>
           <div className="mt-1 i-readout text-[12px] whitespace-nowrap" style={{ color: "var(--i-reality)" }}>
-            {formatDateOnly(new Date(startDate.getTime() + reality.percentiles.p50 * 86400000), { month: "short", day: "numeric" })}
+            {formatDateOnly(forecastDateAtDay(startDate, reality.percentiles.p50), { month: "short", day: "numeric" })}
           </div>
           <div className="mt-1 text-[10px] text-[var(--i-text-faint)] whitespace-nowrap">
             the baseline this scenario left

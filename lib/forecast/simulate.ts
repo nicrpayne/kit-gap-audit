@@ -91,7 +91,11 @@ export function confidenceAtDay(sorted: number[], targetDays: number): number {
   return Math.round((withinTarget / sorted.length) * 100);
 }
 
-function addDays(date: Date, days: number): Date {
+// A simulated completion is a fractional count of calendar days, but every
+// user-facing delivery date is a whole DateOnly. Keep that conversion in one
+// place so the headline, detail panels, reports, and timeline cannot disagree
+// by a day when a percentile lands between midnights.
+export function forecastDateAtDay(date: Date, days: number): Date {
   const result = new Date(date);
   result.setUTCDate(result.getUTCDate() + Math.round(days));
   return result;
@@ -158,9 +162,9 @@ export function summarizeCompletionDays(
   }
 
   return {
-    likelyDate: addDays(startDate, percentiles.p50),
-    earliestDate: addDays(startDate, percentiles.p10),
-    latestDate: addDays(startDate, percentiles.p90),
+    likelyDate: forecastDateAtDay(startDate, percentiles.p50),
+    earliestDate: forecastDateAtDay(startDate, percentiles.p10),
+    latestDate: forecastDateAtDay(startDate, percentiles.p90),
     confidenceAtTarget,
     remainingEffortDays: sumThreePoint(items),
     decisionDelayDays: sumThreePoint(gates),

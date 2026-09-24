@@ -8,7 +8,7 @@ import ToolWindow, { Row } from "@/components/instrument/ToolWindow";
 import type { DecisionGate, SimulationResult } from "@/lib/forecast/simulate";
 import type { ProjectScope, ProjectSource } from "@/lib/instrument/useProject";
 import { fmtDay, fmtFull } from "@/lib/instrument/useProject";
-import { confidenceAtDay } from "@/lib/forecast/simulate";
+import { confidenceAtDay, forecastDateAtDay } from "@/lib/forecast/simulate";
 import Link from "@/components/instrument/SignalLink";
 
 // ── GATE ─────────────────────────────────────────────────────────────────
@@ -93,7 +93,7 @@ export function TargetDetail({
   onClearOverride: () => void;
 }) {
   if (!open) return null;
-  const d = (days: number) => fmtFull(new Date(startDate.getTime() + days * 86400000));
+  const d = (days: number) => fmtFull(forecastDateAtDay(startDate, days));
   const conf = targetDay === null ? null : confidenceAtDay(result.completionDaysSorted, targetDay);
   const overridden = targetDay !== null && targetDay !== savedTargetDay;
 
@@ -168,7 +168,7 @@ export function TargetDetail({
                 className="mt-2 w-full rounded-md px-3 py-2 text-[11px] transition-colors"
                 style={{ background: "transparent", color: "var(--i-text-soft)", border: "1px solid var(--i-border-strong)" }}
               >
-                {savedTargetDay !== null ? `Back to the saved target · ${fmtDay(new Date(startDate.getTime() + savedTargetDay * 86400000))}` : "Stop evaluating"}
+                {savedTargetDay !== null ? `Back to the saved target · ${fmtDay(forecastDateAtDay(startDate, savedTargetDay))}` : "Stop evaluating"}
               </button>
             )}
           </>
@@ -207,7 +207,7 @@ export function RealityDetail({
   startDate: Date;
 }) {
   if (!open) return null;
-  const d = (days: number) => fmtFull(new Date(startDate.getTime() + days * 86400000));
+  const d = (days: number) => fmtFull(forecastDateAtDay(startDate, days));
   const spreadR = Math.round(reality.percentiles.p90 - reality.percentiles.p10);
   const spreadS = Math.round(scenario.percentiles.p90 - scenario.percentiles.p10);
   const movedP50 = Math.round(scenario.percentiles.p50 - reality.percentiles.p50);
@@ -225,7 +225,7 @@ export function RealityDetail({
           Reality — the baseline
         </div>
         <Row k="Lands" v={d(reality.percentiles.p50)} />
-        <Row k="Range" v={`${fmtDay(new Date(startDate.getTime() + reality.percentiles.p10 * 86400000))} — ${fmtDay(new Date(startDate.getTime() + reality.percentiles.p90 * 86400000))}`} note={`${spreadR}d spread`} />
+        <Row k="Range" v={`${fmtDay(forecastDateAtDay(startDate, reality.percentiles.p10))} — ${fmtDay(forecastDateAtDay(startDate, reality.percentiles.p90))}`} note={`${spreadR}d spread`} />
 
         {scenarioActive ? (
           <>
@@ -235,7 +235,7 @@ export function RealityDetail({
             <Row k="Lands" v={d(scenario.percentiles.p50)} tone="var(--i-violet)" />
             <Row
               k="Range"
-              v={`${fmtDay(new Date(startDate.getTime() + scenario.percentiles.p10 * 86400000))} — ${fmtDay(new Date(startDate.getTime() + scenario.percentiles.p90 * 86400000))}`}
+              v={`${fmtDay(forecastDateAtDay(startDate, scenario.percentiles.p10))} — ${fmtDay(forecastDateAtDay(startDate, scenario.percentiles.p90))}`}
               note={`${spreadS}d spread`}
             />
             <div className="i-label mt-4 mb-1">What the scenario changed</div>
