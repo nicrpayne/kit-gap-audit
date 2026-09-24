@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { evaluateForecastCoverage, inheritDependencyCoverage } from "../lib/forecast/coverage";
-import { runPortfolioSimulation } from "../lib/forecast/portfolio";
+import { buildPortfolioScenarios, runPortfolioSimulation } from "../lib/forecast/portfolio";
 import { composeScopeFeatures } from "../lib/scope/features";
 import { partitionProductShape, type ShapeCapability } from "../lib/scope/productShape";
 import type { ScopeWorkItem } from "../lib/forecast/compute";
@@ -48,6 +48,39 @@ assert.equal(iTrackSimulation.latestDate.toISOString().slice(0, 10), "2026-09-22
 assert.equal(iTrackSimulation.confidenceAtTarget, 100);
 assert.deepEqual(iTrackSimulation.remainingEffortDays, { low: 0, likely: 0, high: 0 });
 assert.deepEqual(iTrackSimulation.decisionDelayDays, { low: 1, likely: 4, high: 10 });
+
+const dependencySpecs = [
+  {
+    scopeId: "platform",
+    items: [{ id: "platform-work", label: "Platform work", low: 12, likely: 12, high: 12 }],
+    gates: [],
+    teamCapacity: 1,
+    dependsOnScopeIds: [],
+    startDate,
+    targetDate: null,
+  },
+  {
+    scopeId: "jsa",
+    items: [{ id: "jsa-work", label: "JSA work", low: 6, likely: 6, high: 6 }],
+    gates: [],
+    teamCapacity: 1,
+    dependsOnScopeIds: ["platform"],
+    startDate,
+    targetDate: null,
+  },
+];
+const dependencyBase = runPortfolioSimulation(dependencySpecs, 500).get("jsa")!;
+const dependencyScenarios = buildPortfolioScenarios(dependencySpecs, "jsa", dependencyBase, 500);
+assert.equal(dependencyBase.likelyDate.toISOString().slice(0, 10), "2026-09-23");
+assert.ok(dependencyScenarios.length > 0);
+assert.ok(
+  dependencyScenarios.every((scenario) => scenario.likelyDate.getTime() === dependencyBase.likelyDate.getTime()),
+  "a dominating dependency keeps local staffing and descoping levers on the canonical date"
+);
+assert.ok(
+  dependencyScenarios.every((scenario) => scenario.deltaDays === 0),
+  "dependency-aware lever deltas are measured against dependency-aware Reality"
+);
 
 const iTrackCoverage = evaluateForecastCoverage({
   executionState: "configured",

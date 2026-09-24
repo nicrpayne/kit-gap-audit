@@ -10,7 +10,7 @@ import {
   type SourcedWorkItem,
 } from "@/lib/forecast/build";
 import { buildScenarios } from "@/lib/forecast/scenarios";
-import { runPortfolioSimulation, type ScopeSimulationSpec } from "@/lib/forecast/portfolio";
+import { buildPortfolioScenarios, runPortfolioSimulation, type ScopeSimulationSpec } from "@/lib/forecast/portfolio";
 import type { SimulationResult } from "@/lib/forecast/simulate";
 import { estimateContentHash, findingContentHash } from "@/lib/estimate/run";
 import { buildReleaseContext } from "@/lib/estimate/context";
@@ -790,10 +790,9 @@ export async function collectDependencyClosure(rootScope: Scope): Promise<Scope[
 // and the scenario rows in one call, untouched. Only a Scope that
 // explicitly sets dependsOnScopeIds takes the portfolio-aware branch,
 // which threads its dependencies' own simulated completion days into its
-// base result via lib/forecast/portfolio.ts. Scenario levers ("Paths to
-// a sooner date") are NOT yet dependency-aware in either branch -- a
-// known, deliberate limitation, since making the interactive levers
-// respect dependencies too is Phase 2 territory, not this one.
+// base result via lib/forecast/portfolio.ts. Scenario levers are evaluated
+// through that same graph so their dates and deltas stay comparable with the
+// canonical dependency-aware Reality result.
 export async function computeForecast(scope: Scope): Promise<ForecastResult> {
   if (scope.executionState !== "configured") {
     throw new ForecastUnavailableError(scope.executionState === "not_configured" ? "Missing executable work mapping" : `Execution source is ${scope.executionState}`);
@@ -838,7 +837,7 @@ export async function computeForecast(scope: Scope): Promise<ForecastResult> {
     // cycle; today nothing can, since no Scope has a dependency set yet.
     const results = runPortfolioSimulation(specs);
     base = results.get(scope.id)!;
-    rawScenarios = buildScenarios(inputs, startDate, scope.targetDate).scenarios;
+    rawScenarios = buildPortfolioScenarios(specs, scope.id, base);
   }
 
   const topItems = [...inputs.items]

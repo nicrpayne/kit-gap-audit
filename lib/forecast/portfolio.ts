@@ -1,5 +1,5 @@
 import { sampleOwnDays, summarizeCompletionDays, type SimulationResult, type WorkItem, type DecisionGate } from "./simulate";
-import { seededRandom, FORECAST_SEED } from "./scenarios";
+import { buildScenarioVariants, seededRandom, FORECAST_SEED, type Scenario } from "./scenarios";
 
 export interface ScopeSimulationSpec {
   scopeId: string;
@@ -131,4 +131,42 @@ export function runPortfolioSimulation(specs: ScopeSimulationSpec[], trials = 50
     results.set(scopeId, summarizeCompletionDays(days, spec.items, spec.gates, spec.startDate, spec.targetDate));
   }
   return results;
+}
+
+function daysBetween(a: Date, b: Date): number {
+  return Math.round((b.getTime() - a.getTime()) / 86400000);
+}
+
+// Evaluates a root Scope's standard levers through the same dependency graph
+// as its canonical result. This prevents a dependency-free scenario date from
+// being compared with a dependency-aware Reality date in Forecast and Reports.
+export function buildPortfolioScenarios(
+  specs: ScopeSimulationSpec[],
+  rootScopeId: string,
+  base: SimulationResult,
+  trials = 5000
+): Scenario[] {
+  const root = specs.find((spec) => spec.scopeId === rootScopeId);
+  if (!root) throw new MissingDependencyError(rootScopeId, rootScopeId);
+
+  return buildScenarioVariants(root).map((variant) => {
+    const variantSpecs = specs.map((spec) =>
+      spec.scopeId === rootScopeId
+        ? {
+            ...spec,
+            items: variant.items,
+            gates: variant.gates,
+            teamCapacity: variant.teamCapacity,
+          }
+        : spec
+    );
+    const result = runPortfolioSimulation(variantSpecs, trials).get(rootScopeId)!;
+    return {
+      id: variant.id,
+      label: variant.label,
+      likelyDate: result.likelyDate,
+      deltaDays: daysBetween(base.likelyDate, result.likelyDate),
+      confidenceAtTarget: result.confidenceAtTarget,
+    };
+  });
 }
