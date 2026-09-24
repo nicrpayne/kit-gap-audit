@@ -450,7 +450,7 @@ function DecisionBody({
             style={{ background: tone, boxShadow: `0 0 6px ${tone}` }}
           />
           <span className="text-[10.5px]" style={{ color: tone }}>
-            {gating ? `Holding ${decision.gate!.targetScope.name}` : decision.status === "open" ? "Open · holding nothing" : decision.status}
+            {gating ? `Holding ${decision.gate!.targetScope.name}` : decision.status === "open" ? "Open · blocks forecast readiness" : decision.status}
           </span>
           <span className="ml-auto i-label" style={{ fontSize: 8.5 }}>
             Decision home · {decision.scope.name}
@@ -513,8 +513,9 @@ function DecisionBody({
         <Group label="Delivery">
           <div data-shoot="inspector-no-gate">
             <Well>
-              No direct forecast effect. Nothing has been established as waiting on this choice, so it does
-              not appear in the delivery path and moves no date.
+              No delay days are attached to this choice, so it does not move the modeled date. It is still an
+              open product-shape boundary and blocks a publishable Forecast for {decision.scope.name} until it
+              is decided or dismissed.
             </Well>
           </div>
         </Group>
@@ -621,8 +622,8 @@ function DecisionBody({
         ) : (
           decision.status === "open" && (
             <p data-shoot="inspector-no-lever" className="text-[10px] leading-relaxed text-[var(--i-text-faint)]">
-              No scenario lever: assuming an ungated decision resolved would change nothing the engine can
-              see. Connect it to delivery first, if delivery really is waiting.
+              No timing lever: this choice adds zero delay days. Decide or dismiss it to close the product
+              boundary; connect it to delivery only if work is actually waiting on the answer.
             </p>
           )
         )}
