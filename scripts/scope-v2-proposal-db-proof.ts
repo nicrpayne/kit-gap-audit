@@ -41,14 +41,19 @@ async function main() {
           matchState: "confidently_matched", action: "create_capability", workItemIds: ["PRF-11"],
           rationale: { headline: "proof" }, provenance: { refs: ["proof"] },
         },
+        {
+          candidateKey: "linear:notifications-follow-up", title: "Notifications follow-up", origins: ["linear"], reconciliationState: "execution_exception", conflicts: [], releaseSignal: "likely_in", confidence: "medium", confidenceScore: 70,
+          matchState: "operator_corrected", action: "link_existing", targetCapabilityId: capability.id, targetRevision: 1,
+          workItemIds: ["PRF-4"], alreadyLinkedItemIds: [], rationale: { headline: "proof" }, provenance: { refs: ["proof"] },
+        },
       ] },
     }, include: { items: true } });
-    const work = ["PRF-1", "PRF-2", "PRF-3", "PRF-11"].map((externalId) => ({ externalId, externalUrl: null, title: externalId, state: "Todo", updatedAt: "2026-09-15T18:00:00.000Z" }));
+    const work = ["PRF-1", "PRF-2", "PRF-3", "PRF-4", "PRF-11"].map((externalId) => ({ externalId, externalUrl: null, title: externalId, state: "Todo", updatedAt: "2026-09-15T18:00:00.000Z" }));
     const selections = proposal.items.map((item) => ({
       itemId: item.id,
       targetCapabilityId: item.targetCapabilityId,
       expectedRevision: item.targetRevision,
-      workItemIds: item.targetCapabilityId ? ["PRF-2", "PRF-3"] : item.workItemIds,
+      workItemIds: item.candidateKey === "reality:notifications" ? ["PRF-2", "PRF-3"] : item.workItemIds,
       releaseStatus: "accepted" as const,
     }));
 
@@ -59,9 +64,9 @@ async function main() {
 
     const reality = await prisma.capability.findMany({ where: { scopeId: scope.id }, include: { workLinks: true, events: true }, orderBy: { name: "asc" } });
     assert.deepEqual(reality.map((item) => item.name), ["Notifications", "Offline support"]);
-    assert.equal(reality.flatMap((item) => item.workLinks).length, 3);
-    assert.deepEqual(reality.find((item) => item.id === capability.id)?.workLinks.map((link) => link.externalId).sort(), ["PRF-2", "PRF-3"], "reviewed subset must remove deselected existing work and add only selected work");
-    assert.equal(reality.reduce((count, item) => count + item.events.length, 0), 2);
+    assert.equal(reality.flatMap((item) => item.workLinks).length, 4);
+    assert.deepEqual(reality.find((item) => item.id === capability.id)?.workLinks.map((link) => link.externalId).sort(), ["PRF-2", "PRF-3", "PRF-4"], "multiple reviewed items may update one capability atomically from the same base revision");
+    assert.equal(reality.reduce((count, item) => count + item.events.length, 0), 3);
     assert.equal(await prisma.scopeProposalEvent.count({ where: { proposalId: proposal.id } }), 1);
     assert.equal((await prisma.scopeProposal.findUniqueOrThrow({ where: { id: proposal.id } })).status, "committed");
 
@@ -78,7 +83,7 @@ async function main() {
       ScopeRealityConflictError,
     );
 
-    console.log(JSON.stringify({ ok: true, idempotentReplay: true, reviewedSubsetApplied: true, optimisticConflictRejected: true, capabilityCount: reality.length, workLinkCount: 3, eventCount: 2 }, null, 2));
+    console.log(JSON.stringify({ ok: true, idempotentReplay: true, reviewedSubsetApplied: true, sharedTargetBatchApplied: true, optimisticConflictRejected: true, capabilityCount: reality.length, workLinkCount: 4, eventCount: 3 }, null, 2));
   } finally {
     await prisma.scope.delete({ where: { id: scope.id } });
     await prisma.$disconnect();
