@@ -69,6 +69,7 @@ export default function DecisionBriefView({ brief }: { brief: DecisionBriefV1 })
               <div className="text-[11px] font-medium">{item.owner}</div>
               <Stamp value={item} />
               {item.sourceId && <div className="mt-1 truncate font-mono text-[9px] text-[var(--i-text-faint)]">{item.sourceId}</div>}
+              {item.note && <div className="mt-1 text-[9px] leading-relaxed text-[var(--i-text-soft)]">{item.note}</div>}
             </div>
           ))}
         </div>

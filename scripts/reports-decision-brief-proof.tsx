@@ -109,6 +109,23 @@ const historical = assembleDecisionBrief(liveDiffersFromHistoryFixture());
 assert.equal(historical.headline.movement.source.temporalRole, "historical");
 assert(renderDecisionBriefMarkdown(historical).includes("ReportHistory · HISTORICAL"));
 
+const refreshed = assembleDecisionBrief(healthyOwnerFixture());
+const refreshSource = refreshed.identity.sourceSnapshots.find((source) => source.owner === "SignalRefresh");
+assert.equal(refreshSource?.sourceId, "refresh-run-4");
+assert.equal(refreshSource?.currentness, "current");
+assert(renderDecisionBriefMarkdown(refreshed).includes("Run 4 complete · Knowledge complete · Audit complete · Linear + Scope complete"));
+const missingRefreshInputs = healthyOwnerFixture();
+missingRefreshInputs.refresh = {
+  scanId: null,
+  sequence: null,
+  status: "missing",
+  completedAt: null,
+  currentness: "missing",
+  note: "No completed end-to-end Signal refresh receipt exists for this project.",
+  warnings: ["No completed end-to-end Signal refresh receipt exists for this project."],
+};
+assert(assembleDecisionBrief(missingRefreshInputs).caveats.value.some((caveat) => caveat.code === "REFRESH_RECEIPT_INCOMPLETE"));
+
 const liveInputs = healthyOwnerFixture();
 const saved = structuredClone(assembleDecisionBrief(liveInputs));
 const savedJson = JSON.stringify(saved);

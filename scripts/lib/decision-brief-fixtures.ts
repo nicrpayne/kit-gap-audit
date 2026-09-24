@@ -8,6 +8,15 @@ export function healthyOwnerFixture(): DecisionBriefOwnerInputs {
     mode: "reality",
     scenarioId: null,
     project: { id: "jsa", name: "JSA", targetDate: "2026-11-15T00:00:00.000Z", asOf: NOW },
+    refresh: {
+      scanId: "refresh-run-4",
+      sequence: 4,
+      status: "complete",
+      completedAt: "2026-09-04T14:59:00.000Z",
+      currentness: "current",
+      note: "Run 4 complete · Knowledge complete · Audit complete · Linear + Scope complete · 134 Linear items · Forecast + readiness current",
+      warnings: [],
+    },
     context: {
       snapshotId: "ctx-current",
       packageId: "pkg-current",

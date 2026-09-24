@@ -8,7 +8,7 @@ const instantDate = (iso: string) => formatInstant(toInstant(iso), {
 });
 const n = (value: number) => (Number.isInteger(value) ? String(value) : value.toFixed(2));
 const status = (source: SourceStamp) =>
-  `${source.owner} · ${source.temporalRole.toUpperCase()} · as of ${instantDate(source.asOf)} · ${source.currentness.toUpperCase()}${source.sourceId ? ` · ${source.sourceId}` : ""}`;
+  `${source.owner} · ${source.temporalRole.toUpperCase()} · as of ${instantDate(source.asOf)} · ${source.currentness.toUpperCase()}${source.sourceId ? ` · ${source.sourceId}` : ""}${source.note ? ` · ${source.note}` : ""}`;
 
 export function briefPayloadFingerprint(brief: DecisionBriefV1): string {
   // PostgreSQL JSONB does not preserve object-key insertion order. Sort keys

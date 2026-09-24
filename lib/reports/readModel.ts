@@ -7,6 +7,7 @@ import { computeChangesSince } from "@/lib/reports/changes";
 import { capacityForecastContract, CapacityReconciliationIncompleteError } from "@/lib/capacity/contract";
 import { toDateOnly } from "@/lib/time/dateContract";
 import { ForecastCoverageIncompleteError } from "@/lib/forecast/coverage";
+import { readKnowledgeStatus } from "@/lib/audit/changeInbox";
 import type { PolicyEvaluatedCompleteness } from "@/lib/context/sourcePolicy";
 import {
   assembleDecisionBrief,
@@ -23,6 +24,20 @@ function completeness(value: unknown): PolicyEvaluatedCompleteness | null {
   return candidate.status === "complete" || candidate.status === "partial"
     ? candidate as PolicyEvaluatedCompleteness
     : null;
+}
+
+function record(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
+}
+
+function refreshStage(label: string, value: unknown): { summary: string; healthy: boolean } {
+  const stage = record(value);
+  const status = typeof stage.status === "string" ? stage.status : "missing";
+  const issueCount = typeof stage.linearIssueCount === "number" ? ` · ${stage.linearIssueCount} Linear items` : "";
+  return {
+    summary: `${label} ${status.replaceAll("_", " ")}${issueCount}`,
+    healthy: status === "complete" || status === "current" || status === "skipped",
+  };
 }
 
 async function findingsForRun(run: { sourceId: string | null; contextSnapshotId: string | null }) {
@@ -108,7 +123,7 @@ export async function loadDecisionBriefOwnerInputs(
   if (!forecast.forecastCoverage.canonicalForecast) {
     throw new ForecastCoverageIncompleteError(forecast.forecastCoverage);
   }
-  const [previousReport, audit, decisions, dependencyScopes, people, allocations, settings, reconciliation, timelineEvents, contextSnapshot, kitConstruct, derivedState] = await Promise.all([
+  const [previousReport, audit, decisions, dependencyScopes, people, allocations, settings, reconciliation, timelineEvents, contextSnapshot, kitConstruct, derivedState, refreshStatus] = await Promise.all([
     prisma.report.findFirst({
       where: { scopeId: scope.id },
       orderBy: { generatedAt: "desc" },
@@ -142,6 +157,7 @@ export async function loadDecisionBriefOwnerInputs(
       : prisma.contextSnapshot.findFirst({ where: { scopeId: scope.id }, orderBy: { createdAt: "desc" } }),
     prisma.scope.findFirst({ where: { name: { contains: "KIT Construct", mode: "insensitive" } }, select: { id: true } }),
     prisma.projectDerivedState.findUnique({ where: { scopeId: scope.id }, select: { realityRevision: true } }),
+    readKnowledgeStatus(scope.id),
   ]);
   const changes = await computeChangesSince(scope, forecast, previousReport?.generatedAt ?? null);
   const contextHealth = completeness(contextSnapshot?.completenessSummary);
@@ -164,12 +180,32 @@ export async function loadDecisionBriefOwnerInputs(
     effectiveFte: contributor.effectiveFte,
     scopeCount: contributor.scopeCount,
   }));
+  const refreshRun = refreshStatus.latestRun;
+  const refreshStages = refreshRun ? [
+    refreshStage("Knowledge", refreshRun.stages.knowledge),
+    refreshStage("Audit", refreshRun.stages.audit),
+    refreshStage("Linear + Scope", refreshRun.stages.scope),
+    refreshStage("Forecast + readiness", refreshRun.stages.derived),
+  ] : [];
+  const refreshCurrent = !!refreshRun && refreshRun.status === "complete" && refreshStages.every((stage) => stage.healthy);
+  const refreshNote = refreshRun
+    ? `Run ${refreshRun.sequence} ${refreshRun.status.replaceAll("_", " ")} · ${refreshStages.map((stage) => stage.summary).join(" · ")}`
+    : "No completed end-to-end Signal refresh receipt exists for this project.";
 
   return {
     generatedAt,
     mode: options?.mode ?? "reality",
     scenarioId: options?.scenarioId ?? null,
     project: { id: scope.id, name: scope.name, targetDate: scope.targetDate ? toDateOnly(scope.targetDate) : null, asOf: generatedAt, realityRevision: derivedState?.realityRevision ?? 0 },
+    refresh: {
+      scanId: refreshRun?.scanId ?? null,
+      sequence: refreshRun?.sequence ?? null,
+      status: refreshRun?.status ?? "missing",
+      completedAt: refreshRun?.completedAt ?? null,
+      currentness: refreshCurrent ? "current" : refreshRun ? "unreconciled" : "missing",
+      note: refreshNote,
+      warnings: refreshCurrent ? [] : [refreshNote],
+    },
     context: {
       snapshotId: contextSnapshot?.id ?? null,
       packageId: contextSnapshot?.packageId ?? null,

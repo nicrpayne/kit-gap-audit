@@ -184,6 +184,7 @@ export default function ReportsPageClient() {
       liveUnavailableReason: live?.state === "error" ? live.reason : live?.state === "loading" ? "still loading" : live?.state === "ready" && live.coverageState !== "forecastable" ? live.coverageLabel : null,
     });
   }, [selected, live]);
+  const forecastPending = live === null || live.state === "loading";
   const forecastUnavailable = live?.state === "error" && live.reason.includes("FORECAST UNAVAILABLE");
   const forecastIncomplete = live?.state === "ready" && live.coverageState !== "forecastable";
   const scenarioReportBlockedReason = generating
@@ -192,6 +193,8 @@ export default function ReportsPageClient() {
       ? "Choose a project first."
       : !project.active
         ? "Stage at least one Scope, estimate, staffing, Capacity, or decision lever in Scenario first."
+        : forecastPending
+          ? "Signal is checking the current Forecast and coverage gate."
         : forecastUnavailable
           ? live.reason
           : forecastIncomplete
@@ -306,11 +309,11 @@ export default function ReportsPageClient() {
         )}
         <button
           onClick={generate}
-          disabled={generating || !scopeId || forecastUnavailable || forecastIncomplete}
-          title={forecastIncomplete ? `${live.coverageReason ?? live.coverageLabel}. Reconcile execution coverage in Scope before publishing a delivery brief.` : undefined}
+          disabled={generating || !scopeId || forecastPending || forecastUnavailable || forecastIncomplete}
+          title={forecastPending ? "Signal is checking the current Forecast and coverage gate." : forecastIncomplete ? `${live.coverageReason ?? live.coverageLabel}. Reconcile execution coverage in Scope before publishing a delivery brief.` : undefined}
           className="i-btn-primary px-4 py-2 text-sm"
         >
-          {generating ? "Generating…" : forecastIncomplete ? "Resolve coverage to report" : "Generate report"}
+          {generating ? "Generating…" : forecastPending ? "Checking readiness…" : forecastIncomplete ? "Resolve coverage to report" : "Generate report"}
         </button>
         <button
           onClick={() => void generateScenario()}
@@ -319,7 +322,7 @@ export default function ReportsPageClient() {
           aria-describedby={scenarioReportBlockedReason ? "scenario-report-blocked-reason" : undefined}
           className="rounded-md border border-[var(--i-violet)] px-4 py-2 text-sm text-[var(--i-violet)] disabled:opacity-35"
         >
-          {generating ? "Generating…" : forecastIncomplete ? "Resolve coverage to compare" : "Generate Reality + Scenario"}
+          {generating ? "Generating…" : forecastPending ? "Checking readiness…" : forecastIncomplete ? "Resolve coverage to compare" : "Generate Reality + Scenario"}
         </button>
         <select value={audience} onChange={(event) => setAudience(event.target.value as AudienceLens)} className="rounded-md border border-[var(--i-border)] bg-[var(--i-panel)] px-3 py-2 text-xs text-[var(--i-text)]" aria-label="Brief audience">
           {Object.entries(AUDIENCE_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}

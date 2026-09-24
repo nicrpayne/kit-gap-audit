@@ -13,6 +13,7 @@ export type BriefMode = "reality" | "scenario";
 export type TemporalRole = "live" | "historical";
 export type Currentness = "current" | "stale" | "missing" | "unavailable" | "unreconciled";
 export type TruthOwner =
+  | "SignalRefresh"
   | "Scope"
   | "Forecast"
   | "Audit"
@@ -100,6 +101,15 @@ export interface DecisionBriefOwnerInputs {
     targetDate: string | null;
     asOf: string;
     realityRevision?: number;
+  };
+  refresh: {
+    scanId: string | null;
+    sequence: number | null;
+    status: string;
+    completedAt: string | null;
+    currentness: Currentness;
+    note: string;
+    warnings: string[];
   };
   context: {
     snapshotId: string | null;
@@ -383,6 +393,7 @@ export function assembleDecisionBrief(input: DecisionBriefOwnerInputs): Decision
     ...input.context.missingSources.map((name) => `Tracked provider/source not supplied: ${name}.`),
     ...input.context.warnings,
     ...input.audit.warnings,
+    ...input.refresh.warnings,
     ...suspicious.map((decision) => `Governed test residue requires disposition: Decision “${decision.title}”${decision.gate ? ` / Gate “${decision.gate.dependency}”` : ""}.`),
   ];
   const caveats: { code: string; message: string }[] = [];
@@ -393,6 +404,7 @@ export function assembleDecisionBrief(input: DecisionBriefOwnerInputs): Decision
   if (weak.length) caveats.push({ code: "WEAK_GROUNDING", message: `${weak.length} current Finding${weak.length === 1 ? " is" : "s are"} not grounded to passage-level evidence.` });
   if (suspicious.length) caveats.push({ code: "TEST_RESIDUE", message: `${suspicious.length} suspicious test Decision/Gate record${suspicious.length === 1 ? "" : "s"} remain for governed disposition.` });
   if (input.audit.comparisonCurrentness === "unavailable") caveats.push({ code: "AUDIT_DELTA_UNAVAILABLE", message: "Exact current/prior Audit membership is unavailable for runs sharing the same source snapshot; no change is inferred from absence." });
+  if (input.refresh.currentness !== "current") caveats.push({ code: "REFRESH_RECEIPT_INCOMPLETE", message: input.refresh.note });
   if (forecastCurrentness === "stale") caveats.push({ code: "FORECAST_STALE", message: `The live Forecast owner read is stale (${forecastAgeDays} days old; as of ${input.forecast.asOf}).` });
 
   const movement = input.previousReport
@@ -412,6 +424,14 @@ export function assembleDecisionBrief(input: DecisionBriefOwnerInputs): Decision
   const decisionsSource = source("Decisions", input.generatedAt, input.project.id);
   const dependencySource = source("Dependencies", input.generatedAt, input.project.id);
   const scopeSource = source("Scope", input.project.asOf, input.project.id);
+  const refreshSource = source(
+    "SignalRefresh",
+    input.refresh.completedAt ?? input.generatedAt,
+    input.refresh.scanId,
+    input.refresh.currentness,
+    "historical",
+    input.refresh.note,
+  );
 
   return {
     version: DECISION_BRIEF_VERSION,
@@ -421,7 +441,7 @@ export function assembleDecisionBrief(input: DecisionBriefOwnerInputs): Decision
       mode: input.mode,
       scenarioId: input.scenarioId,
       realityRevision: input.project.realityRevision ?? 0,
-      sourceSnapshots: [scopeSource, forecastSource, auditSource, decisionsSource, dependencySource, capacitySource, timelineSource, contextSource, reportHistorySource],
+      sourceSnapshots: [refreshSource, scopeSource, forecastSource, auditSource, decisionsSource, dependencySource, capacitySource, timelineSource, contextSource, reportHistorySource],
     },
     headline: {
       targetDate: { value: input.project.targetDate, source: scopeSource },

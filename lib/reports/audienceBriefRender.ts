@@ -132,7 +132,7 @@ function moduleMarkdown(id: BriefModuleId, density: ModuleDensity, brief: Decisi
       break;
     case "source-health":
       heading("Source health");
-      for (const item of brief.identity.sourceSnapshots) out.push(`- ${stamp(item)}${item.sourceId ? ` · ${item.sourceId}` : ""}`);
+      for (const item of brief.identity.sourceSnapshots) out.push(`- ${stamp(item)}${item.sourceId ? ` · ${item.sourceId}` : ""}${item.note ? ` · ${item.note}` : ""}`);
       break;
     case "caveats":
       heading("Missing inputs / caveats");
