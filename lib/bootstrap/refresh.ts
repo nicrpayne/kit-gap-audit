@@ -109,7 +109,10 @@ function completeness(pkg: ProjectBootstrapPackageV1): PolicyEvaluatedCompletene
   };
 }
 
-export async function auditActivatedBootstrapRefresh(bootstrapId: string) {
+export async function auditActivatedBootstrapRefresh(
+  bootstrapId: string,
+  options: { receiptScanRunId?: string } = {},
+) {
   const bootstrap = await prisma.projectBootstrap.findUnique({
     where: { id: bootstrapId }, include: { activation: true },
   });
@@ -214,12 +217,13 @@ export async function auditActivatedBootstrapRefresh(bootstrapId: string) {
       pipeline.derived = { status: "error", at: completedAt, detail: errorMessage(error) };
     }
 
+    const receiptScanRunId = options.receiptScanRunId ?? packageRow.scanRunId;
     const scan = await prisma.bootstrapScanRun.findUnique({
-      where: { id: packageRow.scanRunId },
+      where: { id: receiptScanRunId },
       select: { metrics: true },
     });
     await prisma.bootstrapScanRun.update({
-      where: { id: packageRow.scanRunId },
+      where: { id: receiptScanRunId },
       data: {
         metrics: {
           ...object(scan?.metrics),

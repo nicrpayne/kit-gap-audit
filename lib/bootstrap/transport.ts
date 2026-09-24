@@ -23,7 +23,26 @@ export async function ingestBootstrapPackage(
   if (existing && existing.packageHash !== hash) return { status: 409, body: { error: "The producer reused packageId for different content" } };
   if (existing && existing.bootstrapId !== bootstrapId) return { status: 409, body: { error: "The package identity already belongs to a different bootstrap" } };
   if (existing && bootstrap.activePackageId === existing.id) {
-    return { status: 200, body: { ok: true, scanId: existing.scanRunId, packageId: existing.packageId, reused: true, refreshAudit: null } };
+    if (options.scanRunId) {
+      const scan = await prisma.bootstrapScanRun.findUnique({ where: { id: options.scanRunId } });
+      if (!scan || scan.bootstrapId !== bootstrapId) return { status: 409, body: { error: "Job scan does not belong to this bootstrap" } };
+    }
+    // A companion can legitimately compile the same immutable knowledge
+    // package twice. Reusing it must still honor the operator's one-button
+    // refresh by reading Linear again and recomputing Scope and readiness.
+    const refreshAudit = bootstrap.activation
+      ? await auditActivatedBootstrapRefresh(bootstrapId, { receiptScanRunId: options.scanRunId })
+      : null;
+    return {
+      status: 200,
+      body: {
+        ok: true,
+        scanId: options.scanRunId ?? existing.scanRunId,
+        packageId: existing.packageId,
+        reused: true,
+        refreshAudit,
+      },
+    };
   }
 
   let scanId = options.scanRunId;
@@ -45,6 +64,8 @@ export async function ingestBootstrapPackage(
     scanId = scan.id;
   }
   await persistCompiledPackage(scanId, pkg);
-  const refreshAudit = bootstrap.activation ? await auditActivatedBootstrapRefresh(bootstrapId) : null;
+  const refreshAudit = bootstrap.activation
+    ? await auditActivatedBootstrapRefresh(bootstrapId, { receiptScanRunId: scanId })
+    : null;
   return { status: existing ? 200 : 201, body: { ok: true, scanId, packageId: pkg.packageId, reused: Boolean(existing), refreshAudit } };
 }
