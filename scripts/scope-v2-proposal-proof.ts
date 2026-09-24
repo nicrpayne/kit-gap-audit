@@ -30,6 +30,18 @@ const capabilities: ProposalCapability[] = [
   ["crew", "Crew acknowledgment"], ["audit", "Audit export"],
 ].map(([id, name]) => ({ id, name, description: `${name} accepted outcome`, status: "accepted", revision: 3, workLinks: [] }));
 
+capabilities.push({
+  id: "notifications-later",
+  name: "Deferred communication channels",
+  description: "Governed later-channel work must not be reclaimed by the in-release notification proposal.",
+  status: "outside",
+  revision: 2,
+  workLinks: [
+    { externalId: "SOF-912", state: "active" },
+    { externalId: "SOF-913", state: "configured" },
+  ],
+});
+
 const intelligenceObjects = [
   ...expectedClusters.map(({ parent, target }) => ({
     id: `intel-${target}`, intelligenceType: "Decision", trust: "external_intelligence", isCurrent: true,
@@ -81,9 +93,18 @@ for (const expected of expectedClusters) {
   assert.equal(proposal.reconciliationState, "aligned");
   assert.equal(proposal.action, "link_existing");
   assert.equal(proposal.confidence, "high");
-  assert.deepEqual(proposal.workItemIds, [...expected.children].sort());
+  const expectedAvailable = expected.target === "notifications" ? expected.children.filter((identifier) => !["SOF-912", "SOF-913"].includes(identifier)) : [...expected.children];
+  assert.deepEqual(proposal.workItemIds, [...expectedAvailable].sort());
   assert.ok(!new Set<string>(proposal.workItemIds).has(expected.parent), `${expected.parent} parent must not double-count beside its children`);
 }
+
+const notificationProposal = byTarget("notifications")!;
+assert.deepEqual(notificationProposal.provenance.claimedElsewhere.map((item) => `${item.identifier}:${item.capabilityId}`), [
+  "SOF-912:notifications-later",
+  "SOF-913:notifications-later",
+]);
+assert.match(notificationProposal.rationale.cautions.join(" "), /2 matched Linear items are already governed/i);
+assert.ok(bulkEligible.find((item) => item.targetCapabilityId === "notifications")?.workItemIds.every((identifier) => !["SOF-912", "SOF-913"].includes(identifier)), "bulk staging must exclude work governed by another capability");
 
 const contextOnly = compiled.items.find((item) => item.title === "Field annotations");
 assert.deepEqual(contextOnly?.origins, ["knowledge"]);

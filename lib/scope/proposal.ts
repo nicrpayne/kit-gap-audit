@@ -4,7 +4,7 @@ import { remainingIssuesFor } from "@/lib/forecast/build";
 import type { ProjectContextPackage } from "@/lib/context/package";
 
 export const SCOPE_PROPOSAL_CONTRACT_VERSION = "2.1" as const;
-export const SCOPE_PROPOSAL_COMPILER_VERSION = "scope-reconciler-three-source-2.2" as const;
+export const SCOPE_PROPOSAL_COMPILER_VERSION = "scope-reconciler-three-source-2.3" as const;
 
 export type ScopeProposalReleaseSignal = "likely_in" | "likely_out" | "boundary";
 export type ScopeProposalConfidence = "high" | "medium" | "low";
@@ -85,6 +85,7 @@ export interface CompiledScopeProposalItem {
     linearParent: { identifier: string; title: string } | null;
     linearParents: { identifier: string; title: string }[];
     linearItems: { identifier: string; title: string; state: string; projectName: string | null; updatedAt: string | null }[];
+    claimedElsewhere: { identifier: string; capabilityId: string; capabilityName: string; capabilityStatus: string }[];
     contextSnapshotId: string | null;
     contextRefs: ProposalContextRef[];
     realityCapability: { id: string; name: string; status: string; revision: number } | null;
@@ -472,6 +473,14 @@ export function compileScopeProposal(input: {
   const linearGroups = [...grouped.values()].sort((a, b) => a.key.localeCompare(b.key));
   const activeRelease = resolveActiveRelease(input.activeReleaseNames, input.issues);
   const refs = contextRefs(input.snapshot, activeRelease);
+  const activeWorkOwners = new Map<string, { capabilityId: string; capabilityName: string; capabilityStatus: string }[]>();
+  for (const capability of input.capabilities) {
+    for (const link of capability.workLinks.filter((item) => item.state === "active" || item.state === "configured")) {
+      const owners = activeWorkOwners.get(link.externalId) ?? [];
+      owners.push({ capabilityId: capability.id, capabilityName: capability.name, capabilityStatus: capability.status });
+      activeWorkOwners.set(link.externalId, owners);
+    }
+  }
 
   // Ledger one: governed Reality always gets a seat, even with no work.
   const candidates: Candidate[] = [...input.capabilities].sort((a, b) => a.id.localeCompare(b.id)).map((capability) => ({
@@ -530,8 +539,18 @@ export function compileScopeProposal(input: {
 
   const items: CompiledScopeProposalItem[] = candidates.map((candidate) => {
     const linearIssues = candidate.linearGroups.flatMap((group) => group.issues).sort((a, b) => a.identifier.localeCompare(b.identifier));
-    const workItemIds = [...new Set(linearIssues.map((issue) => issue.identifier))];
+    const matchedWorkItemIds = [...new Set(linearIssues.map((issue) => issue.identifier))];
     const target = candidate.reality;
+    const claimedElsewhere = matchedWorkItemIds.flatMap((identifier) =>
+      (activeWorkOwners.get(identifier) ?? [])
+        .filter((owner) => owner.capabilityId !== target?.id)
+        .map((owner) => ({ identifier, ...owner })),
+    );
+    const claimedElsewhereIds = new Set(claimedElsewhere.map((item) => item.identifier));
+    // Accepted Reality owns an active execution link until an operator
+    // explicitly moves it. A proposal may still explain the semantic match,
+    // but it must never bulk-stage or commit that work to a second capability.
+    const workItemIds = matchedWorkItemIds.filter((identifier) => !claimedElsewhereIds.has(identifier));
     const activeLinks = target?.workLinks.filter((link) => link.state === "active" || link.state === "configured") ?? [];
     const alreadyLinkedItemIds = workItemIds.filter((id) => activeLinks.some((link) => link.externalId === id));
     const missing = workItemIds.filter((id) => !alreadyLinkedItemIds.includes(id));
@@ -582,6 +601,7 @@ export function compileScopeProposal(input: {
       ...(realityNoExecution ? ["Accepted Reality has no active work mapping and no current executable cluster."] : []),
       ...(knowledgeNoExecution ? ["Knowledge proposes shape, but no current Linear execution was found."] : []),
       ...(linearIssues.some((issue) => issue.estimate === null) ? ["One or more executable items have no Linear estimate."] : []),
+      ...(claimedElsewhere.length ? [`${claimedElsewhereIds.size} matched Linear ${claimedElsewhereIds.size === 1 ? "item is" : "items are"} already governed by another Scope capability and ${claimedElsewhereIds.size === 1 ? "is" : "are"} excluded from this proposal.`] : []),
       ...(releaseSignal === "boundary" && !conflicts.length ? ["Available evidence does not establish a single in/out release decision."] : []),
     ];
     const headline = reconciliationState === "conflict" ? "Signals disagree; accepted Reality remains authoritative until an operator resolves the boundary."
@@ -603,6 +623,7 @@ export function compileScopeProposal(input: {
         linearParent: linearParents[0] ?? null,
         linearParents,
         linearItems: linearIssues.map((issue) => ({ identifier: issue.identifier, title: issue.title, state: issue.state, projectName: issue.projectName, updatedAt: issue.updatedAt ?? null })),
+        claimedElsewhere,
         contextSnapshotId: input.snapshot?.id ?? null,
         contextRefs: candidate.knowledgeRefs.map((ref) => ({ kind: ref.kind, id: ref.id, statement: ref.statement, evidenceRefs: ref.evidenceRefs, topicTags: ref.topicTags, candidateTitle: ref.candidateTitle, observedAt: ref.observedAt, releaseClaims: ref.releaseClaims })),
         realityCapability: target ? { id: target.id, name: target.name, status: target.status, revision: target.revision } : null,

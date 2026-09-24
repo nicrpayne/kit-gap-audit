@@ -66,6 +66,7 @@ export interface ScopeProposalItemView {
     linearParent: { identifier: string; title: string } | null;
     linearParents: { identifier: string; title: string }[];
     linearItems: { identifier: string; title?: string; state: string; projectName: string | null; updatedAt: string | null }[];
+    claimedElsewhere?: { identifier: string; capabilityId: string; capabilityName: string; capabilityStatus: string }[];
     contextSnapshotId: string | null;
     contextRefs: { kind: string; id: string; statement: string; evidenceRefs: string[]; topicTags: string[]; candidateTitle: string | null; observedAt?: string | null; releaseClaims?: ReleaseClaimView[] }[];
     realityCapability: { id: string; name: string; status: string; revision: number } | null;
@@ -238,6 +239,8 @@ function ReconciliationFocus({ item, nextItem, selection, capabilities, committi
     setSelectedWorkIds(selection?.itemIds ?? item.workItemIds);
   }, [identity, item, selection]);
   if (!item) return null;
+  const claimedElsewhere = item.provenance.claimedElsewhere ?? [];
+  const claimedElsewhereById = new Map(claimedElsewhere.map((claim) => [claim.identifier, claim]));
   const releaseInterpretation = item.provenance.releaseInterpretation ?? { activeRelease: null, activeReleaseSource: "unresolved" as const, policy: "latest_explicit_same_boundary" as const, effectiveClaims: [], supersededClaims: [], otherBoundaryClaims: [], genericClaims: [] };
   const actionable = item.action !== "none" && item.status !== "committed" && item.reconciliationState !== "conflict";
   const chosenTarget = target === "new" ? null : target;
@@ -298,7 +301,7 @@ function ReconciliationFocus({ item, nextItem, selection, capabilities, committi
       </section>
 
       <section className="p-6">
-        <FocusHeading eyebrow="Execution cluster" title={`${item.workItemIds.length} current items`} />
+        <FocusHeading eyebrow="Execution cluster" title={claimedElsewhere.length ? `${item.workItemIds.length} available · ${claimedElsewhere.length} governed elsewhere` : `${item.workItemIds.length} current items`} />
         <div className="mt-4 rounded-lg p-4" style={{ border: "1px solid var(--i-border)", background: "var(--i-recess)" }}>
           <div className="text-[10px] uppercase tracking-[0.12em] text-[var(--i-text-faint)]">Linear boundary</div>
           <div className="mt-2 text-[12px] font-medium text-[var(--i-text)]">{item.provenance.linearParent ? `${item.provenance.linearParent.identifier} · ${item.provenance.linearParent.title}` : "No safe parent boundary"}</div>
@@ -307,9 +310,10 @@ function ReconciliationFocus({ item, nextItem, selection, capabilities, committi
         <div className="mt-3 max-h-[290px] space-y-1.5 overflow-y-auto">{item.provenance.linearItems.length ? item.provenance.linearItems.map((work) => {
           const checked = selectedWorkIds.includes(work.identifier);
           const linked = item.alreadyLinkedItemIds.includes(work.identifier);
-          return <label key={work.identifier} className="flex cursor-pointer items-start gap-2 rounded-md px-3 py-2.5" style={{ border: `1px solid ${checked ? "color-mix(in srgb, var(--i-violet) 55%, var(--i-border))" : "var(--i-border)"}`, background: checked ? "color-mix(in srgb, var(--i-violet) 6%, transparent)" : "transparent" }} data-shoot="proposal-work-choice">
-            <input type="checkbox" checked={checked} disabled={!actionable || committing} onChange={() => toggleWork(work.identifier)} className="mt-0.5 accent-[var(--i-violet)]" />
-            <span className="min-w-0 flex-1"><span className="block text-[10.5px] font-medium text-[var(--i-text)]">{work.identifier}{work.title ? ` · ${work.title}` : ""}</span><span className="mt-1 block text-[9px] text-[var(--i-text-faint)]">{work.state}{linked ? " · linked in Reality" : " · proposed"}</span></span>
+          const otherOwner = claimedElsewhereById.get(work.identifier);
+          return <label key={work.identifier} className={`flex items-start gap-2 rounded-md px-3 py-2.5 ${otherOwner ? "cursor-not-allowed opacity-65" : "cursor-pointer"}`} style={{ border: `1px solid ${checked ? "color-mix(in srgb, var(--i-violet) 55%, var(--i-border))" : "var(--i-border)"}`, background: checked ? "color-mix(in srgb, var(--i-violet) 6%, transparent)" : "transparent" }} data-shoot="proposal-work-choice">
+            <input type="checkbox" checked={checked} disabled={!actionable || committing || Boolean(otherOwner)} onChange={() => toggleWork(work.identifier)} className="mt-0.5 accent-[var(--i-violet)]" />
+            <span className="min-w-0 flex-1"><span className="block text-[10.5px] font-medium text-[var(--i-text)]">{work.identifier}{work.title ? ` · ${work.title}` : ""}</span><span className="mt-1 block text-[9px] text-[var(--i-text-faint)]">{work.state}{otherOwner ? ` · governed by ${otherOwner.capabilityName} · excluded` : linked ? " · linked in Reality" : " · proposed"}</span></span>
           </label>;
         }) : <EmptyBlock>No current executable Linear work matched this capability.</EmptyBlock>}</div>
         <div className="mt-5 rounded-lg p-4" style={{ border: "1px solid var(--i-border-strong)", background: "#0c1215" }}>
