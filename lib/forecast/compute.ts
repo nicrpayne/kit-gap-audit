@@ -5,6 +5,7 @@ import {
   buildForecastInputs,
   remainingIssuesFor,
   inferCapacityFromAssignees,
+  estimateQualityForItems,
   type CapacitySource,
   type ForecastInputs,
   type SourcedWorkItem,
@@ -18,7 +19,13 @@ import { resolveCapacity, type CapacityContributor } from "@/lib/capacity/resolv
 import { capacityForecastContract, type CapacityForecastContract } from "@/lib/capacity/contract";
 import { deliveryRelevantIssueIds, evaluateForecastCoverage, inheritDependencyCoverage, type ForecastCoverageContract } from "@/lib/forecast/coverage";
 import type { ProjectContextPackage } from "@/lib/context/package";
-import { capabilityKnowledgeEstimates, type CapabilityKnowledgeEstimate } from "@/lib/scope/knowledgeEstimates";
+import {
+  acceptedCapabilityEstimate,
+  capabilityKnowledgeEstimates,
+  substituteCapabilityKnowledgeEstimates,
+  type AcceptedCapabilityEstimate,
+  type CapabilityKnowledgeEstimate,
+} from "@/lib/scope/knowledgeEstimates";
 
 export interface ForecastFinding {
   id: string;
@@ -127,6 +134,10 @@ export function weakestSourceStamp(stamps: ForecastSourceStamp[], fallback: Date
 
 interface ScopeSimBundle {
   inputs: ForecastInputs;
+  /** The linked-ticket modeled subset before accepted capability estimates
+      replace their rollups. Used by Scope to keep showing the execution
+      underneath the canonical top-down estimate. */
+  sourceInputs: ForecastInputs;
   /** Every current Linear item, before accepted Scope chooses the modeled subset. */
   executionInputs: ForecastInputs;
   capacityContributors: CapacityContributor[];
@@ -141,7 +152,9 @@ interface ScopeSimBundle {
   contextIssues: string[];
   capabilities: {
     id: string;
+    name: string;
     status: string;
+    acceptedEstimate: Prisma.JsonValue | null;
     workLinks: { externalId: string; state: string }[];
   }[];
   openShapeDecisionCount: number;
@@ -186,7 +199,7 @@ async function buildScopeSimInputs(scope: Scope): Promise<ScopeSimBundle> {
     prisma.workEstimate.findMany({ where: { scopeId: scope.id } }),
     prisma.capability.findMany({
       where: { scopeId: scope.id },
-      select: { id: true, status: true, workLinks: { select: { externalId: true, state: true } } },
+      select: { id: true, name: true, status: true, acceptedEstimate: true, workLinks: { select: { externalId: true, state: true } } },
     }),
     prisma.decision.count({ where: { scopeId: scope.id, status: "open", gate: { is: null } } }),
   ]);
@@ -285,7 +298,27 @@ async function buildScopeSimInputs(scope: Scope): Promise<ScopeSimBundle> {
     findingHashFor: (f) => findingContentHash(f, contextHash),
     capacitySource: resolved.source ?? undefined,
   };
-  const inputs = buildForecastInputs(modeledIssues, findings, resolved.capacity, buildOptions);
+  const sourceInputs = buildForecastInputs(modeledIssues, findings, resolved.capacity, buildOptions);
+  const acceptedSubstitutions = acceptedCapabilities.flatMap((capability) => {
+    const estimate = acceptedCapabilityEstimate(capability.acceptedEstimate);
+    if (!estimate) return [];
+    return [{
+      capabilityId: capability.id,
+      capabilityName: capability.name,
+      estimateId: estimate.id,
+      range: estimate.range,
+      replacedItemIds: capability.workLinks
+        .filter((link) => link.state === "active" || link.state === "configured")
+        .map((link) => link.externalId),
+      authority: "accepted" as const,
+    }];
+  });
+  const acceptedItems = substituteCapabilityKnowledgeEstimates(sourceInputs.items, acceptedSubstitutions);
+  const inputs: ForecastInputs = {
+    ...sourceInputs,
+    items: acceptedItems,
+    estimateQuality: estimateQualityForItems(acceptedItems),
+  };
   const executionInputs = buildForecastInputs(issues, [], resolved.capacity, buildOptions);
 
   const forecastCoverage = evaluateForecastCoverage({
@@ -300,6 +333,7 @@ async function buildScopeSimInputs(scope: Scope): Promise<ScopeSimBundle> {
 
   return {
     inputs,
+    sourceInputs,
     executionInputs,
     capacityContributors: resolved.contributors,
     issues,
@@ -438,6 +472,9 @@ export interface PortfolioScopeInput {
   targetDate: Date | null;
   dependsOnScopeIds: string[];
   items: ScopeWorkItem[];
+  /** Exact canonical simulation inputs after accepted capability-level
+      estimates replace their ticket rollups. */
+  forecastItems: ForecastInputs["items"];
   /** Raw Linear owner read for mapping; not necessarily in the modeled subset. */
   executionItems: ScopeWorkItem[];
   /** Finished work, for coverage only. Never simulated. */
@@ -501,6 +538,7 @@ export interface PortfolioScopeInput {
     events: { id: string; action: string; actor: string; createdAt: Date }[];
     workLinks: { id: string; provider: string; externalId: string; externalUrl: string | null; state: string }[];
     knowledgeEstimates: CapabilityKnowledgeEstimate[];
+    acceptedEstimate: AcceptedCapabilityEstimate | null;
   }[];
   openShapeQuestions: { id: string; title: string; rationale: string | null; status: string }[];
 }
@@ -644,7 +682,8 @@ export async function buildPortfolioInputs(): Promise<PortfolioInputs> {
       name: scope.name,
       targetDate: scope.targetDate,
       dependsOnScopeIds: scope.dependsOnScopeIds,
-      items: describeItems(bundle),
+      items: describeItems({ ...bundle, inputs: bundle.sourceInputs }),
+      forecastItems: bundle.inputs.items,
       executionItems: describeItems({ ...bundle, inputs: bundle.executionInputs }),
       completedWork: bundle.issues
         .filter((i) => i.completedAt !== null)
@@ -696,6 +735,7 @@ export async function buildPortfolioInputs(): Promise<PortfolioInputs> {
         events: capability.events.map((event) => ({ id: event.id, action: event.action, actor: event.actor, createdAt: event.createdAt })),
         workLinks: capability.workLinks.map((link) => ({ id: link.id, provider: link.provider, externalId: link.externalId, externalUrl: link.externalUrl, state: link.state })),
         knowledgeEstimates: estimatesByCapability.get(capability.id) ?? [],
+        acceptedEstimate: acceptedCapabilityEstimate(capability.acceptedEstimate),
       })),
       openShapeQuestions: scope.decisions.map((decision) => ({ id: decision.id, title: decision.title, rationale: decision.rationale, status: decision.status })),
     });

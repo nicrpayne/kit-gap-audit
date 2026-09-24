@@ -108,7 +108,7 @@ async function main() {
   const specsFrom = (capacityByScope: Map<string, number>) =>
     portfolio.scopes.map((s) => ({
       scopeId: s.scopeId,
-      items: s.items,
+      items: s.forecastItems,
       gates: s.gates,
       teamCapacity: capacityByScope.get(s.scopeId) ?? s.teamCapacity,
       dependsOnScopeIds: s.dependsOnScopeIds,

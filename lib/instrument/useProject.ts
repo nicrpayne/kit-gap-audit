@@ -18,14 +18,14 @@ import { computeMomentumTrend, type MomentumTrend } from "@/lib/momentum/trend";
 import { realityRevision, subscribeReality } from "@/lib/instrument/reality";
 import { formatDateOnly } from "@/lib/time/dateContract";
 import type { ForecastCoverageContract } from "@/lib/forecast/coverage";
-import { substituteCapabilityKnowledgeEstimates, type CapabilityKnowledgeEstimate } from "@/lib/scope/knowledgeEstimates";
+import { substituteCapabilityKnowledgeEstimates, type AcceptedCapabilityEstimate, type CapabilityKnowledgeEstimate } from "@/lib/scope/knowledgeEstimates";
 import type { CapabilityStaffingPlan } from "@/lib/scope/capabilityForecast";
 
 // The provenance the Scope instrument reads. Produced by describeItems in
 // lib/forecast/compute.ts by joining each simulated item back to the Linear
 // issue or Finding it was built from -- nothing here is inferred client-side.
 export interface ScopeWorkItem extends WorkItem {
-  estimateSource: "ai" | "points" | "issue_placeholder" | "hint" | "finding_placeholder";
+  estimateSource: "ai" | "points" | "issue_placeholder" | "hint" | "finding_placeholder" | "knowledge";
   kind: "ticket" | "inferred";
   state: string | null;
   externalUrl?: string | null;
@@ -46,6 +46,7 @@ export interface ProjectScope {
   targetDate: string | null;
   dependsOnScopeIds: string[];
   items: ScopeWorkItem[];
+  forecastItems: WorkItem[];
   executionItems: ScopeWorkItem[];
   completedWork: {
     id: string;
@@ -97,6 +98,7 @@ export interface ProjectScope {
     events: { id: string; action: string; actor: string; createdAt: string }[];
     workLinks: { id: string; provider: string; externalId: string; externalUrl: string | null; state: string }[];
     knowledgeEstimates: CapabilityKnowledgeEstimate[];
+    acceptedEstimate: AcceptedCapabilityEstimate | null;
   }[];
   openShapeQuestions: { id: string; title: string; rationale: string | null; status: string }[];
 }
@@ -478,7 +480,7 @@ export function useProject(): ProjectModel {
     if (!data || !startDate) return null;
     return data.scopes.map((s) => ({
       scopeId: s.scopeId,
-      items: s.items,
+      items: s.forecastItems,
       gates: s.gates,
       dependsOnScopeIds: s.dependsOnScopeIds,
       explicitTeamCapacity: s.explicitTeamCapacity,
@@ -547,6 +549,14 @@ export function useProject(): ProjectModel {
                 : []),
               ];
             }));
+            const bypassedCapabilityItemIds = new Set((fullScope?.capabilities ?? [])
+              .filter((capability) => scenario.bypassedFeatureIds.has(`capability:${capability.id}`))
+              .flatMap((capability) => [
+                ...capability.workLinks.map((link) => link.externalId),
+                ...(capability.acceptedEstimate
+                  ? [`knowledge-estimate:${capability.id}:${capability.acceptedEstimate.id}`]
+                  : []),
+              ]));
             const knowledgeSubstitutions = Object.entries(scenario.knowledgeEstimateByCapabilityId)
               .flatMap(([capabilityId, estimate]) => {
                 const capability = fullScope?.capabilities.find((candidate) => candidate.id === capabilityId);
@@ -563,6 +573,9 @@ export function useProject(): ProjectModel {
                   range: { low: estimate.low, likely: estimate.likely, high: estimate.high },
                   replacedItemIds: [
                     ...capability.workLinks.map((link) => link.externalId),
+                    ...(capability.acceptedEstimate
+                      ? [`knowledge-estimate:${capabilityId}:${capability.acceptedEstimate.id}`]
+                      : []),
                     ...proposedIds,
                   ],
                   capabilityName: capability.name,
@@ -573,7 +586,7 @@ export function useProject(): ProjectModel {
               ...(fullScope?.executionItems ?? [])
                 .filter((item) => (scenario.includedItemIds.has(item.id) || proposalIncludedIds.has(item.id)) && !s.items.some((base) => base.id === item.id)),
             ]
-              .filter((i) => !scenario.excludedItemIds.has(i.id) && !proposalExcludedIds.has(i.id))
+              .filter((i) => !scenario.excludedItemIds.has(i.id) && !proposalExcludedIds.has(i.id) && !bypassedCapabilityItemIds.has(i.id))
               .map((i) => {
                 const o = scenario.estimateOverrideByItemId[i.id];
                 return o ? { ...i, low: o.low, likely: o.likely, high: o.high } : i;

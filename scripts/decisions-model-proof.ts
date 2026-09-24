@@ -56,7 +56,7 @@ async function dates(): Promise<Map<string, string>> {
   const result = runPortfolioSimulation(
     portfolio.scopes.map((s) => ({
       scopeId: s.scopeId,
-      items: s.items,
+      items: s.forecastItems,
       gates: s.gates,
       teamCapacity: s.teamCapacity,
       dependsOnScopeIds: s.dependsOnScopeIds,
@@ -75,7 +75,7 @@ async function datesAssuming(resolvedGateIds: Set<string>): Promise<Map<string, 
   const result = runPortfolioSimulation(
     portfolio.scopes.map((s) => ({
       scopeId: s.scopeId,
-      items: s.items,
+      items: s.forecastItems,
       gates: s.gates.filter((g) => !resolvedGateIds.has(g.id)),
       teamCapacity: s.teamCapacity,
       dependsOnScopeIds: s.dependsOnScopeIds,

@@ -86,6 +86,12 @@ model Capability {
   revision          Int                  @default(1)
   sortOrder         Int                  @default(0)
   provenance        Json
+  // The operator-accepted, source-attributed remaining-work estimate for
+  // this capability. It replaces the linked-ticket rollup in the canonical
+  // forecast; it is never added on top. The complete evidence assertion is
+  // stored so a later knowledge refresh cannot silently erase accepted
+  // planning truth. Every change is also retained in CapabilityEvent.
+  acceptedEstimate  Json?
   sourceCandidateId String?              @unique
   createdAt         DateTime             @default(now())
   updatedAt         DateTime             @updatedAt

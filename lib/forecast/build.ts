@@ -21,7 +21,7 @@ function round1(n: number): number {
 // exists -- the estimate-quality panel reports how much of the forecast
 // rests on these, since tightening them is the cheapest way to narrow the
 // date range.
-export type EstimateSource = "ai" | "points" | "issue_placeholder" | "hint" | "finding_placeholder";
+export type EstimateSource = "ai" | "points" | "issue_placeholder" | "hint" | "finding_placeholder" | "knowledge";
 
 // A stored AI estimate for one work item (see the WorkEstimate model).
 export interface WorkEstimateLike {
@@ -124,7 +124,7 @@ export function estimateQualityForItems(items: Array<ThreePoint & { estimateSour
     // A Scenario-authored range or source-attributed capability range has no
     // legacy estimateSource field; it is nevertheless a governed range, not
     // a placeholder guess, and belongs in this non-placeholder bucket.
-    hintFindingCount: items.filter((item) => item.estimateSource === "hint" || item.estimateSource === undefined).length,
+    hintFindingCount: items.filter((item) => item.estimateSource === "hint" || item.estimateSource === "knowledge" || item.estimateSource === undefined).length,
     placeholderFindingCount: items.filter((item) => item.estimateSource === "finding_placeholder").length,
     placeholderEffortSharePct: totalLikely > 0 ? Math.round((placeholderLikely / totalLikely) * 100) : 0,
   };

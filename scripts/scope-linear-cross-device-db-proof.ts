@@ -32,7 +32,7 @@ async function snapshot(scopeId: string) {
   const scope = payload.scopes.find((candidate) => candidate.scopeId === scopeId)!;
   const simulation = runPortfolioSimulation([{
     scopeId,
-    items: scope.items,
+    items: scope.forecastItems,
     gates: scope.gates,
     teamCapacity: scope.teamCapacity,
     dependsOnScopeIds: [],

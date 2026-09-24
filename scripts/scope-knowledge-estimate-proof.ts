@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import type { ProjectContextPackage } from "../lib/context/package";
 import {
+  acceptCapabilityKnowledgeEstimate,
+  acceptedCapabilityEstimate,
   capabilityKnowledgeEstimates,
   substituteCapabilityKnowledgeEstimates,
 } from "../lib/scope/knowledgeEstimates";
@@ -113,9 +115,40 @@ assert.ok(substituted.some((item) => item.id === "SOF-3"));
 assert.deepEqual(substituted.find((item) => item.id.startsWith("knowledge-estimate:")), {
   id: "knowledge-estimate:notifications:hermes:estimate-notifications",
   label: "JSA notifications · provisional meeting estimate",
+  estimateSource: "knowledge",
   low: 8,
   likely: 10.5,
   high: 13,
 });
 
-console.log("Scope knowledge estimate proof passed: provenance retained, unsupported units fenced, and Scenario substitution does not double count.");
+const accepted = acceptCapabilityKnowledgeEstimate(notifications!, "2026-09-24T12:00:00.000Z");
+assert.deepEqual(acceptedCapabilityEstimate(JSON.parse(JSON.stringify(accepted))), accepted, "accepted Reality must retain the complete source assertion");
+assert.equal(acceptedCapabilityEstimate({ ...accepted, range: { low: 20, likely: 5, high: 30 } }), null, "invalid Reality estimate ranges must fail closed");
+
+const canonical = substituteCapabilityKnowledgeEstimates([
+  { id: "SOF-1", label: "Notification ticket one", low: 1, likely: 3, high: 7 },
+  { id: "SOF-2", label: "Notification ticket two", low: 2, likely: 4, high: 8 },
+], [{
+  capabilityId: "notifications",
+  capabilityName: "JSA notifications",
+  estimateId: accepted.id,
+  range: accepted.range,
+  replacedItemIds: ["SOF-1", "SOF-2"],
+  authority: "accepted",
+}]);
+assert.equal(canonical.length, 1, "accepted estimate must replace every mapped ticket exactly once");
+assert.equal(canonical[0].label, "JSA notifications · accepted meeting estimate");
+assert.equal("estimateSource" in canonical[0] ? canonical[0].estimateSource : null, "knowledge");
+
+const provisionalOverReality = substituteCapabilityKnowledgeEstimates(canonical, [{
+  capabilityId: "notifications",
+  capabilityName: "JSA notifications",
+  estimateId: "newer-meeting-estimate",
+  range: { low: 6, likely: 8, high: 10 },
+  replacedItemIds: [canonical[0].id, "SOF-1", "SOF-2"],
+  authority: "provisional",
+}]);
+assert.equal(provisionalOverReality.length, 1, "Scenario estimate must replace accepted Reality rather than stack on it");
+assert.equal(provisionalOverReality[0].likely, 8);
+
+console.log("Scope knowledge estimate proof passed: provenance retained, unsupported units fenced, and Scenario/Reality substitutions do not double count.");

@@ -97,7 +97,12 @@ export function renderDecisionBriefMarkdown(brief: DecisionBriefV1): string {
     out.push("Isolated capability outlooks");
     for (const outlook of scope.capabilityOutlooks) {
       const people = outlook.contributors.map((person) => `${person.name} ${n(person.fte)} FTE`).join(" + ");
-      out.push(`- **${outlook.name}** · likely ${date(outlook.likelyDate)} (${date(outlook.earliestDate)}–${date(outlook.latestDate)}) · ${people} · ${outlook.estimateBasis === "knowledge_provisional" ? "provisional meeting estimate" : "mapped-work rollup"}`);
+      const basis = outlook.estimateBasis === "knowledge_provisional"
+        ? "provisional meeting estimate"
+        : outlook.estimateBasis === "knowledge_accepted"
+          ? "accepted meeting estimate"
+          : "mapped-work rollup";
+      out.push(`- **${outlook.name}** · likely ${date(outlook.likelyDate)} (${date(outlook.earliestDate)}–${date(outlook.latestDate)}) · ${people} · ${basis}`);
     }
     out.push("  - These are isolated card-level what-ifs, not a claim that the same people can execute several cards simultaneously.");
   }

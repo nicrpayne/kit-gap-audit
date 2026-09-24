@@ -22,7 +22,7 @@ const startDate = new Date(data.startDate);
 const specsFrom = (excluded = new Set()) =>
   data.scopes.map((s) => ({
     scopeId: s.scopeId,
-    items: s.items.filter((i) => !excluded.has(i.id)),
+    items: s.forecastItems.filter((i) => !excluded.has(i.id)),
     gates: s.gates,
     teamCapacity: s.teamCapacity,
     dependsOnScopeIds: s.dependsOnScopeIds,
@@ -36,9 +36,9 @@ const base = runPortfolioSimulation(specsFrom());
 console.log("=== REALITY ===");
 for (const s of data.scopes) {
   const r = base.get(s.scopeId);
-  const effort = s.items.reduce((a, i) => a + i.likely, 0);
+  const effort = s.forecastItems.reduce((a, i) => a + i.likely, 0);
   console.log(
-    `${s.name.padEnd(9)} items=${String(s.items.length).padStart(2)} gates=${s.gates.length} ` +
+    `${s.name.padEnd(9)} items=${String(s.forecastItems.length).padStart(2)} gates=${s.gates.length} ` +
       `cap=${s.teamCapacity.toFixed(1).padStart(4)} (${s.capacitySource}) ` +
       `effort=${effort.toFixed(0).padStart(3)}d  own=${(effort / s.teamCapacity).toFixed(1).padStart(5)}d ` +
       `P50=+${String(day(r.likelyDate)).padStart(3)}d  depends=[${s.dependsOnScopeIds.join(",")}]`

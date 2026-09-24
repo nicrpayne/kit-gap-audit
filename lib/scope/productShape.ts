@@ -14,6 +14,7 @@ export interface ShapeCapability {
   sortOrder?: number;
   updatedAt?: string;
   provenance?: unknown;
+  acceptedEstimate?: import("@/lib/scope/knowledgeEstimates").AcceptedCapabilityEstimate | null;
   events?: { id: string; action: string; actor: string; createdAt: string }[];
   workLinks: { id: string; provider: string; externalId: string; externalUrl: string | null; state: string }[];
   knowledgeEstimates?: import("@/lib/scope/knowledgeEstimates").CapabilityKnowledgeEstimate[];

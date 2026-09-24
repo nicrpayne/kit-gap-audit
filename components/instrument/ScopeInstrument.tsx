@@ -207,9 +207,15 @@ export default function ScopeInstrument() {
         if (out) {
           features.add(feature.id);
           for (const i of feature.items) items.add(i.id);
+          if (feature.canonicalCapability && feature.acceptedKnowledgeEstimate) {
+            items.add(`knowledge-estimate:${feature.canonicalCapability.id}:${feature.acceptedKnowledgeEstimate.id}`);
+          }
         } else {
           features.delete(feature.id);
           for (const i of feature.items) items.delete(i.id);
+          if (feature.canonicalCapability && feature.acceptedKnowledgeEstimate) {
+            items.delete(`knowledge-estimate:${feature.canonicalCapability.id}:${feature.acceptedKnowledgeEstimate.id}`);
+          }
         }
         return { ...prev, bypassedFeatureIds: features, excludedItemIds: items };
       }),
@@ -499,6 +505,11 @@ export default function ScopeInstrument() {
             excludedItemIds.delete(id);
             includedItemIds.delete(id);
           }
+          if (pending.capability.acceptedEstimate) {
+            const acceptedId = `knowledge-estimate:${pending.capability.id}:${pending.capability.acceptedEstimate.id}`;
+            excludedItemIds.delete(acceptedId);
+            includedItemIds.delete(acceptedId);
+          }
           const includedCapabilityIds = new Set(prev.includedCapabilityIds);
           includedCapabilityIds.delete(pending.capability.id);
           return { ...prev, bypassedFeatureIds, excludedItemIds, includedItemIds, includedCapabilityIds };
@@ -574,6 +585,75 @@ export default function ScopeInstrument() {
       setOpenFeatureId(null);
     } catch (error) {
       setWriteError(error instanceof Error ? error.message : "Capability could not be saved.");
+    } finally {
+      setWriting(false);
+    }
+  };
+
+  const acceptKnowledgeEstimate = async (capabilityId: string, estimate: import("@/lib/scope/knowledgeEstimates").CapabilityKnowledgeEstimate) => {
+    const capability = scope.capabilities.find((candidate) => candidate.id === capabilityId);
+    if (!capability || !estimate.range) return;
+    setWriting(true);
+    setWriteError(null);
+    try {
+      const response = await mutateReality(`/api/capabilities/${capabilityId}/estimate`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          expectedRevision: capability.revision ?? 1,
+          estimateId: estimate.id,
+          contextSnapshotId: estimate.contextSnapshotId,
+          idempotencyKey: crypto.randomUUID(),
+        }),
+      });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(body.error ?? "The meeting estimate could not be accepted into Reality.");
+      m.setScenario((prev) => {
+        const next = { ...prev.knowledgeEstimateByCapabilityId };
+        delete next[capabilityId];
+        const excludedItemIds = new Set(prev.excludedItemIds);
+        const includedItemIds = new Set(prev.includedItemIds);
+        if (capability.acceptedEstimate) {
+          const oldAcceptedId = `knowledge-estimate:${capabilityId}:${capability.acceptedEstimate.id}`;
+          excludedItemIds.delete(oldAcceptedId);
+          includedItemIds.delete(oldAcceptedId);
+        }
+        if (prev.bypassedFeatureIds.has(`capability:${capabilityId}`)) {
+          excludedItemIds.add(`knowledge-estimate:${capabilityId}:${estimate.id}`);
+        }
+        return { ...prev, knowledgeEstimateByCapabilityId: next, excludedItemIds, includedItemIds };
+      });
+    } catch (error) {
+      setWriteError(error instanceof Error ? error.message : "The meeting estimate could not be accepted into Reality.");
+    } finally {
+      setWriting(false);
+    }
+  };
+
+  const clearAcceptedKnowledgeEstimate = async (capabilityId: string) => {
+    const capability = scope.capabilities.find((candidate) => candidate.id === capabilityId);
+    if (!capability) return;
+    setWriting(true);
+    setWriteError(null);
+    try {
+      const response = await mutateReality(`/api/capabilities/${capabilityId}/estimate`, {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ expectedRevision: capability.revision ?? 1, idempotencyKey: crypto.randomUUID() }),
+      });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(body.error ?? "The accepted meeting estimate could not be cleared.");
+      m.setScenario((prev) => {
+        if (!capability.acceptedEstimate) return prev;
+        const acceptedId = `knowledge-estimate:${capabilityId}:${capability.acceptedEstimate.id}`;
+        const excludedItemIds = new Set(prev.excludedItemIds);
+        const includedItemIds = new Set(prev.includedItemIds);
+        excludedItemIds.delete(acceptedId);
+        includedItemIds.delete(acceptedId);
+        return { ...prev, excludedItemIds, includedItemIds };
+      });
+    } catch (error) {
+      setWriteError(error instanceof Error ? error.message : "The accepted meeting estimate could not be cleared.");
     } finally {
       setWriting(false);
     }
@@ -946,6 +1026,8 @@ export default function ScopeInstrument() {
             return { ...prev, knowledgeEstimateByCapabilityId: next };
           })
         }
+        onAcceptKnowledgeEstimate={acceptKnowledgeEstimate}
+        onClearAcceptedKnowledgeEstimate={clearAcceptedKnowledgeEstimate}
         onSetCapabilityStaffing={(capabilityId, plan) =>
           m.setScenario((prev) => ({
             ...prev,

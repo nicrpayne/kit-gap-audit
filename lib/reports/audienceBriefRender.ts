@@ -99,7 +99,12 @@ function moduleMarkdown(id: BriefModuleId, density: ModuleDensity, brief: Decisi
       if (scope.capabilityOutlooks?.length) {
         out.push("", "Isolated capability outlooks — each assumes its named contributors stay focused on that card:");
         for (const outlook of scope.capabilityOutlooks) {
-          out.push(`- **${outlook.name}** — likely ${date(outlook.likelyDate)} (${date(outlook.earliestDate)}–${date(outlook.latestDate)}) · ${number(outlook.staffingFte)} FTE · ${outlook.contributors.map((person) => `${person.name} ${number(person.fte)}`).join(", ")} · ${outlook.estimateBasis === "knowledge_provisional" ? "provisional meeting estimate" : "ticket rollup"}`);
+          const basis = outlook.estimateBasis === "knowledge_provisional"
+            ? "provisional meeting estimate"
+            : outlook.estimateBasis === "knowledge_accepted"
+              ? "accepted meeting estimate"
+              : "ticket rollup";
+          out.push(`- **${outlook.name}** — likely ${date(outlook.likelyDate)} (${date(outlook.earliestDate)}–${date(outlook.latestDate)}) · ${number(outlook.staffingFte)} FTE · ${outlook.contributors.map((person) => `${person.name} ${number(person.fte)}`).join(", ")} · ${basis}`);
         }
       }
       break;

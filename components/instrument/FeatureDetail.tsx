@@ -42,6 +42,7 @@ const ESTIMATE_SOURCE: Record<string, string> = {
   issue_placeholder: "No estimate on the ticket — a deliberately wide 1–7 day guess",
   hint: "Parsed from a range someone actually stated",
   finding_placeholder: "Nobody sized this — a deliberately wide 2–12 day guess",
+  knowledge: "Accepted source-attributed developer estimate",
 };
 
 export default function FeatureDetail({
@@ -58,6 +59,8 @@ export default function FeatureDetail({
   onClearEstimate,
   onStageKnowledgeEstimate,
   onClearKnowledgeEstimate,
+  onAcceptKnowledgeEstimate,
+  onClearAcceptedKnowledgeEstimate,
   staffingOptions,
   onSetCapabilityStaffing,
   onClearCapabilityStaffing,
@@ -80,6 +83,8 @@ export default function FeatureDetail({
   onClearEstimate: (id: string) => void;
   onStageKnowledgeEstimate: (capabilityId: string, estimate: CapabilityKnowledgeEstimate) => void;
   onClearKnowledgeEstimate: (capabilityId: string) => void;
+  onAcceptKnowledgeEstimate: (capabilityId: string, estimate: CapabilityKnowledgeEstimate) => void;
+  onClearAcceptedKnowledgeEstimate: (capabilityId: string) => void;
   staffingOptions: StaffingOption[];
   onSetCapabilityStaffing: (capabilityId: string, plan: CapabilityStaffingPlan) => void;
   onClearCapabilityStaffing: (capabilityId: string) => void;
@@ -153,9 +158,9 @@ export default function FeatureDetail({
         <Overview feature={f} />
       )}
       {mode === "work" && <Work feature={f} capacity={capacity} onUnlinkReality={onUnlinkReality} />}
-      {mode === "evidence" && <Evidence feature={f} onAccept={onAccept} onStageKnowledgeEstimate={onStageKnowledgeEstimate} onClearKnowledgeEstimate={onClearKnowledgeEstimate} />}
+      {mode === "evidence" && <Evidence feature={f} onAccept={onAccept} onStageKnowledgeEstimate={onStageKnowledgeEstimate} onClearKnowledgeEstimate={onClearKnowledgeEstimate} onAcceptKnowledgeEstimate={onAcceptKnowledgeEstimate} onClearAcceptedKnowledgeEstimate={onClearAcceptedKnowledgeEstimate} />}
       {mode === "estimate" && (
-        <Estimate feature={f} capacity={capacity} onSetEstimate={onSetEstimate} onClearEstimate={onClearEstimate} onStageKnowledgeEstimate={onStageKnowledgeEstimate} onClearKnowledgeEstimate={onClearKnowledgeEstimate} staffingOptions={staffingOptions} onSetCapabilityStaffing={onSetCapabilityStaffing} onClearCapabilityStaffing={onClearCapabilityStaffing} />
+        <Estimate feature={f} capacity={capacity} onSetEstimate={onSetEstimate} onClearEstimate={onClearEstimate} onStageKnowledgeEstimate={onStageKnowledgeEstimate} onClearKnowledgeEstimate={onClearKnowledgeEstimate} onAcceptKnowledgeEstimate={onAcceptKnowledgeEstimate} onClearAcceptedKnowledgeEstimate={onClearAcceptedKnowledgeEstimate} staffingOptions={staffingOptions} onSetCapabilityStaffing={onSetCapabilityStaffing} onClearCapabilityStaffing={onClearCapabilityStaffing} />
       )}
       {mode === "history" && <History feature={f} />}
     </ToolWindow>
@@ -184,7 +189,7 @@ function ModuleHead({
 }) {
   const material = materialOf(f);
   const accent = accentFor(material);
-  const hasEstimate = f.items.length > 0 || f.activeKnowledgeEstimate !== null;
+  const hasEstimate = f.items.length > 0 || f.activeKnowledgeEstimate !== null || f.acceptedKnowledgeEstimate !== null;
   const hasRange = hasEstimate && f.range.high - f.range.low > 0;
   const retuned = !!realityRange && hasRange && Math.abs(realityRange.likely - f.range.likely) > 0.05;
   const source =
@@ -241,6 +246,8 @@ function ModuleHead({
             ? `${f.capabilityForecast.staffingFte.toFixed(2)} named FTE · isolated`
             : f.activeKnowledgeEstimate
               ? `provisional · ÷ ${capacity.toFixed(2)} FTE`
+              : f.acceptedKnowledgeEstimate
+                ? `accepted meeting estimate · ÷ ${capacity.toFixed(2)} FTE`
               : hasEstimate ? `÷ ${capacity.toFixed(2)} FTE` : "no mapped work"}
         />
         <HeadStat
@@ -251,7 +258,7 @@ function ModuleHead({
         <HeadStat
           k="Uncertainty"
           v={uncertaintyLabel(f.uncertainty)}
-          n={f.activeKnowledgeEstimate ? "meeting evidence" : f.placeholderCount > 0 ? `${f.placeholderCount} unestimated` : "all sized"}
+          n={f.activeKnowledgeEstimate || f.acceptedKnowledgeEstimate ? "meeting evidence" : f.placeholderCount > 0 ? `${f.placeholderCount} unestimated` : "all sized"}
         />
         {f.capabilityForecast && (
           <HeadStat
@@ -331,9 +338,11 @@ function Overview({ feature: f }: { feature: Feature }) {
         />
         <Row
           k="Effort"
-          v={f.items.length > 0 || f.activeKnowledgeEstimate ? `${expectedDays(f.range).toFixed(1)}d` : "—"}
+          v={f.items.length > 0 || f.activeKnowledgeEstimate || f.acceptedKnowledgeEstimate ? `${expectedDays(f.range).toFixed(1)}d` : "—"}
           note={f.activeKnowledgeEstimate
             ? `provisional meeting range · ${f.range.low.toFixed(0)}–${f.range.high.toFixed(0)} developer-days`
+            : f.acceptedKnowledgeEstimate
+              ? `accepted meeting range · ${f.range.low.toFixed(0)}–${f.range.high.toFixed(0)} developer-days`
             : f.items.length > 0
               ? `expected, before capacity · ${f.range.low.toFixed(0)}–${f.range.high.toFixed(0)}d range`
               : "no mapped work or staged estimate"}
@@ -549,11 +558,15 @@ function Evidence({
   onAccept,
   onStageKnowledgeEstimate,
   onClearKnowledgeEstimate,
+  onAcceptKnowledgeEstimate,
+  onClearAcceptedKnowledgeEstimate,
 }: {
   feature: Feature;
   onAccept: (id: string) => void;
   onStageKnowledgeEstimate: (capabilityId: string, estimate: CapabilityKnowledgeEstimate) => void;
   onClearKnowledgeEstimate: (capabilityId: string) => void;
+  onAcceptKnowledgeEstimate: (capabilityId: string, estimate: CapabilityKnowledgeEstimate) => void;
+  onClearAcceptedKnowledgeEstimate: (capabilityId: string) => void;
 }) {
   if (f.canonicalCapability) {
     const ownerEvents = f.canonicalCapability.events ?? [];
@@ -573,7 +586,7 @@ function Evidence({
           <Row k="Execution evidence" v={`${f.canonicalCapability.workLinks.length} explicit link${f.canonicalCapability.workLinks.length === 1 ? "" : "s"}`} note="current Linear facts remain owned by Linear" />
           <AttachedEvidence evidence={evidence} />
         </div>
-        <KnowledgeEstimateEvidence feature={f} onStage={onStageKnowledgeEstimate} onClear={onClearKnowledgeEstimate} />
+        <KnowledgeEstimateEvidence feature={f} onStage={onStageKnowledgeEstimate} onClear={onClearKnowledgeEstimate} onAcceptReality={onAcceptKnowledgeEstimate} onClearReality={onClearAcceptedKnowledgeEstimate} />
         <div className="i-label mt-4 mb-2">Recent governed history</div>
         {ownerEvents.length ? ownerEvents.slice(0, 6).map((event) => (
           <div key={event.id} className="flex items-baseline gap-2 py-1.5" style={{ borderTop: "1px solid var(--i-border)" }}>
@@ -682,6 +695,8 @@ function Estimate({
   onClearEstimate,
   onStageKnowledgeEstimate,
   onClearKnowledgeEstimate,
+  onAcceptKnowledgeEstimate,
+  onClearAcceptedKnowledgeEstimate,
   staffingOptions,
   onSetCapabilityStaffing,
   onClearCapabilityStaffing,
@@ -692,18 +707,20 @@ function Estimate({
   onClearEstimate: (id: string) => void;
   onStageKnowledgeEstimate: (capabilityId: string, estimate: CapabilityKnowledgeEstimate) => void;
   onClearKnowledgeEstimate: (capabilityId: string) => void;
+  onAcceptKnowledgeEstimate: (capabilityId: string, estimate: CapabilityKnowledgeEstimate) => void;
+  onClearAcceptedKnowledgeEstimate: (capabilityId: string) => void;
   staffingOptions: StaffingOption[];
   onSetCapabilityStaffing: (capabilityId: string, plan: CapabilityStaffingPlan) => void;
   onClearCapabilityStaffing: (capabilityId: string) => void;
 }) {
   const [tuning, setTuning] = useState<string | null>(null);
-  if (f.items.length === 0 && f.knowledgeEstimates.length === 0)
+  if (f.items.length === 0 && f.knowledgeEstimates.length === 0 && !f.acceptedKnowledgeEstimate)
     return <Empty title="Nothing to estimate" body="No open work is mapped and the current knowledge snapshot carries no developer estimate for this capability." />;
 
   const tuned = f.items.find((i) => i.id === tuning) ?? null;
   return (
     <div className="px-5 py-4">
-      <KnowledgeEstimateEvidence feature={f} onStage={onStageKnowledgeEstimate} onClear={onClearKnowledgeEstimate} />
+      <KnowledgeEstimateEvidence feature={f} onStage={onStageKnowledgeEstimate} onClear={onClearKnowledgeEstimate} onAcceptReality={onAcceptKnowledgeEstimate} onClearReality={onClearAcceptedKnowledgeEstimate} />
       <CapabilityStaffingEditor
         feature={f}
         options={staffingOptions}
@@ -713,7 +730,9 @@ function Estimate({
       {f.items.length > 0 ? <>
       <p className="text-[11px] text-[var(--i-text-soft)] leading-relaxed">
         {f.activeKnowledgeEstimate
-          ? "The staged meeting estimate is replacing this ticket rollup in Scenario, so the same work is not counted twice. Remove it to return to the ranges below."
+          ? "The staged meeting estimate is replacing the current Reality basis in this Scenario. Remove it to return to accepted Reality."
+          : f.acceptedKnowledgeEstimate
+            ? "The accepted developer estimate is the current Reality basis for this capability. The linked tickets remain visible below for execution tracking, but their estimates are not added again."
           : `The display above is the sum of these ${f.items.length} range${f.items.length === 1 ? "" : "s"}. Re-estimating one moves it, in this Scenario only.`}
       </p>
 
@@ -799,7 +818,7 @@ function CapabilityStaffingEditor({
     return fte > 0 ? [{ personId: option.personId, name: option.name, fte }] : [];
   });
   const total = selected.reduce((sum, person) => sum + person.fte, 0);
-  const suggested = feature.activeKnowledgeEstimate?.owner ?? feature.knowledgeEstimates[0]?.owner ?? null;
+  const suggested = feature.activeKnowledgeEstimate?.owner ?? feature.acceptedKnowledgeEstimate?.owner ?? feature.knowledgeEstimates[0]?.owner ?? null;
 
   return (
     <div className="mt-4 rounded-md px-3 py-3" style={{ border: "1px solid color-mix(in srgb, var(--i-signal) 35%, var(--i-border))", background: "var(--i-recess)" }} data-shoot="capability-staffing">
@@ -884,13 +903,24 @@ function KnowledgeEstimateEvidence({
   feature,
   onStage,
   onClear,
+  onAcceptReality,
+  onClearReality,
 }: {
   feature: Feature;
   onStage: (capabilityId: string, estimate: CapabilityKnowledgeEstimate) => void;
   onClear: (capabilityId: string) => void;
+  onAcceptReality: (capabilityId: string, estimate: CapabilityKnowledgeEstimate) => void;
+  onClearReality: (capabilityId: string) => void;
 }) {
   const capability = feature.canonicalCapability;
-  if (!capability || feature.knowledgeEstimates.length === 0) return null;
+  if (!capability || (feature.knowledgeEstimates.length === 0 && !feature.acceptedKnowledgeEstimate)) return null;
+  const estimates = [
+    ...(feature.acceptedKnowledgeEstimate ? [feature.acceptedKnowledgeEstimate] : []),
+    ...feature.knowledgeEstimates.filter((estimate) =>
+      estimate.id !== feature.acceptedKnowledgeEstimate?.id ||
+      estimate.contextSnapshotId !== feature.acceptedKnowledgeEstimate.contextSnapshotId
+    ),
+  ];
   return (
     <div className="mt-4 rounded-md px-3 py-3" style={{ border: "1px solid color-mix(in srgb, var(--i-violet) 45%, var(--i-border))", background: "var(--i-recess)" }} data-shoot="knowledge-estimate-evidence">
       <div className="flex items-baseline justify-between gap-3">
@@ -898,8 +928,10 @@ function KnowledgeEstimateEvidence({
         <span className="text-[8.5px] text-[var(--i-text-faint)]">from current knowledge snapshot</span>
       </div>
       <div className="mt-2 space-y-2">
-        {feature.knowledgeEstimates.slice(0, 3).map((estimate) => {
+        {estimates.slice(0, 3).map((estimate) => {
           const active = feature.activeKnowledgeEstimate?.id === estimate.id;
+          const accepted = feature.acceptedKnowledgeEstimate?.id === estimate.id
+            && feature.acceptedKnowledgeEstimate.contextSnapshotId === estimate.contextSnapshotId;
           const attribution = [estimate.speaker ?? estimate.owner, estimate.observedAt, estimate.sourceRef].filter(Boolean).join(" · ");
           return (
             <div key={estimate.id} className="rounded px-2.5 py-2" style={{ border: "1px solid var(--i-border)" }}>
@@ -907,18 +939,36 @@ function KnowledgeEstimateEvidence({
                 <span className="min-w-0 flex-1 text-[10.5px] text-[var(--i-text-soft)]">{estimate.statement}</span>
                 <span className="shrink-0 i-readout text-[10.5px] text-[var(--i-text)]">{estimate.rawEstimate}</span>
               </div>
+              {accepted && (
+                <div className="mt-1 i-label" style={{ color: "var(--i-mint)" }}>
+                  Current Reality estimate
+                </div>
+              )}
               {attribution && <div className="mt-1 text-[8.5px] text-[var(--i-text-faint)]">{attribution}</div>}
               {estimate.excerpt && <div className="mt-1.5 text-[9.5px] italic leading-relaxed text-[var(--i-text-faint)]">&ldquo;{estimate.excerpt}&rdquo;</div>}
               {estimate.range ? (
-                <button
-                  type="button"
-                  onClick={() => active ? onClear(capability.id) : onStage(capability.id, estimate)}
-                  className="mt-2 w-full rounded px-2 py-1.5 text-[9.5px]"
-                  style={{ border: "1px solid var(--i-violet)", color: "var(--i-violet)" }}
-                  data-shoot={active ? "clear-knowledge-estimate" : "stage-knowledge-estimate"}
-                >
-                  {active ? "Remove provisional estimate from Scenario" : "Use provisionally in Scenario"}
-                </button>
+                <div className="mt-2 grid gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => accepted ? onClearReality(capability.id) : onAcceptReality(capability.id, estimate)}
+                    className="w-full rounded px-2 py-1.5 text-[9.5px]"
+                    style={{ border: "1px solid var(--i-signal)", color: accepted ? "var(--i-text-soft)" : "var(--i-signal)" }}
+                    data-shoot={accepted ? "clear-accepted-knowledge-estimate" : "accept-knowledge-estimate-reality"}
+                  >
+                    {accepted ? "Stop using as the Reality estimate" : "Accept as current Reality estimate"}
+                  </button>
+                  {!accepted && (
+                    <button
+                      type="button"
+                      onClick={() => active ? onClear(capability.id) : onStage(capability.id, estimate)}
+                      className="w-full rounded px-2 py-1.5 text-[9.5px]"
+                      style={{ border: "1px solid var(--i-violet)", color: "var(--i-violet)" }}
+                      data-shoot={active ? "clear-knowledge-estimate" : "stage-knowledge-estimate"}
+                    >
+                      {active ? "Remove estimate from Scenario" : "Preview in Scenario first"}
+                    </button>
+                  )}
+                </div>
               ) : (
                 <div className="mt-2 text-[9px] leading-snug text-[var(--i-amber)]">
                   Evidence only. Signal will not convert sprints, story points, or an unbounded statement into developer-days.
@@ -929,7 +979,7 @@ function KnowledgeEstimateEvidence({
         })}
       </div>
       <p className="mt-2 text-[9px] leading-snug text-[var(--i-text-faint)]">
-        Staging replaces this capability&apos;s ticket rollup in the hypothetical. It never adds both totals, never writes to Linear, and never changes Reality.
+        An accepted estimate becomes this capability&apos;s canonical remaining-work basis. It replaces the ticket rollup, never adds both totals, and never writes to Linear. Previewing remains Scenario-only.
       </p>
     </div>
   );

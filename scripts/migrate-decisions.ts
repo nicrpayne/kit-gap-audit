@@ -80,7 +80,7 @@ async function main() {
   const specsWith = (gatesByScope: Map<string, { low: number; likely: number; high: number; id: string; label: string }[]>) =>
     portfolio.scopes.map((s) => ({
       scopeId: s.scopeId,
-      items: s.items,
+      items: s.forecastItems,
       gates: gatesByScope.get(s.scopeId) ?? [],
       teamCapacity: s.teamCapacity,
       dependsOnScopeIds: s.dependsOnScopeIds,

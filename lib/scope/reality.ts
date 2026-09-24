@@ -1,6 +1,7 @@
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { invalidateDerivedReads, recomputeDerivedReads } from "@/lib/audit/derivedRefresh";
+import type { AcceptedCapabilityEstimate } from "@/lib/scope/knowledgeEstimates";
 
 export const CAPABILITY_STATUSES = ["accepted", "outside", "future"] as const;
 export type CapabilityStatus = (typeof CAPABILITY_STATUSES)[number];
@@ -315,6 +316,59 @@ export async function unlinkCanonicalWork(
       afterState: json(plain(after)),
     } });
     await invalidateDerivedReads(tx, before.scopeId, `Linear work unlinked from Capability ${capabilityId}.`);
+    return { capability: await tx.capability.findUniqueOrThrow({ where: { id: capabilityId }, include: capabilityInclude }), scopeId: before.scopeId, changed: true };
+  }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }));
+  return { capability: result.capability, changed: result.changed, ...(await finish(result.scopeId, result.changed)) };
+}
+
+/**
+ * Persist or clear the one source-attributed remaining-work estimate that
+ * canonical Forecast should use for this capability. The caller resolves the
+ * estimate from an immutable ContextSnapshot; this owner function supplies
+ * the same optimistic concurrency, idempotency, event history, and derived
+ * refresh contract as every other Scope Reality write.
+ */
+export async function setCanonicalCapabilityEstimate(
+  capabilityId: string,
+  input: {
+    expectedRevision: number;
+    estimate: AcceptedCapabilityEstimate | null;
+    idempotencyKey: string;
+  },
+) {
+  const idempotencyKey = required(input.idempotencyKey, "idempotencyKey");
+  const result = await retrySerializable(() => prisma.$transaction(async (tx) => {
+    const prior = await tx.capabilityEvent.findUnique({ where: { idempotencyKey }, select: { capabilityId: true } });
+    if (prior) {
+      const capability = await tx.capability.findUniqueOrThrow({ where: { id: prior.capabilityId }, include: capabilityInclude });
+      return { capability, scopeId: capability.scopeId, changed: false };
+    }
+    const before = await tx.capability.findUniqueOrThrow({ where: { id: capabilityId }, include: { workLinks: true } });
+    if (!Number.isInteger(input.expectedRevision) || input.expectedRevision !== before.revision) {
+      throw new ScopeRealityConflictError(`This capability changed in another session (current revision ${before.revision}). Reload before saving.`);
+    }
+    if (input.estimate && input.estimate.capabilityId !== before.id) {
+      throw new ScopeRealityInputError("That estimate belongs to a different capability.");
+    }
+    await tx.capability.update({
+      where: { id: capabilityId },
+      data: {
+        acceptedEstimate: input.estimate ? json(input.estimate) : Prisma.DbNull,
+        revision: { increment: 1 },
+      },
+    });
+    const after = await tx.capability.findUniqueOrThrow({ where: { id: capabilityId }, include: { workLinks: true } });
+    await tx.capabilityEvent.create({ data: {
+      capabilityId,
+      scopeId: before.scopeId,
+      idempotencyKey,
+      action: input.estimate ? "accept_knowledge_estimate" : "clear_knowledge_estimate",
+      beforeState: json(plain(before)),
+      afterState: json(plain(after)),
+    } });
+    await invalidateDerivedReads(tx, before.scopeId, input.estimate
+      ? `Accepted meeting estimate for Capability ${capabilityId}.`
+      : `Cleared accepted meeting estimate for Capability ${capabilityId}.`);
     return { capability: await tx.capability.findUniqueOrThrow({ where: { id: capabilityId }, include: capabilityInclude }), scopeId: before.scopeId, changed: true };
   }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }));
   return { capability: result.capability, changed: result.changed, ...(await finish(result.scopeId, result.changed)) };

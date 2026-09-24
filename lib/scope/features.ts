@@ -25,7 +25,7 @@
 import type { ScopeWorkItem } from "@/lib/instrument/useProject";
 import type { CompletedWork } from "@/lib/forecast/compute";
 import type { ShapeCapability } from "@/lib/scope/productShape";
-import type { CapabilityKnowledgeEstimate } from "@/lib/scope/knowledgeEstimates";
+import type { AcceptedCapabilityEstimate, CapabilityKnowledgeEstimate } from "@/lib/scope/knowledgeEstimates";
 import {
   forecastCapability,
   type CapabilityForecastOutlook,
@@ -84,7 +84,10 @@ export interface Feature {
   /** The knowledge estimate replacing this capability's ticket rollup in
       the current Scenario, if any. */
   activeKnowledgeEstimate: CapabilityKnowledgeEstimate | null;
-  estimateBasis: "work_rollup" | "knowledge_provisional";
+  /** The durable, operator-accepted remaining-work assertion used by
+      canonical Reality when no Scenario estimate supersedes it. */
+  acceptedKnowledgeEstimate: AcceptedCapabilityEstimate | null;
+  estimateBasis: "work_rollup" | "knowledge_provisional" | "knowledge_accepted";
   /** Scenario-only named focus assumption and its isolated card outlook. */
   staffingPlan: CapabilityStaffingPlan | null;
   capabilityForecast: CapabilityForecastOutlook | null;
@@ -177,6 +180,7 @@ function summarise(
     accepted,
     knowledgeEstimates: [],
     activeKnowledgeEstimate: null,
+    acceptedKnowledgeEstimate: null,
     estimateBasis: "work_rollup",
     staffingPlan: null,
     capabilityForecast: null,
@@ -393,9 +397,10 @@ export function composeScopeFeatures(
     const activeKnowledgeEstimate = override
       ? capability.knowledgeEstimates?.find((estimate) => estimate.id === override.estimateId && estimate.contextSnapshotId === override.contextSnapshotId) ?? null
       : null;
+    const acceptedKnowledgeEstimate = capability.acceptedEstimate ?? null;
     const range = activeKnowledgeEstimate
       ? { low: override.low, likely: override.likely, high: override.high }
-      : base.range;
+      : acceptedKnowledgeEstimate?.range ?? base.range;
     const effortDays = expectedDays(range);
     const staffingPlan = capabilityStaffingById[capability.id] ?? null;
     return {
@@ -404,12 +409,17 @@ export function composeScopeFeatures(
       canonicalCapability: capability,
       knowledgeEstimates: capability.knowledgeEstimates ?? [],
       activeKnowledgeEstimate,
-      estimateBasis: activeKnowledgeEstimate ? "knowledge_provisional" as const : "work_rollup" as const,
+      acceptedKnowledgeEstimate,
+      estimateBasis: activeKnowledgeEstimate
+        ? "knowledge_provisional" as const
+        : acceptedKnowledgeEstimate
+          ? "knowledge_accepted" as const
+          : "work_rollup" as const,
       range,
       effortDays,
       loadDays: effortDays / (capacity > 0 ? capacity : 1),
       uncertainty: effortDays > 0 ? (range.high - range.low) / effortDays : 0,
-      placeholderCount: activeKnowledgeEstimate ? 0 : base.placeholderCount,
+      placeholderCount: activeKnowledgeEstimate || acceptedKnowledgeEstimate ? 0 : base.placeholderCount,
       staffingPlan,
       capabilityForecast: staffingPlan && startDate
         ? forecastCapability(capability.id, range, staffingPlan, startDate, targetDate)

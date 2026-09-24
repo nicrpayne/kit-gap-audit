@@ -31,29 +31,114 @@ export interface CapabilityKnowledgeEstimate {
   confidence: string | null;
 }
 
+/**
+ * The durable Scope assertion created when an operator accepts one immutable
+ * knowledge estimate as the current remaining-work basis. The source fields
+ * are copied deliberately: an accepted Reality assertion must survive the
+ * next knowledge snapshot and remain auditable even when Hermes supersedes
+ * the source object.
+ */
+export interface AcceptedCapabilityEstimate extends CapabilityKnowledgeEstimate {
+  range: ThreePoint;
+  unit: "developer_days";
+  acceptedAt: string;
+  acceptedBy: "operator";
+}
+
 export interface KnowledgeEstimateSubstitution {
   capabilityId: string;
   capabilityName: string;
   estimateId: string;
   range: ThreePoint;
   replacedItemIds: string[];
+  authority?: "accepted" | "provisional";
 }
 
 /** Replace, never add on top of, the execution rollup for a capability. */
-export function substituteCapabilityKnowledgeEstimates(
-  items: WorkItem[],
+export function substituteCapabilityKnowledgeEstimates<T extends WorkItem>(
+  items: T[],
   substitutions: KnowledgeEstimateSubstitution[],
-): WorkItem[] {
+): Array<T | (WorkItem & { estimateSource: "knowledge" })> {
   if (substitutions.length === 0) return items;
   const replaced = new Set(substitutions.flatMap((entry) => entry.replacedItemIds));
   return [
     ...items.filter((item) => !replaced.has(item.id)),
     ...substitutions.map((entry) => ({
       id: `knowledge-estimate:${entry.capabilityId}:${entry.estimateId}`,
-      label: `${entry.capabilityName} · provisional meeting estimate`,
+      label: `${entry.capabilityName} · ${entry.authority === "accepted" ? "accepted" : "provisional"} meeting estimate`,
+      estimateSource: "knowledge" as const,
       ...entry.range,
     })),
   ];
+}
+
+function nullableString(value: unknown): string | null {
+  return typeof value === "string" && value.trim() ? value : null;
+}
+
+function stringArray(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
+}
+
+function threePoint(value: unknown): ThreePoint | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const candidate = value as Record<string, unknown>;
+  const low = candidate.low;
+  const likely = candidate.likely;
+  const high = candidate.high;
+  if (
+    typeof low !== "number" || !Number.isFinite(low) || low <= 0 ||
+    typeof likely !== "number" || !Number.isFinite(likely) || likely < low ||
+    typeof high !== "number" || !Number.isFinite(high) || high < likely
+  ) return null;
+  return { low, likely, high };
+}
+
+export function acceptCapabilityKnowledgeEstimate(
+  estimate: CapabilityKnowledgeEstimate,
+  acceptedAt = new Date().toISOString(),
+): AcceptedCapabilityEstimate {
+  if (!estimate.range || estimate.unit !== "developer_days") {
+    throw new Error("Only an explicit developer-day range can become the accepted capability estimate.");
+  }
+  return { ...estimate, range: estimate.range, unit: "developer_days", acceptedAt, acceptedBy: "operator" };
+}
+
+/** Fail closed when reading the JSON Reality field. Invalid legacy or manual
+ * database content is ignored rather than allowed to alter a forecast. */
+export function acceptedCapabilityEstimate(value: unknown): AcceptedCapabilityEstimate | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const candidate = value as Record<string, unknown>;
+  const range = threePoint(candidate.range);
+  if (
+    !range || candidate.unit !== "developer_days" || candidate.basis !== "remaining_capability" ||
+    typeof candidate.id !== "string" || !candidate.id ||
+    typeof candidate.contextSnapshotId !== "string" || !candidate.contextSnapshotId ||
+    typeof candidate.capabilityId !== "string" || !candidate.capabilityId ||
+    typeof candidate.rawEstimate !== "string" || !candidate.rawEstimate ||
+    typeof candidate.statement !== "string" || !candidate.statement ||
+    typeof candidate.acceptedAt !== "string" || !Number.isFinite(Date.parse(candidate.acceptedAt)) ||
+    candidate.acceptedBy !== "operator"
+  ) return null;
+  return {
+    id: candidate.id,
+    contextSnapshotId: candidate.contextSnapshotId,
+    capabilityId: candidate.capabilityId,
+    rawEstimate: candidate.rawEstimate,
+    range,
+    unit: "developer_days",
+    basis: "remaining_capability",
+    speaker: nullableString(candidate.speaker),
+    owner: nullableString(candidate.owner),
+    observedAt: nullableString(candidate.observedAt),
+    sourceRef: nullableString(candidate.sourceRef),
+    excerpt: nullableString(candidate.excerpt),
+    evidenceRefs: stringArray(candidate.evidenceRefs),
+    statement: candidate.statement,
+    confidence: nullableString(candidate.confidence),
+    acceptedAt: candidate.acceptedAt,
+    acceptedBy: "operator",
+  };
 }
 
 type CapabilityRef = { id: string; name: string };

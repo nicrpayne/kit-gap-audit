@@ -96,6 +96,8 @@ export function TargetDetail({
   const d = (days: number) => fmtFull(forecastDateAtDay(startDate, days));
   const conf = targetDay === null ? null : confidenceAtDay(result.completionDaysSorted, targetDay);
   const overridden = targetDay !== null && targetDay !== savedTargetDay;
+  const likelyDay = Math.round(result.percentiles.p50);
+  const variance = targetDay === null ? null : likelyDay - targetDay;
 
   const step = (delta: number) => {
     const from = targetDay ?? Math.round(result.percentiles.p50);
@@ -103,56 +105,61 @@ export function TargetDetail({
   };
 
   return (
-    <ToolWindow open onClose={onClose} title="Target evaluation" subtitle={scope.name} width={380} dataShoot="tool-target">
+    <ToolWindow open onClose={onClose} title="Will we hit the date?" subtitle={scope.name} width={420} dataShoot="tool-target">
       <div className="px-5 py-4">
-        <p className="text-[11px] text-[var(--i-text-soft)] leading-relaxed">
-          A target is <strong className="text-[var(--i-text)]">evaluation, not forecast input</strong>. Moving it
-          never re-runs the simulation and never moves the object — it is a lookup against the same runs, which is
-          why the form holds still while the line sweeps through it.
-        </p>
-
         {targetDay === null ? (
           <>
-            <p className="mt-4 text-[11px] text-[var(--i-text-faint)] leading-relaxed">
-              No target is set on {scope.name}. You can evaluate a hypothetical one without saving anything.
+            <p className="text-[11.5px] text-[var(--i-text-soft)] leading-relaxed">
+              {scope.name} has no official target date yet. Set one in Timeline, or temporarily test a date here.
             </p>
             <button
               type="button"
               data-shoot="target-hypothetical"
               onClick={() => onSetOverride(Math.round(result.percentiles.p50))}
-              className="mt-3 w-full rounded-md px-3 py-2.5 text-[12px] font-medium transition-colors"
-              style={{ background: "var(--i-panel-raised)", color: "var(--i-text)", border: "1px solid var(--i-border-strong)" }}
+              className="mt-4 w-full rounded-md px-3 py-2.5 text-[12px] font-medium transition-colors"
+              style={{ background: "var(--i-signal)", color: "var(--i-void)", border: "1px solid var(--i-signal)" }}
             >
-              Evaluate a hypothetical target
+              Test the most likely finish date
             </button>
           </>
         ) : (
           <>
-            <div className="mt-4">
-              <Row k="Evaluating" v={d(targetDay)} changed={overridden} />
-              {savedTargetDay !== null && overridden && <Row k="Saved target" v={d(savedTargetDay)} />}
+            <div className="rounded-md px-3 py-3" style={{ background: "var(--i-recess)", border: "1px solid var(--i-border-strong)" }}>
+              <div className="i-label" style={{ color: savedTargetDay === null ? "var(--i-violet)" : "var(--i-signal)" }}>
+                {savedTargetDay === null ? "Testing only · not saved" : overridden ? "Testing a different date" : "Official target"}
+              </div>
+              <div className="mt-2 i-readout text-[24px] leading-none text-[var(--i-text)]">{d(targetDay)}</div>
+              <div className="mt-2 text-[10px] text-[var(--i-text-faint)]">Most likely finish · {d(likelyDay)}</div>
+            </div>
+
+            <div className="mt-3">
               <Row
-                k="Chance of hitting it"
+                k="Chance of finishing on time"
                 v={`${conf}%`}
                 tone={conf !== null && conf >= 70 ? "var(--i-mint)" : conf !== null && conf >= 40 ? "var(--i-amber)" : "var(--i-red)"}
                 note={`${conf} of every 100 runs land on or before it`}
               />
-              <Row k="Miss tail" v={`${100 - (conf ?? 0)}%`} note="the hatched part of the object" />
+              <Row k="Chance of finishing late" v={`${100 - (conf ?? 0)}%`} note="the striped part of the forecast" />
+              <Row
+                k="Most likely variance"
+                v={variance === 0 ? "On target" : `${Math.abs(variance ?? 0)}d ${variance !== null && variance > 0 ? "late" : "early"}`}
+              />
+              {savedTargetDay !== null && overridden && <Row k="Official target" v={d(savedTargetDay)} />}
             </div>
 
-            <div className="mt-4 grid grid-cols-4 gap-1.5">
+            <div className="mt-4 grid grid-cols-2 gap-1.5">
               {[
-                { l: "−7d", v: -7 },
-                { l: "−1d", v: -1 },
-                { l: "+1d", v: +1 },
-                { l: "+7d", v: +7 },
+                { l: "Test 1 week earlier", v: -7 },
+                { l: "Test 1 day earlier", v: -1 },
+                { l: "Test 1 day later", v: +1 },
+                { l: "Test 1 week later", v: +7 },
               ].map((b) => (
                 <button
                   key={b.l}
                   type="button"
                   data-shoot={`target-step-${b.v}`}
                   onClick={() => step(b.v)}
-                  className="rounded-md py-2 text-[12px] i-readout transition-colors hover:text-[var(--i-text)]"
+                  className="rounded-md px-2 py-2 text-[10.5px] transition-colors hover:text-[var(--i-text)]"
                   style={{ background: "var(--i-panel-raised)", color: "var(--i-text-soft)", border: "1px solid var(--i-border-strong)" }}
                 >
                   {b.l}
@@ -174,11 +181,18 @@ export function TargetDetail({
           </>
         )}
 
+        <details className="mt-4 rounded-md px-3 py-2.5" style={{ border: "1px solid var(--i-border)" }}>
+          <summary className="cursor-pointer text-[10.5px] text-[var(--i-text-soft)]">How this works</summary>
+          <p className="mt-2 text-[10px] text-[var(--i-text-faint)] leading-relaxed">
+            Testing a date does not change the forecast. Signal compares the date with the same simulation runs and reports how many finish on time. The official target is owned by Timeline.
+          </p>
+        </details>
+
         <Link
           href="/timeline"
           className="mt-4 block text-[10.5px] text-[var(--i-text-faint)] hover:text-[var(--i-text)] transition-colors"
         >
-          Timeline owns targets →
+          {savedTargetDay === null ? "Set the official target in Timeline →" : "Edit the official target in Timeline →"}
         </Link>
       </div>
     </ToolWindow>

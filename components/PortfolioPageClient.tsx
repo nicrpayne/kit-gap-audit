@@ -78,6 +78,9 @@ interface ScopeInputRow {
   targetDate: string | null;
   dependsOnScopeIds: string[];
   items: WorkItem[];
+  /** Canonical simulation inputs after accepted capability-level estimates
+      replace (rather than stack on) their linked ticket rollups. */
+  forecastItems: WorkItem[];
   gates: DecisionGate[];
   teamCapacity: number;
   capacitySource: "allocations" | "explicit" | "inferred";
@@ -289,7 +292,7 @@ export default function PortfolioPageClient() {
     const startDate = new Date(data.startDate);
     return data.scopes.map((s) => ({
       scopeId: s.scopeId,
-      items: s.items,
+      items: s.forecastItems,
       gates: s.gates,
       dependsOnScopeIds: s.dependsOnScopeIds,
       explicitTeamCapacity: s.explicitTeamCapacity,

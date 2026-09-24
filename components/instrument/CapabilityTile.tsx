@@ -436,7 +436,7 @@ export default function CapabilityTile({
   const spectral = material === "spectral";
   const raw = material === "raw";
   const accent = accentFor(material);
-  const hasEstimate = f.items.length > 0 || f.activeKnowledgeEstimate !== null;
+  const hasEstimate = f.items.length > 0 || f.activeKnowledgeEstimate !== null || f.acceptedKnowledgeEstimate !== null;
   const hasRange = hasEstimate && f.range.high - f.range.low > 0;
   const geom = tracePaths(f.range, f.items.length > 0, maxSpread, 200, 30);
   const mapped = f.items.length + f.done.length;
@@ -613,7 +613,7 @@ export default function CapabilityTile({
           </span>
         </div>
 
-        {(classLabel(f) || raw || out || f.activeKnowledgeEstimate) && (
+        {(classLabel(f) || raw || out || f.activeKnowledgeEstimate || f.acceptedKnowledgeEstimate) && (
           <div className="relative mt-1 flex items-center gap-1.5" style={{ minHeight: 12 }}>
             {classLabel(f) && (
               <span
@@ -636,6 +636,11 @@ export default function CapabilityTile({
             {f.activeKnowledgeEstimate && (
               <span className="text-[8px] font-semibold uppercase tracking-[0.1em]" style={{ color: "var(--i-violet)" }}>
                 provisional estimate
+              </span>
+            )}
+            {!f.activeKnowledgeEstimate && f.acceptedKnowledgeEstimate && (
+              <span className="text-[8px] font-semibold uppercase tracking-[0.1em]" style={{ color: "var(--i-mint)" }}>
+                meeting estimate · Reality
               </span>
             )}
           </div>
@@ -676,6 +681,8 @@ export default function CapabilityTile({
             <span>
               {f.activeKnowledgeEstimate
                 ? f.capabilityForecast ? "MEETING ESTIMATE + STAFFING · SCENARIO" : "MEETING ESTIMATE · SCENARIO"
+                : f.acceptedKnowledgeEstimate
+                ? f.capabilityForecast ? "ACCEPTED MEETING ESTIMATE + STAFFING" : "ACCEPTED MEETING ESTIMATE"
                 : f.capabilityForecast
                 ? "CAPABILITY FORECAST · SCENARIO"
                 : f.items.length === 0 && f.done.length === 0

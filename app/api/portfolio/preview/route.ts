@@ -169,7 +169,7 @@ export async function POST(req: NextRequest) {
   // assignees rung, without re-deriving it from Linear.
   const scenarioScopes: ScenarioInputScope[] = portfolio.scopes.map((s) => ({
     scopeId: s.scopeId,
-    items: s.items,
+    items: s.forecastItems,
     gates: s.gates,
     dependsOnScopeIds: s.dependsOnScopeIds,
     explicitTeamCapacity: s.explicitTeamCapacity,

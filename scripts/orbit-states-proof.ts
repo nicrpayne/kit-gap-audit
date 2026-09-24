@@ -69,6 +69,7 @@ const feature = (id: string, name: string, loadDays: number): Feature => ({
   accepted: false,
   knowledgeEstimates: [],
   activeKnowledgeEstimate: null,
+  acceptedKnowledgeEstimate: null,
   estimateBasis: "work_rollup",
   staffingPlan: null,
   capabilityForecast: null,

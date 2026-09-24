@@ -22,6 +22,7 @@ const cap = (id: string, name: string, status: string, externalIds: string[] = [
   provenance: { authority: "Scope", source: "operator", assertion: "Accepted product-shape truth", evidence: [{ ref: "context:jsa" }] },
   events: [{ id: `event-${id}`, action: "accept_scope", actor: "operator", createdAt: "2026-09-14T18:00:00.000Z" }],
   workLinks: externalIds.map((externalId) => ({ id: `link-${id}-${externalId}`, provider: "linear", externalId, externalUrl: `https://linear.example/${externalId}`, state: "active" })),
+  knowledgeEstimates: [], acceptedEstimate: null,
 });
 const capabilities = [
   cap("crew", "Crew acknowledgment", "accepted", linked.map((item) => item.id)),
@@ -40,7 +41,7 @@ const coverage = {
 const payload = {
   startDate: "2026-09-15T00:00:00.000Z", forecastSource: { asOf: "2026-09-15T18:30:00.000Z", provider: "Linear", temporalRole: "live", availability: "available" },
   scopes: [{
-    scopeId: "visual-jsa", name: "JSA", targetDate: "2026-10-31T00:00:00.000Z", dependsOnScopeIds: [], items: linked, executionItems, completedWork: [], gates: [], teamCapacity: 1,
+    scopeId: "visual-jsa", name: "JSA", targetDate: "2026-10-31T00:00:00.000Z", dependsOnScopeIds: [], items: linked, forecastItems: linked, executionItems, completedWork: [], gates: [], teamCapacity: 1,
     capacitySource: "inferred", explicitTeamCapacity: null, lastReport: null, reportHistory: [], capacityBasis: { kind: "inferred", assignees: ["JSA Team"], remainingIssueCount: 24, unassignedCount: 0 },
     capacityContract: { scopeId: "visual-jsa", workforceFte: 3, namedRawFte: 0, namedEffectiveFte: 0, forecastEffectiveFte: 1, source: "inferred", status: "legacy_inferred_unstaffed", reconciles: false },
     forecastSource: { asOf: "2026-09-15T18:30:00.000Z", provider: "Linear", temporalRole: "live", availability: "available" }, executionSource: { asOf: "2026-09-15T18:30:00.000Z", provider: "Linear", temporalRole: "live", availability: "available" },

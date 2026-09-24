@@ -156,7 +156,7 @@ export async function buildScenarioDecisionBriefReadModel(
   const portfolio = await buildPortfolioInputs();
   const target = portfolio.scopes.find((candidate) => candidate.scopeId === scope.id);
   if (!target) throw new ScenarioReportValidationError("Scenario project is no longer in the active portfolio.");
-  const allItemIds = new Set(portfolio.scopes.flatMap((candidate) => [...candidate.items, ...candidate.executionItems].map((item) => item.id)));
+  const allItemIds = new Set(portfolio.scopes.flatMap((candidate) => [...candidate.items, ...candidate.forecastItems, ...candidate.executionItems].map((item) => item.id)));
   const allGateIds = new Set(portfolio.scopes.flatMap((candidate) => candidate.gates.map((gate) => gate.id)));
   const allScopeIds = new Set(portfolio.scopes.map((candidate) => candidate.scopeId));
   const capabilityOwner = new Map(portfolio.scopes.flatMap((candidate) => candidate.capabilities.map((capability) => [capability.id, { scope: candidate, capability }] as const)));
@@ -191,7 +191,7 @@ export async function buildScenarioDecisionBriefReadModel(
 
   const scopes: ScenarioInputScope[] = portfolio.scopes.map((candidate) => ({
     scopeId: candidate.scopeId,
-    items: candidate.items,
+    items: candidate.forecastItems,
     gates: candidate.gates,
     dependsOnScopeIds: candidate.dependsOnScopeIds,
     explicitTeamCapacity: candidate.explicitTeamCapacity,
@@ -212,6 +212,14 @@ export async function buildScenarioDecisionBriefReadModel(
   const excludedCapabilities = new Set(scenario.excludedCapabilityIds);
   const scenarioScopes = scopes.map((candidate) => {
     const owner = portfolio.scopes.find((row) => row.scopeId === candidate.scopeId)!;
+    const excludedCapabilityItemIds = new Set(owner.capabilities
+      .filter((capability) => excludedCapabilities.has(capability.id))
+      .flatMap((capability) => [
+        ...capability.workLinks.map((link) => link.externalId),
+        ...(capability.acceptedEstimate
+          ? [`knowledge-estimate:${capability.id}:${capability.acceptedEstimate.id}`]
+          : []),
+      ]));
     const knowledgeSubstitutions = Object.entries(scenario.knowledgeEstimateByCapabilityId).flatMap(([capabilityId, selected]) => {
       const capability = owner.capabilities.find((row) => row.id === capabilityId);
       if (!capability || excludedCapabilities.has(capabilityId)) return [];
@@ -220,11 +228,16 @@ export async function buildScenarioDecisionBriefReadModel(
         capabilityName: capability.name,
         estimateId: selected.estimateId,
         range: { low: selected.low, likely: selected.likely, high: selected.high },
-        replacedItemIds: capability.workLinks.map((link) => link.externalId),
+        replacedItemIds: [
+          ...capability.workLinks.map((link) => link.externalId),
+          ...(capability.acceptedEstimate
+            ? [`knowledge-estimate:${capabilityId}:${capability.acceptedEstimate.id}`]
+            : []),
+        ],
       }];
     });
     const baseItems = [...candidate.items, ...owner.executionItems.filter((item) => included.has(item.id) && !candidate.items.some((base) => base.id === item.id))]
-      .filter((item) => !excluded.has(item.id))
+      .filter((item) => !excluded.has(item.id) && !excludedCapabilityItemIds.has(item.id))
       .map((item) => scenario.estimateOverrideByItemId[item.id] ? { ...item, ...scenario.estimateOverrideByItemId[item.id], estimateSource: "hint" as const } : item);
     return {
       ...candidate,
@@ -285,8 +298,11 @@ export async function buildScenarioDecisionBriefReadModel(
     const capability = target.capabilities.find((candidate) => candidate.id === capabilityId);
     if (!capability || excludedCapabilities.has(capabilityId)) return [];
     const knowledge = scenario.knowledgeEstimateByCapabilityId[capabilityId];
+    const acceptedKnowledge = capability.acceptedEstimate;
     const effortDays = knowledge
       ? { low: knowledge.low, likely: knowledge.likely, high: knowledge.high }
+      : acceptedKnowledge?.range
+        ? acceptedKnowledge.range
       : capability.workLinks
           .filter((link) => link.state === "active" || link.state === "configured")
           .map((link) => targetItems.get(link.externalId))
@@ -300,7 +316,11 @@ export async function buildScenarioDecisionBriefReadModel(
     return outlook ? [{
       capabilityId,
       name: capability.name,
-      estimateBasis: knowledge ? "knowledge_provisional" as const : "work_rollup" as const,
+      estimateBasis: knowledge
+        ? "knowledge_provisional" as const
+        : acceptedKnowledge
+          ? "knowledge_accepted" as const
+          : "work_rollup" as const,
       effortDays,
       contributors: staffing.contributors,
       staffingFte: outlook.staffingFte,
