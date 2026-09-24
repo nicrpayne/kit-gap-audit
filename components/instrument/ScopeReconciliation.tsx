@@ -275,7 +275,11 @@ function ReconciliationFocus({ item, nextItem, selection, capabilities, committi
         <div className="mt-5 rounded-lg p-4" style={{ background: "var(--i-recess)", border: "1px solid var(--i-border)" }}>
           <div className="text-[10px] uppercase tracking-[0.14em] text-[var(--i-text-faint)]">Current Reality</div>
           <div className="mt-2 text-[13px] font-medium text-[var(--i-text)]">{item.provenance.realityCapability?.name ?? "No accepted capability"}</div>
-          <div className="mt-1 text-[10px] text-[var(--i-text-faint)]">{item.provenance.realityCapability ? `${item.provenance.realityCapability.status} · revision ${item.provenance.realityCapability.revision}` : "Knowledge is proposing a new boundary; Reality remains unchanged."}</div>
+          <div className="mt-1 text-[10px] text-[var(--i-text-faint)]">{item.provenance.realityCapability
+            ? `${item.provenance.realityCapability.status} · revision ${item.provenance.realityCapability.revision}`
+            : item.origins.includes("knowledge")
+              ? "Knowledge is proposing a new boundary; Reality remains unchanged."
+              : "Linear work is awaiting operator classification; Reality remains unchanged."}</div>
         </div>
         <div className="mt-3 rounded-lg p-4" style={{ background: "color-mix(in srgb, var(--i-violet) 5%, var(--i-recess))", border: "1px solid color-mix(in srgb, var(--i-violet) 35%, var(--i-border))" }}>
           <div className="text-[10px] uppercase tracking-[0.14em] text-[var(--i-violet)]">Proposed change</div>
