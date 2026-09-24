@@ -66,7 +66,7 @@ import { readDominance } from "@/lib/scope/constraint";
 import { formatCapacity } from "@/lib/capacity/limits";
 import { formatDateOnly } from "@/lib/time/dateContract";
 import { partitionProductShape, type ShapeCapability } from "@/lib/scope/productShape";
-import type { ForecastCoverageContract } from "@/lib/forecast/coverage";
+import { evaluateForecastCoverage, type ForecastCoverageContract } from "@/lib/forecast/coverage";
 import { mutateReality } from "@/lib/instrument/reality";
 import type { ScopeWorkItem } from "@/lib/instrument/useProject";
 import ToolWindow from "@/components/instrument/ToolWindow";
@@ -304,6 +304,29 @@ export default function ScopeInstrument() {
     if (selection.releaseStatus !== "outside") continue;
     proposalBypassed.add(selection.targetCapabilityId ? `capability:${selection.targetCapabilityId}` : `proposal:${selection.itemId}`);
   }
+  const scenarioCoverageCapabilities = [
+    ...scenarioCapabilities.map((capability) => ({
+      status: proposalBypassed.has(`capability:${capability.id}`) ? "outside" : capability.status,
+      workLinks: capability.workLinks,
+    })),
+    ...proposalSelections
+      .filter((selection) => !selection.targetCapabilityId)
+      .map((selection) => ({
+        status: selection.releaseStatus,
+        workLinks: selection.itemIds.map((externalId) => ({ externalId, state: "active" })),
+      })),
+    ...m.scenario.draftFeatures.map((draft) => ({
+      status: "accepted",
+      workLinks: draft.itemIds.map((externalId) => ({ externalId, state: "active" })),
+    })),
+  ];
+  const scenarioCoverage = evaluateForecastCoverage({
+    executionState: scope.executionState,
+    issueIds: scope.executionItems.map((item) => item.id),
+    capabilities: scenarioCoverageCapabilities,
+    openShapeDecisionCount: scope.openShapeQuestions.filter((question) => !m.scenario.resolvedGateIds.has(question.id)).length,
+  });
+  const displayedCoverage = m.active ? scenarioCoverage : scope.forecastCoverage;
   const composition = composeScopeFeatures(
     scenarioItems,
     scope.completedWork,
@@ -689,7 +712,7 @@ export default function ScopeInstrument() {
                   movedDays={movedDays}
                   effortRemoved={effortRemoved}
                   active={m.active}
-                  canonicalForecast={scope.forecastCoverage.canonicalForecast && scope.capacityContract.reconciles}
+                  canonicalForecast={displayedCoverage.canonicalForecast && scope.capacityContract.reconciles}
                   dominancePhrase={dom?.dominated ? dom.phrase : null}
                   previewRelief={
                     carryingSeated && dragging ? dragging.effortDays / (capacity > 0 ? capacity : 1) : null
@@ -698,10 +721,11 @@ export default function ScopeInstrument() {
               </div>
 
               <ProductShapeSummary
-                accepted={productShape.accepted}
-                coverage={scope.forecastCoverage}
+                accepted={m.active ? scenarioProductShape.accepted : productShape.accepted}
+                coverage={displayedCoverage}
                 executionSource={scope.executionSource}
                 capacityReconciles={scope.capacityContract.reconciles}
+                scenario={m.active}
               />
 
               {/* ── MAIN: the deck, then the strata it rests on ─────────── */}
@@ -765,7 +789,7 @@ export default function ScopeInstrument() {
                   onOpenOutside={setEditing}
                 />
 
-                <ConstraintStrip gates={openGates} openQuestions={scope.openShapeQuestions} scopeId={scope.scopeId} dominance={dom} startDate={startDate} truthReady={scope.forecastCoverage.canonicalForecast && scope.capacityContract.reconciles} />
+                <ConstraintStrip gates={openGates} openQuestions={scope.openShapeQuestions} scopeId={scope.scopeId} dominance={dom} startDate={startDate} truthReady={displayedCoverage.canonicalForecast && scope.capacityContract.reconciles} />
 
                 <SignalStrip
                   capacityLabel={formatCapacity(capacity)}
@@ -1101,22 +1125,24 @@ function ProductShapeSummary({
   coverage,
   executionSource,
   capacityReconciles,
+  scenario,
 }: {
   accepted: ShapeCapability[];
   coverage: ForecastCoverageContract;
   executionSource: { asOf: string; availability: "available" | "empty" };
   capacityReconciles: boolean;
+  scenario: boolean;
 }) {
   const ready = coverage.state === "forecastable" && capacityReconciles;
   const tone = ready ? "var(--i-signal)" : "var(--i-amber)";
   return (
     <div className="mx-5 mb-3 grid shrink-0 grid-cols-3 gap-2" data-shoot="scope-product-shape-summary">
       <div className="min-w-0 rounded-lg border bg-[var(--i-panel)] px-3 py-2" style={{ borderColor: `color-mix(in srgb, ${tone} 35%, var(--i-border))` }} data-shoot="scope-coverage-state">
-        <div className="i-label" style={{ color: tone }}>{ready ? "DELIVERY CLAIM READY" : "FORECAST READINESS BLOCKED"}</div>
+        <div className="i-label" style={{ color: tone }}>{scenario ? ready ? "SCENARIO COVERAGE COMPLETE" : "SCENARIO READINESS BLOCKED" : ready ? "DELIVERY CLAIM READY" : "FORECAST READINESS BLOCKED"}</div>
         <div className="mt-1 truncate text-[9px] text-[var(--i-text-soft)]">{!capacityReconciles ? "Named capacity has not been reconciled to forecast capacity" : coverage.reason ?? "Canonical delivery forecast is supported"}</div>
       </div>
       <div className="min-w-0 rounded-lg border border-[var(--i-border)] bg-[var(--i-recess)] px-3 py-2">
-        <div className="i-label">Accepted shape mapped</div>
+        <div className="i-label">{scenario ? "Scenario shape mapped" : "Accepted shape mapped"}</div>
         <div className="mt-1 text-[9px] text-[var(--i-text-faint)]">{coverage.census.mappedAcceptedCapabilityCount}/{coverage.census.acceptedCapabilityCount} capabilities · {coverage.census.modeledExecutionIssueCount} modeled · {coverage.census.outsideExecutionIssueCount} out/later · {coverage.census.unmappedExecutionIssueCount} unresolved</div>
         {accepted.length === 0 && <div className="mt-0.5 truncate text-[8.5px] text-[var(--i-text-faint)]">No accepted Capability records; legacy execution grammar remains visible</div>}
       </div>
