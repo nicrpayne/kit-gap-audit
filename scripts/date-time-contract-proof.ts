@@ -36,6 +36,7 @@ const surfaces = [
   "Portfolio/Capacity",
   "Scope",
   "Timeline",
+  "Orbit",
 ] as const;
 
 for (const timezone of timezones) {
@@ -112,6 +113,7 @@ const migratedConsumers = [
   "components/portfolio/ScenarioInspector.tsx",
   "components/PortfolioPageClient.tsx",
   "components/instrument/ScopeInstrument.tsx",
+  "components/OrbitPageClient.tsx",
   "lib/timeline/geometry.ts",
 ] as const;
 for (const path of migratedConsumers) {
