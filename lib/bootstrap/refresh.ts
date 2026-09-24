@@ -194,7 +194,10 @@ export async function auditActivatedBootstrapRefresh(
       const watermark = object(scopeRefresh?.proposal.sourceWatermark);
       pipeline.scope = scopeRefresh ? {
         status: "complete",
-        at: scopeRefresh.proposal.generatedAt.toISOString(),
+        // This is the refresh receipt time, not the immutable proposal's
+        // creation time. The proposal may be reused when the Linear result is
+        // unchanged even though Linear was read again just now.
+        at: completedAt,
         proposalId: scopeRefresh.proposal.id,
         contextSnapshotId: scopeRefresh.proposal.contextSnapshotId,
         linearAsOf: typeof watermark.linearAsOf === "string" ? watermark.linearAsOf : null,
