@@ -42,7 +42,9 @@ export function computeMomentum(current: MomentumSnapshot, previous: MomentumSna
 // used both collapsed (paired with a time reference) and in prose.
 export function dateDeltaPhrase(days: number): string {
   if (days === 0) return "unchanged";
-  return days < 0 ? `${Math.abs(days)} days sooner` : `${days} days later`;
+  const magnitude = Math.abs(days);
+  const unit = magnitude === 1 ? "day" : "days";
+  return days < 0 ? `${magnitude} ${unit} sooner` : `${magnitude} ${unit} later`;
 }
 
 // "you'd win this bet 62 times out of 100" -- betting-odds framing for a

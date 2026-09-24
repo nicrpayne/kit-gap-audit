@@ -12,6 +12,7 @@ import {
 } from "../lib/reports/composer";
 import { renderAudienceBriefMarkdown, renderAudienceBriefPlainText } from "../lib/reports/audienceBriefRender";
 import { buildBriefPresentation, buildInteractiveBriefBundle, siteHandoffPrompt } from "../lib/reports/presentation";
+import { dateDeltaPhrase } from "../lib/momentum/compute";
 import { healthyOwnerFixture, missingNamedCapacityFixture, pivotPrototypeFixture } from "./lib/decision-brief-fixtures";
 
 const audiences = Object.keys(AUDIENCE_LABELS) as AudienceLens[];
@@ -19,6 +20,9 @@ const purposes = Object.keys(PURPOSE_LABELS) as BriefPurpose[];
 const brief = assembleDecisionBrief(healthyOwnerFixture());
 const fingerprint = briefPayloadFingerprint(brief);
 const canonical = JSON.stringify(brief);
+
+assert.equal(dateDeltaPhrase(-1), "1 day sooner", "singular earlier movement reads naturally");
+assert.equal(dateDeltaPhrase(1), "1 day later", "singular later movement reads naturally");
 
 for (const audience of audiences) {
   for (const purpose of purposes) {
