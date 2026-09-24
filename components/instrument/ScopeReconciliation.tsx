@@ -131,6 +131,11 @@ export default function ScopeReconciliation(props: {
     item.rationale.headline,
     ...item.provenance.linearItems.flatMap((work) => [work.identifier, work.title ?? ""]),
   ].join(" ").toLowerCase().includes(query.toLowerCase()));
+  const nextReviewItem = focused ? (() => {
+    const currentIndex = reviewItems.findIndex((item) => item.id === focused.id);
+    const ordered = [...reviewItems.slice(currentIndex + 1), ...reviewItems.slice(0, currentIndex)];
+    return ordered.find((item) => item.id !== focused.id && item.status !== "committed" && item.action !== "none" && !selectionByItem.has(item.id)) ?? null;
+  })() : null;
   const stagedItemIds = new Set(selections.map((selection) => selection.itemId));
   const bulkEligible = bulkStageEligibleItems(proposal?.items ?? [], stagedItemIds);
   const bulkEligibleTotal = (proposal?.items ?? []).filter(isBulkStageEligible).length;
@@ -200,7 +205,7 @@ export default function ScopeReconciliation(props: {
         </div>
       </aside>
 
-      <ReconciliationFocus item={focused} selection={focused ? selectionByItem.get(focused.id) : undefined} capabilities={capabilities} committing={committing} onClose={() => setFocusedId(null)} onStage={onStage} onUnstage={onUnstage} />
+      <ReconciliationFocus item={focused} nextItem={nextReviewItem} selection={focused ? selectionByItem.get(focused.id) : undefined} capabilities={capabilities} committing={committing} onClose={() => setFocusedId(null)} onReviewNext={(itemId) => setFocusedId(itemId)} onStage={onStage} onUnstage={onUnstage} />
     </>
   );
 }
@@ -221,7 +226,7 @@ function CandidateRow({ item, selected, onOpen }: { item: ScopeProposalItemView;
   </button>;
 }
 
-function ReconciliationFocus({ item, selection, capabilities, committing, onClose, onStage, onUnstage }: { item: ScopeProposalItemView | null; selection?: Selection; capabilities: { id: string; name: string; revision: number }[]; committing: boolean; onClose: () => void; onStage: (item: ScopeProposalItemView, targetCapabilityId: string | null, releaseStatus: "accepted" | "outside", itemIds?: string[]) => void; onUnstage: (itemId: string) => void }) {
+function ReconciliationFocus({ item, nextItem, selection, capabilities, committing, onClose, onReviewNext, onStage, onUnstage }: { item: ScopeProposalItemView | null; nextItem: ScopeProposalItemView | null; selection?: Selection; capabilities: { id: string; name: string; revision: number }[]; committing: boolean; onClose: () => void; onReviewNext: (itemId: string) => void; onStage: (item: ScopeProposalItemView, targetCapabilityId: string | null, releaseStatus: "accepted" | "outside", itemIds?: string[]) => void; onUnstage: (itemId: string) => void }) {
   const [target, setTarget] = useState("new");
   const [release, setRelease] = useState<"accepted" | "outside">("accepted");
   const [selectedWorkIds, setSelectedWorkIds] = useState<string[]>([]);
@@ -250,9 +255,14 @@ function ReconciliationFocus({ item, selection, capabilities, committing, onClos
     setSelectedWorkIds(next);
     applyCorrection(chosenTarget, release, next);
   };
+  const stageAndAdvance = () => {
+    onStage(item, chosenTarget, release, selectedWorkIds);
+    if (nextItem) onReviewNext(nextItem.id);
+  };
   return <ToolWindow open onClose={onClose} title="Scope reconciliation" subtitle={item.title} width={980} dataShoot="reconciliation-focus" footer={<div className="flex items-center gap-3 px-6 py-4">
     <div className="min-w-0 flex-1 text-[10px] leading-relaxed text-[var(--i-text-faint)]">{selectedWorkIds.length} of {item.workItemIds.length} Linear items selected. Staging is local and reversible; Commit is the only crossing into shared Reality.</div>
-    <button disabled={!actionable || committing || !hasReviewedEffect} onClick={() => selection ? onUnstage(item.id) : onStage(item, chosenTarget, release, selectedWorkIds)} className="min-w-[180px] rounded-md px-4 py-2.5 text-[11px] font-medium disabled:opacity-30" style={{ border: `1px solid ${selection ? "var(--i-violet)" : "var(--i-signal)"}`, color: selection ? "var(--i-violet)" : "var(--i-signal)" }} data-shoot="stage-focused-proposal">{item.status === "committed" ? "Committed" : item.reconciliationState === "conflict" ? "Resolve conflict first" : item.action === "none" ? "Judgment required" : selection ? "Unstage change" : "Stage selected work"}</button>
+    {nextItem && <button type="button" disabled={committing} onClick={() => onReviewNext(nextItem.id)} className="min-w-[120px] rounded-md px-3 py-2.5 text-[10px] text-[var(--i-text-soft)] disabled:opacity-30" style={{ border: "1px solid var(--i-border-strong)" }}>Review next →</button>}
+    <button disabled={!actionable || committing || !hasReviewedEffect} onClick={() => selection ? onUnstage(item.id) : stageAndAdvance()} className="min-w-[180px] rounded-md px-4 py-2.5 text-[11px] font-medium disabled:opacity-30" style={{ border: `1px solid ${selection ? "var(--i-violet)" : "var(--i-signal)"}`, color: selection ? "var(--i-violet)" : "var(--i-signal)" }} data-shoot="stage-focused-proposal">{item.status === "committed" ? "Committed" : item.reconciliationState === "conflict" ? "Resolve conflict first" : item.action === "none" ? "Judgment required" : selection ? "Unstage change" : nextItem ? "Stage & review next" : "Stage selected work"}</button>
   </div>}>
     <div className="grid min-h-full grid-cols-[1.05fr_1fr_0.9fr]">
       <section className="p-6" style={{ borderRight: "1px solid var(--i-border)" }}>
