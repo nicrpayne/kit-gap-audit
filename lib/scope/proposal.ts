@@ -572,12 +572,12 @@ export function compileScopeProposal(input: {
     let action: ScopeProposalAction = "none";
     if (!conflicts.length && target && workItemIds.length) action = "link_existing";
     if (!conflicts.length && !target && candidate.explicitKnowledge && releaseSignal !== "boundary") action = "create_capability";
-    if (
-      !conflicts.length
-      && linearOnly
-      && workItemIds.length > 0
-      && candidate.linearGroups.every((group) => Boolean(group.parent))
-    ) action = "create_capability";
+    // Linear alone cannot establish product shape, so these candidates stay
+    // low-confidence and are never bulk-stage eligible. It can still expose
+    // an operator action: explicitly link the work to accepted shape, create
+    // a reviewed boundary, or place it out/later. Without this, singleton
+    // execution exceptions make the coverage gate impossible to close.
+    if (!conflicts.length && linearOnly && workItemIds.length > 0) action = "create_capability";
     const corroborated = Boolean(target && workItemIds.length > 0 && missing.length === 0);
     let confidenceScore = 18;
     if (origins.includes("knowledge")) confidenceScore += candidate.explicitKnowledge ? 28 : 20;
@@ -605,7 +605,9 @@ export function compileScopeProposal(input: {
       ...(releaseSignal === "boundary" && !conflicts.length ? ["Available evidence does not establish a single in/out release decision."] : []),
     ];
     const headline = reconciliationState === "conflict" ? "Signals disagree; accepted Reality remains authoritative until an operator resolves the boundary."
-      : reconciliationState === "execution_exception" && action === "create_capability" ? `Linear contains ${workItemIds.length} current ${workItemIds.length === 1 ? "item" : "items"} under ${candidate.linearGroups[0]?.parent?.identifier}. Review whether to create a capability, attach selected work to an existing one, or defer it.`
+      : reconciliationState === "execution_exception" && action === "create_capability" ? candidate.linearGroups[0]?.parent
+        ? `Linear contains ${workItemIds.length} current ${workItemIds.length === 1 ? "item" : "items"} under ${candidate.linearGroups[0].parent.identifier}. Review whether to create a capability, attach selected work to an existing one, or defer it.`
+        : `Linear contains ${workItemIds.length} current ${workItemIds.length === 1 ? "item" : "items"} without grounded product shape. Review whether to link ${workItemIds.length === 1 ? "it" : "them"} to an accepted capability, create a boundary, or defer ${workItemIds.length === 1 ? "it" : "them"}.`
         : reconciliationState === "execution_exception" ? "Linear work has no grounded product-shape candidate yet."
         : reconciliationState === "reality_no_execution" ? "Accepted product shape currently has no active execution mapped."
           : reconciliationState === "knowledge_no_execution" ? "Structured knowledge proposes product shape, but current execution is absent."

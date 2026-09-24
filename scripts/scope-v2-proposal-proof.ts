@@ -24,6 +24,7 @@ const issues: LinearIssueSummary[] = [
   ...expectedClusters.flatMap(({ parent, title, children }) => cluster(parent, title, [...children])),
   ...cluster("LIN-100", "Telemetry housekeeping", ["LIN-101"]),
   ...cluster("LIN-200", "Audit export", ["LIN-201"]),
+  issue("LIN-300", "Orphan execution work"),
 ];
 const capabilities: ProposalCapability[] = [
   ["notifications", "JSA notifications"], ["pdf", "PDF / Docufy output"], ["offline", "Offline support"], ["approvals", "Submission and job-lead approvals"],
@@ -122,6 +123,13 @@ assert.equal(linearOnly?.reconciliationState, "execution_exception");
 assert.equal(linearOnly?.action, "create_capability", "a parent-backed Linear cluster should be reviewable by an operator");
 assert.equal(linearOnly?.confidence, "low", "Linear-only shape must remain low-confidence");
 assert.equal(isBulkStageEligible({ ...linearOnly!, id: linearOnly!.candidateKey, status: "suggested" }), false, "Linear-only shape must never enter bulk staging");
+
+const linearSingleton = compiled.items.find((item) => item.workItemIds.includes("LIN-300"));
+assert.equal(linearSingleton?.reconciliationState, "execution_exception");
+assert.equal(linearSingleton?.action, "create_capability", "an operator must be able to classify an unparented execution exception");
+assert.equal(linearSingleton?.confidence, "low");
+assert.match(linearSingleton?.rationale.headline ?? "", /link it to an accepted capability, create a boundary, or defer it/i);
+assert.equal(isBulkStageEligible({ ...linearSingleton!, id: linearSingleton!.candidateKey, status: "suggested" }), false, "operator-only singleton classification must never enter bulk staging");
 
 const deferred = compiled.items.find((item) => item.title === "Advanced analytics");
 assert.equal(deferred?.releaseSignal, "likely_out");
