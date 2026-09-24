@@ -448,9 +448,9 @@ function digest(value: unknown): string {
 /**
  * Deterministic three-ledger reconciliation. Current structured intelligence
  * may propose shape, accepted Scope Reality is the governed baseline, and
- * Linear corroborates execution. A parent-backed Linear-only cluster may be
- * offered for explicit operator review, but is deliberately low-confidence
- * and therefore never eligible for bulk staging.
+ * Linear corroborates execution. A Linear-only cluster may be offered for
+ * explicit operator review, but is deliberately low-confidence and therefore
+ * never eligible for bulk staging.
  */
 export function compileScopeProposal(input: {
   includeTriage: boolean;
@@ -521,7 +521,12 @@ export function compileScopeProposal(input: {
   for (const group of linearGroups) {
     const groupText = `${group.parent?.title ?? group.issues[0].title} ${group.parent?.description ?? ""} ${group.issues.map((issue) => issue.title).join(" ")}`;
     const groupTitle = group.parent?.title ?? group.issues[0].title;
-    const ranked = candidates.map((candidate) => {
+    // Pure Linear exceptions are not product-shape authority and must never
+    // become magnets for later groups. Only governed Reality or structured
+    // Knowledge may corroborate multiple execution groups. Parent/child work
+    // is already grouped above by its explicit Linear hierarchy.
+    const shapeCandidates = candidates.filter((candidate) => candidate.reality || candidate.knowledgeRefs.length > 0);
+    const ranked = shapeCandidates.map((candidate) => {
       const titleMatch = similarity(groupTitle, candidate.title);
       const fullMatch = similarity(groupText, `${candidate.title} ${candidate.description ?? ""}`);
       return { candidate, score: Math.max(titleMatch.score, fullMatch.score), shared: titleMatch.score >= fullMatch.score ? titleMatch.shared : fullMatch.shared };

@@ -25,6 +25,8 @@ const issues: LinearIssueSummary[] = [
   ...cluster("LIN-100", "Telemetry housekeeping", ["LIN-101"]),
   ...cluster("LIN-200", "Audit export", ["LIN-201"]),
   issue("LIN-300", "Orphan execution work"),
+  issue("LIN-301", "[SAFETY FRONTEND/BACKEND] Update Declined to Rejected in Enum"),
+  issue("LIN-302", "JSA Submissions Table: Should we have an indicator that a JSA is incomplete?"),
 ];
 const capabilities: ProposalCapability[] = [
   ["notifications", "JSA notifications"], ["pdf", "PDF / Docufy output"], ["offline", "Offline support"], ["approvals", "Submission and job-lead approvals"],
@@ -130,6 +132,11 @@ assert.equal(linearSingleton?.action, "create_capability", "an operator must be 
 assert.equal(linearSingleton?.confidence, "low");
 assert.match(linearSingleton?.rationale.headline ?? "", /link it to an accepted capability, create a boundary, or defer it/i);
 assert.equal(isBulkStageEligible({ ...linearSingleton!, id: linearSingleton!.candidateKey, status: "suggested" }), false, "operator-only singleton classification must never enter bulk staging");
+
+const adjacentSingletons = compiled.items.filter((item) => item.workItemIds.some((identifier) => ["LIN-301", "LIN-302"].includes(identifier)));
+assert.equal(adjacentSingletons.length, 2, "unparented Linear exceptions must not absorb one another through lexical similarity");
+assert.deepEqual(adjacentSingletons.map((item) => item.workItemIds), [["LIN-301"], ["LIN-302"]]);
+assert.ok(adjacentSingletons.every((item) => item.action === "create_capability" && item.confidence === "low"));
 
 const deferred = compiled.items.find((item) => item.title === "Advanced analytics");
 assert.equal(deferred?.releaseSignal, "likely_out");
