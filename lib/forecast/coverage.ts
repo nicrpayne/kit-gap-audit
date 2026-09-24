@@ -66,11 +66,24 @@ export interface ForecastCoverageInput {
 
 const ACTIVE_LINK_STATES = new Set(["active", "configured"]);
 
-/** Coverage governs unresolved delivery work, not historical shipped rows. */
+/** Coverage governs the same executable leaf work as the simulation, not
+    historical shipped rows or Linear grouping parents represented by an
+    open child. A dangling parent still counts because no child represents
+    its delivery work. */
 export function deliveryRelevantIssueIds(
-  issues: { identifier: string; completedAt: string | null }[],
+  issues: { identifier: string; completedAt: string | null; stateType?: string; parentIdentifier?: string | null }[],
+  includeTriage = true,
 ): string[] {
-  return issues.filter((issue) => issue.completedAt === null).map((issue) => issue.identifier);
+  const remaining = issues.filter((issue) =>
+    issue.completedAt === null
+    && issue.stateType !== "completed"
+    && issue.stateType !== "canceled"
+    && (includeTriage || issue.stateType !== "triage")
+  );
+  const representedParents = new Set(
+    remaining.map((issue) => issue.parentIdentifier).filter((identifier): identifier is string => Boolean(identifier)),
+  );
+  return remaining.filter((issue) => !representedParents.has(issue.identifier)).map((issue) => issue.identifier);
 }
 
 /**

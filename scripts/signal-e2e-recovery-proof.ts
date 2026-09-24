@@ -46,11 +46,15 @@ assert.equal(realityScopes[0].items.length, 2, "scenario transforms must not mut
 
 assert.deepEqual(
   deliveryRelevantIssueIds([
+    { identifier: "PARENT-1", completedAt: null, stateType: "unstarted", parentIdentifier: null },
+    { identifier: "CHILD-1", completedAt: null, stateType: "unstarted", parentIdentifier: "PARENT-1" },
     { identifier: "OPEN-1", completedAt: null },
     { identifier: "SHIPPED-1", completedAt: "2026-09-17T00:00:00.000Z" },
-  ]),
-  ["OPEN-1"],
-  "forecast coverage must not require shipped history to be adopted into current Capability scope",
+    { identifier: "CANCELED-1", completedAt: null, stateType: "canceled" },
+    { identifier: "TRIAGE-1", completedAt: null, stateType: "triage" },
+  ], false),
+  ["CHILD-1", "OPEN-1"],
+  "forecast coverage must use executable leaves and exclude shipped, canceled, triage, and represented parent rows",
 );
 
 const bootstrapUi = readFileSync(new URL("../components/bootstrap/BootstrapWorkspace.tsx", import.meta.url), "utf8");

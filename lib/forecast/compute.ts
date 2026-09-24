@@ -284,12 +284,10 @@ async function buildScopeSimInputs(scope: Scope): Promise<ScopeSimBundle> {
 
   const forecastCoverage = evaluateForecastCoverage({
     executionState: scope.executionState,
-    // Coverage is a gate on work that can still move delivery. Historical
-    // completed/cancelled rows remain in the execution census and report
-    // history, but requiring every shipped ticket to be adopted into today's
-    // accepted Capability graph makes a bounded active release impossible to
-    // govern (and recreates the legacy "clean up the whole backlog" trap).
-    issueIds: deliveryRelevantIssueIds(issues),
+    // Coverage gates the exact executable leaf boundary the simulation uses.
+    // Historical rows and Linear grouping parents remain in source history,
+    // but neither is a second delivery item that must be classified.
+    issueIds: deliveryRelevantIssueIds(issues, scope.includeTriage),
     capabilities,
     openShapeDecisionCount,
   });
