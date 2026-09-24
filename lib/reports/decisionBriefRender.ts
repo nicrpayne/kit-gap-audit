@@ -92,6 +92,7 @@ export function renderDecisionBriefMarkdown(brief: DecisionBriefV1): string {
   out.push("## What can move");
   const scope = brief.movable.scope.value;
   out.push(`Executable Scope: ${scope.executableItemCount} canonical work item${scope.executableItemCount === 1 ? "" : "s"}; ${n(scope.remainingEffortDays.low)} / ${n(scope.remainingEffortDays.likely)} / ${n(scope.remainingEffortDays.high)} days low / likely / high. [Open Scope](${scope.href})`);
+  if (scope.estimateQuality) out.push(`Estimate quality: ${scope.estimateQuality.pointsIssueCount} Linear-estimated · ${scope.estimateQuality.aiCount} AI-estimated · ${scope.estimateQuality.placeholderIssueCount + scope.estimateQuality.placeholderFindingCount} placeholders · ${scope.estimateQuality.placeholderEffortSharePct}% of likely effort rests on placeholders.`);
   if (scope.capabilityOutlooks?.length) {
     out.push("Isolated capability outlooks");
     for (const outlook of scope.capabilityOutlooks) {

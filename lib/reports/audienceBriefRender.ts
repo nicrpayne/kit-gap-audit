@@ -95,6 +95,7 @@ function moduleMarkdown(id: BriefModuleId, density: ModuleDensity, brief: Decisi
       heading("Executable Scope");
       const scope = brief.movable.scope.value;
       out.push(`**${scope.executableItemCount} canonical work items · ${number(scope.remainingEffortDays.low)}/${number(scope.remainingEffortDays.likely)}/${number(scope.remainingEffortDays.high)} effort days** · [Open Scope](${scope.href})`);
+      if (scope.estimateQuality) out.push(`Estimate quality: ${scope.estimateQuality.pointsIssueCount} Linear-estimated · ${scope.estimateQuality.aiCount} AI-estimated · ${scope.estimateQuality.placeholderIssueCount + scope.estimateQuality.placeholderFindingCount} placeholders · ${scope.estimateQuality.placeholderEffortSharePct}% of likely effort rests on placeholders.`);
       if (scope.capabilityOutlooks?.length) {
         out.push("", "Isolated capability outlooks — each assumes its named contributors stay focused on that card:");
         for (const outlook of scope.capabilityOutlooks) {

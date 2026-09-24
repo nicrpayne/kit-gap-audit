@@ -3,6 +3,7 @@ import "server-only";
 import type { Prisma, Scope } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { buildPortfolioInputs } from "@/lib/forecast/compute";
+import { estimateQualityForItems } from "@/lib/forecast/build";
 import { runPortfolioSimulation } from "@/lib/forecast/portfolio";
 import { applyScenarioInputDelta, type ScenarioInputDelta, type ScenarioInputScope } from "@/lib/scenario/inputDelta";
 import { toDateOnly } from "@/lib/time/dateContract";
@@ -224,7 +225,7 @@ export async function buildScenarioDecisionBriefReadModel(
     });
     const baseItems = [...candidate.items, ...owner.executionItems.filter((item) => included.has(item.id) && !candidate.items.some((base) => base.id === item.id))]
       .filter((item) => !excluded.has(item.id))
-      .map((item) => scenario.estimateOverrideByItemId[item.id] ? { ...item, ...scenario.estimateOverrideByItemId[item.id] } : item);
+      .map((item) => scenario.estimateOverrideByItemId[item.id] ? { ...item, ...scenario.estimateOverrideByItemId[item.id], estimateSource: "hint" as const } : item);
     return {
       ...candidate,
       items: substituteCapabilityKnowledgeEstimates(baseItems, knowledgeSubstitutions),
@@ -261,6 +262,7 @@ export async function buildScenarioDecisionBriefReadModel(
     latestDate: toDateOnly(scenarioResult.latestDate),
     confidenceAtTarget: scenarioResult.confidenceAtTarget,
     remainingIssueCount: scenarioSpecs.find((candidate) => candidate.scopeId === scope.id)?.items.length ?? 0,
+    estimateQuality: estimateQualityForItems(scenarioScopes.find((candidate) => candidate.scopeId === scope.id)?.items ?? []),
     remainingEffortDays: scenarioResult.remainingEffortDays,
     decisionDelayDays: scenarioResult.decisionDelayDays,
   };

@@ -112,6 +112,24 @@ export interface EstimateQuality {
   placeholderEffortSharePct: number; // % of likely effort-days from placeholders
 }
 
+export function estimateQualityForItems(items: Array<ThreePoint & { estimateSource?: EstimateSource }>): EstimateQuality {
+  const totalLikely = items.reduce((sum, item) => sum + item.likely, 0);
+  const placeholderLikely = items
+    .filter((item) => item.estimateSource === "issue_placeholder" || item.estimateSource === "finding_placeholder")
+    .reduce((sum, item) => sum + item.likely, 0);
+  return {
+    aiCount: items.filter((item) => item.estimateSource === "ai").length,
+    pointsIssueCount: items.filter((item) => item.estimateSource === "points").length,
+    placeholderIssueCount: items.filter((item) => item.estimateSource === "issue_placeholder").length,
+    // A Scenario-authored range or source-attributed capability range has no
+    // legacy estimateSource field; it is nevertheless a governed range, not
+    // a placeholder guess, and belongs in this non-placeholder bucket.
+    hintFindingCount: items.filter((item) => item.estimateSource === "hint" || item.estimateSource === undefined).length,
+    placeholderFindingCount: items.filter((item) => item.estimateSource === "finding_placeholder").length,
+    placeholderEffortSharePct: totalLikely > 0 ? Math.round((placeholderLikely / totalLikely) * 100) : 0,
+  };
+}
+
 // What the AI estimator contributed and surfaced for this forecast.
 export interface AiEstimateStats {
   aiItemCount: number;
@@ -331,19 +349,7 @@ export function buildForecastInputs(
     capacitySource = "inferred";
   }
 
-  const totalLikely = items.reduce((sum, i) => sum + i.likely, 0);
-  const placeholderLikely = items
-    .filter((i) => i.estimateSource === "issue_placeholder" || i.estimateSource === "finding_placeholder")
-    .reduce((sum, i) => sum + i.likely, 0);
-
-  const estimateQuality: EstimateQuality = {
-    aiCount: items.filter((i) => i.estimateSource === "ai").length,
-    pointsIssueCount: items.filter((i) => i.estimateSource === "points").length,
-    placeholderIssueCount: items.filter((i) => i.estimateSource === "issue_placeholder").length,
-    hintFindingCount: items.filter((i) => i.estimateSource === "hint").length,
-    placeholderFindingCount: items.filter((i) => i.estimateSource === "finding_placeholder").length,
-    placeholderEffortSharePct: totalLikely > 0 ? Math.round((placeholderLikely / totalLikely) * 100) : 0,
-  };
+  const estimateQuality = estimateQualityForItems(items);
 
   return {
     items,

@@ -143,7 +143,7 @@ export function deliveryDrivers(brief: DecisionBriefV1): DeliveryDriver[] {
       id: "scope:executable",
       family: "scope",
       label: `${scope.executableItemCount} executable work item${scope.executableItemCount === 1 ? "" : "s"}`,
-      detail: `${scope.remainingEffortDays.low}/${scope.remainingEffortDays.likely}/${scope.remainingEffortDays.high} effort days low/likely/high`,
+      detail: `${scope.remainingEffortDays.low}/${scope.remainingEffortDays.likely}/${scope.remainingEffortDays.high} effort days low/likely/high${scope.estimateQuality ? ` · ${scope.estimateQuality.placeholderIssueCount + scope.estimateQuality.placeholderFindingCount} placeholder estimates (${scope.estimateQuality.placeholderEffortSharePct}% of likely effort)` : ""}`,
       owner: "Forecast",
       href: scope.href,
     });

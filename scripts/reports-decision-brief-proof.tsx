@@ -114,6 +114,9 @@ const refreshSource = refreshed.identity.sourceSnapshots.find((source) => source
 assert.equal(refreshSource?.sourceId, "refresh-run-4");
 assert.equal(refreshSource?.currentness, "current");
 assert(renderDecisionBriefMarkdown(refreshed).includes("Run 4 complete · Knowledge complete · Audit complete · Linear + Scope complete"));
+assert.deepEqual(refreshed.movable.scope.value.estimateQuality, healthyOwnerFixture().forecast.estimateQuality);
+assert(renderDecisionBriefMarkdown(refreshed).includes("2 placeholders · 16% of likely effort rests on placeholders"));
+assert(refreshed.caveats.value.some((caveat) => caveat.code === "ESTIMATE_QUALITY"));
 const missingRefreshInputs = healthyOwnerFixture();
 missingRefreshInputs.refresh = {
   scanId: null,

@@ -35,6 +35,7 @@ export function healthyOwnerFixture(): DecisionBriefOwnerInputs {
       remainingIssueCount: 12,
       unticketedFindingCount: 1,
       remainingEffortDays: { low: 25, likely: 38, high: 57 },
+      estimateQuality: { aiCount: 0, pointsIssueCount: 10, placeholderIssueCount: 2, hintFindingCount: 0, placeholderFindingCount: 0, placeholderEffortSharePct: 16 },
       decisionDelayDays: { low: 1, likely: 3, high: 6 },
       scenarios: [{ id: "resolve-decisions", label: "Resolve the open blocking decision", likelyDate: "2026-10-29T00:00:00.000Z", deltaDays: -3, confidenceAtTarget: 84 }],
     },

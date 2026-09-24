@@ -224,6 +224,7 @@ export async function loadDecisionBriefOwnerInputs(
       remainingIssueCount: forecast.breakdown.remainingIssueCount,
       unticketedFindingCount: forecast.breakdown.unticketedFindingCount,
       remainingEffortDays: forecast.breakdown.remainingEffortDays,
+      estimateQuality: forecast.breakdown.estimateQuality,
       decisionDelayDays: forecast.breakdown.decisionDelayDays,
       scenarios: forecast.scenarios.map((scenario) => ({ ...scenario, likelyDate: toDateOnly(scenario.likelyDate) })),
     },

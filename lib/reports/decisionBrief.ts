@@ -7,6 +7,8 @@
  * persistence happens only after this value is complete.
  */
 
+import type { EstimateQuality } from "@/lib/forecast/build";
+
 export const DECISION_BRIEF_VERSION = "decision-brief.v1" as const;
 
 export type BriefMode = "reality" | "scenario";
@@ -129,6 +131,7 @@ export interface DecisionBriefOwnerInputs {
     remainingIssueCount: number;
     unticketedFindingCount: number;
     remainingEffortDays: { low: number; likely: number; high: number };
+    estimateQuality: EstimateQuality;
     decisionDelayDays: { low: number; likely: number; high: number };
     scenarios: { id: string; label: string; likelyDate: string; deltaDays: number; confidenceAtTarget: number | null }[];
   };
@@ -222,6 +225,7 @@ export interface DecisionBriefV1 {
     scope: Sourced<{
       executableItemCount: number;
       remainingEffortDays: { low: number; likely: number; high: number };
+      estimateQuality?: EstimateQuality;
       href: string;
       /** Present on Scenario briefs that carry explicit named focus for a
           capability. Older immutable V1 reports legitimately omit it. */
@@ -404,6 +408,8 @@ export function assembleDecisionBrief(input: DecisionBriefOwnerInputs): Decision
   if (weak.length) caveats.push({ code: "WEAK_GROUNDING", message: `${weak.length} current Finding${weak.length === 1 ? " is" : "s are"} not grounded to passage-level evidence.` });
   if (suspicious.length) caveats.push({ code: "TEST_RESIDUE", message: `${suspicious.length} suspicious test Decision/Gate record${suspicious.length === 1 ? "" : "s"} remain for governed disposition.` });
   if (input.audit.comparisonCurrentness === "unavailable") caveats.push({ code: "AUDIT_DELTA_UNAVAILABLE", message: "Exact current/prior Audit membership is unavailable for runs sharing the same source snapshot; no change is inferred from absence." });
+  const placeholderEstimateCount = input.forecast.estimateQuality.placeholderIssueCount + input.forecast.estimateQuality.placeholderFindingCount;
+  if (placeholderEstimateCount > 0) caveats.push({ code: "ESTIMATE_QUALITY", message: `${placeholderEstimateCount} modeled work item${placeholderEstimateCount === 1 ? " uses" : "s use"} wide placeholder estimates, representing ${input.forecast.estimateQuality.placeholderEffortSharePct}% of likely effort.` });
   if (input.refresh.currentness !== "current") caveats.push({ code: "REFRESH_RECEIPT_INCOMPLETE", message: input.refresh.note });
   if (forecastCurrentness === "stale") caveats.push({ code: "FORECAST_STALE", message: `The live Forecast owner read is stale (${forecastAgeDays} days old; as of ${input.forecast.asOf}).` });
 
@@ -470,6 +476,7 @@ export function assembleDecisionBrief(input: DecisionBriefOwnerInputs): Decision
         value: {
           executableItemCount: input.forecast.remainingIssueCount,
           remainingEffortDays: input.forecast.remainingEffortDays,
+          estimateQuality: input.forecast.estimateQuality,
           href: decisionBriefHref("/scope", input.project.id),
         },
         source: forecastSource,

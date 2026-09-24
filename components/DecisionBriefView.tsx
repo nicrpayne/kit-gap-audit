@@ -146,6 +146,7 @@ export default function DecisionBriefView({ brief }: { brief: DecisionBriefV1 })
         <div className="mb-4 rounded-lg border border-[var(--i-border)] bg-[var(--i-panel)] p-4 text-sm">
           <div className="text-[9px] font-semibold uppercase tracking-wider text-[var(--i-text-faint)]">Executable canonical Scope</div>
           <div className="mt-1">{brief.movable.scope.value.executableItemCount} work item{brief.movable.scope.value.executableItemCount === 1 ? "" : "s"} · {fte(brief.movable.scope.value.remainingEffortDays.low)} / {fte(brief.movable.scope.value.remainingEffortDays.likely)} / {fte(brief.movable.scope.value.remainingEffortDays.high)} days</div>
+          {brief.movable.scope.value.estimateQuality && <div className="mt-2 text-[11px] text-[var(--i-text-faint)]">Estimate quality · {brief.movable.scope.value.estimateQuality.pointsIssueCount} Linear-estimated · {brief.movable.scope.value.estimateQuality.aiCount} AI-estimated · {brief.movable.scope.value.estimateQuality.placeholderIssueCount + brief.movable.scope.value.estimateQuality.placeholderFindingCount} placeholders · {brief.movable.scope.value.estimateQuality.placeholderEffortSharePct}% of likely effort rests on placeholders</div>}
           <Link href={brief.movable.scope.value.href} className="mt-2 inline-block text-xs text-[var(--i-signal)] hover:underline">Open Scope →</Link>
           {!!brief.movable.scope.value.capabilityOutlooks?.length && (
             <div className="mt-4 border-t border-[var(--i-border)] pt-3">
