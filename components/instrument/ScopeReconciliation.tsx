@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import ToolWindow from "@/components/instrument/ToolWindow";
 import type { ScopeWorkItem, SuiteScenario } from "@/lib/instrument/useProject";
 import { bulkStageEligibleItems, isBulkStageEligible } from "@/lib/scope/proposalEligibility";
@@ -231,12 +231,21 @@ function ReconciliationFocus({ item, nextItem, selection, capabilities, committi
   const [target, setTarget] = useState("new");
   const [release, setRelease] = useState<"accepted" | "outside">("accepted");
   const [selectedWorkIds, setSelectedWorkIds] = useState<string[]>([]);
+  const targetRef = useRef(target);
+  const releaseRef = useRef(release);
+  const selectedWorkIdsRef = useRef(selectedWorkIds);
   const identity = item ? `${item.id}:${selection?.targetCapabilityId ?? item.targetCapabilityId ?? "new"}:${selection?.releaseStatus ?? item.releaseSignal}:${selection?.itemIds.join(",") ?? "default"}` : "none";
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!item) return;
-    setTarget(selection?.targetCapabilityId ?? item.targetCapabilityId ?? "new");
-    setRelease(selection?.releaseStatus ?? (item.releaseSignal === "likely_out" ? "outside" : "accepted"));
-    setSelectedWorkIds(selection?.itemIds ?? item.workItemIds);
+    const nextTarget = selection?.targetCapabilityId ?? item.targetCapabilityId ?? "new";
+    const nextRelease = selection?.releaseStatus ?? (item.releaseSignal === "likely_out" ? "outside" : "accepted");
+    const nextWorkIds = selection?.itemIds ?? item.workItemIds;
+    targetRef.current = nextTarget;
+    releaseRef.current = nextRelease;
+    selectedWorkIdsRef.current = nextWorkIds;
+    setTarget(nextTarget);
+    setRelease(nextRelease);
+    setSelectedWorkIds(nextWorkIds);
   }, [identity, item, selection]);
   if (!item) return null;
   const claimedElsewhere = item.provenance.claimedElsewhere ?? [];
@@ -251,15 +260,18 @@ function ReconciliationFocus({ item, nextItem, selection, capabilities, committi
     const next = selectedWorkIds.includes(workId)
       ? selectedWorkIds.filter((id) => id !== workId)
       : [...selectedWorkIds, workId];
+    selectedWorkIdsRef.current = next;
     setSelectedWorkIds(next);
     applyCorrection(chosenTarget, release, next);
   };
   const chooseWork = (next: string[]) => {
+    selectedWorkIdsRef.current = next;
     setSelectedWorkIds(next);
     applyCorrection(chosenTarget, release, next);
   };
   const stageAndAdvance = () => {
-    onStage(item, chosenTarget, release, selectedWorkIds);
+    const currentTarget = targetRef.current === "new" ? null : targetRef.current;
+    onStage(item, currentTarget, releaseRef.current, selectedWorkIdsRef.current);
     if (nextItem) onReviewNext(nextItem.id);
   };
   return <ToolWindow open onClose={onClose} title="Scope reconciliation" subtitle={item.title} width={980} dataShoot="reconciliation-focus" footer={<div className="flex items-center gap-3 px-6 py-4">
@@ -286,7 +298,7 @@ function ReconciliationFocus({ item, nextItem, selection, capabilities, committi
           <p className="mt-2 text-[11px] leading-relaxed text-[var(--i-text-soft)]">{item.rationale.headline}</p>
         </div>
         {item.conflicts.length > 0 && <div className="mt-3 rounded-lg border border-[var(--i-red)]/40 bg-[var(--i-red)]/5 p-4" data-shoot="focused-conflict"><div className="text-[10px] uppercase tracking-[0.14em] text-[var(--i-red)]">Conflict</div>{item.conflicts.map((conflict) => <p key={conflict} className="mt-2 text-[10.5px] leading-relaxed text-[var(--i-text-soft)]">{conflict}</p>)}</div>}
-        {actionable && <div className="mt-5 grid grid-cols-[1fr_110px] gap-2"><label className="text-[9px] uppercase tracking-[0.12em] text-[var(--i-text-faint)]">Capability<select value={target} onChange={(event) => { const value = event.target.value; setTarget(value); applyCorrection(value === "new" ? null : value, release); }} className="mt-1.5 w-full rounded-md px-2.5 py-2 text-[10.5px] normal-case tracking-normal" style={{ border: "1px solid var(--i-border-strong)", background: "#0b0f12", color: "var(--i-text)" }}><option value="new">New capability</option>{capabilities.map((capability) => <option key={capability.id} value={capability.id}>{capability.name}</option>)}</select></label><label className="text-[9px] uppercase tracking-[0.12em] text-[var(--i-text-faint)]">Release<select value={release} onChange={(event) => { const value = event.target.value as "accepted" | "outside"; setRelease(value); applyCorrection(chosenTarget, value); }} className="mt-1.5 w-full rounded-md px-2.5 py-2 text-[10.5px] normal-case tracking-normal" style={{ border: "1px solid var(--i-border-strong)", background: "#0b0f12", color: "var(--i-text)" }}><option value="accepted">In</option><option value="outside">Out / later</option></select></label></div>}
+        {actionable && <div className="mt-5 grid grid-cols-[1fr_110px] gap-2"><label className="text-[9px] uppercase tracking-[0.12em] text-[var(--i-text-faint)]">Capability<select value={target} onChange={(event) => { const value = event.target.value; targetRef.current = value; setTarget(value); applyCorrection(value === "new" ? null : value, release); }} className="mt-1.5 w-full rounded-md px-2.5 py-2 text-[10.5px] normal-case tracking-normal" style={{ border: "1px solid var(--i-border-strong)", background: "#0b0f12", color: "var(--i-text)" }}><option value="new">New capability</option>{capabilities.map((capability) => <option key={capability.id} value={capability.id}>{capability.name}</option>)}</select></label><label className="text-[9px] uppercase tracking-[0.12em] text-[var(--i-text-faint)]">Release<select value={release} onChange={(event) => { const value = event.target.value as "accepted" | "outside"; releaseRef.current = value; setRelease(value); applyCorrection(chosenTarget, value); }} className="mt-1.5 w-full rounded-md px-2.5 py-2 text-[10.5px] normal-case tracking-normal" style={{ border: "1px solid var(--i-border-strong)", background: "#0b0f12", color: "var(--i-text)" }}><option value="accepted">In</option><option value="outside">Out / later</option></select></label></div>}
       </section>
 
       <section className="p-6" style={{ borderRight: "1px solid var(--i-border)" }} data-shoot="proposal-evidence-inspection">
