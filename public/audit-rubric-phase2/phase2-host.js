@@ -414,6 +414,20 @@
         else window.BrainCore.select(null);
         return;
       }
+      if (message.type === 'signal-audit-select-node') {
+        const target = typeof message.nodeId === 'string' ? window.BrainCore.S.byId.get(message.nodeId) : null;
+        if (target) {
+          window.BrainCore.select(target);
+          window.BrainCore.flyToNode(target);
+        }
+        if (window.parent !== window) {
+          window.parent.postMessage({
+            type: target ? 'signal-audit-selection-applied' : 'signal-audit-selection-missing',
+            nodeId: typeof message.nodeId === 'string' ? message.nodeId : '',
+          }, window.location.origin);
+        }
+        return;
+      }
       if (message.type !== 'signal-audit-set-context') return;
       scope = typeof message.scope === 'string' ? message.scope : scope;
       audit = typeof message.audit === 'string' ? message.audit : '';

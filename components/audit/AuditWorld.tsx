@@ -36,9 +36,11 @@ function dateLabel(value: string): string {
 
 export default function AuditWorld({
   initialScopeId,
+  initialSelectId,
   fixture,
 }: {
   initialScopeId?: string;
+  initialSelectId?: string;
   fixture?: string;
 }) {
   const frameRef = useRef<HTMLIFrameElement | null>(null);
@@ -121,11 +123,20 @@ export default function AuditWorld({
       const message = event.data as {
         type?: string;
         scope?: string;
+        nodeId?: string;
         canonicalId?: string;
         auditContext?: { mode?: string; id?: string };
       };
       if (message.type === "signal-audit-open-finding" && message.canonicalId) {
         setFindingReviewId(message.canonicalId);
+        return;
+      }
+      if (message.type === "signal-audit-selection-applied") {
+        setNotice("Exact source passage selected");
+        return;
+      }
+      if (message.type === "signal-audit-selection-missing") {
+        setNotice("That source passage is not present in this Audit context");
         return;
       }
       if (message.type !== "signal-audit-world-ready" && message.type !== "signal-audit-world-updated") return;
@@ -140,6 +151,14 @@ export default function AuditWorld({
     window.addEventListener("message", onMessage);
     return () => window.removeEventListener("message", onMessage);
   }, [sendContext]);
+
+  useEffect(() => {
+    if (worldState !== "ready" || !initialSelectId) return;
+    frameRef.current?.contentWindow?.postMessage(
+      { type: "signal-audit-select-node", nodeId: initialSelectId },
+      window.location.origin
+    );
+  }, [initialSelectId, worldState]);
 
   const traceFinding = useCallback((canonicalId: string, active: boolean) => {
     frameRef.current?.contentWindow?.postMessage(

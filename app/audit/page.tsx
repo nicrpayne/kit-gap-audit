@@ -12,9 +12,10 @@ export const dynamic = "force-dynamic";
 export default async function AuditPage({
   searchParams,
 }: {
-  searchParams: Promise<{ scope?: string; rubric?: string; fixture?: string }>;
+  searchParams: Promise<{ scope?: string; project?: string; select?: string; rubric?: string; fixture?: string }>;
 }) {
-  const { scope, rubric, fixture } = await searchParams;
+  const { scope, project, select, rubric, fixture } = await searchParams;
+  const requestedScope = project ?? scope;
   // Phase 1 is intentionally a literal Rubric transplant, not another
   // renderer option inside AuditInstrument. Serve it as its own full-page
   // Audit subroute so no Signal shell, canvas, or iframe can alter Rubric's
@@ -39,7 +40,7 @@ export default async function AuditPage({
       // coalesces it back to InstrumentShell's default identity strip.
       stateBar={<div className="hidden" />}
     >
-      <AuditWorld initialScopeId={scope} fixture={fixture} />
+      <AuditWorld initialScopeId={requestedScope} initialSelectId={select} fixture={fixture} />
     </InstrumentShell>
   );
 }

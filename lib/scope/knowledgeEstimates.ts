@@ -54,6 +54,32 @@ export interface KnowledgeEstimateSubstitution {
   authority?: "accepted" | "provisional";
 }
 
+export function traceableKnowledgeEstimate(
+  estimate: Pick<CapabilityKnowledgeEstimate, "contextSnapshotId" | "sourceRef" | "excerpt" | "evidenceRefs">,
+): boolean {
+  return Boolean(
+    estimate.contextSnapshotId &&
+    estimate.sourceRef &&
+    estimate.excerpt &&
+    estimate.evidenceRefs.length > 0
+  );
+}
+
+/** Audit passage ids are snapshot-scoped because evidence ids are only
+ * guaranteed to be stable inside the immutable context package that carried
+ * them. Keeping this grammar here makes Scope's quote link land on the exact
+ * node Audit used, rather than a text search that might find a newer quote. */
+export function auditPassageHref(
+  scopeId: string,
+  estimate: Pick<CapabilityKnowledgeEstimate, "contextSnapshotId" | "evidenceRefs">,
+): string | null {
+  const evidenceId = estimate.evidenceRefs[0];
+  if (!scopeId || !estimate.contextSnapshotId || !evidenceId) return null;
+  const nodeId = `passage:${estimate.contextSnapshotId}:${evidenceId}`;
+  const params = new URLSearchParams({ project: scopeId, select: nodeId });
+  return `/audit?${params.toString()}`;
+}
+
 /** Replace, never add on top of, the execution rollup for a capability. */
 export function substituteCapabilityKnowledgeEstimates<T extends WorkItem>(
   items: T[],
@@ -101,6 +127,9 @@ export function acceptCapabilityKnowledgeEstimate(
   if (!estimate.range || estimate.unit !== "developer_days") {
     throw new Error("Only an explicit developer-day range can become the accepted capability estimate.");
   }
+  if (!traceableKnowledgeEstimate(estimate)) {
+    throw new Error("A Reality estimate must retain an exact source passage, quote, and immutable snapshot reference.");
+  }
   return { ...estimate, range: estimate.range, unit: "developer_days", acceptedAt, acceptedBy: "operator" };
 }
 
@@ -117,6 +146,8 @@ export function acceptedCapabilityEstimate(value: unknown): AcceptedCapabilityEs
     typeof candidate.capabilityId !== "string" || !candidate.capabilityId ||
     typeof candidate.rawEstimate !== "string" || !candidate.rawEstimate ||
     typeof candidate.statement !== "string" || !candidate.statement ||
+    !nullableString(candidate.sourceRef) || !nullableString(candidate.excerpt) ||
+    stringArray(candidate.evidenceRefs).length === 0 ||
     typeof candidate.acceptedAt !== "string" || !Number.isFinite(Date.parse(candidate.acceptedAt)) ||
     candidate.acceptedBy !== "operator"
   ) return null;

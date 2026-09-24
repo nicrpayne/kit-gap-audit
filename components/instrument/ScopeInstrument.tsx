@@ -962,6 +962,7 @@ export default function ScopeInstrument() {
       <FeatureDetail
         feature={openFeature}
         onClose={() => setOpenFeatureId(null)}
+        scopeId={scope.scopeId}
         scopeName={scope.name}
         capacity={capacity}
         releaseLoadDays={composition.loadDays}

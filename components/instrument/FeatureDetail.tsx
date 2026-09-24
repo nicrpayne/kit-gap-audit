@@ -24,7 +24,7 @@ import { Prototype } from "@/components/instrument/Panel";
 import { expectedDays, uncertaintyLabel, type Feature, type ThreePoint, type DraftFeature } from "@/lib/scope/features";
 import type { ScopeWorkItem } from "@/lib/instrument/useProject";
 import type { ShapeCapability } from "@/lib/scope/productShape";
-import type { CapabilityKnowledgeEstimate } from "@/lib/scope/knowledgeEstimates";
+import { auditPassageHref, traceableKnowledgeEstimate, type CapabilityKnowledgeEstimate } from "@/lib/scope/knowledgeEstimates";
 import type { CapabilityStaffingPlan } from "@/lib/scope/capabilityForecast";
 import { formatDateOnly } from "@/lib/time/dateContract";
 
@@ -48,6 +48,7 @@ const ESTIMATE_SOURCE: Record<string, string> = {
 export default function FeatureDetail({
   feature,
   onClose,
+  scopeId,
   scopeName,
   capacity,
   releaseLoadDays,
@@ -70,6 +71,7 @@ export default function FeatureDetail({
 }: {
   feature: Feature | null;
   onClose: () => void;
+  scopeId: string;
   scopeName: string;
   capacity: number;
   releaseLoadDays: number;
@@ -158,9 +160,9 @@ export default function FeatureDetail({
         <Overview feature={f} />
       )}
       {mode === "work" && <Work feature={f} capacity={capacity} onUnlinkReality={onUnlinkReality} />}
-      {mode === "evidence" && <Evidence feature={f} onAccept={onAccept} onStageKnowledgeEstimate={onStageKnowledgeEstimate} onClearKnowledgeEstimate={onClearKnowledgeEstimate} onAcceptKnowledgeEstimate={onAcceptKnowledgeEstimate} onClearAcceptedKnowledgeEstimate={onClearAcceptedKnowledgeEstimate} />}
+      {mode === "evidence" && <Evidence feature={f} scopeId={scopeId} onAccept={onAccept} onStageKnowledgeEstimate={onStageKnowledgeEstimate} onClearKnowledgeEstimate={onClearKnowledgeEstimate} onAcceptKnowledgeEstimate={onAcceptKnowledgeEstimate} onClearAcceptedKnowledgeEstimate={onClearAcceptedKnowledgeEstimate} />}
       {mode === "estimate" && (
-        <Estimate feature={f} capacity={capacity} onSetEstimate={onSetEstimate} onClearEstimate={onClearEstimate} onStageKnowledgeEstimate={onStageKnowledgeEstimate} onClearKnowledgeEstimate={onClearKnowledgeEstimate} onAcceptKnowledgeEstimate={onAcceptKnowledgeEstimate} onClearAcceptedKnowledgeEstimate={onClearAcceptedKnowledgeEstimate} staffingOptions={staffingOptions} onSetCapabilityStaffing={onSetCapabilityStaffing} onClearCapabilityStaffing={onClearCapabilityStaffing} />
+        <Estimate feature={f} scopeId={scopeId} capacity={capacity} onSetEstimate={onSetEstimate} onClearEstimate={onClearEstimate} onStageKnowledgeEstimate={onStageKnowledgeEstimate} onClearKnowledgeEstimate={onClearKnowledgeEstimate} onAcceptKnowledgeEstimate={onAcceptKnowledgeEstimate} onClearAcceptedKnowledgeEstimate={onClearAcceptedKnowledgeEstimate} staffingOptions={staffingOptions} onSetCapabilityStaffing={onSetCapabilityStaffing} onClearCapabilityStaffing={onClearCapabilityStaffing} />
       )}
       {mode === "history" && <History feature={f} />}
     </ToolWindow>
@@ -555,6 +557,7 @@ function AttachedEvidence({ evidence }: { evidence: unknown[] }) {
 
 function Evidence({
   feature: f,
+  scopeId,
   onAccept,
   onStageKnowledgeEstimate,
   onClearKnowledgeEstimate,
@@ -562,6 +565,7 @@ function Evidence({
   onClearAcceptedKnowledgeEstimate,
 }: {
   feature: Feature;
+  scopeId: string;
   onAccept: (id: string) => void;
   onStageKnowledgeEstimate: (capabilityId: string, estimate: CapabilityKnowledgeEstimate) => void;
   onClearKnowledgeEstimate: (capabilityId: string) => void;
@@ -586,7 +590,7 @@ function Evidence({
           <Row k="Execution evidence" v={`${f.canonicalCapability.workLinks.length} explicit link${f.canonicalCapability.workLinks.length === 1 ? "" : "s"}`} note="current Linear facts remain owned by Linear" />
           <AttachedEvidence evidence={evidence} />
         </div>
-        <KnowledgeEstimateEvidence feature={f} onStage={onStageKnowledgeEstimate} onClear={onClearKnowledgeEstimate} onAcceptReality={onAcceptKnowledgeEstimate} onClearReality={onClearAcceptedKnowledgeEstimate} />
+        <KnowledgeEstimateEvidence feature={f} scopeId={scopeId} onStage={onStageKnowledgeEstimate} onClear={onClearKnowledgeEstimate} onAcceptReality={onAcceptKnowledgeEstimate} onClearReality={onClearAcceptedKnowledgeEstimate} />
         <div className="i-label mt-4 mb-2">Recent governed history</div>
         {ownerEvents.length ? ownerEvents.slice(0, 6).map((event) => (
           <div key={event.id} className="flex items-baseline gap-2 py-1.5" style={{ borderTop: "1px solid var(--i-border)" }}>
@@ -690,6 +694,7 @@ function Evidence({
 
 function Estimate({
   feature: f,
+  scopeId,
   capacity,
   onSetEstimate,
   onClearEstimate,
@@ -702,6 +707,7 @@ function Estimate({
   onClearCapabilityStaffing,
 }: {
   feature: Feature;
+  scopeId: string;
   capacity: number;
   onSetEstimate: (id: string, range: ThreePoint) => void;
   onClearEstimate: (id: string) => void;
@@ -720,7 +726,7 @@ function Estimate({
   const tuned = f.items.find((i) => i.id === tuning) ?? null;
   return (
     <div className="px-5 py-4">
-      <KnowledgeEstimateEvidence feature={f} onStage={onStageKnowledgeEstimate} onClear={onClearKnowledgeEstimate} onAcceptReality={onAcceptKnowledgeEstimate} onClearReality={onClearAcceptedKnowledgeEstimate} />
+      <KnowledgeEstimateEvidence feature={f} scopeId={scopeId} onStage={onStageKnowledgeEstimate} onClear={onClearKnowledgeEstimate} onAcceptReality={onAcceptKnowledgeEstimate} onClearReality={onClearAcceptedKnowledgeEstimate} />
       <CapabilityStaffingEditor
         feature={f}
         options={staffingOptions}
@@ -901,12 +907,14 @@ function CapabilityStaffingEditor({
 
 function KnowledgeEstimateEvidence({
   feature,
+  scopeId,
   onStage,
   onClear,
   onAcceptReality,
   onClearReality,
 }: {
   feature: Feature;
+  scopeId: string;
   onStage: (capabilityId: string, estimate: CapabilityKnowledgeEstimate) => void;
   onClear: (capabilityId: string) => void;
   onAcceptReality: (capabilityId: string, estimate: CapabilityKnowledgeEstimate) => void;
@@ -925,7 +933,7 @@ function KnowledgeEstimateEvidence({
     <div className="mt-4 rounded-md px-3 py-3" style={{ border: "1px solid color-mix(in srgb, var(--i-violet) 45%, var(--i-border))", background: "var(--i-recess)" }} data-shoot="knowledge-estimate-evidence">
       <div className="flex items-baseline justify-between gap-3">
         <span className="i-label" style={{ color: "var(--i-violet)" }}>Developer estimate evidence</span>
-        <span className="text-[8.5px] text-[var(--i-text-faint)]">from current knowledge snapshot</span>
+        <span className="text-[8.5px] text-[var(--i-text-faint)]">from a saved source record</span>
       </div>
       <div className="mt-2 space-y-2">
         {estimates.slice(0, 3).map((estimate) => {
@@ -933,6 +941,8 @@ function KnowledgeEstimateEvidence({
           const accepted = feature.acceptedKnowledgeEstimate?.id === estimate.id
             && feature.acceptedKnowledgeEstimate.contextSnapshotId === estimate.contextSnapshotId;
           const attribution = [estimate.speaker ?? estimate.owner, estimate.observedAt, estimate.sourceRef].filter(Boolean).join(" · ");
+          const traceable = traceableKnowledgeEstimate(estimate);
+          const auditHref = auditPassageHref(scopeId, estimate);
           return (
             <div key={estimate.id} className="rounded px-2.5 py-2" style={{ border: "1px solid var(--i-border)" }}>
               <div className="flex items-baseline gap-2">
@@ -946,17 +956,32 @@ function KnowledgeEstimateEvidence({
               )}
               {attribution && <div className="mt-1 text-[8.5px] text-[var(--i-text-faint)]">{attribution}</div>}
               {estimate.excerpt && <div className="mt-1.5 text-[9.5px] italic leading-relaxed text-[var(--i-text-faint)]">&ldquo;{estimate.excerpt}&rdquo;</div>}
+              {auditHref && (
+                <Link
+                  href={auditHref}
+                  className="mt-1.5 inline-block text-[9px] text-[var(--i-signal)] hover:underline"
+                  data-shoot="open-estimate-evidence-in-audit"
+                >
+                  Open this exact quote in Audit →
+                </Link>
+              )}
               {estimate.range ? (
                 <div className="mt-2 grid gap-1.5">
-                  <button
-                    type="button"
-                    onClick={() => accepted ? onClearReality(capability.id) : onAcceptReality(capability.id, estimate)}
-                    className="w-full rounded px-2 py-1.5 text-[9.5px]"
-                    style={{ border: "1px solid var(--i-signal)", color: accepted ? "var(--i-text-soft)" : "var(--i-signal)" }}
-                    data-shoot={accepted ? "clear-accepted-knowledge-estimate" : "accept-knowledge-estimate-reality"}
-                  >
-                    {accepted ? "Stop using as the Reality estimate" : "Accept as current Reality estimate"}
-                  </button>
+                  {traceable ? (
+                    <button
+                      type="button"
+                      onClick={() => accepted ? onClearReality(capability.id) : onAcceptReality(capability.id, estimate)}
+                      className="w-full rounded px-2 py-1.5 text-[9.5px]"
+                      style={{ border: "1px solid var(--i-signal)", color: accepted ? "var(--i-text-soft)" : "var(--i-signal)" }}
+                      data-shoot={accepted ? "clear-accepted-knowledge-estimate" : "accept-knowledge-estimate-reality"}
+                    >
+                      {accepted ? "Stop using as the Reality estimate" : "Accept as current Reality estimate"}
+                    </button>
+                  ) : (
+                    <div className="text-[9px] leading-snug text-[var(--i-amber)]">
+                      Cannot become Reality: no exact source passage is attached.
+                    </div>
+                  )}
                   {!accepted && (
                     <button
                       type="button"

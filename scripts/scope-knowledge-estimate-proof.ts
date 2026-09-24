@@ -3,6 +3,7 @@ import type { ProjectContextPackage } from "../lib/context/package";
 import {
   acceptCapabilityKnowledgeEstimate,
   acceptedCapabilityEstimate,
+  auditPassageHref,
   capabilityKnowledgeEstimates,
   substituteCapabilityKnowledgeEstimates,
 } from "../lib/scope/knowledgeEstimates";
@@ -93,6 +94,11 @@ assert.deepEqual(notifications?.range, { low: 8, likely: 10.5, high: 13 });
 assert.equal(notifications?.speaker, "James");
 assert.equal(notifications?.sourceRef, "refinement-2026-09-22");
 assert.equal(notifications?.contextSnapshotId, "snapshot-1");
+assert.equal(
+  auditPassageHref("jsa", notifications!),
+  "/audit?project=jsa&select=passage%3Asnapshot-1%3Aev-notifications",
+  "the quote link must name the exact immutable Audit passage",
+);
 
 const offline = estimates.find((estimate) => estimate.capabilityId === "offline");
 assert.equal(offline?.range, null, "sprints must remain evidence; Signal cannot invent a dev-day conversion");
@@ -124,6 +130,12 @@ assert.deepEqual(substituted.find((item) => item.id.startsWith("knowledge-estima
 const accepted = acceptCapabilityKnowledgeEstimate(notifications!, "2026-09-24T12:00:00.000Z");
 assert.deepEqual(acceptedCapabilityEstimate(JSON.parse(JSON.stringify(accepted))), accepted, "accepted Reality must retain the complete source assertion");
 assert.equal(acceptedCapabilityEstimate({ ...accepted, range: { low: 20, likely: 5, high: 30 } }), null, "invalid Reality estimate ranges must fail closed");
+assert.equal(acceptedCapabilityEstimate({ ...accepted, evidenceRefs: [] }), null, "accepted Reality without an exact passage must fail closed");
+assert.throws(
+  () => acceptCapabilityKnowledgeEstimate({ ...notifications!, excerpt: null }),
+  /exact source passage/,
+  "an operator must not accept an estimate whose quote cannot be traced",
+);
 
 const canonical = substituteCapabilityKnowledgeEstimates([
   { id: "SOF-1", label: "Notification ticket one", low: 1, likely: 3, high: 7 },

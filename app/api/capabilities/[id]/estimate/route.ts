@@ -4,6 +4,7 @@ import type { ProjectContextPackage } from "@/lib/context/package";
 import {
   acceptCapabilityKnowledgeEstimate,
   capabilityKnowledgeEstimates,
+  traceableKnowledgeEstimate,
 } from "@/lib/scope/knowledgeEstimates";
 import { setCanonicalCapabilityEstimate } from "@/lib/scope/reality";
 import { scopeRealityError } from "@/lib/scope/http";
@@ -44,6 +45,12 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     }
     if (!estimate.range || estimate.unit !== "developer_days") {
       return NextResponse.json({ error: "Only an explicit developer-day range can become the current forecast basis." }, { status: 422 });
+    }
+    if (!traceableKnowledgeEstimate(estimate)) {
+      return NextResponse.json(
+        { error: "This estimate has no exact source passage and quote, so it cannot become accepted Reality." },
+        { status: 422 },
+      );
     }
     return NextResponse.json(await setCanonicalCapabilityEstimate(id, {
       expectedRevision: body.expectedRevision,
