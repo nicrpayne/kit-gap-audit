@@ -34,9 +34,9 @@ import { useDecisions } from "@/lib/decisions/useDecisions";
 import { adaptOrbitInput } from "@/lib/orbit/adapt";
 import { buildOrbitGraph, relatedTo, type OrbitGraph, type OrbitNode } from "@/lib/orbit/graph";
 import { layoutOrbit } from "@/lib/orbit/layout";
+import { forecastDateAtDay } from "@/lib/forecast/simulate";
 
 const SIZE = 880;
-const DAY = 86400000;
 
 const KIND_COLOR: Record<OrbitNode["kind"], string> = {
   forecast: "var(--i-signal)",
@@ -72,7 +72,7 @@ function quantityOf(n: OrbitNode): string {
 }
 
 const dateOf = (start: Date, days: number) =>
-  new Date(start.getTime() + days * DAY).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+  forecastDateAtDay(start, days).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
 
 export default function OrbitPageClient() {
   const m = useProject();

@@ -49,7 +49,7 @@ export function renderDecisionBriefMarkdown(brief: DecisionBriefV1): string {
   out.push(`**Likely ${date(window.likely)} · window ${date(window.earliest)}–${date(window.latest)}**`);
   out.push(`Target: ${date(brief.headline.targetDate.value)} · Confidence: ${brief.headline.confidenceAtTarget.value === null ? "UNAVAILABLE" : `${brief.headline.confidenceAtTarget.value}%`}.`);
   const movement = brief.headline.movement.value;
-  out.push(movement ? `Since saved brief ${movement.comparedToReportId}: ${Math.abs(movement.days)} day${Math.abs(movement.days) === 1 ? "" : "s"} ${movement.days > 0 ? "later" : movement.days < 0 ? "earlier" : "unchanged"}${movement.confidencePoints === null ? "" : `; confidence ${movement.confidencePoints >= 0 ? "+" : ""}${movement.confidencePoints} points`}.` : "No prior saved brief; no trend claim.");
+  out.push(movement ? `Since saved brief ${movement.comparedToReportId}: ${movement.days === 0 ? "forecast unchanged" : `${Math.abs(movement.days)} day${Math.abs(movement.days) === 1 ? "" : "s"} ${movement.days > 0 ? "later" : "earlier"}`}${movement.confidencePoints === null ? "" : `; confidence ${movement.confidencePoints >= 0 ? "+" : ""}${movement.confidencePoints} points`}.` : "No prior saved brief; no trend claim.");
   out.push(brief.headline.keyReason.value, "");
   pushSource(brief.headline.likelyWindow.source);
 

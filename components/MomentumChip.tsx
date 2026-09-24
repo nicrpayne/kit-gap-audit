@@ -39,7 +39,9 @@ export default function MomentumChip({ momentum, currentConfidence }: { momentum
         <Sparkline points={momentum.sparkline} color={momentum.stalled ? "var(--color-ink-soft)" : "var(--color-accent)"} />
         {momentum.stalled ? (
           <span className="rounded-full bg-[var(--color-line)]/60 text-[var(--color-ink-soft)] px-2 py-0.5 font-medium">
-            Unchanged for {daysSince(momentum.previousGeneratedAt)} days
+            {daysSince(momentum.previousGeneratedAt) === 0
+              ? "No forecast movement since the previous brief"
+              : `Unchanged for ${daysSince(momentum.previousGeneratedAt)} days`}
           </span>
         ) : (
           <span className="text-[var(--color-ink)]">

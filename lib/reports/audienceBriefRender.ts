@@ -46,7 +46,7 @@ function moduleMarkdown(id: BriefModuleId, density: ModuleDensity, brief: Decisi
       break;
     case "movement":
       heading("Movement");
-      out.push(movement ? `Since saved brief ${movement.comparedToReportId}: **${Math.abs(movement.days)} day${Math.abs(movement.days) === 1 ? "" : "s"} ${movement.days < 0 ? "earlier" : movement.days > 0 ? "later" : "unchanged"}**${movement.confidencePoints === null ? "" : `; confidence ${movement.confidencePoints >= 0 ? "+" : ""}${movement.confidencePoints} points`}.` : "No comparable saved brief; no trend claim.");
+      out.push(movement ? `Since saved brief ${movement.comparedToReportId}: **${movement.days === 0 ? "forecast unchanged" : `${Math.abs(movement.days)} day${Math.abs(movement.days) === 1 ? "" : "s"} ${movement.days < 0 ? "earlier" : "later"}`}**${movement.confidencePoints === null ? "" : `; confidence ${movement.confidencePoints >= 0 ? "+" : ""}${movement.confidencePoints} points`}.` : "No comparable saved brief; no trend claim.");
       break;
     case "what-changed": {
       heading("What changed");

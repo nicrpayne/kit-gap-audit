@@ -182,7 +182,9 @@ function deterministicSignalRead(brief: DecisionBriefV1, drivers: DeliveryDriver
   const likely = isoDate(brief.headline.likelyWindow.value.likely);
   const movement = brief.headline.movement.value;
   const movementText = movement
-    ? `${Math.abs(movement.days)} day${Math.abs(movement.days) === 1 ? "" : "s"} ${movement.days < 0 ? "earlier" : movement.days > 0 ? "later" : "unchanged"} than the previous saved brief`
+    ? movement.days === 0
+      ? "unchanged from the previous saved brief"
+      : `${Math.abs(movement.days)} day${Math.abs(movement.days) === 1 ? "" : "s"} ${movement.days < 0 ? "earlier" : "later"} than the previous saved brief`
     : "with no prior saved brief for a trend claim";
   const driver = drivers[0]?.detail ?? "no ranked schedule driver available";
   const caveat = brief.caveats.value.length ? ` ${brief.caveats.value.length} explicit decision-input caveat${brief.caveats.value.length === 1 ? " remains" : "s remain"}.` : "";
