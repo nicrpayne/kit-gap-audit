@@ -104,6 +104,8 @@ assert(assembleDecisionBrief(weakGroundingFixture()).caveats.value.some((caveat)
 const residueInputs = healthyOwnerFixture();
 residueInputs.decisions[0].title = "Test";
 assert(assembleDecisionBrief(residueInputs).caveats.value.some((caveat) => caveat.code === "TEST_RESIDUE"));
+residueInputs.decisions[0].status = "dismissed";
+assert(!assembleDecisionBrief(residueInputs).caveats.value.some((caveat) => caveat.code === "TEST_RESIDUE"));
 
 const historical = assembleDecisionBrief(liveDiffersFromHistoryFixture());
 assert.equal(historical.headline.movement.source.temporalRole, "historical");

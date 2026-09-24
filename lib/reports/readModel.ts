@@ -258,7 +258,15 @@ export async function loadDecisionBriefOwnerInputs(
         provenance: decision.gate.provenance,
       } : null,
     })),
-    dependencies: dependencyScopes.map((dependency) => ({ scopeId: dependency.id, name: dependency.name, likelyDate: null, currentness: "unavailable" })),
+    dependencies: dependencyScopes.map((dependency) => {
+      const outcome = forecast.dependencies.find((candidate) => candidate.scopeId === dependency.id);
+      return {
+        scopeId: dependency.id,
+        name: dependency.name,
+        likelyDate: outcome?.likelyDate ? toDateOnly(outcome.likelyDate) : null,
+        currentness: outcome?.currentness ?? "unavailable",
+      };
+    }),
     capacity: {
       ...capacityContract,
       contextSwitchCostPct: settings?.contextSwitchCostPct ?? 0,

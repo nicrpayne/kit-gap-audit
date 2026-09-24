@@ -62,6 +62,12 @@ export interface ForecastResult {
   // since nothing else signals it.
   contextComplete: boolean;
   contextIssues: string[];
+  dependencies: {
+    scopeId: string;
+    name: string;
+    likelyDate: Date | null;
+    currentness: "current" | "unavailable";
+  }[];
   likelyDate: Date;
   earliestDate: Date;
   latestDate: Date;
@@ -804,8 +810,9 @@ export async function computeForecast(scope: Scope): Promise<ForecastResult> {
 
   let base: SimulationResult;
   let rawScenarios: ForecastScenario[];
+  let dependencyOutcomes: ForecastResult["dependencies"] = [];
   const sourceStamps = [sourceStampForIssues(own.issues, readAt)];
-  const dependencyCoverage: { name: string; coverage: ForecastCoverageContract }[] = [];
+  const dependencyCoverage: { scopeId: string; name: string; coverage: ForecastCoverageContract }[] = [];
 
   if (scope.dependsOnScopeIds.length === 0) {
     const scenarioRun = buildScenarios(inputs, startDate, scope.targetDate);
@@ -818,7 +825,7 @@ export async function computeForecast(scope: Scope): Promise<ForecastResult> {
       const bundle = s.id === scope.id ? own : await buildScopeSimInputs(s);
       if (s.id !== scope.id) {
         sourceStamps.push(sourceStampForIssues(bundle.issues, readAt));
-        dependencyCoverage.push({ name: s.name, coverage: bundle.forecastCoverage });
+        dependencyCoverage.push({ scopeId: s.id, name: s.name, coverage: bundle.forecastCoverage });
       }
       specs.push({
         scopeId: s.id,
@@ -837,6 +844,19 @@ export async function computeForecast(scope: Scope): Promise<ForecastResult> {
     // cycle; today nothing can, since no Scope has a dependency set yet.
     const results = runPortfolioSimulation(specs);
     base = results.get(scope.id)!;
+    const scopeById = new Map(closure.map((dependency) => [dependency.id, dependency]));
+    dependencyOutcomes = scope.dependsOnScopeIds.map((scopeId) => {
+      const dependency = scopeById.get(scopeId)!;
+      const coverage = dependencyCoverage.find((entry) => entry.scopeId === scopeId)?.coverage;
+      const result = results.get(scopeId);
+      const available = coverage?.canonicalForecast === true && !!result;
+      return {
+        scopeId,
+        name: dependency.name,
+        likelyDate: available ? result.likelyDate : null,
+        currentness: available ? "current" as const : "unavailable" as const,
+      };
+    });
     rawScenarios = buildPortfolioScenarios(specs, scope.id, base);
   }
 
@@ -860,6 +880,7 @@ export async function computeForecast(scope: Scope): Promise<ForecastResult> {
     contextDocs: own.contextDocs,
     contextComplete: own.contextComplete,
     contextIssues: own.contextIssues,
+    dependencies: dependencyOutcomes,
     likelyDate: base.likelyDate,
     earliestDate: base.earliestDate,
     latestDate: base.latestDate,

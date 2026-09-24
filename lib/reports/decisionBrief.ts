@@ -390,6 +390,7 @@ export function assembleDecisionBrief(input: DecisionBriefOwnerInputs): Decision
   const nextMilestone = planned.find((event) => new Date(event.date).getTime() >= new Date(input.generatedAt).getTime()) ?? null;
   const conflicts = planned.filter((event) => new Date(event.date).getTime() < new Date(input.generatedAt).getTime());
   const suspicious = input.decisions.filter((decision) =>
+    decision.status === "open" &&
     /(^|\s)test(\s|$)/i.test(`${decision.title} ${decision.gate?.dependency ?? ""} ${decision.gate?.evidenceForGate ?? ""}`)
   );
   const evidenceWarnings = [
