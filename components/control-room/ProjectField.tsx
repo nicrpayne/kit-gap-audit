@@ -7,10 +7,10 @@
 // and at the same scale:
 //
 //   TIME        one horizontal axis, real days, shared by everything.
-//   STRUCTURE   lanes ordered by declared dependency depth, so a lane can
-//               never sit above something it waits on. A release spine
-//               drops from an upstream's landing through everything that
-//               waits on it — the fan-out is the drawing, not a sentence.
+//   STRUCTURE   lanes ordered by declared dependency depth. A finish-floor
+//               spine drops from an upstream's landing through every lane
+//               whose completion is floored by it — the fan-out is the
+//               drawing, not a sentence.
 //   OBSTRUCTION gates are CLAMPS on the lane they block. They are not peer
 //               nodes and they are not rows in a list: an unanswered
 //               question is a thing sitting across the track.
@@ -181,15 +181,16 @@ export default function ProjectField({
           {/* ── RELEASE SPINES ────────────────────────────────────── */}
           {/*
               A dependency drawn as physics rather than prose. The spine
-              drops from the moment an upstream lands, straight through
-              every lane that waits on it, and a branch runs along each of
+              drops from an upstream's landing through every lane whose
+              completion is floored by it, and a branch runs along each of
               those lanes to where IT lands. The distance between the spine
-              and the branch's end is the real gap between two real P50s.
+              and the branch's end is the real gap between two real P50s;
+              it does not claim that downstream work starts there.
 
               A shared upstream — one carrying more than one launch — is
-              drawn amber, because it is the single point whose slip moves
-              several dates at once. That is not a score; it is a count of
-              declared edges.
+              drawn amber because its outcome can raise several completion
+              floors. Whether any downstream date moves still depends on the
+              later-of-outcomes rule. This is a count of declared edges.
           */}
           {field.sharedUpstreamIds
             .concat(lanes.filter((l) => l.downstreamScopeIds.length > 0).map((l) => l.scopeId))
@@ -266,7 +267,7 @@ export default function ProjectField({
                         fill="var(--i-amber)"
                         textAnchor="end"
                       >
-                        {kids.length} launches wait on {up.name}
+                        {up.name} sets {kids.length} finish floors
                       </text>
                     </g>
                   )}
@@ -312,7 +313,7 @@ export default function ProjectField({
                 </text>
                 <text x={10} y={y + 5} fontSize={9} fill="var(--i-text-faint)" pointerEvents="none">
                   {l.dependsOnScopeIds.length > 0
-                    ? `waits on ${l.dependsOnScopeIds
+                    ? `finish floor: ${l.dependsOnScopeIds
                         .map((u) => lanes.find((z) => z.scopeId === u)?.name ?? u)
                         .join(", ")}`
                     : l.downstreamScopeIds.length > 0

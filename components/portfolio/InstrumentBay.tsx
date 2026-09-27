@@ -36,6 +36,8 @@ import {
   trendPhrase,
   type MomentumTrend,
 } from "@/lib/momentum/trend";
+import type { ForecastCoverageContract } from "@/lib/forecast/coverage";
+import { FORECAST_PERCENTILE_COPY, presentForecastDeliveryClaim } from "@/lib/forecast/claims";
 
 export interface BayGate {
   id: string;
@@ -70,6 +72,7 @@ interface InstrumentBayProps {
   trend: MomentumTrend | null;
   trendSeries: number[];
   confidencePct: number | null;
+  forecastCoverage: ForecastCoverageContract;
   targetLabel: string;
   hasTarget: boolean;
   onSetTarget: () => void;
@@ -101,6 +104,7 @@ export default function InstrumentBay({
   trend,
   trendSeries,
   confidencePct,
+  forecastCoverage,
   targetLabel,
   hasTarget,
   onSetTarget,
@@ -113,6 +117,13 @@ export default function InstrumentBay({
   const gateDays = gates.reduce((sum, g) => sum + g.likely, 0);
   const capacityDelta = scenarioCapacity - realityCapacity;
   const capacityChanged = Math.abs(capacityDelta) > 1e-6;
+  const claim = presentForecastDeliveryClaim({
+    scopeName,
+    coverage: forecastCoverage,
+    likelyDate: null,
+    targetDate: hasTarget ? targetLabel : null,
+    confidenceAtTarget: confidencePct,
+  });
 
   return (
     <div
@@ -258,8 +269,15 @@ export default function InstrumentBay({
           )}
         </Meter>
 
-        <Meter label="Confidence" width={182}>
-          {hasTarget ? (
+        <Meter label="Simulated frequency" width={182}>
+          {!forecastCoverage.canonicalForecast ? (
+            <div className="w-full">
+              <div className="i-readout text-[14px] leading-tight text-[var(--i-amber)]">Unavailable</div>
+              <div className="mt-1.5 text-[9.5px] text-[var(--i-text-faint)] leading-tight">
+                {claim.targetConfidence}
+              </div>
+            </div>
+          ) : hasTarget ? (
             <ArcMeter pct={confidencePct} tone={confidenceTone(confidencePct)} caption={targetLabel} />
           ) : (
             // Not a failure state -- there is simply nothing to be confident
@@ -267,7 +285,7 @@ export default function InstrumentBay({
             <div className="w-full">
               <div className="i-readout text-[15px] leading-none text-[var(--i-text-faint)]">No target</div>
               <div className="mt-1.5 text-[9.5px] text-[var(--i-text-faint)] leading-tight">
-                Confidence needs a date to measure against.
+                A target date is required to calculate finish frequency.
               </div>
               <button
                 onClick={onSetTarget}
@@ -283,17 +301,24 @@ export default function InstrumentBay({
 
         <Meter label="Spread" width={158}>
           <div className="i-readout text-[24px] leading-none text-[var(--i-text)]">
-            {spreadDays === null ? "—" : `${spreadDays}d`}
+            {forecastCoverage.state === "unavailable" || spreadDays === null ? "—" : `${spreadDays}d`}
           </div>
-          {spreadRange && (
+          {forecastCoverage.state !== "unavailable" && spreadRange && (
             <div className="mt-2 i-readout text-[11px] text-[var(--i-text-soft)] leading-tight">
-              {spreadRange.earliest} — {spreadRange.latest}
+              P10 {spreadRange.earliest} — P90 {spreadRange.latest}
             </div>
           )}
-          <div className="mt-1 text-[9.5px] text-[var(--i-text-faint)] leading-tight">best to worst case</div>
+          <div className="mt-1 text-[9.5px] text-[var(--i-text-faint)] leading-tight">
+            {forecastCoverage.state === "unavailable"
+              ? "Delivery outcome unavailable"
+              : forecastCoverage.state === "modeled_subset"
+                ? `Modeled subset · ${FORECAST_PERCENTILE_COPY.interval}`
+                : FORECAST_PERCENTILE_COPY.interval}
+          </div>
+          {forecastCoverage.state !== "unavailable" && <div className="mt-1 text-[8.5px] text-[var(--i-text-faint)] leading-tight">P10: 10% on or before · P90: 90% on or before</div>}
         </Meter>
 
-        <Meter label="Open gates" width={196}>
+        <Meter label="Serial gates" width={196}>
           <div className="flex items-baseline gap-2">
             <span
               className="i-readout text-[24px] leading-none"
@@ -306,7 +331,7 @@ export default function InstrumentBay({
             )}
           </div>
           <ul className="mt-2 space-y-1 w-full">
-            {gates.length === 0 && <li className="text-[10px] text-[var(--i-text-faint)]">Nothing blocking.</li>}
+            {gates.length === 0 && <li className="text-[10px] text-[var(--i-text-faint)]">No declared serial gates.</li>}
             {gates.slice(0, 2).map((g) => (
               <li key={g.id} className="flex items-baseline gap-1.5 text-[10px] leading-tight">
                 <span className="shrink-0 text-[var(--i-amber)] tabular-nums">+{Math.round(g.likely)}d</span>

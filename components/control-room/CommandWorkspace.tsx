@@ -635,15 +635,15 @@ export default function CommandWorkspace({
               <div className="i-noscrollbar i-fade-b flex min-h-0 flex-1 flex-col gap-[3px] overflow-y-auto pt-[8px]">
                 {r.dependencies.length === 0 && (
                   <p className="text-[11px]" style={{ color: "var(--i-text-faint)" }}>
-                    Nothing waits on anything else.
+                    No dependency completion floors are declared.
                   </p>
                 )}
                 {/* A SINGLE POINT OF FAILURE GOES FIRST, and it is the one
                     row that gets to spend a second line saying what happens
-                    if it slips. A plain edge is a fact; an upstream two
-                    projects wait on is the thing this panel exists to
-                    prevent being a surprise, and "2 downstream" on its own
-                    does not say that both of them move. */}
+                    if its completion moves. A plain edge is a fact; an
+                    upstream that sets two project floors is the thing this
+                    panel exists to keep visible. "2 downstream" on its own
+                    does not say that both outcomes move. */}
                 {[...r.dependencies]
                   .filter((d) => d.kind !== "needs_review")
                   .sort((a, b) => Number(b.kind !== "waits_on") - Number(a.kind !== "waits_on"))

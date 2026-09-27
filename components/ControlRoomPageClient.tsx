@@ -714,7 +714,7 @@ export default function ControlRoomPageClient() {
                         <div className="i-noscrollbar i-fade-b flex min-h-0 flex-1 flex-col gap-[3px] overflow-y-auto">
                           {r.dependencies.length === 0 && (
                             <p className="text-[10.5px]" style={{ color: "var(--i-text-faint)" }}>
-                              Nothing waits on anything else.
+                              No dependency completion floors are declared.
                             </p>
                           )}
                           {r.dependencies

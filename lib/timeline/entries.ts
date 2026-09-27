@@ -25,6 +25,7 @@
 import { prisma } from "@/lib/prisma";
 import { getScopedIssues } from "@/lib/linear";
 import { toDateOnly } from "@/lib/time/dateContract";
+import { CANONICAL_REPORT_MODE_WHERE, CANONICAL_REPORT_ORDER_ASC } from "@/lib/reports/history";
 
 /** What KIND of moment this is. Not a colour -- a semantic class; the
     surface derives material from `family` + `temporalState`. */
@@ -139,17 +140,7 @@ const iso = (d: Date) => d.toISOString();
  * Returns null before the scope's first Report: "no forecast snapshot yet"
  * is the truth, and substituting the current forecast would be a lie.
  */
-export function forecastMemoryAt(
-  snapshots: ForecastSnapshot[],
-  at: Date
-): ForecastSnapshot | null {
-  let found: ForecastSnapshot | null = null;
-  for (const s of snapshots) {
-    if (new Date(s.generatedAt).getTime() <= at.getTime()) found = s;
-    else break; // ascending, so the first future one ends it
-  }
-  return found;
-}
+export { forecastMemoryAt } from "./forecastMemory";
 
 export async function buildTimeline(): Promise<TimelineProjection> {
   const now = new Date();
@@ -172,10 +163,11 @@ export async function buildTimeline(): Promise<TimelineProjection> {
   const entries: TimelineEntry[] = [];
 
   // ── FORECAST MEMORY ────────────────────────────────────────────────
-  // Every Report is a moment the app committed to a belief, in writing.
+  // Reality/legacy Reports are moments the app committed to a canonical
+  // belief. Scenario rows remain visible in Reports, never Forecast memory.
   const reports = await prisma.report.findMany({
-    where: { scopeId: { in: scopeIds } },
-    orderBy: { generatedAt: "asc" },
+    where: { scopeId: { in: scopeIds }, ...CANONICAL_REPORT_MODE_WHERE },
+    orderBy: CANONICAL_REPORT_ORDER_ASC,
   });
   const snapshotsByScope: Record<string, ForecastSnapshot[]> = {};
   for (const id of scopeIds) snapshotsByScope[id] = [];

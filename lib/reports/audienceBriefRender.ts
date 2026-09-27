@@ -2,7 +2,9 @@ import type { DecisionBriefV1, SourceStamp } from "./decisionBrief";
 import { briefPayloadFingerprint } from "./decisionBriefRender";
 import type { BriefModuleId, BriefRecipeV1, ModuleDensity } from "./composer";
 import { buildBriefPresentation, sourceForModule } from "./presentation";
+import { markdownBlockquoteLines } from "./markdown";
 import { formatDateOnly, formatInstant, toInstant } from "@/lib/time/dateContract";
+import { FORECAST_PERCENTILE_COPY } from "@/lib/forecast/claims";
 
 const date = (iso: string | null) => iso
   ? formatDateOnly(iso, { month: "short", day: "numeric", year: "numeric" })
@@ -11,7 +13,38 @@ const instantDate = (iso: string) => formatInstant(toInstant(iso), {
   timeZone: "UTC", month: "short", day: "numeric", year: "numeric",
 });
 const number = (value: number) => Number.isInteger(value) ? String(value) : value.toFixed(2);
-const stamp = (source: SourceStamp) => `${source.owner} · ${source.temporalRole.toUpperCase()} · as of ${instantDate(source.asOf)} · ${source.currentness.toUpperCase()}`;
+const stamp = (source: SourceStamp) => `${source.owner} · ${source.temporalRole === "historical" ? "HISTORICAL" : "FROZEN SNAPSHOT"} · source ${source.currentness.toUpperCase()} at generation · source as of ${instantDate(source.asOf)}`;
+const forecastSnapshotStamp = (brief: DecisionBriefV1, source: SourceStamp) => `Snapshot generated ${instantDate(brief.identity.generatedAt)} · source ${source.currentness.toUpperCase()} at generation · source as of ${instantDate(source.asOf)}`;
+
+function forecastAssumptionsMarkdown(brief: DecisionBriefV1): string[] {
+  const assumptions = brief.forecast?.assumptions;
+  if (!assumptions) return ["", "**Forecast assumptions**", "- UNAVAILABLE IN LEGACY SNAPSHOT — not backfilled from the current model."];
+  return [
+    "",
+    `**Forecast assumptions · ${assumptions.version}**`,
+    ...assumptions.items.map((item) => `- **${item.label}.** ${item.detail}`),
+  ];
+}
+
+function capabilityEstimateMarkdown(brief: DecisionBriefV1): string[] {
+  const records = brief.forecast?.basis?.capabilityEstimates;
+  if (!records?.length) return [];
+  const out = ["", "**Frozen capability estimate basis**"];
+  for (const record of records) {
+    const estimate = record.estimate;
+    const range = estimate.range
+      ? `${number(estimate.range.low)} / ${number(estimate.range.likely)} / ${number(estimate.range.high)} developer-days`
+      : "range unavailable";
+    const sourceDate = estimate.observedAt ? date(estimate.observedAt) : "source date unavailable";
+    const linkStart = record.auditHref ? "[" : "";
+    const linkEnd = record.auditHref ? `](${record.auditHref})` : "";
+    out.push(`- ${linkStart}**${record.capabilityName}**${linkEnd} · ${record.authority.toUpperCase()} ${estimate.basis.replaceAll("_", " ")} · ${range} · source ${sourceDate} · replaces ${record.replacedItemIds.length} ticket ${record.replacedItemIds.length === 1 ? "estimate" : "estimates"}`);
+    out.push("  - Original statement (verbatim from frozen snapshot):");
+    out.push(...markdownBlockquoteLines(estimate.excerpt ?? estimate.statement, "    "));
+    out.push(`  - Raw estimate: ${estimate.rawEstimate} · immutable snapshot ${estimate.contextSnapshotId}`);
+  }
+  return out;
+}
 
 function moduleMarkdown(id: BriefModuleId, density: ModuleDensity, brief: DecisionBriefV1, recipe: BriefRecipeV1): string[] {
   const out: string[] = [];
@@ -26,9 +59,12 @@ function moduleMarkdown(id: BriefModuleId, density: ModuleDensity, brief: Decisi
   switch (id) {
     case "delivery-outlook":
       heading("Delivery outlook");
-      out.push(`**Likely ${date(window.likely)} · ${date(window.earliest)}–${date(window.latest)}**`);
-      out.push(`Target ${date(brief.headline.targetDate.value)} · confidence ${brief.headline.confidenceAtTarget.value === null ? "UNAVAILABLE" : `${brief.headline.confidenceAtTarget.value}%`} · ${brief.identity.mode.toUpperCase()}`);
+      out.push(`**P50 ${date(window.likely)} · P10–P90 interval ${date(window.earliest)}–${date(window.latest)} (middle 80% of simulated outcomes)**`);
+      out.push(`${FORECAST_PERCENTILE_COPY.p10}. ${FORECAST_PERCENTILE_COPY.p50}. ${FORECAST_PERCENTILE_COPY.p90}.`);
+      out.push(`Target ${date(brief.headline.targetDate.value)} · simulated frequency ${brief.headline.confidenceAtTarget.value === null ? "UNAVAILABLE" : `${brief.headline.confidenceAtTarget.value}% of simulated runs under the frozen assumptions; not a measured real-world probability`} · ${brief.identity.mode.toUpperCase()}`);
+      out.push(`_${forecastSnapshotStamp(brief, brief.headline.likelyWindow.source)}_`);
       if (detail) out.push("", brief.headline.keyReason.value);
+      out.push(...forecastAssumptionsMarkdown(brief));
       break;
     case "signal-read":
       heading("Signal's Read");
@@ -46,7 +82,7 @@ function moduleMarkdown(id: BriefModuleId, density: ModuleDensity, brief: Decisi
       break;
     case "movement":
       heading("Movement");
-      out.push(movement ? `Since saved brief ${movement.comparedToReportId}: **${movement.days === 0 ? "forecast unchanged" : `${Math.abs(movement.days)} day${Math.abs(movement.days) === 1 ? "" : "s"} ${movement.days < 0 ? "earlier" : "later"}`}**${movement.confidencePoints === null ? "" : `; confidence ${movement.confidencePoints >= 0 ? "+" : ""}${movement.confidencePoints} points`}.` : "No comparable saved brief; no trend claim.");
+      out.push(movement ? `Since saved brief ${movement.comparedToReportId}: **${movement.days === 0 ? "forecast unchanged" : `${Math.abs(movement.days)} day${Math.abs(movement.days) === 1 ? "" : "s"} ${movement.days < 0 ? "earlier" : "later"}`}**${movement.confidencePoints === null ? "" : `; stored target-frequency change ${movement.confidencePoints >= 0 ? "+" : ""}${movement.confidencePoints} points`}.` : "No comparable saved brief; no trend claim.");
       break;
     case "what-changed": {
       heading("What changed");
@@ -62,7 +98,7 @@ function moduleMarkdown(id: BriefModuleId, density: ModuleDensity, brief: Decisi
     case "acceleration-levers":
       heading("Acceleration levers");
       if (!brief.movable.scenarioOptions.value.length) out.push("- UNAVAILABLE — no Forecast-owned scenario consequence exists.");
-      for (const option of brief.movable.scenarioOptions.value) out.push(`- **${option.label}** — likely ${date(option.likelyDate)} · ${Math.abs(option.deltaDays)}d ${option.deltaDays < 0 ? "sooner" : option.deltaDays > 0 ? "later" : "unchanged"} · confidence ${option.confidenceAtTarget === null ? "UNAVAILABLE" : `${option.confidenceAtTarget}%`}`);
+      for (const option of brief.movable.scenarioOptions.value) out.push(`- **${option.label}** — P50 ${date(option.likelyDate)} · ${Math.abs(option.deltaDays)}d ${option.deltaDays < 0 ? "sooner" : option.deltaDays > 0 ? "later" : "unchanged"} · target simulated frequency ${option.confidenceAtTarget === null ? "UNAVAILABLE" : `${option.confidenceAtTarget}% under frozen assumptions; not a measured probability`}`);
       break;
     case "leadership-asks":
       heading("Leadership asks");
@@ -88,13 +124,13 @@ function moduleMarkdown(id: BriefModuleId, density: ModuleDensity, brief: Decisi
       break;
     case "dependencies":
       heading("Dependencies");
-      if (!brief.calls.dependencies.value.length) out.push("No declared dependencies in the snapshot.");
-      for (const dependency of brief.calls.dependencies.value) out.push(`- [${dependency.name}](${dependency.href}) · ${dependency.likelyDate ? `likely ${date(dependency.likelyDate)}` : "current consequence UNAVAILABLE"}`);
+      if (!brief.calls.dependencies.value.length) out.push("No declared dependency finish floors in the snapshot.");
+      for (const dependency of brief.calls.dependencies.value) out.push(`- [${dependency.name}](${dependency.href}) · completion floor · ${dependency.likelyDate ? `P50 ${date(dependency.likelyDate)}` : "snapshot consequence UNAVAILABLE"} · own work may proceed concurrently; each run uses the later completion.`);
       break;
     case "scope": {
       heading("Executable Scope");
       const scope = brief.movable.scope.value;
-      out.push(`**${scope.executableItemCount} canonical work items · ${number(scope.remainingEffortDays.low)}/${number(scope.remainingEffortDays.likely)}/${number(scope.remainingEffortDays.high)} effort days** · [Open Scope](${scope.href})`);
+      out.push(`**${scope.executableItemCount} tracked source tickets · ${scope.simulationItemCount ?? "LEGACY UNKNOWN"} simulated estimate-basis items · ${number(scope.remainingEffortDays.low)}/${number(scope.remainingEffortDays.likely)}/${number(scope.remainingEffortDays.high)} effort days** · [Open Scope](${scope.href})`);
       if (scope.estimateQuality) out.push(`Estimate quality: ${scope.estimateQuality.pointsIssueCount} Linear-estimated · ${scope.estimateQuality.aiCount} AI-estimated · ${scope.estimateQuality.placeholderIssueCount + scope.estimateQuality.placeholderFindingCount} placeholders · ${scope.estimateQuality.placeholderEffortSharePct}% of likely effort rests on placeholders.`);
       if (scope.capabilityOutlooks?.length) {
         out.push("", "Isolated capability outlooks — each assumes its named contributors stay focused on that card:");
@@ -104,9 +140,10 @@ function moduleMarkdown(id: BriefModuleId, density: ModuleDensity, brief: Decisi
             : outlook.estimateBasis === "knowledge_accepted"
               ? "accepted meeting estimate"
               : "ticket rollup";
-          out.push(`- **${outlook.name}** — likely ${date(outlook.likelyDate)} (${date(outlook.earliestDate)}–${date(outlook.latestDate)}) · ${number(outlook.staffingFte)} FTE · ${outlook.contributors.map((person) => `${person.name} ${number(person.fte)}`).join(", ")} · ${basis}`);
+          out.push(`- **${outlook.name}** — P50 ${date(outlook.likelyDate)} (P10–P90 ${date(outlook.earliestDate)}–${date(outlook.latestDate)}) · ${number(outlook.staffingFte)} FTE · ${outlook.contributors.map((person) => `${person.name} ${number(person.fte)}`).join(", ")} · ${basis}`);
         }
       }
+      out.push(...capabilityEstimateMarkdown(brief));
       break;
     }
     case "capacity": {
@@ -121,7 +158,7 @@ function moduleMarkdown(id: BriefModuleId, density: ModuleDensity, brief: Decisi
     }
     case "timeline":
       heading("Timeline");
-      out.push(`**Live Forecast · ${brief.timeline.currentForecast.source.currentness.toUpperCase()} · as of ${instantDate(brief.timeline.currentForecast.source.asOf)}** — [likely ${date(brief.timeline.currentForecast.value.likelyDate)}](${brief.timeline.currentForecast.value.href})`);
+      out.push(`**${forecastSnapshotStamp(brief, brief.timeline.currentForecast.source)}** — [snapshot P50 ${date(brief.timeline.currentForecast.value.likelyDate)}](${brief.timeline.currentForecast.value.href})`);
       out.push(brief.timeline.nextMilestone.value ? `Next milestone: ${brief.timeline.nextMilestone.value.title} · ${date(brief.timeline.nextMilestone.value.date)}` : "Next milestone: MISSING.");
       for (const conflict of brief.timeline.conflicts.value) out.push(`- Conflict: ${conflict.title} · ${date(conflict.date)}`);
       break;

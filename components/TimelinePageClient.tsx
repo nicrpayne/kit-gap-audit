@@ -29,7 +29,7 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import type {
   TimelineProjection, TimelineEntry, TimelineCandidate, ForecastSnapshot,
 } from "@/lib/timeline/entries";
-import { forecastMemoryAt } from "@/lib/timeline/entries";
+import { forecastMemoryAt } from "@/lib/timeline/forecastMemory";
 import { buildPlaybackPlan, playheadAt, crossedAt, type PlaybackPlan } from "@/lib/timeline/playback";
 import { momentOf, idsAt } from "@/lib/timeline/moment";
 import { DAY, fmtDay, fmtFull, scaleFor, zoomAbout, windowFollowing } from "@/lib/timeline/geometry";

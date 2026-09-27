@@ -5,6 +5,7 @@ import Link from "@/components/instrument/SignalLink";
 import type { DecisionBriefV1, SourceStamp } from "@/lib/reports/decisionBrief";
 import { briefPayloadFingerprint } from "@/lib/reports/decisionBriefRender";
 import { formatDateOnly, formatInstant, toInstant } from "@/lib/time/dateContract";
+import { FORECAST_PERCENTILE_COPY } from "@/lib/forecast/claims";
 
 const date = (iso: string | null) =>
   iso ? formatDateOnly(iso, { month: "short", day: "numeric", year: "numeric" }) : "MISSING";
@@ -16,7 +17,7 @@ const fte = (value: number) => (Number.isInteger(value) ? String(value) : value.
 function Stamp({ value }: { value: SourceStamp }) {
   return (
     <span className="text-[9px] uppercase tracking-[0.12em] text-[var(--i-text-faint)]">
-      {value.owner} · {value.temporalRole} · as of {instantDate(value.asOf)} · {value.currentness}
+      {value.owner} · frozen snapshot · source {value.currentness} at generation · source as of {instantDate(value.asOf)}
     </span>
   );
 }
@@ -35,6 +36,35 @@ function Section({ title, source, children }: { title: string; source?: SourceSt
 
 function Empty({ children }: { children: React.ReactNode }) {
   return <p className="text-xs text-[var(--i-text-faint)]">{children}</p>;
+}
+
+function ForecastAssumptions({ brief }: { brief: DecisionBriefV1 }) {
+  const assumptions = brief.forecast?.assumptions;
+  if (!assumptions) return <div className="mt-4 rounded border border-[var(--i-amber)] bg-[var(--i-amber-soft)] p-3 text-xs">Forecast assumptions unavailable in this legacy snapshot; they are not backfilled from the current model.</div>;
+  return <details className="mt-4 rounded border border-[var(--i-border)] bg-[var(--i-panel)] p-3" open>
+    <summary className="cursor-pointer text-[10px] font-semibold uppercase tracking-wider text-[var(--i-text-soft)]">Forecast assumptions · {assumptions.version}</summary>
+    <ul className="mt-2 space-y-2">
+      {assumptions.items.map((item) => <li key={item.id} className="text-[10px] leading-relaxed text-[var(--i-text-faint)]"><strong className="text-[var(--i-text-soft)]">{item.label}.</strong> {item.detail}</li>)}
+    </ul>
+  </details>;
+}
+
+function FrozenEstimateBasis({ brief }: { brief: DecisionBriefV1 }) {
+  const records = brief.forecast?.basis?.capabilityEstimates;
+  if (!records?.length) return null;
+  return <div className="mt-4 border-t border-[var(--i-border)] pt-3">
+    <div className="text-[9px] font-semibold uppercase tracking-wider text-[var(--i-text-faint)]">Frozen capability estimate basis</div>
+    {records.map((record) => {
+      const estimate = record.estimate;
+      const range = estimate.range ? `${fte(estimate.range.low)} / ${fte(estimate.range.likely)} / ${fte(estimate.range.high)} developer-days` : "range unavailable";
+      return <div key={`${record.scopeId}:${record.capabilityId}:${estimate.id}`} className="mt-3 rounded border border-[var(--i-border)] p-3 text-xs">
+        <div className="flex flex-wrap justify-between gap-2"><strong>{record.auditHref ? <Link href={record.auditHref} className="text-[var(--i-signal)] hover:underline">{record.capabilityName}</Link> : record.capabilityName}</strong><span className="text-[var(--i-text-faint)]">{record.authority} · {range}</span></div>
+        <div className="mt-1 text-[10px] text-[var(--i-text-faint)]">{estimate.basis.replaceAll("_", " ")} · source {estimate.observedAt ? date(estimate.observedAt) : "date unavailable"} · replaces {record.replacedItemIds.length} ticket {record.replacedItemIds.length === 1 ? "estimate" : "estimates"}</div>
+        <blockquote className="mt-2 border-l-2 border-[var(--i-signal)] pl-2 text-[11px] leading-relaxed text-[var(--i-text-soft)]">“{estimate.excerpt ?? estimate.statement}”</blockquote>
+        <div className="mt-2 font-mono text-[9px] text-[var(--i-text-faint)]">Raw: {estimate.rawEstimate} · snapshot {estimate.contextSnapshotId}</div>
+      </div>;
+    })}
+  </div>;
 }
 
 export default function DecisionBriefView({ brief }: { brief: DecisionBriefV1 }) {
@@ -78,20 +108,22 @@ export default function DecisionBriefView({ brief }: { brief: DecisionBriefV1 })
       <Section title="Headline" source={brief.headline.likelyWindow.source}>
         <div className="grid gap-3 sm:grid-cols-3">
           <div className={`rounded-lg border bg-[var(--i-panel)] p-4 sm:col-span-2 ${forecastStale ? "border-[var(--i-amber)]" : "border-[var(--i-signal)]"}`}>
-            <div className={`text-[9px] uppercase tracking-[0.14em] ${forecastStale ? "text-[var(--i-amber)]" : "text-[var(--i-text-faint)]"}`}>Live likely window · {brief.headline.likelyWindow.source.currentness} · as of {instantDate(brief.headline.likelyWindow.source.asOf)}</div>
+            <div className={`text-[9px] uppercase tracking-[0.14em] ${forecastStale ? "text-[var(--i-amber)]" : "text-[var(--i-text-faint)]"}`}>Snapshot P50 · source {brief.headline.likelyWindow.source.currentness} at generation · source as of {instantDate(brief.headline.likelyWindow.source.asOf)}</div>
             <div className="mt-1 font-display text-2xl">{date(window.likely)}</div>
-            <div className="mt-1 text-xs text-[var(--i-text-faint)]">{date(window.earliest)} – {date(window.latest)}</div>
+            <div className="mt-1 text-xs text-[var(--i-text-faint)]">P10–P90 · {date(window.earliest)} – {date(window.latest)} · middle 80%</div>
           </div>
           <div className="rounded-lg border border-[var(--i-border)] bg-[var(--i-panel)] p-4">
-            <div className="text-[9px] uppercase tracking-[0.14em] text-[var(--i-text-faint)]">Target confidence</div>
+            <div className="text-[9px] uppercase tracking-[0.14em] text-[var(--i-text-faint)]">Target simulated frequency</div>
             <div className="mt-1 font-display text-2xl">{brief.headline.confidenceAtTarget.value === null ? "—" : `${brief.headline.confidenceAtTarget.value}%`}</div>
-            <div className="mt-1 text-xs text-[var(--i-text-faint)]">target {date(brief.headline.targetDate.value)}</div>
+            <div className="mt-1 text-xs text-[var(--i-text-faint)]">target {date(brief.headline.targetDate.value)} · simulated runs under frozen assumptions · not measured probability</div>
           </div>
         </div>
+        <p className="mt-3 text-[10px] leading-relaxed text-[var(--i-text-faint)]">{FORECAST_PERCENTILE_COPY.p10}. {FORECAST_PERCENTILE_COPY.p50}. {FORECAST_PERCENTILE_COPY.p90}.</p>
         <p className="mt-4 text-sm leading-relaxed">{brief.headline.keyReason.value}</p>
         <p className="mt-1 text-xs text-[var(--i-text-faint)]">
           {movement ? `Since ${movement.comparedToReportId}: ${Math.abs(movement.days)} day${Math.abs(movement.days) === 1 ? "" : "s"} ${movement.days > 0 ? "later" : movement.days < 0 ? "earlier" : "unchanged"}.` : "No prior saved brief; no trend claim."}
         </p>
+        <ForecastAssumptions brief={brief} />
       </Section>
 
       <Section title="What changed" source={brief.changes.audit.source}>
@@ -131,11 +163,11 @@ export default function DecisionBriefView({ brief }: { brief: DecisionBriefV1 })
         </div>
         {brief.calls.dependencies.value.length > 0 && (
           <div className="mt-5 border-t border-[var(--i-border)] pt-4">
-            <h3 className="mb-2 text-[10px] font-semibold uppercase tracking-wider">Declared dependencies</h3>
+            <h3 className="mb-2 text-[10px] font-semibold uppercase tracking-wider">Declared dependency finish floors</h3>
             {brief.calls.dependencies.value.map((dependency) => (
               <Link key={dependency.scopeId} href={dependency.href} className="mb-2 flex flex-wrap justify-between gap-2 text-xs text-[var(--i-signal)] hover:underline">
-                <span>{dependency.name}</span>
-                <span className="text-[var(--i-text-faint)]">{dependency.likelyDate ? `likely ${date(dependency.likelyDate)}` : "current forecast UNAVAILABLE"}</span>
+                <span>{dependency.name}<small className="block text-[var(--i-text-faint)]">Completion floor · own work may proceed concurrently; each run uses the later completion.</small></span>
+                <span className="text-[var(--i-text-faint)]">{dependency.likelyDate ? `snapshot P50 ${date(dependency.likelyDate)}` : "snapshot consequence UNAVAILABLE"}</span>
               </Link>
             ))}
           </div>
@@ -144,8 +176,8 @@ export default function DecisionBriefView({ brief }: { brief: DecisionBriefV1 })
 
       <Section title="What can move" source={brief.movable.capacity.source}>
         <div className="mb-4 rounded-lg border border-[var(--i-border)] bg-[var(--i-panel)] p-4 text-sm">
-          <div className="text-[9px] font-semibold uppercase tracking-wider text-[var(--i-text-faint)]">Executable canonical Scope</div>
-          <div className="mt-1">{brief.movable.scope.value.executableItemCount} work item{brief.movable.scope.value.executableItemCount === 1 ? "" : "s"} · {fte(brief.movable.scope.value.remainingEffortDays.low)} / {fte(brief.movable.scope.value.remainingEffortDays.likely)} / {fte(brief.movable.scope.value.remainingEffortDays.high)} days</div>
+          <div className="text-[9px] font-semibold uppercase tracking-wider text-[var(--i-text-faint)]">Forecast work basis</div>
+          <div className="mt-1">{brief.movable.scope.value.executableItemCount} tracked source ticket{brief.movable.scope.value.executableItemCount === 1 ? "" : "s"} · {brief.movable.scope.value.simulationItemCount ?? "Legacy unknown"} simulated estimate-basis items · {fte(brief.movable.scope.value.remainingEffortDays.low)} / {fte(brief.movable.scope.value.remainingEffortDays.likely)} / {fte(brief.movable.scope.value.remainingEffortDays.high)} effort days</div>
           {brief.movable.scope.value.estimateQuality && <div className="mt-2 text-[11px] text-[var(--i-text-faint)]">Estimate quality · {brief.movable.scope.value.estimateQuality.pointsIssueCount} Linear-estimated · {brief.movable.scope.value.estimateQuality.aiCount} AI-estimated · {brief.movable.scope.value.estimateQuality.placeholderIssueCount + brief.movable.scope.value.estimateQuality.placeholderFindingCount} placeholders · {brief.movable.scope.value.estimateQuality.placeholderEffortSharePct}% of likely effort rests on placeholders</div>}
           <Link href={brief.movable.scope.value.href} className="mt-2 inline-block text-xs text-[var(--i-signal)] hover:underline">Open Scope →</Link>
           {!!brief.movable.scope.value.capabilityOutlooks?.length && (
@@ -154,12 +186,13 @@ export default function DecisionBriefView({ brief }: { brief: DecisionBriefV1 })
               {brief.movable.scope.value.capabilityOutlooks.map((outlook) => (
                 <div key={outlook.capabilityId} className="mt-2 flex flex-wrap items-baseline justify-between gap-2 text-xs">
                   <span>{outlook.name}<span className="ml-2 text-[var(--i-text-faint)]">{outlook.contributors.map((person) => `${person.name} ${fte(person.fte)} FTE`).join(" · ")}</span></span>
-                  <span className="tabular-nums">likely {date(outlook.likelyDate)}</span>
+                  <span className="tabular-nums">P50 {date(outlook.likelyDate)} · P10–P90 {date(outlook.earliestDate)}–{date(outlook.latestDate)}</span>
                 </div>
               ))}
               <p className="mt-2 text-[10px] text-[var(--i-text-faint)]">Each date assumes those people stay focused on that card. It does not assert simultaneous execution across cards.</p>
             </div>
           )}
+          <FrozenEstimateBasis brief={brief} />
         </div>
         {capacity.availability === "available" ? (
           <div>
@@ -175,8 +208,9 @@ export default function DecisionBriefView({ brief }: { brief: DecisionBriefV1 })
 
       <Section title="Timeline" source={brief.timeline.currentForecast.source}>
         <Link href={brief.timeline.currentForecast.value.href} className={`block rounded-lg border bg-[var(--i-panel)] p-4 ${forecastStale ? "border-[var(--i-amber)]" : "border-[var(--i-signal)]"}`}>
-          <div className={`text-[9px] font-semibold uppercase tracking-wider ${forecastStale ? "text-[var(--i-amber)]" : "text-[var(--i-mint)]"}`}>Live Forecast · {brief.timeline.currentForecast.source.currentness} · as of {instantDate(brief.timeline.currentForecast.source.asOf)}</div>
-          <div className="mt-1 font-display text-lg">Likely {date(brief.timeline.currentForecast.value.likelyDate)}</div>
+          <div className={`text-[9px] font-semibold uppercase tracking-wider ${forecastStale ? "text-[var(--i-amber)]" : "text-[var(--i-mint)]"}`}>Snapshot generated {instantDate(brief.identity.generatedAt)} · source {brief.timeline.currentForecast.source.currentness} at generation · source as of {instantDate(brief.timeline.currentForecast.source.asOf)}</div>
+          <div className="mt-1 font-display text-lg">P50 {date(brief.timeline.currentForecast.value.likelyDate)}</div>
+          <div className="mt-1 text-[10px] text-[var(--i-text-faint)]">P10–P90 {date(brief.timeline.currentForecast.value.earliestDate)}–{date(brief.timeline.currentForecast.value.latestDate)}</div>
         </Link>
         <div className="mt-4 text-sm">Next committed/current milestone: {brief.timeline.nextMilestone.value ? `${brief.timeline.nextMilestone.value.title} · ${date(brief.timeline.nextMilestone.value.date)}` : "MISSING"}</div>
         {brief.timeline.conflicts.value.map((conflict) => <div key={conflict.id} className="mt-2 text-xs text-[var(--i-red)]">Conflict · {conflict.title} was planned for {date(conflict.date)}</div>)}

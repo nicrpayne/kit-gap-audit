@@ -14,8 +14,9 @@ canonical forecast.
 4. Scope attaches the object to the exact accepted Capability. The Evidence
    and Estimate tabs show the statement, raw estimate, speaker/owner, meeting
    date, source, and excerpt.
-5. The estimate remains inert until the operator chooses **Use provisionally
-   in Scenario**.
+5. The estimate remains inert until the operator chooses **Preview in Scenario first**
+   or separately reviews **Accept as current Reality estimate**. Acceptance requires
+   an exact quote and immutable snapshot; it records governed revision/history.
 6. In Scenario it replaces that capability's ticket rollup. It is never added
    on top of those tickets, never writes to Linear, and never changes Reality.
 7. When named Capacity is reconciled, the operator may also choose who is
@@ -57,9 +58,21 @@ still displayed as evidence, but they cannot be staged until someone supplies
 a usable range. This prevents the app from inventing sprint length, staffing,
 velocity, or uncertainty.
 
-The current implementation is deliberately Scenario-only. Persisting a
-knowledge estimate into Reality requires a separate governed owner model with
-history and supersession; a context refresh by itself is never that action.
+An accepted Reality estimate is persisted on the capability with source provenance,
+history and revision checks. A context refresh by itself never replaces it. The
+nullable JSON field is introduced by migration `20260924130000_capability_accepted_estimate`.
+Stopping its use restores the current ticket rollup, not a historical point total.
+Switching to a capability basis clears local ticket-estimate experiments for that card.
+
+Quote locators use the immutable snapshot and the actual resolved passage. Original
+external URLs and surrounding context are preserved only when supplied; Signal does
+not invent a document URL or speaker. Two snapshots reusing an intelligence-object
+ID remain separate identities. Saved reports freeze their own estimate/quote/input
+basis; legacy reports without it must say the provenance was not captured.
+
+These are implementation contracts, not a claim that the real refinement transcript
+has passed end-to-end acceptance. Sprint-only statements and later narrowed feature
+boundaries still require explicit owner-reviewed interpretation before numerical use.
 
 ## Forecast precedence
 

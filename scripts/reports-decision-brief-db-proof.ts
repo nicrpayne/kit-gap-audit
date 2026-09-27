@@ -24,13 +24,13 @@ async function main() {
 try {
   const scope = await prisma.scope.findFirst({ where: { name: "JSA" } });
   assert(scope, "seeded JSA scope exists");
-  const unavailableScenario = await fetch(`${base}/api/reports`, {
+  const malformedScenario = await fetch(`${base}/api/reports`, {
     method: "POST",
     headers: { "Content-Type": "application/json", ...authHeaders },
     body: JSON.stringify({ scopeId: scope.id, mode: "scenario", scenarioId: "capacity-plus-1", scenarioSnapshot: { id: "capacity-plus-1" } }),
   });
-  assert.equal(unavailableScenario.status, 409, "Reports refuses to relabel live Reality as a Scenario snapshot");
-  assert((await unavailableScenario.json() as { error: string }).error.includes("UNAVAILABLE"));
+  assert.equal(malformedScenario.status, 400, "Reports rejects a malformed Scenario before any report generation");
+  assert.match((await malformedScenario.json() as { error: string }).error, /scenarioId must match the snapshot/);
   const response = await fetch(`${base}/api/reports`, {
     method: "POST",
     headers: { "Content-Type": "application/json", ...authHeaders },
@@ -75,7 +75,9 @@ try {
   const html = await print.text();
   assert(print.ok);
   assert(html.includes(briefPayloadFingerprint(brief)));
-  assert(html.includes("Live Forecast"));
+  assert(html.includes("Snapshot generated"));
+  assert(html.includes("source current at generation"));
+  assert(!html.includes("Live Forecast"));
 
   console.log(`PASS Reports DB boundary: migration + API generation + immutable JSON + exact Markdown + history + print (${reportId})`);
 } finally {

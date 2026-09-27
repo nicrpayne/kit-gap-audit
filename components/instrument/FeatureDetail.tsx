@@ -24,7 +24,7 @@ import { Prototype } from "@/components/instrument/Panel";
 import { expectedDays, uncertaintyLabel, type Feature, type ThreePoint, type DraftFeature } from "@/lib/scope/features";
 import type { ScopeWorkItem } from "@/lib/instrument/useProject";
 import type { ShapeCapability } from "@/lib/scope/productShape";
-import { auditPassageHref, traceableKnowledgeEstimate, type CapabilityKnowledgeEstimate } from "@/lib/scope/knowledgeEstimates";
+import { auditPassageHref, safeSourceUrl, traceableKnowledgeEstimate, type CapabilityKnowledgeEstimate } from "@/lib/scope/knowledgeEstimates";
 import type { CapabilityStaffingPlan } from "@/lib/scope/capabilityForecast";
 import { formatDateOnly } from "@/lib/time/dateContract";
 
@@ -399,7 +399,7 @@ function Work({ feature: f, capacity, onUnlinkReality }: { feature: Feature; cap
     return (
       <Empty
         title="No work mapped yet"
-        body="This capability exists as a declaration. Nothing in Linear hangs from it, so it carries no load and the forecast is unaffected by it."
+        body={f.estimateBasis === "work_rollup" ? "This capability is declared, but no execution work is linked. Missing work is a coverage gap, not proof of zero effort." : "No execution work is linked. The capability-level estimate supplies the forecast basis; inspect Estimate for its original quote."}
       />
     );
 
@@ -412,7 +412,8 @@ function Work({ feature: f, capacity, onUnlinkReality }: { feature: Feature; cap
         {f.items.map((i) => (
           <li key={i.id} className="py-2" style={{ borderTop: "1px solid var(--i-border)" }}>
             <div className="flex items-baseline gap-2">
-              <span className="min-w-0 flex-1 text-[11.5px] text-[var(--i-text)] leading-snug">{i.label}</span>
+              {safeSourceUrl(i.externalUrl) ? <a href={safeSourceUrl(i.externalUrl)!} target="_blank" rel="noopener noreferrer" className="min-w-0 flex-1 text-[11.5px] text-[var(--i-signal)] leading-snug hover:underline" title="Open original Linear ticket">{i.label} ↗</a>
+                : <span className="min-w-0 flex-1 text-[11.5px] text-[var(--i-text)] leading-snug">{i.label}</span>}
               <span className="shrink-0 i-readout text-[11px] text-[var(--i-text-soft)]">
                 {(expectedDays({ low: i.low, likely: i.likely, high: i.high }) / (capacity > 0 ? capacity : 1)).toFixed(
                   1
@@ -723,7 +724,8 @@ function Estimate({
   if (f.items.length === 0 && f.knowledgeEstimates.length === 0 && !f.acceptedKnowledgeEstimate)
     return <Empty title="Nothing to estimate" body="No open work is mapped and the current knowledge snapshot carries no developer estimate for this capability." />;
 
-  const tuned = f.items.find((i) => i.id === tuning) ?? null;
+  const ticketTuningAllowed = f.estimateBasis === "work_rollup";
+  const tuned = ticketTuningAllowed ? f.items.find((i) => i.id === tuning) ?? null : null;
   return (
     <div className="px-5 py-4">
       <KnowledgeEstimateEvidence feature={f} scopeId={scopeId} onStage={onStageKnowledgeEstimate} onClear={onClearKnowledgeEstimate} onAcceptReality={onAcceptKnowledgeEstimate} onClearReality={onClearAcceptedKnowledgeEstimate} />
@@ -752,12 +754,14 @@ function Estimate({
                 {i.low}–{i.likely}–{i.high}d
               </span>
               <button
+                disabled={!ticketTuningAllowed}
+                title={ticketTuningAllowed ? "Change this ticket range in Scenario" : "The capability estimate replaces ticket estimates. Remove that basis before tuning tickets."}
                 onClick={() => setTuning(tuning === i.id ? null : i.id)}
                 data-shoot="tune-estimate"
                 className="shrink-0 rounded px-2 py-1 text-[9.5px] text-[var(--i-text-faint)] hover:text-[var(--i-text)] transition-colors"
                 style={{ border: "1px solid var(--i-border-strong)" }}
               >
-                {tuning === i.id ? "done" : "re-estimate"}
+                {!ticketTuningAllowed ? "covered by capability estimate" : tuning === i.id ? "done" : "re-estimate"}
               </button>
             </div>
             <div className="mt-1 text-[9.5px] text-[var(--i-text-faint)]">
@@ -937,14 +941,15 @@ function KnowledgeEstimateEvidence({
       </div>
       <div className="mt-2 space-y-2">
         {estimates.slice(0, 3).map((estimate) => {
-          const active = feature.activeKnowledgeEstimate?.id === estimate.id;
+          const active = feature.activeKnowledgeEstimate?.id === estimate.id
+            && feature.activeKnowledgeEstimate.contextSnapshotId === estimate.contextSnapshotId;
           const accepted = feature.acceptedKnowledgeEstimate?.id === estimate.id
             && feature.acceptedKnowledgeEstimate.contextSnapshotId === estimate.contextSnapshotId;
           const attribution = [estimate.speaker ?? estimate.owner, estimate.observedAt, estimate.sourceRef].filter(Boolean).join(" · ");
           const traceable = traceableKnowledgeEstimate(estimate);
           const auditHref = auditPassageHref(scopeId, estimate);
           return (
-            <div key={estimate.id} className="rounded px-2.5 py-2" style={{ border: "1px solid var(--i-border)" }}>
+            <div key={`${estimate.contextSnapshotId}:${estimate.id}`} className="rounded px-2.5 py-2" style={{ border: "1px solid var(--i-border)" }}>
               <div className="flex items-baseline gap-2">
                 <span className="min-w-0 flex-1 text-[10.5px] text-[var(--i-text-soft)]">{estimate.statement}</span>
                 <span className="shrink-0 i-readout text-[10.5px] text-[var(--i-text)]">{estimate.rawEstimate}</span>
@@ -956,6 +961,10 @@ function KnowledgeEstimateEvidence({
               )}
               {attribution && <div className="mt-1 text-[8.5px] text-[var(--i-text-faint)]">{attribution}</div>}
               {estimate.excerpt && <div className="mt-1.5 text-[9.5px] italic leading-relaxed text-[var(--i-text-faint)]">&ldquo;{estimate.excerpt}&rdquo;</div>}
+              {estimate.sourceLocator?.surroundingContext && <details className="mt-1.5 text-[9px] text-[var(--i-text-soft)]"><summary>Original surrounding context</summary><p className="mt-1 whitespace-pre-wrap">{estimate.sourceLocator.surroundingContext}</p></details>}
+              {safeSourceUrl(estimate.sourceLocator?.sourceUrl)
+                ? <a href={safeSourceUrl(estimate.sourceLocator?.sourceUrl)!} target="_blank" rel="noopener noreferrer" className="mt-1.5 block text-[9px] text-[var(--i-signal)] hover:underline">Open original source ↗</a>
+                : <p className="mt-1.5 text-[9px] text-[var(--i-text-faint)]">External source link not supplied. The stored original quote remains available in Audit.</p>}
               {auditHref && (
                 <Link
                   href={auditHref}
@@ -1004,7 +1013,7 @@ function KnowledgeEstimateEvidence({
         })}
       </div>
       <p className="mt-2 text-[9px] leading-snug text-[var(--i-text-faint)]">
-        An accepted estimate becomes this capability&apos;s canonical remaining-work basis. It replaces the ticket rollup, never adds both totals, and never writes to Linear. Previewing remains Scenario-only.
+        An accepted estimate becomes this capability&apos;s canonical remaining-work basis. It replaces the ticket rollup, never adds both totals, and never writes to Linear. Switching to a capability estimate clears this card&apos;s ticket-estimate experiments. Previewing remains Scenario-only.
       </p>
     </div>
   );
@@ -1020,13 +1029,14 @@ function EstimatePad({
   onChange,
   onReset,
 }: {
-  item: ScopeWorkItem;
+  item: ScopeWorkItem & { realityRange?: ThreePoint };
   capacity: number;
   onChange: (r: ThreePoint) => void;
   onReset: () => void;
 }) {
   const [dragging, setDragging] = useState(false);
-  const stored = useMemo<ThreePoint>(() => ({ low: item.low, likely: item.likely, high: item.high }), [item]);
+  const stored = useMemo<ThreePoint>(() => item.realityRange ?? ({ low: item.low, likely: item.likely, high: item.high }), [item]);
+  const current = { low: item.low, likely: item.likely, high: item.high };
   const maxLikely = Math.max(1, stored.likely * 2.5);
   const storedSpread = Math.max(0.5, stored.high - stored.low);
   const maxSpread = storedSpread * 2.5;
@@ -1034,8 +1044,8 @@ function EstimatePad({
   // Reality keeps skewing pessimistic when you widen it.
   const leftShare = (stored.likely - stored.low) / storedSpread;
 
-  const x = Math.min(1, stored.likely / maxLikely);
-  const y = Math.min(1, storedSpread / maxSpread);
+  const x = Math.min(1, current.likely / maxLikely);
+  const y = Math.min(1, (current.high - current.low) / maxSpread);
 
   const emit = (nx: number, ny: number) => {
     const likely = Math.max(0.5, Math.round(nx * maxLikely * 2) / 2);
@@ -1111,12 +1121,13 @@ function EstimatePad({
       </div>
       <div className="mt-2 flex items-baseline justify-between">
         <span className="i-readout text-[12px] text-[var(--i-text)]">
-          {stored.low} – {stored.likely} – {stored.high}d
+          {current.low} – {current.likely} – {current.high}d
         </span>
         <span className="text-[10px] text-[var(--i-text-faint)]">
-          {(expectedDays(stored) / (capacity > 0 ? capacity : 1)).toFixed(1)}d of schedule
+          {(expectedDays(current) / (capacity > 0 ? capacity : 1)).toFixed(1)}d of schedule
         </span>
       </div>
+      <p className="mt-1 text-[9px] text-[var(--i-text-faint)]">Reality: {stored.low}–{stored.likely}–{stored.high} developer-days. Ticket edits remain hypothetical.</p>
     </div>
   );
 }

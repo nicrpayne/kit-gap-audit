@@ -110,6 +110,25 @@ export function chipsFor(
       href: "/portfolio",
     });
   }
+  if (scenario.capacityPlan) {
+    const hypotheticalHireFte = scenario.capacityPlan.hypotheticalPeople.reduce((total, person) => total + person.fte, 0);
+    if (hypotheticalHireFte > 0) {
+      const hireCount = scenario.capacityPlan.hypotheticalPeople.length;
+      chips.push({
+        id: "capacity-explicit-hires",
+        label: `${hypotheticalHireFte.toFixed(1)} FTE explicit hypothetical hire${hireCount === 1 ? "" : "s"}`,
+        href: "/portfolio",
+      });
+    }
+    for (const [scopeId, fte] of Object.entries(scenario.capacityPlan.requiredByScope)) {
+      if (fte <= 0) continue;
+      chips.push({
+        id: `capacity-shortfall-${scopeId}`,
+        label: `${scopeNameById.get(scopeId) ?? scopeId} requires ${fte.toFixed(1)} FTE unstaffed`,
+        href: "/portfolio",
+      });
+    }
+  }
   // Scope speaks in capabilities; the engine speaks in work items. When Scope
   // set the exclusions it also recorded which capabilities they came from, so
   // the chip can say the product-level thing rather than the accounting one.

@@ -4,6 +4,8 @@ import {
   acceptCapabilityKnowledgeEstimate,
   acceptedCapabilityEstimate,
   auditPassageHref,
+  knowledgeEstimateItemId,
+  safeSourceUrl,
   capabilityKnowledgeEstimates,
   substituteCapabilityKnowledgeEstimates,
 } from "../lib/scope/knowledgeEstimates";
@@ -101,6 +103,22 @@ assert.equal(
 );
 
 const offline = estimates.find((estimate) => estimate.capabilityId === "offline");
+assert.notEqual(knowledgeEstimateItemId("notifications", "stable-object", "snapshot-A"), knowledgeEstimateItemId("notifications", "stable-object", "snapshot-B"), "refreshed statements with a reused producer id remain separate engine identities");
+const missingFirstRef = structuredClone(pkg);
+missingFirstRef.intelligenceObjects![0].evidenceRefs = ["missing-passage", "ev-notifications"];
+const resolvedPassage = capabilityKnowledgeEstimates(missingFirstRef, "snapshot-1", [{ id: "notifications", name: "JSA notifications" }])[0];
+assert.equal(resolvedPassage.evidenceRefs[0], "ev-notifications", "exact quote link follows the passage actually resolved");
+assert.equal(auditPassageHref("jsa", resolvedPassage), "/audit?project=jsa&select=passage%3Asnapshot-1%3Aev-notifications");
+assert.equal(safeSourceUrl("javascript:alert(1)"), null);
+assert.equal(safeSourceUrl("file:///private/transcript"), null);
+assert.equal(safeSourceUrl("https://secret:token@example.test/meeting"), null);
+const withLocator = structuredClone(pkg);
+withLocator.evidence[0].externalRef = "https://example.test/transcripts/meeting#passage-1";
+withLocator.evidence[0].data = { ...withLocator.evidence[0].data, surroundingContext: "Verbatim surrounding source context." };
+const located = capabilityKnowledgeEstimates(withLocator, "snapshot-A", [{ id: "notifications", name: "JSA notifications" }])[0];
+const savedLocated = acceptedCapabilityEstimate(acceptCapabilityKnowledgeEstimate(located));
+assert.equal(savedLocated?.sourceLocator?.sourceUrl, withLocator.evidence[0].externalRef);
+assert.equal(savedLocated?.sourceLocator?.surroundingContext, "Verbatim surrounding source context.");
 assert.equal(offline?.range, null, "sprints must remain evidence; Signal cannot invent a dev-day conversion");
 assert.equal(offline?.rawEstimate, "3 sprints");
 

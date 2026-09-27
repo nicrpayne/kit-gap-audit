@@ -32,9 +32,31 @@
   }
 
   .decision-brief-print {
+    --i-bg: #ffffff;
+    --i-panel: #ffffff;
+    --i-text: #111827;
+    --i-text-soft: #253247;
+    --i-text-faint: #42516a;
+    --i-border: #aeb8c4;
+    --i-signal: #006b82;
+    --i-mint: #006846;
+    --i-violet: #5740a0;
+    --i-amber: #795600;
+    --i-amber-soft: #fff8df;
     max-width: none !important;
     color: #111827 !important;
+    background: white !important;
+    overflow-wrap: anywhere;
+    box-shadow: none !important;
   }
+
+  body:has(.decision-brief-print),
+  body:has(.decision-brief-print) main {
+    background: white !important;
+    color: #111827 !important;
+  }
+  .decision-brief-print a { color: #006b82 !important; }
+  .decision-brief-print [class*="--i-mint"] { color: #006846 !important; }
 
   .decision-brief-print section,
   .decision-brief-print header {

@@ -277,7 +277,7 @@ export interface ControlRoomReading {
   scenarioActive: boolean;
 }
 
-/** Everything a scope transitively waits on, from declared edges only. */
+/** Every transitive completion floor for a scope, from declared edges only. */
 function upstreamOf(scopeId: string, byId: Map<string, TimelineLane>, seen = new Set<string>()): Set<string> {
   const lane = byId.get(scopeId);
   if (!lane) return seen;
@@ -549,7 +549,7 @@ export function readControlRoom(i: ControlRoomInput): ControlRoomReading {
   // score, and no dependency is ever inferred from anything.
   const dependencies: DependencyRow[] = [];
 
-  // Who waits on whom, and how many projects each upstream carries.
+  // Which completion floors apply, and how many projects each upstream floors.
   const dependents = new Map<string, string[]>();
   for (const lane of lanes) {
     for (const up of lane.dependsOnScopeIds) {
@@ -563,8 +563,8 @@ export function readControlRoom(i: ControlRoomInput): ControlRoomReading {
       const upSim = preview.get(upId);
       if (!upSim || !downSim) continue;
       const upName = scopeName.get(upId) ?? upId;
-      // Does the thing it waits on land after its own target? That is the
-      // surprise this surface exists to prevent, and it is exact.
+      // Does the upstream completion floor land after the downstream target?
+      // That is the surprise this surface exists to prevent, and it is exact.
       const downTarget = lane.targetDate ? new Date(lane.targetDate) : null;
       const overrun = downTarget ? Math.round(days(upSim.likelyDate, downTarget)) : null;
       // Has the backlog stopped being what decides this date? Scope's own
@@ -585,7 +585,7 @@ export function readControlRoom(i: ControlRoomInput): ControlRoomReading {
       dependencies.push({
         id: `waits:${lane.scopeId}:${upId}`,
         kind: "waits_on",
-        subject: `${lane.name} waits on ${upName}`,
+        subject: `${lane.name} completion floor: ${upName}`,
         // PROSE ONLY WHERE THERE IS NEWS. A dependency that is simply
         // declared and behaving needs one line and a word; one that is
         // pushing something past its target, or has taken the date away
@@ -596,7 +596,7 @@ export function readControlRoom(i: ControlRoomInput): ControlRoomReading {
             : overrun !== null && overrun > 0
             ? `${upName} is not expected until ${formatDateOnly(upSim.likelyDate, { month: "short", day: "numeric" })} — after ${lane.name}'s own target.`
             : dom?.dominated
-              ? `${lane.name}'s backlog has stopped deciding its date. What it waits on decides it.`
+              ? `${lane.name}'s backlog has stopped deciding its P50; a declared completion floor sets the later outcome.`
               : "",
         quantity:
           !scope?.forecastCoverage.canonicalForecast || !upstreamScope?.forecastCoverage.canonicalForecast
@@ -625,8 +625,8 @@ export function readControlRoom(i: ControlRoomInput): ControlRoomReading {
     dependencies.push({
       id: `shared:${upId}`,
       kind: "shared_upstream",
-      subject: `${scopeName.get(upId) ?? upId} carries ${downs.length} projects`,
-      detail: `${downs.map((d) => scopeName.get(d) ?? d).join(" and ")} both wait on it. If it slips, they both slip.`.slice(0, 200),
+      subject: `${scopeName.get(upId) ?? upId} sets completion floors for ${downs.length} projects`,
+      detail: `${downs.map((d) => scopeName.get(d) ?? d).join(" and ")} each use the later of their own outcome and this upstream outcome; a later upstream can raise each floor.`.slice(0, 200),
       quantity: `${downs.length} downstream`,
       causal: true,
       focusScopeId: downs[0],

@@ -252,6 +252,8 @@ function ReconciliationFocus({ item, nextItem, selection, capabilities, committi
   if (!item) return null;
   const claimedElsewhere = item.provenance.claimedElsewhere ?? [];
   const claimedElsewhereById = new Map(claimedElsewhere.map((claim) => [claim.identifier, claim]));
+  const otherOwnerNames = [...new Set(claimedElsewhere.map((claim) => claim.capabilityName))];
+  const allMatchedWorkGovernedElsewhere = claimedElsewhere.length > 0 && item.workItemIds.length === 0;
   const releaseInterpretation = item.provenance.releaseInterpretation ?? { activeRelease: null, activeReleaseSource: "unresolved" as const, policy: "latest_explicit_same_boundary" as const, effectiveClaims: [], supersededClaims: [], otherBoundaryClaims: [], genericClaims: [] };
   const actionable = item.action !== "none" && item.status !== "committed" && item.reconciliationState !== "conflict";
   const chosenTarget = target === "new" ? null : target;
@@ -302,8 +304,10 @@ function ReconciliationFocus({ item, nextItem, selection, capabilities, committi
               : "Linear work is awaiting operator classification; Reality remains unchanged."}</div>
         </div>
         <div className="mt-3 rounded-lg p-4" style={{ background: "color-mix(in srgb, var(--i-violet) 5%, var(--i-recess))", border: "1px solid color-mix(in srgb, var(--i-violet) 35%, var(--i-border))" }}>
-          <div className="text-[10px] uppercase tracking-[0.14em] text-[var(--i-violet)]">Proposed change</div>
-          <p className="mt-2 text-[11px] leading-relaxed text-[var(--i-text-soft)]">{item.rationale.headline}</p>
+          <div className="text-[10px] uppercase tracking-[0.14em] text-[var(--i-violet)]">{item.targetCapabilityId || item.action !== "none" ? "Proposed change" : "No proposed target match"}</div>
+          <p className="mt-2 text-[11px] leading-relaxed text-[var(--i-text-soft)]">{allMatchedWorkGovernedElsewhere
+            ? `No ownership change is proposed. The matched ${claimedElsewhere.length === 1 ? "ticket is" : "tickets are"} already governed by ${otherOwnerNames.join(", ")} and remain excluded from this proposal.`
+            : item.rationale.headline}</p>
         </div>
         {item.conflicts.length > 0 && <div className="mt-3 rounded-lg border border-[var(--i-red)]/40 bg-[var(--i-red)]/5 p-4" data-shoot="focused-conflict"><div className="text-[10px] uppercase tracking-[0.14em] text-[var(--i-red)]">Conflict</div>{item.conflicts.map((conflict) => <p key={conflict} className="mt-2 text-[10.5px] leading-relaxed text-[var(--i-text-soft)]">{conflict}</p>)}</div>}
         {actionable && <div className="mt-5 grid grid-cols-[1fr_110px] gap-2"><label className="text-[9px] uppercase tracking-[0.12em] text-[var(--i-text-faint)]">Capability<select ref={targetSelectRef} value={target} onChange={(event) => { const value = event.target.value; targetRef.current = value; setTarget(value); applyCorrection(value === "new" ? null : value, releaseRef.current); }} className="mt-1.5 w-full rounded-md px-2.5 py-2 text-[10.5px] normal-case tracking-normal" style={{ border: "1px solid var(--i-border-strong)", background: "#0b0f12", color: "var(--i-text)" }}><option value="new">New capability</option>{capabilities.map((capability) => <option key={capability.id} value={capability.id}>{capability.name}</option>)}</select></label><label className="text-[9px] uppercase tracking-[0.12em] text-[var(--i-text-faint)]">Release<select ref={releaseSelectRef} value={release} onChange={(event) => { const value = event.target.value as "accepted" | "outside"; releaseRef.current = value; setRelease(value); applyCorrection(targetRef.current === "new" ? null : targetRef.current, value); }} className="mt-1.5 w-full rounded-md px-2.5 py-2 text-[10.5px] normal-case tracking-normal" style={{ border: "1px solid var(--i-border-strong)", background: "#0b0f12", color: "var(--i-text)" }}><option value="accepted">In</option><option value="outside">Out / later</option></select></label></div>}
@@ -325,11 +329,11 @@ function ReconciliationFocus({ item, nextItem, selection, capabilities, committi
       </section>
 
       <section className="p-6">
-        <FocusHeading eyebrow="Execution cluster" title={claimedElsewhere.length ? `${item.workItemIds.length} available · ${claimedElsewhere.length} governed elsewhere` : `${item.workItemIds.length} current items`} />
+        <FocusHeading eyebrow="Execution cluster" title={claimedElsewhere.length ? `${item.workItemIds.length} available for this proposal · ${claimedElsewhere.length} governed elsewhere` : `${item.workItemIds.length} current items`} />
         <div className="mt-4 rounded-lg p-4" style={{ border: "1px solid var(--i-border)", background: "var(--i-recess)" }}>
           <div className="text-[10px] uppercase tracking-[0.12em] text-[var(--i-text-faint)]">Linear boundary</div>
           <div className="mt-2 text-[12px] font-medium text-[var(--i-text)]">{item.provenance.linearParent ? `${item.provenance.linearParent.identifier} · ${item.provenance.linearParent.title}` : "No safe parent boundary"}</div>
-          <div className="mt-2 flex items-center gap-2 text-[10px] text-[var(--i-text-faint)]"><span>{item.alreadyLinkedItemIds.length}/{item.workItemIds.length} already linked · {item.workItemIds.length - item.alreadyLinkedItemIds.length} proposed</span><span className="ml-auto flex gap-1"><button type="button" disabled={!actionable || committing} onClick={() => chooseWork(item.workItemIds)} className="rounded px-2 py-1 disabled:opacity-30" style={{ border: "1px solid var(--i-border-strong)" }}>All</button><button type="button" disabled={!actionable || committing} onClick={() => chooseWork([])} className="rounded px-2 py-1 disabled:opacity-30" style={{ border: "1px solid var(--i-border-strong)" }}>None</button></span></div>
+          <div className="mt-2 flex items-center gap-2 text-[10px] text-[var(--i-text-faint)]"><span>{item.alreadyLinkedItemIds.length}/{item.workItemIds.length} already linked · {item.workItemIds.length - item.alreadyLinkedItemIds.length} proposed{claimedElsewhere.length ? ` · ${claimedElsewhere.length} excluded under existing ownership` : ""}</span><span className="ml-auto flex gap-1"><button type="button" disabled={!actionable || committing} onClick={() => chooseWork(item.workItemIds)} className="rounded px-2 py-1 disabled:opacity-30" style={{ border: "1px solid var(--i-border-strong)" }}>All</button><button type="button" disabled={!actionable || committing} onClick={() => chooseWork([])} className="rounded px-2 py-1 disabled:opacity-30" style={{ border: "1px solid var(--i-border-strong)" }}>None</button></span></div>
         </div>
         <div className="mt-3 max-h-[290px] space-y-1.5 overflow-y-auto">{item.provenance.linearItems.length ? item.provenance.linearItems.map((work) => {
           const checked = selectedWorkIds.includes(work.identifier);
@@ -342,7 +346,13 @@ function ReconciliationFocus({ item, nextItem, selection, capabilities, committi
         }) : <EmptyBlock>No current executable Linear work matched this capability.</EmptyBlock>}</div>
         <div className="mt-5 rounded-lg p-4" style={{ border: "1px solid var(--i-border-strong)", background: "#0c1215" }}>
           <div className="text-[10px] uppercase tracking-[0.12em] text-[var(--i-text-faint)]">Modeled consequence</div>
-          <div className="mt-2 text-[12px] font-medium text-[var(--i-text)]">{selection ? `${selectedWorkIds.length} selected items included in the active Scope Scenario` : item.action === "none" ? "No safe simulation input yet" : "Select the work that belongs, then stage it"}</div>
+          <div className="mt-2 text-[12px] font-medium text-[var(--i-text)]">{selection
+            ? `${selectedWorkIds.length} selected items included in the active Scope Scenario`
+            : allMatchedWorkGovernedElsewhere
+              ? `No Scenario change · ${otherOwnerNames.join(", ")} ownership is preserved`
+              : item.action === "none"
+                ? "No proposed target match · operator judgment required"
+                : "Select the work that belongs, then stage it"}</div>
           <p className="mt-2 text-[10px] leading-relaxed text-[var(--i-text-faint)]">Unchecking an item already linked to this capability previews removing that association. Moving selected work to another capability previews the reassignment. Missing estimates remain visible; no effort is fabricated here.</p>
         </div>
         {item.rationale.cautions.length > 0 && <div className="mt-4"><div className="text-[10px] uppercase tracking-[0.12em] text-[var(--i-amber)]">Cautions</div>{item.rationale.cautions.map((caution) => <p key={caution} className="mt-2 text-[10px] leading-relaxed text-[var(--i-text-soft)]">{caution}</p>)}</div>}

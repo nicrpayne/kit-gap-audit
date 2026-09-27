@@ -1159,7 +1159,7 @@ export default function TimeField({
               )}
               {!rail && !tight && lane.dependsOnScopeIds.length > 0 && (
                 <span className="text-[8px] mt-1 text-[var(--i-text-faint)] truncate">
-                  waits on {lane.dependsOnScopeIds.map((d) => lanes.find((l) => l.scopeId === d)?.name ?? "—").join(", ")}
+                  finish floor: {lane.dependsOnScopeIds.map((d) => lanes.find((l) => l.scopeId === d)?.name ?? "—").join(", ")}
                 </span>
               )}
               {/* WHICH WAY THE PROJECT IS FACING.

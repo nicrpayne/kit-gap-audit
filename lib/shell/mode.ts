@@ -116,8 +116,8 @@ export const DESTINATIONS: ShellDestination[] = [
       {
         href: "/orbit",
         label: "Dependencies",
-        question: "What is waiting on what?",
-        owns: "What waits on what, and what a delay upstream costs downstream",
+        question: "Which projects set completion floors for others?",
+        owns: "Declared completion floors, and when an upstream outcome can raise downstream completion",
       },
     ],
   },

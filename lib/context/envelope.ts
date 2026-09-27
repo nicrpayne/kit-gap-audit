@@ -17,6 +17,7 @@ import { computeForecast, type CapacityBasis } from "@/lib/forecast/compute";
 import type { CapacitySource } from "@/lib/forecast/build";
 import { computeMomentum } from "@/lib/momentum/compute";
 import type { PolicyEvaluatedCompleteness } from "@/lib/context/sourcePolicy";
+import { CANONICAL_REPORT_MODE_WHERE, CANONICAL_REPORT_ORDER_DESC } from "@/lib/reports/history";
 
 export interface EnvelopeFinding {
   id: string;
@@ -119,8 +120,8 @@ export async function buildProjectIntelligenceEnvelope(scope: Scope): Promise<Pr
   const forecast = await computeForecast(scope);
 
   const previousReport = await prisma.report.findFirst({
-    where: { scopeId: scope.id },
-    orderBy: { generatedAt: "desc" },
+    where: { scopeId: scope.id, ...CANONICAL_REPORT_MODE_WHERE },
+    orderBy: CANONICAL_REPORT_ORDER_DESC,
   });
   const momentum = previousReport
     ? (() => {

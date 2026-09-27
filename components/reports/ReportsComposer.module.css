@@ -77,4 +77,18 @@
 .fingerprint { color: var(--r-muted); font-family: ui-monospace, monospace; font-size: 8px; }
 @media (max-width: 1000px) { .workspace { grid-template-columns: 180px minmax(380px, 1fr); } .inspector { display: none; } }
 @media (max-width: 720px) { .workspace { display: block; } .browser { display: none; } .transport { flex-wrap: wrap; } .headlineGrid { grid-template-columns: 1fr; } .preview { padding: 16px; } }
-@media print { .shell { border: 0; box-shadow: none; background: white; color: #111; } .briefModule { border-color: #bbb; background: white; } .briefModule summary { color: #111 !important; } .briefModuleContent, .briefModule:not([open]) .briefModuleContent { display: block; } .copy, .listItem, .muted { color: #222; } .warning { color: #513b00; background: #fff8df; } }
+@media print {
+  .shell { --r-bg: #fff; --r-panel: #fff; --r-panel-2: #f5f7f9; --r-text: #111827; --r-muted: #42516a; --r-line: #aeb8c4; --r-cyan: #006b82; --r-mint: #006846; --r-violet: #5740a0; border: 0; box-shadow: none; background: white; color: #111; }
+  .briefModule { border-color: #aeb8c4; background: white; }
+  .briefModule summary { color: #111 !important; }
+  .briefModuleContent, .briefModule:not([open]) .briefModuleContent { display: block; }
+  .headlineGrid { grid-template-columns: 1.5fr 1fr 1fr; }
+  .metric { background: #f5f7f9; break-inside: avoid; }
+  .metricValue { color: #111827 !important; font-size: 20px; line-height: 1.15; }
+  .metricSub, .label, .stamp, .fingerprint { color: #42516a; font-size: 10px; }
+  .mode { color: #006846; }
+  .copy, .listItem, .muted { color: #222; }
+  .listItem > :first-child { flex: 1 1 35%; min-width: 0; }
+  .listItem > :last-child { flex: 0 1 60%; min-width: 0; }
+  .warning { color: #513b00; background: #fff8df; }
+}

@@ -6,138 +6,28 @@ import { buildPortfolioInputs } from "@/lib/forecast/compute";
 import { estimateQualityForItems } from "@/lib/forecast/build";
 import { runPortfolioSimulation } from "@/lib/forecast/portfolio";
 import { applyScenarioInputDelta, type ScenarioInputDelta, type ScenarioInputScope } from "@/lib/scenario/inputDelta";
+import {
+  buildCapacityPlanBaseline,
+  capacityAssumptionLedger,
+  capacityPlanAffectedScopeIds,
+  resolveCapacityPlan,
+  validateCapacityScenarioPlan,
+} from "@/lib/scenario/capacityPlan";
 import { toDateOnly } from "@/lib/time/dateContract";
 import { assembleDecisionBrief, type DecisionBriefV1 } from "./decisionBrief";
 import { loadDecisionBriefOwnerInputs } from "./readModel";
-import { substituteCapabilityKnowledgeEstimates } from "@/lib/scope/knowledgeEstimates";
+import { knowledgeEstimateItemId, substituteCapabilityKnowledgeEstimates } from "@/lib/scope/knowledgeEstimates";
+import { forecastCapability } from "@/lib/scope/capabilityForecast";
+import { freezeCapabilityEstimate, freezeForecastBasis, type ForecastCapacityBasisInput } from "./forecastBasis";
+import { findScenarioLeverConflicts, scenarioLeverConflictMessage } from "./scenarioConflicts";
+
+export * from "./scenarioSnapshot";
 import {
-  forecastCapability,
-  type CapabilityStaffingPlan,
-} from "@/lib/scope/capabilityForecast";
-
-export const SCENARIO_REPORT_VERSION = "scenario-report.v1" as const;
-
-export interface ScenarioReportSnapshotV1 {
-  version: typeof SCENARIO_REPORT_VERSION;
-  scenarioId: string;
-  baseRealityRevision: number;
-  excludedItemIds: string[];
-  includedItemIds: string[];
-  resolvedGateIds: string[];
-  estimateOverrideByItemId: Record<string, { low: number; likely: number; high: number }>;
-  capacityOverrideByScope: Record<string, number>;
-  contextSwitchCostPct: number | null;
-  /** Product-level removal provenance. Item ids remain the engine input. */
-  excludedCapabilityIds: string[];
-  /** Source-attributed capability estimate staged from the current snapshot. */
-  knowledgeEstimateByCapabilityId: Record<string, {
-    estimateId: string;
-    contextSnapshotId: string;
-    low: number;
-    likely: number;
-    high: number;
-  }>;
-  /** Named focus assumptions for isolated per-capability outlooks. */
-  capabilityStaffingById: Record<string, CapabilityStaffingPlan>;
-  computed?: {
-    realityLikelyDate: string;
-    scenarioLikelyDate: string;
-    deltaDays: number;
-    causalExplanation: string[];
-  };
-}
-
-export class ScenarioReportValidationError extends Error {
-  readonly status = 409;
-}
-
-const strings = (value: unknown): string[] => Array.isArray(value)
-  ? [...new Set(value.filter((item): item is string => typeof item === "string" && Boolean(item.trim())).map((item) => item.trim()))]
-  : [];
-
-function range(value: unknown, label: string): { low: number; likely: number; high: number } {
-  if (!value || typeof value !== "object" || Array.isArray(value)) throw new ScenarioReportValidationError(`${label} is invalid.`);
-  const point = value as Record<string, unknown>;
-  if (![point.low, point.likely, point.high].every((n) => typeof n === "number" && Number.isFinite(n) && n >= 0) || (point.low as number) > (point.likely as number) || (point.likely as number) > (point.high as number)) {
-    throw new ScenarioReportValidationError(`${label} must satisfy 0 ≤ low ≤ likely ≤ high.`);
-  }
-  return { low: point.low as number, likely: point.likely as number, high: point.high as number };
-}
-
-export function parseScenarioReportSnapshot(value: unknown): ScenarioReportSnapshotV1 {
-  if (!value || typeof value !== "object" || Array.isArray(value)) throw new ScenarioReportValidationError("A complete scenario snapshot is required.");
-  const raw = value as Record<string, unknown>;
-  const scenarioId = typeof raw.scenarioId === "string" ? raw.scenarioId.trim() : "";
-  const baseRealityRevision = raw.baseRealityRevision;
-  if (!scenarioId || !/^[a-zA-Z0-9._:-]{3,120}$/.test(scenarioId)) throw new ScenarioReportValidationError("scenarioId must be a stable 3–120 character identifier.");
-  if (!Number.isInteger(baseRealityRevision) || (baseRealityRevision as number) < 0) throw new ScenarioReportValidationError("baseRealityRevision is required.");
-
-  const estimates: ScenarioReportSnapshotV1["estimateOverrideByItemId"] = {};
-  if (raw.estimateOverrideByItemId && typeof raw.estimateOverrideByItemId === "object" && !Array.isArray(raw.estimateOverrideByItemId)) {
-    for (const [id, candidate] of Object.entries(raw.estimateOverrideByItemId as Record<string, unknown>)) {
-      estimates[id] = range(candidate, `Estimate override ${id}`);
-    }
-  }
-  const capacity: Record<string, number> = {};
-  if (raw.capacityOverrideByScope && typeof raw.capacityOverrideByScope === "object" && !Array.isArray(raw.capacityOverrideByScope)) {
-    for (const [scopeId, candidate] of Object.entries(raw.capacityOverrideByScope as Record<string, unknown>)) {
-      if (typeof candidate !== "number" || !Number.isFinite(candidate) || candidate <= 0) throw new ScenarioReportValidationError(`Capacity override ${scopeId} must be greater than zero.`);
-      capacity[scopeId] = candidate;
-    }
-  }
-  const contextSwitchCostPct = raw.contextSwitchCostPct === null || raw.contextSwitchCostPct === undefined
-    ? null
-    : typeof raw.contextSwitchCostPct === "number" && raw.contextSwitchCostPct >= 0 && raw.contextSwitchCostPct <= 100
-      ? raw.contextSwitchCostPct
-      : (() => { throw new ScenarioReportValidationError("contextSwitchCostPct must be between 0 and 100."); })();
-  const knowledge: ScenarioReportSnapshotV1["knowledgeEstimateByCapabilityId"] = {};
-  if (raw.knowledgeEstimateByCapabilityId && typeof raw.knowledgeEstimateByCapabilityId === "object" && !Array.isArray(raw.knowledgeEstimateByCapabilityId)) {
-    for (const [capabilityId, candidate] of Object.entries(raw.knowledgeEstimateByCapabilityId as Record<string, unknown>)) {
-      if (!candidate || typeof candidate !== "object" || Array.isArray(candidate)) throw new ScenarioReportValidationError(`Knowledge estimate ${capabilityId} is invalid.`);
-      const value = candidate as Record<string, unknown>;
-      const estimateId = typeof value.estimateId === "string" ? value.estimateId.trim() : "";
-      const contextSnapshotId = typeof value.contextSnapshotId === "string" ? value.contextSnapshotId.trim() : "";
-      if (!estimateId || !contextSnapshotId) throw new ScenarioReportValidationError(`Knowledge estimate ${capabilityId} must retain its estimate and context snapshot ids.`);
-      knowledge[capabilityId] = { estimateId, contextSnapshotId, ...range(value, `Knowledge estimate ${capabilityId}`) };
-    }
-  }
-  const staffing: ScenarioReportSnapshotV1["capabilityStaffingById"] = {};
-  if (raw.capabilityStaffingById && typeof raw.capabilityStaffingById === "object" && !Array.isArray(raw.capabilityStaffingById)) {
-    for (const [capabilityId, candidate] of Object.entries(raw.capabilityStaffingById as Record<string, unknown>)) {
-      if (!candidate || typeof candidate !== "object" || Array.isArray(candidate)) throw new ScenarioReportValidationError(`Capability staffing ${capabilityId} is invalid.`);
-      const contributors = (candidate as Record<string, unknown>).contributors;
-      if (!Array.isArray(contributors) || contributors.length === 0) throw new ScenarioReportValidationError(`Capability staffing ${capabilityId} requires at least one named contributor.`);
-      staffing[capabilityId] = {
-        contributors: contributors.map((entry, index) => {
-          if (!entry || typeof entry !== "object" || Array.isArray(entry)) throw new ScenarioReportValidationError(`Capability staffing ${capabilityId} contributor ${index + 1} is invalid.`);
-          const person = entry as Record<string, unknown>;
-          const personId = typeof person.personId === "string" ? person.personId.trim() : "";
-          const name = typeof person.name === "string" ? person.name.trim() : "";
-          const fte = person.fte;
-          if (!personId || !name || typeof fte !== "number" || !Number.isFinite(fte) || fte <= 0) throw new ScenarioReportValidationError(`Capability staffing ${capabilityId} contributor ${index + 1} must have a person, name, and positive FTE.`);
-          return { personId, name, fte };
-        }),
-      };
-    }
-  }
-  const snapshot: ScenarioReportSnapshotV1 = {
-    version: SCENARIO_REPORT_VERSION,
-    scenarioId,
-    baseRealityRevision: baseRealityRevision as number,
-    excludedItemIds: strings(raw.excludedItemIds),
-    includedItemIds: strings(raw.includedItemIds),
-    resolvedGateIds: strings(raw.resolvedGateIds),
-    estimateOverrideByItemId: estimates,
-    capacityOverrideByScope: capacity,
-    contextSwitchCostPct,
-    excludedCapabilityIds: strings(raw.excludedCapabilityIds),
-    knowledgeEstimateByCapabilityId: knowledge,
-    capabilityStaffingById: staffing,
-  };
-  const leverCount = snapshot.excludedItemIds.length + snapshot.includedItemIds.length + snapshot.resolvedGateIds.length + Object.keys(estimates).length + Object.keys(capacity).length + Object.keys(knowledge).length + Object.keys(staffing).length + (contextSwitchCostPct === null ? 0 : 1);
-  if (leverCount === 0) throw new ScenarioReportValidationError("Scenario reports require at least one explicit hypothetical lever.");
-  return snapshot;
-}
+  SCENARIO_REPORT_VERSION,
+  ScenarioReportValidationError,
+  parseScenarioReportSnapshot,
+  type ScenarioReportSnapshotV1,
+} from "./scenarioSnapshot";
 
 const day = 86_400_000;
 
@@ -145,8 +35,16 @@ export async function buildScenarioDecisionBriefReadModel(
   scope: Scope,
   value: unknown,
   contextSnapshotId?: string | null
-): Promise<{ brief: DecisionBriefV1; scenarioSnapshot: ScenarioReportSnapshotV1 }> {
+): Promise<{ realityBrief: DecisionBriefV1; brief: DecisionBriefV1; scenarioSnapshot: ScenarioReportSnapshotV1 }> {
   const scenario = parseScenarioReportSnapshot(value);
+  // Historical v1 payloads remain readable, but new reports must not bypass
+  // named-person conservation through a legacy aggregate override.
+  if (scenario.version !== SCENARIO_REPORT_VERSION) {
+    throw new ScenarioReportValidationError("Recreate this legacy Scenario with the current controls before publishing.");
+  }
+  if (!scenario.capacityPlan && (Object.keys(scenario.capacityOverrideByScope).length || scenario.contextSwitchCostPct !== null)) {
+    throw new ScenarioReportValidationError("A reportable Capacity or switch-cost change requires the complete named staffing plan. Recreate it in Capacity.");
+  }
   const derived = await prisma.projectDerivedState.findUnique({ where: { scopeId: scope.id }, select: { realityRevision: true, computedRevision: true, status: true } });
   const realityRevision = derived?.realityRevision ?? 0;
   if (scenario.baseRealityRevision !== realityRevision || derived && (derived.computedRevision !== derived.realityRevision || derived.status !== "current")) {
@@ -156,6 +54,40 @@ export async function buildScenarioDecisionBriefReadModel(
   const portfolio = await buildPortfolioInputs();
   const target = portfolio.scopes.find((candidate) => candidate.scopeId === scope.id);
   if (!target) throw new ScenarioReportValidationError("Scenario project is no longer in the active portfolio.");
+  if (
+    target.realityState.realityRevision !== realityRevision ||
+    target.realityState.computedRevision !== target.realityState.realityRevision ||
+    target.realityState.status !== "current"
+  ) {
+    throw new ScenarioReportValidationError("Reality changed while the Scenario report inputs were loading. Review the refreshed Scenario and try again.");
+  }
+  if (scenario.capacityPlan) {
+    const affectedScopeIds = new Set(capacityPlanAffectedScopeIds(scenario.capacityPlan));
+    const incoherentScopes = portfolio.scopes.filter((candidate) =>
+      affectedScopeIds.has(candidate.scopeId) && (
+        candidate.realityState.status !== "current" ||
+        candidate.realityState.computedRevision !== candidate.realityState.realityRevision
+      )
+    );
+    if (incoherentScopes.length) {
+      throw new ScenarioReportValidationError(`Capacity inputs are still recomputing for ${incoherentScopes.map((candidate) => candidate.name).join(", ")}. Wait for coherent Reality, then review the scenario.`);
+    }
+    const currentCapacityBaseline = buildCapacityPlanBaseline({
+      people: portfolio.people,
+      allocations: portfolio.allocations,
+      contextSwitchCostPct: portfolio.contextSwitchCostPct,
+      scopeRevisionById: Object.fromEntries(portfolio.scopes.map((candidate) => [
+        candidate.scopeId,
+        candidate.realityState.realityRevision,
+      ])),
+    });
+    const capacityValidation = validateCapacityScenarioPlan(scenario.capacityPlan, currentCapacityBaseline);
+    if (!capacityValidation.ok) throw new ScenarioReportValidationError(capacityValidation.reason);
+    const unstaffed = Object.values(scenario.capacityPlan.requiredByScope).reduce((total, fte) => total + fte, 0);
+    if (unstaffed > 1e-6) {
+      throw new ScenarioReportValidationError(`This Capacity scenario still requires ${unstaffed.toFixed(1)} FTE that has not been staffed. Reallocate named capacity or add an explicit hypothetical hire before publishing it.`);
+    }
+  }
   const allItemIds = new Set(portfolio.scopes.flatMap((candidate) => [...candidate.items, ...candidate.forecastItems, ...candidate.executionItems].map((item) => item.id)));
   const allGateIds = new Set(portfolio.scopes.flatMap((candidate) => candidate.gates.map((gate) => gate.id)));
   const allScopeIds = new Set(portfolio.scopes.map((candidate) => candidate.scopeId));
@@ -166,6 +98,44 @@ export async function buildScenarioDecisionBriefReadModel(
   const unknownCapabilities = [...scenario.excludedCapabilityIds, ...Object.keys(scenario.knowledgeEstimateByCapabilityId), ...Object.keys(scenario.capabilityStaffingById)].filter((id) => !capabilityOwner.has(id));
   if (unknownItems.length || unknownGates.length || unknownScopes.length || unknownCapabilities.length) {
     throw new ScenarioReportValidationError(`Scenario references stale owner records: ${[...unknownItems, ...unknownGates, ...unknownScopes, ...unknownCapabilities].join(", ")}. Refresh and recreate it.`);
+  }
+
+  const includedSet = new Set(scenario.includedItemIds);
+  const conflictCapabilities = portfolio.scopes.flatMap((candidate) => {
+    const sourceItemIds = new Set(candidate.items.map((item) => item.id));
+    return candidate.capabilities.map((capability) => ({
+      id: capability.id,
+      name: capability.name,
+      scopeId: candidate.scopeId,
+      workItemIds: [
+        ...capability.workLinks
+          .filter((link) => (link.state === "active" || link.state === "configured") && sourceItemIds.has(link.externalId))
+          .map((link) => link.externalId),
+        ...(capability.acceptedEstimate
+          ? [knowledgeEstimateItemId(capability.id, capability.acceptedEstimate.id, capability.acceptedEstimate.contextSnapshotId)]
+          : []),
+      ],
+    }));
+  });
+  const leverConflicts = findScenarioLeverConflicts({
+    capabilities: conflictCapabilities,
+    excludedCapabilityIds: scenario.excludedCapabilityIds,
+    excludedItemIds: scenario.excludedItemIds,
+    includedItemIds: scenario.includedItemIds,
+    knowledgeCapabilityIds: Object.keys(scenario.knowledgeEstimateByCapabilityId),
+    staffingCapabilityIds: Object.keys(scenario.capabilityStaffingById),
+  });
+  if (leverConflicts.length) {
+    throw new ScenarioReportValidationError(`Scenario levers conflict: ${scenarioLeverConflictMessage(leverConflicts)}. Resolve the conflicting choices in Scope before publishing; no staged changes were removed.`);
+  }
+  const conflictingIncludedItems = portfolio.scopes.flatMap((candidate) => candidate.capabilities.flatMap((capability) => {
+    const hasCapabilityBasis = Boolean(capability.acceptedEstimate || scenario.knowledgeEstimateByCapabilityId[capability.id]);
+    return hasCapabilityBasis
+      ? capability.workLinks.map((link) => link.externalId).filter((id) => includedSet.has(id))
+      : [];
+  }));
+  if (conflictingIncludedItems.length) {
+    throw new ScenarioReportValidationError(`Additional work is inside a capability estimate boundary and cannot be added independently: ${[...new Set(conflictingIncludedItems)].join(", ")}. Review whether it is genuinely additional work before publishing.`);
   }
 
   for (const [capabilityId, selected] of Object.entries(scenario.knowledgeEstimateByCapabilityId)) {
@@ -206,18 +176,40 @@ export async function buildScenarioDecisionBriefReadModel(
     contextSwitchCostPct: portfolio.contextSwitchCostPct,
   };
   const baselineSpecs = applyScenarioInputDelta(scopes, portfolio.people, baselineDelta);
+  const frozenBaselineCapabilityEstimates = portfolio.scopes.flatMap((candidate) => {
+    const sourceItemIds = new Set(candidate.items.map((item) => item.id));
+    const simulatedIds = new Set(scopes.find((row) => row.scopeId === candidate.scopeId)?.items.map((item) => item.id) ?? []);
+    return candidate.capabilities.flatMap((capability) => {
+      if (capability.status !== "accepted" || !capability.acceptedEstimate) return [];
+      const syntheticId = knowledgeEstimateItemId(capability.id, capability.acceptedEstimate.id, capability.acceptedEstimate.contextSnapshotId);
+      if (!simulatedIds.has(syntheticId)) return [];
+      const replacedSourceItemIds = capability.workLinks
+        .filter((link) => (link.state === "active" || link.state === "configured") && sourceItemIds.has(link.externalId))
+        .map((link) => link.externalId);
+      return [freezeCapabilityEstimate(
+        candidate.scopeId,
+        capability,
+        capability.acceptedEstimate,
+        replacedSourceItemIds,
+        "accepted",
+      )];
+    });
+  });
   const excluded = new Set(scenario.excludedItemIds);
   const included = new Set(scenario.includedItemIds);
   const resolved = new Set(scenario.resolvedGateIds);
   const excludedCapabilities = new Set(scenario.excludedCapabilityIds);
   const scenarioScopes = scopes.map((candidate) => {
     const owner = portfolio.scopes.find((row) => row.scopeId === candidate.scopeId)!;
+    const sourceItemIds = new Set(owner.items.map((item) => item.id));
     const excludedCapabilityItemIds = new Set(owner.capabilities
       .filter((capability) => excludedCapabilities.has(capability.id))
       .flatMap((capability) => [
-        ...capability.workLinks.map((link) => link.externalId),
+        ...capability.workLinks
+          .filter((link) => (link.state === "active" || link.state === "configured") && sourceItemIds.has(link.externalId))
+          .map((link) => link.externalId),
         ...(capability.acceptedEstimate
-          ? [`knowledge-estimate:${capability.id}:${capability.acceptedEstimate.id}`]
+          ? [knowledgeEstimateItemId(capability.id, capability.acceptedEstimate.id, capability.acceptedEstimate.contextSnapshotId)]
           : []),
       ]));
     const knowledgeSubstitutions = Object.entries(scenario.knowledgeEstimateByCapabilityId).flatMap(([capabilityId, selected]) => {
@@ -227,11 +219,14 @@ export async function buildScenarioDecisionBriefReadModel(
         capabilityId,
         capabilityName: capability.name,
         estimateId: selected.estimateId,
+        contextSnapshotId: selected.contextSnapshotId,
         range: { low: selected.low, likely: selected.likely, high: selected.high },
         replacedItemIds: [
-          ...capability.workLinks.map((link) => link.externalId),
+          ...capability.workLinks
+            .filter((link) => (link.state === "active" || link.state === "configured") && sourceItemIds.has(link.externalId))
+            .map((link) => link.externalId),
           ...(capability.acceptedEstimate
-            ? [`knowledge-estimate:${capabilityId}:${capability.acceptedEstimate.id}`]
+            ? [knowledgeEstimateItemId(capabilityId, capability.acceptedEstimate.id, capability.acceptedEstimate.contextSnapshotId)]
             : []),
         ],
       }];
@@ -245,36 +240,182 @@ export async function buildScenarioDecisionBriefReadModel(
       gates: candidate.gates.filter((gate) => !resolved.has(gate.id)),
     };
   });
-  const scenarioDelta: ScenarioInputDelta = {
-    ...baselineDelta,
-    contextSwitchCostPct: scenario.contextSwitchCostPct ?? portfolio.contextSwitchCostPct,
-    capacityOverrideByScope: scenario.capacityOverrideByScope,
+  const frozenCapabilityEstimates = portfolio.scopes.flatMap((candidate) => candidate.capabilities.flatMap((capability) => {
+    if (excludedCapabilities.has(capability.id)) return [];
+    const sourceItemIds = new Set(candidate.items.map((item) => item.id));
+    const replacedSourceItemIds = capability.workLinks
+      .filter((link) => (link.state === "active" || link.state === "configured") && sourceItemIds.has(link.externalId))
+      .map((link) => link.externalId);
+    const simulatedIds = new Set(scenarioScopes.find((row) => row.scopeId === candidate.scopeId)?.items.map((item) => item.id) ?? []);
+    const provisional = scenario.knowledgeEstimateByCapabilityId[capability.id];
+    if (provisional) {
+      const estimate = capability.knowledgeEstimates.find((row) =>
+        row.id === provisional.estimateId && row.contextSnapshotId === provisional.contextSnapshotId
+      );
+      if (!estimate || !simulatedIds.has(knowledgeEstimateItemId(capability.id, estimate.id, estimate.contextSnapshotId))) return [];
+      return [freezeCapabilityEstimate(
+        candidate.scopeId,
+        capability,
+        estimate,
+        [
+          ...replacedSourceItemIds,
+          ...(capability.acceptedEstimate
+            ? [knowledgeEstimateItemId(capability.id, capability.acceptedEstimate.id, capability.acceptedEstimate.contextSnapshotId)]
+            : []),
+        ],
+        "provisional",
+      )];
+    }
+    return capability.status === "accepted" && capability.acceptedEstimate && simulatedIds.has(knowledgeEstimateItemId(capability.id, capability.acceptedEstimate.id, capability.acceptedEstimate.contextSnapshotId))
+      ? [freezeCapabilityEstimate(
+          candidate.scopeId,
+          capability,
+          capability.acceptedEstimate,
+          replacedSourceItemIds,
+          "accepted",
+        )]
+      : [];
+  }));
+  const scenarioDelta: ScenarioInputDelta = scenario.capacityPlan
+    ? resolveCapacityPlan(scenario.capacityPlan)
+    : {
+        ...baselineDelta,
+        contextSwitchCostPct: scenario.contextSwitchCostPct ?? portfolio.contextSwitchCostPct,
+        capacityOverrideByScope: scenario.capacityOverrideByScope,
   };
   const scenarioSpecs = applyScenarioInputDelta(scenarioScopes, portfolio.people, scenarioDelta);
+  if (scenario.capacityPlan) {
+    const baselineCapacityByScope = new Map(baselineSpecs.map((candidate) => [candidate.scopeId, candidate.teamCapacity]));
+    const expectedCapacityProjection = Object.fromEntries(scenarioSpecs.flatMap((candidate) => {
+      const baselineCapacity = baselineCapacityByScope.get(candidate.scopeId) ?? candidate.teamCapacity;
+      return Math.abs(candidate.teamCapacity - baselineCapacity) > 1e-6
+        ? [[candidate.scopeId, candidate.teamCapacity] as const]
+        : [];
+    }));
+    const projectionScopeIds = new Set([
+      ...Object.keys(expectedCapacityProjection),
+      ...Object.keys(scenario.capacityOverrideByScope),
+    ]);
+    const projectionMismatch = [...projectionScopeIds].find((scopeId) => {
+      const expected = expectedCapacityProjection[scopeId];
+      const supplied = scenario.capacityOverrideByScope[scopeId];
+      return expected === undefined || supplied === undefined || Math.abs(expected - supplied) > 1e-6;
+    });
+    if (projectionMismatch) {
+      throw new ScenarioReportValidationError(`Capacity projection for ${projectionMismatch} does not match the complete exact named plan. Return to Capacity and recreate the scenario.`);
+    }
+    const expectedLegacySwitchCost = scenario.capacityPlan.contextSwitchCostPct === scenario.capacityPlan.baselineFingerprint.contextSwitchCostPct
+      ? null
+      : scenario.capacityPlan.contextSwitchCostPct;
+    if (scenario.contextSwitchCostPct !== expectedLegacySwitchCost) {
+      throw new ScenarioReportValidationError("The projected switch-cost field does not match the exact named Capacity plan. Return to Capacity and recreate the scenario.");
+    }
+    const capacityChangesSimulation = scenarioSpecs.some((candidate) =>
+      Math.abs(candidate.teamCapacity - (baselineCapacityByScope.get(candidate.scopeId) ?? candidate.teamCapacity)) > 1e-6
+    );
+    if (!capacityChangesSimulation) {
+      throw new ScenarioReportValidationError("The Capacity plan does not change any simulated project input. Allocate an explicit hypothetical hire or clear the no-op capacity assumption before publishing.");
+    }
+  }
+
+  // Every claimed ticket-level override must survive into the exact
+  // simulation input. Excluded work or work replaced by a capability basis
+  // would otherwise produce a report that names a change the engine ignored.
+  const simulatedItemIds = new Set(scenarioScopes.flatMap((candidate) => candidate.items.map((item) => item.id)));
+  const ignoredEstimateOverrides = Object.keys(scenario.estimateOverrideByItemId).filter((id) => !simulatedItemIds.has(id));
+  if (ignoredEstimateOverrides.length) {
+    throw new ScenarioReportValidationError(`Estimate overrides would not affect the simulated basis: ${ignoredEstimateOverrides.join(", ")}. Clear the covered ticket assumptions or review the capability estimate boundary before publishing.`);
+  }
+  const baselineCapacityBasis: ForecastCapacityBasisInput = {
+    namedRoster: portfolio.people,
+    modeledAllocations: baselineDelta.allocations,
+    contextSwitchCostPct: baselineDelta.contextSwitchCostPct,
+    hypotheticalHires: [],
+    aggregateOverridesByScope: {},
+  };
+  const scenarioCapacityBasis: ForecastCapacityBasisInput = {
+    namedRoster: portfolio.people,
+    modeledAllocations: scenarioDelta.allocations,
+    contextSwitchCostPct: scenarioDelta.contextSwitchCostPct,
+    hypotheticalHires: scenario.capacityPlan?.hypotheticalPeople ?? [],
+    // Exact named plans flow through allocations and hires. This field only
+    // records an aggregate override actually consumed by the simulation.
+    aggregateOverridesByScope: scenarioDelta.capacityOverrideByScope ?? {},
+  };
   const baselineResult = runPortfolioSimulation(baselineSpecs).get(scope.id)!;
   const scenarioResult = runPortfolioSimulation(scenarioSpecs).get(scope.id)!;
   const deltaDays = Math.round((scenarioResult.likelyDate.getTime() - baselineResult.likelyDate.getTime()) / day);
+  const capacityLedger = scenario.capacityPlan ? capacityAssumptionLedger(scenario.capacityPlan) : undefined;
+  const capacityAffectedScopeIds = scenario.capacityPlan ? capacityPlanAffectedScopeIds(scenario.capacityPlan) : [];
   const causalExplanation = [
+    ...(scenario.excludedCapabilityIds.length ? [`Removed ${scenario.excludedCapabilityIds.length} product capability${scenario.excludedCapabilityIds.length === 1 ? "" : "s"} from the hypothetical release scope.`] : []),
     ...(scenario.excludedItemIds.length ? [`Removed ${scenario.excludedItemIds.length} executable work item${scenario.excludedItemIds.length === 1 ? "" : "s"}.`] : []),
     ...(scenario.includedItemIds.length ? [`Added ${scenario.includedItemIds.length} mapped execution item${scenario.includedItemIds.length === 1 ? "" : "s"}.`] : []),
     ...(scenario.resolvedGateIds.length ? [`Assumed ${scenario.resolvedGateIds.length} decision gate${scenario.resolvedGateIds.length === 1 ? "" : "s"} resolved.`] : []),
     ...(Object.keys(scenario.estimateOverrideByItemId).length ? [`Changed ${Object.keys(scenario.estimateOverrideByItemId).length} governed estimate assumption${Object.keys(scenario.estimateOverrideByItemId).length === 1 ? "" : "s"}.`] : []),
     ...(Object.keys(scenario.knowledgeEstimateByCapabilityId).length ? [`Used ${Object.keys(scenario.knowledgeEstimateByCapabilityId).length} source-attributed meeting estimate${Object.keys(scenario.knowledgeEstimateByCapabilityId).length === 1 ? "" : "s"} provisionally, replacing rather than adding to ticket rollups.`] : []),
     ...(Object.keys(scenario.capabilityStaffingById).length ? [`Added ${Object.keys(scenario.capabilityStaffingById).length} isolated capability staffing outlook${Object.keys(scenario.capabilityStaffingById).length === 1 ? "" : "s"}; these do not claim the same people can execute multiple cards simultaneously.`] : []),
-    ...(Object.keys(scenario.capacityOverrideByScope).length ? [`Changed aggregate capacity for ${Object.keys(scenario.capacityOverrideByScope).length} project${Object.keys(scenario.capacityOverrideByScope).length === 1 ? "" : "s"}.`] : []),
-    ...(scenario.contextSwitchCostPct === null ? [] : [`Set context-switch cost to ${scenario.contextSwitchCostPct}%.`]),
+    ...(scenario.capacityPlan
+      ? [`Applied an exact named capacity plan across ${capacityAffectedScopeIds.length} affected project${capacityAffectedScopeIds.length === 1 ? "" : "s"}; allocations and outside-Signal commitments remain conserved.`]
+      : Object.keys(scenario.capacityOverrideByScope).length
+        ? [`Changed aggregate capacity for ${Object.keys(scenario.capacityOverrideByScope).length} project${Object.keys(scenario.capacityOverrideByScope).length === 1 ? "" : "s"}.`]
+        : []),
+    ...(capacityLedger?.scenario.hypotheticalHireFte
+      ? [`Added ${capacityLedger.scenario.hypotheticalHireFte.toFixed(1)} FTE from explicit hypothetical hires.`]
+      : []),
+    ...(capacityLedger && capacityLedger.scenario.externalCommitmentFte > 0
+      ? [`Preserved ${capacityLedger.scenario.externalCommitmentFte.toFixed(1)} FTE committed outside Signal.`]
+      : []),
+    ...(scenario.capacityPlan
+      ? scenario.capacityPlan.contextSwitchCostPct === scenario.capacityPlan.baselineFingerprint.contextSwitchCostPct
+        ? []
+        : [`Set context-switch cost to ${scenario.capacityPlan.contextSwitchCostPct}%.`]
+      : scenario.contextSwitchCostPct === null ? [] : [`Set context-switch cost to ${scenario.contextSwitchCostPct}%.`]),
     `The protected forecast engine moved the likely date ${Math.abs(deltaDays)} day${Math.abs(deltaDays) === 1 ? "" : "s"} ${deltaDays < 0 ? "earlier" : deltaDays > 0 ? "later" : "(no net movement)"}.`,
   ];
 
-  const input = await loadDecisionBriefOwnerInputs(scope, { contextSnapshotId, mode: "scenario", scenarioId: scenario.scenarioId });
+  // Load every non-forecast owner once, then derive both halves from the same
+  // immutable owner read and the same portfolio baseline. generate.ts persists
+  // this `realityBrief` with `brief` as one comparison; it must not issue a
+  // second independent Reality read.
+  const ownerInput = await loadDecisionBriefOwnerInputs(scope, { contextSnapshotId, mode: "reality", scenarioId: null });
+  if ((ownerInput.project.realityRevision ?? 0) !== realityRevision) {
+    throw new ScenarioReportValidationError("Reality changed while the paired report owner inputs were loading. Review the refreshed Scenario and try again.");
+  }
+  const realityInput = structuredClone(ownerInput);
+  realityInput.forecast = {
+    ...realityInput.forecast,
+    basis: freezeForecastBasis(baselineSpecs, frozenBaselineCapabilityEstimates, baselineCapacityBasis),
+    simulationItemCount: baselineSpecs.find((candidate) => candidate.scopeId === scope.id)?.items.length ?? 0,
+    sourceId: `scenario-pair:${scenario.scenarioId}:reality:${realityRevision}`,
+    earliestDate: toDateOnly(baselineResult.earliestDate),
+    likelyDate: toDateOnly(baselineResult.likelyDate),
+    latestDate: toDateOnly(baselineResult.latestDate),
+    confidenceAtTarget: baselineResult.confidenceAtTarget,
+    estimateQuality: estimateQualityForItems(scopes.find((candidate) => candidate.scopeId === scope.id)?.items ?? []),
+    remainingEffortDays: baselineResult.remainingEffortDays,
+    decisionDelayDays: baselineResult.decisionDelayDays,
+  };
+  realityInput.capacity = {
+    ...realityInput.capacity,
+    forecastEffectiveFte: baselineSpecs.find((candidate) => candidate.scopeId === scope.id)?.teamCapacity ?? realityInput.capacity.forecastEffectiveFte,
+    contextSwitchCostPct: portfolio.contextSwitchCostPct,
+  };
+  const realityBrief = assembleDecisionBrief(realityInput);
+  realityBrief.identity.comparisonId = scenario.scenarioId;
+
+  const input = structuredClone(ownerInput);
+  input.mode = "scenario";
+  input.scenarioId = scenario.scenarioId;
   input.forecast = {
     ...input.forecast,
+    basis: freezeForecastBasis(scenarioSpecs, frozenCapabilityEstimates, scenarioCapacityBasis),
+    simulationItemCount: scenarioSpecs.find((candidate) => candidate.scopeId === scope.id)?.items.length ?? 0,
     sourceId: `scenario:${scenario.scenarioId}:reality:${realityRevision}`,
     earliestDate: toDateOnly(scenarioResult.earliestDate),
     likelyDate: toDateOnly(scenarioResult.likelyDate),
     latestDate: toDateOnly(scenarioResult.latestDate),
     confidenceAtTarget: scenarioResult.confidenceAtTarget,
-    remainingIssueCount: scenarioSpecs.find((candidate) => candidate.scopeId === scope.id)?.items.length ?? 0,
     estimateQuality: estimateQualityForItems(scenarioScopes.find((candidate) => candidate.scopeId === scope.id)?.items ?? []),
     remainingEffortDays: scenarioResult.remainingEffortDays,
     decisionDelayDays: scenarioResult.decisionDelayDays,
@@ -282,16 +423,17 @@ export async function buildScenarioDecisionBriefReadModel(
   input.context.warnings = [...input.context.warnings, `Scenario ${scenario.scenarioId} is hypothetical and based on Reality r${realityRevision}.`, ...causalExplanation];
   input.decisions = input.decisions.map((decision) => decision.gate && resolved.has(decision.gate.id) ? { ...decision, status: "scenario-resolved" } : decision);
   const override = scenario.capacityOverrideByScope[scope.id];
-  if (override !== undefined || scenario.contextSwitchCostPct !== null) {
+  if (scenario.capacityPlan || override !== undefined || scenario.contextSwitchCostPct !== null) {
     input.capacity = {
       ...input.capacity,
       status: "aggregate_unreconciled",
       reconciles: false,
       forecastEffectiveFte: scenarioSpecs.find((candidate) => candidate.scopeId === scope.id)?.teamCapacity ?? input.capacity.forecastEffectiveFte,
-      contextSwitchCostPct: scenario.contextSwitchCostPct ?? input.capacity.contextSwitchCostPct,
+      contextSwitchCostPct: scenario.capacityPlan?.contextSwitchCostPct ?? scenario.contextSwitchCostPct ?? input.capacity.contextSwitchCostPct,
     };
   }
   const brief = assembleDecisionBrief(input);
+  brief.identity.comparisonId = scenario.scenarioId;
   brief.headline.keyReason.value = causalExplanation.join(" ");
   const targetItems = new Map([...target.items, ...target.executionItems].map((item) => [item.id, item]));
   brief.movable.scope.value.capabilityOutlooks = Object.entries(scenario.capabilityStaffingById).flatMap(([capabilityId, staffing]) => {
@@ -335,6 +477,7 @@ export async function buildScenarioDecisionBriefReadModel(
     brief.caveats.value.push({ code: "CAPABILITY_OUTLOOK_ISOLATED", message: "Capability dates assume the named contributors stay focused on that card. They do not assert sequencing or simultaneous availability across other cards." });
   }
   return {
+    realityBrief,
     brief,
     scenarioSnapshot: {
       ...scenario,
@@ -343,6 +486,7 @@ export async function buildScenarioDecisionBriefReadModel(
         scenarioLikelyDate: toDateOnly(scenarioResult.likelyDate),
         deltaDays,
         causalExplanation,
+        capacityLedger,
       },
     },
   };

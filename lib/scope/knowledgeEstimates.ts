@@ -29,6 +29,8 @@ export interface CapabilityKnowledgeEstimate {
   evidenceRefs: string[];
   statement: string;
   confidence: string | null;
+  /** Verbatim provider locator/context; never a guessed document URL. */
+  sourceLocator?: { externalRef: string | null; sourceUrl: string | null; surroundingContext: string | null };
 }
 
 /**
@@ -49,9 +51,18 @@ export interface KnowledgeEstimateSubstitution {
   capabilityId: string;
   capabilityName: string;
   estimateId: string;
+  contextSnapshotId?: string;
   range: ThreePoint;
   replacedItemIds: string[];
   authority?: "accepted" | "provisional";
+}
+
+/** Snapshot-qualified identity for every newly computed basis. The legacy
+ * form remains readable only for frozen older payloads. */
+export function knowledgeEstimateItemId(capabilityId: string, estimateId: string, contextSnapshotId?: string): string {
+  return contextSnapshotId
+    ? `knowledge-estimate:${encodeURIComponent(capabilityId)}:${encodeURIComponent(contextSnapshotId)}:${encodeURIComponent(estimateId)}`
+    : `knowledge-estimate:${capabilityId}:${estimateId}`;
 }
 
 export function traceableKnowledgeEstimate(
@@ -90,7 +101,7 @@ export function substituteCapabilityKnowledgeEstimates<T extends WorkItem>(
   return [
     ...items.filter((item) => !replaced.has(item.id)),
     ...substitutions.map((entry) => ({
-      id: `knowledge-estimate:${entry.capabilityId}:${entry.estimateId}`,
+      id: knowledgeEstimateItemId(entry.capabilityId, entry.estimateId, entry.contextSnapshotId),
       label: `${entry.capabilityName} · ${entry.authority === "accepted" ? "accepted" : "provisional"} meeting estimate`,
       estimateSource: "knowledge" as const,
       ...entry.range,
@@ -100,6 +111,14 @@ export function substituteCapabilityKnowledgeEstimates<T extends WorkItem>(
 
 function nullableString(value: unknown): string | null {
   return typeof value === "string" && value.trim() ? value : null;
+}
+
+export function safeSourceUrl(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  try {
+    const url = new URL(value);
+    return (url.protocol === "https:" || url.protocol === "http:") && !url.username && !url.password ? url.toString() : null;
+  } catch { return null; }
 }
 
 function stringArray(value: unknown): string[] {
@@ -139,6 +158,8 @@ export function acceptedCapabilityEstimate(value: unknown): AcceptedCapabilityEs
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
   const candidate = value as Record<string, unknown>;
   const range = threePoint(candidate.range);
+  const locator = candidate.sourceLocator && typeof candidate.sourceLocator === "object"
+    ? candidate.sourceLocator as Record<string, unknown> : null;
   if (
     !range || candidate.unit !== "developer_days" || candidate.basis !== "remaining_capability" ||
     typeof candidate.id !== "string" || !candidate.id ||
@@ -167,6 +188,10 @@ export function acceptedCapabilityEstimate(value: unknown): AcceptedCapabilityEs
     evidenceRefs: stringArray(candidate.evidenceRefs),
     statement: candidate.statement,
     confidence: nullableString(candidate.confidence),
+    ...(locator ? { sourceLocator: {
+      externalRef: nullableString(locator.externalRef), sourceUrl: safeSourceUrl(locator.sourceUrl),
+      surroundingContext: nullableString(locator.surroundingContext),
+    } } : {}),
     acceptedAt: candidate.acceptedAt,
     acceptedBy: "operator",
   };
@@ -285,7 +310,7 @@ function evidenceFor(pkg: ProjectContextPackage, refs: string[]): EvidenceItem |
   const byId = new Map(pkg.evidence.map((item) => [item.id, item]));
   for (const ref of refs) {
     const evidence = byId.get(ref);
-    if (evidence) return evidence;
+    if (evidence?.excerpt?.trim()) return evidence;
   }
   return null;
 }
@@ -323,6 +348,10 @@ export function capabilityKnowledgeEstimates(
     if (!capability) continue;
     const refs = object.evidenceRefs ?? [];
     const evidence = evidenceFor(pkg, refs);
+    const source = pkg.sources.find((candidate) => candidate.sourceRef === evidence?.sourceRef);
+    const evidenceData = record(evidence?.data);
+    const evidenceExtra = record(evidence?.extra);
+    const sourceExtra = record(source?.extra);
     const range = parseDeveloperDayRange(fields, rawEstimate);
     estimates.push({
       id: object.id,
@@ -337,9 +366,18 @@ export function capabilityKnowledgeEstimates(
       observedAt: observedAtFor(object, evidence),
       sourceRef: evidence?.sourceRef ?? null,
       excerpt: evidence?.excerpt ?? null,
-      evidenceRefs: refs,
+      // The quote's actual passage must be first: Audit navigation uses it,
+      // not an unresolved or non-passage ref that preceded it upstream.
+      evidenceRefs: evidence ? [evidence.id, ...refs.filter((ref) => ref !== evidence.id)] : refs,
       statement: object.statement,
       confidence: firstText(record(object.provenance), ["confidence"]),
+      sourceLocator: {
+        externalRef: evidence?.externalRef ?? null,
+        sourceUrl: [evidence?.externalRef, ...[evidenceData, evidenceExtra, sourceExtra].flatMap((fields) => [fields.url, fields.sourceUrl, fields.externalUrl])]
+          .map(safeSourceUrl).find((value) => value !== null) ?? null,
+        surroundingContext: firstText(evidenceData, ["surroundingContext", "context", "fullText"])
+          ?? firstText(evidenceExtra, ["surroundingContext", "context"]),
+      },
     });
   }
 

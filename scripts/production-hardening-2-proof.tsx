@@ -213,8 +213,12 @@ assert.equal(brief.headline.likelyWindow.source.currentness, "stale");
 assert.equal(brief.timeline.currentForecast.source.currentness, "stale");
 assert.equal(brief.movable.scenarioOptions.source.currentness, "stale");
 assert(brief.caveats.value.some((caveat) => caveat.code === "FORECAST_STALE"));
+const staleForecastCaveat = brief.caveats.value.find((caveat) => caveat.code === "FORECAST_STALE")!;
+assert.match(staleForecastCaveat.message, /source was stale when this brief was generated/i);
+assert(!/live Forecast/i.test(staleForecastCaveat.message));
 const briefMarkdown = renderDecisionBriefMarkdown(brief);
-assert(briefMarkdown.includes("Live Forecast · STALE · as of Aug 5, 2026"));
+assert(briefMarkdown.includes("Snapshot generated Sep 6, 2026 · source STALE at generation · source as of Aug 5, 2026"));
+assert(!briefMarkdown.includes("Live Forecast"), "immutable exports must not present their forecast as live");
 
 // Audit is in the fixture so every cross-instrument proof includes the
 // protected world contract even though this tranche changes no spatial file.

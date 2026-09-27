@@ -1,4 +1,5 @@
 import { LinearClient, LinearDocument, type LinearRawResponse } from "@linear/sdk";
+import { AsyncLocalStorage } from "node:async_hooks";
 
 const KIT_FOUND_LABEL = "kit-found";
 
@@ -111,6 +112,14 @@ interface ScopedIssuesQueryData {
 // fine on Railway where next start is one long-lived process.
 const ISSUE_CACHE_TTL_MS = 2 * 60 * 1000;
 const issueCache = new Map<string, { at: number; issues: LinearIssueSummary[] }>();
+const scopedReadSnapshot = new AsyncLocalStorage<Map<string, Promise<LinearIssueSummary[]>>>();
+
+/** Pin one provider read per governed filter for report assembly. A concurrent
+ * refresh may invalidate the ordinary TTL cache but cannot split a report pair
+ * across different Linear observations. No persistent state is changed. */
+export function withScopedIssueReadSnapshot<T>(read: () => Promise<T>): Promise<T> {
+  return scopedReadSnapshot.run(new Map(), read);
+}
 
 /** A governed Linear write changes the canonical work set immediately.
  * Drop every filtered view so the next Forecast/Scope read cannot retain a
@@ -125,6 +134,18 @@ export function invalidateIssueCache(): void {
 // data (see Scope model), not env vars, so a new module (Precon, Design,
 // ...) is a new row, not a redeploy.
 export async function getScopedIssues(scope: ScopeFilter): Promise<LinearIssueSummary[]> {
+  const snapshot = scopedReadSnapshot.getStore();
+  if (!snapshot) return readScopedIssues(scope);
+  const key = JSON.stringify([scope.teamKey, [...(scope.projectNames ?? [])].sort(), scope.labelFilter ?? null, scope.executionState ?? "configured"]);
+  let pending = snapshot.get(key);
+  if (!pending) {
+    pending = readScopedIssues(scope).then((issues) => structuredClone(issues));
+    snapshot.set(key, pending);
+  }
+  return structuredClone(await pending);
+}
+
+async function readScopedIssues(scope: ScopeFilter): Promise<LinearIssueSummary[]> {
   // An activated project is valid before an execution system is configured.
   // Returning the empty structural read here keeps Audit/Scope navigable;
   // Forecast itself checks executionState and refuses to manufacture a date.

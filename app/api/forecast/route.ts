@@ -5,6 +5,7 @@ import { computeChangesSince } from "@/lib/reports/changes";
 import { computeMomentum } from "@/lib/momentum/compute";
 import { attributionSentence } from "@/lib/momentum/attribution";
 import { toDateOnly } from "@/lib/time/dateContract";
+import { CANONICAL_REPORT_MODE_WHERE, CANONICAL_REPORT_ORDER_ASC, CANONICAL_REPORT_ORDER_DESC } from "@/lib/reports/history";
 
 // How many most-recent Reports feed the sparkline -- small on purpose,
 // it's an at-a-glance trend line, not a chart worth panning/zooming.
@@ -42,8 +43,8 @@ export async function GET(req: NextRequest) {
   // "vs. last time we told someone a number", which is the honest
   // meaning of "moved since last report".
   const recentReports = await prisma.report.findMany({
-    where: { scopeId: scope.id },
-    orderBy: { generatedAt: "desc" },
+    where: { scopeId: scope.id, ...CANONICAL_REPORT_MODE_WHERE },
+    orderBy: CANONICAL_REPORT_ORDER_DESC,
     take: SPARKLINE_REPORT_COUNT,
     select: { generatedAt: true, likelyDate: true, confidenceAtTarget: true, targetDate: true },
   });
@@ -74,10 +75,10 @@ export async function GET(req: NextRequest) {
   // history to say anything meaningful -- 4+ reports spanning 4+ weeks
   // for THIS Scope. No partial/approximate version in between; either
   // there's enough to be honest about, or there isn't.
-  const reportCount = await prisma.report.count({ where: { scopeId: scope.id } });
+  const reportCount = await prisma.report.count({ where: { scopeId: scope.id, ...CANONICAL_REPORT_MODE_WHERE } });
   const oldestReport = await prisma.report.findFirst({
-    where: { scopeId: scope.id },
-    orderBy: { generatedAt: "asc" },
+    where: { scopeId: scope.id, ...CANONICAL_REPORT_MODE_WHERE },
+    orderBy: CANONICAL_REPORT_ORDER_ASC,
     select: { generatedAt: true },
   });
   const spanDays = oldestReport ? (Date.now() - oldestReport.generatedAt.getTime()) / 86400000 : 0;

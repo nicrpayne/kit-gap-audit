@@ -2,11 +2,12 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { readUploadedFile, type ParsedSheet } from "@/lib/client/uploadFile";
-import { bettingOddsPhrase } from "@/lib/momentum/compute";
 import MomentumChip, { type MomentumData } from "./MomentumChip";
 import AskChips from "./AskChips";
 import CalibrationLink, { type CalibrationData } from "./CalibrationLink";
 import { formatDateOnly, toDateOnly } from "@/lib/time/dateContract";
+import type { ForecastCoverageContract } from "@/lib/forecast/coverage";
+import { FORECAST_PERCENTILE_COPY, forecastAssumptionSnapshot, presentForecastDeliveryClaim } from "@/lib/forecast/claims";
 
 interface ScenarioRow {
   id: string;
@@ -17,6 +18,7 @@ interface ScenarioRow {
 }
 
 interface ForecastData {
+  forecastCoverage: ForecastCoverageContract;
   scope: {
     id: string;
     name: string;
@@ -297,6 +299,14 @@ export default function ForecastView({ scopeId }: { scopeId: string }) {
   const likelyMs = new Date(data.likelyDate).getTime();
   const span = Math.max(1, latestMs - earliestMs);
   const likelyPos = Math.min(100, Math.max(0, ((likelyMs - earliestMs) / span) * 100));
+  const claim = presentForecastDeliveryClaim({
+    scopeName: data.scope.name,
+    coverage: data.forecastCoverage,
+    likelyDate: formatDateOnly(data.likelyDate),
+    targetDate: data.scope.targetDate ? formatDateOnly(data.scope.targetDate) : null,
+    confidenceAtTarget: data.confidenceAtTarget,
+  });
+  const assumptions = forecastAssumptionSnapshot();
 
   return (
     <div>
@@ -511,22 +521,29 @@ export default function ForecastView({ scopeId }: { scopeId: string }) {
         </details>
       </div>
 
-      <div className="border border-[var(--color-line)] rounded-xl bg-[var(--color-card)] p-6 mb-6">
+      <div className="border border-[var(--color-line)] rounded-xl bg-[var(--color-card)] p-6 mb-6" aria-label={claim.accessibleLabel}>
         <div className="text-[11px] uppercase tracking-wider text-[var(--color-ink-soft)] mb-1">
-          Likely release date
+          {data.forecastCoverage.state === "forecastable" ? "P50 delivery outcome" : data.forecastCoverage.state === "modeled_subset" ? "Modeled subset P50" : "Delivery outcome"}
         </div>
-        <div className="font-display text-6xl mb-3">{formatDateOnly(data.likelyDate)}</div>
-        {data.confidenceAtTarget !== null && (
+        <div className="font-display text-6xl mb-3">
+          {data.forecastCoverage.state === "unavailable" ? "—" : `${data.forecastCoverage.state === "modeled_subset" ? "~" : ""}${formatDateOnly(data.likelyDate)}`}
+        </div>
+        {!data.forecastCoverage.canonicalForecast && (
+          <div className="mb-4 rounded-md border border-[var(--color-amber)] bg-[var(--color-amber-soft)] px-3 py-2 text-xs text-[var(--color-amber)]">
+            {claim.badge} · {claim.detail ?? claim.targetConfidence}
+          </div>
+        )}
+        {data.forecastCoverage.canonicalForecast && data.confidenceAtTarget !== null && (
           <div className="inline-flex items-center rounded-full bg-[var(--color-accent-soft)] text-[var(--color-accent-dark)] px-3 py-1 text-xs font-medium mb-5">
-            {bettingOddsPhrase(data.confidenceAtTarget)}
+            {data.confidenceAtTarget}% of simulated runs finish by the target under these assumptions · not measured probability
           </div>
         )}
 
-        {data.momentum && <MomentumChip momentum={data.momentum} currentConfidence={data.confidenceAtTarget} />}
-        <CalibrationLink calibration={data.calibration} />
+        {data.forecastCoverage.canonicalForecast && data.momentum && <MomentumChip momentum={data.momentum} currentConfidence={data.confidenceAtTarget} />}
+        {data.forecastCoverage.canonicalForecast && <CalibrationLink calibration={data.calibration} />}
 
         <div className="flex items-center gap-4 text-xs text-[var(--color-ink-soft)] mt-5">
-          <span>Earliest {formatDateOnly(data.earliestDate)}</span>
+          <span>P10 {formatDateOnly(data.earliestDate)}</span>
           <div className="flex-1 h-2 rounded-full bg-[var(--color-line)] relative">
             <div
               className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 h-3 w-3 rounded-full bg-[var(--color-accent)] border-2 border-white shadow"
@@ -534,14 +551,21 @@ export default function ForecastView({ scopeId }: { scopeId: string }) {
               title={`Likely: ${formatDateOnly(data.likelyDate)}`}
             />
           </div>
-          <span>Latest {formatDateOnly(data.latestDate)}</span>
+          <span>P90 {formatDateOnly(data.latestDate)}</span>
         </div>
+        <div className="mt-2 text-[11px] text-[var(--color-ink-soft)]">{FORECAST_PERCENTILE_COPY.interval}. {FORECAST_PERCENTILE_COPY.p10}. {FORECAST_PERCENTILE_COPY.p90}.</div>
+        <details className="mt-4 border-t border-[var(--color-line)] pt-3">
+          <summary className="cursor-pointer text-xs text-[var(--color-ink-soft)]">Forecast assumptions · {assumptions.version}</summary>
+          <ul className="mt-2 space-y-1.5 text-[11px] text-[var(--color-ink-soft)]">
+            {assumptions.items.map((item) => <li key={item.id}><strong>{item.label}.</strong> {item.detail}</li>)}
+          </ul>
+        </details>
       </div>
 
       {data.scenarios.length > 0 && (
         <details open className="border border-[var(--color-line)] rounded-xl bg-[var(--color-card)] mb-6">
           <summary className="px-5 py-3 text-sm cursor-pointer select-none font-medium hover:text-[var(--color-accent-dark)]">
-            Paths to a sooner date
+            {data.forecastCoverage.canonicalForecast ? "Paths to a sooner date" : "Modeled-subset scenario outcomes"}
           </summary>
           <div className="px-5 pb-5 pt-1">
             <p className="text-xs text-[var(--color-ink-soft)] mb-4">
@@ -557,7 +581,7 @@ export default function ForecastView({ scopeId }: { scopeId: string }) {
                     </span>
                     {s.label}
                   </span>
-                  <span className="font-medium whitespace-nowrap">{formatDateOnly(s.likelyDate)}</span>
+                  <span className="font-medium whitespace-nowrap">{data.forecastCoverage.canonicalForecast ? "" : "~"}{formatDateOnly(s.likelyDate)}</span>
                   <span
                     className={`text-xs whitespace-nowrap w-16 text-right ${
                       s.deltaDays < 0 ? "text-[var(--color-accent-dark)]" : "text-[var(--color-ink-soft)]"
@@ -565,11 +589,11 @@ export default function ForecastView({ scopeId }: { scopeId: string }) {
                   >
                     {s.deltaDays < 0 ? `${s.deltaDays} days` : s.deltaDays === 0 ? "no change" : `+${s.deltaDays} days`}
                   </span>
-                  {s.confidenceAtTarget !== null && (
+                  {data.forecastCoverage.canonicalForecast && s.confidenceAtTarget !== null && (
                     <span
                       className="text-xs font-medium w-24 text-right whitespace-nowrap"
                       style={{ color: confidenceColor(s.confidenceAtTarget) }}
-                      title="Chance of landing on or before your target date under this scenario"
+                      title="Simulated frequency of finishing by the target under this scenario; not a measured probability"
                     >
                       {s.confidenceAtTarget}% at target
                     </span>

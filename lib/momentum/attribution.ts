@@ -37,7 +37,7 @@ export function attributionSentence(changes: ChangesSince): string | null {
 export function reportAttributionSentence(report: { resolvedSinceLastCount: number; shippedCount: number }): string | null {
   if (report.resolvedSinceLastCount > 0) {
     const n = report.resolvedSinceLastCount;
-    return `${n} blocking decision${n === 1 ? "" : "s"} resolved.`;
+    return `${n} Audit Finding${n === 1 ? "" : "s"} resolved.`;
   }
   if (report.shippedCount > 0) {
     const n = report.shippedCount;

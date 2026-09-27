@@ -60,7 +60,7 @@ export function explainScope(input: ScopeExplanationInput): string[] {
     if (deltaDays < 0) {
       lines.push(`${capacityPhrase}, which shortened its own forecast by ${Math.abs(deltaDays)} days.`);
     } else if (deltaDays === 0) {
-      lines.push(`${capacityPhrase}, but its own forecast didn't move — another constraint (its remaining work, or a blocking decision) still dominates.`);
+      lines.push(`${capacityPhrase}, but its own forecast didn't move — its remaining work, a serial gate, or a dependency finish floor still sets the later completion.`);
     } else {
       lines.push(`${capacityPhrase}. Its forecast still moved later — the added capacity wasn't enough to offset something else that changed.`);
     }
@@ -68,9 +68,9 @@ export function explainScope(input: ScopeExplanationInput): string[] {
 
   for (const dep of movedDependencies) {
     if (deltaDays !== 0 && Math.sign(deltaDays) === Math.sign(dep.deltaDays)) {
-      lines.push(`${scopeName} depends on ${dep.name}, which moved ${moveWord(dep.deltaDays)} — ${scopeName} moved with it.`);
+      lines.push(`${dep.name} is a declared finish floor and moved ${moveWord(dep.deltaDays)}. ${scopeName} also moved ${moveWord(deltaDays)}; the simulation does not attribute how much of that movement came from the floor.`);
     } else {
-      lines.push(`${scopeName} depends on ${dep.name}, which moved ${moveWord(dep.deltaDays)}, but ${scopeName}'s own date didn't follow — another constraint still dominates ${scopeName}'s forecast.`);
+      lines.push(`${dep.name} is a declared finish floor and moved ${moveWord(dep.deltaDays)}, but ${scopeName}'s later completion did not follow it — the scope's own outcome or another floor still set the date.`);
     }
   }
 

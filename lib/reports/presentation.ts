@@ -132,7 +132,9 @@ export function deliveryDrivers(brief: DecisionBriefV1): DeliveryDriver[] {
       id: `dependency:${dependency.scopeId}`,
       family: "dependency",
       label: dependency.name,
-      detail: dependency.likelyDate ? `Declared dependency · likely ${isoDate(dependency.likelyDate)}` : "Declared dependency · current consequence UNAVAILABLE",
+      detail: dependency.likelyDate
+        ? `Declared dependency completion floor · snapshot P50 ${isoDate(dependency.likelyDate)} · own work may proceed concurrently; later of own and upstream outcomes sets completion`
+        : "Declared dependency completion floor · snapshot consequence UNAVAILABLE · own work may proceed concurrently; later of own and upstream outcomes sets completion",
       owner: "Dependencies",
       href: dependency.href,
     });

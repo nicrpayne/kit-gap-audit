@@ -308,10 +308,12 @@ deploying:
 git diff --name-only <production-sha>..<rc-sha> -- prisma/migrations
 ```
 
-This release candidate adds **no new migration** — the newest is
-`20260817090000_timeline_candidate_enddate`, which predates it. So an
-application-only rollback is clean *provided* production is already at or
-beyond that migration. **Confirm against the real production SHA**, which this
-environment cannot read.
+The workflow-repair candidate includes
+`20260924130000_capability_accepted_estimate` (nullable accepted-estimate data).
+Do not assume production already has it. Compare the exact approved candidate
+against the observed production SHA and migration ledger before deployment.
+Application rollback retains any applied schema changes and accepted assertions;
+verify backward compatibility with the rollback build on an isolated database.
+No migration or production deployment is authorized by this runbook alone.
 
 **Database:** restore the calibration archive from §5 step 1.

@@ -13,12 +13,19 @@ import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore
 import { runPortfolioSimulation } from "@/lib/forecast/portfolio";
 import type { SimulationResult, WorkItem, DecisionGate } from "@/lib/forecast/simulate";
 import { applyScenarioInputDelta, type ScenarioInputDelta, type ScenarioInputScope } from "@/lib/scenario/inputDelta";
+import {
+  buildCapacityPlanBaseline,
+  capacityPlanAffectedScopeIds,
+  resolveCapacityPlan,
+  validateCapacityScenarioPlan,
+  type CapacityScenarioPlanV1,
+} from "@/lib/scenario/capacityPlan";
 import { computeMomentum } from "@/lib/momentum/compute";
 import { computeMomentumTrend, type MomentumTrend } from "@/lib/momentum/trend";
 import { realityRevision, subscribeReality } from "@/lib/instrument/reality";
 import { formatDateOnly } from "@/lib/time/dateContract";
 import type { ForecastCoverageContract } from "@/lib/forecast/coverage";
-import { substituteCapabilityKnowledgeEstimates, type AcceptedCapabilityEstimate, type CapabilityKnowledgeEstimate } from "@/lib/scope/knowledgeEstimates";
+import { knowledgeEstimateItemId, substituteCapabilityKnowledgeEstimates, type AcceptedCapabilityEstimate, type CapabilityKnowledgeEstimate } from "@/lib/scope/knowledgeEstimates";
 import type { CapabilityStaffingPlan } from "@/lib/scope/capabilityForecast";
 
 // The provenance the Scope instrument reads. Produced by describeItems in
@@ -162,6 +169,9 @@ export interface ProjectPayload {
 // The scenario levers the ENGINE genuinely honours today. Anything not in
 // this shape is not simulable, and the UI must say so rather than pretend.
 export interface SuiteScenario {
+  /** Exact cross-project Portfolio plan. This is the durable capacity owner;
+      aggregate overrides below are only a backward-compatible projection. */
+  capacityPlan: CapacityScenarioPlanV1 | null;
   /** scopeId -> simulated total FTE (Portfolio's aggregate override). */
   capacityOverrideByScope: Record<string, number>;
   /** Work item ids excluded from the simulation -- real: items simply drop. */
@@ -229,6 +239,7 @@ export interface SuiteScenario {
 }
 
 export const EMPTY_SCENARIO: SuiteScenario = {
+  capacityPlan: null,
   capacityOverrideByScope: {},
   excludedItemIds: new Set(),
   includedItemIds: new Set(),
@@ -244,8 +255,18 @@ export const EMPTY_SCENARIO: SuiteScenario = {
   contextSwitchCostPct: null,
 };
 
+/** Explicit lifetime contract for every local hypothetical. */
+export const SCENARIO_SESSION_POLICY = Object.freeze({
+  navigation: "survives-same-tab-navigation",
+  realityRevalidation: "retain-and-mark-stale",
+  documentReload: "return-to-reality",
+  newTab: "isolated-reality-session",
+  reset: "clear-all-levers",
+} as const);
+
 export function scenarioIsActive(s: SuiteScenario): boolean {
   return (
+    s.capacityPlan !== null ||
     Object.keys(s.capacityOverrideByScope).length > 0 ||
     s.excludedItemIds.size > 0 ||
     s.includedItemIds.size > 0 ||
@@ -315,9 +336,11 @@ function subscribe(l: () => void) {
   return () => listeners.delete(l);
 }
 
-// force = an explicit user-driven refresh, which DOES drop the scenario: the
-// hypothetical was built against facts that just changed underneath it.
-// Mounting a second instrument is not that, and must never clear it.
+// force only bypasses request deduplication. A refresh never drops Scenario:
+// exact capacity plans retain their baseline fingerprint and become visibly
+// stale if Reality changed, rather than being silently discarded or rebased.
+// Back to Reality is the explicit reset. A full document reload/new tab starts
+// Reality naturally because this session store is deliberately not persisted.
 //
 // Every other call is a REVALIDATION: fetch current truth, swap it in, leave
 // the scenario exactly where it was. Mounting an instrument is one of these,
@@ -354,7 +377,7 @@ function load(force: boolean): Promise<void> {
       }
       const data: ProjectPayload = await res.json();
       dataRevision = startedAt;
-      publish({ data, loading: false, scenario: force ? EMPTY_SCENARIO : store.scenario });
+      publish({ data, loading: false, scenario: store.scenario });
     } catch (err) {
       publish({ error: err instanceof Error ? err.message : "Something went wrong.", loading: false });
     } finally {
@@ -418,6 +441,9 @@ export interface ProjectModel {
       consuming surface on a loading state forever, which is the one failure
       mode a decision surface must never have. */
   simulationError: string | null;
+  /** A shared capacity plan whose complete owner baseline no longer matches
+      current Reality is retained for review but never silently rebased. */
+  capacityPlanError: string | null;
   /** Reality: what the app currently accepts as true. */
   baseline: Map<string, SimulationResult> | null;
   /** Scenario: the hypothetical, or Reality when nothing is set. */
@@ -491,6 +517,27 @@ export function useProject(): ProjectModel {
     }));
   }, [data, startDate]);
 
+  const capacityBaseline = useMemo(() => data ? buildCapacityPlanBaseline({
+    people: data.people,
+    allocations: data.allocations,
+    contextSwitchCostPct: data.contextSwitchCostPct,
+    scopeRevisionById: Object.fromEntries(data.scopes.map((scope) => [scope.scopeId, scope.realityState.realityRevision])),
+  }) : null, [data]);
+  const capacityPlanValidation = useMemo(() => {
+    if (!scenario.capacityPlan || !capacityBaseline) return { ok: true } as const;
+    const validation = validateCapacityScenarioPlan(scenario.capacityPlan, capacityBaseline);
+    if (!validation.ok) return validation;
+    const affected = new Set(capacityPlanAffectedScopeIds(scenario.capacityPlan));
+    const incoherent = data?.scopes.filter((scope) => affected.has(scope.scopeId) && (
+      scope.realityState.status !== "current" ||
+      scope.realityState.computedRevision !== scope.realityState.realityRevision
+    )) ?? [];
+    return incoherent.length
+      ? { ok: false as const, reason: `Capacity inputs are still recomputing for ${incoherent.map((scope) => scope.name).join(", ")}. Wait for coherent Reality, then review the scenario.` }
+      : validation;
+  }, [scenario.capacityPlan, capacityBaseline, data]);
+  const capacityPlanError = capacityPlanValidation.ok ? null : capacityPlanValidation.reason;
+
   const baselineAttempt = useMemo(() => {
     if (!data || !scenarioScopes) return { result: null, reason: null };
     const delta: ScenarioInputDelta = {
@@ -520,12 +567,20 @@ export function useProject(): ProjectModel {
     if (!data || !scenarioScopes) return;
     if (debounce.current) clearTimeout(debounce.current);
     debounce.current = setTimeout(() => {
-      const delta: ScenarioInputDelta = {
-        allocations: data.allocations.map((a) => ({ personId: a.personId, scopeId: a.scopeId, fraction: a.fraction })),
-        hypotheticalPeople: [],
-        contextSwitchCostPct: scenario.contextSwitchCostPct ?? data.contextSwitchCostPct,
-        capacityOverrideByScope: scenario.capacityOverrideByScope,
-      };
+      // A current exact plan and report replay share resolveCapacityPlan.
+      // Requested shortfalls never enter this delta. When its baseline is
+      // stale, retain the plan for review but simulate Reality capacity until
+      // the operator explicitly recreates it or returns to Reality.
+      const delta: ScenarioInputDelta = scenario.capacityPlan && capacityPlanValidation.ok
+        ? resolveCapacityPlan(scenario.capacityPlan)
+        : {
+            allocations: data.allocations.map((a) => ({ personId: a.personId, scopeId: a.scopeId, fraction: a.fraction })),
+            hypotheticalPeople: [],
+            contextSwitchCostPct: scenario.capacityPlan
+              ? data.contextSwitchCostPct
+              : scenario.contextSwitchCostPct ?? data.contextSwitchCostPct,
+            capacityOverrideByScope: scenario.capacityPlan ? undefined : scenario.capacityOverrideByScope,
+          };
       // emptyScopeId: additionally drop every item of that one scope, which
       // is how the irreducible floor is measured -- what survives an empty
       // backlog is, by definition, what cutting scope cannot reach.
@@ -533,6 +588,7 @@ export function useProject(): ProjectModel {
         applyScenarioInputDelta(
           scenarioScopes.map((s) => {
             const fullScope = data.scopes.find((scope) => scope.scopeId === s.scopeId);
+            const sourceItemIds = new Set(fullScope?.items.map((item) => item.id) ?? []);
             const proposed = scenario.scopeProposalSelections.filter((selection) => selection.scopeId === s.scopeId);
             const proposalIncludedIds = new Set(proposed.flatMap((selection) => selection.itemIds));
             const proposalExcludedIds = new Set(proposed.flatMap((selection) => {
@@ -552,9 +608,11 @@ export function useProject(): ProjectModel {
             const bypassedCapabilityItemIds = new Set((fullScope?.capabilities ?? [])
               .filter((capability) => scenario.bypassedFeatureIds.has(`capability:${capability.id}`))
               .flatMap((capability) => [
-                ...capability.workLinks.map((link) => link.externalId),
+                ...capability.workLinks
+                  .filter((link) => (link.state === "active" || link.state === "configured") && sourceItemIds.has(link.externalId))
+                  .map((link) => link.externalId),
                 ...(capability.acceptedEstimate
-                  ? [`knowledge-estimate:${capability.id}:${capability.acceptedEstimate.id}`]
+                  ? [knowledgeEstimateItemId(capability.id, capability.acceptedEstimate.id, capability.acceptedEstimate.contextSnapshotId)]
                   : []),
               ]));
             const knowledgeSubstitutions = Object.entries(scenario.knowledgeEstimateByCapabilityId)
@@ -570,11 +628,14 @@ export function useProject(): ProjectModel {
                 return [{
                   capabilityId,
                   estimateId: estimate.estimateId,
+                  contextSnapshotId: estimate.contextSnapshotId,
                   range: { low: estimate.low, likely: estimate.likely, high: estimate.high },
                   replacedItemIds: [
-                    ...capability.workLinks.map((link) => link.externalId),
+                    ...capability.workLinks
+                      .filter((link) => (link.state === "active" || link.state === "configured") && sourceItemIds.has(link.externalId))
+                      .map((link) => link.externalId),
                     ...(capability.acceptedEstimate
-                      ? [`knowledge-estimate:${capabilityId}:${capability.acceptedEstimate.id}`]
+                      ? [knowledgeEstimateItemId(capabilityId, capability.acceptedEstimate.id, capability.acceptedEstimate.contextSnapshotId)]
                       : []),
                     ...proposedIds,
                   ],
@@ -624,7 +685,7 @@ export function useProject(): ProjectModel {
     return () => {
       if (debounce.current) clearTimeout(debounce.current);
     };
-  }, [data, scenarioScopes, scenario]);
+  }, [data, scenarioScopes, scenario, capacityPlanValidation.ok]);
 
   const momentumByScope = useMemo(() => {
     const out = new Map<string, MomentumTrend>();
@@ -684,7 +745,8 @@ export function useProject(): ProjectModel {
     data,
     loading,
     error,
-    simulationError: simFailure ?? baselineAttempt.reason,
+    simulationError: capacityPlanError ?? simFailure ?? baselineAttempt.reason,
+    capacityPlanError,
     reload,
     startDate,
     baseline,

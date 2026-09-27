@@ -477,10 +477,10 @@ export function buildTruthMap(input: TruthInputs): TruthMapModel {
   const dependencyChecks: TruthCheckpoint[] = dependsSupplied
     ? [
         {
-          id: "dependencies:accepted",
-          label: "Dependency accepted",
+          id: "dependencies:declared",
+          label: "Dependency declared",
           state: "verified",
-          detail: `waits on ${input.dependsOn.map((s) => s.name).join(", ") || scope.dependsOnScopeIds.join(", ")}`,
+          detail: `completion floor set by ${input.dependsOn.map((s) => s.name).join(", ") || scope.dependsOnScopeIds.join(", ")}`,
         },
         {
           id: "dependencies:target",

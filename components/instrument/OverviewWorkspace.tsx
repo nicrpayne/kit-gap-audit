@@ -30,6 +30,7 @@ import {
 } from "@/lib/instrument/useProject";
 import { DIRECTION_GLYPH, DIRECTION_LABEL, directionTone, trendPhrase } from "@/lib/momentum/trend";
 import { confidenceAtDay } from "@/lib/forecast/simulate";
+import { presentForecastDeliveryClaim, presentPortfolioDeliveryClaim } from "@/lib/forecast/claims";
 
 type Preset = "brief" | "field" | "risk";
 
@@ -56,10 +57,37 @@ export default function OverviewWorkspace() {
         name: s.name,
         dependsOnScopeIds: s.dependsOnScopeIds,
         targetDate: s.targetDate,
+        forecastCoverage: s.forecastCoverage,
         changed: s.scopeId in m.scenario.capacityOverrideByScope,
       })),
     [m.data, m.scenario]
   );
+
+  const portfolioClaim = useMemo(
+    () => presentPortfolioDeliveryClaim({
+      likelyDate: m.portfolioLikely.date ? fmtFull(m.portfolioLikely.date) : null,
+      scopes: (m.data?.scopes ?? []).map((scope) => ({ name: scope.name, coverage: scope.forecastCoverage })),
+    }),
+    [m.data, m.portfolioLikely.date],
+  );
+
+  const portfolioConfidenceAvailable = (m.data?.scopes.length ?? 0) > 0
+    && (m.data?.scopes ?? []).every((scope) => scope.forecastCoverage.canonicalForecast);
+
+  const leastLikely = useMemo(() => {
+    if (!m.data || !m.startDate || !portfolioConfidenceAvailable) return null;
+    let least: { name: string; confidence: number } | null = null;
+    for (const scope of m.data.scopes) {
+      const result = m.preview?.get(scope.scopeId) ?? m.baseline?.get(scope.scopeId);
+      if (!result || !scope.targetDate) continue;
+      const confidence = confidenceAtDay(
+        result.completionDaysSorted,
+        (new Date(scope.targetDate).getTime() - m.startDate.getTime()) / 86400000,
+      );
+      if (!least || confidence < least.confidence) least = { name: scope.name, confidence };
+    }
+    return least;
+  }, [m.data, m.startDate, m.preview, m.baseline, portfolioConfidenceAvailable]);
 
   const axis = useMemo(() => {
     if (!m.data || !m.startDate) return null;
@@ -89,6 +117,16 @@ export default function OverviewWorkspace() {
     if (!m.data) return [];
     const out: { id: string; tone: string; label: string; detail: string; href: string }[] = [];
     for (const s of m.data.scopes) {
+      if (!s.forecastCoverage.canonicalForecast) {
+        out.push({
+          id: `coverage-${s.scopeId}`,
+          tone: "var(--i-amber)",
+          label: `${s.name} forecast ${s.forecastCoverage.state === "modeled_subset" ? "incomplete" : "unavailable"}`,
+          detail: s.forecastCoverage.reason ?? s.forecastCoverage.caveat ?? "Complete delivery coverage is unavailable.",
+          href: "/forecast",
+        });
+        continue;
+      }
       const r = m.preview?.get(s.scopeId) ?? m.baseline?.get(s.scopeId);
       if (!r || !s.targetDate || !m.startDate) continue;
       const conf = confidenceAtDay(
@@ -99,8 +137,8 @@ export default function OverviewWorkspace() {
         out.push({
           id: `conf-${s.scopeId}`,
           tone: conf < 25 ? "var(--i-red)" : "var(--i-amber)",
-          label: `${s.name} is unlikely to hit its target`,
-          detail: `${conf}% by ${fmtDay(new Date(s.targetDate))}`,
+          label: `${s.name} has low simulated target frequency`,
+          detail: `${conf}% of modeled runs by ${fmtDay(new Date(s.targetDate))} under current assumptions`,
           href: "/forecast",
         });
     }
@@ -188,7 +226,7 @@ export default function OverviewWorkspace() {
   const forecastPanel = (
     <Panel
       title="Forecast"
-      subtitle={m.portfolioLikely.gatedBy ? `gated by ${m.portfolioLikely.gatedBy}` : undefined}
+      subtitle={portfolioClaim.state === "forecastable" && m.portfolioLikely.gatedBy ? `gated by ${m.portfolioLikely.gatedBy}` : undefined}
       accent="var(--i-violet)"
       href="/forecast"
       hrefLabel="Open Forecast"
@@ -235,7 +273,7 @@ export default function OverviewWorkspace() {
       subtitle={`${attention.length} ranked`}
     >
       {attention.length === 0 ? (
-        <p className="text-[11.5px] text-[var(--i-text-faint)] p-2">Nothing is currently blocking or off-target.</p>
+        <p className="text-[11.5px] text-[var(--i-text-faint)] p-2">No ranked attention items.</p>
       ) : (
         <ul className="space-y-px">
           {attention.map((a) => (
@@ -266,12 +304,19 @@ export default function OverviewWorkspace() {
           .map((s) => {
             const r = m.preview?.get(s.scopeId) ?? m.baseline?.get(s.scopeId);
             const conf =
-              r && m.startDate
+              s.forecastCoverage.canonicalForecast && r && m.startDate
                 ? confidenceAtDay(
                     r.completionDaysSorted,
                     (new Date(s.targetDate!).getTime() - m.startDate.getTime()) / 86400000
                   )
                 : null;
+            const claim = presentForecastDeliveryClaim({
+              scopeName: s.name,
+              coverage: s.forecastCoverage,
+              likelyDate: r ? fmtFull(r.likelyDate) : null,
+              targetDate: fmtFull(new Date(s.targetDate!)),
+              confidenceAtTarget: conf,
+            });
             return (
               <li key={s.scopeId} className="flex items-center justify-between gap-2 px-2 py-2">
                 <span className="min-w-0">
@@ -280,8 +325,15 @@ export default function OverviewWorkspace() {
                     target {fmtDay(new Date(s.targetDate!))}
                   </span>
                 </span>
-                <span className="i-readout text-[13px] shrink-0" style={{ color: confidenceTone(conf) }}>
-                  {conf === null ? "—" : `${conf}%`}
+                <span
+                  className={`shrink-0 ${s.forecastCoverage.canonicalForecast ? "i-readout text-[13px]" : "text-[9px] uppercase tracking-wider"}`}
+                  style={{ color: s.forecastCoverage.canonicalForecast ? confidenceTone(conf) : "var(--i-amber)" }}
+                  aria-label={claim.accessibleLabel}
+                  title={claim.detail ?? claim.targetConfidence}
+                >
+                  {s.forecastCoverage.canonicalForecast
+                    ? conf === null ? "—" : `${conf}%`
+                    : s.forecastCoverage.state === "modeled_subset" ? "incomplete" : "unavailable"}
                 </span>
               </li>
             );
@@ -368,12 +420,18 @@ export default function OverviewWorkspace() {
           {[
             <Stat
               key="a"
-              label="Portfolio lands"
-              size={26}
-              value={m.portfolioLikely.date ? fmtFull(m.portfolioLikely.date) : "—"}
-              tone={m.active && m.portfolioLikely.deltaDays !== 0 ? "var(--i-violet)" : undefined}
+              label={portfolioClaim.state === "forecastable" ? "Portfolio lands" : "Portfolio coverage"}
+              size={portfolioClaim.state === "forecastable" ? 26 : 18}
+              value={portfolioClaim.state === "forecastable"
+                ? m.portfolioLikely.date ? fmtFull(m.portfolioLikely.date) : "—"
+                : portfolioClaim.headline}
+              tone={portfolioClaim.state !== "forecastable"
+                ? "var(--i-amber)"
+                : m.active && m.portfolioLikely.deltaDays !== 0 ? "var(--i-violet)" : undefined}
               sub={
-                m.active && m.portfolioLikely.deltaDays !== 0
+                portfolioClaim.state !== "forecastable"
+                  ? portfolioClaim.detail
+                  : m.active && m.portfolioLikely.deltaDays !== 0
                   ? deltaLabel(m.portfolioLikely.deltaDays)
                   : m.portfolioLikely.gatedBy
                     ? `set by ${m.portfolioLikely.gatedBy}`
@@ -382,52 +440,17 @@ export default function OverviewWorkspace() {
             />,
             <Stat
               key="b"
-              label="Least likely to land"
+              label="Lowest project target frequency"
               size={26}
-              value={(() => {
-                if (!m.startDate) return "—";
-                let worst: { n: string; c: number } | null = null;
-                for (const s of m.data!.scopes) {
-                  const r = m.preview?.get(s.scopeId) ?? m.baseline?.get(s.scopeId);
-                  if (!r || !s.targetDate) continue;
-                  const c = confidenceAtDay(
-                    r.completionDaysSorted,
-                    (new Date(s.targetDate).getTime() - m.startDate.getTime()) / 86400000
-                  );
-                  if (!worst || c < worst.c) worst = { n: s.name, c };
-                }
-                return worst ? `${worst.c}%` : "—";
-              })()}
-              tone={(() => {
-                if (!m.startDate) return undefined;
-                let worst = 101;
-                for (const s of m.data!.scopes) {
-                  const r = m.preview?.get(s.scopeId) ?? m.baseline?.get(s.scopeId);
-                  if (!r || !s.targetDate) continue;
-                  worst = Math.min(
-                    worst,
-                    confidenceAtDay(
-                      r.completionDaysSorted,
-                      (new Date(s.targetDate).getTime() - m.startDate.getTime()) / 86400000
-                    )
-                  );
-                }
-                return worst > 100 ? undefined : confidenceTone(worst);
-              })()}
-              sub={(() => {
-                if (!m.startDate) return undefined;
-                let worst: { n: string; c: number } | null = null;
-                for (const s of m.data!.scopes) {
-                  const r = m.preview?.get(s.scopeId) ?? m.baseline?.get(s.scopeId);
-                  if (!r || !s.targetDate) continue;
-                  const c = confidenceAtDay(
-                    r.completionDaysSorted,
-                    (new Date(s.targetDate).getTime() - m.startDate.getTime()) / 86400000
-                  );
-                  if (!worst || c < worst.c) worst = { n: s.name, c };
-                }
-                return worst ? `${worst.n} against its target` : "no targets set";
-              })()}
+              value={portfolioConfidenceAvailable && leastLikely ? `${leastLikely.confidence}%` : "—"}
+              tone={portfolioConfidenceAvailable
+                ? leastLikely ? confidenceTone(leastLikely.confidence) : undefined
+                : "var(--i-amber)"}
+              sub={portfolioConfidenceAvailable
+                ? leastLikely
+                  ? `${leastLikely.name} · simulated frequency by its target, not measured probability`
+                  : "no targets set"
+                : `Unavailable — ${portfolioClaim.incompleteScopeNames.join(", ")} incomplete`}
             />,
             anyTrend ? (
               <div key="c" className="min-w-0">
@@ -465,7 +488,7 @@ export default function OverviewWorkspace() {
               size={26}
               value={String(attention.length)}
               tone={attention.length > 0 ? "var(--i-amber)" : "var(--i-mint)"}
-              sub={attention.length > 0 ? attention[0].label : "nothing blocking"}
+              sub={attention.length > 0 ? attention[0].label : "no ranked attention items"}
             />,
           ].map((el, i) => (
             <div key={i} className="px-4 py-3" style={{ background: "var(--i-panel)" }}>

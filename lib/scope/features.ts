@@ -57,7 +57,7 @@ export interface Feature {
   /** The Linear Project the work sits in, when the work agrees on one. */
   epic: string | null;
   /** Remaining work, which is what the simulation actually carries. */
-  items: ScopeWorkItem[];
+  items: (ScopeWorkItem & { realityRange?: ThreePoint })[];
   /** Finished work. Coverage only -- never simulated. */
   done: CompletedWork[];
   /** Expected days of effort, before capacity. */
@@ -149,10 +149,14 @@ function summarise(
   accepted: boolean,
   estimateOverrides: Record<string, ThreePoint>
 ): Feature {
-  const range = items.reduce<ThreePoint>(
+  // Rows, pads and totals must all consume the same ephemeral overlay. Keep
+  // the original range for the Reality ghost/reset; never mutate owner data.
+  const effectiveItems = items.map((item) => estimateOverrides[item.id]
+    ? { ...item, realityRange: { low: item.low, likely: item.likely, high: item.high }, ...estimateOverrides[item.id] }
+    : item);
+  const range = effectiveItems.reduce<ThreePoint>(
     (acc, i) => {
-      const o = estimateOverrides[i.id];
-      const r = o ?? { low: i.low, likely: i.likely, high: i.high };
+      const r = i;
       return { low: acc.low + r.low, likely: acc.likely + r.likely, high: acc.high + r.high };
     },
     { low: 0, likely: 0, high: 0 }
@@ -164,7 +168,7 @@ function summarise(
     description: null,
     source,
     epic,
-    items,
+    items: effectiveItems,
     done,
     effortDays,
     loadDays: effortDays / (capacity > 0 ? capacity : 1),
@@ -380,6 +384,11 @@ export function composeScopeFeatures(
       return [item];
     });
     const id = `capability:${capability.id}`;
+    const override = knowledgeEstimateOverrides[capability.id];
+    const activeKnowledgeEstimate = override
+      ? capability.knowledgeEstimates?.find((estimate) => estimate.id === override.estimateId && estimate.contextSnapshotId === override.contextSnapshotId) ?? null
+      : null;
+    const acceptedKnowledgeEstimate = capability.acceptedEstimate ?? null;
     const base = summarise(
       id,
       capability.name,
@@ -391,13 +400,8 @@ export function composeScopeFeatures(
       null,
       bypassedFeatureIds.has(id),
       true,
-      estimateOverrides,
+      activeKnowledgeEstimate || acceptedKnowledgeEstimate ? {} : estimateOverrides,
     );
-    const override = knowledgeEstimateOverrides[capability.id];
-    const activeKnowledgeEstimate = override
-      ? capability.knowledgeEstimates?.find((estimate) => estimate.id === override.estimateId && estimate.contextSnapshotId === override.contextSnapshotId) ?? null
-      : null;
-    const acceptedKnowledgeEstimate = capability.acceptedEstimate ?? null;
     const range = activeKnowledgeEstimate
       ? { low: override.low, likely: override.likely, high: override.high }
       : acceptedKnowledgeEstimate?.range ?? base.range;

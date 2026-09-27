@@ -6,8 +6,8 @@
 // shape provokes — "so what happens if that moves?" — and it answers it in
 // the model's own terms:
 //
-//   a LANE     what it waits on, what waits on it, how much of its date is
-//              still backlog, and how far it is from its own target
+//   a LANE     its completion floors, the projects it floors, how much of
+//              its date is still backlog, and how far it is from its target
 //   an EDGE    the upstream, the launches riding on it, and the real gap
 //              between two real P50s
 //   a GATE     what it is holding, its stored modelled delay, and every
@@ -82,7 +82,7 @@ export default function Inspector({
           value={shared ? shared.name : "none"}
           note={
             shared
-              ? `${shared.downstreamScopeIds.length} ${plural(shared.downstreamScopeIds.length, "launch rides", "launches ride")} on it`
+              ? `sets completion floors for ${shared.downstreamScopeIds.length} ${plural(shared.downstreamScopeIds.length, "project", "projects")}`
               : "no project carries more than one other"
           }
           tone={shared ? "var(--i-amber)" : "var(--i-mint)"}
@@ -177,19 +177,19 @@ export default function Inspector({
             />
           )}
           <Line
-            label="Waits on"
+            label="Completion floor"
             value={l.dependsOnScopeIds.length ? l.dependsOnScopeIds.map(nameOf).join(", ") : "nothing"}
-            note={l.dependsOnScopeIds.length ? "declared, and honoured by the engine" : "it can start whenever it likes"}
+            note={l.dependsOnScopeIds.length ? "declared; each run takes the later of own and upstream completion" : "no dependency finish floor is declared"}
             tone={l.dependsOnScopeIds.length ? "var(--i-amber)" : "var(--i-mint)"}
           />
           <Line
-            label="Carries"
+            label="Sets floors for"
             value={
               l.downstreamScopeIds.length
-                ? `${l.downstreamScopeIds.length} ${plural(l.downstreamScopeIds.length, "launch", "launches")}`
+                ? `${l.downstreamScopeIds.length} ${plural(l.downstreamScopeIds.length, "project", "projects")}`
                 : "nothing"
             }
-            note={l.downstreamScopeIds.length ? l.downstreamScopeIds.map(nameOf).join(", ") : "nothing waits on it"}
+            note={l.downstreamScopeIds.length ? l.downstreamScopeIds.map(nameOf).join(", ") : "no downstream completion floors"}
             tone={l.downstreamScopeIds.length ? "var(--i-amber)" : "var(--i-text-soft)"}
           />
           <Line
@@ -209,7 +209,7 @@ export default function Inspector({
           )}
           {l.downstreamScopeIds.length > 0 && (
             <Consequence
-              text={`If ${l.name} slips a day, ${l.downstreamScopeIds.map(nameOf).join(" and ")} ${l.downstreamScopeIds.length === 1 ? "can" : "can each"} slip with it.`}
+              text={`${l.name} sets a completion floor for ${l.downstreamScopeIds.map(nameOf).join(" and ")}. A later ${l.name} outcome can raise that floor; each downstream run still uses the later of its own and upstream completion.`}
             />
           )}
         </>
@@ -229,15 +229,15 @@ export default function Inspector({
       body = (
         <>
           <Line
-            label="Releases at"
+            label="Upstream P50"
             value={up.p50 != null ? date(up.p50) : "—"}
-            note={`${up.name} lands here`}
+            note={`${up.name}'s modeled completion; not a downstream start date`}
             tone="var(--i-signal)"
           />
           {kids.map((k) => (
             <Line
               key={k.scopeId}
-              label="Then"
+              label="Downstream P50"
               value={k.p50 != null ? date(k.p50) : "—"}
               note={
                 k.p50 != null && up.p50 != null
@@ -250,7 +250,7 @@ export default function Inspector({
           <Consequence
             text={
               kids.length > 1
-                ? `${up.name} is a single point: one slip here moves ${kids.length} launches, not one.`
+                ? `${up.name} sets completion floors for ${kids.length} projects. A later upstream outcome can raise those floors; each downstream run still takes the later completion.`
                 : `${kids[0]?.name ?? "The downstream project"} cannot finish before ${up.name} does. The engine takes the later of the two in every trial.`
             }
           />
@@ -278,7 +278,7 @@ export default function Inspector({
           <Line
             label="Modelled"
             value={`${g.likelyDays}d`}
-            note="the stored likely delay, sampled serially before the work starts"
+            note="the stored likely delay, sampled serially and added to modeled duration"
             tone="var(--i-amber)"
           />
           <Line

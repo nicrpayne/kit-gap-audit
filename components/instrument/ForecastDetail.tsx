@@ -29,6 +29,11 @@ import type { ProjectScope, SuiteScenario } from "@/lib/instrument/useProject";
 import { fmtDay, fmtFull, deltaLabel, deltaTone, confidenceTone } from "@/lib/instrument/useProject";
 import type { MomentumTrend } from "@/lib/momentum/trend";
 import { DIRECTION_GLYPH, DIRECTION_LABEL, directionTone, trendPhrase } from "@/lib/momentum/trend";
+import {
+  FORECAST_PERCENTILE_COPY,
+  forecastAssumptionSnapshot,
+  presentStructuralConstraints,
+} from "@/lib/forecast/claims";
 
 type Mode = "summary" | "drivers" | "distribution" | "inputs" | "history";
 
@@ -361,6 +366,9 @@ export default function ForecastDetail({
   const sinceLast = scope.lastReport
     ? Math.round((result.likelyDate.getTime() - new Date(scope.lastReport.likelyDate).getTime()) / 86400000)
     : null;
+  const dependencyNames = scope.dependsOnScopeIds.map((id) => scopeNameById.get(id) ?? id);
+  const structuralConstraints = presentStructuralConstraints(openGates.map((gate) => gate.label), dependencyNames);
+  const assumptions = forecastAssumptionSnapshot();
 
   const capNote =
     scope.capacitySource === "inferred"
@@ -404,8 +412,9 @@ export default function ForecastDetail({
               <div className="text-right">
                 <div className="i-label">Spread</div>
                 <div className="i-readout text-[13px] text-[var(--i-text-soft)] mt-0.5">
-                  {spread}d best to worst
+                  {spread}d · P10–P90
                 </div>
+                <div className="mt-0.5 text-[8.5px] text-[var(--i-text-faint)]">middle 80% of simulated outcomes</div>
               </div>
             </div>
 
@@ -425,7 +434,7 @@ export default function ForecastDetail({
                   k="Target"
                   v={`${fmtDay(forecastDateAtDay(startDate, targetDay))} · ${confidence}%`}
                   tone={confidenceTone(confidence)}
-                  note={`${confidence} of 100 runs land on or before it`}
+                  note={`${confidence} of 100 simulated runs land on or before it under these assumptions; not a measured probability`}
                 />
               ) : (
                 <Stat k="Target" v="none set" note="the instrument stays neutral without one" />
@@ -438,9 +447,9 @@ export default function ForecastDetail({
                 <Stat k="Since last report" v="no reports yet" />
               )}
               <Stat
-                k="Primary constraint"
-                v={openGates.length === 0 ? "none" : openGates[0].label}
-                note={openGates.length === 0 ? "nothing structural in the way" : `serial · likely +${openGates[0].likely}d`}
+                k="Declared structural constraints"
+                v={structuralConstraints.summary}
+                note={structuralConstraints.detail}
                 wide={!momentum}
               />
               {momentum && (
@@ -472,7 +481,7 @@ export default function ForecastDetail({
                     days={g.likely}
                     max={Math.max(...openGates.map((x) => x.likely))}
                     label={`+${g.likely}d`}
-                    note="waits in every trial"
+                    note="serial delay sampled in every trial"
                     color="var(--i-amber)"
                   />
                 ))}
@@ -503,7 +512,7 @@ export default function ForecastDetail({
               <Row
                 k={`${scope.items.length - excluded.length} of ${scope.items.length} items in`}
                 v={`${Math.round(scope.items.filter((i) => !scenario.excludedItemIds.has(i.id)).reduce((s, i) => s + i.likely, 0))}d likely`}
-                note="divided across parallel capacity"
+                note="summed, then divided by pooled effective FTE"
                 changed={excluded.length > 0}
               />
             </Block>
@@ -523,9 +532,14 @@ export default function ForecastDetail({
             </Block>
 
             {scope.dependsOnScopeIds.length > 0 && (
-              <Block title="Dependencies — correlated, not additive">
+              <Block title="Dependency finish floors — correlated, not additive">
                 {scope.dependsOnScopeIds.map((id) => (
-                  <Row key={id} k={`starts after ${scopeNameById.get(id) ?? id}`} v="lockstep" note="a late upstream run delays this scope in the same trial" />
+                  <Row
+                    key={id}
+                    k={scopeNameById.get(id) ?? id}
+                    v="completion floor"
+                    note="own work may proceed concurrently; each run finishes at the later of the two outcomes"
+                  />
                 ))}
               </Block>
             )}
@@ -537,8 +551,8 @@ export default function ForecastDetail({
           <>
             <SectionNote>
               {result.completionDaysSorted.length.toLocaleString()} simulated runs of the remaining work — the same
-              trials the object is drawn from. Each run samples every three-point estimate, waits out open
-              decisions, and divides effort by parallel capacity.
+              trials the object is drawn from. Each run samples every three-point estimate, adds sampled open
+              Decision-gate delay, and divides total effort by pooled effective FTE.
             </SectionNote>
             <div className="mt-3">
               <Histogram result={result} targetDay={targetDay} startDate={startDate} />
@@ -547,11 +561,11 @@ export default function ForecastDetail({
             <div className="mt-3 grid grid-cols-5 gap-1">
               {(
                 [
-                  ["P10", result.percentiles.p10, "earliest realistic"],
-                  ["P50", result.percentiles.p50, "likely"],
-                  ["P70", result.percentiles.p70, ""],
-                  ["P85", result.percentiles.p85, "comfortable"],
-                  ["P90", result.percentiles.p90, "worst realistic"],
+                  ["P10", result.percentiles.p10, FORECAST_PERCENTILE_COPY.p10],
+                  ["P50", result.percentiles.p50, FORECAST_PERCENTILE_COPY.p50],
+                  ["P70", result.percentiles.p70, "70% of simulated finishes are on or before"],
+                  ["P85", result.percentiles.p85, "85% of simulated finishes are on or before"],
+                  ["P90", result.percentiles.p90, FORECAST_PERCENTILE_COPY.p90],
                 ] as const
               ).map(([label, value, note]) => (
                 <div key={label} className="i-meter rounded px-1.5 py-2 text-center">
@@ -569,13 +583,13 @@ export default function ForecastDetail({
               <Row
                 k="Full range"
                 v={`${d(result.completionDaysSorted[0] ?? 0)} — ${d(result.completionDaysSorted[result.completionDaysSorted.length - 1] ?? 0)}`}
-                note="the single earliest and latest simulated runs"
+                note={FORECAST_PERCENTILE_COPY.fullRange}
               />
-              <Row k="Spread (P10–P90)" v={`${spread} ${spread === 1 ? "day" : "days"}`} note="what the object's length shows" />
+              <Row k="P10–P90 interval" v={`${spread} ${spread === 1 ? "day" : "days"}`} note={FORECAST_PERCENTILE_COPY.interval} />
               {targetDay !== null && (
                 <>
-                  <Row k="Target confidence" v={`${confidence}%`} tone={confidenceTone(confidence)} note={`runs landing on or before ${d(targetDay)}`} />
-                  <Row k="Miss tail" v={`${100 - (confidence ?? 0)}%`} note="the hatched mass past the target line" />
+                  <Row k="Simulated frequency by target" v={`${confidence}%`} tone={confidenceTone(confidence)} note={`runs landing on or before ${d(targetDay)} under these assumptions; not a measured probability`} />
+                  <Row k="Simulated frequency after target" v={`${100 - (confidence ?? 0)}%`} note="the hatched mass past the target line under these assumptions" />
                 </>
               )}
             </div>
@@ -589,6 +603,17 @@ export default function ForecastDetail({
               What the simulation currently believes, by owning instrument. Read-only here — Forecast previews
               assumptions; the owners edit them. Scenario overrides are tagged.
             </SectionNote>
+
+            <details className="mt-3 rounded-md px-3 py-2.5" style={{ border: "1px solid var(--i-border)", background: "var(--i-recess)" }} open>
+              <summary className="cursor-pointer text-[10.5px] font-medium text-[var(--i-text)]">Forecast assumptions · {assumptions.version}</summary>
+              <div className="mt-2 space-y-2">
+                {assumptions.items.map((item) => (
+                  <div key={item.id} className="text-[9.5px] leading-relaxed text-[var(--i-text-faint)]">
+                    <strong className="text-[var(--i-text-soft)]">{item.label}.</strong> {item.detail}
+                  </div>
+                ))}
+              </div>
+            </details>
 
             <OwnerHeader label="People" href="/portfolio" owner="Portfolio" />
             <NavRow href="/portfolio">
@@ -667,7 +692,7 @@ export default function ForecastDetail({
 
             <OwnerHeader label="Structure" href="/timeline" owner="Timeline" />
             {scope.dependsOnScopeIds.map((id) => (
-              <Row key={id} k="Depends on" v={scopeNameById.get(id) ?? id} />
+              <Row key={id} k="Dependency finish floor" v={scopeNameById.get(id) ?? id} note="own work may proceed concurrently; each run uses the later completion" />
             ))}
             {scope.targetDate ? (
               <Row k="Saved target" v={fmtFull(new Date(scope.targetDate))} />
@@ -716,7 +741,7 @@ export default function ForecastDetail({
                   k={day(r.generatedAt)}
                   v={day(r.likelyDate)}
                   note={[
-                    r.confidenceAtTarget !== null ? `${r.confidenceAtTarget}% at target` : null,
+                    r.confidenceAtTarget !== null ? `${r.confidenceAtTarget}% stored target frequency` : null,
                     r.shippedCount > 0 ? `${r.shippedCount} shipped` : null,
                     r.resolvedSinceLastCount > 0 ? `${r.resolvedSinceLastCount} resolved` : null,
                   ]

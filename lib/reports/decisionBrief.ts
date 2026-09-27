@@ -8,6 +8,8 @@
  */
 
 import type { EstimateQuality } from "@/lib/forecast/build";
+import type { FrozenForecastBasisV1 } from "@/lib/reports/forecastBasis";
+import type { forecastAssumptionSnapshot } from "@/lib/forecast/claims";
 
 export const DECISION_BRIEF_VERSION = "decision-brief.v1" as const;
 
@@ -122,6 +124,9 @@ export interface DecisionBriefOwnerInputs {
     warnings: string[];
   };
   forecast: {
+    basis?: FrozenForecastBasisV1;
+    assumptions?: ReturnType<typeof forecastAssumptionSnapshot>;
+    simulationItemCount?: number;
     sourceId: string;
     asOf: string;
     earliestDate: string;
@@ -180,12 +185,20 @@ export interface DecisionBriefOwnerInputs {
 
 export interface DecisionBriefV1 {
   version: typeof DECISION_BRIEF_VERSION;
+  /** Additive snapshot; legacy reports lack this and must not be backfilled. */
+  forecast?: {
+    basis?: FrozenForecastBasisV1;
+    assumptions?: ReturnType<typeof forecastAssumptionSnapshot>;
+  };
   identity: {
     project: Sourced<{ id: string; name: string }>;
     generatedAt: string;
     mode: BriefMode;
     scenarioId: string | null;
     realityRevision: number;
+    /** Both sides of a transactionally saved comparison carry this ID. */
+    comparisonId?: string;
+    comparisonRequestHash?: string;
     sourceSnapshots: SourceStamp[];
   };
   headline: {
@@ -224,6 +237,7 @@ export interface DecisionBriefV1 {
   movable: {
     scope: Sourced<{
       executableItemCount: number;
+      simulationItemCount?: number;
       remainingEffortDays: { low: number; likely: number; high: number };
       estimateQuality?: EstimateQuality;
       href: string;
@@ -317,10 +331,10 @@ function headlineReason(input: DecisionBriefOwnerInputs, delta: ReturnType<typeo
   }
   if (input.previousReport) {
     const movement = daysBetween(input.previousReport.likelyDate, input.forecast.likelyDate);
-    if (movement !== 0) return `The live Forecast likely date moved ${Math.abs(movement)} day${Math.abs(movement) === 1 ? "" : "s"} ${movement > 0 ? "later" : "earlier"} than the prior saved brief.`;
+    if (movement !== 0) return `The forecast P50 captured by this brief moved ${Math.abs(movement)} day${Math.abs(movement) === 1 ? "" : "s"} ${movement > 0 ? "later" : "earlier"} than the prior saved brief.`;
   }
   if (delta.newFindings.length > 0) return `${delta.newFindings.length} new Audit Finding${delta.newFindings.length === 1 ? "" : "s"} appeared since the prior Audit.`;
-  return `${input.forecast.remainingIssueCount} canonical executable work item${input.forecast.remainingIssueCount === 1 ? " remains" : "s remain"} in the live Forecast.`;
+  return `${input.forecast.remainingIssueCount} canonical executable work item${input.forecast.remainingIssueCount === 1 ? " remains" : "s remain"} in the forecast snapshot captured by this brief.`;
 }
 
 export function assembleDecisionBrief(input: DecisionBriefOwnerInputs): DecisionBriefV1 {
@@ -412,7 +426,7 @@ export function assembleDecisionBrief(input: DecisionBriefOwnerInputs): Decision
   const placeholderEstimateCount = input.forecast.estimateQuality.placeholderIssueCount + input.forecast.estimateQuality.placeholderFindingCount;
   if (placeholderEstimateCount > 0) caveats.push({ code: "ESTIMATE_QUALITY", message: `${placeholderEstimateCount} modeled work item${placeholderEstimateCount === 1 ? " uses" : "s use"} wide placeholder estimates, representing ${input.forecast.estimateQuality.placeholderEffortSharePct}% of likely effort.` });
   if (input.refresh.currentness !== "current") caveats.push({ code: "REFRESH_RECEIPT_INCOMPLETE", message: input.refresh.note });
-  if (forecastCurrentness === "stale") caveats.push({ code: "FORECAST_STALE", message: `The live Forecast owner read is stale (${forecastAgeDays} days old; as of ${input.forecast.asOf}).` });
+  if (forecastCurrentness === "stale") caveats.push({ code: "FORECAST_STALE", message: `The Forecast source was stale when this brief was generated (${forecastAgeDays} days old; source as of ${input.forecast.asOf}).` });
 
   const movement = input.previousReport
     ? {
@@ -442,6 +456,10 @@ export function assembleDecisionBrief(input: DecisionBriefOwnerInputs): Decision
 
   return {
     version: DECISION_BRIEF_VERSION,
+    ...(input.forecast.basis || input.forecast.assumptions ? { forecast: {
+      basis: input.forecast.basis ? JSON.parse(JSON.stringify(input.forecast.basis)) : undefined,
+      assumptions: input.forecast.assumptions ? JSON.parse(JSON.stringify(input.forecast.assumptions)) : undefined,
+    } } : {}),
     identity: {
       project: { value: { id: input.project.id, name: input.project.name }, source: scopeSource },
       generatedAt: input.generatedAt,
@@ -476,6 +494,7 @@ export function assembleDecisionBrief(input: DecisionBriefOwnerInputs): Decision
       scope: {
         value: {
           executableItemCount: input.forecast.remainingIssueCount,
+          simulationItemCount: input.forecast.simulationItemCount,
           remainingEffortDays: input.forecast.remainingEffortDays,
           estimateQuality: input.forecast.estimateQuality,
           href: decisionBriefHref("/scope", input.project.id),

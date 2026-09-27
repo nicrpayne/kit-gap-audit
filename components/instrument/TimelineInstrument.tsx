@@ -4,8 +4,8 @@
 //
 // Not a Gantt chart. A Gantt draws bars for tasks somebody typed in; this
 // draws the SHAPE the model actually predicts: each scope's likely landing
-// with its uncertainty spread, the dependency edges that make one wait for
-// another, and the gates sitting in temporal context where they bite.
+// with its uncertainty spread, dependency completion floors, and the gates
+// sitting in temporal context where they bite.
 //
 // What is real: cross-scope dependencies, targets, gate delay, the spread.
 // What is NOT yet: arbitrary within-project sequencing, first-class
@@ -171,7 +171,7 @@ export default function TimelineInstrument() {
                       </div>
                       {s.dependsOnScopeIds.length > 0 && (
                         <div className="text-[9.5px] text-[var(--i-text-faint)] mt-1 truncate">
-                          waits on {s.dependsOnScopeIds.map((d) => scopeNameById.get(d) ?? d).join(", ")}
+                          finish floor: {s.dependsOnScopeIds.map((d) => scopeNameById.get(d) ?? d).join(", ")}
                         </div>
                       )}
                     </div>

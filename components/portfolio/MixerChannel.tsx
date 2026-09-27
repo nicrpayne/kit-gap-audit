@@ -18,6 +18,8 @@
 
 import { useMemo } from "react";
 import ChannelFader from "./ChannelFader";
+import type { ForecastCoverageContract } from "@/lib/forecast/coverage";
+import { presentForecastDeliveryClaim } from "@/lib/forecast/claims";
 
 export const CHANNEL_W = 148;
 export const RACK_H = 292;
@@ -36,6 +38,7 @@ export interface ChannelView {
   changed: boolean;
   gateCount: number;
   completionDays: number[];
+  forecastCoverage: ForecastCoverageContract;
 }
 
 interface Props {
@@ -106,6 +109,11 @@ export default function MixerChannel({
   // it again. What the fader was missing was never the request; it was a
   // ceiling low enough to hide it (see faderMax in PortfolioPageClient).
   const requested = raw;
+  const claim = presentForecastDeliveryClaim({
+    scopeName: view.name,
+    coverage: view.forecastCoverage,
+    likelyDate: view.likelyDate === "—" ? null : view.likelyDate,
+  });
 
   return (
     <div
@@ -113,6 +121,7 @@ export default function MixerChannel({
       onClick={onSelect}
       onMouseEnter={() => onHover(true)}
       onMouseLeave={() => onHover(false)}
+      data-forecast-coverage={view.forecastCoverage.state}
       className="shrink-0 flex flex-col rounded-md"
       style={{
         width: CHANNEL_W,
@@ -126,6 +135,7 @@ export default function MixerChannel({
         transition: "opacity 200ms ease, box-shadow 220ms ease, border-color 220ms ease, transform 220ms cubic-bezier(0.22,0.61,0.36,1)",
       }}
     >
+      <span className="sr-only">{claim.accessibleLabel}</span>
       {/* engraved channel number + identity */}
       <div className="px-2.5 pt-2 pb-1.5">
         <div className="flex items-center justify-between">
@@ -142,6 +152,11 @@ export default function MixerChannel({
         <div className="mt-1 flex items-center gap-1.5">
           <span className="h-[6px] w-[6px] rounded-full shrink-0" style={{ background: accent }} aria-hidden />
           <span className="text-[10.5px] uppercase tracking-[0.06em] truncate text-[var(--i-text)]">{view.name}</span>
+          {!view.forecastCoverage.canonicalForecast && (
+            <span className="shrink-0 text-[7.5px] uppercase tracking-[0.08em] text-[var(--i-amber)]" title={claim.detail ?? claim.badge}>
+              {view.forecastCoverage.state === "modeled_subset" ? "subset" : "unavailable"}
+            </span>
+          )}
         </div>
         <div className="mt-1 flex items-baseline gap-1">
           <span
@@ -149,9 +164,13 @@ export default function MixerChannel({
             className="i-readout text-[16px] leading-none"
             style={{ color: changed ? "var(--i-violet)" : "var(--i-text)" }}
           >
-            {view.likelyDate}
+            {view.forecastCoverage.state === "unavailable"
+              ? "—"
+              : view.forecastCoverage.state === "modeled_subset"
+                ? `~${view.likelyDate}`
+                : view.likelyDate}
           </span>
-          {changed && view.deltaDays !== 0 && (
+          {changed && view.forecastCoverage.state !== "unavailable" && view.deltaDays !== 0 && (
             <span className="text-[9px] font-medium" style={{ color: view.deltaDays < 0 ? "var(--i-mint)" : "var(--i-red)" }}>
               {view.deltaDays < 0 ? "−" : "+"}
               {Math.abs(view.deltaDays)}d
@@ -161,7 +180,9 @@ export default function MixerChannel({
       </div>
 
       <div className="px-2.5">
-        <Trace days={view.completionDays} accent={accent} alive={alive} />
+        {view.forecastCoverage.state !== "unavailable" && (
+          <Trace days={view.completionDays} accent={accent} alive={alive} />
+        )}
       </div>
 
       {/* RAW over EFFECTIVE -- stacked, so the strip stays narrow.

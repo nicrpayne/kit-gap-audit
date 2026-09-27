@@ -44,7 +44,7 @@ export const LAYERS: LayerDef[] = [
   { key: "work", label: "Work completed", hint: "Issues finished in Linear", story: true },
   { key: "context", label: "Context", hint: "When a source was read", story: false },
   { key: "findings", label: "Findings", hint: "Raised and resolved by audit", story: false },
-  { key: "dependencies", label: "Dependencies", hint: "Which project waits on which", story: false },
+  { key: "dependencies", label: "Dependencies", hint: "Which project sets another's completion floor", story: false },
 ];
 
 export type LayerState = Record<LayerKey, boolean>;

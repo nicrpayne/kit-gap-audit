@@ -15,10 +15,12 @@ import { buildPortfolioScenarios, runPortfolioSimulation, type ScopeSimulationSp
 import type { SimulationResult } from "@/lib/forecast/simulate";
 import { estimateContentHash, findingContentHash } from "@/lib/estimate/run";
 import { buildReleaseContext } from "@/lib/estimate/context";
-import { resolveCapacity, type CapacityContributor } from "@/lib/capacity/resolve";
+import { resolveCapacity, type AllocationLike, type CapacityContributor, type PersonLike } from "@/lib/capacity/resolve";
 import { capacityForecastContract, type CapacityForecastContract } from "@/lib/capacity/contract";
 import { deliveryRelevantIssueIds, evaluateForecastCoverage, inheritDependencyCoverage, type ForecastCoverageContract } from "@/lib/forecast/coverage";
 import type { ProjectContextPackage } from "@/lib/context/package";
+import { freezeCapabilityEstimate, freezeForecastBasis, type FrozenCapabilityEstimate, type FrozenForecastBasisV1 } from "@/lib/reports/forecastBasis";
+import { CANONICAL_REPORT_MODE_WHERE, CANONICAL_REPORT_ORDER_DESC } from "@/lib/reports/history";
 import {
   acceptedCapabilityEstimate,
   capabilityKnowledgeEstimates,
@@ -51,6 +53,8 @@ export interface ForecastScenario {
 }
 
 export interface ForecastResult {
+  /** Exact input and quote snapshot from this computation, not a later read. */
+  basis: FrozenForecastBasisV1;
   forecastSource: ForecastSourceStamp;
   /** The project's own Linear read, before dependency currentness is folded in. */
   executionSource: ForecastSourceStamp;
@@ -132,6 +136,14 @@ export function weakestSourceStamp(stamps: ForecastSourceStamp[], fallback: Date
   };
 }
 
+interface CapacityComputationInputs {
+  /** Full owner roster, including inactive people and outside commitments. */
+  namedRoster: PersonLike[];
+  /** Only allocations eligible for the modeled capacity resolution. */
+  modeledAllocations: AllocationLike[];
+  contextSwitchCostPct: number;
+}
+
 interface ScopeSimBundle {
   inputs: ForecastInputs;
   /** The linked-ticket modeled subset before accepted capability estimates
@@ -141,6 +153,7 @@ interface ScopeSimBundle {
   /** Every current Linear item, before accepted Scope chooses the modeled subset. */
   executionInputs: ForecastInputs;
   capacityContributors: CapacityContributor[];
+  capacityInputs: CapacityComputationInputs;
   issues: LinearIssueSummary[];
   findings: ForecastFinding[];
   notionDocs: ForecastResult["notionDocs"];
@@ -153,6 +166,7 @@ interface ScopeSimBundle {
   capabilities: {
     id: string;
     name: string;
+    revision: number;
     status: string;
     acceptedEstimate: Prisma.JsonValue | null;
     workLinks: { externalId: string; state: string }[];
@@ -167,7 +181,10 @@ interface ScopeSimBundle {
 // (when it has dependencies) for every Scope in its dependency closure,
 // without duplicating the Linear-fetch / capacity-resolution / context-
 // build logic. Throws on Linear failure -- callers convert to a 502.
-async function buildScopeSimInputs(scope: Scope): Promise<ScopeSimBundle> {
+async function buildScopeSimInputs(
+  scope: Scope,
+  capturedCapacityInputs?: CapacityComputationInputs,
+): Promise<ScopeSimBundle> {
   const issues = await getScopedIssues(scope);
 
   // A Finding reaches this Scope's forecast either via a legacy audit
@@ -199,7 +216,7 @@ async function buildScopeSimInputs(scope: Scope): Promise<ScopeSimBundle> {
     prisma.workEstimate.findMany({ where: { scopeId: scope.id } }),
     prisma.capability.findMany({
       where: { scopeId: scope.id },
-      select: { id: true, name: true, status: true, acceptedEstimate: true, workLinks: { select: { externalId: true, state: true } } },
+      select: { id: true, name: true, revision: true, status: true, acceptedEstimate: true, workLinks: { select: { externalId: true, state: true } } },
     }),
     prisma.decision.count({ where: { scopeId: scope.id, status: "open", gate: { is: null } } }),
   ]);
@@ -248,15 +265,27 @@ async function buildScopeSimInputs(scope: Scope): Promise<ScopeSimBundle> {
   // resolveCapacity always returns { capacity: null, source: null },
   // making this whole block a no-op -- scope.teamCapacity flows through
   // exactly as it did before Allocations existed.
-  const [people, allAllocations, portfolioSettings, exactReconciliations] = await Promise.all([
-    prisma.person.findMany({ where: { active: true } }),
-    prisma.allocation.findMany(),
-    prisma.portfolioSettings.findUnique({ where: { id: "singleton" } }),
-    prisma.capacityReconciliation.findMany({ where: { status: "named_exact", completenessConfirmed: true }, select: { scopeId: true } }),
-  ]);
-  const exactScopeIds = new Set(exactReconciliations.map((item) => item.scopeId));
-  const allocations = allAllocations.filter((item) => exactScopeIds.has(item.scopeId));
-  const resolved = resolveCapacity(scope.id, people, allocations, portfolioSettings?.contextSwitchCostPct ?? 0);
+  let capacityInputs = capturedCapacityInputs;
+  if (!capacityInputs) {
+    const [people, allAllocations, portfolioSettings, exactReconciliations] = await Promise.all([
+      prisma.person.findMany({ orderBy: { name: "asc" } }),
+      prisma.allocation.findMany(),
+      prisma.portfolioSettings.findUnique({ where: { id: "singleton" } }),
+      prisma.capacityReconciliation.findMany({ where: { status: "named_exact", completenessConfirmed: true }, select: { scopeId: true } }),
+    ]);
+    const exactScopeIds = new Set(exactReconciliations.map((item) => item.scopeId));
+    capacityInputs = {
+      namedRoster: people,
+      modeledAllocations: allAllocations.filter((item) => exactScopeIds.has(item.scopeId)),
+      contextSwitchCostPct: portfolioSettings?.contextSwitchCostPct ?? 0,
+    };
+  }
+  const resolved = resolveCapacity(
+    scope.id,
+    capacityInputs.namedRoster,
+    capacityInputs.modeledAllocations,
+    capacityInputs.contextSwitchCostPct,
+  );
 
   // SERIAL GATES, from the Decision model. A Decision reaches the forecast
   // only through a DecisionGate row that names what waits, why it is
@@ -306,6 +335,7 @@ async function buildScopeSimInputs(scope: Scope): Promise<ScopeSimBundle> {
       capabilityId: capability.id,
       capabilityName: capability.name,
       estimateId: estimate.id,
+      contextSnapshotId: estimate.contextSnapshotId,
       range: estimate.range,
       replacedItemIds: capability.workLinks
         .filter((link) => link.state === "active" || link.state === "configured")
@@ -336,6 +366,7 @@ async function buildScopeSimInputs(scope: Scope): Promise<ScopeSimBundle> {
     sourceInputs,
     executionInputs,
     capacityContributors: resolved.contributors,
+    capacityInputs,
     issues,
     findings,
     notionDocs,
@@ -372,7 +403,7 @@ export async function readForecastCoverage(scope: Scope): Promise<ForecastCovera
       name: dependency.name,
       coverage: dependency.executionState === "not_configured" || dependency.executionState === "unavailable"
         ? evaluateForecastCoverage({ executionState: dependency.executionState, issueIds: [], capabilities: [], openShapeDecisionCount: 0 })
-        : (await buildScopeSimInputs(dependency)).forecastCoverage,
+        : (await buildScopeSimInputs(dependency, own.capacityInputs)).forecastCoverage,
     });
   }
   return inheritDependencyCoverage(own.forecastCoverage, dependencies);
@@ -642,6 +673,11 @@ export async function buildPortfolioInputs(): Promise<PortfolioInputs> {
   const reconciliationByScope = new Map(reconciliations.map((item) => [item.scopeId, item]));
   const exactScopeIds = new Set(reconciliations.filter((item) => item.status === "named_exact" && item.completenessConfirmed).map((item) => item.scopeId));
   const allocations = allAllocations.filter((item) => exactScopeIds.has(item.scopeId));
+  const capacityInputs: CapacityComputationInputs = {
+    namedRoster: people,
+    modeledAllocations: allocations,
+    contextSwitchCostPct: portfolioSettings?.contextSwitchCostPct ?? 0,
+  };
   const latestSnapshotByScope = new Map<string, (typeof contextSnapshots)[number]>();
   for (const snapshot of contextSnapshots) {
     if (!latestSnapshotByScope.has(snapshot.scopeId)) latestSnapshotByScope.set(snapshot.scopeId, snapshot);
@@ -650,7 +686,7 @@ export async function buildPortfolioInputs(): Promise<PortfolioInputs> {
   const startDate = new Date();
   const scopeInputs: PortfolioScopeInput[] = [];
   for (const scope of scopes) {
-    const bundle = await buildScopeSimInputs(scope);
+    const bundle = await buildScopeSimInputs(scope, capacityInputs);
     const latestSnapshot = latestSnapshotByScope.get(scope.id) ?? null;
     const knowledgeEstimates = capabilityKnowledgeEstimates(
       latestSnapshot?.package as unknown as ProjectContextPackage | undefined,
@@ -664,8 +700,8 @@ export async function buildPortfolioInputs(): Promise<PortfolioInputs> {
       estimatesByCapability.set(estimate.capabilityId, bucket);
     }
     const recentReports = await prisma.report.findMany({
-      where: { scopeId: scope.id },
-      orderBy: { generatedAt: "desc" },
+      where: { scopeId: scope.id, ...CANONICAL_REPORT_MODE_WHERE },
+      orderBy: CANONICAL_REPORT_ORDER_DESC,
       take: 10,
       select: {
         generatedAt: true,
@@ -853,8 +889,22 @@ export async function computeForecast(scope: Scope): Promise<ForecastResult> {
   let dependencyOutcomes: ForecastResult["dependencies"] = [];
   const sourceStamps = [sourceStampForIssues(own.issues, readAt)];
   const dependencyCoverage: { scopeId: string; name: string; coverage: ForecastCoverageContract }[] = [];
+  const frozenEstimates: FrozenCapabilityEstimate[] = [];
+  const captureEstimates = (scopeId: string, bundle: ScopeSimBundle) => {
+    for (const capability of bundle.capabilities) {
+      const estimate = acceptedCapabilityEstimate(capability.acceptedEstimate);
+      if (capability.status !== "accepted" || !estimate) continue;
+      const sourceIds = new Set(bundle.sourceInputs.items.map((item) => item.id));
+      frozenEstimates.push(freezeCapabilityEstimate(scopeId, capability, estimate,
+        capability.workLinks.filter((link) => (link.state === "active" || link.state === "configured") && sourceIds.has(link.externalId)).map((link) => link.externalId)));
+    }
+  };
+  let frozenSpecs: ScopeSimulationSpec[];
 
   if (scope.dependsOnScopeIds.length === 0) {
+    frozenSpecs = [{ scopeId: scope.id, items: inputs.items, gates: inputs.gates, teamCapacity: inputs.teamCapacity,
+      dependsOnScopeIds: [], startDate, targetDate: scope.targetDate }];
+    captureEstimates(scope.id, own);
     const scenarioRun = buildScenarios(inputs, startDate, scope.targetDate);
     base = scenarioRun.base;
     rawScenarios = scenarioRun.scenarios;
@@ -862,7 +912,8 @@ export async function computeForecast(scope: Scope): Promise<ForecastResult> {
     const closure = await collectDependencyClosure(scope);
     const specs: ScopeSimulationSpec[] = [];
     for (const s of closure) {
-      const bundle = s.id === scope.id ? own : await buildScopeSimInputs(s);
+      const bundle = s.id === scope.id ? own : await buildScopeSimInputs(s, own.capacityInputs);
+      captureEstimates(s.id, bundle);
       if (s.id !== scope.id) {
         sourceStamps.push(sourceStampForIssues(bundle.issues, readAt));
         dependencyCoverage.push({ scopeId: s.id, name: s.name, coverage: bundle.forecastCoverage });
@@ -883,6 +934,7 @@ export async function computeForecast(scope: Scope): Promise<ForecastResult> {
     // distinct error status. Worth doing once a real UI can create a
     // cycle; today nothing can, since no Scope has a dependency set yet.
     const results = runPortfolioSimulation(specs);
+    frozenSpecs = specs;
     base = results.get(scope.id)!;
     const scopeById = new Map(closure.map((dependency) => [dependency.id, dependency]));
     dependencyOutcomes = scope.dependsOnScopeIds.map((scopeId) => {
@@ -908,6 +960,13 @@ export async function computeForecast(scope: Scope): Promise<ForecastResult> {
   const capacityBasis = capacityBasisFor(scope, own);
 
   return {
+    basis: freezeForecastBasis(frozenSpecs, frozenEstimates, {
+      namedRoster: own.capacityInputs.namedRoster,
+      modeledAllocations: own.capacityInputs.modeledAllocations,
+      contextSwitchCostPct: own.capacityInputs.contextSwitchCostPct,
+      hypotheticalHires: [],
+      aggregateOverridesByScope: {},
+    }),
     forecastSource: weakestSourceStamp(sourceStamps, readAt),
     executionSource: sourceStampForIssues(own.issues, readAt),
     forecastCoverage: inheritDependencyCoverage(own.forecastCoverage, dependencyCoverage),

@@ -29,6 +29,14 @@ import { confidenceAtDay, type SimulationResult, type WorkItem, type DecisionGat
 import { computeMomentum } from "@/lib/momentum/compute";
 import { computeMomentumTrend, type MomentumTrend } from "@/lib/momentum/trend";
 import { applyScenarioInputDelta, type ScenarioInputDelta, type ScenarioInputScope } from "@/lib/scenario/inputDelta";
+import {
+  buildCapacityPlanBaseline,
+  capacityPlanIsChanged,
+  createCapacityScenarioPlan,
+  resolveCapacityPlan,
+  validateCapacityScenarioPlan,
+  type HypotheticalCapacityPerson,
+} from "@/lib/scenario/capacityPlan";
 import { compareToBaseline } from "@/lib/scenario/compare";
 import ForecastField, { type FieldScope } from "@/components/portfolio/ForecastField";
 import ScenarioInspector, {
@@ -50,6 +58,8 @@ import { useProjectParam } from "@/lib/shell/useProjectParam";
 import type { CapacityForecastContract } from "@/lib/capacity/contract";
 import { formatDateOnly } from "@/lib/time/dateContract";
 import ActualTeamDrawer from "@/components/portfolio/ActualTeamDrawer";
+import { EMPTY_SCENARIO, useProject } from "@/lib/instrument/useProject";
+import type { ForecastCoverageContract } from "@/lib/forecast/coverage";
 
 // The Instrument. GET /api/portfolio/inputs is the one expensive network
 // call (Linear + findings + context, per Scope), fetched once on mount;
@@ -95,6 +105,8 @@ interface ScopeInputRow {
   }[];
   capacityBasis: CapacityBasisPayload;
   capacityContract: CapacityForecastContract;
+  forecastCoverage: ForecastCoverageContract;
+  realityState: { realityRevision: number; computedRevision: number; status: string; readiness: unknown };
 }
 
 interface PersonRow {
@@ -138,6 +150,18 @@ function addDays(date: Date, days: number): Date {
   const d = new Date(date);
   d.setUTCDate(d.getUTCDate() + Math.round(days));
   return d;
+}
+
+function hypotheticalCapacity(fte: number, startIndex: number): HypotheticalCapacityPerson[] {
+  const exactFte = Math.max(0, Math.round(fte * 1000) / 1000);
+  const whole = Math.floor(exactFte);
+  const remainder = exactFte - whole;
+  const count = whole + (remainder > 1e-6 ? 1 : 0);
+  return hypotheticalHires(count, startIndex).map((person, index) => ({
+    ...person,
+    fte: index < whole ? 1 : remainder,
+    origin: "hypothetical-hire" as const,
+  }));
 }
 function dayOffset(startDate: Date, date: Date): number {
   return (date.getTime() - startDate.getTime()) / 86400000;
@@ -197,6 +221,8 @@ function axisTicks(startDate: Date, minDay: number, maxDay: number): { day: numb
 }
 
 export default function PortfolioPageClient() {
+  const project = useProject();
+  const setScenario = project.setScenario;
   const pathname = usePathname();
   const router = useRouter();
   const params = useSearchParams();
@@ -205,16 +231,6 @@ export default function PortfolioPageClient() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // THE SCENARIO IS AN ALLOCATION PICTURE. null = untouched, so Reality's
-  // own allocations are what the mixer is reading.
-  const [scenarioAllocations, setScenarioAllocations] = useState<AllocationLike[] | null>(null);
-  // People the scenario has hired but Reality has not. Real capacity for
-  // the duration of the hypothetical; never persisted without an explicit
-  // commit.
-  const [hires, setHires] = useState<PersonLike[]>([]);
-  // Capacity a fader asked for that nobody in the portfolio can supply.
-  const [requiredByScope, setRequiredByScope] = useState<Map<string, number>>(new Map());
-  const [switchCostPct, setSwitchCostPct] = useState(0);
   const [patchbayOpen, setPatchbayOpen] = useState(false);
   // Which channel the pointer is on, so its swim lane above can wake. Pure
   // presentation -- it never touches the scenario.
@@ -254,10 +270,6 @@ export default function PortfolioPageClient() {
       }
       const body: PortfolioInputsResponse = await res.json();
       setData(body);
-      setScenarioAllocations(null);
-      setHires([]);
-      setRequiredByScope(new Map());
-      setSwitchCostPct(body.contextSwitchCostPct);
       setPendingTargets(new Map());
       setSaveSummary(null);
     } catch (err) {
@@ -317,6 +329,36 @@ export default function PortfolioPageClient() {
     }
   }, [data, scenarioScopes]);
 
+  const capacityBaseline = useMemo(() => data ? buildCapacityPlanBaseline({
+    people: data.people,
+    allocations: data.allocations,
+    contextSwitchCostPct: data.contextSwitchCostPct,
+    scopeRevisionById: Object.fromEntries(data.scopes.map((scope) => [scope.scopeId, scope.realityState.realityRevision])),
+  }) : null, [data]);
+  const capacityPlanValidation = useMemo(() => {
+    if (!project.scenario.capacityPlan || !capacityBaseline) return { ok: true } as const;
+    return validateCapacityScenarioPlan(project.scenario.capacityPlan, capacityBaseline);
+  }, [project.scenario.capacityPlan, capacityBaseline]);
+  const capacityPlanError = project.capacityPlanError ?? (capacityPlanValidation.ok ? null : capacityPlanValidation.reason);
+  // Stale plans stay in the shared Scenario so the operator can see and
+  // explicitly reset them, but never enter preview math or mutable controls.
+  const activeCapacityPlan = project.scenario.capacityPlan && capacityPlanValidation.ok && !project.capacityPlanError
+    ? project.scenario.capacityPlan
+    : null;
+
+  // THE SCENARIO IS AN EXACT ALLOCATION PICTURE owned by SuiteScenario.
+  // Remounting Portfolio reconstructs every durable control from this plan.
+  const scenarioAllocations = activeCapacityPlan?.allocations ?? null;
+  const hires: HypotheticalCapacityPerson[] = useMemo(
+    () => activeCapacityPlan?.hypotheticalPeople ?? [],
+    [activeCapacityPlan]
+  );
+  const requiredByScope = useMemo(
+    () => new Map(Object.entries(activeCapacityPlan?.requiredByScope ?? {})),
+    [activeCapacityPlan]
+  );
+  const switchCostPct = activeCapacityPlan?.contextSwitchCostPct ?? data?.contextSwitchCostPct ?? 0;
+
   // THE POOL THE MIXER PLAYS. Reality's people plus anyone the scenario has
   // hired -- a hypothetical hire is a real unit of capacity for as long as
   // the hypothetical lasts, and flows down the identical path.
@@ -344,22 +386,17 @@ export default function PortfolioPageClient() {
   const requiredRecord = useMemo(() => Object.fromEntries(requiredByScope), [requiredByScope]);
   const totalRequired = useMemo(() => [...requiredByScope.values()].reduce((t, v) => t + v, 0), [requiredByScope]);
 
-  const previewDelta: ScenarioInputDelta = useMemo(() => {
-    const phantoms: PersonLike[] = [];
-    const allocations = [...currentAllocations];
-    let n = 0;
-    for (const [scopeId, fte] of requiredByScope) {
-      if (fte <= 1e-6) continue;
-      const id = `required-${scopeId}-${n++}`;
-      phantoms.push({ id, name: "Required", fte, active: true });
-      allocations.push({ personId: id, scopeId, fraction: 1 });
-    }
-    return {
-      allocations,
-      hypotheticalPeople: phantoms,
-      contextSwitchCostPct: switchCostPct,
-    };
-  }, [currentAllocations, requiredByScope, switchCostPct]);
+  const previewDelta: ScenarioInputDelta = useMemo(() => activeCapacityPlan
+    ? resolveCapacityPlan(activeCapacityPlan)
+    : {
+        allocations: (data?.allocations ?? []).map((allocation) => ({
+          personId: allocation.personId,
+          scopeId: allocation.scopeId,
+          fraction: allocation.fraction,
+        })),
+        hypotheticalPeople: [],
+        contextSwitchCostPct: data?.contextSwitchCostPct ?? 0,
+      }, [activeCapacityPlan, data]);
 
   const [preview, setPreview] = useState<Map<string, SimulationResult> | null>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -406,10 +443,10 @@ export default function PortfolioPageClient() {
     if (!data) return out;
     for (const s of data.scopes) {
       const resolved = resolveCapacity(s.scopeId, allPeople, currentAllocations, switchCostPct);
-      out.set(s.scopeId, (resolved.capacity ?? 0) + (requiredByScope.get(s.scopeId) ?? 0));
+      out.set(s.scopeId, resolved.capacity ?? s.teamCapacity);
     }
     return out;
-  }, [data, allPeople, currentAllocations, switchCostPct, requiredByScope]);
+  }, [data, allPeople, currentAllocations, switchCostPct]);
 
   const effectiveSelectedScopeId = selectedScopeId ?? data?.scopes[0]?.scopeId ?? null;
 
@@ -439,7 +476,7 @@ export default function PortfolioPageClient() {
   );
 
   const switchCostChanged = !!data && switchCostPct !== data.contextSwitchCostPct;
-  const dirty = changedScopeIds.size > 0 || switchCostChanged || hires.length > 0 || totalRequired > 1e-6;
+  const dirty = project.scenario.capacityPlan !== null;
 
   const selectedScopeDeps = useMemo(() => {
     const empty: { dependsOn: DependencyDelta[]; dependents: DependentDelta[] } = { dependsOn: [], dependents: [] };
@@ -503,6 +540,7 @@ export default function PortfolioPageClient() {
       dependsOnScopeIds: s.dependsOnScopeIds,
       targetDate: s.targetDate,
       changed: changedScopeIds.has(s.scopeId),
+      forecastCoverage: s.forecastCoverage,
       // The lane wakes when its channel below is touched -- the coupling
       // that makes "this fader controls THAT project" instant.
       active: hoveredScopeId === s.scopeId || transferPair.includes(s.scopeId),
@@ -557,6 +595,49 @@ export default function PortfolioPageClient() {
   );
   const trackedScopeCount = switchCostScopes.filter((s) => s.source === "allocations").length;
 
+  const stageCapacityPlan = useCallback((next: {
+    allocations: AllocationLike[];
+    hypotheticalPeople: HypotheticalCapacityPerson[];
+    requiredByScope: Map<string, number>;
+    contextSwitchCostPct: number;
+  }) => {
+    if (!data || !capacityBaseline || !scenarioScopes) return;
+    const plan = createCapacityScenarioPlan({
+      baseline: capacityBaseline,
+      allocations: next.allocations,
+      hypotheticalPeople: next.hypotheticalPeople,
+      requiredByScope: Object.fromEntries(next.requiredByScope),
+      contextSwitchCostPct: next.contextSwitchCostPct,
+    });
+    if (!capacityPlanIsChanged(plan)) {
+      setScenario((previous) => ({
+        ...previous,
+        capacityPlan: null,
+        capacityOverrideByScope: {},
+        contextSwitchCostPct: null,
+      }));
+      return;
+    }
+
+    // Compatibility only: older presentation paths still read this aggregate
+    // projection. Forecast and report math prefer the exact plan above.
+    const specs = applyScenarioInputDelta(scenarioScopes, data.people, resolveCapacityPlan(plan));
+    const capacityOverrideByScope = Object.fromEntries(specs.flatMap((spec) => {
+      const reality = data.scopes.find((scope) => scope.scopeId === spec.scopeId)?.teamCapacity;
+      return reality !== undefined && Math.abs(spec.teamCapacity - reality) > 1e-6
+        ? [[spec.scopeId, spec.teamCapacity] as const]
+        : [];
+    }));
+    setScenario((previous) => ({
+      ...previous,
+      capacityPlan: plan,
+      capacityOverrideByScope,
+      contextSwitchCostPct: plan.contextSwitchCostPct === data.contextSwitchCostPct
+        ? null
+        : plan.contextSwitchCostPct,
+    }));
+  }, [capacityBaseline, data, setScenario, scenarioScopes]);
+
   // ---- interaction handlers -------------------------------------------
 
   // THE FADER. Raising a channel takes free capacity from the pool and
@@ -588,10 +669,14 @@ export default function PortfolioPageClient() {
         switchCostPct,
         scopeId
       );
-      setScenarioAllocations(settled.allocations);
-      setRequiredByScope(settled.required);
+      stageCapacityPlan({
+        allocations: settled.allocations,
+        hypotheticalPeople: hires,
+        requiredByScope: settled.required,
+        contextSwitchCostPct: switchCostPct,
+      });
     },
-    [workforceState, switchCostPct, requiredByScope]
+    [workforceState, switchCostPct, requiredByScope, hires, stageCapacityPlan]
   );
 
   // Resolving a deficit by taking from a named donor: both channels move as
@@ -607,16 +692,18 @@ export default function PortfolioPageClient() {
       setTransferPair([donorScopeId, scopeId]);
       window.setTimeout(() => setTransferPair([]), 1500);
       const result = transferBetweenChannels(workforceState, donorScopeId, scopeId, needed, switchCostPct);
-      setScenarioAllocations(result.allocations);
-      setRequiredByScope((prev) => {
-        const next = new Map(prev);
-        const still = Math.max(0, needed - (result.achievedRaw - readChannel(workforceState, scopeId, switchCostPct).raw));
-        if (still > 1e-6) next.set(scopeId, still);
-        else next.delete(scopeId);
-        return next;
+      const nextRequired = new Map(requiredByScope);
+      const still = Math.max(0, needed - (result.achievedRaw - readChannel(workforceState, scopeId, switchCostPct).raw));
+      if (still > 1e-6) nextRequired.set(scopeId, still);
+      else nextRequired.delete(scopeId);
+      stageCapacityPlan({
+        allocations: result.allocations,
+        hypotheticalPeople: hires,
+        requiredByScope: nextRequired,
+        contextSwitchCostPct: switchCostPct,
       });
     },
-    [workforceState, requiredByScope, switchCostPct]
+    [workforceState, requiredByScope, switchCostPct, hires, stageCapacityPlan]
   );
 
   // Hiring: the one act that changes how much human capacity exists. The
@@ -624,25 +711,32 @@ export default function PortfolioPageClient() {
   const onHire = useCallback(
     (fte: number) => {
       const recipient = [...requiredByScope.entries()].find(([, v]) => v > 1e-6);
-      const fresh = hypotheticalHires(Math.max(1, Math.round(fte)), hires.length + 1);
+      const fresh = hypotheticalCapacity(Math.max(1, fte), hires.length + 1);
       const grown = { people: [...allPeople, ...fresh], allocations: currentAllocations };
-      setHires((prev) => [...prev, ...fresh]);
+      const nextHires = [...hires, ...fresh];
       if (recipient) {
         const [scopeId, needed] = recipient;
         const target = readChannel(grown, scopeId, switchCostPct).raw + needed;
         const result = setChannelRaw(grown, scopeId, target, switchCostPct);
-        setScenarioAllocations(result.allocations);
-        setRequiredByScope((prev) => {
-          const next = new Map(prev);
-          if (result.required > 1e-6) next.set(scopeId, result.required);
-          else next.delete(scopeId);
-          return next;
+        const nextRequired = new Map(requiredByScope);
+        if (result.required > 1e-6) nextRequired.set(scopeId, result.required);
+        else nextRequired.delete(scopeId);
+        stageCapacityPlan({
+          allocations: result.allocations,
+          hypotheticalPeople: nextHires,
+          requiredByScope: nextRequired,
+          contextSwitchCostPct: switchCostPct,
         });
       } else {
-        setScenarioAllocations(currentAllocations);
+        stageCapacityPlan({
+          allocations: currentAllocations,
+          hypotheticalPeople: nextHires,
+          requiredByScope,
+          contextSwitchCostPct: switchCostPct,
+        });
       }
     },
-    [allPeople, currentAllocations, requiredByScope, hires.length, switchCostPct]
+    [allPeople, currentAllocations, requiredByScope, hires, switchCostPct, stageCapacityPlan]
   );
 
   // Setting the workforce total directly. Growing adds anonymous units;
@@ -654,7 +748,13 @@ export default function PortfolioPageClient() {
       const current = workforceFte(allPeople);
       const delta = targetFte - current;
       if (delta > 1e-6) {
-        setHires((prev) => [...prev, ...hypotheticalHires(Math.round(delta), hires.length + 1)]);
+        const fresh = hypotheticalCapacity(delta, hires.length + 1);
+        stageCapacityPlan({
+          allocations: currentAllocations,
+          hypotheticalPeople: [...hires, ...fresh],
+          requiredByScope,
+          contextSwitchCostPct: switchCostPct,
+        });
         return;
       }
       if (delta < -1e-6) {
@@ -663,16 +763,31 @@ export default function PortfolioPageClient() {
         const committed = committedFractionByPerson(currentAllocations, allPeople);
         let toDrop = -delta;
         const dropped = new Set<string>();
+        const resized = new Map<string, number>();
         for (const p of [...hires].reverse()) {
           if (toDrop <= 1e-6) break;
           if ((committed.get(p.id) ?? 0) > 1e-6) continue;
-          dropped.add(p.id);
-          toDrop -= p.fte;
+          if (p.fte <= toDrop + 1e-6) {
+            dropped.add(p.id);
+            toDrop -= p.fte;
+          } else {
+            resized.set(p.id, p.fte - toDrop);
+            toDrop = 0;
+          }
         }
-        if (dropped.size > 0) setHires((prev) => prev.filter((p) => !dropped.has(p.id)));
+        if (dropped.size > 0 || resized.size > 0) {
+          stageCapacityPlan({
+            allocations: currentAllocations,
+            hypotheticalPeople: hires
+              .filter((person) => !dropped.has(person.id))
+              .map((person) => resized.has(person.id) ? { ...person, fte: resized.get(person.id)! } : person),
+            requiredByScope,
+            contextSwitchCostPct: switchCostPct,
+          });
+        }
       }
     },
-    [allPeople, currentAllocations, hires]
+    [allPeople, currentAllocations, hires, requiredByScope, switchCostPct, stageCapacityPlan]
   );
 
   // Dividing one human. Their fractions must still total at most 1.0 --
@@ -682,9 +797,14 @@ export default function PortfolioPageClient() {
     (personId: string, lines: { scopeId: string; fraction: number }[]) => {
       const result = setPersonSplit(workforceState, personId, lines);
       setPatchbayError(result.error);
-      if (!result.error) setScenarioAllocations(result.allocations);
+      if (!result.error) stageCapacityPlan({
+        allocations: result.allocations,
+        hypotheticalPeople: hires,
+        requiredByScope,
+        contextSwitchCostPct: switchCostPct,
+      });
     },
-    [workforceState]
+    [workforceState, hires, requiredByScope, switchCostPct, stageCapacityPlan]
   );
 
   function scrubTarget(scopeId: string, iso: string) {
@@ -721,10 +841,7 @@ export default function PortfolioPageClient() {
 
   function discard() {
     if (!data) return;
-    setScenarioAllocations(null);
-    setHires([]);
-    setRequiredByScope(new Map());
-    setSwitchCostPct(data.contextSwitchCostPct);
+    setScenario(EMPTY_SCENARIO);
     setPendingTargets(new Map());
     setSaveError(null);
     setSaveSummary(null);
@@ -739,7 +856,7 @@ export default function PortfolioPageClient() {
     changedScopeIds.has(scope.scopeId) && scope.capacityContract.status !== "named_exact"
   );
   const requiresRoster = rosterRequiredScopes.length > 0;
-  const canCommit = overAllocated.length === 0 && (totalRequired <= 1e-6 || requiresRoster);
+  const canCommit = capacityPlanError === null && overAllocated.length === 0 && (totalRequired <= 1e-6 || requiresRoster);
 
   async function save() {
     if (!data || !canCommit) return;
@@ -810,6 +927,12 @@ export default function PortfolioPageClient() {
       if (changedScopeNames.length > 0) summaryParts.push(`${changedScopeNames.join(", ")} reallocated`);
       if (summaryParts.length > 0) setSaveSummary({ text: summaryParts.join(" · "), hadBlocks: false });
 
+      setScenario((previous) => ({
+        ...previous,
+        capacityPlan: null,
+        capacityOverrideByScope: {},
+        contextSwitchCostPct: null,
+      }));
       await load();
     } catch (err) {
       setSaveError(err instanceof Error ? err.message : "Couldn't save.");
@@ -893,6 +1016,7 @@ export default function PortfolioPageClient() {
         splitPeople: reading.splitPeople,
         required: reading.required,
         changed: changedScopeIds.has(s.scopeId),
+        forecastCoverage: s.forecastCoverage,
         gateCount: s.gates.length,
         completionDays: p?.completionDaysSorted ?? [],
       };
@@ -1055,7 +1179,7 @@ export default function PortfolioPageClient() {
           onCommit={save}
           onDiscard={discard}
           onOpenAllocations={() => setAllocationsOpen(true)}
-          saveError={saveError}
+          saveError={capacityPlanError ?? saveError}
           saveSummary={saveSummary}
         />
 
@@ -1126,7 +1250,12 @@ export default function PortfolioPageClient() {
               onTakeFrom={onTakeFrom}
               onSplitSomeone={() => setPatchbayOpen(true)}
               onHire={onHire}
-              onContextSwitch={(pct) => setSwitchCostPct(Math.round(pct))}
+              onContextSwitch={(pct) => stageCapacityPlan({
+                allocations: currentAllocations,
+                hypotheticalPeople: hires,
+                requiredByScope,
+                contextSwitchCostPct: Math.round(pct),
+              })}
               onWorkforce={onWorkforce}
               onOpenSplits={() => setPatchbayOpen(true)}
               onOpenGates={() => router.push(contextualHref("/decisions", params))}
@@ -1147,6 +1276,7 @@ export default function PortfolioPageClient() {
                 name: selectedScope.name,
                 targetDate: selectedScope.targetDate,
                 capacitySource: selectedScope.capacitySource,
+                forecastCoverage: selectedScope.forecastCoverage,
               }}
               baseline={selectedBaseline}
               preview={selectedPreview}

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { buildPortfolioInputs } from "@/lib/forecast/compute";
+import { CANONICAL_REPORT_MODE_WHERE, CANONICAL_REPORT_ORDER_DESC } from "@/lib/reports/history";
 
 // ONE READ FOR THE WHOLE INSTRUMENT SUITE.
 //
@@ -67,7 +68,8 @@ export async function GET() {
       },
     }),
     prisma.report.findMany({
-      orderBy: { generatedAt: "desc" },
+      where: CANONICAL_REPORT_MODE_WHERE,
+      orderBy: CANONICAL_REPORT_ORDER_DESC,
       take: 20,
       select: {
         id: true,

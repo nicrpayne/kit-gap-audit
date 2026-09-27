@@ -22,6 +22,8 @@ import {
 } from "@/lib/momentum/trend";
 import AskChips from "@/components/AskChips";
 import type { CapacityForecastContract } from "@/lib/capacity/contract";
+import type { ForecastCoverageContract } from "@/lib/forecast/coverage";
+import { presentForecastDeliveryClaim } from "@/lib/forecast/claims";
 import { formatDateOnly } from "@/lib/time/dateContract";
 
 export type InspectorFocus = "capacity" | "switchCost" | "momentum" | null;
@@ -44,6 +46,7 @@ export interface InspectorScope {
   name: string;
   targetDate: string | null;
   capacitySource: "allocations" | "explicit" | "inferred";
+  forecastCoverage: ForecastCoverageContract;
 }
 
 interface ScenarioInspectorProps {
@@ -109,6 +112,12 @@ export default function ScenarioInspector({
   }, [focus]);
 
   const capacityChanged = dirty && Math.abs(scenarioCapacity - realityCapacity) > 1e-6;
+  const claim = presentForecastDeliveryClaim({
+    scopeName: scope.name,
+    coverage: scope.forecastCoverage,
+    likelyDate: active ? formatDate(active.likelyDate) : null,
+    targetDate: scope.targetDate ? formatDate(new Date(scope.targetDate)) : null,
+  });
 
   const explanation = useMemo(
     () =>
@@ -130,7 +139,7 @@ export default function ScenarioInspector({
     <aside
       className="shrink-0 hidden xl:flex flex-col overflow-y-auto"
       style={{ width: 296, background: "var(--i-bg)", borderLeft: "1px solid var(--i-border)" }}
-      aria-label={`${scope.name} detail`}
+      aria-label={`${scope.name} detail. ${claim.accessibleLabel}`}
     >
       {/* INSPECTING is structural/neutral. CHANGED is violet. They are
           different questions and must never share a visual state. */}
@@ -139,13 +148,13 @@ export default function ScenarioInspector({
           <div className="min-w-0">
             <div className="i-label">Inspecting</div>
             <div className="mt-1.5 text-[13px] font-medium text-[var(--i-text)] truncate">{scope.name}</div>
-            {active && (
+            {active && scope.forecastCoverage.state !== "unavailable" && (
               <div className="mt-1.5 flex items-baseline gap-2 flex-wrap">
                 <span
                   className="i-readout text-[20px] leading-none"
                   style={{ color: dirty && deltaDays !== 0 ? "var(--i-violet)" : "var(--i-text)" }}
                 >
-                  {formatDate(active.likelyDate)}
+                  {scope.forecastCoverage.state === "modeled_subset" ? `Modeled subset ~${formatDate(active.likelyDate)}` : formatDate(active.likelyDate)}
                 </span>
                 {dirty && deltaDays !== 0 && (
                   <span className="text-[11px] font-medium" style={{ color: moveColor(deltaDays) }}>
@@ -153,6 +162,9 @@ export default function ScenarioInspector({
                   </span>
                 )}
               </div>
+            )}
+            {scope.forecastCoverage.state === "unavailable" && (
+              <div className="mt-1.5 text-[12px] font-medium text-[var(--i-amber)]">Delivery outcome unavailable</div>
             )}
           </div>
           <button
@@ -164,6 +176,14 @@ export default function ScenarioInspector({
             ›
           </button>
         </div>
+
+        {!scope.forecastCoverage.canonicalForecast && (
+          <div className="mt-3 rounded-md px-2.5 py-2" style={{ background: "rgba(224,176,74,0.08)", border: "1px solid rgba(224,176,74,0.25)" }}>
+            <div className="i-label text-[var(--i-amber)]">{claim.badge}</div>
+            <div className="mt-1 text-[10px] leading-relaxed text-[var(--i-text-soft)]">{claim.detail ?? claim.targetConfidence}</div>
+            <div className="mt-1 text-[9px] leading-relaxed text-[var(--i-text-faint)]">{claim.targetConfidence}</div>
+          </div>
+        )}
 
         {changedScopeNames.length > 0 && (
           <div className="mt-3 rounded-md px-2.5 py-2" style={{ background: "var(--i-violet-soft)" }}>
@@ -259,7 +279,7 @@ export default function ScenarioInspector({
           </div>
           {trend.dateUnchangedButImproving && (
             <p className="mt-2 text-[11px] leading-relaxed text-[var(--i-mint)]">
-              The headline date hasn&rsquo;t moved yet, but the odds behind it improved — worth saying out loud
+              The headline date hasn&rsquo;t moved yet, but its stored simulated target frequency improved — worth saying out loud
               before someone reads &ldquo;no change&rdquo; as &ldquo;no progress.&rdquo;
             </p>
           )}
@@ -289,8 +309,8 @@ export default function ScenarioInspector({
             </summary>
             <p className="mt-2 text-[11px] text-[var(--i-text-faint)] leading-relaxed">
               It compares two things only: today&rsquo;s forecast against the forecast in the last report we
-              generated for this scope. If the date moved earlier or the odds of hitting the target went up, that
-              reads as rising; later or worse odds reads as falling; movement under a day or under five points is
+              generated for this scope. If the date moved earlier or the stored simulated target frequency went up, that
+              reads as rising; later or a lower frequency reads as falling; movement under a day or under five points is
               treated as no movement at all.
             </p>
             <p className="mt-2 text-[11px] text-[var(--i-text-faint)] leading-relaxed">
@@ -319,7 +339,7 @@ export default function ScenarioInspector({
       )}
 
       <section className="px-4 py-3.5" style={{ borderBottom: "1px solid var(--i-border)" }}>
-        <div className="i-label mb-2">Why this date</div>
+        <div className="i-label mb-2">{scope.forecastCoverage.state === "modeled_subset" ? "Why this subset date" : scope.forecastCoverage.state === "unavailable" ? "Why no date" : "Why this date"}</div>
         {capacityChanged && (
           <p className="text-[11.5px] text-[var(--i-text-soft)] leading-relaxed mb-2">
             {scope.name} is being simulated at{" "}

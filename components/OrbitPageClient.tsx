@@ -50,7 +50,7 @@ const KIND_COLOR: Record<OrbitNode["kind"], string> = {
 const KIND_LABEL: Record<OrbitNode["kind"], string> = {
   forecast: "Forecast",
   capability: "Capability",
-  dependency: "Waiting on",
+  dependency: "Completion floor",
   gate: "Decision gate",
   capacity: "People",
 };

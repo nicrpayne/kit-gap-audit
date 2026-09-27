@@ -9,6 +9,7 @@ import type { DecisionGate, SimulationResult } from "@/lib/forecast/simulate";
 import type { ProjectScope, ProjectSource } from "@/lib/instrument/useProject";
 import { fmtDay, fmtFull } from "@/lib/instrument/useProject";
 import { confidenceAtDay, forecastDateAtDay } from "@/lib/forecast/simulate";
+import { FORECAST_PERCENTILE_COPY } from "@/lib/forecast/claims";
 import Link from "@/components/instrument/SignalLink";
 
 // ── GATE ─────────────────────────────────────────────────────────────────
@@ -30,14 +31,14 @@ export function GateDetail({
       <div className="px-5 py-4">
         <p className="text-[11px] text-[var(--i-text-soft)] leading-relaxed">
           A decision is <strong className="text-[var(--i-text)]">serial delay, not effort</strong>. Every simulated
-          run waits it out before the outcome can land — adding people changes nothing about it, which is why it is
-          drawn as a wall the forecast presses against rather than as work inside the object.
+          run samples it as delay added to modeled duration — adding people changes nothing about it, which is why
+          it is drawn as a wall the forecast presses against rather than as work inside the object.
         </p>
 
         <div className="mt-4">
-          <Row k="Time to decide, best" v={`${gate.low}d`} />
-          <Row k="Likely" v={`${gate.likely}d`} note="the wall stands at this day" />
-          <Row k="Worst" v={`${gate.high}d`} />
+          <Row k="Time to decide, low estimate" v={`${gate.low}d`} />
+          <Row k="Likely estimate" v={`${gate.likely}d`} note="sampled serial delay" />
+          <Row k="High estimate" v={`${gate.high}d`} />
         </div>
 
         <button
@@ -119,7 +120,7 @@ export function TargetDetail({
               className="mt-4 w-full rounded-md px-3 py-2.5 text-[12px] font-medium transition-colors"
               style={{ background: "var(--i-signal)", color: "var(--i-void)", border: "1px solid var(--i-signal)" }}
             >
-              Test the most likely finish date
+              Test the P50 finish date
             </button>
           </>
         ) : (
@@ -129,19 +130,19 @@ export function TargetDetail({
                 {savedTargetDay === null ? "Testing only · not saved" : overridden ? "Testing a different date" : "Official target"}
               </div>
               <div className="mt-2 i-readout text-[24px] leading-none text-[var(--i-text)]">{d(targetDay)}</div>
-              <div className="mt-2 text-[10px] text-[var(--i-text-faint)]">Most likely finish · {d(likelyDay)}</div>
+              <div className="mt-2 text-[10px] text-[var(--i-text-faint)]">P50 finish · {d(likelyDay)}</div>
             </div>
 
             <div className="mt-3">
               <Row
-                k="Chance of finishing on time"
+                k="Simulated frequency by target"
                 v={`${conf}%`}
                 tone={conf !== null && conf >= 70 ? "var(--i-mint)" : conf !== null && conf >= 40 ? "var(--i-amber)" : "var(--i-red)"}
-                note={`${conf} of every 100 runs land on or before it`}
+                note={`${conf} of every 100 runs land on or before it under these assumptions; not a measured probability`}
               />
-              <Row k="Chance of finishing late" v={`${100 - (conf ?? 0)}%`} note="the striped part of the forecast" />
+              <Row k="Simulated frequency after target" v={`${100 - (conf ?? 0)}%`} note="runs after the target under these assumptions" />
               <Row
-                k="Most likely variance"
+                k="P50 variance"
                 v={variance === 0 ? "On target" : `${Math.abs(variance ?? 0)}d ${variance !== null && variance > 0 ? "late" : "early"}`}
               />
               {savedTargetDay !== null && overridden && <Row k="Official target" v={d(savedTargetDay)} />}
@@ -184,7 +185,7 @@ export function TargetDetail({
         <details className="mt-4 rounded-md px-3 py-2.5" style={{ border: "1px solid var(--i-border)" }}>
           <summary className="cursor-pointer text-[10.5px] text-[var(--i-text-soft)]">How this works</summary>
           <p className="mt-2 text-[10px] text-[var(--i-text-faint)] leading-relaxed">
-            Testing a date does not change the forecast. Signal compares the date with the same simulation runs and reports how many finish on time. The official target is owned by Timeline.
+            Testing a date does not change the forecast. Signal compares the date with the same simulation runs and reports their finish frequency under the model assumptions, not a measured real-world probability. The official target is owned by Timeline.
           </p>
         </details>
 
@@ -239,7 +240,7 @@ export function RealityDetail({
           Reality — the baseline
         </div>
         <Row k="Lands" v={d(reality.percentiles.p50)} />
-        <Row k="Range" v={`${fmtDay(forecastDateAtDay(startDate, reality.percentiles.p10))} — ${fmtDay(forecastDateAtDay(startDate, reality.percentiles.p90))}`} note={`${spreadR}d spread`} />
+        <Row k="P10–P90 interval" v={`${fmtDay(forecastDateAtDay(startDate, reality.percentiles.p10))} — ${fmtDay(forecastDateAtDay(startDate, reality.percentiles.p90))}`} note={`${spreadR}d · ${FORECAST_PERCENTILE_COPY.p10}; ${FORECAST_PERCENTILE_COPY.p90}`} />
 
         {scenarioActive ? (
           <>
@@ -248,9 +249,9 @@ export function RealityDetail({
             </div>
             <Row k="Lands" v={d(scenario.percentiles.p50)} tone="var(--i-violet)" />
             <Row
-              k="Range"
+              k="P10–P90 interval"
               v={`${fmtDay(forecastDateAtDay(startDate, scenario.percentiles.p10))} — ${fmtDay(forecastDateAtDay(startDate, scenario.percentiles.p90))}`}
-              note={`${spreadS}d spread`}
+              note={`${spreadS}d · ${FORECAST_PERCENTILE_COPY.p10}; ${FORECAST_PERCENTILE_COPY.p90}`}
             />
             <div className="i-label mt-4 mb-1">What the scenario changed</div>
             <Row
@@ -261,7 +262,7 @@ export function RealityDetail({
             <Row
               k="Uncertainty"
               v={dSpread === 0 ? "unchanged" : `${Math.abs(dSpread)}d ${dSpread < 0 ? "tighter" : "wider"}`}
-              note="the spread between best and worst case"
+              note="change in the P10–P90 interval"
             />
           </>
         ) : (

@@ -7,7 +7,9 @@ import { computeChangesSince } from "@/lib/reports/changes";
 import { capacityForecastContract, CapacityReconciliationIncompleteError } from "@/lib/capacity/contract";
 import { toDateOnly } from "@/lib/time/dateContract";
 import { ForecastCoverageIncompleteError } from "@/lib/forecast/coverage";
+import { forecastAssumptionSnapshot } from "@/lib/forecast/claims";
 import { readKnowledgeStatus } from "@/lib/audit/changeInbox";
+import { CANONICAL_REPORT_MODE_WHERE, CANONICAL_REPORT_ORDER_DESC } from "./history";
 import type { PolicyEvaluatedCompleteness } from "@/lib/context/sourcePolicy";
 import {
   assembleDecisionBrief,
@@ -125,8 +127,8 @@ export async function loadDecisionBriefOwnerInputs(
   }
   const [previousReport, audit, decisions, dependencyScopes, people, allocations, settings, reconciliation, timelineEvents, contextSnapshot, kitConstruct, derivedState, refreshStatus] = await Promise.all([
     prisma.report.findFirst({
-      where: { scopeId: scope.id },
-      orderBy: { generatedAt: "desc" },
+      where: { scopeId: scope.id, ...CANONICAL_REPORT_MODE_WHERE },
+      orderBy: CANONICAL_REPORT_ORDER_DESC,
       select: { id: true, generatedAt: true, likelyDate: true, confidenceAtTarget: true },
     }),
     auditObservations(scope.id),
@@ -215,6 +217,9 @@ export async function loadDecisionBriefOwnerInputs(
       warnings: [...forecast.contextIssues, ...audit.providerChanges],
     },
     forecast: {
+      basis: forecast.basis,
+      assumptions: forecastAssumptionSnapshot(),
+      simulationItemCount: forecast.basis.scopes.find((item) => item.scopeId === scope.id)?.items.length ?? 0,
       sourceId: `forecast:${scope.id}:${generatedAt}`,
       asOf: forecast.forecastSource.asOf.toISOString(),
       earliestDate: toDateOnly(forecast.earliestDate),

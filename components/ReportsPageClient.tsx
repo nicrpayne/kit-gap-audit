@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback, useMemo } from "react";
+import { useEffect, useState, useCallback, useMemo, useRef } from "react";
 import Link from "@/components/instrument/SignalLink";
 import ReportView, { CopyMarkdownButton } from "./ReportView";
 import DecisionBriefView from "./DecisionBriefView";
@@ -18,6 +18,14 @@ import { renderAudienceBriefPlainText } from "@/lib/reports/audienceBriefRender"
 import { currentnessLabel, sourceCurrentness } from "@/lib/truth/currentness";
 import { formatDateOnly } from "@/lib/time/dateContract";
 import { useProject } from "@/lib/instrument/useProject";
+import { reportComparison } from "@/lib/reports/comparison";
+import { removeUnchangedCapacityAssumption } from "@/lib/reports/scenarioRecovery";
+import {
+  countScenarioReportLevers,
+  findScenarioLeverConflicts,
+  scenarioLeverConflictMessage,
+} from "@/lib/reports/scenarioConflicts";
+import { knowledgeEstimateItemId } from "@/lib/scope/knowledgeEstimates";
 
 /** The live forecast is a comparison input, not report data. Three states,
     because "we could not resolve it" must be distinguishable from "it
@@ -67,6 +75,7 @@ export default function ReportsPageClient() {
   const [reports, setReports] = useState<ReportRow[] | null>(null);
   const [selected, setSelected] = useState<ReportRow | null>(null);
   const [generating, setGenerating] = useState(false);
+  const comparisonAttempt = useRef<{ signature: string; id: string } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [live, setLive] = useState<LiveForecast | null>(null);
   const [audience, setAudience] = useState<AudienceLens>("delivery-leadership");
@@ -79,11 +88,7 @@ export default function ReportsPageClient() {
     () => selected && isBriefRecipeV1(selected.briefRecipe) ? selected.briefRecipe : null,
     [selected]
   );
-  const comparison = useMemo(() => {
-    const reality = reports?.find((report) => report.mode === "reality" && isDecisionBriefV1(report.briefSnapshot)) ?? null;
-    const scenario = reports?.find((report) => report.mode === "scenario" && isDecisionBriefV1(report.briefSnapshot)) ?? null;
-    return reality && scenario ? { reality, scenario, realityBrief: reality.briefSnapshot as DecisionBriefV1, scenarioBrief: scenario.briefSnapshot as DecisionBriefV1 } : null;
-  }, [reports]);
+  const comparison = useMemo(() => reportComparison(reports ?? [], selected?.id ?? null), [reports, selected]);
 
   // Momentum for the selected report: comparison is against the report
   // immediately BEFORE it chronologically (`reports` is sorted newest
@@ -94,8 +99,14 @@ export default function ReportsPageClient() {
   // network calls, per the brief's "mostly free" expectation for this page.
   const momentum = useMemo(() => {
     if (!selected || !reports) return null;
-    const index = reports.findIndex((r) => r.id === selected.id);
-    const previous = index >= 0 ? reports[index + 1] : undefined;
+    // Hypothetical rows are not new Reality history. The stored brief knows
+    // which earlier Reality it compared with; never use its paired sibling.
+    if (selected.mode === "scenario") return null;
+    const storedBrief = isDecisionBriefV1(selected.briefSnapshot) ? selected.briefSnapshot : null;
+    const priorId = storedBrief?.headline.movement.value?.comparedToReportId;
+    const previous = storedBrief
+      ? reports.find((r) => r.id === priorId)
+      : reports.find((r) => r.mode !== "scenario" && new Date(r.generatedAt) < new Date(selected.generatedAt));
     if (!previous) return null;
     const m = computeMomentum(
       { generatedAt: new Date(selected.generatedAt), likelyDate: new Date(selected.likelyDate), confidenceAtTarget: selected.confidenceAtTarget },
@@ -106,6 +117,7 @@ export default function ReportsPageClient() {
       previousGeneratedAt: previous.generatedAt,
       attribution: reportAttributionSentence(selected),
       sparkline: [...reports]
+        .filter((r) => r.mode !== "scenario" && new Date(r.generatedAt) <= new Date(selected.generatedAt))
         .reverse()
         .map((r) => ({ generatedAt: r.generatedAt, likelyDate: r.likelyDate, targetDate: r.targetDate })),
     };
@@ -187,12 +199,59 @@ export default function ReportsPageClient() {
   const forecastPending = live === null || live.state === "loading";
   const forecastUnavailable = live?.state === "error" && live.reason.includes("FORECAST UNAVAILABLE");
   const forecastIncomplete = live?.state === "ready" && live.coverageState !== "forecastable";
+  const unstaffedCapacityFte = project.scenario.capacityPlan
+    ? Object.values(project.scenario.capacityPlan.requiredByScope).reduce((total, fte) => total + fte, 0)
+    : 0;
+  const capacityPlanNoOp = Boolean(
+    project.scenario.capacityPlan &&
+    unstaffedCapacityFte <= 1e-6 &&
+    Object.keys(project.scenario.capacityOverrideByScope).length === 0
+  );
+  const excludedCapabilityIds = [...project.scenario.bypassedFeatureIds]
+    .filter((id) => id.startsWith("capability:"))
+    .map((id) => id.slice("capability:".length));
+  const conflictCapabilities = (project.data?.scopes ?? []).flatMap((candidate) => {
+    const sourceItemIds = new Set(candidate.items.map((item) => item.id));
+    return candidate.capabilities.map((capability) => ({
+      id: capability.id,
+      name: capability.name,
+      scopeId: candidate.scopeId,
+      workItemIds: [
+        ...capability.workLinks
+          .filter((link) => (link.state === "active" || link.state === "configured") && sourceItemIds.has(link.externalId))
+          .map((link) => link.externalId),
+        ...(capability.acceptedEstimate
+          ? [knowledgeEstimateItemId(capability.id, capability.acceptedEstimate.id, capability.acceptedEstimate.contextSnapshotId)]
+          : []),
+      ],
+    }));
+  });
+  const scenarioLeverConflicts = findScenarioLeverConflicts({
+    capabilities: conflictCapabilities,
+    excludedCapabilityIds,
+    excludedItemIds: [...project.scenario.excludedItemIds],
+    includedItemIds: [...project.scenario.includedItemIds],
+    knowledgeCapabilityIds: Object.keys(project.scenario.knowledgeEstimateByCapabilityId),
+    staffingCapabilityIds: Object.keys(project.scenario.capabilityStaffingById),
+  });
+  const scenarioLeverConflictReason = scenarioLeverConflicts.length
+    ? `${scenarioLeverConflictMessage(scenarioLeverConflicts)}. Choose which staged assumption to keep in Scope; Signal has not removed any of them.`
+    : null;
+  const scenarioConflictScopeId = scenarioLeverConflicts.flatMap((conflict) => conflict.scopeIds)[0] ?? scopeId;
   const scenarioReportBlockedReason = generating
     ? "Report generation is already in progress."
     : !scopeId
       ? "Choose a project first."
       : !project.active
         ? "Stage at least one Scope, estimate, staffing, Capacity, or decision lever in Scenario first."
+        : scenarioLeverConflictReason
+          ? scenarioLeverConflictReason
+        : project.capacityPlanError
+          ? project.capacityPlanError
+        : unstaffedCapacityFte > 1e-6
+          ? `Capacity still requires ${unstaffedCapacityFte.toFixed(1)} FTE that has not been staffed. Reallocate named capacity or add an explicit hypothetical hire before publishing.`
+        : capacityPlanNoOp
+          ? "The staged Capacity assumption leaves every simulated project at its Reality effective FTE, so the forecast ignores it and a report must not claim it changed the result. Remove only that unchanged Capacity assumption to continue; any other Scenario changes will remain staged."
         : forecastPending
           ? "Signal is checking the current Forecast and coverage gate."
         : forecastUnavailable
@@ -228,46 +287,54 @@ export default function ReportsPageClient() {
       setError("Scenario owner state is still loading. Retry in a moment.");
       return;
     }
-    const supportedLeverCount = project.scenario.excludedItemIds.size + project.scenario.includedItemIds.size + project.scenario.resolvedGateIds.size + Object.keys(project.scenario.estimateOverrideByItemId).length + Object.keys(project.scenario.knowledgeEstimateByCapabilityId).length + Object.keys(project.scenario.capabilityStaffingById).length + Object.keys(project.scenario.capacityOverrideByScope).length + (project.scenario.contextSwitchCostPct === null ? 0 : 1);
+    const supportedLeverCount = countScenarioReportLevers({
+      excludedItemIds: [...project.scenario.excludedItemIds],
+      includedItemIds: [...project.scenario.includedItemIds],
+      excludedCapabilityIds,
+      resolvedGateIds: [...project.scenario.resolvedGateIds],
+      estimateOverrideIds: Object.keys(project.scenario.estimateOverrideByItemId),
+      knowledgeCapabilityIds: Object.keys(project.scenario.knowledgeEstimateByCapabilityId),
+      staffingCapabilityIds: Object.keys(project.scenario.capabilityStaffingById),
+      capacityOverrideScopeIds: Object.keys(project.scenario.capacityOverrideByScope),
+      hasCapacityPlan: Boolean(project.scenario.capacityPlan),
+      contextSwitchCostPct: project.scenario.contextSwitchCostPct,
+    });
     if (supportedLeverCount === 0) {
       setError("This scenario has no reportable forecast lever. Knowledge-only drafts remain unmodeled until mapped to work or governed effort.");
       return;
     }
     setGenerating(true);
     setError(null);
-    const scenarioId = `scenario-${scopeId.slice(-6)}-r${scope.realityState.realityRevision}-${Date.now()}`;
+    let scenarioId = `scenario-${crypto.randomUUID()}`;
     const scenarioSnapshot = {
-      version: "scenario-report.v1",
+      version: "scenario-report.v2",
       scenarioId,
       baseRealityRevision: scope.realityState.realityRevision,
       excludedItemIds: [...project.scenario.excludedItemIds],
       includedItemIds: [...project.scenario.includedItemIds],
       resolvedGateIds: [...project.scenario.resolvedGateIds],
       estimateOverrideByItemId: project.scenario.estimateOverrideByItemId,
-      excludedCapabilityIds: [...project.scenario.bypassedFeatureIds]
-        .filter((id) => id.startsWith("capability:"))
-        .map((id) => id.slice("capability:".length)),
+      excludedCapabilityIds,
       knowledgeEstimateByCapabilityId: project.scenario.knowledgeEstimateByCapabilityId,
       capabilityStaffingById: project.scenario.capabilityStaffingById,
+      capacityPlan: project.scenario.capacityPlan,
       capacityOverrideByScope: project.scenario.capacityOverrideByScope,
       contextSwitchCostPct: project.scenario.contextSwitchCostPct,
     };
+    const signature = JSON.stringify({ scopeId, ...scenarioSnapshot, scenarioId: null, audience, purpose });
+    if (comparisonAttempt.current?.signature === signature) scenarioId = comparisonAttempt.current.id;
+    else comparisonAttempt.current = { signature, id: scenarioId };
+    scenarioSnapshot.scenarioId = scenarioId;
     try {
-      const realityResponse = await fetch("/api/reports", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ scopeId, mode: "reality", recipe: buildBriefRecipe(audience, purpose) }),
-      });
-      const realityBody = await realityResponse.json();
-      if (!realityResponse.ok) throw new Error(realityBody.error ?? "Couldn't generate the Reality side of the comparison.");
       const response = await fetch("/api/reports", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ scopeId, mode: "scenario", scenarioId, scenarioSnapshot, recipe: buildBriefRecipe(audience, purpose) }),
+        body: JSON.stringify({ scopeId, mode: "comparison", scenarioId, scenarioSnapshot, recipe: buildBriefRecipe(audience, purpose) }),
       });
       const body = await response.json();
-      if (!response.ok) throw new Error(body.error ?? "Reality was saved, but the Scenario side of the comparison could not be generated.");
+      if (!response.ok) throw new Error(body.error ?? "Couldn't save the comparison. Neither report was saved.");
       await loadReports(scopeId);
+      comparisonAttempt.current = null;
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Couldn't generate Scenario report.");
     } finally {
@@ -349,7 +416,19 @@ export default function ReportsPageClient() {
       {scenarioReportBlockedReason && project.active && !generating && (
         <div id="scenario-report-blocked-reason" className="report-no-print mb-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-[var(--i-amber)] bg-[var(--i-amber-soft)] px-4 py-3 text-xs text-[var(--i-text-soft)]">
           <span><strong className="text-[var(--i-amber)]">Scenario comparison is not publishable yet.</strong> {scenarioReportBlockedReason}</span>
-          {forecastIncomplete && <Link href={`/scope?project=${encodeURIComponent(scopeId ?? "")}`} className="shrink-0 text-[var(--i-signal)] hover:underline">Open Scope reconciliation →</Link>}
+          {scenarioLeverConflictReason ? (
+            <Link href={`/scope?project=${encodeURIComponent(scenarioConflictScopeId ?? "")}`} className="shrink-0 text-[var(--i-signal)] hover:underline">Resolve in Scope →</Link>
+          ) : capacityPlanNoOp ? (
+            <button
+              type="button"
+              onClick={() => project.setScenario(removeUnchangedCapacityAssumption)}
+              className="shrink-0 rounded-md border border-[var(--i-amber)] px-3 py-1.5 font-semibold text-[var(--i-amber)] hover:bg-white/5"
+            >
+              Remove unchanged capacity assumption
+            </button>
+          ) : forecastIncomplete ? (
+            <Link href={`/scope?project=${encodeURIComponent(scopeId ?? "")}`} className="shrink-0 text-[var(--i-signal)] hover:underline">Open Scope reconciliation →</Link>
+          ) : null}
         </div>
       )}
 

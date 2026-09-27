@@ -6,6 +6,7 @@ import { computeMomentum } from "@/lib/momentum/compute";
 import { attributionSentence } from "@/lib/momentum/attribution";
 import { buildWhyMovedPrompt, buildHitTargetPrompt, type AskContext } from "@/lib/momentum/askPrompt";
 import { completeJson } from "@/lib/model";
+import { CANONICAL_REPORT_MODE_WHERE, CANONICAL_REPORT_ORDER_DESC } from "@/lib/reports/history";
 
 const QUESTION_TYPES = new Set(["why_moved", "hit_target"]);
 
@@ -68,8 +69,8 @@ export async function POST(req: NextRequest) {
   }
 
   const previousReport = await prisma.report.findFirst({
-    where: { scopeId: scope.id },
-    orderBy: { generatedAt: "desc" },
+    where: { scopeId: scope.id, ...CANONICAL_REPORT_MODE_WHERE },
+    orderBy: CANONICAL_REPORT_ORDER_DESC,
   });
 
   let momentum: AskContext["momentum"] = null;

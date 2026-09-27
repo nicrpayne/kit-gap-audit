@@ -13,8 +13,8 @@
 // Three things are drawn on top of that mass, and each one is a fact:
 //   - the P50 stem, where the outcome balances
 //   - Reality's own ridge, hollow and dashed, once a scenario moves things
-//   - the tail past the target date, hatched -- that hatched area IS the
-//     probability of missing, so "how sure are we" can be read spatially
+//   - for complete coverage, the tail past the target date is hatched --
+//     that area is the simulated miss frequency under model assumptions
 //     before anyone looks at the percentage
 //
 // That is what makes the surface playable: raise capacity and you watch the
@@ -25,6 +25,8 @@
 import { useId, useMemo, useRef } from "react";
 import type { SimulationResult } from "@/lib/forecast/simulate";
 import { confidenceAtDay } from "@/lib/forecast/simulate";
+import type { ForecastCoverageContract } from "@/lib/forecast/coverage";
+import { forecastAssumptionSnapshot, presentForecastDeliveryClaim, presentPortfolioDeliveryClaim } from "@/lib/forecast/claims";
 import { formatDateOnly, toDateOnly } from "@/lib/time/dateContract";
 
 export interface FieldScope {
@@ -32,6 +34,7 @@ export interface FieldScope {
   name: string;
   dependsOnScopeIds: string[];
   targetDate: string | null;
+  forecastCoverage: ForecastCoverageContract;
   /** Carries a scenario change. Deliberately independent of selection:
       "what I changed" and "what I'm looking at" are different questions and
       never share a visual state -- violet means changed, full stop. */
@@ -212,6 +215,14 @@ export default function ForecastField({
 
   const byId = useMemo(() => new Map(scopes.map((s) => [s.scopeId, s])), [scopes]);
   const todayPct = pct(0);
+  const portfolioClaim = useMemo(
+    () => presentPortfolioDeliveryClaim({
+      likelyDate: portfolioLikely ? fmtLong(portfolioLikely) : null,
+      scopes: scopes.map((scope) => ({ name: scope.name, coverage: scope.forecastCoverage })),
+    }),
+    [portfolioLikely, scopes],
+  );
+  const assumptions = useMemo(() => forecastAssumptionSnapshot(), []);
 
   return (
     <div ref={trackRef} className="relative flex-1 min-h-0 flex flex-col">
@@ -223,15 +234,18 @@ export default function ForecastField({
         style={{ borderBottom: "1px solid var(--i-border)" }}
       >
         <div>
-          <div className="i-label">Portfolio lands</div>
+          <span className="sr-only">{portfolioClaim.accessibleLabel}</span>
+          <div className="i-label">{portfolioClaim.state === "forecastable" ? "Portfolio lands" : "Portfolio coverage"}</div>
           <div className="flex items-baseline gap-2.5 mt-1.5">
             <span
-              className="i-readout text-[27px] leading-none"
+              className={`i-readout leading-none ${portfolioClaim.state === "forecastable" ? "text-[27px]" : "text-[19px]"}`}
               style={{ color: dirty && portfolioDeltaDays !== 0 ? "var(--i-violet)" : "var(--i-text)" }}
             >
-              {portfolioLikely ? fmtLong(portfolioLikely) : "—"}
+              {portfolioClaim.state === "forecastable"
+                ? portfolioLikely ? fmtLong(portfolioLikely) : "—"
+                : portfolioClaim.headline}
             </span>
-            {dirty && portfolioDeltaDays !== 0 && (
+            {portfolioClaim.state === "forecastable" && dirty && portfolioDeltaDays !== 0 && (
               <span
                 className="i-readout text-[13px]"
                 style={{ color: portfolioDeltaDays < 0 ? "var(--i-mint)" : "var(--i-red)" }}
@@ -239,17 +253,37 @@ export default function ForecastField({
                 {portfolioDeltaDays < 0 ? `${Math.abs(portfolioDeltaDays)}d earlier` : `${portfolioDeltaDays}d later`}
               </span>
             )}
-            {dirty && portfolioDeltaDays === 0 && portfolioGatedBy && (
+            {portfolioClaim.state === "forecastable" && dirty && portfolioDeltaDays === 0 && portfolioGatedBy && (
               <span className="text-[11px] text-[var(--i-amber)]">still gated by {portfolioGatedBy}</span>
             )}
           </div>
-          {portfolioGatedBy && !(dirty && portfolioDeltaDays === 0) && (
+          {portfolioClaim.state === "forecastable" && portfolioGatedBy && !(dirty && portfolioDeltaDays === 0) && (
             <div className="mt-1.5 text-[10px] text-[var(--i-text-faint)]">
               set by {portfolioGatedBy}, the last scope to land
             </div>
           )}
+          {portfolioClaim.state !== "forecastable" && (
+            <div className="mt-1.5 max-w-[560px] text-[10px] leading-relaxed text-[var(--i-amber)]">
+              {portfolioClaim.detail}
+            </div>
+          )}
         </div>
         <div className="flex-1" />
+        <details className="relative pb-0.5">
+          <summary className="cursor-pointer list-none text-[9px] uppercase tracking-[0.1em] text-[var(--i-text-faint)] hover:text-[var(--i-text)]">
+            Model assumptions
+          </summary>
+          <div className="absolute right-0 top-full z-20 mt-2 w-[480px] rounded-md p-3 shadow-xl" style={{ background: "var(--i-panel-raised)", border: "1px solid var(--i-border-strong)" }}>
+            <div className="i-label">Forecast assumptions · {assumptions.version}</div>
+            <ul className="mt-2 space-y-1.5">
+              {assumptions.items.map((item) => (
+                <li key={item.id} className="text-[9.5px] leading-relaxed text-[var(--i-text-faint)]">
+                  <strong className="text-[var(--i-text-soft)]">{item.label}.</strong> {item.detail}
+                </li>
+              ))}
+            </ul>
+          </div>
+        </details>
         {/* Legend. Four marks, four meanings -- the field uses no colour or
             texture that isn't named here. */}
         <div className="flex items-center gap-4 pb-0.5">
@@ -326,18 +360,24 @@ export default function ForecastField({
         {scopes.map((s) => {
           const b = baseline?.get(s.scopeId);
           const p = preview?.get(s.scopeId) ?? b;
-          if (!p) return null;
 
           const selected = s.scopeId === selectedScopeId;
-          const deltaDays = dirty && b ? Math.round((p.likelyDate.getTime() - b.likelyDate.getTime()) / 86400000) : 0;
-          const moved = dirty && !!b && Math.abs(deltaDays) >= 1;
+          const deltaDays = dirty && b && p ? Math.round((p.likelyDate.getTime() - b.likelyDate.getTime()) / 86400000) : 0;
+          const moved = dirty && !!b && !!p && Math.abs(deltaDays) >= 1;
           const deltaColor = deltaDays < 0 ? "var(--i-mint)" : deltaDays > 0 ? "var(--i-red)" : "var(--i-text-soft)";
 
           const pendingTarget = pendingTargets.get(s.scopeId);
           const targetIso = pendingTarget ?? s.targetDate;
           const targetDay = targetIso ? dayOffset(startDate, new Date(targetIso)) : null;
           const targetDirty = pendingTarget !== undefined && pendingTarget !== (s.targetDate?.slice(0, 10) ?? "");
-          const confAtTarget = targetDay !== null ? confidenceAtDay(p.completionDaysSorted, targetDay) : null;
+          const confAtTarget = targetDay !== null && p ? confidenceAtDay(p.completionDaysSorted, targetDay) : null;
+          const claim = presentForecastDeliveryClaim({
+            scopeName: s.name,
+            coverage: s.forecastCoverage,
+            likelyDate: p ? fmtLong(p.likelyDate) : null,
+            targetDate: targetIso ? fmtLong(new Date(targetIso)) : null,
+            confidenceAtTarget: confAtTarget,
+          });
 
           return (
             <div
@@ -345,7 +385,7 @@ export default function ForecastField({
               role="button"
               tabIndex={0}
               aria-pressed={selected}
-              aria-label={`${s.name}, likely ${fmtLong(p.likelyDate)}${confAtTarget !== null ? `, ${confAtTarget}% by target` : ""}`}
+              aria-label={claim.accessibleLabel}
               onClick={() => onSelectScope(s.scopeId)}
               onKeyDown={(e) => {
                 if (e.key === "Enter" || e.key === " ") {
@@ -397,12 +437,25 @@ export default function ForecastField({
                       changed
                     </span>
                   )}
+                  {!s.forecastCoverage.canonicalForecast && (
+                    <span
+                      className="shrink-0 rounded-sm px-1 py-[1px] text-[8px] uppercase tracking-[0.08em] font-semibold"
+                      style={{ background: "rgba(224,176,74,0.1)", color: "var(--i-amber)" }}
+                      title={claim.detail ?? claim.badge}
+                    >
+                      {s.forecastCoverage.state === "modeled_subset" ? "subset" : "unavailable"}
+                    </span>
+                  )}
                 </div>
                 <div
                   className="i-readout text-[21px] mt-1.5 leading-none"
                   style={{ color: moved ? "var(--i-violet)" : "var(--i-text)" }}
                 >
-                  {fmtShort(p.likelyDate)}
+                  {s.forecastCoverage.state === "unavailable" || !p
+                    ? "—"
+                    : s.forecastCoverage.state === "modeled_subset"
+                      ? `~${fmtShort(p.likelyDate)}`
+                      : fmtShort(p.likelyDate)}
                 </div>
                 <div className="mt-1.5 h-[13px]">
                   {moved ? (
@@ -417,8 +470,12 @@ export default function ForecastField({
                       }}
                       className="text-left text-[10px] text-[var(--i-text-faint)] hover:text-[var(--i-text-soft)] truncate max-w-full"
                     >
-                      waits on {s.dependsOnScopeIds.map((id) => byId.get(id)?.name ?? id).join(", ")}
+                      finish floor: {s.dependsOnScopeIds.map((id) => byId.get(id)?.name ?? id).join(", ")}
                     </button>
+                  ) : !s.forecastCoverage.canonicalForecast ? (
+                    <span className="block truncate text-[9px] text-[var(--i-amber)]" title={claim.detail ?? claim.badge}>
+                      {claim.targetConfidence}
+                    </span>
                   ) : null}
                 </div>
               </div>
@@ -427,16 +484,22 @@ export default function ForecastField({
                 {/* Violet tracks THIS row's own movement, not the global
                     dirty flag -- a scope you haven't affected must not look
                     like one you have. */}
-                <Ridge
-                  result={p}
-                  reality={moved ? b : undefined}
-                  axis={axis}
-                  moved={moved}
-                  targetPct={targetDay !== null ? pct(targetDay) : null}
-                />
+                {p && s.forecastCoverage.state !== "unavailable" ? (
+                  <Ridge
+                    result={p}
+                    reality={moved ? b : undefined}
+                    axis={axis}
+                    moved={moved}
+                    targetPct={s.forecastCoverage.canonicalForecast && targetDay !== null ? pct(targetDay) : null}
+                  />
+                ) : (
+                  <div className="absolute inset-0 flex items-center justify-center px-5 text-center text-[10px] text-[var(--i-text-faint)]">
+                    {claim.detail ?? claim.outcome}
+                  </div>
+                )}
 
                 {/* P50 stem */}
-                <div
+                {p && s.forecastCoverage.state !== "unavailable" && <div
                   className="absolute transition-[left] duration-200 ease-out pointer-events-none z-[2]"
                   style={{ left: `${pct(p.percentiles.p50)}%`, top: RIDGE_TOP, bottom: RIDGE_BOTTOM }}
                   aria-hidden
@@ -452,17 +515,19 @@ export default function ForecastField({
                       background: moved ? "var(--i-violet)" : "var(--i-text)",
                     }}
                   />
-                </div>
+                </div>}
 
                 {/* Target flag -- a real control. Drag it or arrow-key it and
-                    the probability under it, and the hatched miss-tail
+                    the simulated frequency under it, and the hatched miss-tail
                     behind it, both update live. */}
-                {targetDay !== null && (
+                {targetDay !== null && p && s.forecastCoverage.state !== "unavailable" && (
                   <div
                     role="slider"
                     tabIndex={0}
                     aria-label={`${s.name} target date`}
-                    aria-valuetext={`${fmtLong(new Date(targetIso!))}, ${confAtTarget ?? 0} percent likely by then`}
+                    aria-valuetext={s.forecastCoverage.canonicalForecast
+                      ? `${fmtLong(new Date(targetIso!))}, ${confAtTarget ?? 0} percent of simulated runs finish by then under these assumptions; this is not a measured real-world probability`
+                      : `${fmtLong(new Date(targetIso!))}, project target confidence unavailable because delivery coverage is incomplete`}
                     aria-valuenow={calendarDaysBetween(startDate, new Date(targetIso!))}
                     aria-valuemin={Math.round(axis?.minDay ?? 0)}
                     aria-valuemax={Math.round(axis?.maxDay ?? 0)}
@@ -492,20 +557,20 @@ export default function ForecastField({
                   >
                     <div
                       className="absolute inset-y-0 left-1/2 w-px -translate-x-1/2"
-                      style={{ background: confAtTarget !== null ? confidenceTone(confAtTarget) : "var(--i-amber)", opacity: 0.9 }}
+                      style={{ background: claim.exposesProjectConfidence && confAtTarget !== null ? confidenceTone(confAtTarget) : "var(--i-amber)", opacity: 0.9 }}
                     />
                     <div
                       className="absolute left-1/2 -translate-x-1/2 top-1.5 flex items-center gap-1.5 rounded-[3px] px-1.5 py-[3px] whitespace-nowrap"
                       style={{
                         background: "var(--i-void)",
-                        border: `1px solid ${confAtTarget !== null ? confidenceTone(confAtTarget) : "var(--i-amber)"}`,
+                        border: `1px solid ${claim.exposesProjectConfidence && confAtTarget !== null ? confidenceTone(confAtTarget) : "var(--i-amber)"}`,
                       }}
                     >
                       <span
                         className="i-readout text-[11px] leading-none"
-                        style={{ color: confAtTarget !== null ? confidenceTone(confAtTarget) : "var(--i-amber)" }}
+                        style={{ color: claim.exposesProjectConfidence && confAtTarget !== null ? confidenceTone(confAtTarget) : "var(--i-amber)" }}
                       >
-                        {confAtTarget !== null ? `${confAtTarget}%` : "—"}
+                        {claim.exposesProjectConfidence && confAtTarget !== null ? `${confAtTarget}%` : "—"}
                       </span>
                       <span className="text-[9px] text-[var(--i-text-faint)] leading-none uppercase tracking-wider">
                         {fmtShort(new Date(targetIso!))}

@@ -29,7 +29,7 @@ export interface Dominance {
   dominated: boolean;
   /** Named causes, from the model -- never guessed. */
   causes: { kind: "decisions" | "dependency"; label: string }[];
-  /** The causes as a readable clause, e.g. "it waits on Platform". Built here
+  /** The causes as a readable clause, e.g. "its completion has a declared floor from Platform". Built here
       so the canvas, the macro strip and the Comparison tool cannot describe
       the same fact three slightly different ways. Empty when nothing outside
       the backlog is holding this scope. */
@@ -55,12 +55,12 @@ export function readDominance(
   const clauses: string[] = [];
   if (dependencyNames.length > 0) {
     for (const name of dependencyNames) causes.push({ kind: "dependency", label: name });
-    clauses.push(`it waits on ${dependencyNames.join(" and ")}`);
+    clauses.push(`its completion has a declared floor from ${dependencyNames.join(" and ")}`);
   }
   if (openGates.length > 0) {
     const n = openGates.length;
     causes.push({ kind: "decisions", label: `${n} open decision${n === 1 ? "" : "s"}` });
-    clauses.push(`${n} open decision${n === 1 ? " has" : "s have"} to be settled first`);
+    clauses.push(`${n} open decision${n === 1 ? " adds" : "s add"} serial modeled delay`);
   }
 
   return {
