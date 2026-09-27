@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { runAudit, VALID_AUDIT_KINDS } from "@/lib/audit/run";
 import { runEstimationForScope } from "@/lib/estimate/runForScope";
+import { estimateRunReceipt, type EstimateRunReceipt } from "@/lib/estimate/status";
 import { computeForecast } from "@/lib/forecast/compute";
 import { ForecastCoverageIncompleteError } from "@/lib/forecast/coverage";
 import { generateReport } from "@/lib/reports/generate";
@@ -231,9 +232,9 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  let estimateSummary;
+  let estimateReceipt: EstimateRunReceipt;
   try {
-    estimateSummary = (await runEstimationForScope(scope)).summary;
+    estimateReceipt = estimateRunReceipt((await runEstimationForScope(scope)).summary);
   } catch (error) {
     return NextResponse.json(
       {
@@ -256,7 +257,7 @@ export async function POST(req: NextRequest) {
         contextDocsUpdated,
         contextSnapshotId,
         audit,
-        estimate: estimateSummary,
+        estimate: estimateReceipt,
       },
       { status: 502 }
     );
@@ -277,7 +278,7 @@ export async function POST(req: NextRequest) {
           contextDocsUpdated,
           contextSnapshotId,
           audit,
-          estimate: estimateSummary,
+          estimate: estimateReceipt,
           forecast: {
             likelyDate: forecastResult.likelyDate,
             confidenceAtTarget: forecastResult.forecastCoverage.canonicalForecast ? forecastResult.confidenceAtTarget : null,
@@ -290,7 +291,11 @@ export async function POST(req: NextRequest) {
   }
 
   return NextResponse.json({
-    ok: true,
+    // A model-output failure is a partial refresh, not a reason to discard an
+    // independently valid forecast. Keep the forecast/report in this 200
+    // response, but do not tell an unattended caller the whole run succeeded.
+    ok: estimateReceipt.complete,
+    status: estimateReceipt.complete ? "complete" : "partial",
     scopeId: scope.id,
     scopeName: scope.name,
     contextDocsUpdated,
@@ -302,7 +307,7 @@ export async function POST(req: NextRequest) {
     decisionCandidates,
     timelineCandidates,
     audit,
-    estimate: estimateSummary,
+    estimate: estimateReceipt,
     forecast: {
       likelyDate: forecastResult.likelyDate,
       earliestDate: forecastResult.earliestDate,

@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { composeFeatures, composeScopeFeatures } from "../lib/scope/features";
+import { composeFeatures, composeScopeFeatures, ticketEstimateTuningAllowed } from "../lib/scope/features";
 import type { ShapeCapability } from "../lib/scope/productShape";
 import type { ScopeWorkItem } from "../lib/instrument/useProject";
 import { reviewCapabilityKnowledgeEstimate } from "../lib/scope/knowledgeEstimates";
@@ -72,6 +72,39 @@ const reviewedCapability: ShapeCapability = {
 const reviewedFeature = composeScopeFeatures([item, untouched], [], [reviewedCapability], 2, new Set(), {}, []).features[0];
 assert.equal(reviewedFeature.estimateBasis, "knowledge_accepted");
 assert.deepEqual(reviewedFeature.range, { low: 21, likely: 28, high: 37 }, "reviewed range replaces covered work while additional ticket work remains once");
+assert.equal(ticketEstimateTuningAllowed(reviewedFeature, item.id), false, "reviewed covered work remains owned by the capability estimate");
+assert.equal(ticketEstimateTuningAllowed(reviewedFeature, untouched.id), true, "reviewed additional work remains an ordinary tunable ticket");
+const additionalOverride = { low: 2, likely: 4, high: 6 };
+const reviewedWithTicketOverrides = composeScopeFeatures(
+  [item, untouched],
+  [],
+  [reviewedCapability],
+  2,
+  new Set(),
+  {
+    [item.id]: { low: 100, likely: 100, high: 100 },
+    [untouched.id]: additionalOverride,
+  },
+  [],
+).features[0];
+assert.deepEqual(
+  reviewedWithTicketOverrides.range,
+  { low: 22, likely: 29, high: 36 },
+  "only an additional ticket override changes the accepted capability-plus-ticket Scenario range",
+);
+assert.deepEqual(
+  reviewedWithTicketOverrides.items.map((candidate) => ({
+    id: candidate.id,
+    low: candidate.low,
+    likely: candidate.likely,
+    high: candidate.high,
+  })),
+  [
+    { id: item.id, low: 1, likely: 3, high: 7 },
+    { id: untouched.id, ...additionalOverride },
+  ],
+  "covered rows ignore ticket overrides while additional rows show the exact Scenario overlay",
+);
 const newOpen = { ...item, id: "TEST-3", label: "New unclassified work" };
 const driftedCapability: ShapeCapability = {
   ...reviewedCapability,

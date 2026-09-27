@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { runEstimationForScope } from "@/lib/estimate/runForScope";
+import { estimateRunReceipt } from "@/lib/estimate/status";
 
 // Runs the AI estimation pass for a Scope's open tickets. Content-hash
 // cached: unchanged tickets are never re-sent to the model, so re-running
@@ -23,9 +24,10 @@ export async function POST(req: NextRequest) {
 
   try {
     const { summary, context } = await runEstimationForScope(scope);
+    const receipt = estimateRunReceipt(summary);
     return NextResponse.json({
-      ok: true,
-      ...summary,
+      ok: receipt.complete,
+      ...receipt,
       notionDocs: context.notionDocs,
       notionWarning: context.notionWarning,
       figmaRefs: context.figmaRefs,

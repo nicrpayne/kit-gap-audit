@@ -230,9 +230,11 @@ export default function ForecastView({ scopeId }: { scopeId: string }) {
 
   const [estimating, setEstimating] = useState(false);
   const [estimateStatus, setEstimateStatus] = useState<string | null>(null);
+  const [estimateOutcome, setEstimateOutcome] = useState<"complete" | "partial" | "failed" | null>(null);
 
   async function runAiEstimation() {
     setEstimating(true);
+    setEstimateOutcome(null);
     setEstimateStatus("Reading tickets and estimating — this can take a couple of minutes…");
     try {
       const res = await fetch("/api/estimate", {
@@ -240,15 +242,18 @@ export default function ForecastView({ scopeId }: { scopeId: string }) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ scopeId }),
       });
-      const body = await res.json().catch(() => ({}));
+      const body = await res.json().catch(() => ({})) as {
+        error?: string;
+        status?: "complete" | "partial" | "failed";
+        detail?: string;
+      };
       if (!res.ok) throw new Error(body.error ?? "Estimation failed.");
-      setEstimateStatus(
-        `Estimated ${body.estimated} ticket${body.estimated === 1 ? "" : "s"}` +
-          (body.cached > 0 ? ` (${body.cached} unchanged, reused)` : "") +
-          (body.failed > 0 ? ` — ${body.failed} failed, re-run to retry` : "")
-      );
+      if (!body.status || !body.detail) throw new Error("Estimation returned no stage receipt.");
+      setEstimateOutcome(body.status);
+      setEstimateStatus(body.detail);
       await load();
     } catch (err) {
+      setEstimateOutcome("failed");
       setEstimateStatus(err instanceof Error ? err.message : "Estimation failed.");
     } finally {
       setEstimating(false);
@@ -355,7 +360,13 @@ export default function ForecastView({ scopeId }: { scopeId: string }) {
           >
             {estimating ? "Estimating…" : "Estimate tickets with AI"}
           </button>
-          <span className="text-xs text-[var(--color-ink-soft)]">
+          <span
+            className="text-xs text-[var(--color-ink-soft)]"
+            role="status"
+            aria-live="polite"
+            data-estimation-status={estimateOutcome ?? (estimating ? "running" : "idle")}
+            style={{ color: estimateOutcome === "failed" ? "var(--i-red)" : estimateOutcome === "partial" ? "var(--i-amber)" : undefined }}
+          >
             {estimateStatus ??
               (breakdown.ai.aiItemCount > 0
                 ? `${breakdown.ai.aiItemCount} of ${breakdown.remainingIssueCount} tickets have AI estimates` +

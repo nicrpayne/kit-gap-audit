@@ -1,0 +1,9 @@
+# Pin a Node 22 runtime that satisfies the installed tooling's >=22.13 floor.
+# Nixpacks' built-in Node 22 archive selects 22.11.0. This immutable upstream
+# nixos-25.11 revision supplies Node 22.22.2; do not use a moving branch here.
+# https://github.com/NixOS/nixpkgs/blob/b6018f87da91d19d0ab4cf979885689b469cdd41/pkgs/development/web/nodejs/v22.nix
+[variables]
+NIXPACKS_NODE_VERSION = "22"
+
+[phases.setup]
+nixpkgsArchive = "b6018f87da91d19d0ab4cf979885689b469cdd41"

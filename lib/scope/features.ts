@@ -104,6 +104,21 @@ export interface Feature {
   capabilityForecast: CapabilityForecastOutlook | null;
 }
 
+/** Ticket estimates remain independently tunable whenever they survive in
+    the exact simulation basis. A reviewed capability estimate replaces only
+    the operator-declared covered partition; reviewed additional tickets stay
+    in the rollup once and keep their own Scenario control. */
+export function ticketEstimateTuningAllowed(feature: Feature, itemId: string): boolean {
+  if (feature.activeKnowledgeEstimate || feature.estimateBasis === "knowledge_provisional") return false;
+  const review = feature.acceptedKnowledgeReview;
+  const modeledBoundary = review?.status === "reviewed"
+    ? review
+    : review?.status === "review_required"
+      ? review.exploration
+      : null;
+  return !modeledBoundary || modeledBoundary.additionalItemIds.includes(itemId);
+}
+
 export interface FeatureComposition {
   features: Feature[];
   /** Engaged features only -- what the release currently carries. */
@@ -422,6 +437,11 @@ export function composeScopeFeatures(
             additionalItemIds: acceptedKnowledgeReview.exploration.additionalItemIds,
           }
         : null;
+    const modeledTicketOverrides = acceptedModeled
+      ? Object.fromEntries(Object.entries(estimateOverrides).filter(([itemId]) => acceptedModeled.additionalItemIds.includes(itemId)))
+      : activeKnowledgeEstimate
+        ? {}
+        : estimateOverrides;
     const base = summarise(
       id,
       capability.name,
@@ -433,10 +453,10 @@ export function composeScopeFeatures(
       null,
       bypassedFeatureIds.has(id),
       true,
-      activeKnowledgeEstimate || acceptedModeled ? {} : estimateOverrides,
+      modeledTicketOverrides,
     );
     const additionalRange = acceptedModeled
-      ? mappedItems
+      ? base.items
           .filter((item) => acceptedModeled.additionalItemIds.includes(item.id))
           .reduce<ThreePoint>((sum, item) => ({
             low: sum.low + item.low,

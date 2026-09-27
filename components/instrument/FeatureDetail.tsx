@@ -21,7 +21,7 @@ import Link from "@/components/instrument/SignalLink";
 import ToolWindow, { RailButton, Row } from "@/components/instrument/ToolWindow";
 import { DistributionDisplay, accentFor, materialOf } from "@/components/instrument/CapabilityTile";
 import { Prototype } from "@/components/instrument/Panel";
-import { expectedDays, uncertaintyLabel, type Feature, type ThreePoint, type DraftFeature } from "@/lib/scope/features";
+import { expectedDays, ticketEstimateTuningAllowed, uncertaintyLabel, type Feature, type ThreePoint, type DraftFeature } from "@/lib/scope/features";
 import type { ScopeWorkItem } from "@/lib/instrument/useProject";
 import type { ShapeCapability } from "@/lib/scope/productShape";
 import {
@@ -755,9 +755,7 @@ function Estimate({
   if (f.items.length === 0 && f.knowledgeEstimates.length === 0 && !f.acceptedKnowledgeEstimate)
     return <Empty title="Nothing to estimate" body="No open work is mapped and the current knowledge snapshot carries no developer estimate for this capability." />;
 
-  const ticketTuningAllowed = f.estimateBasis === "work_rollup"
-    || (f.acceptedKnowledgeReview?.status === "review_required" && !f.acceptedKnowledgeReview.exploration);
-  const tuned = ticketTuningAllowed ? f.items.find((i) => i.id === tuning) ?? null : null;
+  const tuned = f.items.find((i) => i.id === tuning && ticketEstimateTuningAllowed(f, i.id)) ?? null;
   return (
     <div className="px-5 py-4">
       <KnowledgeEstimateEvidence feature={f} scopeId={scopeId} onStage={onStageKnowledgeEstimate} onClear={onClearKnowledgeEstimate} onAcceptReality={onAcceptKnowledgeEstimate} onClearReality={onClearAcceptedKnowledgeEstimate} />
@@ -784,29 +782,32 @@ function Estimate({
 
       <div className="i-label mt-4 mb-2">Where each number comes from</div>
       <ul>
-        {f.items.map((i) => (
-          <li key={i.id} className="py-2" style={{ borderTop: "1px solid var(--i-border)" }}>
-            <div className="flex items-baseline gap-2">
-              <span className="min-w-0 flex-1 truncate text-[11px] text-[var(--i-text-soft)]">{i.label}</span>
-              <span className="shrink-0 i-readout text-[11px] text-[var(--i-text)]">
-                {i.low}–{i.likely}–{i.high}d
-              </span>
-              <button
-                disabled={!ticketTuningAllowed}
-                title={ticketTuningAllowed ? "Change this ticket range in Scenario" : "The capability estimate replaces ticket estimates. Remove that basis before tuning tickets."}
-                onClick={() => setTuning(tuning === i.id ? null : i.id)}
-                data-shoot="tune-estimate"
-                className="shrink-0 rounded px-2 py-1 text-[9.5px] text-[var(--i-text-faint)] hover:text-[var(--i-text)] transition-colors"
-                style={{ border: "1px solid var(--i-border-strong)" }}
-              >
-                {!ticketTuningAllowed ? "covered by capability estimate" : tuning === i.id ? "done" : "re-estimate"}
-              </button>
-            </div>
-            <div className="mt-1 text-[9.5px] text-[var(--i-text-faint)]">
-              {ESTIMATE_SOURCE[i.estimateSource] ?? i.estimateSource}
-            </div>
-          </li>
-        ))}
+        {f.items.map((i) => {
+          const tuningAllowed = ticketEstimateTuningAllowed(f, i.id);
+          return (
+            <li key={i.id} className="py-2" style={{ borderTop: "1px solid var(--i-border)" }}>
+              <div className="flex items-baseline gap-2">
+                <span className="min-w-0 flex-1 truncate text-[11px] text-[var(--i-text-soft)]">{i.label}</span>
+                <span className="shrink-0 i-readout text-[11px] text-[var(--i-text)]">
+                  {i.low}–{i.likely}–{i.high}d
+                </span>
+                <button
+                  disabled={!tuningAllowed}
+                  title={tuningAllowed ? "Change this ticket range in Scenario" : "The active capability estimate replaces this ticket's estimate. Additional tickets outside a reviewed estimate remain independently tunable."}
+                  onClick={() => setTuning(tuning === i.id ? null : i.id)}
+                  data-shoot="tune-estimate"
+                  className="shrink-0 rounded px-2 py-1 text-[9.5px] text-[var(--i-text-faint)] hover:text-[var(--i-text)] transition-colors"
+                  style={{ border: "1px solid var(--i-border-strong)" }}
+                >
+                  {!tuningAllowed ? "covered by capability estimate" : tuning === i.id ? "done" : "re-estimate"}
+                </button>
+              </div>
+              <div className="mt-1 text-[9.5px] text-[var(--i-text-faint)]">
+                {ESTIMATE_SOURCE[i.estimateSource] ?? i.estimateSource}
+              </div>
+            </li>
+          );
+        })}
       </ul>
 
       {tuned && (
