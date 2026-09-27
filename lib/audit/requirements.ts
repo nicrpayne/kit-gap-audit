@@ -53,6 +53,9 @@ export interface ProjectedRequirement {
   scopeId: string;
   /** The requirement itself, as the source states it. */
   statement: string;
+  /** Verbatim surrounding context supplied on the evidence row. Null means
+      none was supplied; this projection never synthesizes it. */
+  surroundingContext: string | null;
   /** EvidenceItem.kind — "row", "block", … Reported, never interpreted. */
   evidenceKind: string;
   sourceRef: string;
@@ -135,6 +138,7 @@ export function projectRequirements(snapshots: RequirementSnapshotInput[]): Proj
         evidenceId: item.id,
         scopeId: snap.scopeId,
         statement: item.excerpt,
+        surroundingContext: str(data.surroundingContext),
         evidenceKind: item.kind,
         sourceRef: item.sourceRef,
         sourceType: manifest.sourceType ?? null,

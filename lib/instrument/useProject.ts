@@ -11,6 +11,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { runPortfolioSimulation } from "@/lib/forecast/portfolio";
+import { scenarioPreviewRefusal, type ScenarioPreviewRefusal } from "@/lib/instrument/scenarioPreviewRefusal";
 import { ambiguousScenarioItemLeverMessage, findAmbiguousScenarioItemLevers } from "@/lib/scenario/itemLeverScope";
 import type { SimulationResult, WorkItem, DecisionGate } from "@/lib/forecast/simulate";
 import { applyScenarioInputDelta, type ScenarioInputDelta, type ScenarioInputScope } from "@/lib/scenario/inputDelta";
@@ -443,6 +444,9 @@ export interface ProjectModel {
       consuming surface on a loading state forever, which is the one failure
       mode a decision surface must never have. */
   simulationError: string | null;
+  /** Atomic Scenario preview refusal. The Scenario remains staged, but every
+      consumer must withhold its overlays until this is null. */
+  scenarioPreviewRefusal: ScenarioPreviewRefusal | null;
   /** A shared capacity plan whose complete owner baseline no longer matches
       current Reality is retained for review but never silently rebased. */
   capacityPlanError: string | null;
@@ -539,6 +543,16 @@ export function useProject(): ProjectModel {
       : validation;
   }, [scenario.capacityPlan, capacityBaseline, data]);
   const capacityPlanError = capacityPlanValidation.ok ? null : capacityPlanValidation.reason;
+  const previewRefusal = useMemo(() => data ? scenarioPreviewRefusal({
+    scopes: data.scopes.map((scope) => ({
+      scopeId: scope.scopeId,
+      name: scope.name,
+      itemIds: [...new Set([...scope.items, ...scope.forecastItems, ...scope.executionItems].map((item) => item.id))],
+    })),
+    excludedItemIds: [...scenario.excludedItemIds],
+    includedItemIds: [...scenario.includedItemIds],
+    estimateOverrideIds: Object.keys(scenario.estimateOverrideByItemId),
+  }) : null, [data, scenario]);
 
   const baselineAttempt = useMemo(() => {
     if (!data || !scenarioScopes) return { result: null, reason: null };
@@ -680,7 +694,7 @@ export function useProject(): ProjectModel {
     return () => {
       if (debounce.current) clearTimeout(debounce.current);
     };
-  }, [data, scenarioScopes, scenario, capacityPlanValidation.ok, baseline]);
+  }, [data, scenarioScopes, scenario, capacityPlanValidation.ok, baseline, previewRefusal]);
 
   const momentumByScope = useMemo(() => {
     const out = new Map<string, MomentumTrend>();
@@ -741,6 +755,7 @@ export function useProject(): ProjectModel {
     loading,
     error,
     simulationError: capacityPlanError ?? simFailure ?? baselineAttempt.reason,
+    scenarioPreviewRefusal: previewRefusal,
     capacityPlanError,
     reload,
     startDate,

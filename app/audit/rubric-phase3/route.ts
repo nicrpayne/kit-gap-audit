@@ -91,6 +91,10 @@ export async function GET(req: NextRequest) {
   body.signal-audit-embedded #brain-card .card-neigh { max-height: none; }
   body.signal-audit-embedded .signal-inspector-label { color: var(--signal-reality); font: 600 10px/1 Outfit,sans-serif; letter-spacing: .16em; text-transform: uppercase; margin-bottom: 9px; }
   body.signal-audit-embedded .signal-trace-badge { display: inline-block; margin-left: 7px; padding: 3px 6px; border-radius: 4px; color: var(--signal-reality); background: var(--signal-reality-soft); box-shadow: 0 0 0 1px var(--signal-reality); }
+  body.signal-audit-embedded .signal-passage-provenance { margin: 12px 0; padding: 10px; border: 1px solid var(--signal-border-subtle); border-radius: 6px; background: var(--signal-surface-recessed); }
+  body.signal-audit-embedded .signal-passage-provenance-row + .signal-passage-provenance-row { margin-top: 9px; }
+  body.signal-audit-embedded .signal-passage-provenance dt { color: var(--signal-text-tertiary); font: 600 9px/1.3 Outfit,sans-serif; letter-spacing: .12em; text-transform: uppercase; }
+  body.signal-audit-embedded .signal-passage-provenance dd { margin: 3px 0 0; color: var(--signal-text-secondary); font: 500 10px/1.45 Outfit,sans-serif; overflow-wrap: anywhere; }
   body.signal-audit-embedded #signal-inspector-overview h2 { margin-top: 9px; font: 600 18px/1.2 Outfit,sans-serif; }
   body.signal-audit-embedded #signal-overview-close { min-width: 32px; min-height: 32px; border: 0; background: transparent; color: var(--signal-text-tertiary); cursor: pointer; font: 400 19px/1 Outfit,sans-serif; }
   body.signal-audit-embedded #signal-overview-close:hover { color: var(--signal-text-primary); }
@@ -103,6 +107,7 @@ export async function GET(req: NextRequest) {
   body.signal-audit-embedded .act,
   body.signal-audit-embedded .nrow { min-height: 32px; }
   body.signal-audit-embedded .res { min-height: 32px; }
+  body.signal-audit-embedded #brain-results .res:focus-visible { outline: 2px solid var(--signal-focus-ring) !important; outline-offset: -2px; background: var(--signal-selected-overlay); }
   body.signal-audit-embedded .seg button.on { border-color: var(--signal-border-selected); box-shadow: inset 0 0 0 1px var(--signal-border-selected); }
   body.signal-audit-embedded :focus-visible { outline: 2px solid var(--signal-focus-ring) !important; outline-offset: 2px; }
   body.signal-audit-embedded:has(#brain-viewer.open) #fab-menu,

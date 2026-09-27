@@ -22,6 +22,7 @@ import { useProjectParam } from "@/lib/shell/useProjectParam";
 import Link from "@/components/instrument/SignalLink";
 import InstrumentShell from "@/components/instrument/InstrumentShell";
 import ScenarioStrip, { chipsFor } from "@/components/instrument/ScenarioStrip";
+import ScenarioPreviewRefusal from "@/components/instrument/ScenarioPreviewRefusal";
 import LivingForecast, { type GateMark } from "@/components/instrument/LivingForecast";
 import ForecastDetail from "@/components/instrument/ForecastDetail";
 import { GateDetail, TargetDetail, ContextDetail, RealityDetail } from "@/components/instrument/ForecastTools";
@@ -108,6 +109,18 @@ export default function ForecastInstrument() {
         </div>
       </InstrumentShell>
     );
+
+  if (m.scenarioPreviewRefusal) {
+    return (
+      <InstrumentShell
+        stateBar={strip}
+        scopes={m.data.scopes.map((candidate) => ({ scopeId: candidate.scopeId, name: candidate.name }))}
+        onSelectScope={setSelected}
+      >
+        <ScenarioPreviewRefusal refusal={m.scenarioPreviewRefusal} surface="Forecast" />
+      </InstrumentShell>
+    );
+  }
 
   if (scope.forecastReadiness.state === "unavailable") {
     return <InstrumentShell stateBar={strip} scopes={m.data.scopes.map((s) => ({ scopeId: s.scopeId, name: s.name }))} onSelectScope={setSelected}>

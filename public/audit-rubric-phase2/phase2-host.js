@@ -289,7 +289,8 @@
     const input = document.getElementById('brain-search');
     if (!input || document.getElementById('signal-search-clear')) return;
     const clear = document.createElement('button');
-    clear.id = 'signal-search-clear'; clear.type = 'button'; clear.title = 'Clear and restore prior view'; clear.textContent = '×';
+    clear.id = 'signal-search-clear'; clear.type = 'button'; clear.title = 'Clear and restore prior view';
+    clear.setAttribute('aria-label', 'Clear search and restore prior Audit view'); clear.textContent = '×';
     input.parentElement.appendChild(clear);
     const remember = () => {
       if (!searchRestore) searchRestore = { cam: { ...window.BrainCore.S.cam }, selected: window.BrainCore.S.sel && window.BrainCore.S.sel.id };
@@ -304,10 +305,75 @@
     clear.onclick = () => restoreSearch();
   }
 
+  function patchSearchResults() {
+    const input = document.getElementById('brain-search');
+    const results = document.getElementById('brain-results');
+    if (!input || !results) return;
+    input.setAttribute('aria-label', 'Search Audit objects');
+    input.setAttribute('aria-controls', 'brain-results');
+    input.setAttribute('aria-autocomplete', 'list');
+    results.setAttribute('role', 'listbox');
+    results.setAttribute('aria-label', 'Audit search results');
+    const rows = [...results.querySelectorAll('.res')];
+    input.setAttribute('aria-expanded', rows.length && results.style.display !== 'none' ? 'true' : 'false');
+
+    if (!input.dataset.signalKeyboardSearch) {
+      input.dataset.signalKeyboardSearch = 'true';
+      const nativeBlur = input.onblur;
+      input.onblur = event => {
+        if (event.relatedTarget && results.contains(event.relatedTarget)) return;
+        input.setAttribute('aria-expanded', 'false');
+        if (nativeBlur) return nativeBlur.call(input, event);
+      };
+      input.addEventListener('keydown', event => {
+        if (event.key !== 'ArrowDown') return;
+        const first = results.querySelector('.res');
+        if (!first) return;
+        event.preventDefault();
+        first.focus();
+      });
+    }
+
+    rows.forEach((row, index) => {
+      row.setAttribute('role', 'option');
+      row.setAttribute('tabindex', '0');
+      row.setAttribute('aria-selected', 'false');
+      if (!row.id) row.id = `signal-search-result-${index + 1}`;
+      if (row.dataset.signalKeyboardResult) return;
+      row.dataset.signalKeyboardResult = 'true';
+      row.addEventListener('focus', () => row.setAttribute('aria-selected', 'true'));
+      row.addEventListener('blur', () => row.setAttribute('aria-selected', 'false'));
+      row.addEventListener('click', () => input.setAttribute('aria-expanded', 'false'));
+      row.addEventListener('keydown', event => {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault();
+          row.click();
+          return;
+        }
+        if (event.key === 'Escape') {
+          event.preventDefault();
+          restoreSearch();
+          input.focus();
+          return;
+        }
+        if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return;
+        event.preventDefault();
+        const options = [...results.querySelectorAll('.res')];
+        const current = options.indexOf(row);
+        const next = event.key === 'Home' ? 0
+          : event.key === 'End' ? options.length - 1
+            : event.key === 'ArrowDown' ? Math.min(options.length - 1, current + 1)
+              : Math.max(0, current - 1);
+        options[next]?.focus();
+      });
+    });
+  }
+
   function restoreSearch() {
     const input = document.getElementById('brain-search');
     const results = document.getElementById('brain-results');
     if (input) input.value = '';
+    if (input) input.setAttribute('aria-expanded', 'false');
     if (results) { results.innerHTML = ''; results.style.display = 'none'; }
     if (searchRestore) {
       window.BrainCore.S.fly = null;
@@ -375,7 +441,7 @@
       nav.innerHTML = `<a href="/">Signal</a><span>Audit World</span><span class="scope">${escape(window.BrainCore.S.meta.scopeName || '')}</span><span>Phase 2</span>`;
       document.body.appendChild(nav);
     }
-    installSearchRestore(); installTraceOverlay();
+    installSearchRestore(); patchSearchResults(); installTraceOverlay();
     const canvas = document.getElementById('brain-canvas');
     if (!canvas || canvas.dataset.signalInstalled) return;
     canvas.dataset.signalInstalled = 'true';
@@ -444,7 +510,7 @@
     if (records.every(record => record.target === document.getElementById('brain-tip')
       || (record.target.closest && record.target.closest('#brain-tip')))) return;
     if (!window.BrainCore || !window.BrainCore.S || !window.BrainCore.S.meta) return;
-    patchWords(); patchCard(); patchViewer(); installShell(); installSignalAuditBridge();
+    patchWords(); patchCard(); patchViewer(); installShell(); patchSearchResults(); installSignalAuditBridge();
   });
   observer.observe(document.documentElement, { childList: true, subtree: true });
 })();

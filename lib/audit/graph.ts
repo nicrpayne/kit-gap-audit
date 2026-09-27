@@ -780,6 +780,9 @@ export function buildAuditGraph({ model, provenance, entities }: BuildGraphInput
     psg: {
       evidenceId: string;
       excerpt: string;
+      /** Verbatim context supplied with this evidence row. Absence stays
+          null; the graph does not infer neighboring text. */
+      surroundingContext?: string | null;
       sourceRef: string;
       sourceType: string | null;
       observedAt: string | null;
@@ -808,6 +811,7 @@ export function buildAuditGraph({ model, provenance, entities }: BuildGraphInput
         // evidence.
         lane: laneForSourceType(psg.sourceType),
         excerpt: psg.excerpt,
+        surroundingContext: psg.surroundingContext ?? null,
         externalRef: psg.externalRef,
         sourceRef: psg.sourceRef,
         anchor: psg.anchor ?? {},
@@ -939,6 +943,7 @@ export function buildAuditGraph({ model, provenance, entities }: BuildGraphInput
     const pid = ensurePassage(r.snapshotId, {
       evidenceId: r.evidenceId,
       excerpt: r.statement,
+      surroundingContext: r.surroundingContext,
       sourceRef: r.sourceRef,
       sourceType: r.sourceType,
       observedAt: r.observedAt,
@@ -1078,6 +1083,7 @@ export function buildAuditGraph({ model, provenance, entities }: BuildGraphInput
       ensurePassage(psg.snapshotId, {
         evidenceId: psg.evidenceId,
         excerpt: psg.excerpt,
+        surroundingContext: psg.surroundingContext,
         sourceRef: psg.sourceRef,
         sourceType: psg.sourceType,
         observedAt: psg.observedAt,

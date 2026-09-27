@@ -59,6 +59,7 @@ import type { CapacityForecastContract } from "@/lib/capacity/contract";
 import { formatDateOnly } from "@/lib/time/dateContract";
 import ActualTeamDrawer from "@/components/portfolio/ActualTeamDrawer";
 import { EMPTY_SCENARIO, useProject } from "@/lib/instrument/useProject";
+import ScenarioPreviewRefusal from "@/components/instrument/ScenarioPreviewRefusal";
 import type { ForecastCoverageContract } from "@/lib/forecast/coverage";
 
 // The Instrument. GET /api/portfolio/inputs is the one expensive network
@@ -342,7 +343,7 @@ export default function PortfolioPageClient() {
   const capacityPlanError = project.capacityPlanError ?? (capacityPlanValidation.ok ? null : capacityPlanValidation.reason);
   // Stale plans stay in the shared Scenario so the operator can see and
   // explicitly reset them, but never enter preview math or mutable controls.
-  const activeCapacityPlan = project.scenario.capacityPlan && capacityPlanValidation.ok && !project.capacityPlanError
+  const activeCapacityPlan = !project.scenarioPreviewRefusal && project.scenario.capacityPlan && capacityPlanValidation.ok && !project.capacityPlanError
     ? project.scenario.capacityPlan
     : null;
 
@@ -1085,6 +1086,16 @@ export default function PortfolioPageClient() {
       <div className="flex-1 flex items-center justify-center text-[12px] text-[var(--i-text-faint)]">
         No Scope configured yet. Add one at /scopes to see a portfolio view.
       </div>
+    );
+  }
+
+  if (project.scenarioPreviewRefusal) {
+    return shell(
+      <ScenarioPreviewRefusal
+        refusal={project.scenarioPreviewRefusal}
+        surface="Portfolio"
+        onBackToReality={discard}
+      />
     );
   }
 

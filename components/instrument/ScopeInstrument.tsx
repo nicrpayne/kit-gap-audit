@@ -52,6 +52,7 @@ import { useProjectParam } from "@/lib/shell/useProjectParam";
 import { AnimatePresence, MotionConfig, motion, useMotionValue, useSpring, useTransform, type MotionValue } from "motion/react";
 import InstrumentShell from "@/components/instrument/InstrumentShell";
 import ScenarioStrip, { chipsFor } from "@/components/instrument/ScenarioStrip";
+import ScenarioPreviewRefusal from "@/components/instrument/ScenarioPreviewRefusal";
 import FeatureDetail, { AddFeature } from "@/components/instrument/FeatureDetail";
 import CapabilityTile, { Seat, materialOf, sigilPathFor, MODULE_H } from "@/components/instrument/CapabilityTile";
 import {
@@ -268,6 +269,21 @@ export default function ScopeInstrument() {
         </div>
       </InstrumentShell>
     );
+
+  if (m.scenarioPreviewRefusal) {
+    return (
+      <InstrumentShell
+        stateBar={strip}
+        scopes={m.data.scopes.map((candidate) => ({ scopeId: candidate.scopeId, name: candidate.name }))}
+        onSelectScope={(id) => {
+          setScopeId(id);
+          setOpenFeatureId(null);
+        }}
+      >
+        <ScenarioPreviewRefusal refusal={m.scenarioPreviewRefusal} surface="Scope" />
+      </InstrumentShell>
+    );
+  }
 
   const productShape = partitionProductShape(scope.capabilities);
   const startDate = m.startDate;

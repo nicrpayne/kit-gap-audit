@@ -1,0 +1,11 @@
+import assert from "node:assert/strict";
+import { proposalRealityDescription } from "../lib/scope/proposalOwnership";
+const governed = proposalRealityDescription({ target: null, otherOwnerNames: ["Maps", "Maps"], hasKnowledge: false });
+assert.equal(governed.heading, "No accepted target for this proposal");
+assert.match(governed.detail, /already has accepted links to Maps/);
+assert.doesNotMatch(governed.detail, /awaiting operator classification/);
+assert.match(governed.detail, /only unowned work is available/);
+assert.deepEqual(proposalRealityDescription({ target: { name: "Maps", status: "accepted", revision: 4 }, otherOwnerNames: [], hasKnowledge: true }), { heading: "Maps", detail: "accepted · revision 4" });
+assert.match(proposalRealityDescription({ target: null, otherOwnerNames: [], hasKnowledge: false }).detail, /Unowned Linear work/);
+assert.match(proposalRealityDescription({ target: null, otherOwnerNames: [], hasKnowledge: true }).detail, /Knowledge is proposing/);
+console.log("PASS: unmatched proposal targets do not deny existing accepted ticket ownership.");

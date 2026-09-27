@@ -28,6 +28,9 @@ import type { EvidenceItem, PackageSourceManifestEntry, ProjectContextPackage } 
 export interface ProvenancePassage {
   evidenceId: string;
   excerpt: string;
+  /** Producer-preserved words immediately around the excerpt. Null means
+      the evidence row did not supply context; Signal never reconstructs it. */
+  surroundingContext: string | null;
   kind: string;
   /** The manifest entry this passage's sourceRef resolves to, when it does. */
   sourceRef: string;
@@ -123,6 +126,9 @@ export function resolveProvenance(
       passages.push({
         evidenceId: item.id,
         excerpt: item.excerpt,
+        surroundingContext: typeof item.data?.surroundingContext === "string" && item.data.surroundingContext.trim()
+          ? item.data.surroundingContext
+          : null,
         kind: item.kind,
         sourceRef: item.sourceRef,
         sourceType: manifest?.sourceType ?? null,

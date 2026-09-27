@@ -29,6 +29,7 @@ import { useSearchParams } from "next/navigation";
 import { useProjectParam } from "@/lib/shell/useProjectParam";
 import InstrumentShell from "@/components/instrument/InstrumentShell";
 import ScenarioStrip from "@/components/instrument/ScenarioStrip";
+import ScenarioPreviewRefusal from "@/components/instrument/ScenarioPreviewRefusal";
 import { useProject, EMPTY_SCENARIO } from "@/lib/instrument/useProject";
 import { useDecisions } from "@/lib/decisions/useDecisions";
 import { adaptOrbitInput } from "@/lib/orbit/adapt";
@@ -129,7 +130,7 @@ export default function OrbitPageClient() {
   );
 
   const graph: OrbitGraph | null = useMemo(() => {
-    if (!m.data || !m.preview || !m.baseline || !focus) return null;
+    if (!m.data || !m.preview || !m.baseline || !focus || m.scenarioPreviewRefusal) return null;
     const input = adaptOrbitInput({
       data: m.data,
       scenario: m.scenario,
@@ -140,7 +141,7 @@ export default function OrbitPageClient() {
       focusScopeId: focus,
     });
     return input ? buildOrbitGraph(input) : null;
-  }, [m.data, m.preview, m.baseline, m.scenario, m.active, d.data, focus]);
+  }, [m.data, m.preview, m.baseline, m.scenario, m.active, m.scenarioPreviewRefusal, d.data, focus]);
 
   const places = useMemo(() => (graph ? layoutOrbit(graph, SIZE) : new Map()), [graph]);
   const related = useMemo(() => (graph && selected ? relatedTo(graph, selected) : null), [graph, selected]);
@@ -200,6 +201,18 @@ export default function OrbitPageClient() {
       }
     />
   );
+
+  if (m.scenarioPreviewRefusal) {
+    return (
+      <InstrumentShell
+        stateBar={strip}
+        scopes={scopes.map((candidate) => ({ scopeId: candidate.scopeId, name: candidate.name }))}
+        onSelectScope={setFocusScopeId}
+      >
+        <ScenarioPreviewRefusal refusal={m.scenarioPreviewRefusal} surface="Orbit" />
+      </InstrumentShell>
+    );
+  }
 
   if (!graph || !m.startDate)
     return (

@@ -202,6 +202,31 @@
     };
   }
 
+  function appendPassageProvenanceRow(list, label, value) {
+    if (typeof value !== 'string' || !value.trim()) return;
+    const row = document.createElement('div');
+    row.className = 'signal-passage-provenance-row';
+    const term = document.createElement('dt');
+    term.textContent = label;
+    const detail = document.createElement('dd');
+    detail.textContent = value;
+    row.append(term, detail);
+    list.appendChild(row);
+  }
+
+  function patchPassageProvenance(card, node, actions) {
+    if (node.kind !== 'passage' || card.querySelector('.signal-passage-provenance')) return;
+    const list = document.createElement('dl');
+    list.className = 'signal-passage-provenance';
+    list.setAttribute('aria-label', 'Exact passage provenance');
+    appendPassageProvenanceRow(list, 'Source reference', node.sourceRef);
+    appendPassageProvenanceRow(list, 'Snapshot-qualified passage', node.canonicalId);
+    appendPassageProvenanceRow(list, 'Surrounding context', node.attributes && node.attributes.surroundingContext);
+    if (!list.children.length) return;
+    if (actions) actions.insertAdjacentElement('beforebegin', list);
+    else card.appendChild(list);
+  }
+
   function patchPhase3Card() {
     const core = window.BrainCore;
     const n = core && core.S && core.S.sel;
@@ -226,6 +251,11 @@
       } else if (!traceLive && traceBadge) traceBadge.remove();
       card.dataset.shoot = 'signal-inspector';
       card.dataset.canonicalId = n.canonicalId || '';
+      const close = card.querySelector('#card-close');
+      if (close) {
+        close.setAttribute('aria-label', 'Close Inspector');
+        close.setAttribute('title', 'Close Inspector');
+      }
     };
     syncStatus();
     if (card.dataset.signalPhase3Id === n.id && actions && actions.dataset.signalPhase3Patched === 'true') {
@@ -253,6 +283,7 @@
         counted(n.sourceCounts.claims, 'claim'),
       ].join(' · ');
     }
+    patchPassageProvenance(card, n, actions);
 
     const line = document.createElement('div');
     line.className = 'signal-phase3-line';

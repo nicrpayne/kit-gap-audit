@@ -145,6 +145,9 @@ export interface ProjectedIntelPassage {
   snapshotId: string;
   evidenceId: string;
   excerpt: string;
+  /** Verbatim context carried by the evidence row, when the producer supplied
+      it. Null is preserved as unknown rather than reconstructed. */
+  surroundingContext: string | null;
   sourceRef: string;
   sourceType: string | null;
   observedAt: string | null;
@@ -344,6 +347,9 @@ export function projectIntelligence(
           snapshotId: snap.id,
           evidenceId: item.id,
           excerpt: item.excerpt,
+          surroundingContext: typeof item.data?.surroundingContext === "string" && item.data.surroundingContext.trim()
+            ? item.data.surroundingContext
+            : null,
           sourceRef: item.sourceRef,
           sourceType: manifest?.sourceType ?? null,
           observedAt: manifest?.observedAt ?? null,

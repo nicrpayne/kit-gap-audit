@@ -4,6 +4,7 @@ import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import ToolWindow from "@/components/instrument/ToolWindow";
 import type { ScopeWorkItem, SuiteScenario } from "@/lib/instrument/useProject";
 import { bulkStageEligibleItems, isBulkStageEligible } from "@/lib/scope/proposalEligibility";
+import { proposalRealityDescription } from "@/lib/scope/proposalOwnership";
 
 export interface ScopeProposalView {
   id: string;
@@ -253,6 +254,7 @@ function ReconciliationFocus({ item, nextItem, selection, capabilities, committi
   const claimedElsewhere = item.provenance.claimedElsewhere ?? [];
   const claimedElsewhereById = new Map(claimedElsewhere.map((claim) => [claim.identifier, claim]));
   const otherOwnerNames = [...new Set(claimedElsewhere.map((claim) => claim.capabilityName))];
+  const realityDescription = proposalRealityDescription({ target: item.provenance.realityCapability, otherOwnerNames, hasKnowledge: item.origins.includes("knowledge") });
   const allMatchedWorkGovernedElsewhere = claimedElsewhere.length > 0 && item.workItemIds.length === 0;
   const releaseInterpretation = item.provenance.releaseInterpretation ?? { activeRelease: null, activeReleaseSource: "unresolved" as const, policy: "latest_explicit_same_boundary" as const, effectiveClaims: [], supersededClaims: [], otherBoundaryClaims: [], genericClaims: [] };
   const actionable = item.action !== "none" && item.status !== "committed" && item.reconciliationState !== "conflict";
@@ -296,12 +298,8 @@ function ReconciliationFocus({ item, nextItem, selection, capabilities, committi
         <div className="mt-4 flex flex-wrap gap-1.5">{item.origins.map((origin) => <Origin key={origin} value={origin} />)}</div>
         <div className="mt-5 rounded-lg p-4" style={{ background: "var(--i-recess)", border: "1px solid var(--i-border)" }}>
           <div className="text-[10px] uppercase tracking-[0.14em] text-[var(--i-text-faint)]">Current Reality</div>
-          <div className="mt-2 text-[13px] font-medium text-[var(--i-text)]">{item.provenance.realityCapability?.name ?? "No accepted capability"}</div>
-          <div className="mt-1 text-[10px] text-[var(--i-text-faint)]">{item.provenance.realityCapability
-            ? `${item.provenance.realityCapability.status} · revision ${item.provenance.realityCapability.revision}`
-            : item.origins.includes("knowledge")
-              ? "Knowledge is proposing a new boundary; Reality remains unchanged."
-              : "Linear work is awaiting operator classification; Reality remains unchanged."}</div>
+          <div className="mt-2 text-[13px] font-medium text-[var(--i-text)]">{realityDescription.heading}</div>
+          <div className="mt-1 text-[10px] text-[var(--i-text-faint)]">{realityDescription.detail}</div>
         </div>
         <div className="mt-3 rounded-lg p-4" style={{ background: "color-mix(in srgb, var(--i-violet) 5%, var(--i-recess))", border: "1px solid color-mix(in srgb, var(--i-violet) 35%, var(--i-border))" }}>
           <div className="text-[10px] uppercase tracking-[0.14em] text-[var(--i-violet)]">{item.targetCapabilityId || item.action !== "none" ? "Proposed change" : "No proposed target match"}</div>
