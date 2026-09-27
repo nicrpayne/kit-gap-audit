@@ -35,6 +35,7 @@ import { adaptOrbitInput } from "@/lib/orbit/adapt";
 import { buildOrbitGraph, relatedTo, type OrbitGraph, type OrbitNode } from "@/lib/orbit/graph";
 import { layoutOrbit } from "@/lib/orbit/layout";
 import { forecastDateAtDay } from "@/lib/forecast/simulate";
+import { presentForecastDeliveryClaim } from "@/lib/forecast/claims";
 import { formatDateOnly } from "@/lib/time/dateContract";
 
 const SIZE = 880;
@@ -66,7 +67,9 @@ function quantityOf(n: OrbitNode): string {
     case "gate":
       return `${n.likely}d likely`;
     case "dependency":
-      return `P50 +${Math.round(n.p50)}d`;
+      return n.forecastCoverage.state === "unavailable"
+        ? "outcome unavailable"
+        : `${n.forecastCoverage.canonicalForecast ? "P50" : "Modeled subset P50"} +${Math.round(n.p50)}d`;
     default:
       return "";
   }
@@ -209,6 +212,18 @@ export default function OrbitPageClient() {
 
   const start = m.startDate;
   const centre = graph.nodes.find((n) => n.kind === "forecast");
+  const centreClaim = centre?.kind === "forecast"
+    ? presentForecastDeliveryClaim({
+        scopeName: centre.label,
+        coverage: centre.forecastCoverage,
+        likelyDate: centre.forecastCoverage.state === "unavailable" ? null : dateOf(start, centre.p50),
+        targetDate: centre.targetDay === null ? null : dateOf(start, centre.targetDay),
+        confidenceAtTarget: centre.confidenceAtTarget,
+      })
+    : null;
+  const centreAccessibleLabel = centreClaim
+    ? `${centreClaim.accessibleLabel}. ${centreClaim.targetConfidence}.`
+    : undefined;
   const dim = (id: string) => (related && !related.nodes.has(id) ? 0.18 : 1);
   const edgeDim = (id: string) => (related && !related.edges.has(id) ? 0.1 : 1);
 
@@ -216,9 +231,27 @@ export default function OrbitPageClient() {
     <InstrumentShell stateBar={strip}>
       <div className="flex-1 min-h-0 flex">
         {/* THE FIELD */}
-        <div className="flex-1 min-w-0 flex items-center justify-center" style={{ background: "var(--i-void)" }}>
+        <div className="relative flex-1 min-w-0 flex items-center justify-center" style={{ background: "var(--i-void)" }}>
+          {centreClaim && centreClaim.state !== "forecastable" && (
+            <div
+              role="status"
+              aria-label={centreAccessibleLabel}
+              data-shoot="orbit-coverage-warning"
+              className="absolute left-4 right-4 top-4 z-10 rounded-md border p-3 text-[11px] leading-relaxed"
+              style={{ borderColor: "var(--i-amber)", background: "var(--i-panel)", color: "var(--i-text-soft)" }}
+            >
+              <strong className="block text-[10px] tracking-wider" style={{ color: "var(--i-amber)" }}>
+                {centreClaim.badge}
+              </strong>
+              <span className="block text-[var(--i-text)]">{centreClaim.outcome}</span>
+              <span className="block">{centreClaim.detail}</span>
+              <span className="block">{centreClaim.targetConfidence}. {centreClaim.state === "modeled_subset" ? "Shown dates are modeled-subset consequences, not a full-project delivery forecast." : "No delivery date is claimed."}</span>
+            </div>
+          )}
           <svg
             data-shoot="orbit-field"
+            role="img"
+            aria-label={centreAccessibleLabel}
             width={SIZE}
             height={SIZE}
             viewBox={`0 0 ${SIZE} ${SIZE}`}
@@ -302,10 +335,14 @@ export default function OrbitPageClient() {
                         fontSize={15}
                         data-shoot="orbit-centre-p50"
                       >
-                        {dateOf(start, centre.p50)}
+                        {centre.forecastCoverage.state === "unavailable"
+                          ? "—"
+                          : `${centre.forecastCoverage.canonicalForecast ? "" : "~"}${dateOf(start, centre.p50)}`}
                       </text>
                       <text x={p.x} y={p.y + 8} textAnchor="middle" fill="var(--i-text-faint)" fontSize={9}>
-                        {dateOf(start, centre.p10)} → {dateOf(start, centre.p90)}
+                        {centre.forecastCoverage.state === "unavailable"
+                          ? "delivery outcome unavailable"
+                          : `${centre.forecastCoverage.canonicalForecast ? "" : "modeled subset · ~"}${dateOf(start, centre.p10)} → ${centre.forecastCoverage.canonicalForecast ? "" : "~"}${dateOf(start, centre.p90)}`}
                       </text>
                       <text
                         x={p.x}
@@ -315,7 +352,9 @@ export default function OrbitPageClient() {
                         fontSize={10}
                         data-shoot="orbit-centre-confidence"
                       >
-                        {centre.confidenceAtTarget === null
+                        {!centre.forecastCoverage.canonicalForecast
+                          ? "target confidence unavailable"
+                          : centre.confidenceAtTarget === null
                           ? "no target set"
                           : `${centre.confidenceAtTarget}% by target`}
                       </text>
@@ -499,7 +538,24 @@ export default function OrbitPageClient() {
 
               {node.kind === "dependency" && (
                 <div className="text-[11px] text-[var(--i-text-soft)]">
-                  Lands around {dateOf(start, node.p50)}. Nothing here finishes before it does.
+                  {node.forecastCoverage.state === "unavailable"
+                    ? "Upstream delivery outcome unavailable. This declared dependency remains a completion floor, but no reliable upstream date is claimed."
+                    : `${node.forecastCoverage.canonicalForecast ? "P50" : "Modeled subset P50"} ${node.forecastCoverage.canonicalForecast ? "" : "~"}${dateOf(start, node.p50)}. ${node.forecastCoverage.canonicalForecast ? "" : "This is not a full-project delivery forecast. "}Own work may proceed concurrently; each run finishes at the later of own and upstream completion.`}
+                </div>
+              )}
+
+              {node.kind === "forecast" && (
+                <div
+                  className="rounded p-2 text-[11px] text-[var(--i-text-soft)]"
+                  style={{ background: "var(--i-recess)" }}
+                  data-shoot="orbit-forecast-claim"
+                >
+                  <strong className="block" style={{ color: node.forecastCoverage.canonicalForecast ? "var(--i-signal)" : "var(--i-amber)" }}>
+                    {centreClaim?.badge}
+                  </strong>
+                  <span className="block">{centreClaim?.outcome}</span>
+                  {centreClaim?.detail && <span className="block">{centreClaim.detail}</span>}
+                  <span className="block">{centreClaim?.targetConfidence}</span>
                 </div>
               )}
 

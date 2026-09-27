@@ -2,7 +2,8 @@ import assert from "node:assert/strict";
 import { composeFeatures, composeScopeFeatures, ticketEstimateTuningAllowed } from "../lib/scope/features";
 import type { ShapeCapability } from "../lib/scope/productShape";
 import type { ScopeWorkItem } from "../lib/instrument/useProject";
-import { reviewCapabilityKnowledgeEstimate } from "../lib/scope/knowledgeEstimates";
+import { reviewCapabilityKnowledgeEstimate, substituteCapabilityKnowledgeEstimates } from "../lib/scope/knowledgeEstimates";
+import { reviewedEstimateSimulationDecision } from "../lib/forecast/reviewedEstimate";
 
 const item: ScopeWorkItem = {
   id: "TEST-1", label: "Synthetic remaining work", low: 1, likely: 3, high: 7,
@@ -43,6 +44,7 @@ assert.equal(covered.range.likely, 3, "pre-v2 raw evidence must not alter a new 
 assert.equal(covered.activeKnowledgeEstimate, null);
 assert.equal(covered.stagedKnowledgeEstimateReviewRequired?.id, "same-object", "the inert staged state remains visible for explicit review or removal");
 assert.equal(covered.items[0].likely, 3, "execution rows remain Reality while the raw assumption is inert");
+assert.equal(covered.placeholderCount, 1, "inert raw evidence does not hide the ticket placeholder");
 
 const candidate = capability.knowledgeEstimates![0];
 const accepted = reviewCapabilityKnowledgeEstimate(candidate, {
@@ -72,6 +74,7 @@ const reviewedCapability: ShapeCapability = {
 const reviewedFeature = composeScopeFeatures([item, untouched], [], [reviewedCapability], 2, new Set(), {}, []).features[0];
 assert.equal(reviewedFeature.estimateBasis, "knowledge_accepted");
 assert.deepEqual(reviewedFeature.range, { low: 21, likely: 28, high: 37 }, "reviewed range replaces covered work while additional ticket work remains once");
+assert.equal(reviewedFeature.placeholderCount, 1, "only the non-covered ticket remains a placeholder input");
 assert.equal(ticketEstimateTuningAllowed(reviewedFeature, item.id), false, "reviewed covered work remains owned by the capability estimate");
 assert.equal(ticketEstimateTuningAllowed(reviewedFeature, untouched.id), true, "reviewed additional work remains an ordinary tunable ticket");
 const additionalOverride = { low: 2, likely: 4, high: 6 };
@@ -113,5 +116,46 @@ const driftedCapability: ShapeCapability = {
 const driftedFeature = composeScopeFeatures([item, untouched, newOpen], [], [driftedCapability], 2, new Set(), {}, []).features[0];
 assert.equal(driftedFeature.estimateBasis, "knowledge_review_required");
 assert.equal(driftedFeature.acceptedKnowledgeReview?.status, "review_required");
-assert.deepEqual(driftedFeature.range, { low: 21, likely: 28, high: 37 }, "new unclassified work is not silently swallowed or added to the qualified prior boundary");
+assert.equal(ticketEstimateTuningAllowed(driftedFeature, item.id), false, "the reviewed covered partition remains replaced during drift");
+assert.equal(ticketEstimateTuningAllowed(driftedFeature, newOpen.id), true, "new unclassified work remains a raw, tunable input rather than being silently absorbed");
+const driftedDecision = reviewedEstimateSimulationDecision(driftedCapability, driftedFeature.acceptedKnowledgeReview!);
+assert(driftedDecision.substitution, "qualified exploration retains its last reviewed covered boundary");
+const driftedForecastItems = substituteCapabilityKnowledgeEstimates(
+  [item, untouched, newOpen],
+  [driftedDecision.substitution],
+);
+const summed = (items: typeof driftedForecastItems) => items.reduce((total, candidate) => ({
+  low: total.low + candidate.low,
+  likely: total.likely + candidate.likely,
+  high: total.high + candidate.high,
+}), { low: 0, likely: 0, high: 0 });
+assert.deepEqual(
+  driftedFeature.range,
+  summed(driftedForecastItems),
+  "Scope and Forecast use the same qualified exploration plus every current non-covered ticket",
+);
+assert.deepEqual(driftedFeature.range, { low: 22, likely: 31, high: 44 });
+assert.equal(driftedFeature.placeholderCount, 2, "both declared additional and new non-covered placeholders remain visible during drift");
+
+const newOpenOverride = { low: 3, likely: 5, high: 9 };
+const driftedWithOverride = composeScopeFeatures(
+  [item, untouched, newOpen],
+  [],
+  [driftedCapability],
+  2,
+  new Set(),
+  { [item.id]: { low: 100, likely: 100, high: 100 }, [newOpen.id]: newOpenOverride },
+  [],
+).features[0];
+const forecastWithOverride = substituteCapabilityKnowledgeEstimates(
+  [item, untouched, { ...newOpen, ...newOpenOverride }],
+  [driftedDecision.substitution],
+);
+assert.deepEqual(
+  driftedWithOverride.range,
+  summed(forecastWithOverride),
+  "a new non-covered ticket override changes Scope and Forecast identically while a covered override stays inert",
+);
+assert.deepEqual(driftedWithOverride.range, { low: 24, likely: 33, high: 46 });
+assert.equal(driftedWithOverride.acceptedKnowledgeReview?.status, "review_required", "tuning drifted work does not implicitly accept the changed boundary");
 console.log("PASS: Scenario estimate rows, aggregate and reset resolve the same range without mutating Reality.");

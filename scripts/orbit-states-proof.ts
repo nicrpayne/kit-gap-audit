@@ -27,6 +27,7 @@ import type { OrbitInput, OrbitGraph, OrbitScopeInput, OrbitGateInput } from "..
 import type { SimulationResult } from "../lib/forecast/simulate";
 import type { Feature, FeatureComposition } from "../lib/scope/features";
 import type { ChannelReading } from "../lib/capacity/workforce";
+import type { ForecastCoverageContract } from "../lib/forecast/coverage";
 
 let failures = 0;
 const check = (name: string, ok: boolean, detail = "") => {
@@ -35,6 +36,24 @@ const check = (name: string, ok: boolean, detail = "") => {
 };
 
 const START = new Date("2026-01-01T00:00:00.000Z");
+const forecastCoverage: ForecastCoverageContract = {
+  state: "forecastable",
+  canonicalForecast: true,
+  label: "CANONICAL DELIVERY FORECAST",
+  reason: null,
+  caveat: null,
+  reasons: [],
+  census: {
+    executionIssueCount: 1,
+    modeledExecutionIssueCount: 1,
+    outsideExecutionIssueCount: 0,
+    unmappedExecutionIssueCount: 0,
+    acceptedCapabilityCount: 1,
+    mappedAcceptedCapabilityCount: 1,
+    openShapeDecisionCount: 0,
+    incompleteDependencyCount: 0,
+  },
+};
 const sortedDays = (base: number, spread: number): number[] =>
   Array.from({ length: 200 }, (_, i) => base + Math.round((i / 199) * spread));
 
@@ -126,6 +145,7 @@ function state(over: {
     name: "JSA",
     targetDate: new Date("2026-05-01T00:00:00.000Z"),
     dependsOnScopeIds: [],
+    forecastCoverage,
     composition: composition(over.features ?? [feature("f1", "Offline capture", 12), feature("f2", "Forms engine", 10)]),
     channel: over.channel ?? channel("jsa", 4, 3.6),
     sim: over.sim ?? sim(100, 60),

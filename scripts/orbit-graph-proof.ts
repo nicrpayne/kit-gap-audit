@@ -12,10 +12,13 @@
 //   npx tsx scripts/orbit-graph-proof.ts
 import { buildOrbitGraph, relatedTo } from "../lib/orbit/graph";
 import type { OrbitInput, OrbitGateInput, OrbitScopeInput } from "../lib/orbit/graph";
+import { presentForecastDeliveryClaim } from "../lib/forecast/claims";
+import { readFileSync } from "node:fs";
 import type { SimulationResult } from "../lib/forecast/simulate";
 import { confidenceAtDay } from "../lib/forecast/simulate";
 import type { Feature, FeatureComposition } from "../lib/scope/features";
 import type { ChannelReading } from "../lib/capacity/workforce";
+import type { ForecastCoverageContract } from "../lib/forecast/coverage";
 
 let failures = 0;
 const check = (name: string, ok: boolean, detail = "") => {
@@ -28,6 +31,34 @@ const check = (name: string, ok: boolean, detail = "") => {
 // check by reading this file. Nothing here is random and nothing is fetched.
 
 const START = new Date("2026-01-01T00:00:00.000Z");
+
+const coverage = (
+  state: ForecastCoverageContract["state"] = "forecastable",
+  reason: string | null = null,
+): ForecastCoverageContract => ({
+  state,
+  canonicalForecast: state === "forecastable",
+  label: state === "forecastable" ? "CANONICAL DELIVERY FORECAST" : state === "modeled_subset" ? "FORECAST INCOMPLETE — EXECUTION COVERAGE UNRESOLVED" : "FORECAST UNAVAILABLE",
+  reason,
+  caveat: state === "forecastable" ? null : "Modeled execution coverage is incomplete.",
+  reasons: state === "forecastable"
+    ? []
+    : [{
+        code: state === "unavailable" ? "execution_source_unavailable" : "execution_work_unmapped",
+        label: reason ?? (state === "unavailable" ? "Execution source is unavailable" : "Execution work is unmapped"),
+        count: 1,
+      }],
+  census: {
+    executionIssueCount: 2,
+    modeledExecutionIssueCount: state === "forecastable" ? 2 : 1,
+    outsideExecutionIssueCount: 0,
+    unmappedExecutionIssueCount: state === "forecastable" ? 0 : 1,
+    acceptedCapabilityCount: 1,
+    mappedAcceptedCapabilityCount: 1,
+    openShapeDecisionCount: 0,
+    incompleteDependencyCount: 0,
+  },
+});
 
 /** A sorted trial array with a known shape: 200 trials, 60..259 days. */
 const sortedDays = (base: number, spread: number): number[] =>
@@ -95,6 +126,7 @@ const platform: OrbitScopeInput = {
   name: "Platform",
   targetDate: new Date("2026-06-01T00:00:00.000Z"),
   dependsOnScopeIds: [],
+  forecastCoverage: coverage(),
   composition: composition([feature("plat-a", "Tax engine", 30)]),
   channel: channel("platform", 3, 3),
   sim: sim(60, 40),
@@ -108,6 +140,7 @@ const jsa: OrbitScopeInput = {
   // target moving is a visible change in confidence rather than 100% → 100%.
   targetDate: new Date("2026-05-01T00:00:00.000Z"),
   dependsOnScopeIds: ["platform"],
+  forecastCoverage: coverage(),
   composition: composition([
     feature("f-big", "Offline capture", 40),
     feature("f-mid", "Forms engine", 20),
@@ -158,6 +191,71 @@ const world = (over: Partial<OrbitInput> = {}): OrbitInput => ({
   check("A3. Nodes and edges are in a stable, id-sorted order",
     a.nodes.every((n, i) => i === 0 || a.nodes[i - 1].id.localeCompare(n.id) <= 0) &&
     a.edges.every((e, i) => i === 0 || a.edges[i - 1].id.localeCompare(e.id) <= 0));
+}
+
+// ── A4. A DISTRIBUTION DOES NOT OUTRUN ITS COVERAGE ───────────────────
+{
+  const upstreamSubset = {
+    ...platform,
+    forecastCoverage: coverage("modeled_subset", "1 current execution item is not classified"),
+  };
+  const inheritedSubset: OrbitScopeInput = {
+    ...jsa,
+    forecastCoverage: {
+      ...coverage("modeled_subset", "1 dependency has incomplete execution coverage (Platform)"),
+      reasons: [{
+        code: "dependency_coverage_incomplete",
+        label: "1 dependency has incomplete execution coverage (Platform)",
+        count: 1,
+      }],
+      census: { ...coverage().census, incompleteDependencyCount: 1 },
+    },
+  };
+  const g = buildOrbitGraph(world({ scopes: [inheritedSubset, upstreamSubset] }));
+  const forecast = g.nodes.find((node) => node.kind === "forecast");
+  const dependency = g.nodes.find((node) => node.kind === "dependency");
+  const dependencyEdge = g.edges.find((edge) => edge.kind === "waits_on");
+  check("A4. Focus coverage is carried beside its simulated distribution",
+    forecast?.kind === "forecast" && forecast.forecastCoverage.reasons[0]?.code === "dependency_coverage_incomplete");
+  check("A5. Incomplete coverage suppresses project target confidence",
+    forecast?.kind === "forecast" && forecast.p50 > 0 && forecast.confidenceAtTarget === null);
+  check("A6. Dependency nodes retain their own modeled-subset boundary",
+    dependency?.kind === "dependency" && dependency.forecastCoverage.state === "modeled_subset" && dependency.p50 > 0);
+  check("A7. Dependency edge detail labels its quantity as a modeled-subset consequence",
+    dependencyEdge?.quantity?.unit === "days"
+      && /modeled-subset completion-floor consequence/i.test(dependencyEdge.meaning)
+      && /not a full-project delivery forecast/i.test(dependencyEdge.meaning));
+  const claim = forecast?.kind === "forecast"
+    ? presentForecastDeliveryClaim({
+        scopeName: forecast.label,
+        coverage: forecast.forecastCoverage,
+        likelyDate: "May 23, 2026",
+        targetDate: "May 1, 2026",
+        confidenceAtTarget: forecast.confidenceAtTarget,
+      })
+    : null;
+  check("A8. Orbit's shared presenter calls the outcome a modeled subset",
+    claim?.badge === "FORECAST INCOMPLETE" && claim.outcome === "Modeled subset ~May 23, 2026");
+  check("A9. The accessible claim withholds canonical confidence",
+    claim?.targetConfidence === "Project target confidence unavailable — incomplete coverage"
+      && /not a full-project delivery forecast/i.test(claim.accessibleLabel));
+  const orbitUi = readFileSync("components/OrbitPageClient.tsx", "utf8");
+  check("A10. Orbit renders the shared qualified claim and its accessible equivalent",
+    orbitUi.includes("presentForecastDeliveryClaim")
+      && orbitUi.includes('data-shoot="orbit-coverage-warning"')
+      && orbitUi.includes("centreAccessibleLabel"));
+  check("A11. Orbit's dependency prose describes a completion floor, not start sequencing",
+    /Own work may proceed concurrently; each run finishes at the later of own and upstream completion/.test(orbitUi)
+      && !/Nothing here finishes before it does/.test(orbitUi));
+  const unavailableGraph = buildOrbitGraph(world({
+    scopes: [
+      { ...inheritedSubset, forecastCoverage: coverage("unavailable", "Dependency execution source is unavailable") },
+      { ...platform, forecastCoverage: coverage("unavailable", "Execution source is unavailable") },
+    ],
+  }));
+  const unavailableEdge = unavailableGraph.edges.find((edge) => edge.kind === "waits_on");
+  check("A12. An unavailable dependency exposes neither a date quantity nor a canonical claim",
+    unavailableEdge?.quantity === null && /no reliable upstream date is claimed/i.test(unavailableEdge.meaning));
 }
 
 // ── B. THE RESTING VIEW IS RESTRAINED, AND ADMITS IT ───────────────────

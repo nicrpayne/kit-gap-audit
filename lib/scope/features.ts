@@ -116,7 +116,11 @@ export function ticketEstimateTuningAllowed(feature: Feature, itemId: string): b
     : review?.status === "review_required"
       ? review.exploration
       : null;
-  return !modeledBoundary || modeledBoundary.additionalItemIds.includes(itemId);
+  // A qualified, drifted boundary does not silently absorb newly linked
+  // work. Only the explicitly reviewed covered partition is replaced by the
+  // capability estimate; every current non-covered ticket remains an
+  // ordinary (but report-blocked) ticket input and keeps its Scenario control.
+  return !modeledBoundary || !modeledBoundary.coveredItemIds.includes(itemId);
 }
 
 export interface FeatureComposition {
@@ -429,16 +433,19 @@ export function composeScopeFeatures(
     const acceptedModeled = acceptedKnowledgeReview?.status === "reviewed"
       ? {
           range: acceptedKnowledgeReview.range,
+          coveredItemIds: acceptedKnowledgeReview.coveredItemIds,
           additionalItemIds: acceptedKnowledgeReview.additionalItemIds,
         }
       : acceptedKnowledgeReview?.exploration
         ? {
             range: acceptedKnowledgeReview.exploration.range,
+            coveredItemIds: acceptedKnowledgeReview.exploration.coveredItemIds,
             additionalItemIds: acceptedKnowledgeReview.exploration.additionalItemIds,
           }
         : null;
+    const coveredItemIds = new Set(acceptedModeled?.coveredItemIds ?? []);
     const modeledTicketOverrides = acceptedModeled
-      ? Object.fromEntries(Object.entries(estimateOverrides).filter(([itemId]) => acceptedModeled.additionalItemIds.includes(itemId)))
+      ? Object.fromEntries(Object.entries(estimateOverrides).filter(([itemId]) => !coveredItemIds.has(itemId)))
       : activeKnowledgeEstimate
         ? {}
         : estimateOverrides;
@@ -455,9 +462,9 @@ export function composeScopeFeatures(
       true,
       modeledTicketOverrides,
     );
-    const additionalRange = acceptedModeled
+    const retainedTicketRange = acceptedModeled
       ? base.items
-          .filter((item) => acceptedModeled.additionalItemIds.includes(item.id))
+          .filter((item) => !coveredItemIds.has(item.id))
           .reduce<ThreePoint>((sum, item) => ({
             low: sum.low + item.low,
             likely: sum.likely + item.likely,
@@ -468,9 +475,9 @@ export function composeScopeFeatures(
       ? { low: override.low, likely: override.likely, high: override.high }
       : acceptedModeled
         ? {
-            low: acceptedModeled.range.low + additionalRange.low,
-            likely: acceptedModeled.range.likely + additionalRange.likely,
-            high: acceptedModeled.range.high + additionalRange.high,
+            low: acceptedModeled.range.low + retainedTicketRange.low,
+            likely: acceptedModeled.range.likely + retainedTicketRange.likely,
+            high: acceptedModeled.range.high + retainedTicketRange.high,
           }
         : base.range;
     const effortDays = expectedDays(range);
@@ -497,7 +504,7 @@ export function composeScopeFeatures(
       loadDays: effortDays / (capacity > 0 ? capacity : 1),
       uncertainty: effortDays > 0 ? (range.high - range.low) / effortDays : 0,
       placeholderCount: activeKnowledgeEstimate || acceptedModeled
-        ? mappedItems.filter((item) => acceptedModeled?.additionalItemIds.includes(item.id)
+        ? mappedItems.filter((item) => !coveredItemIds.has(item.id)
           && (item.estimateSource === "issue_placeholder" || item.estimateSource === "finding_placeholder")).length
         : base.placeholderCount,
       staffingPlan,

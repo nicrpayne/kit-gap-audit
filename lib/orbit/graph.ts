@@ -27,6 +27,7 @@
 
 import type { SimulationResult } from "@/lib/forecast/simulate";
 import { percentileDay, confidenceAtDay } from "@/lib/forecast/simulate";
+import type { ForecastCoverageContract } from "@/lib/forecast/coverage";
 import type { Feature, FeatureComposition } from "@/lib/scope/features";
 import type { ChannelReading } from "@/lib/capacity/workforce";
 
@@ -63,6 +64,10 @@ export interface OrbitScopeInput {
   name: string;
   targetDate: Date | null;
   dependsOnScopeIds: string[];
+  /** The owning Forecast coverage contract. A distribution can exist while
+      still being only a modeled-subset consequence, so Orbit must carry the
+      claim boundary beside the numbers it draws. */
+  forecastCoverage: ForecastCoverageContract;
   /** From composeFeatures — the capability layer, already derived. */
   composition: FeatureComposition;
   /** From readChannel — raw vs effective, and why they differ. */
@@ -122,6 +127,7 @@ export type OrbitLever =
 export interface OrbitForecastNode extends OrbitNodeBase {
   kind: "forecast";
   scopeId: string;
+  forecastCoverage: ForecastCoverageContract;
   /** The real sorted trial outcomes. The renderer reads density from this
       and from nothing else. */
   completionDaysSorted: number[];
@@ -155,6 +161,7 @@ export interface OrbitCapabilityNode extends OrbitNodeBase {
 export interface OrbitDependencyNode extends OrbitNodeBase {
   kind: "dependency";
   scopeId: string;
+  forecastCoverage: ForecastCoverageContract;
   /** The upstream scope's own P50, in days from the shared startDate. */
   p50: number;
 }
@@ -205,7 +212,7 @@ export type OrbitNode =
  *   feeds     "these people divide that scope's effort"   — FORECAST-CAUSAL
  *   gates     "this decision is a serial delay added to
  *              that scope before any of its work counts"  — FORECAST-CAUSAL
- *   waits_on  "this scope cannot finish before that one"  — FORECAST-CAUSAL
+ *   waits_on  "this dependency sets a completion floor"   — FORECAST-CAUSAL
  *   candidate "a machine believes this capability exists" — EXPLANATORY ONLY
  *
  * `causal` is not a label the renderer chooses; it is a property of which
@@ -306,6 +313,7 @@ export function buildOrbitGraph(input: OrbitInput): OrbitGraph {
     scenarioLever: null,
     provenance: { source: "lib/forecast/simulate.ts:runSimulation", ref: focus.scopeId },
     scopeId: focus.scopeId,
+    forecastCoverage: focus.forecastCoverage,
     completionDaysSorted: focus.sim.completionDaysSorted,
     p10: percentileDay(focus.sim.completionDaysSorted, 10),
     p50: percentileDay(focus.sim.completionDaysSorted, 50),
@@ -314,7 +322,9 @@ export function buildOrbitGraph(input: OrbitInput): OrbitGraph {
     // TARGET IS EVALUATION, NOT INPUT. Confidence is recomputed by counting
     // the SAME trials against a different day — the distribution is never
     // re-run because a target moved.
-    confidenceAtTarget: targetDay === null ? null : confidenceAtDay(focus.sim.completionDaysSorted, targetDay),
+    confidenceAtTarget: focus.forecastCoverage.canonicalForecast && targetDay !== null
+      ? confidenceAtDay(focus.sim.completionDaysSorted, targetDay)
+      : null,
     realityCompletionDaysSorted: focus.realitySim?.completionDaysSorted ?? null,
     realityP50: focus.realitySim ? percentileDay(focus.realitySim.completionDaysSorted, 50) : null,
   });
@@ -357,7 +367,7 @@ export function buildOrbitGraph(input: OrbitInput): OrbitGraph {
     });
   }
 
-  // ── FIRST ORBIT: what this scope waits on ────────────────────────────
+  // ── FIRST ORBIT: declared dependency completion floors ───────────────
   for (const depId of [...focus.dependsOnScopeIds].sort()) {
     const dep = scopes.find((s) => s.scopeId === depId);
     if (!dep) continue;
@@ -370,6 +380,7 @@ export function buildOrbitGraph(input: OrbitInput): OrbitGraph {
       scenarioLever: null,
       provenance: { source: "prisma:Scope.dependsOnScopeIds", ref: depId },
       scopeId: depId,
+      forecastCoverage: dep.forecastCoverage,
       p50: percentileDay(dep.sim.completionDaysSorted, 50),
     });
     edges.push({
@@ -379,9 +390,14 @@ export function buildOrbitGraph(input: OrbitInput): OrbitGraph {
       to: id,
       causal: true,
       structural: true,
-      quantity: { value: percentileDay(dep.sim.completionDaysSorted, 50), unit: "days" },
-      meaning:
-        "This scope cannot finish before that one. Every trial takes the later of the two, so the upstream scope's own spread is part of this outcome.",
+      quantity: dep.forecastCoverage.state === "unavailable"
+        ? null
+        : { value: percentileDay(dep.sim.completionDaysSorted, 50), unit: "days" },
+      meaning: dep.forecastCoverage.state === "unavailable"
+        ? "This declared dependency remains a completion floor, but its execution coverage is unavailable, so no reliable upstream date is claimed."
+        : dep.forecastCoverage.canonicalForecast
+          ? "This declared dependency sets a completion floor. Own work may proceed concurrently; every trial takes the later of own and upstream completion."
+          : "This declared dependency sets a modeled-subset completion-floor consequence, not a full-project delivery forecast. Own work may proceed concurrently; every trial takes the later of own and upstream completion.",
       provenance: { source: "lib/forecast/portfolio.ts:runPortfolioTrials", ref: `${focus.scopeId}<-${depId}` },
     });
   }

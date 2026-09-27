@@ -26,6 +26,7 @@ import {
   scenarioLeverConflictMessage,
 } from "@/lib/reports/scenarioConflicts";
 import { acceptedEstimateIdentity, knowledgeEstimateItemId } from "@/lib/scope/knowledgeEstimates";
+import { ambiguousScenarioItemLeverMessage, findAmbiguousScenarioItemLevers } from "@/lib/scenario/itemLeverScope";
 
 /** The live forecast is a comparison input, not report data. Three states,
     because "we could not resolve it" must be distinguishable from "it
@@ -238,6 +239,19 @@ export default function ReportsPageClient() {
   const scenarioLeverConflictReason = scenarioLeverConflicts.length
     ? `${scenarioLeverConflictMessage(scenarioLeverConflicts)}. Choose which staged assumption to keep in Scope; Signal has not removed any of them.`
     : null;
+  const ambiguousItemLevers = findAmbiguousScenarioItemLevers({
+    scopes: (project.data?.scopes ?? []).map((candidate) => ({
+      scopeId: candidate.scopeId,
+      name: candidate.name,
+      itemIds: [...new Set([...candidate.items, ...candidate.forecastItems, ...candidate.executionItems].map((item) => item.id))],
+    })),
+    excludedItemIds: [...project.scenario.excludedItemIds],
+    includedItemIds: [...project.scenario.includedItemIds],
+    estimateOverrideIds: Object.keys(project.scenario.estimateOverrideByItemId),
+  });
+  const ambiguousItemLeverReason = ambiguousItemLevers.length
+    ? `Scenario work-item controls are ambiguous: ${ambiguousScenarioItemLeverMessage(ambiguousItemLevers)}. Return to Reality and remove overlapping execution ownership; Signal has not guessed an owner or removed any staged change.`
+    : null;
   const unreviewedKnowledgeCapabilityIds = Object.keys(project.scenario.knowledgeEstimateByCapabilityId);
   const unreviewedKnowledgeReason = unreviewedKnowledgeCapabilityIds.length
     ? `Raw meeting estimates require an explicit remaining-work interpretation and exact covered/additional ticket review before publication. Review ${unreviewedKnowledgeCapabilityIds.length === 1 ? "this assertion" : "these assertions"} in Scope; other staged Scenario levers will remain unchanged.`
@@ -251,6 +265,8 @@ export default function ReportsPageClient() {
         ? "Stage at least one Scope, estimate, staffing, Capacity, or decision lever in Scenario first."
         : unreviewedKnowledgeReason
           ? unreviewedKnowledgeReason
+        : ambiguousItemLeverReason
+          ? ambiguousItemLeverReason
         : scenarioLeverConflictReason
           ? scenarioLeverConflictReason
         : project.capacityPlanError

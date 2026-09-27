@@ -11,6 +11,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { runPortfolioSimulation } from "@/lib/forecast/portfolio";
+import { ambiguousScenarioItemLeverMessage, findAmbiguousScenarioItemLevers } from "@/lib/scenario/itemLeverScope";
 import type { SimulationResult, WorkItem, DecisionGate } from "@/lib/forecast/simulate";
 import { applyScenarioInputDelta, type ScenarioInputDelta, type ScenarioInputScope } from "@/lib/scenario/inputDelta";
 import {
@@ -568,6 +569,22 @@ export function useProject(): ProjectModel {
     if (!data || !scenarioScopes) return;
     if (debounce.current) clearTimeout(debounce.current);
     debounce.current = setTimeout(() => {
+      const ambiguousItemLevers = findAmbiguousScenarioItemLevers({
+        scopes: data.scopes.map((scope) => ({
+          scopeId: scope.scopeId,
+          name: scope.name,
+          itemIds: [...new Set([...scope.items, ...scope.forecastItems, ...scope.executionItems].map((item) => item.id))],
+        })),
+        excludedItemIds: [...scenario.excludedItemIds],
+        includedItemIds: [...scenario.includedItemIds],
+        estimateOverrideIds: Object.keys(scenario.estimateOverrideByItemId),
+      });
+      if (ambiguousItemLevers.length) {
+        setSimFailure(`Scenario work-item controls are ambiguous: ${ambiguousScenarioItemLeverMessage(ambiguousItemLevers)}. The same ticket cannot be changed across multiple projects by an unscoped control. Return to Reality and remove overlapping execution ownership; no Scenario input was applied.`);
+        setPreview(baseline);
+        setFloorByScope(null);
+        return;
+      }
       // A current exact plan and report replay share resolveCapacityPlan.
       // Requested shortfalls never enter this delta. When its baseline is
       // stale, retain the plan for review but simulate Reality capacity until
@@ -663,7 +680,7 @@ export function useProject(): ProjectModel {
     return () => {
       if (debounce.current) clearTimeout(debounce.current);
     };
-  }, [data, scenarioScopes, scenario, capacityPlanValidation.ok]);
+  }, [data, scenarioScopes, scenario, capacityPlanValidation.ok, baseline]);
 
   const momentumByScope = useMemo(() => {
     const out = new Map<string, MomentumTrend>();

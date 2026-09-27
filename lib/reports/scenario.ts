@@ -24,6 +24,7 @@ import { ForecastCoverageIncompleteError } from "@/lib/forecast/coverage";
 import { forecastCapability } from "@/lib/scope/capabilityForecast";
 import { freezeCapabilityEstimate, freezeForecastBasis, type ForecastCapacityBasisInput } from "./forecastBasis";
 import { findScenarioLeverConflicts, scenarioLeverConflictMessage } from "./scenarioConflicts";
+import { ambiguousScenarioItemLeverMessage, findAmbiguousScenarioItemLevers } from "@/lib/scenario/itemLeverScope";
 
 export * from "./scenarioSnapshot";
 import {
@@ -109,6 +110,19 @@ export async function buildScenarioDecisionBriefReadModel(
   const unknownCapabilities = [...scenario.excludedCapabilityIds, ...Object.keys(scenario.knowledgeEstimateByCapabilityId), ...Object.keys(scenario.capabilityStaffingById)].filter((id) => !capabilityOwner.has(id));
   if (unknownItems.length || unknownGates.length || unknownScopes.length || unknownCapabilities.length) {
     throw new ScenarioReportValidationError(`Scenario references stale owner records: ${[...unknownItems, ...unknownGates, ...unknownScopes, ...unknownCapabilities].join(", ")}. Refresh and recreate it.`);
+  }
+  const ambiguousItemLevers = findAmbiguousScenarioItemLevers({
+    scopes: portfolio.scopes.map((candidate) => ({
+      scopeId: candidate.scopeId,
+      name: candidate.name,
+      itemIds: [...new Set([...candidate.items, ...candidate.forecastItems, ...candidate.executionItems].map((item) => item.id))],
+    })),
+    excludedItemIds: scenario.excludedItemIds,
+    includedItemIds: scenario.includedItemIds,
+    estimateOverrideIds: Object.keys(scenario.estimateOverrideByItemId),
+  });
+  if (ambiguousItemLevers.length) {
+    throw new ScenarioReportValidationError(`Scenario work-item controls are ambiguous: ${ambiguousScenarioItemLeverMessage(ambiguousItemLevers)}. Bare item ids cannot be published when more than one project owns them; no owner was guessed and no staged change was removed.`);
   }
 
   const includedSet = new Set(scenario.includedItemIds);

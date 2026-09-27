@@ -90,6 +90,7 @@ export function adaptOrbitInput(i: OrbitAdaptInput): OrbitInput | null {
       name: s.name,
       targetDate: s.targetDate ? new Date(s.targetDate) : null,
       dependsOnScopeIds: s.dependsOnScopeIds,
+      forecastCoverage: s.forecastCoverage,
       composition,
       channel,
       sim,
