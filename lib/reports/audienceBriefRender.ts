@@ -2,9 +2,10 @@ import type { DecisionBriefV1, SourceStamp } from "./decisionBrief";
 import { briefPayloadFingerprint } from "./decisionBriefRender";
 import type { BriefModuleId, BriefRecipeV1, ModuleDensity } from "./composer";
 import { buildBriefPresentation, sourceForModule } from "./presentation";
-import { markdownBlockquoteLines } from "./markdown";
+import { markdownBlockquoteLines, markdownInlineText } from "./markdown";
 import { formatDateOnly, formatInstant, toInstant } from "@/lib/time/dateContract";
 import { FORECAST_PERCENTILE_COPY } from "@/lib/forecast/claims";
+import { capabilityEstimatePresentation } from "./capabilityEstimatePresentation";
 
 const date = (iso: string | null) => iso
   ? formatDateOnly(iso, { month: "short", day: "numeric", year: "numeric" })
@@ -31,17 +32,25 @@ function capabilityEstimateMarkdown(brief: DecisionBriefV1): string[] {
   if (!records?.length) return [];
   const out = ["", "**Frozen capability estimate basis**"];
   for (const record of records) {
-    const estimate = record.estimate;
-    const range = estimate.range
-      ? `${number(estimate.range.low)} / ${number(estimate.range.likely)} / ${number(estimate.range.high)} developer-days`
+    const presentation = capabilityEstimatePresentation(record);
+    const range = presentation.range
+      ? `${number(presentation.range.low)} / ${number(presentation.range.likely)} / ${number(presentation.range.high)} developer-days`
       : "range unavailable";
-    const sourceDate = estimate.observedAt ? date(estimate.observedAt) : "source date unavailable";
+    const sourceDate = presentation.sourceDate ? date(presentation.sourceDate) : "source date unavailable";
+    const capabilityName = markdownInlineText(record.capabilityName);
     const linkStart = record.auditHref ? "[" : "";
     const linkEnd = record.auditHref ? `](${record.auditHref})` : "";
-    out.push(`- ${linkStart}**${record.capabilityName}**${linkEnd} · ${record.authority.toUpperCase()} ${estimate.basis.replaceAll("_", " ")} · ${range} · source ${sourceDate} · replaces ${record.replacedItemIds.length} ticket ${record.replacedItemIds.length === 1 ? "estimate" : "estimates"}`);
+    out.push(`- ${linkStart}**${capabilityName}**${linkEnd} · ${presentation.authorityLabel} ${presentation.basisLabel} · ${range} · source ${sourceDate}${record.review ? ` · ${presentation.usedInSimulation ? "used in this simulation" : "evidence only; ticket rollup used"}` : ` · replaces ${record.replacedItemIds.length} ticket ${record.replacedItemIds.length === 1 ? "estimate" : "estimates"}`}`);
+    if (presentation.reviewSummary) out.push(`  - ${markdownInlineText(presentation.reviewSummary)}`);
+    if (presentation.interpretation) out.push(`  - Reviewed interpretation: ${markdownInlineText(presentation.interpretation)}`);
+    if (record.review) {
+      out.push(`  - Reviewer ${markdownInlineText(presentation.reviewer ?? "unavailable")} · reviewed ${presentation.reviewedAt ? date(presentation.reviewedAt) : "date unavailable"}`);
+      out.push(`  - Covered tickets: ${presentation.coveredItemIds.length ? presentation.coveredItemIds.map(markdownInlineText).join(", ") : "none"}`);
+      out.push(`  - Additional tickets retained separately: ${presentation.additionalItemIds.length ? presentation.additionalItemIds.map(markdownInlineText).join(", ") : "none"}`);
+    }
     out.push("  - Original statement (verbatim from frozen snapshot):");
-    out.push(...markdownBlockquoteLines(estimate.excerpt ?? estimate.statement, "    "));
-    out.push(`  - Raw estimate: ${estimate.rawEstimate} · immutable snapshot ${estimate.contextSnapshotId}`);
+    out.push(...markdownBlockquoteLines(presentation.originalQuote, "    "));
+    out.push(`  - Raw assertion: ${markdownInlineText(presentation.rawAssertion)} · immutable snapshot ${markdownInlineText(presentation.contextSnapshotId)}`);
   }
   return out;
 }
@@ -143,7 +152,6 @@ function moduleMarkdown(id: BriefModuleId, density: ModuleDensity, brief: Decisi
           out.push(`- **${outlook.name}** — P50 ${date(outlook.likelyDate)} (P10–P90 ${date(outlook.earliestDate)}–${date(outlook.latestDate)}) · ${number(outlook.staffingFte)} FTE · ${outlook.contributors.map((person) => `${person.name} ${number(person.fte)}`).join(", ")} · ${basis}`);
         }
       }
-      out.push(...capabilityEstimateMarkdown(brief));
       break;
     }
     case "capacity": {
@@ -199,6 +207,7 @@ export function renderAudienceBriefMarkdown(brief: DecisionBriefV1, inputRecipe:
     "",
   ];
   for (const item of presentation.modules) out.push(...moduleMarkdown(item.id, item.density, brief, presentation.recipe));
+  out.push(...capabilityEstimateMarkdown(brief));
   out.push("---", `Immutable ${brief.version} + ${presentation.version} · ${briefPayloadFingerprint(brief)} · generated ${brief.identity.generatedAt}`);
   return out.join("\n");
 }

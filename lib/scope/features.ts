@@ -25,7 +25,12 @@
 import type { ScopeWorkItem } from "@/lib/instrument/useProject";
 import type { CompletedWork } from "@/lib/forecast/compute";
 import type { ShapeCapability } from "@/lib/scope/productShape";
-import type { AcceptedCapabilityEstimate, CapabilityKnowledgeEstimate } from "@/lib/scope/knowledgeEstimates";
+import {
+  reviewedCapabilityEstimate,
+  type AcceptedCapabilityEstimate,
+  type CapabilityKnowledgeEstimate,
+  type ReviewedCapabilityEstimateResult,
+} from "@/lib/scope/knowledgeEstimates";
 import {
   forecastCapability,
   type CapabilityForecastOutlook,
@@ -84,10 +89,16 @@ export interface Feature {
   /** The knowledge estimate replacing this capability's ticket rollup in
       the current Scenario, if any. */
   activeKnowledgeEstimate: CapabilityKnowledgeEstimate | null;
+  /** A pre-v2 Scenario assumption retained visibly but excluded from math
+      until its interpretation and exact boundary are reviewed. */
+  stagedKnowledgeEstimateReviewRequired?: CapabilityKnowledgeEstimate | null;
+  stagedKnowledgeEstimateMissing?: boolean;
   /** The durable, operator-accepted remaining-work assertion used by
       canonical Reality when no Scenario estimate supersedes it. */
   acceptedKnowledgeEstimate: AcceptedCapabilityEstimate | null;
-  estimateBasis: "work_rollup" | "knowledge_provisional" | "knowledge_accepted";
+  /** The adapter is the sole authority for publishability and drift. */
+  acceptedKnowledgeReview?: ReviewedCapabilityEstimateResult;
+  estimateBasis: "work_rollup" | "knowledge_provisional" | "knowledge_accepted" | "knowledge_review_required";
   /** Scenario-only named focus assumption and its isolated card outlook. */
   staffingPlan: CapabilityStaffingPlan | null;
   capabilityForecast: CapabilityForecastOutlook | null;
@@ -184,7 +195,10 @@ function summarise(
     accepted,
     knowledgeEstimates: [],
     activeKnowledgeEstimate: null,
+    stagedKnowledgeEstimateReviewRequired: null,
+    stagedKnowledgeEstimateMissing: false,
     acceptedKnowledgeEstimate: null,
+    acceptedKnowledgeReview: null,
     estimateBasis: "work_rollup",
     staffingPlan: null,
     capabilityForecast: null,
@@ -385,10 +399,29 @@ export function composeScopeFeatures(
     });
     const id = `capability:${capability.id}`;
     const override = knowledgeEstimateOverrides[capability.id];
-    const activeKnowledgeEstimate = override
+    const stagedKnowledgeEstimateReviewRequired = override
       ? capability.knowledgeEstimates?.find((estimate) => estimate.id === override.estimateId && estimate.contextSnapshotId === override.contextSnapshotId) ?? null
       : null;
-    const acceptedKnowledgeEstimate = capability.acceptedEstimate ?? null;
+    // Raw source evidence has no reviewed ticket boundary. Retain its staged
+    // state for recovery UI, but never let it change a simulation.
+    const activeKnowledgeEstimate = null;
+    const acceptedKnowledgeReview = reviewedCapabilityEstimate(
+      capability.acceptedEstimate,
+      mappedItems.map((item) => item.id),
+      capability.knowledgeEstimates ?? [],
+    );
+    const acceptedKnowledgeEstimate = acceptedKnowledgeReview?.estimate ?? null;
+    const acceptedModeled = acceptedKnowledgeReview?.status === "reviewed"
+      ? {
+          range: acceptedKnowledgeReview.range,
+          additionalItemIds: acceptedKnowledgeReview.additionalItemIds,
+        }
+      : acceptedKnowledgeReview?.exploration
+        ? {
+            range: acceptedKnowledgeReview.exploration.range,
+            additionalItemIds: acceptedKnowledgeReview.exploration.additionalItemIds,
+          }
+        : null;
     const base = summarise(
       id,
       capability.name,
@@ -400,11 +433,26 @@ export function composeScopeFeatures(
       null,
       bypassedFeatureIds.has(id),
       true,
-      activeKnowledgeEstimate || acceptedKnowledgeEstimate ? {} : estimateOverrides,
+      activeKnowledgeEstimate || acceptedModeled ? {} : estimateOverrides,
     );
+    const additionalRange = acceptedModeled
+      ? mappedItems
+          .filter((item) => acceptedModeled.additionalItemIds.includes(item.id))
+          .reduce<ThreePoint>((sum, item) => ({
+            low: sum.low + item.low,
+            likely: sum.likely + item.likely,
+            high: sum.high + item.high,
+          }), { low: 0, likely: 0, high: 0 })
+      : { low: 0, likely: 0, high: 0 };
     const range = activeKnowledgeEstimate
       ? { low: override.low, likely: override.likely, high: override.high }
-      : acceptedKnowledgeEstimate?.range ?? base.range;
+      : acceptedModeled
+        ? {
+            low: acceptedModeled.range.low + additionalRange.low,
+            likely: acceptedModeled.range.likely + additionalRange.likely,
+            high: acceptedModeled.range.high + additionalRange.high,
+          }
+        : base.range;
     const effortDays = expectedDays(range);
     const staffingPlan = capabilityStaffingById[capability.id] ?? null;
     return {
@@ -413,19 +461,27 @@ export function composeScopeFeatures(
       canonicalCapability: capability,
       knowledgeEstimates: capability.knowledgeEstimates ?? [],
       activeKnowledgeEstimate,
+      stagedKnowledgeEstimateReviewRequired,
+      stagedKnowledgeEstimateMissing: Boolean(override && !stagedKnowledgeEstimateReviewRequired),
       acceptedKnowledgeEstimate,
-      estimateBasis: activeKnowledgeEstimate
-        ? "knowledge_provisional" as const
-        : acceptedKnowledgeEstimate
+      acceptedKnowledgeReview,
+      estimateBasis: stagedKnowledgeEstimateReviewRequired
+        ? "knowledge_review_required" as const
+        : acceptedKnowledgeReview?.status === "reviewed"
           ? "knowledge_accepted" as const
+          : acceptedKnowledgeReview?.status === "review_required"
+            ? "knowledge_review_required" as const
           : "work_rollup" as const,
       range,
       effortDays,
       loadDays: effortDays / (capacity > 0 ? capacity : 1),
       uncertainty: effortDays > 0 ? (range.high - range.low) / effortDays : 0,
-      placeholderCount: activeKnowledgeEstimate || acceptedKnowledgeEstimate ? 0 : base.placeholderCount,
+      placeholderCount: activeKnowledgeEstimate || acceptedModeled
+        ? mappedItems.filter((item) => acceptedModeled?.additionalItemIds.includes(item.id)
+          && (item.estimateSource === "issue_placeholder" || item.estimateSource === "finding_placeholder")).length
+        : base.placeholderCount,
       staffingPlan,
-      capabilityForecast: staffingPlan && startDate
+      capabilityForecast: staffingPlan && startDate && acceptedKnowledgeReview?.status !== "review_required" && !stagedKnowledgeEstimateReviewRequired
         ? forecastCapability(capability.id, range, staffingPlan, startDate, targetDate)
         : null,
     };

@@ -25,7 +25,7 @@ import { computeMomentumTrend, type MomentumTrend } from "@/lib/momentum/trend";
 import { realityRevision, subscribeReality } from "@/lib/instrument/reality";
 import { formatDateOnly } from "@/lib/time/dateContract";
 import type { ForecastCoverageContract } from "@/lib/forecast/coverage";
-import { knowledgeEstimateItemId, substituteCapabilityKnowledgeEstimates, type AcceptedCapabilityEstimate, type CapabilityKnowledgeEstimate } from "@/lib/scope/knowledgeEstimates";
+import { acceptedEstimateIdentity, knowledgeEstimateItemId, substituteCapabilityKnowledgeEstimates, type AcceptedCapabilityEstimate, type CapabilityKnowledgeEstimate, type ReviewedCapabilityEstimateResult } from "@/lib/scope/knowledgeEstimates";
 import type { CapabilityStaffingPlan } from "@/lib/scope/capabilityForecast";
 
 // The provenance the Scope instrument reads. Produced by describeItems in
@@ -106,6 +106,7 @@ export interface ProjectScope {
     workLinks: { id: string; provider: string; externalId: string; externalUrl: string | null; state: string }[];
     knowledgeEstimates: CapabilityKnowledgeEstimate[];
     acceptedEstimate: AcceptedCapabilityEstimate | null;
+    estimateReview: ReviewedCapabilityEstimateResult;
   }[];
   openShapeQuestions: { id: string; title: string; rationale: string | null; status: string }[];
 }
@@ -611,37 +612,14 @@ export function useProject(): ProjectModel {
                 ...capability.workLinks
                   .filter((link) => (link.state === "active" || link.state === "configured") && sourceItemIds.has(link.externalId))
                   .map((link) => link.externalId),
-                ...(capability.acceptedEstimate
-                  ? [knowledgeEstimateItemId(capability.id, capability.acceptedEstimate.id, capability.acceptedEstimate.contextSnapshotId)]
+                ...(capability.estimateReview?.estimate && (capability.estimateReview.status === "reviewed" || capability.estimateReview.exploration)
+                  ? (() => { const identity = acceptedEstimateIdentity(capability.estimateReview.estimate); return [knowledgeEstimateItemId(capability.id, identity.estimateId, identity.contextSnapshotId)]; })()
                   : []),
               ]));
-            const knowledgeSubstitutions = Object.entries(scenario.knowledgeEstimateByCapabilityId)
-              .flatMap(([capabilityId, estimate]) => {
-                const capability = fullScope?.capabilities.find((candidate) => candidate.id === capabilityId);
-                const currentEvidence = capability?.knowledgeEstimates.find((candidate) =>
-                  candidate.id === estimate.estimateId && candidate.contextSnapshotId === estimate.contextSnapshotId
-                );
-                if (!capability || !currentEvidence?.range || scenario.bypassedFeatureIds.has(`capability:${capabilityId}`)) return [];
-                const proposedIds = proposed
-                  .filter((selection) => selection.targetCapabilityId === capabilityId)
-                  .flatMap((selection) => selection.itemIds);
-                return [{
-                  capabilityId,
-                  estimateId: estimate.estimateId,
-                  contextSnapshotId: estimate.contextSnapshotId,
-                  range: { low: estimate.low, likely: estimate.likely, high: estimate.high },
-                  replacedItemIds: [
-                    ...capability.workLinks
-                      .filter((link) => (link.state === "active" || link.state === "configured") && sourceItemIds.has(link.externalId))
-                      .map((link) => link.externalId),
-                    ...(capability.acceptedEstimate
-                      ? [knowledgeEstimateItemId(capabilityId, capability.acceptedEstimate.id, capability.acceptedEstimate.contextSnapshotId)]
-                      : []),
-                    ...proposedIds,
-                  ],
-                  capabilityName: capability.name,
-                }];
-              });
+            // Pre-v2 raw-evidence assumptions carry no reviewed covered vs
+            // additional boundary. Preserve their Scenario state for visible
+            // recovery, but fail closed: they cannot alter new simulations.
+            const knowledgeSubstitutions: Parameters<typeof substituteCapabilityKnowledgeEstimates>[1] = [];
             const baseItems = [
               ...s.items,
               ...(fullScope?.executionItems ?? [])

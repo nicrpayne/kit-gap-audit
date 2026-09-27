@@ -16,6 +16,9 @@ import { buildBriefPresentation, buildInteractiveBriefBundle, siteHandoffPrompt 
 import { dateDeltaPhrase } from "../lib/momentum/compute";
 import { forecastAssumptionSnapshot } from "../lib/forecast/claims";
 import { freezeCapabilityEstimate, freezeForecastBasis } from "../lib/reports/forecastBasis";
+import { capabilityEstimatePresentation } from "../lib/reports/capabilityEstimatePresentation";
+import type { AcceptedCapabilityEstimateV2 } from "../lib/scope/knowledgeEstimates";
+import { escapeMarkdownText, markdownInlineText } from "../lib/reports/markdown";
 import { healthyOwnerFixture, missingNamedCapacityFixture, pivotPrototypeFixture, ungatedDecisionFixture } from "./lib/decision-brief-fixtures";
 
 const audiences = Object.keys(AUDIENCE_LABELS) as AudienceLens[];
@@ -118,13 +121,84 @@ traceableFixture.forecast.basis = freezeForecastBasis([], [freezeCapabilityEstim
   },
   ["SOF-919", "SOF-920"],
 )]);
+const hostileCapabilityName = "Reviewed capability\n## Forged capability [link](https://evil.example)";
+const hostileInterpretation = "The quote is remaining work.\n## Forged interpretation\n<script>alert('review')</script>";
+const hostileReviewer = "Delivery lead\n- forged reviewer";
+const hostileRawAssertion = "5 developer-days remaining\n# Forged raw assertion";
+const hostileCoveredId = "SOF-COVERED\n## forged covered";
+const hostileAdditionalId = "SOF-ADDITIONAL\n[click](https://evil.example)";
+const reviewedV2 = {
+  version: "accepted-capability-estimate.v2",
+  source: {
+    contextSnapshotId: "ctx-reviewed", intelligenceObjectId: "estimate-reviewed", passageId: "passage-reviewed",
+    sourceRef: "refinement-reviewed", exactQuote: "Five developer-days remain for the reviewed boundary.",
+    surroundingContext: null, externalRef: null, sourceUrl: null, statement: "Five days remain.",
+    rawEstimateText: hostileRawAssertion, rawUnit: "developer_days", rawValues: [5], rawShape: "single",
+    speaker: "Developer", observedAt: "2026-09-03T13:00:00.000Z", currentnessAtReview: "current",
+    supersedes: [], supersededBy: [],
+  },
+  interpretation: {
+    sourceWorkMeaning: "remaining", modeledBasis: "remaining_capability", modeledUnit: "developer_days",
+    range: { low: 4, likely: 5, high: 7 }, rangeOrigin: { low: "operator", likely: "verbatim", high: "operator" },
+    rationale: hostileInterpretation,
+    quoteSupportsInterpretation: true,
+    policy: { progress: "manual_remaining_no_status_discount.v1", capacity: "pooled_effective_fte.v1", calendar: "calendar_days.v1" },
+  },
+  boundary: {
+    capabilityId: "cap-reviewed", capabilityRevisionAtReview: 3,
+    coveredOpenItemIds: [hostileCoveredId], additionalOpenItemIds: [hostileAdditionalId],
+    reviewedLinkFingerprint: "estimate-boundary.v1:fixture", reviewedAt: "2026-09-04T12:00:00.000Z", boundaryStatement: null,
+  },
+  acceptance: { acceptedAt: "2026-09-04T12:00:00.000Z", reviewer: { id: null, displayName: hostileReviewer } },
+} as AcceptedCapabilityEstimateV2;
+traceableFixture.forecast.basis.capabilityEstimates.push(freezeCapabilityEstimate(
+  "jsa",
+  { id: "cap-reviewed", name: hostileCapabilityName, revision: 3 },
+  reviewedV2,
+  ["SOF-COVERED"],
+  "reviewed",
+  {
+    status: "reviewed",
+    interpretation: reviewedV2.interpretation.rationale,
+    reviewedBy: reviewedV2.acceptance.reviewer.displayName,
+    reviewedAt: reviewedV2.boundary.reviewedAt,
+    coveredItemIds: reviewedV2.boundary.coveredOpenItemIds,
+    additionalItemIds: reviewedV2.boundary.additionalOpenItemIds,
+    usedInSimulation: true,
+    reviewRequiredReason: null,
+  },
+));
 const traceableBrief = assembleDecisionBrief(traceableFixture);
 const traceableOutput = renderAudienceBriefMarkdown(traceableBrief, buildBriefRecipe("operator", "delivery-review", traceableBrief));
 const traceableDecisionOutput = renderDecisionBriefMarkdown(traceableBrief);
+const reviewedEstimateQuote = reviewedV2.source.exactQuote;
+const renderedReviewedEstimateQuote = escapeMarkdownText(reviewedEstimateQuote);
+const occurrences = (text: string, needle: string) => text.split(needle).length - 1;
+const defaultSavedRecipe = buildBriefRecipe("delivery-leadership", "weekly-update", traceableBrief);
+assert(!defaultSavedRecipe.modules.some((module) => module.id === "scope"), "default saved recipe reproduces the no-Scope provenance boundary");
+assert.equal(occurrences(renderAudienceBriefMarkdown(traceableBrief, defaultSavedRecipe), renderedReviewedEstimateQuote), 1, "default saved Markdown exposes the frozen estimate quote exactly once without Scope");
+assert.equal(occurrences(renderAudienceBriefPlainText(traceableBrief, defaultSavedRecipe), renderedReviewedEstimateQuote), 1, "default saved plain text exposes the frozen estimate quote exactly once without Scope");
+for (const audience of audiences) {
+  for (const purpose of purposes) {
+    const recipe = buildBriefRecipe(audience, purpose, traceableBrief);
+    assert.equal(occurrences(renderAudienceBriefMarkdown(traceableBrief, recipe), renderedReviewedEstimateQuote), 1, `${audience}/${purpose}: Markdown estimate provenance exactly once`);
+    assert.equal(occurrences(renderAudienceBriefPlainText(traceableBrief, recipe), renderedReviewedEstimateQuote), 1, `${audience}/${purpose}: plain-text estimate provenance exactly once`);
+  }
+}
+const scenarioCountBrief = structuredClone(traceableBrief);
+scenarioCountBrief.identity.mode = "scenario";
+scenarioCountBrief.movable.scope.value.executableItemCount = 10;
+scenarioCountBrief.movable.scope.value.simulationItemCount = 9;
+const scenarioScopeDriver = buildBriefPresentation(
+  scenarioCountBrief,
+  buildBriefRecipe("delivery-leadership", "weekly-update", scenarioCountBrief),
+).drivers.find((driver) => driver.family === "scope");
+assert.equal(scenarioScopeDriver?.label, "9 simulated estimate-basis items", "Why this date names the active Scenario model, not the unchanged source census");
+assert.match(scenarioScopeDriver?.detail ?? "", /10 tracked source tickets/, "Scenario driver retains the distinct source-ticket census");
 assert(traceableOutput.includes("Forecast assumptions · forecast-assumptions.v1"));
 assert(traceableOutput.includes("Modeled durations are added as calendar days"));
 assert(traceableOutput.includes("11 simulated estimate-basis items"));
-assert.equal(traceableBrief.forecast?.basis?.capabilityEstimates[0].estimate.excerpt, hostileEstimateExcerpt, "frozen JSON retains the exact original quote");
+assert.equal(capabilityEstimatePresentation(traceableBrief.forecast!.basis!.capabilityEstimates[0]).originalQuote, hostileEstimateExcerpt, "frozen JSON retains the exact original quote");
 for (const output of [traceableOutput, traceableDecisionOutput]) {
   assert(output.includes("> \\# Executive override"), "each original line renders inside an escaped blockquote");
   assert(output.includes("> \\[click here\\]\\(https://example\\.test\\)"), "link syntax cannot become an active link");
@@ -134,7 +208,23 @@ for (const output of [traceableOutput, traceableDecisionOutput]) {
   assert(!output.includes("\n# Executive override"), "quote cannot inject a heading");
   assert(!output.includes("[click here](https://example.test)"), "quote cannot inject a Markdown link");
   assert(!output.includes("<script>"), "quote cannot inject raw HTML");
+  assert(output.includes("REVIEWED remaining capability"), "reviewed-v2 authority and modeled basis are visible");
+  assert(output.includes(`Reviewed interpretation: ${markdownInlineText(hostileInterpretation)}`));
+  assert(output.includes(`Reviewer ${markdownInlineText(hostileReviewer)}`));
+  assert(output.includes(`Covered tickets: ${markdownInlineText(hostileCoveredId)}`));
+  assert(output.includes(`Additional tickets retained separately: ${markdownInlineText(hostileAdditionalId)}`));
+  assert(output.includes(`Raw assertion: ${markdownInlineText(hostileRawAssertion)}`));
+  assert(output.includes(markdownInlineText(hostileCapabilityName)));
+  assert(!output.includes("\n## Forged"), "inline frozen fields cannot inject Markdown headings");
+  assert(!output.includes("[link](https://evil.example)"), "inline frozen fields cannot inject Markdown links");
+  assert(!output.includes("<script>alert('review')</script>"), "inline frozen fields cannot inject raw HTML");
 }
+const frozenReviewed = traceableBrief.forecast!.basis!.capabilityEstimates.find((record) => record.capabilityId === "cap-reviewed")!;
+assert.equal(frozenReviewed.review?.interpretation, hostileInterpretation, "frozen JSON keeps the exact multiline interpretation");
+assert.equal(frozenReviewed.review?.reviewedBy, hostileReviewer, "frozen JSON keeps the exact reviewer label");
+assert.deepEqual(frozenReviewed.review?.coveredItemIds, [hostileCoveredId], "frozen JSON keeps the exact reviewed boundary");
+assert("version" in frozenReviewed.estimate && frozenReviewed.estimate.version === "accepted-capability-estimate.v2");
+assert.equal(frozenReviewed.estimate.source.rawEstimateText, hostileRawAssertion, "frozen JSON keeps the exact raw assertion");
 assert(traceableOutput.includes("/audit?project=jsa&amp;select=passage%3Actx-estimate%3Apassage-docufy") || traceableOutput.includes("/audit?project=jsa&select=passage%3Actx-estimate%3Apassage-docufy"));
 
 const missingCapacityBrief = assembleDecisionBrief(missingNamedCapacityFixture());

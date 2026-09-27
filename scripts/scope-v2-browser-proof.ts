@@ -2,8 +2,10 @@ import assert from "node:assert/strict";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { chromium, webkit, type BrowserContext, type Page } from "playwright";
+import { estimateBoundaryFingerprint } from "@/lib/scope/knowledgeEstimates";
 
 const baseURL = process.env.SIGNAL_PROOF_URL ?? "http://localhost:3311";
+const proofPassword = process.env.SIGNAL_PROOF_PASSWORD;
 const repoOut = resolve("artifacts/scope-v2-browser-proof");
 const deliverableOut = process.env.SIGNAL_SCOPE_V2_OUTPUT_DIR ?? repoOut;
 mkdirSync(repoOut, { recursive: true });
@@ -17,6 +19,7 @@ const work = (id: string, index: number) => ({
 });
 const linked = [work("SOF-100", 0), work("SOF-101", 1)];
 const executionItems = [...linked, ...workIds.map(work)];
+const fixtureForecastItems = [...linked, executionItems.find((item) => item.id === "SOF-912")!];
 const cap = (id: string, name: string, status: string, externalIds: string[] = []) => ({
   id, name, description: `${name} product outcome`, status, revision: 3, sortOrder: 0, updatedAt: "2026-09-15T18:00:00.000Z", workLinkCount: externalIds.length,
   provenance: { authority: "Scope", source: "operator", assertion: "Accepted product-shape truth", evidence: [{ ref: "context:jsa" }] },
@@ -24,9 +27,143 @@ const cap = (id: string, name: string, status: string, externalIds: string[] = [
   workLinks: externalIds.map((externalId) => ({ id: `link-${id}-${externalId}`, provider: "linear", externalId, externalUrl: `https://linear.example/${externalId}`, state: "active" })),
   knowledgeEstimates: [], acceptedEstimate: null,
 });
+const acceptedSourceEstimate = {
+  id: "estimate-accepted",
+  contextSnapshotId: "snapshot-jsa",
+  capabilityId: "crew",
+  rawEstimate: "5–8 developer days remaining",
+  rawUnit: "developer_days",
+  rawValues: [5, 8],
+  rawShape: "bounds",
+  sourceWorkMeaning: "remaining",
+  currentness: "current",
+  supersedes: [],
+  supersededBy: [],
+  passages: [{
+    id: "passage-accepted",
+    sourceRef: "fixture:accepted-refinement",
+    exactQuote: "Five to eight developer days remain for crew acknowledgment.",
+    externalRef: null,
+    sourceUrl: null,
+    surroundingContext: "Deterministic mocked browser read fixture.",
+  }],
+  range: null,
+  unit: "unsupported",
+  basis: "review_required",
+  speaker: "Fixture engineer",
+  owner: null,
+  observedAt: "2026-09-12T15:00:00.000Z",
+  sourceRef: "fixture:accepted-refinement",
+  excerpt: "Five to eight developer days remain for crew acknowledgment.",
+  evidenceRefs: ["passage-accepted"],
+  statement: "Accepted crew estimate source assertion",
+  confidence: "fixture",
+  sourceLocator: { externalRef: null, sourceUrl: null, surroundingContext: "Deterministic mocked browser read fixture." },
+};
+const reviewCandidateEstimate = {
+  ...acceptedSourceEstimate,
+  id: "estimate-review-bounds",
+  rawEstimate: "8–13 developer days",
+  rawValues: [8, 13],
+  sourceWorkMeaning: "unknown",
+  passages: [
+    {
+      id: "passage-context",
+      sourceRef: "fixture:review-context",
+      exactQuote: "The refinement covered the crew acknowledgment workflow.",
+      externalRef: null,
+      sourceUrl: null,
+      surroundingContext: "Context only; not the selected estimate passage.",
+    },
+    {
+      id: "passage-selected",
+      sourceRef: "fixture:review-estimate",
+      exactQuote: "Crew acknowledgment is eight to thirteen developer days.",
+      externalRef: null,
+      sourceUrl: null,
+      surroundingContext: "Deterministic mocked browser read fixture.",
+    },
+  ],
+  observedAt: "2026-09-15T16:00:00.000Z",
+  sourceRef: "fixture:review-context",
+  excerpt: "The refinement covered the crew acknowledgment workflow.",
+  evidenceRefs: ["passage-context", "passage-selected"],
+  statement: "Unreviewed bounds with unknown remaining-versus-total meaning",
+};
+const historicalEstimate = {
+  ...acceptedSourceEstimate,
+  id: "estimate-historical",
+  rawEstimate: "one sprint",
+  rawUnit: "sprints",
+  rawValues: [1],
+  rawShape: "single",
+  sourceWorkMeaning: "unknown",
+  currentness: "historical",
+  passages: [{
+    id: "passage-historical",
+    sourceRef: "fixture:older-refinement",
+    exactQuote: "An older refinement called this one sprint.",
+    externalRef: null,
+    sourceUrl: null,
+    surroundingContext: "Deterministic mocked browser read fixture.",
+  }],
+  observedAt: "2026-08-20T15:00:00.000Z",
+  sourceRef: "fixture:older-refinement",
+  excerpt: "An older refinement called this one sprint.",
+  evidenceRefs: ["passage-historical"],
+  statement: "Historical sprint assertion",
+};
+const acceptedEstimate = {
+  version: "accepted-capability-estimate.v2",
+  source: {
+    contextSnapshotId: acceptedSourceEstimate.contextSnapshotId,
+    intelligenceObjectId: acceptedSourceEstimate.id,
+    passageId: "passage-accepted",
+    sourceRef: "fixture:accepted-refinement",
+    exactQuote: "Five to eight developer days remain for crew acknowledgment.",
+    surroundingContext: "Deterministic mocked browser read fixture.",
+    externalRef: null,
+    sourceUrl: null,
+    statement: acceptedSourceEstimate.statement,
+    rawEstimateText: acceptedSourceEstimate.rawEstimate,
+    rawUnit: "developer_days",
+    rawValues: [5, 8],
+    rawShape: "bounds",
+    declaredWorkMeaningAtReview: "remaining",
+    speaker: "Fixture engineer",
+    observedAt: "2026-09-12T15:00:00.000Z",
+    currentnessAtReview: "current",
+    supersedes: [],
+    supersededBy: [],
+  },
+  interpretation: {
+    sourceWorkMeaning: "remaining",
+    modeledBasis: "remaining_capability",
+    modeledUnit: "developer_days",
+    range: { low: 5, likely: 6.5, high: 8 },
+    rangeOrigin: { low: "verbatim", likely: "operator", high: "verbatim" },
+    rationale: "Fixture reviewer entered the likely value without inferring a midpoint.",
+    quoteSupportsInterpretation: true,
+    policy: { progress: "manual_remaining_no_status_discount.v1", capacity: "pooled_effective_fte.v1", calendar: "calendar_days.v1" },
+  },
+  boundary: {
+    capabilityId: "crew",
+    capabilityRevisionAtReview: 3,
+    coveredOpenItemIds: ["SOF-100"],
+    additionalOpenItemIds: ["SOF-101"],
+    reviewedLinkFingerprint: estimateBoundaryFingerprint("crew", ["SOF-100"], ["SOF-101"]),
+    reviewedAt: "2026-09-12T15:05:00.000Z",
+    boundaryStatement: null,
+  },
+  acceptance: { acceptedAt: "2026-09-12T15:05:00.000Z", reviewer: { id: null, displayName: "Fixture delivery lead" } },
+};
 const capabilities = [
-  cap("crew", "Crew acknowledgment", "accepted", linked.map((item) => item.id)),
-  cap("guidance", "Arc-Angel JSA guidance", "accepted"),
+  {
+    ...cap("crew", "Crew acknowledgment", "accepted", linked.map((item) => item.id)),
+    knowledgeEstimates: [reviewCandidateEstimate, acceptedSourceEstimate, historicalEstimate],
+    acceptedEstimate,
+  },
+  cap("guidance", "Arc-Angel JSA guidance", "accepted", ["SOF-912"]),
   cap("photo", "Photo upload", "accepted"),
   cap("notifications", "Notifications", "future"),
   cap("pdf", "PDF / Docufy output", "future"),
@@ -41,7 +178,7 @@ const coverage = {
 const payload = {
   startDate: "2026-09-15T00:00:00.000Z", forecastSource: { asOf: "2026-09-15T18:30:00.000Z", provider: "Linear", temporalRole: "live", availability: "available" },
   scopes: [{
-    scopeId: "visual-jsa", name: "JSA", targetDate: "2026-10-31T00:00:00.000Z", dependsOnScopeIds: [], items: linked, forecastItems: linked, executionItems, completedWork: [], gates: [], teamCapacity: 1,
+    scopeId: "visual-jsa", name: "JSA", targetDate: "2026-10-31T00:00:00.000Z", dependsOnScopeIds: [], items: fixtureForecastItems, forecastItems: fixtureForecastItems, executionItems, completedWork: [], gates: [], teamCapacity: 1,
     capacitySource: "inferred", explicitTeamCapacity: null, lastReport: null, reportHistory: [], capacityBasis: { kind: "inferred", assignees: ["JSA Team"], remainingIssueCount: 24, unassignedCount: 0 },
     capacityContract: { scopeId: "visual-jsa", workforceFte: 3, namedRawFte: 0, namedEffectiveFte: 0, forecastEffectiveFte: 1, source: "inferred", status: "legacy_inferred_unstaffed", reconciles: false },
     forecastSource: { asOf: "2026-09-15T18:30:00.000Z", provider: "Linear", temporalRole: "live", availability: "available" }, executionSource: { asOf: "2026-09-15T18:30:00.000Z", provider: "Linear", temporalRole: "live", availability: "available" },
@@ -82,9 +219,14 @@ const longProposal = {
   ],
 };
 
-async function installFixtures(page: Page, candidateProposal = longProposal) {
+async function installFixtures(page: Page, candidateProposal = longProposal, estimateReviewWrites: unknown[] = []) {
   await page.route("**/api/instrument/project", (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(payload) }));
   await page.route("**/api/scopes/visual-jsa/proposal", (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ proposal: candidateProposal, stale: false }) }));
+  await page.route("**/api/capabilities/crew/estimate", async (route) => {
+    if (route.request().method() !== "PUT") return route.fulfill({ status: 405, contentType: "application/json", body: JSON.stringify({ error: "Fixture accepts reviewed PUT only." }) });
+    estimateReviewWrites.push(route.request().postDataJSON());
+    return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ capability: capabilities[0], changed: true, derived: null }) });
+  });
 }
 
 function trackProposalRequests(context: BrowserContext, requests: string[]) {
@@ -94,13 +236,50 @@ function trackProposalRequests(context: BrowserContext, requests: string[]) {
   });
 }
 
+type ProofAuthentication = "not_required" | "server_cookie" | "loopback_http_cookie_clone";
+
+async function authenticate(context: BrowserContext): Promise<ProofAuthentication> {
+  if (!proofPassword) return "not_required";
+  const response = await context.request.post(`${baseURL}/api/login`, { data: { password: proofPassword } });
+  assert.equal(response.status(), 200, "local proof authentication must succeed");
+
+  const target = new URL(baseURL);
+  const sessionCookie = (await context.cookies(baseURL)).find((cookie) => cookie.name === "kit_session");
+  if (target.protocol === "https:" || (sessionCookie && !sessionCookie.secure)) return "server_cookie";
+
+  // Production correctly emits a Secure browser session cookie. WebKit will
+  // not send that cookie to a plain-http loopback fixture, while Chromium may
+  // treat loopback as a secure-context exception. Clone the server-issued
+  // token as non-Secure only for an explicit HTTP loopback proof. This changes
+  // no application auth policy and cannot target a remote host.
+  assert.equal(target.protocol, "http:", "only an HTTP loopback proof may clone the production Secure cookie");
+  assert.ok(["127.0.0.1", "localhost", "[::1]"].includes(target.hostname), "cookie cloning is restricted to an explicit loopback fixture");
+  const setCookie = response.headers()["set-cookie"] ?? "";
+  const token = sessionCookie?.value ?? setCookie.match(/(?:^|[,;]\s*)kit_session=([^;,\s]+)/)?.[1] ?? "";
+  assert.match(token, /^[a-f0-9]{64}$/, "the loopback clone must use the exact server-issued session token");
+  await context.addCookies([{
+    name: "kit_session",
+    value: token,
+    url: target.origin,
+    httpOnly: true,
+    secure: false,
+    sameSite: "Lax",
+  }]);
+  const cloned = (await context.cookies(baseURL)).find((cookie) => cookie.name === "kit_session");
+  assert.ok(cloned && !cloned.secure && cloned.value === token, "the loopback-only proof cookie must be available to page navigation");
+  return "loopback_http_cookie_clone";
+}
+
 async function main() {
   const browser = await chromium.launch({ headless: true });
   const requests: string[] = [];
+  const estimateReviewWrites: unknown[] = [];
+  const authenticationModes: ProofAuthentication[] = [];
   const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, colorScheme: "dark" });
+  authenticationModes.push(await authenticate(context));
   trackProposalRequests(context, requests);
   const page = await context.newPage();
-  await installFixtures(page);
+  await installFixtures(page, longProposal, estimateReviewWrites);
   await page.goto(`${baseURL}/scope?project=visual-jsa`);
   await page.locator('[data-shoot="reconciliation-workspace"]').waitFor();
   await page.waitForTimeout(700);
@@ -156,7 +335,101 @@ async function main() {
   assert.equal(await page.locator('[data-shoot="attached-evidence-list"]').getByText("context:jsa", { exact: true }).isVisible(), true, "the stored evidence reference should be inspectable");
   assert.equal(await page.locator('[data-capability="capability:crew"][data-selected="true"]').count(), 1, "selected capability remains unmistakable behind Focus");
   await page.screenshot({ path: resolve(deliverableOut, "scope-v2-capability-focus.png") });
-  await page.locator('[data-shoot="feature-detail"]').getByRole("button", { name: "Close" }).click();
+
+  await page.locator('[data-shoot="mode-estimate"]').click();
+  const acceptedReview = page.locator('[data-shoot="accepted-estimate-review-state"]');
+  assert.match(await acceptedReview.innerText(), /reviewed reality estimate/i);
+  assert.match(await acceptedReview.innerText(), /Five to eight developer days remain for crew acknowledgment/);
+  assert.match(await acceptedReview.innerText(), /5–6\.5–8 developer-days/);
+  assert.match(await acceptedReview.innerText(), /Fixture delivery lead[\s\S]*operator-entered label, not authenticated identity/);
+  const historicalCard = page.locator('[data-estimate-id="snapshot-jsa:estimate-historical"]');
+  assert.match(await historicalCard.innerText(), /Historical source/);
+  assert.match(await historicalCard.innerText(), /older refinement called this one sprint/i);
+
+  const candidateCard = page.locator('[data-estimate-id="snapshot-jsa:estimate-review-bounds"]');
+  assert.match(await candidateCard.innerText(), /bounds · developer days · work meaning unknown/i);
+  await candidateCard.locator('[data-shoot="review-knowledge-estimate"]').click();
+  const reviewForm = candidateCard.locator('[data-shoot="estimate-review-form"]');
+  await reviewForm.waitFor();
+  const rangeInputs = reviewForm.locator('input[type="number"]');
+  assert.equal(await rangeInputs.count(), 3);
+  assert.deepEqual(await rangeInputs.evaluateAll((inputs) => inputs.map((input) => (input as HTMLInputElement).value)), ["", "", ""], "bounds must not prefill low/likely/high or invent a midpoint");
+  assert.equal(await reviewForm.locator('input[name="meaning-estimate-review-bounds"]:checked').count(), 0, "unknown source meaning must not preselect remaining or total");
+  const supportingPassage = reviewForm.getByLabel("Supporting passage");
+  assert.equal(await supportingPassage.inputValue(), "", "no source passage is selected without review");
+  await supportingPassage.selectOption("passage-selected");
+  assert.equal(await supportingPassage.inputValue(), "passage-selected");
+  assert.match(await supportingPassage.locator('option:checked').innerText(), /Crew acknowledgment is eight to thirteen developer days/);
+  await reviewForm.locator('input[name="meaning-estimate-review-bounds"]').first().check();
+  await rangeInputs.nth(0).fill("13");
+  await rangeInputs.nth(1).fill("10");
+  await rangeInputs.nth(2).fill("8");
+  const reviewSelects = reviewForm.locator("select");
+  await reviewSelects.nth(1).selectOption("verbatim");
+  await reviewSelects.nth(2).selectOption("operator");
+  await reviewSelects.nth(3).selectOption("verbatim");
+  await reviewForm.getByPlaceholder("Required rationale for the remaining developer-day interpretation").fill("Fixture reviewer explicitly interpreted the selected quote as remaining developer effort; no midpoint or progress discount was inferred.");
+  await reviewForm.locator('[data-review-item-id="SOF-100"]').getByLabel("covered by range").check();
+  await reviewForm.locator('[data-review-item-id="SOF-101"]').getByLabel("additional work").check();
+  await reviewForm.getByPlaceholder("Reviewer label (typed, not authenticated identity)").fill("Browser fixture reviewer");
+  await reviewForm.getByRole("checkbox", { name: /I attest that the selected quote/ }).check();
+  const acceptReviewed = reviewForm.locator('[data-shoot="accept-reviewed-knowledge-estimate"]');
+  assert.equal(await acceptReviewed.isDisabled(), true, "an inverted range must remain invalid even after every other review field is complete");
+  await rangeInputs.nth(0).fill("8");
+  await rangeInputs.nth(1).fill("10");
+  await rangeInputs.nth(2).fill("13");
+  assert.equal(await acceptReviewed.isEnabled(), true, "a selected quote, explicit range, typed reviewer, attestation, and complete boundary enable acceptance");
+  await page.screenshot({ path: resolve(deliverableOut, "scope-v2-estimate-review-drawer.png") });
+  const reviewRequest = page.waitForRequest((request) => request.method() === "PUT" && request.url().endsWith("/api/capabilities/crew/estimate"));
+  await acceptReviewed.click();
+  await reviewRequest;
+  await page.waitForFunction(() => document.querySelector('[data-shoot="accept-reviewed-knowledge-estimate"]')?.hasAttribute("disabled") === false);
+  assert.equal(estimateReviewWrites.length, 1, "the mocked component proof records one acceptance request without claiming DB persistence");
+  const submitted = estimateReviewWrites[0] as {
+    estimateId: string;
+    contextSnapshotId: string;
+    review: { passageId: string; reviewerDisplayName: string; coveredOpenItemIds: string[]; additionalOpenItemIds: string[]; range: { low: number; likely: number; high: number } };
+  };
+  assert.equal(submitted.estimateId, "estimate-review-bounds");
+  assert.equal(submitted.contextSnapshotId, "snapshot-jsa");
+  assert.equal(submitted.review.passageId, "passage-selected", "the exact operator-selected passage must reach the write boundary");
+  assert.equal(submitted.review.reviewerDisplayName, "Browser fixture reviewer");
+  assert.deepEqual(submitted.review.coveredOpenItemIds, ["SOF-100"]);
+  assert.deepEqual(submitted.review.additionalOpenItemIds, ["SOF-101"]);
+  assert.deepEqual(submitted.review.range, { low: 8, likely: 10, high: 13 });
+  await page.locator('[data-shoot="feature-detail"]').getByRole("button", { name: "Close", exact: true }).click();
+
+  await page.locator('[data-capability="capability:guidance"]').click();
+  await page.locator('[data-shoot="mode-estimate"]').click();
+  await page.locator('[data-shoot="tune-estimate"]').first().click();
+  const preciseControls = page.locator('[data-shoot="precise-estimate-controls"]');
+  const ticketLow = preciseControls.getByLabel("Ticket estimate low");
+  const ticketLikely = preciseControls.getByLabel("Ticket estimate likely");
+  const ticketHigh = preciseControls.getByLabel("Ticket estimate high");
+  const applyTicketEstimate = page.getByRole("button", { name: "Apply ticket estimate to Scenario" });
+  assert.deepEqual([await ticketLow.inputValue(), await ticketLikely.inputValue(), await ticketHigh.inputValue()], ["1", "2", "4"]);
+  await ticketLow.fill("");
+  await ticketLikely.fill("2");
+  await ticketHigh.fill("4");
+  assert.equal(await applyTicketEstimate.isDisabled(), true, "partial precise edits cannot mutate Scenario");
+  assert.match(await page.locator('[data-shoot="scenario-strip"]').innerText(), /reality/i);
+  await ticketLow.fill("4");
+  await ticketLikely.fill("2");
+  await ticketHigh.fill("3");
+  assert.equal(await applyTicketEstimate.isDisabled(), true, "out-of-order precise edits cannot mutate Scenario");
+  assert.match(await page.locator('[data-shoot="estimate-pad"]').locator("xpath=..").innerText(), /1 – 2 – 4d/);
+  await ticketLow.fill("1.5");
+  await ticketLikely.fill("2.5");
+  await ticketHigh.fill("5");
+  assert.equal(await applyTicketEstimate.isEnabled(), true);
+  await applyTicketEstimate.click();
+  assert.match(await page.locator('[data-shoot="scenario-strip"]').innerText(), /scenario/i);
+  assert.match(await page.locator('[data-shoot="estimate-pad"]').locator("xpath=..").innerText(), /1.5 – 2.5 – 5d/);
+  assert.match(await page.locator('[data-shoot="estimate-pad"]').locator("xpath=..").innerText(), /Reality: 1–2–4 developer-days/);
+  await page.getByRole("button", { name: "back to Reality", exact: true }).click();
+  await page.waitForFunction(() => (document.querySelector('[aria-label="Ticket estimate low"]') as HTMLInputElement | null)?.value === "1");
+  assert.match(await page.locator('[data-shoot="scenario-strip"]').innerText(), /reality/i);
+  await page.locator('[data-shoot="feature-detail"]').getByRole("button", { name: "Close", exact: true }).click();
 
   await page.locator('[data-proposal-item="proposal-notifications"]').click();
   await page.locator('[data-shoot="reconciliation-focus"]').waitFor();
@@ -169,7 +442,7 @@ async function main() {
   await page.waitForTimeout(250);
   await page.screenshot({ path: resolve(deliverableOut, "scope-v2-proposal-evidence-focus.png") });
   await page.locator('[data-shoot="stage-focused-proposal"]').click();
-  await page.locator('[data-shoot="reconciliation-focus"]').getByRole("button", { name: "Close" }).click();
+  await page.locator('[data-shoot="reconciliation-focus"]').getByRole("button", { name: "Close", exact: true }).click();
   assert.match(await page.locator('[data-shoot="scenario-strip"]').innerText(), /Scenario[\s\S]*1 intelligence proposal staged[\s\S]*Back to Reality/i);
   assert.match(await page.locator('[data-shoot="reconciliation-scenario-feedback"]').innerText(), /Scenario[\s\S]*1 reviewed change staged[\s\S]*Reality is unchanged/i);
   assert.match(await page.locator('[data-proposal-item="proposal-notifications"]').innerText(), /staged/i);
@@ -179,7 +452,7 @@ async function main() {
   assert.equal(await page.locator('[data-shoot="proposal-work-choice"]').first().getByRole("checkbox").isChecked(), false, "ticket selection must persist in the local Scenario");
   assert.match(await page.locator('[data-shoot="reconciliation-focus"]').innerText(), /4 selected items included in the active Scope Scenario/i);
   await page.locator('[data-shoot="stage-focused-proposal"]').getByText("Unstage change", { exact: true }).click();
-  await page.locator('[data-shoot="reconciliation-focus"]').getByRole("button", { name: "Close" }).click();
+  await page.locator('[data-shoot="reconciliation-focus"]').getByRole("button", { name: "Close", exact: true }).click();
   assert.match(await page.locator('[data-shoot="scenario-strip"]').innerText(), /Reality/);
   assert.equal(await page.locator('[data-shoot="reconciliation-scenario-feedback"]').count(), 0);
 
@@ -199,6 +472,7 @@ async function main() {
   assert.equal(await page.locator('[data-shoot="reconciliation-scenario-feedback"]').count(), 0, "reload returns to persisted Reality; local Scenario is not persisted");
 
   const isolatedContext = await browser.newContext({ viewport: { width: 1440, height: 900 }, colorScheme: "dark" });
+  authenticationModes.push(await authenticate(isolatedContext));
   trackProposalRequests(isolatedContext, requests);
   const isolatedPage = await isolatedContext.newPage();
   await installFixtures(isolatedPage);
@@ -209,6 +483,7 @@ async function main() {
   await isolatedContext.close();
 
   const zeroContext = await browser.newContext({ viewport: { width: 1440, height: 900 }, colorScheme: "dark" });
+  authenticationModes.push(await authenticate(zeroContext));
   trackProposalRequests(zeroContext, requests);
   const zeroPage = await zeroContext.newPage();
   const zeroEligibleProposal = { ...longProposal, items: longProposal.items.map((item) => ({ ...item, confidence: "medium" })) };
@@ -225,6 +500,7 @@ async function main() {
 
   const safari = await webkit.launch({ headless: true });
   const safariContext = await safari.newContext({ viewport: { width: 1728, height: 1117 }, colorScheme: "dark" });
+  authenticationModes.push(await authenticate(safariContext));
   trackProposalRequests(safariContext, requests);
   const safariPage = await safariContext.newPage();
   await installFixtures(safariPage);
@@ -242,7 +518,7 @@ async function main() {
 
   const proposalCommitRequests = requests.filter((request) => request.endsWith("/proposal/commit"));
   assert.deepEqual(proposalCommitRequests, [], "verification must never commit a proposal");
-  const result = { ok: true, proposalCards: 16, overviewMode: true, capabilityFocus: true, uncertaintyLabel: true, attachedEvidenceInspectable: true, releaseTitleVisible: true, releaseTitleGeometry, proposalEvidenceFocus: true, ticketLevelReconciliation: true, activeReleaseBoundary: "KIT JSA v1/governed_scope_project", releaseEvidenceInterpretationVisible: true, candidateGeometry, pointerScrollTop, keyboardCandidateAccess: true, manualStageAndUnstage: true, bulkEligibleCount: 4, zeroEligibleDisabledWithReason: true, scenarioFeedback: true, backToReality: true, reloadRealityPersistence: true, independentBrowserIsolation: true, safariLikeViewport: "1728x1117", safariCandidateVisible, truthBoundary: "forecast-not-ready/no-floor", horizontalOverflow: overflow, proposalCommitRequests: proposalCommitRequests.length };
+  const result = { ok: true, fixtureProvenance: "mocked browser read model and mocked estimate PUT; no database persistence provenance", authenticationModes: [...new Set(authenticationModes)], proposalCards: 16, overviewMode: true, capabilityFocus: true, uncertaintyLabel: true, attachedEvidenceInspectable: true, estimateReviewDrawer: { emptyRangeInputs: true, unknownMeaningUnselected: true, exactPassageSelected: submitted.review.passageId, invalidRangeDisabled: true, typedReviewer: submitted.review.reviewerDisplayName, coveredItemIds: submitted.review.coveredOpenItemIds, additionalItemIds: submitted.review.additionalOpenItemIds, acceptedSourceReadable: true, historicalSourceReadable: true, mockedWriteCount: estimateReviewWrites.length }, preciseTicketEstimate: { labeledInputs: true, partialDisabled: true, unorderedDisabled: true, appliedRange: { low: 1.5, likely: 2.5, high: 5 }, realityRangePreserved: { low: 1, likely: 2, high: 4 }, resetToReality: true }, releaseTitleVisible: true, releaseTitleGeometry, proposalEvidenceFocus: true, ticketLevelReconciliation: true, activeReleaseBoundary: "KIT JSA v1/governed_scope_project", releaseEvidenceInterpretationVisible: true, candidateGeometry, pointerScrollTop, keyboardCandidateAccess: true, manualStageAndUnstage: true, bulkEligibleCount: 4, zeroEligibleDisabledWithReason: true, scenarioFeedback: true, backToReality: true, reloadRealityPersistence: true, independentBrowserIsolation: true, safariLikeViewport: "1728x1117", safariCandidateVisible, truthBoundary: "forecast-not-ready/no-floor", horizontalOverflow: overflow, proposalCommitRequests: proposalCommitRequests.length };
   writeFileSync(resolve(repoOut, "browser-proof.json"), JSON.stringify(result, null, 2));
   console.log(JSON.stringify(result, null, 2));
   await browser.close();

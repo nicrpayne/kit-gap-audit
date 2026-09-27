@@ -1,7 +1,14 @@
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { invalidateDerivedReads, recomputeDerivedReads } from "@/lib/audit/derivedRefresh";
-import type { AcceptedCapabilityEstimate } from "@/lib/scope/knowledgeEstimates";
+import {
+  acceptedCapabilityEstimate,
+  acceptedEstimateIdentity,
+  estimateBoundaryFingerprint,
+  isAcceptedCapabilityEstimateV2,
+  type AcceptedCapabilityEstimate,
+  type EstimateReviewInput,
+} from "@/lib/scope/knowledgeEstimates";
 
 export const CAPABILITY_STATUSES = ["accepted", "outside", "future"] as const;
 export type CapabilityStatus = (typeof CAPABILITY_STATUSES)[number];
@@ -44,6 +51,57 @@ function plain(value: unknown): Record<string, unknown> {
 function required(value: unknown, label: string): string {
   if (typeof value !== "string" || !value.trim()) throw new ScopeRealityInputError(`${label} is required.`);
   return value.trim();
+}
+
+function eventAcceptedEstimate(afterState: unknown): AcceptedCapabilityEstimate | null {
+  if (!afterState || typeof afterState !== "object" || Array.isArray(afterState)) return null;
+  return acceptedCapabilityEstimate((afterState as Record<string, unknown>).acceptedEstimate);
+}
+
+function canonicalReplayIds(value: unknown): string[] {
+  return Array.isArray(value)
+    ? [...new Set(value.filter((item): item is string => typeof item === "string" && Boolean(item.trim()))
+      .map((item) => item.trim()))].sort()
+    : [];
+}
+
+function sameReplayIds(left: unknown, right: string[]): boolean {
+  if (!Array.isArray(left) || left.some((item) => typeof item !== "string" || !item.trim())) return false;
+  const normalized = canonicalReplayIds(left);
+  return normalized.length === left.length
+    && normalized.length === right.length
+    && normalized.every((id, index) => id === right[index]);
+}
+
+export interface CapabilityEstimateReplayIntent {
+  expectedRevision: number;
+  estimateId: string;
+  contextSnapshotId: string;
+  review: EstimateReviewInput;
+}
+
+function replayIntentMatchesAccepted(estimate: AcceptedCapabilityEstimate | null, intent: CapabilityEstimateReplayIntent): boolean {
+  if (!estimate || !isAcceptedCapabilityEstimateV2(estimate)) return false;
+  const review = intent.review;
+  if (!review || typeof review !== "object") return false;
+  const trimmed = (value: unknown) => typeof value === "string" && value.trim() ? value.trim() : null;
+  return estimate.source.intelligenceObjectId === intent.estimateId
+    && estimate.source.contextSnapshotId === intent.contextSnapshotId
+    && estimate.source.passageId === review.passageId
+    && estimate.boundary.capabilityRevisionAtReview === intent.expectedRevision
+    && estimate.interpretation.sourceWorkMeaning === review.sourceWorkMeaning
+    && estimate.interpretation.range.low === review.range?.low
+    && estimate.interpretation.range.likely === review.range?.likely
+    && estimate.interpretation.range.high === review.range?.high
+    && estimate.interpretation.rangeOrigin.low === review.rangeOrigin?.low
+    && estimate.interpretation.rangeOrigin.likely === review.rangeOrigin?.likely
+    && estimate.interpretation.rangeOrigin.high === review.rangeOrigin?.high
+    && estimate.interpretation.rationale === trimmed(review.rationale)
+    && review.quoteSupportsInterpretation === true
+    && sameReplayIds(review.coveredOpenItemIds, estimate.boundary.coveredOpenItemIds)
+    && sameReplayIds(review.additionalOpenItemIds, estimate.boundary.additionalOpenItemIds)
+    && estimate.boundary.boundaryStatement === trimmed(review.boundaryStatement)
+    && estimate.acceptance.reviewer.displayName === trimmed(review.reviewerDisplayName);
 }
 
 function status(value: unknown): CapabilityStatus {
@@ -333,13 +391,25 @@ export async function setCanonicalCapabilityEstimate(
   input: {
     expectedRevision: number;
     estimate: AcceptedCapabilityEstimate | null;
+    reviewedOpenItemIds?: string[];
+    expectedContextSnapshotId?: string;
     idempotencyKey: string;
   },
 ) {
   const idempotencyKey = required(input.idempotencyKey, "idempotencyKey");
+  const expectedAction = input.estimate?.version === "accepted-capability-estimate.v2"
+    ? "accept_estimate_v2"
+    : input.estimate ? "accept_knowledge_estimate" : "clear_knowledge_estimate";
   const result = await retrySerializable(() => prisma.$transaction(async (tx) => {
-    const prior = await tx.capabilityEvent.findUnique({ where: { idempotencyKey }, select: { capabilityId: true } });
+    const prior = await tx.capabilityEvent.findUnique({ where: { idempotencyKey }, select: { capabilityId: true, action: true, afterState: true } });
     if (prior) {
+      if (prior.capabilityId !== capabilityId || prior.action !== expectedAction) {
+        throw new ScopeRealityConflictError("That idempotency key belongs to a different capability write or action.");
+      }
+      const priorEstimate = eventAcceptedEstimate(prior.afterState);
+      if (input.estimate && JSON.stringify(priorEstimate) !== JSON.stringify(input.estimate)) {
+        throw new ScopeRealityConflictError("That idempotency key belongs to a different estimate acceptance request.");
+      }
       const capability = await tx.capability.findUniqueOrThrow({ where: { id: prior.capabilityId }, include: capabilityInclude });
       return { capability, scopeId: capability.scopeId, changed: false };
     }
@@ -347,8 +417,37 @@ export async function setCanonicalCapabilityEstimate(
     if (!Number.isInteger(input.expectedRevision) || input.expectedRevision !== before.revision) {
       throw new ScopeRealityConflictError(`This capability changed in another session (current revision ${before.revision}). Reload before saving.`);
     }
-    if (input.estimate && input.estimate.capabilityId !== before.id) {
+    if (input.estimate && acceptedEstimateIdentity(input.estimate).capabilityId !== before.id) {
       throw new ScopeRealityInputError("That estimate belongs to a different capability.");
+    }
+    if (input.estimate?.version === "accepted-capability-estimate.v2") {
+      if (!input.expectedContextSnapshotId || input.estimate.source.contextSnapshotId !== input.expectedContextSnapshotId) {
+        throw new ScopeRealityInputError("The reviewed estimate must name the immutable source snapshot it was opened from.");
+      }
+      const latestSnapshot = await tx.contextSnapshot.findFirst({
+        where: { scopeId: before.scopeId },
+        orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+        select: { id: true },
+      });
+      if (!latestSnapshot || latestSnapshot.id !== input.expectedContextSnapshotId) {
+        throw new ScopeRealityConflictError("Knowledge changed while this estimate was being reviewed. Reload Scope and review the current evidence.");
+      }
+      const covered = input.estimate.boundary.coveredOpenItemIds;
+      const additional = input.estimate.boundary.additionalOpenItemIds;
+      const reviewed = [...new Set(input.reviewedOpenItemIds ?? [])].sort();
+      const classified = [...covered, ...additional].sort();
+      if (reviewed.length !== classified.length || reviewed.some((id, index) => id !== classified[index])) {
+        throw new ScopeRealityConflictError("The open-work boundary changed while the estimate was being reviewed. Reload and classify it again.");
+      }
+      const activeLinks = new Set(before.workLinks
+        .filter((link) => link.state === "active" || link.state === "configured")
+        .map((link) => link.externalId));
+      if (classified.some((id) => !activeLinks.has(id))) {
+        throw new ScopeRealityConflictError("A reviewed work item is no longer linked to this capability. Reload before accepting the estimate.");
+      }
+      if (input.estimate.boundary.reviewedLinkFingerprint !== estimateBoundaryFingerprint(before.id, covered, additional)) {
+        throw new ScopeRealityInputError("The reviewed estimate boundary fingerprint is invalid.");
+      }
     }
     await tx.capability.update({
       where: { id: capabilityId },
@@ -362,7 +461,7 @@ export async function setCanonicalCapabilityEstimate(
       capabilityId,
       scopeId: before.scopeId,
       idempotencyKey,
-      action: input.estimate ? "accept_knowledge_estimate" : "clear_knowledge_estimate",
+      action: expectedAction,
       beforeState: json(plain(before)),
       afterState: json(plain(after)),
     } });
@@ -372,6 +471,32 @@ export async function setCanonicalCapabilityEstimate(
     return { capability: await tx.capability.findUniqueOrThrow({ where: { id: capabilityId }, include: capabilityInclude }), scopeId: before.scopeId, changed: true };
   }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }));
   return { capability: result.capability, changed: result.changed, ...(await finish(result.scopeId, result.changed)) };
+}
+
+/** Idempotent PUT retries must be resolved before revalidating today's
+ * source snapshot. A later refresh cannot turn a successful retry into a
+ * stale-source error. The transactional owner still performs the same
+ * lookup again to close the check/write race. */
+export async function replayCanonicalCapabilityEstimate(
+  capabilityId: string,
+  idempotencyKeyValue: string,
+  expectedAction: "accept_estimate_v2" | "clear_knowledge_estimate",
+  intent?: CapabilityEstimateReplayIntent,
+) {
+  const idempotencyKey = required(idempotencyKeyValue, "idempotencyKey");
+  const prior = await prisma.capabilityEvent.findUnique({
+    where: { idempotencyKey },
+    select: { capabilityId: true, action: true, afterState: true },
+  });
+  if (!prior) return null;
+  if (prior.capabilityId !== capabilityId || prior.action !== expectedAction) {
+    throw new ScopeRealityConflictError("That idempotency key belongs to a different capability write or action.");
+  }
+  if (expectedAction === "accept_estimate_v2" && (!intent || !replayIntentMatchesAccepted(eventAcceptedEstimate(prior.afterState), intent))) {
+    throw new ScopeRealityConflictError("That idempotency key belongs to a different estimate acceptance request.");
+  }
+  const capability = await prisma.capability.findUniqueOrThrow({ where: { id: capabilityId }, include: capabilityInclude });
+  return { capability, changed: false, ...(await finish(capability.scopeId, false)) };
 }
 
 export interface ScopeProposalCommitSelection {

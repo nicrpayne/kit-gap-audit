@@ -25,7 +25,7 @@ import {
   findScenarioLeverConflicts,
   scenarioLeverConflictMessage,
 } from "@/lib/reports/scenarioConflicts";
-import { knowledgeEstimateItemId } from "@/lib/scope/knowledgeEstimates";
+import { acceptedEstimateIdentity, knowledgeEstimateItemId } from "@/lib/scope/knowledgeEstimates";
 
 /** The live forecast is a comparison input, not report data. Three states,
     because "we could not resolve it" must be distinguishable from "it
@@ -220,9 +220,10 @@ export default function ReportsPageClient() {
         ...capability.workLinks
           .filter((link) => (link.state === "active" || link.state === "configured") && sourceItemIds.has(link.externalId))
           .map((link) => link.externalId),
-        ...(capability.acceptedEstimate
-          ? [knowledgeEstimateItemId(capability.id, capability.acceptedEstimate.id, capability.acceptedEstimate.contextSnapshotId)]
-          : []),
+        ...(capability.estimateReview?.estimate && (capability.estimateReview.status === "reviewed" || capability.estimateReview.exploration) ? (() => {
+          const identity = acceptedEstimateIdentity(capability.estimateReview.estimate);
+          return [knowledgeEstimateItemId(capability.id, identity.estimateId, identity.contextSnapshotId)];
+        })() : []),
       ],
     }));
   });
@@ -237,6 +238,10 @@ export default function ReportsPageClient() {
   const scenarioLeverConflictReason = scenarioLeverConflicts.length
     ? `${scenarioLeverConflictMessage(scenarioLeverConflicts)}. Choose which staged assumption to keep in Scope; Signal has not removed any of them.`
     : null;
+  const unreviewedKnowledgeCapabilityIds = Object.keys(project.scenario.knowledgeEstimateByCapabilityId);
+  const unreviewedKnowledgeReason = unreviewedKnowledgeCapabilityIds.length
+    ? `Raw meeting estimates require an explicit remaining-work interpretation and exact covered/additional ticket review before publication. Review ${unreviewedKnowledgeCapabilityIds.length === 1 ? "this assertion" : "these assertions"} in Scope; other staged Scenario levers will remain unchanged.`
+    : null;
   const scenarioConflictScopeId = scenarioLeverConflicts.flatMap((conflict) => conflict.scopeIds)[0] ?? scopeId;
   const scenarioReportBlockedReason = generating
     ? "Report generation is already in progress."
@@ -244,6 +249,8 @@ export default function ReportsPageClient() {
       ? "Choose a project first."
       : !project.active
         ? "Stage at least one Scope, estimate, staffing, Capacity, or decision lever in Scenario first."
+        : unreviewedKnowledgeReason
+          ? unreviewedKnowledgeReason
         : scenarioLeverConflictReason
           ? scenarioLeverConflictReason
         : project.capacityPlanError
@@ -416,7 +423,9 @@ export default function ReportsPageClient() {
       {scenarioReportBlockedReason && project.active && !generating && (
         <div id="scenario-report-blocked-reason" className="report-no-print mb-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-[var(--i-amber)] bg-[var(--i-amber-soft)] px-4 py-3 text-xs text-[var(--i-text-soft)]">
           <span><strong className="text-[var(--i-amber)]">Scenario comparison is not publishable yet.</strong> {scenarioReportBlockedReason}</span>
-          {scenarioLeverConflictReason ? (
+          {unreviewedKnowledgeReason ? (
+            <Link href={`/scope?project=${encodeURIComponent(scopeId ?? "")}`} className="shrink-0 text-[var(--i-signal)] hover:underline">Review assertion in Scope →</Link>
+          ) : scenarioLeverConflictReason ? (
             <Link href={`/scope?project=${encodeURIComponent(scenarioConflictScopeId ?? "")}`} className="shrink-0 text-[var(--i-signal)] hover:underline">Resolve in Scope →</Link>
           ) : capacityPlanNoOp ? (
             <button

@@ -1,7 +1,8 @@
 import type { DecisionBriefV1, SourceStamp } from "./decisionBrief";
 import { formatDateOnly, formatInstant, toInstant } from "@/lib/time/dateContract";
 import { FORECAST_PERCENTILE_COPY } from "@/lib/forecast/claims";
-import { markdownBlockquoteLines } from "./markdown";
+import { markdownBlockquoteLines, markdownInlineText } from "./markdown";
+import { capabilityEstimatePresentation } from "./capabilityEstimatePresentation";
 
 const date = (iso: string | null) =>
   iso ? formatDateOnly(iso, { month: "short", day: "numeric", year: "numeric" }) : "MISSING";
@@ -119,13 +120,21 @@ export function renderDecisionBriefMarkdown(brief: DecisionBriefV1): string {
   if (brief.forecast?.basis?.capabilityEstimates.length) {
     out.push("Frozen capability estimate basis");
     for (const record of brief.forecast.basis.capabilityEstimates) {
-      const estimate = record.estimate;
-      const range = estimate.range ? `${n(estimate.range.low)} / ${n(estimate.range.likely)} / ${n(estimate.range.high)} developer-days` : "range unavailable";
-      const label = record.auditHref ? `[${record.capabilityName}](${record.auditHref})` : record.capabilityName;
-      out.push(`- **${label}** · ${record.authority.toUpperCase()} ${estimate.basis.replaceAll("_", " ")} · ${range} · source ${estimate.observedAt ? date(estimate.observedAt) : "date unavailable"} · replaces ${record.replacedItemIds.length} ticket ${record.replacedItemIds.length === 1 ? "estimate" : "estimates"}`);
+      const presentation = capabilityEstimatePresentation(record);
+      const range = presentation.range ? `${n(presentation.range.low)} / ${n(presentation.range.likely)} / ${n(presentation.range.high)} developer-days` : "range unavailable";
+      const capabilityName = markdownInlineText(record.capabilityName);
+      const label = record.auditHref ? `[${capabilityName}](${record.auditHref})` : capabilityName;
+      out.push(`- **${label}** · ${presentation.authorityLabel} ${presentation.basisLabel} · ${range} · source ${presentation.sourceDate ? date(presentation.sourceDate) : "date unavailable"}${record.review ? ` · ${presentation.usedInSimulation ? "used in this simulation" : "evidence only; ticket rollup used"}` : ` · replaces ${record.replacedItemIds.length} ticket ${record.replacedItemIds.length === 1 ? "estimate" : "estimates"}`}`);
+      if (presentation.reviewSummary) out.push(`  - ${markdownInlineText(presentation.reviewSummary)}`);
+      if (presentation.interpretation) out.push(`  - Reviewed interpretation: ${markdownInlineText(presentation.interpretation)}`);
+      if (record.review) {
+        out.push(`  - Reviewer ${markdownInlineText(presentation.reviewer ?? "unavailable")} · reviewed ${presentation.reviewedAt ? date(presentation.reviewedAt) : "date unavailable"}`);
+        out.push(`  - Covered tickets: ${presentation.coveredItemIds.length ? presentation.coveredItemIds.map(markdownInlineText).join(", ") : "none"}`);
+        out.push(`  - Additional tickets retained separately: ${presentation.additionalItemIds.length ? presentation.additionalItemIds.map(markdownInlineText).join(", ") : "none"}`);
+      }
       out.push("  - Original statement (verbatim from frozen snapshot):");
-      out.push(...markdownBlockquoteLines(estimate.excerpt ?? estimate.statement, "    "));
-      out.push(`  - Raw estimate: ${estimate.rawEstimate} · immutable snapshot ${estimate.contextSnapshotId}`);
+      out.push(...markdownBlockquoteLines(presentation.originalQuote, "    "));
+      out.push(`  - Raw assertion: ${markdownInlineText(presentation.rawAssertion)} · immutable snapshot ${markdownInlineText(presentation.contextSnapshotId)}`);
     }
   }
   const capacity = brief.movable.capacity.value;

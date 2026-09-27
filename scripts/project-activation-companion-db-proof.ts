@@ -68,6 +68,23 @@ async function main() {
   const retry = await deliverJob(deliveryRequest(), { params: Promise.resolve({ id: claimed.id }) });
   assert.equal(retry.status, 200);
   assert.equal((await retry.json()).reused, true, "response-loss retry must reuse completed job/package");
+  const differentPackage = await deliverJob(new NextRequest(`http://signal.test/api/bridge/jobs/${claimed.id}/package`, {
+    method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ claimToken: claimed.claimToken, revision: claimed.revision, package: packageFor(bootstrap.id, "different-package-id") }),
+  }), { params: Promise.resolve({ id: claimed.id }) });
+  assert.equal(differentPackage.status, 409, "a terminal claim cannot be replayed with a different package identity");
+  const changedContent = packageFor(bootstrap.id, "companion-proof-package");
+  changedContent.warnings = ["Changed content under a reused immutable package id."];
+  const changedPackage = await deliverJob(new NextRequest(`http://signal.test/api/bridge/jobs/${claimed.id}/package`, {
+    method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ claimToken: claimed.claimToken, revision: claimed.revision, package: changedContent }),
+  }), { params: Promise.resolve({ id: claimed.id }) });
+  assert.equal(changedPackage.status, 409, "a terminal replay must match the exact immutable package hash");
+  const invalidToken = await deliverJob(new NextRequest(`http://signal.test/api/bridge/jobs/${claimed.id}/package`, {
+    method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ claimToken: "0".repeat(64), revision: claimed.revision, package: packageFor(bootstrap.id, "companion-proof-package") }),
+  }), { params: Promise.resolve({ id: claimed.id }) });
+  assert.equal(invalidToken.status, 409, "terminal replay still requires the original claim secret");
   assert.equal(await prisma.bootstrapPackage.count({ where: { bootstrapId: bootstrap.id } }), 1);
   assert.equal(await prisma.bootstrapScanRun.count({ where: { bootstrapId: bootstrap.id } }), 1);
 
@@ -102,7 +119,7 @@ async function main() {
 
   console.log(JSON.stringify({
     automaticJob: { bootstrapId: bootstrap.id, scanRunId: claimed.scanRunId, jobId: claimed.id, packageId: "companion-proof-package" },
-    duplicateClaim: "one winner", responseLossRetry: "reused", restartRetryAttempts: restartedJob.attempts,
+    duplicateClaim: "one winner", responseLossRetry: "reused with exact token and immutable package hash", restartRetryAttempts: restartedJob.attempts,
     staleRevision: "rejected", offlineHeartbeat: "offline", canonicalWritesBeforeActivation: 0,
   }, null, 2));
 }

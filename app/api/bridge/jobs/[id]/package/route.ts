@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { BootstrapPackageValidationError, validateBootstrapPackage } from "@/lib/bootstrap/contracts";
-import { authorizedJob } from "@/lib/bootstrap/jobs";
+import { authorizedPackageDeliveryJob } from "@/lib/bootstrap/jobs";
+import { bootstrapHash } from "@/lib/bootstrap/hash";
 import { ingestBootstrapPackage } from "@/lib/bootstrap/transport";
 
 const SENSITIVE = /^(access_?token|refresh_?token|api_?key|password|client_?secret|authorization)$/i;
@@ -20,7 +21,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   if (raw.length > 5_010_000) return NextResponse.json({ error: "Bootstrap delivery exceeds 5 MB" }, { status: 413 });
   let body: Record<string, unknown>;
   try { body = JSON.parse(raw) as Record<string, unknown>; } catch { return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 }); }
-  const job = await authorizedJob(id, body.claimToken);
+  const job = await authorizedPackageDeliveryJob(id, body.claimToken);
   if (!job) return NextResponse.json({ error: "Invalid or expired job claim" }, { status: 409 });
   if (body.revision !== job.revision) return NextResponse.json({ error: "Stale bootstrap revision" }, { status: 409 });
 
@@ -35,12 +36,12 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
   if (["complete", "partial"].includes(job.status)) {
     const existing = await prisma.bootstrapPackage.findUnique({ where: { producer_packageId: { producer: pkg.producer, packageId: pkg.packageId } } });
-    if (!existing || existing.bootstrapId !== job.bootstrapId || existing.packageId !== job.packageId) {
+    if (!existing || existing.bootstrapId !== job.bootstrapId || existing.packageId !== job.packageId || existing.packageHash !== bootstrapHash(pkg)) {
       return NextResponse.json({ error: "Completed job package identity does not match" }, { status: 409 });
     }
     return NextResponse.json({ ok: true, scanId: existing.scanRunId, packageId: existing.packageId, reused: true, jobId: id });
   }
-  if (job.bootstrap.reviewRevision !== job.revision) {
+  if (job.bootstrap.reviewRevision !== job.revision || job.bootstrap.status === "archived") {
     await prisma.bootstrapScanJob.update({ where: { id }, data: { status: "stale", stage: "stale_revision", error: "Bootstrap revision changed before package delivery", completedAt: new Date() } });
     return NextResponse.json({ error: "Stale bootstrap revision" }, { status: 409 });
   }

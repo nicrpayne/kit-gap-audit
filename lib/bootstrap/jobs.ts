@@ -138,12 +138,31 @@ export async function claimNextJob(companionId: string) {
   return null;
 }
 
-export async function authorizedJob(jobId: string, claimToken: unknown) {
+async function jobWithValidClaimToken(jobId: string, claimToken: unknown) {
   if (typeof claimToken !== "string" || claimToken.length < 32) return null;
   const job = await prisma.bootstrapScanJob.findUnique({ where: { id: jobId }, include: { bootstrap: true } });
   if (!job?.claimTokenHash || job.claimTokenHash !== hashClaimToken(claimToken)) return null;
   if (["stale", "failed"].includes(job.status)) return null;
+  return job;
+}
+
+export async function authorizedJob(jobId: string, claimToken: unknown) {
+  const job = await jobWithValidClaimToken(jobId, claimToken);
+  if (!job) return null;
   if (job.bootstrap.reviewRevision !== job.revision || job.bootstrap.status === "archived") return null;
   if (!["complete", "partial"].includes(job.status) && (!job.claimExpiresAt || job.claimExpiresAt.getTime() < Date.now())) return null;
+  return job;
+}
+
+/** Package response-loss retries need to reach the terminal identity/hash
+ * check even though accepting the first package advances reviewRevision.
+ * Nonterminal revision drift is returned to the route solely so it can mark
+ * the job stale; an expired current claim remains unauthorized. */
+export async function authorizedPackageDeliveryJob(jobId: string, claimToken: unknown) {
+  const job = await jobWithValidClaimToken(jobId, claimToken);
+  if (!job) return null;
+  if (["complete", "partial"].includes(job.status)) return job;
+  if (job.bootstrap.reviewRevision !== job.revision || job.bootstrap.status === "archived") return job;
+  if (!job.claimExpiresAt || job.claimExpiresAt.getTime() < Date.now()) return null;
   return job;
 }

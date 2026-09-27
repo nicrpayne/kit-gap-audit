@@ -21,12 +21,15 @@ import { deliveryRelevantIssueIds, evaluateForecastCoverage, inheritDependencyCo
 import type { ProjectContextPackage } from "@/lib/context/package";
 import { freezeCapabilityEstimate, freezeForecastBasis, type FrozenCapabilityEstimate, type FrozenForecastBasisV1 } from "@/lib/reports/forecastBasis";
 import { CANONICAL_REPORT_MODE_WHERE, CANONICAL_REPORT_ORDER_DESC } from "@/lib/reports/history";
+import { reviewedEstimateSimulationDecision } from "@/lib/forecast/reviewedEstimate";
 import {
   acceptedCapabilityEstimate,
   capabilityKnowledgeEstimates,
+  reviewedCapabilityEstimate,
   substituteCapabilityKnowledgeEstimates,
   type AcceptedCapabilityEstimate,
   type CapabilityKnowledgeEstimate,
+  type ReviewedCapabilityEstimateResult,
 } from "@/lib/scope/knowledgeEstimates";
 
 export interface ForecastFinding {
@@ -170,7 +173,10 @@ interface ScopeSimBundle {
     status: string;
     acceptedEstimate: Prisma.JsonValue | null;
     workLinks: { externalId: string; state: string }[];
+    estimateReview: ReviewedCapabilityEstimateResult;
+    estimateReviewRequired: boolean;
   }[];
+  currentKnowledgeEstimates: CapabilityKnowledgeEstimate[];
   openShapeDecisionCount: number;
   forecastCoverage: ForecastCoverageContract;
 }
@@ -212,13 +218,18 @@ async function buildScopeSimInputs(
     },
   });
 
-  const [workEstimates, capabilities, openShapeDecisionCount] = await Promise.all([
+  const [workEstimates, capabilities, openShapeDecisionCount, latestKnowledgeSnapshot] = await Promise.all([
     prisma.workEstimate.findMany({ where: { scopeId: scope.id } }),
     prisma.capability.findMany({
       where: { scopeId: scope.id },
       select: { id: true, name: true, revision: true, status: true, acceptedEstimate: true, workLinks: { select: { externalId: true, state: true } } },
     }),
     prisma.decision.count({ where: { scopeId: scope.id, status: "open", gate: { is: null } } }),
+    prisma.contextSnapshot.findFirst({
+      where: { scopeId: scope.id },
+      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+      select: { id: true, package: true },
+    }),
   ]);
   const estimates = new Map(
     workEstimates.filter((e) => e.source === "linear").map((e) => [e.externalId, e])
@@ -308,7 +319,29 @@ async function buildScopeSimInputs(
   // execution facts, but an unreviewed ticket is not silently promoted into
   // accepted Scope. Legacy projects with no Capability rows retain their
   // historical all-Linear behavior until they adopt the bridge.
-  const acceptedCapabilities = capabilities.filter((capability) => capability.status === "accepted");
+  const currentKnowledgeEstimates = capabilityKnowledgeEstimates(
+    latestKnowledgeSnapshot?.package as unknown as ProjectContextPackage | undefined,
+    latestKnowledgeSnapshot?.id,
+    capabilities.map((capability) => ({ id: capability.id, name: capability.name })),
+  );
+  const currentOpenIssueIds = new Set(deliveryRelevantIssueIds(issues, scope.includeTriage));
+  const simulationCapabilities = capabilities.map((capability) => {
+    const currentOpenItemIds = capability.workLinks
+      .filter((link) => (link.state === "active" || link.state === "configured") && currentOpenIssueIds.has(link.externalId))
+      .map((link) => link.externalId);
+    return {
+      ...capability,
+      estimateReview: reviewedCapabilityEstimate(
+        capability.acceptedEstimate,
+        currentOpenItemIds,
+        currentKnowledgeEstimates.filter((estimate) => estimate.capabilityId === capability.id),
+      ),
+    };
+  }).map((capability) => ({
+    ...capability,
+    estimateReviewRequired: capability.status === "accepted" && capability.estimateReview?.status === "review_required",
+  }));
+  const acceptedCapabilities = simulationCapabilities.filter((capability) => capability.status === "accepted");
   const modeledIssueIds = new Set(
     acceptedCapabilities.flatMap((capability) => capability.workLinks)
       .filter((link) => link.state === "active" || link.state === "configured")
@@ -329,19 +362,9 @@ async function buildScopeSimInputs(
   };
   const sourceInputs = buildForecastInputs(modeledIssues, findings, resolved.capacity, buildOptions);
   const acceptedSubstitutions = acceptedCapabilities.flatMap((capability) => {
-    const estimate = acceptedCapabilityEstimate(capability.acceptedEstimate);
-    if (!estimate) return [];
-    return [{
-      capabilityId: capability.id,
-      capabilityName: capability.name,
-      estimateId: estimate.id,
-      contextSnapshotId: estimate.contextSnapshotId,
-      range: estimate.range,
-      replacedItemIds: capability.workLinks
-        .filter((link) => link.state === "active" || link.state === "configured")
-        .map((link) => link.externalId),
-      authority: "accepted" as const,
-    }];
+    if (!capability.estimateReview) return [];
+    const decision = reviewedEstimateSimulationDecision(capability, capability.estimateReview);
+    return decision.substitution ? [decision.substitution] : [];
   });
   const acceptedItems = substituteCapabilityKnowledgeEstimates(sourceInputs.items, acceptedSubstitutions);
   const inputs: ForecastInputs = {
@@ -357,7 +380,7 @@ async function buildScopeSimInputs(
     // Historical rows and Linear grouping parents remain in source history,
     // but neither is a second delivery item that must be classified.
     issueIds: deliveryRelevantIssueIds(issues, scope.includeTriage),
-    capabilities,
+    capabilities: simulationCapabilities,
     openShapeDecisionCount,
   });
 
@@ -376,7 +399,8 @@ async function buildScopeSimInputs(
     contextDocs: contextDocsInfo,
     contextComplete,
     contextIssues,
-    capabilities,
+    capabilities: simulationCapabilities,
+    currentKnowledgeEstimates,
     openShapeDecisionCount,
     forecastCoverage,
   };
@@ -570,6 +594,7 @@ export interface PortfolioScopeInput {
     workLinks: { id: string; provider: string; externalId: string; externalUrl: string | null; state: string }[];
     knowledgeEstimates: CapabilityKnowledgeEstimate[];
     acceptedEstimate: AcceptedCapabilityEstimate | null;
+    estimateReview: ReviewedCapabilityEstimateResult;
   }[];
   openShapeQuestions: { id: string; title: string; rationale: string | null; status: string }[];
 }
@@ -646,7 +671,7 @@ export interface PortfolioInputs {
 // against this payload rather than round-tripping to a server route.
 export async function buildPortfolioInputs(): Promise<PortfolioInputs> {
   const readAt = new Date();
-  const [scopes, people, allAllocations, portfolioSettings, reconciliations, contextSnapshots] = await Promise.all([
+  const [scopes, people, allAllocations, portfolioSettings, reconciliations] = await Promise.all([
     prisma.scope.findMany({
       orderBy: { createdAt: "asc" },
       include: {
@@ -665,10 +690,6 @@ export async function buildPortfolioInputs(): Promise<PortfolioInputs> {
     prisma.allocation.findMany(),
     prisma.portfolioSettings.findUnique({ where: { id: "singleton" } }),
     prisma.capacityReconciliation.findMany(),
-    prisma.contextSnapshot.findMany({
-      orderBy: { createdAt: "desc" },
-      select: { id: true, scopeId: true, package: true, createdAt: true },
-    }),
   ]);
   const reconciliationByScope = new Map(reconciliations.map((item) => [item.scopeId, item]));
   const exactScopeIds = new Set(reconciliations.filter((item) => item.status === "named_exact" && item.completenessConfirmed).map((item) => item.scopeId));
@@ -678,21 +699,11 @@ export async function buildPortfolioInputs(): Promise<PortfolioInputs> {
     modeledAllocations: allocations,
     contextSwitchCostPct: portfolioSettings?.contextSwitchCostPct ?? 0,
   };
-  const latestSnapshotByScope = new Map<string, (typeof contextSnapshots)[number]>();
-  for (const snapshot of contextSnapshots) {
-    if (!latestSnapshotByScope.has(snapshot.scopeId)) latestSnapshotByScope.set(snapshot.scopeId, snapshot);
-  }
-
   const startDate = new Date();
   const scopeInputs: PortfolioScopeInput[] = [];
   for (const scope of scopes) {
     const bundle = await buildScopeSimInputs(scope, capacityInputs);
-    const latestSnapshot = latestSnapshotByScope.get(scope.id) ?? null;
-    const knowledgeEstimates = capabilityKnowledgeEstimates(
-      latestSnapshot?.package as unknown as ProjectContextPackage | undefined,
-      latestSnapshot?.id,
-      scope.capabilities.map((capability) => ({ id: capability.id, name: capability.name })),
-    );
+    const knowledgeEstimates = bundle.currentKnowledgeEstimates;
     const estimatesByCapability = new Map<string, typeof knowledgeEstimates>();
     for (const estimate of knowledgeEstimates) {
       const bucket = estimatesByCapability.get(estimate.capabilityId) ?? [];
@@ -772,6 +783,7 @@ export async function buildPortfolioInputs(): Promise<PortfolioInputs> {
         workLinks: capability.workLinks.map((link) => ({ id: link.id, provider: link.provider, externalId: link.externalId, externalUrl: link.externalUrl, state: link.state })),
         knowledgeEstimates: estimatesByCapability.get(capability.id) ?? [],
         acceptedEstimate: acceptedCapabilityEstimate(capability.acceptedEstimate),
+        estimateReview: bundle.capabilities.find((row) => row.id === capability.id)?.estimateReview ?? null,
       })),
       openShapeQuestions: scope.decisions.map((decision) => ({ id: decision.id, title: decision.title, rationale: decision.rationale, status: decision.status })),
     });
@@ -892,11 +904,16 @@ export async function computeForecast(scope: Scope): Promise<ForecastResult> {
   const frozenEstimates: FrozenCapabilityEstimate[] = [];
   const captureEstimates = (scopeId: string, bundle: ScopeSimBundle) => {
     for (const capability of bundle.capabilities) {
-      const estimate = acceptedCapabilityEstimate(capability.acceptedEstimate);
-      if (capability.status !== "accepted" || !estimate) continue;
-      const sourceIds = new Set(bundle.sourceInputs.items.map((item) => item.id));
-      frozenEstimates.push(freezeCapabilityEstimate(scopeId, capability, estimate,
-        capability.workLinks.filter((link) => (link.state === "active" || link.state === "configured") && sourceIds.has(link.externalId)).map((link) => link.externalId)));
+      if (capability.status !== "accepted" || !capability.estimateReview?.estimate) continue;
+      const decision = reviewedEstimateSimulationDecision(capability, capability.estimateReview);
+      frozenEstimates.push(freezeCapabilityEstimate(
+        scopeId,
+        capability,
+        capability.estimateReview.estimate,
+        decision.review.coveredItemIds,
+        capability.estimateReview.status,
+        decision.review,
+      ));
     }
   };
   let frozenSpecs: ScopeSimulationSpec[];

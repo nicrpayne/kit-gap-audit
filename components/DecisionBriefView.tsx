@@ -6,6 +6,7 @@ import type { DecisionBriefV1, SourceStamp } from "@/lib/reports/decisionBrief";
 import { briefPayloadFingerprint } from "@/lib/reports/decisionBriefRender";
 import { formatDateOnly, formatInstant, toInstant } from "@/lib/time/dateContract";
 import { FORECAST_PERCENTILE_COPY } from "@/lib/forecast/claims";
+import { capabilityEstimatePresentation } from "@/lib/reports/capabilityEstimatePresentation";
 
 const date = (iso: string | null) =>
   iso ? formatDateOnly(iso, { month: "short", day: "numeric", year: "numeric" }) : "MISSING";
@@ -55,13 +56,17 @@ function FrozenEstimateBasis({ brief }: { brief: DecisionBriefV1 }) {
   return <div className="mt-4 border-t border-[var(--i-border)] pt-3">
     <div className="text-[9px] font-semibold uppercase tracking-wider text-[var(--i-text-faint)]">Frozen capability estimate basis</div>
     {records.map((record) => {
-      const estimate = record.estimate;
-      const range = estimate.range ? `${fte(estimate.range.low)} / ${fte(estimate.range.likely)} / ${fte(estimate.range.high)} developer-days` : "range unavailable";
-      return <div key={`${record.scopeId}:${record.capabilityId}:${estimate.id}`} className="mt-3 rounded border border-[var(--i-border)] p-3 text-xs">
-        <div className="flex flex-wrap justify-between gap-2"><strong>{record.auditHref ? <Link href={record.auditHref} className="text-[var(--i-signal)] hover:underline">{record.capabilityName}</Link> : record.capabilityName}</strong><span className="text-[var(--i-text-faint)]">{record.authority} · {range}</span></div>
-        <div className="mt-1 text-[10px] text-[var(--i-text-faint)]">{estimate.basis.replaceAll("_", " ")} · source {estimate.observedAt ? date(estimate.observedAt) : "date unavailable"} · replaces {record.replacedItemIds.length} ticket {record.replacedItemIds.length === 1 ? "estimate" : "estimates"}</div>
-        <blockquote className="mt-2 border-l-2 border-[var(--i-signal)] pl-2 text-[11px] leading-relaxed text-[var(--i-text-soft)]">“{estimate.excerpt ?? estimate.statement}”</blockquote>
-        <div className="mt-2 font-mono text-[9px] text-[var(--i-text-faint)]">Raw: {estimate.rawEstimate} · snapshot {estimate.contextSnapshotId}</div>
+      const presentation = capabilityEstimatePresentation(record);
+      const range = presentation.range ? `${fte(presentation.range.low)} / ${fte(presentation.range.likely)} / ${fte(presentation.range.high)} developer-days` : "range unavailable";
+      return <div key={`${record.scopeId}:${record.capabilityId}:${presentation.estimateId}`} className="mt-3 rounded border border-[var(--i-border)] p-3 text-xs">
+        <div className="flex flex-wrap justify-between gap-2"><strong>{record.auditHref ? <Link href={record.auditHref} className="text-[var(--i-signal)] hover:underline">{record.capabilityName}</Link> : record.capabilityName}</strong><span className={presentation.reviewRequired ? "text-[var(--i-amber)]" : "text-[var(--i-text-faint)]"}>{presentation.authorityLabel} · {range}</span></div>
+        <div className="mt-1 text-[10px] text-[var(--i-text-faint)]">{presentation.basisLabel} · source {presentation.sourceDate ? date(presentation.sourceDate) : "date unavailable"}{record.review ? ` · ${presentation.usedInSimulation ? "used in this simulation" : "evidence only; ticket rollup used"}` : ` · replaces ${record.replacedItemIds.length} ticket ${record.replacedItemIds.length === 1 ? "estimate" : "estimates"}`}</div>
+        {presentation.reviewSummary && <div className={`mt-2 text-[10px] leading-relaxed ${presentation.reviewRequired ? "text-[var(--i-amber)]" : "text-[var(--i-text-soft)]"}`}>{presentation.reviewSummary}</div>}
+        {presentation.interpretation && <div className="mt-2 text-[10px] text-[var(--i-text-soft)]"><strong>Reviewed interpretation:</strong> {presentation.interpretation}</div>}
+        {record.review && <div className="mt-1 text-[10px] text-[var(--i-text-faint)]">Reviewer {presentation.reviewer ?? "unavailable"} · reviewed {presentation.reviewedAt ? date(presentation.reviewedAt) : "date unavailable"}</div>}
+        {record.review && <div className="mt-2 font-mono text-[9px] leading-relaxed text-[var(--i-text-faint)]">Covered tickets: {presentation.coveredItemIds.length ? presentation.coveredItemIds.join(", ") : "none"}<br />Additional tickets retained separately: {presentation.additionalItemIds.length ? presentation.additionalItemIds.join(", ") : "none"}</div>}
+        <blockquote className="mt-2 border-l-2 border-[var(--i-signal)] pl-2 text-[11px] leading-relaxed text-[var(--i-text-soft)]">“{presentation.originalQuote}”</blockquote>
+        <div className="mt-2 font-mono text-[9px] text-[var(--i-text-faint)]">Raw assertion: {presentation.rawAssertion} · snapshot {presentation.contextSnapshotId}</div>
       </div>;
     })}
   </div>;

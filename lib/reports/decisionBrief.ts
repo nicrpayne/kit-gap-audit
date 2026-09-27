@@ -519,7 +519,16 @@ export function assembleDecisionBrief(input: DecisionBriefOwnerInputs): Decision
       },
       scenarioOptions: {
         value: input.forecast.scenarios,
-        source: source("Forecast", input.forecast.asOf, input.forecast.sourceId, forecastCurrentness, "live", "Existing canonical Forecast scenarios; no new Reports simulation semantics."),
+        source: source(
+          "Forecast",
+          input.forecast.asOf,
+          input.forecast.sourceId,
+          forecastCurrentness,
+          "live",
+          input.mode === "scenario"
+            ? "Standard Forecast levers recomputed from this exact hypothetical basis; deltas compare with the saved Scenario outcome."
+            : "Existing canonical Forecast scenarios; no new Reports simulation semantics.",
+        ),
       },
     },
     timeline: {

@@ -114,6 +114,22 @@ assert.equal(classifiedBoundaryCoverage.canonicalForecast, true);
 assert.equal(classifiedBoundaryCoverage.census.modeledExecutionIssueCount, 1);
 assert.equal(classifiedBoundaryCoverage.census.outsideExecutionIssueCount, 1);
 assert.equal(classifiedBoundaryCoverage.census.unmappedExecutionIssueCount, 0);
+const estimateReviewCoverage = evaluateForecastCoverage({
+  executionState: "configured",
+  issueIds: ["SOF-IN"],
+  capabilities: [{
+    status: "accepted",
+    workLinks: [{ externalId: "SOF-IN", state: "active" }],
+    estimateReviewRequired: true,
+  }],
+  openShapeDecisionCount: 0,
+});
+assert.equal(estimateReviewCoverage.state, "modeled_subset");
+assert.equal(estimateReviewCoverage.canonicalForecast, false);
+assert.ok(estimateReviewCoverage.reasons.some((reason) => reason.code === "capability_estimate_review_required"));
+assert.match(estimateReviewCoverage.reason ?? "", /review/i);
+assert.match(estimateReviewCoverage.caveat ?? "", /legacy or malformed assertion is not applied/i);
+assert.match(estimateReviewCoverage.caveat ?? "", /ticket-only subset pending review/i);
 const downstreamCoverage = inheritDependencyCoverage(platformCoverage, [{ name: "iTrack", coverage: iTrackCoverage }]);
 assert.equal(downstreamCoverage.state, "modeled_subset");
 assert.equal(downstreamCoverage.canonicalForecast, false);

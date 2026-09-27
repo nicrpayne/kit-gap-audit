@@ -24,7 +24,18 @@ import { Prototype } from "@/components/instrument/Panel";
 import { expectedDays, uncertaintyLabel, type Feature, type ThreePoint, type DraftFeature } from "@/lib/scope/features";
 import type { ScopeWorkItem } from "@/lib/instrument/useProject";
 import type { ShapeCapability } from "@/lib/scope/productShape";
-import { auditPassageHref, safeSourceUrl, traceableKnowledgeEstimate, type CapabilityKnowledgeEstimate } from "@/lib/scope/knowledgeEstimates";
+import {
+  acceptedEstimateIdentity,
+  auditPassageHref,
+  safeSourceUrl,
+  traceableKnowledgeEstimate,
+  isAcceptedCapabilityEstimateV2,
+  type AcceptedCapabilityEstimate,
+  type AcceptedCapabilityEstimateV1,
+  type CapabilityKnowledgeEstimate,
+  type EstimatePointOrigin,
+  type EstimateReviewInput,
+} from "@/lib/scope/knowledgeEstimates";
 import type { CapabilityStaffingPlan } from "@/lib/scope/capabilityForecast";
 import { formatDateOnly } from "@/lib/time/dateContract";
 
@@ -44,6 +55,13 @@ const ESTIMATE_SOURCE: Record<string, string> = {
   finding_placeholder: "Nobody sized this — a deliberately wide 2–12 day guess",
   knowledge: "Accepted source-attributed developer estimate",
 };
+
+function hasModeledEstimate(feature: Feature): boolean {
+  return feature.items.length > 0
+    || feature.activeKnowledgeEstimate !== null
+    || feature.acceptedKnowledgeReview?.status === "reviewed"
+    || (feature.acceptedKnowledgeReview?.status === "review_required" && Boolean(feature.acceptedKnowledgeReview.exploration));
+}
 
 export default function FeatureDetail({
   feature,
@@ -85,7 +103,7 @@ export default function FeatureDetail({
   onClearEstimate: (id: string) => void;
   onStageKnowledgeEstimate: (capabilityId: string, estimate: CapabilityKnowledgeEstimate) => void;
   onClearKnowledgeEstimate: (capabilityId: string) => void;
-  onAcceptKnowledgeEstimate: (capabilityId: string, estimate: CapabilityKnowledgeEstimate) => void;
+  onAcceptKnowledgeEstimate: (capabilityId: string, estimate: CapabilityKnowledgeEstimate, review: EstimateReviewInput) => void;
   onClearAcceptedKnowledgeEstimate: (capabilityId: string) => void;
   staffingOptions: StaffingOption[];
   onSetCapabilityStaffing: (capabilityId: string, plan: CapabilityStaffingPlan) => void;
@@ -191,8 +209,11 @@ function ModuleHead({
 }) {
   const material = materialOf(f);
   const accent = accentFor(material);
-  const hasEstimate = f.items.length > 0 || f.activeKnowledgeEstimate !== null || f.acceptedKnowledgeEstimate !== null;
+  const hasEstimate = hasModeledEstimate(f);
   const hasRange = hasEstimate && f.range.high - f.range.low > 0;
+  const requiredReview = f.acceptedKnowledgeReview?.status === "review_required" ? f.acceptedKnowledgeReview : null;
+  const legacyEstimateReviewRequired = Boolean(requiredReview && !requiredReview.exploration);
+  const invalidAcceptedEstimate = Boolean(requiredReview?.invalidStoredAssertion);
   const retuned = !!realityRange && hasRange && Math.abs(realityRange.likely - f.range.likely) > 0.05;
   const source =
     f.source === "canonical"
@@ -242,14 +263,18 @@ function ModuleHead({
 
       <div className="mt-3 flex items-start gap-5">
         <HeadStat
-          k={f.capabilityForecast ? "Card schedule" : "Load"}
+          k={legacyEstimateReviewRequired ? "Ticket-only load" : f.capabilityForecast ? "Card schedule" : "Load"}
           v={hasEstimate ? `${(f.capabilityForecast?.likelyScheduleDays ?? f.loadDays).toFixed(1)}d` : "—"}
-          n={f.capabilityForecast
+          n={legacyEstimateReviewRequired
+            ? invalidAcceptedEstimate ? "stored estimate invalid · subset pending review" : "legacy estimate not applied · subset pending review"
+            : f.capabilityForecast
             ? `${f.capabilityForecast.staffingFte.toFixed(2)} named FTE · isolated`
             : f.activeKnowledgeEstimate
               ? `provisional · ÷ ${capacity.toFixed(2)} FTE`
-              : f.acceptedKnowledgeEstimate
+              : f.acceptedKnowledgeReview?.status === "reviewed"
                 ? `accepted meeting estimate · ÷ ${capacity.toFixed(2)} FTE`
+              : f.acceptedKnowledgeReview?.status === "review_required" && f.acceptedKnowledgeReview.exploration
+                ? `qualified prior range · review required`
               : hasEstimate ? `÷ ${capacity.toFixed(2)} FTE` : "no mapped work"}
         />
         <HeadStat
@@ -260,13 +285,15 @@ function ModuleHead({
         <HeadStat
           k="Uncertainty"
           v={uncertaintyLabel(f.uncertainty)}
-          n={f.activeKnowledgeEstimate || f.acceptedKnowledgeEstimate ? "meeting evidence" : f.placeholderCount > 0 ? `${f.placeholderCount} unestimated` : "all sized"}
+          n={legacyEstimateReviewRequired ? "ticket-only subset" : f.activeKnowledgeEstimate || f.acceptedKnowledgeReview ? "meeting evidence" : f.placeholderCount > 0 ? `${f.placeholderCount} unestimated` : "all sized"}
         />
         {f.capabilityForecast && (
           <HeadStat
             k="Likely landing"
             v={formatDateOnly(f.capabilityForecast.likelyDate, { month: "short", day: "numeric" })}
-            n={`${formatDateOnly(f.capabilityForecast.earliestDate, { month: "short", day: "numeric" })}–${formatDateOnly(f.capabilityForecast.latestDate, { month: "short", day: "numeric" })}`}
+            n={legacyEstimateReviewRequired
+              ? "ticket-only subset pending review"
+              : `${formatDateOnly(f.capabilityForecast.earliestDate, { month: "short", day: "numeric" })}–${formatDateOnly(f.capabilityForecast.latestDate, { month: "short", day: "numeric" })}`}
           />
         )}
       </div>
@@ -340,11 +367,15 @@ function Overview({ feature: f }: { feature: Feature }) {
         />
         <Row
           k="Effort"
-          v={f.items.length > 0 || f.activeKnowledgeEstimate || f.acceptedKnowledgeEstimate ? `${expectedDays(f.range).toFixed(1)}d` : "—"}
+          v={hasModeledEstimate(f) ? `${expectedDays(f.range).toFixed(1)}d` : "—"}
           note={f.activeKnowledgeEstimate
             ? `provisional meeting range · ${f.range.low.toFixed(0)}–${f.range.high.toFixed(0)} developer-days`
-            : f.acceptedKnowledgeEstimate
+            : f.acceptedKnowledgeReview?.status === "reviewed"
               ? `accepted meeting range · ${f.range.low.toFixed(0)}–${f.range.high.toFixed(0)} developer-days`
+            : f.acceptedKnowledgeReview?.status === "review_required" && f.acceptedKnowledgeReview.exploration
+              ? `qualified prior range · ${f.range.low.toFixed(0)}–${f.range.high.toFixed(0)} developer-days · not publishable`
+            : f.acceptedKnowledgeReview?.status === "review_required"
+              ? `${f.acceptedKnowledgeReview.invalidStoredAssertion ? "stored estimate invalid" : "legacy estimate not applied"} · ticket-only subset pending review · ${f.range.low.toFixed(0)}–${f.range.high.toFixed(0)}d tickets`
             : f.items.length > 0
               ? `expected, before capacity · ${f.range.low.toFixed(0)}–${f.range.high.toFixed(0)}d range`
               : "no mapped work or staged estimate"}
@@ -399,7 +430,7 @@ function Work({ feature: f, capacity, onUnlinkReality }: { feature: Feature; cap
     return (
       <Empty
         title="No work mapped yet"
-        body={f.estimateBasis === "work_rollup" ? "This capability is declared, but no execution work is linked. Missing work is a coverage gap, not proof of zero effort." : "No execution work is linked. The capability-level estimate supplies the forecast basis; inspect Estimate for its original quote."}
+        body={hasModeledEstimate(f) ? "No execution work is linked. The reviewed capability-level estimate supplies the modeled range; inspect Estimate for its source and boundary." : "This capability is declared, but no execution work is linked. Missing work is a coverage gap, not proof of zero effort."}
       />
     );
 
@@ -570,7 +601,7 @@ function Evidence({
   onAccept: (id: string) => void;
   onStageKnowledgeEstimate: (capabilityId: string, estimate: CapabilityKnowledgeEstimate) => void;
   onClearKnowledgeEstimate: (capabilityId: string) => void;
-  onAcceptKnowledgeEstimate: (capabilityId: string, estimate: CapabilityKnowledgeEstimate) => void;
+  onAcceptKnowledgeEstimate: (capabilityId: string, estimate: CapabilityKnowledgeEstimate, review: EstimateReviewInput) => void;
   onClearAcceptedKnowledgeEstimate: (capabilityId: string) => void;
 }) {
   if (f.canonicalCapability) {
@@ -714,7 +745,7 @@ function Estimate({
   onClearEstimate: (id: string) => void;
   onStageKnowledgeEstimate: (capabilityId: string, estimate: CapabilityKnowledgeEstimate) => void;
   onClearKnowledgeEstimate: (capabilityId: string) => void;
-  onAcceptKnowledgeEstimate: (capabilityId: string, estimate: CapabilityKnowledgeEstimate) => void;
+  onAcceptKnowledgeEstimate: (capabilityId: string, estimate: CapabilityKnowledgeEstimate, review: EstimateReviewInput) => void;
   onClearAcceptedKnowledgeEstimate: (capabilityId: string) => void;
   staffingOptions: StaffingOption[];
   onSetCapabilityStaffing: (capabilityId: string, plan: CapabilityStaffingPlan) => void;
@@ -724,7 +755,8 @@ function Estimate({
   if (f.items.length === 0 && f.knowledgeEstimates.length === 0 && !f.acceptedKnowledgeEstimate)
     return <Empty title="Nothing to estimate" body="No open work is mapped and the current knowledge snapshot carries no developer estimate for this capability." />;
 
-  const ticketTuningAllowed = f.estimateBasis === "work_rollup";
+  const ticketTuningAllowed = f.estimateBasis === "work_rollup"
+    || (f.acceptedKnowledgeReview?.status === "review_required" && !f.acceptedKnowledgeReview.exploration);
   const tuned = ticketTuningAllowed ? f.items.find((i) => i.id === tuning) ?? null : null;
   return (
     <div className="px-5 py-4">
@@ -739,8 +771,14 @@ function Estimate({
       <p className="text-[11px] text-[var(--i-text-soft)] leading-relaxed">
         {f.activeKnowledgeEstimate
           ? "The staged meeting estimate is replacing the current Reality basis in this Scenario. Remove it to return to accepted Reality."
-          : f.acceptedKnowledgeEstimate
-            ? "The accepted developer estimate is the current Reality basis for this capability. The linked tickets remain visible below for execution tracking, but their estimates are not added again."
+          : f.acceptedKnowledgeReview?.status === "reviewed"
+            ? "The reviewed developer estimate replaces only its covered tickets. Tickets reviewed as additional remain in this rollup once."
+          : f.acceptedKnowledgeReview?.status === "review_required" && f.acceptedKnowledgeReview.exploration
+            ? "The last reviewed range is shown only as qualified exploration. Boundary or source drift blocks publication until review."
+          : f.acceptedKnowledgeReview?.status === "review_required"
+            ? f.acceptedKnowledgeReview.invalidStoredAssertion
+              ? "Stored accepted estimate is malformed or unsupported and is not applied; this is the ticket-only subset pending review. Publication stays blocked until the assertion is reviewed and repaired."
+              : "Legacy estimate not applied; this is the ticket-only subset pending review. The old assertion has no reviewed boundary, so Signal cannot guess which tickets it replaces."
           : `The display above is the sum of these ${f.items.length} range${f.items.length === 1 ? "" : "s"}. Re-estimating one moves it, in this Scenario only.`}
       </p>
 
@@ -828,7 +866,10 @@ function CapabilityStaffingEditor({
     return fte > 0 ? [{ personId: option.personId, name: option.name, fte }] : [];
   });
   const total = selected.reduce((sum, person) => sum + person.fte, 0);
-  const suggested = feature.activeKnowledgeEstimate?.owner ?? feature.acceptedKnowledgeEstimate?.owner ?? feature.knowledgeEstimates[0]?.owner ?? null;
+  const acceptedAttribution = feature.acceptedKnowledgeEstimate?.version === "accepted-capability-estimate.v2"
+    ? feature.acceptedKnowledgeEstimate.source.speaker
+    : feature.acceptedKnowledgeEstimate?.owner;
+  const suggested = feature.activeKnowledgeEstimate?.owner ?? acceptedAttribution ?? feature.knowledgeEstimates[0]?.owner ?? null;
 
   return (
     <div className="mt-4 rounded-md px-3 py-3" style={{ border: "1px solid color-mix(in srgb, var(--i-signal) 35%, var(--i-border))", background: "var(--i-recess)" }} data-shoot="capability-staffing">
@@ -921,102 +962,262 @@ function KnowledgeEstimateEvidence({
   scopeId: string;
   onStage: (capabilityId: string, estimate: CapabilityKnowledgeEstimate) => void;
   onClear: (capabilityId: string) => void;
-  onAcceptReality: (capabilityId: string, estimate: CapabilityKnowledgeEstimate) => void;
+  onAcceptReality: (capabilityId: string, estimate: CapabilityKnowledgeEstimate, review: EstimateReviewInput) => void;
   onClearReality: (capabilityId: string) => void;
 }) {
   const capability = feature.canonicalCapability;
-  if (!capability || (feature.knowledgeEstimates.length === 0 && !feature.acceptedKnowledgeEstimate)) return null;
-  const estimates = [
-    ...(feature.acceptedKnowledgeEstimate ? [feature.acceptedKnowledgeEstimate] : []),
-    ...feature.knowledgeEstimates.filter((estimate) =>
-      estimate.id !== feature.acceptedKnowledgeEstimate?.id ||
-      estimate.contextSnapshotId !== feature.acceptedKnowledgeEstimate.contextSnapshotId
-    ),
-  ];
+  const requiredReview = feature.acceptedKnowledgeReview?.status === "review_required" ? feature.acceptedKnowledgeReview : null;
+  const invalidAcceptedEstimate = Boolean(requiredReview?.invalidStoredAssertion);
+  if (!capability || (feature.knowledgeEstimates.length === 0 && !feature.acceptedKnowledgeEstimate && !invalidAcceptedEstimate)) return null;
+  const acceptedIdentity = feature.acceptedKnowledgeEstimate
+    ? acceptedEstimateIdentity(feature.acceptedKnowledgeEstimate)
+    : null;
+  const proposals = feature.knowledgeEstimates.filter((estimate) =>
+    feature.acceptedKnowledgeReview?.status === "review_required"
+    || estimate.id !== acceptedIdentity?.estimateId
+    || estimate.contextSnapshotId !== acceptedIdentity.contextSnapshotId,
+  );
+  const current = proposals.filter((estimate) => estimate.currentness === "current");
+  const historical = proposals.filter((estimate) => estimate.currentness !== "current");
   return (
     <div className="mt-4 rounded-md px-3 py-3" style={{ border: "1px solid color-mix(in srgb, var(--i-violet) 45%, var(--i-border))", background: "var(--i-recess)" }} data-shoot="knowledge-estimate-evidence">
       <div className="flex items-baseline justify-between gap-3">
         <span className="i-label" style={{ color: "var(--i-violet)" }}>Developer estimate evidence</span>
         <span className="text-[8.5px] text-[var(--i-text-faint)]">from a saved source record</span>
       </div>
-      <div className="mt-2 space-y-2">
-        {estimates.slice(0, 3).map((estimate) => {
-          const active = feature.activeKnowledgeEstimate?.id === estimate.id
-            && feature.activeKnowledgeEstimate.contextSnapshotId === estimate.contextSnapshotId;
-          const accepted = feature.acceptedKnowledgeEstimate?.id === estimate.id
-            && feature.acceptedKnowledgeEstimate.contextSnapshotId === estimate.contextSnapshotId;
-          const attribution = [estimate.speaker ?? estimate.owner, estimate.observedAt, estimate.sourceRef].filter(Boolean).join(" · ");
-          const traceable = traceableKnowledgeEstimate(estimate);
-          const auditHref = auditPassageHref(scopeId, estimate);
-          return (
-            <div key={`${estimate.contextSnapshotId}:${estimate.id}`} className="rounded px-2.5 py-2" style={{ border: "1px solid var(--i-border)" }}>
-              <div className="flex items-baseline gap-2">
-                <span className="min-w-0 flex-1 text-[10.5px] text-[var(--i-text-soft)]">{estimate.statement}</span>
-                <span className="shrink-0 i-readout text-[10.5px] text-[var(--i-text)]">{estimate.rawEstimate}</span>
-              </div>
-              {accepted && (
-                <div className="mt-1 i-label" style={{ color: "var(--i-mint)" }}>
-                  Current Reality estimate
-                </div>
-              )}
-              {attribution && <div className="mt-1 text-[8.5px] text-[var(--i-text-faint)]">{attribution}</div>}
-              {estimate.excerpt && <div className="mt-1.5 text-[9.5px] italic leading-relaxed text-[var(--i-text-faint)]">&ldquo;{estimate.excerpt}&rdquo;</div>}
-              {estimate.sourceLocator?.surroundingContext && <details className="mt-1.5 text-[9px] text-[var(--i-text-soft)]"><summary>Original surrounding context</summary><p className="mt-1 whitespace-pre-wrap">{estimate.sourceLocator.surroundingContext}</p></details>}
-              {safeSourceUrl(estimate.sourceLocator?.sourceUrl)
-                ? <a href={safeSourceUrl(estimate.sourceLocator?.sourceUrl)!} target="_blank" rel="noopener noreferrer" className="mt-1.5 block text-[9px] text-[var(--i-signal)] hover:underline">Open original source ↗</a>
-                : <p className="mt-1.5 text-[9px] text-[var(--i-text-faint)]">External source link not supplied. The stored original quote remains available in Audit.</p>}
-              {auditHref && (
-                <Link
-                  href={auditHref}
-                  className="mt-1.5 inline-block text-[9px] text-[var(--i-signal)] hover:underline"
-                  data-shoot="open-estimate-evidence-in-audit"
-                >
-                  Open this exact quote in Audit →
-                </Link>
-              )}
-              {estimate.range ? (
-                <div className="mt-2 grid gap-1.5">
-                  {traceable ? (
-                    <button
-                      type="button"
-                      onClick={() => accepted ? onClearReality(capability.id) : onAcceptReality(capability.id, estimate)}
-                      className="w-full rounded px-2 py-1.5 text-[9.5px]"
-                      style={{ border: "1px solid var(--i-signal)", color: accepted ? "var(--i-text-soft)" : "var(--i-signal)" }}
-                      data-shoot={accepted ? "clear-accepted-knowledge-estimate" : "accept-knowledge-estimate-reality"}
-                    >
-                      {accepted ? "Stop using as the Reality estimate" : "Accept as current Reality estimate"}
-                    </button>
-                  ) : (
-                    <div className="text-[9px] leading-snug text-[var(--i-amber)]">
-                      Cannot become Reality: no exact source passage is attached.
-                    </div>
-                  )}
-                  {!accepted && (
-                    <button
-                      type="button"
-                      onClick={() => active ? onClear(capability.id) : onStage(capability.id, estimate)}
-                      className="w-full rounded px-2 py-1.5 text-[9.5px]"
-                      style={{ border: "1px solid var(--i-violet)", color: "var(--i-violet)" }}
-                      data-shoot={active ? "clear-knowledge-estimate" : "stage-knowledge-estimate"}
-                    >
-                      {active ? "Remove estimate from Scenario" : "Preview in Scenario first"}
-                    </button>
-                  )}
-                </div>
-              ) : (
-                <div className="mt-2 text-[9px] leading-snug text-[var(--i-amber)]">
-                  Evidence only. Signal will not convert sprints, story points, or an unbounded statement into developer-days.
-                </div>
-              )}
-            </div>
-          );
-        })}
-      </div>
+      {feature.acceptedKnowledgeEstimate && (
+        <AcceptedEstimateCard
+          estimate={feature.acceptedKnowledgeEstimate}
+          review={feature.acceptedKnowledgeReview}
+          scopeId={scopeId}
+          onClear={() => onClearReality(capability.id)}
+        />
+      )}
+      {invalidAcceptedEstimate && (
+        <div className="mt-2 rounded px-2.5 py-2" style={{ border: "1px solid var(--i-amber)" }} data-shoot="invalid-accepted-estimate">
+          <div className="i-label" style={{ color: "var(--i-amber)" }}>Stored estimate invalid · review required</div>
+          <p className="mt-1 text-[9px] leading-snug text-[var(--i-text-soft)]">{requiredReview?.reviewRequiredReason} Ticket ranges remain a noncanonical subset; reports stay blocked.</p>
+        </div>
+      )}
+      {feature.stagedKnowledgeEstimateMissing && (
+        <div className="mt-2 rounded px-2.5 py-2" style={{ border: "1px solid var(--i-amber)" }} data-shoot="staged-estimate-review-required">
+          <div className="i-label" style={{ color: "var(--i-amber)" }}>Scenario estimate review required</div>
+          <p className="mt-1 text-[9px] leading-snug text-[var(--i-text-soft)]">This staged raw-evidence assumption came from an older snapshot. It remains in Scenario state for recovery but is excluded from every new simulation and report.</p>
+          <button type="button" onClick={() => onClear(capability.id)} className="mt-2 w-full rounded px-2 py-1.5 text-[9.5px]" style={{ border: "1px solid var(--i-border-strong)", color: "var(--i-text-soft)" }}>Remove stale Scenario assumption</button>
+        </div>
+      )}
+      <EstimateEvidenceGroup
+        label="Current evidence"
+        estimates={current}
+        feature={feature}
+        scopeId={scopeId}
+        onAccept={(estimate, review) => onAcceptReality(capability.id, estimate, review)}
+        onStage={onStage}
+        onClear={onClear}
+      />
+      <EstimateEvidenceGroup
+        label="Historical evidence"
+        estimates={historical}
+        feature={feature}
+        scopeId={scopeId}
+        onAccept={(estimate, review) => onAcceptReality(capability.id, estimate, review)}
+        onStage={onStage}
+        onClear={onClear}
+      />
       <p className="mt-2 text-[9px] leading-snug text-[var(--i-text-faint)]">
-        An accepted estimate becomes this capability&apos;s canonical remaining-work basis. It replaces the ticket rollup, never adds both totals, and never writes to Linear. Switching to a capability estimate clears this card&apos;s ticket-estimate experiments. Previewing remains Scenario-only.
+        Only the explicitly covered open tickets are replaced. Tickets classified as additional remain in the rollup once. A boundary or source change keeps the last range as qualified exploration, blocks a publishable forecast, and requires review; it never silently rebases.
       </p>
     </div>
   );
+}
+
+function AcceptedEstimateCard({
+  estimate,
+  review,
+  scopeId,
+  onClear,
+}: {
+  estimate: AcceptedCapabilityEstimate;
+  review: Feature["acceptedKnowledgeReview"];
+  scopeId: string;
+  onClear: () => void;
+}) {
+  const v2 = isAcceptedCapabilityEstimateV2(estimate) ? estimate : null;
+  const legacy = v2 ? null : estimate as AcceptedCapabilityEstimateV1;
+  const statement = v2 ? v2.source.statement : legacy!.statement;
+  const raw = v2 ? v2.source.rawEstimateText : legacy!.rawEstimate;
+  const quote = v2 ? v2.source.exactQuote : legacy!.excerpt;
+  const auditHref = auditPassageHref(scopeId, estimate);
+  const range = v2 ? v2.interpretation.range : legacy!.range;
+  return (
+    <div className="mt-2 rounded px-2.5 py-2" style={{ border: `1px solid ${review?.status === "reviewed" ? "var(--i-mint)" : "var(--i-amber)"}` }} data-shoot="accepted-estimate-review-state">
+      <div className="flex items-baseline gap-2">
+        <span className="min-w-0 flex-1 text-[10.5px] text-[var(--i-text-soft)]">{statement}</span>
+        <span className="shrink-0 i-readout text-[10.5px] text-[var(--i-text)]">{raw}</span>
+      </div>
+      <div className="mt-1 i-label" style={{ color: review?.status === "reviewed" ? "var(--i-mint)" : "var(--i-amber)" }}>
+        {review?.status === "reviewed" ? "Reviewed Reality estimate" : "Review required · qualified exploration only"}
+      </div>
+      {review?.status === "review_required" && <p className="mt-1 text-[9px] leading-snug text-[var(--i-amber)]">{review.reviewRequiredReason} Reports stay blocked until it is reviewed.</p>}
+      {quote && <div className="mt-1.5 text-[9.5px] italic leading-relaxed text-[var(--i-text-faint)]">&ldquo;{quote}&rdquo;</div>}
+      <div className="mt-1.5 text-[9px] text-[var(--i-text-soft)]">Modeled remaining effort · {range.low}–{range.likely}–{range.high} developer-days</div>
+      {v2 ? (
+        <div className="mt-1 text-[8.5px] leading-relaxed text-[var(--i-text-faint)]">
+          Source meaning reviewed as {v2.interpretation.sourceWorkMeaning} · {v2.boundary.coveredOpenItemIds.length} covered · {v2.boundary.additionalOpenItemIds.length} additional<br />
+          Reviewed by “{v2.acceptance.reviewer.displayName}” — an operator-entered label, not authenticated identity.
+        </div>
+      ) : <p className="mt-1 text-[8.5px] text-[var(--i-amber)]">Legacy estimate not applied; ticket-only subset pending review. Interpretation, reviewer, and the replacement boundary were not captured.</p>}
+      {auditHref && <Link href={auditHref} className="mt-1.5 inline-block text-[9px] text-[var(--i-signal)] hover:underline">Open accepted quote in Audit →</Link>}
+      <button type="button" onClick={onClear} className="mt-2 w-full rounded px-2 py-1.5 text-[9.5px]" style={{ border: "1px solid var(--i-border-strong)", color: "var(--i-text-soft)" }} data-shoot="clear-accepted-knowledge-estimate">Stop using this accepted assertion</button>
+    </div>
+  );
+}
+
+function EstimateEvidenceGroup({
+  label,
+  estimates,
+  feature,
+  scopeId,
+  onAccept,
+  onStage,
+  onClear,
+}: {
+  label: string;
+  estimates: CapabilityKnowledgeEstimate[];
+  feature: Feature;
+  scopeId: string;
+  onAccept: (estimate: CapabilityKnowledgeEstimate, review: EstimateReviewInput) => void;
+  onStage: (capabilityId: string, estimate: CapabilityKnowledgeEstimate) => void;
+  onClear: (capabilityId: string) => void;
+}) {
+  if (estimates.length === 0) return null;
+  return <div className="mt-3">
+    <div className="i-label">{label}</div>
+    <div className="mt-1.5 space-y-2">{estimates.slice(0, 4).map((estimate) => (
+      <EstimateEvidenceCard key={`${estimate.contextSnapshotId}:${estimate.id}`} estimate={estimate} feature={feature} scopeId={scopeId} onAccept={onAccept} onStage={onStage} onClear={onClear} />
+    ))}</div>
+  </div>;
+}
+
+function EstimateEvidenceCard({
+  estimate,
+  feature,
+  scopeId,
+  onAccept,
+  onClear,
+}: {
+  estimate: CapabilityKnowledgeEstimate;
+  feature: Feature;
+  scopeId: string;
+  onAccept: (estimate: CapabilityKnowledgeEstimate, review: EstimateReviewInput) => void;
+  onStage: (capabilityId: string, estimate: CapabilityKnowledgeEstimate) => void;
+  onClear: (capabilityId: string) => void;
+}) {
+  const [reviewing, setReviewing] = useState(false);
+  const acceptedIdentity = feature.acceptedKnowledgeEstimate ? acceptedEstimateIdentity(feature.acceptedKnowledgeEstimate) : null;
+  const recoversAcceptedReview = feature.acceptedKnowledgeReview?.status === "review_required"
+    && acceptedIdentity?.estimateId === estimate.id;
+  const stagedReviewRequired = feature.stagedKnowledgeEstimateReviewRequired?.id === estimate.id
+    && feature.stagedKnowledgeEstimateReviewRequired.contextSnapshotId === estimate.contextSnapshotId;
+  const attribution = [estimate.speaker ?? estimate.owner, estimate.observedAt, estimate.sourceRef].filter(Boolean).join(" · ");
+  const auditHref = auditPassageHref(scopeId, estimate);
+  const traceable = traceableKnowledgeEstimate(estimate);
+  return <div className="rounded px-2.5 py-2" style={{ border: "1px solid var(--i-border)" }} data-estimate-id={`${estimate.contextSnapshotId}:${estimate.id}`}>
+    <div className="flex items-baseline gap-2">
+      <span className="min-w-0 flex-1 text-[10.5px] text-[var(--i-text-soft)]">{estimate.statement}</span>
+      <span className="shrink-0 i-readout text-[10.5px] text-[var(--i-text)]">{estimate.rawEstimate}</span>
+    </div>
+    <div className="mt-1 text-[8.5px] text-[var(--i-text-faint)]">
+      source shape · {estimate.rawShape.replaceAll("_", " ")} · {estimate.rawUnit.replaceAll("_", " ")} · work meaning {estimate.sourceWorkMeaning}
+    </div>
+    {estimate.currentness !== "current" && <div className="mt-1 text-[8.5px] text-[var(--i-amber)]">Historical source · review its currentness explicitly before use</div>}
+    {estimate.supersededBy.length > 0 && <div className="mt-1 text-[8.5px] text-[var(--i-amber)]">Superseded by {estimate.supersededBy.map((ref) => ref.intelligenceObjectId).join(", ")}</div>}
+    {attribution && <div className="mt-1 text-[8.5px] text-[var(--i-text-faint)]">{attribution}</div>}
+    {estimate.excerpt && <div className="mt-1.5 text-[9.5px] italic leading-relaxed text-[var(--i-text-faint)]">&ldquo;{estimate.excerpt}&rdquo;</div>}
+    {safeSourceUrl(estimate.sourceLocator?.sourceUrl)
+      ? <a href={safeSourceUrl(estimate.sourceLocator?.sourceUrl)!} target="_blank" rel="noopener noreferrer" className="mt-1.5 block text-[9px] text-[var(--i-signal)] hover:underline">Open original source ↗</a>
+      : <p className="mt-1.5 text-[9px] text-[var(--i-text-faint)]">External source link not supplied. The immutable quote remains available in Audit.</p>}
+    {auditHref && <Link href={auditHref} className="mt-1.5 inline-block text-[9px] text-[var(--i-signal)] hover:underline" data-shoot="open-estimate-evidence-in-audit">Open this exact quote in Audit →</Link>}
+    {traceable ? <button type="button" onClick={() => setReviewing((open) => !open)} className="mt-2 w-full rounded px-2 py-1.5 text-[9.5px]" style={{ border: "1px solid var(--i-signal)", color: "var(--i-signal)" }} data-shoot="review-knowledge-estimate">{reviewing ? "Close estimate review" : recoversAcceptedReview ? "Review estimate boundary" : "Review interpretation and boundary"}</button>
+      : <div className="mt-2 text-[9px] leading-snug text-[var(--i-amber)]">Cannot be reviewed: no exact source passage is attached.</div>}
+    {reviewing && <EstimateReviewForm estimate={estimate} openItems={feature.items} onSubmit={(review) => onAccept(estimate, review)} />}
+    {stagedReviewRequired && <div className="mt-2 rounded px-2 py-2" style={{ border: "1px solid var(--i-amber)" }} data-shoot="staged-estimate-review-required"><div className="text-[9px] font-medium text-[var(--i-amber)]">This pre-v2 Scenario assumption is inert until reviewed.</div><p className="mt-1 text-[8.5px] text-[var(--i-text-faint)]">It remains visible but changes no forecast and cannot be published.</p><button type="button" onClick={() => onClear(estimate.capabilityId)} className="mt-1.5 w-full rounded px-2 py-1 text-[9px]" style={{ border: "1px solid var(--i-border-strong)" }}>Remove staged assumption</button></div>}
+    <p className="mt-2 text-[8.5px] leading-snug text-[var(--i-text-faint)]">Raw evidence cannot directly replace tickets in Scenario. First review its work meaning, unit, range, exact passage, and covered versus additional work.</p>
+  </div>;
+}
+
+function EstimateReviewForm({
+  estimate,
+  openItems,
+  onSubmit,
+}: {
+  estimate: CapabilityKnowledgeEstimate;
+  openItems: Feature["items"];
+  onSubmit: (review: EstimateReviewInput) => void;
+}) {
+  const [passageId, setPassageId] = useState("");
+  const [meaning, setMeaning] = useState<"" | "remaining" | "total">("");
+  const [low, setLow] = useState("");
+  const [likely, setLikely] = useState("");
+  const [high, setHigh] = useState("");
+  const [origins, setOrigins] = useState<Record<"low" | "likely" | "high", "" | EstimatePointOrigin>>({ low: "", likely: "", high: "" });
+  const [rationale, setRationale] = useState("");
+  const [classification, setClassification] = useState<Record<string, "" | "covered" | "additional">>(() => Object.fromEntries(openItems.map((item) => [item.id, ""])));
+  const [boundaryStatement, setBoundaryStatement] = useState("");
+  const [reviewerDisplayName, setReviewerDisplayName] = useState("");
+  const [attested, setAttested] = useState(false);
+  const numeric = [low, likely, high].map(Number);
+  const ordered = numeric.every((value) => Number.isFinite(value) && value > 0) && numeric[0] <= numeric[1] && numeric[1] <= numeric[2];
+  const boundaryComplete = openItems.length > 0
+    ? openItems.every((item) => classification[item.id] === "covered" || classification[item.id] === "additional")
+    : Boolean(boundaryStatement.trim());
+  const complete = Boolean(
+    passageId && meaning && ordered && origins.low && origins.likely && origins.high
+    && rationale.trim() && boundaryComplete && reviewerDisplayName.trim() && attested,
+  );
+  return <div className="mt-2 rounded px-2.5 py-2.5" style={{ border: "1px solid var(--i-border-strong)", background: "var(--i-panel-raised)" }} data-shoot="estimate-review-form">
+    <div className="i-label" style={{ color: "var(--i-signal)" }}>Source said</div>
+    <p className="mt-1 text-[9px] text-[var(--i-text-faint)]">Raw {estimate.rawShape.replaceAll("_", " ")} · {estimate.rawUnit.replaceAll("_", " ")} · values {estimate.rawValues.length ? estimate.rawValues.join(", ") : "not structured"}. No conversion or midpoint is inferred.</p>
+    <label className="mt-2 block text-[9px] text-[var(--i-text-soft)]">Supporting passage
+      <select value={passageId} onChange={(event) => setPassageId(event.target.value)} className="mt-1 w-full rounded px-2 py-1.5 text-[9.5px]" style={{ background: "var(--i-recess)", border: "1px solid var(--i-border)" }}>
+        <option value="">Choose the exact quote…</option>
+        {estimate.passages.map((passage) => <option key={passage.id} value={passage.id}>{passage.sourceRef} · {passage.exactQuote.slice(0, 90)}</option>)}
+      </select>
+    </label>
+    <div className="i-label mt-3" style={{ color: "var(--i-signal)" }}>Signal will use</div>
+    <p className="mt-1 text-[8.5px] text-[var(--i-text-faint)]">Choose whether the source meant total or remaining work. Signal always models remaining capability effort; if the source meant total, enter a separately reviewed remaining range and explain it. Status percentages are never applied.</p>
+    <div className="mt-2 flex gap-3 text-[9px] text-[var(--i-text-soft)]">
+      {(["remaining", "total"] as const).map((value) => <label key={value} className="flex items-center gap-1"><input type="radio" name={`meaning-${estimate.id}`} checked={meaning === value} onChange={() => setMeaning(value)} /> {value}</label>)}
+    </div>
+    <div className="mt-2 grid grid-cols-3 gap-1.5">
+      {(["low", "likely", "high"] as const).map((point) => <label key={point} className="text-[8.5px] text-[var(--i-text-faint)]">{point}
+        <input type="number" min="0" step="0.1" value={point === "low" ? low : point === "likely" ? likely : high} onChange={(event) => point === "low" ? setLow(event.target.value) : point === "likely" ? setLikely(event.target.value) : setHigh(event.target.value)} placeholder="required" className="mt-1 w-full rounded px-2 py-1.5 text-[9.5px]" style={{ background: "var(--i-recess)", border: "1px solid var(--i-border)" }} />
+        <select value={origins[point]} onChange={(event) => setOrigins((prior) => ({ ...prior, [point]: event.target.value as EstimatePointOrigin }))} className="mt-1 w-full rounded px-1 py-1 text-[8.5px]" style={{ background: "var(--i-recess)", border: "1px solid var(--i-border)" }}><option value="">origin…</option><option value="verbatim">verbatim</option><option value="operator">operator supplied</option></select>
+      </label>)}
+    </div>
+    <textarea value={rationale} onChange={(event) => setRationale(event.target.value)} placeholder="Required rationale for the remaining developer-day interpretation" className="mt-2 w-full rounded px-2 py-1.5 text-[9.5px]" rows={3} style={{ background: "var(--i-recess)", border: "1px solid var(--i-border)" }} />
+    <div className="i-label mt-3" style={{ color: "var(--i-signal)" }}>Open-work boundary</div>
+    {openItems.length > 0 ? <div className="mt-1.5 space-y-1.5">{openItems.map((item) => <div key={item.id} className="rounded px-2 py-1.5" style={{ border: "1px solid var(--i-border)" }} data-review-item-id={item.id}>
+      <div className="text-[9px] text-[var(--i-text-soft)]">{item.id} · {item.label}</div>
+      <div className="mt-1 flex gap-3 text-[8.5px] text-[var(--i-text-faint)]">{(["covered", "additional"] as const).map((value) => <label key={value} className="flex items-center gap-1"><input type="radio" name={`boundary-${estimate.id}-${item.id}`} checked={classification[item.id] === value} onChange={() => setClassification((prior) => ({ ...prior, [item.id]: value }))} /> {value === "covered" ? "covered by range" : "additional work"}</label>)}</div>
+    </div>)}</div> : <textarea value={boundaryStatement} onChange={(event) => setBoundaryStatement(event.target.value)} placeholder="Required: state what this ticketless capability range covers" className="mt-1.5 w-full rounded px-2 py-1.5 text-[9.5px]" rows={2} style={{ background: "var(--i-recess)", border: "1px solid var(--i-border)" }} />}
+    <div className="i-label mt-3" style={{ color: "var(--i-signal)" }}>Application and acceptance</div>
+    <p className="mt-1 text-[8.5px] text-[var(--i-text-faint)]">Developer effort is divided by pooled effective project FTE and converted with the calendar-days policy. This is Signal interpretation, not quoted developer language.</p>
+    <input value={reviewerDisplayName} onChange={(event) => setReviewerDisplayName(event.target.value)} placeholder="Reviewer label (typed, not authenticated identity)" className="mt-2 w-full rounded px-2 py-1.5 text-[9.5px]" style={{ background: "var(--i-recess)", border: "1px solid var(--i-border)" }} />
+    <label className="mt-2 flex items-start gap-1.5 text-[8.5px] leading-snug text-[var(--i-text-soft)]"><input type="checkbox" checked={attested} onChange={(event) => setAttested(event.target.checked)} /> I attest that the selected quote supports the reviewed scope, unit, and work-meaning interpretation.</label>
+    <button type="button" disabled={!complete} onClick={() => onSubmit({
+      passageId,
+      sourceWorkMeaning: meaning as "remaining" | "total",
+      range: { low: numeric[0], likely: numeric[1], high: numeric[2] },
+      rangeOrigin: origins as Record<"low" | "likely" | "high", EstimatePointOrigin>,
+      rationale,
+      quoteSupportsInterpretation: true,
+      coveredOpenItemIds: openItems.filter((item) => classification[item.id] === "covered").map((item) => item.id),
+      additionalOpenItemIds: openItems.filter((item) => classification[item.id] === "additional").map((item) => item.id),
+      boundaryStatement,
+      reviewerDisplayName,
+    })} className="mt-2.5 w-full rounded px-2 py-1.5 text-[9.5px] disabled:opacity-40" style={{ border: "1px solid var(--i-signal)", color: "var(--i-signal)" }} data-shoot="accept-reviewed-knowledge-estimate">Accept reviewed estimate into Reality</button>
+  </div>;
 }
 
 // The one continuous control Scope owns. Two real dimensions, because a
@@ -1037,6 +1238,20 @@ function EstimatePad({
   const [dragging, setDragging] = useState(false);
   const stored = useMemo<ThreePoint>(() => item.realityRange ?? ({ low: item.low, likely: item.likely, high: item.high }), [item]);
   const current = { low: item.low, likely: item.likely, high: item.high };
+  const [numericDraft, setNumericDraft] = useState(() => ({ low: String(current.low), likely: String(current.likely), high: String(current.high) }));
+  useEffect(() => {
+    setNumericDraft({ low: String(item.low), likely: String(item.likely), high: String(item.high) });
+  }, [item.id, item.low, item.likely, item.high]);
+  const parsedDraft = {
+    low: Number(numericDraft.low),
+    likely: Number(numericDraft.likely),
+    high: Number(numericDraft.high),
+  };
+  const numericComplete = numericDraft.low.trim() !== "" && numericDraft.likely.trim() !== "" && numericDraft.high.trim() !== "";
+  const numericValid = numericComplete
+    && Object.values(parsedDraft).every((value) => Number.isFinite(value) && value >= 0)
+    && parsedDraft.low <= parsedDraft.likely
+    && parsedDraft.likely <= parsedDraft.high;
   const maxLikely = Math.max(1, stored.likely * 2.5);
   const storedSpread = Math.max(0.5, stored.high - stored.low);
   const maxSpread = storedSpread * 2.5;
@@ -1051,7 +1266,9 @@ function EstimatePad({
     const likely = Math.max(0.5, Math.round(nx * maxLikely * 2) / 2);
     const spread = Math.max(0, Math.round(ny * maxSpread * 2) / 2);
     const low = Math.max(0.1, Math.round((likely - spread * leftShare) * 10) / 10);
-    onChange({ low, likely, high: Math.max(Math.round((low + spread) * 10) / 10, likely) });
+    const next = { low, likely, high: Math.max(Math.round((low + spread) * 10) / 10, likely) };
+    setNumericDraft({ low: String(next.low), likely: String(next.likely), high: String(next.high) });
+    onChange(next);
   };
   const fromEvent = (e: React.PointerEvent<HTMLDivElement>) => {
     const r = e.currentTarget.getBoundingClientRect();
@@ -1127,6 +1344,32 @@ function EstimatePad({
           {(expectedDays(current) / (capacity > 0 ? capacity : 1)).toFixed(1)}d of schedule
         </span>
       </div>
+      <div className="mt-3 grid grid-cols-3 gap-1.5" data-shoot="precise-estimate-controls">
+        {(["low", "likely", "high"] as const).map((point) => <label key={point} className="text-[8.5px] capitalize text-[var(--i-text-faint)]">
+          {point} developer days
+          <input
+            type="number"
+            min="0"
+            step="0.1"
+            value={numericDraft[point]}
+            onChange={(event) => setNumericDraft((prior) => ({ ...prior, [point]: event.target.value }))}
+            aria-label={`Ticket estimate ${point}`}
+            className="mt-1 w-full rounded px-2 py-1.5 text-[9.5px]"
+            style={{ background: "var(--i-panel)", border: "1px solid var(--i-border)" }}
+          />
+        </label>)}
+      </div>
+      <button
+        type="button"
+        disabled={!numericValid}
+        onClick={() => onChange(parsedDraft)}
+        className="mt-2 w-full rounded px-2 py-1.5 text-[9.5px] disabled:cursor-not-allowed disabled:opacity-40"
+        style={{ border: "1px solid var(--i-violet)", color: "var(--i-violet)" }}
+        data-shoot="apply-precise-estimate"
+      >
+        Apply ticket estimate to Scenario
+      </button>
+      {!numericValid && <p className="mt-1 text-[8.5px] text-[var(--i-amber)]" role="status">Enter all three values with 0 ≤ low ≤ likely ≤ high. Nothing changes until Apply.</p>}
       <p className="mt-1 text-[9px] text-[var(--i-text-faint)]">Reality: {stored.low}–{stored.likely}–{stored.high} developer-days. Ticket edits remain hypothetical.</p>
     </div>
   );

@@ -7,6 +7,7 @@ import { moduleDefinition, type BriefModuleConfig, type BriefModuleId, type Brie
 import { buildBriefPresentation, sourceForModule } from "@/lib/reports/presentation";
 import { formatDateOnly, formatInstant, toInstant } from "@/lib/time/dateContract";
 import { FORECAST_PERCENTILE_COPY } from "@/lib/forecast/claims";
+import { capabilityEstimatePresentation } from "@/lib/reports/capabilityEstimatePresentation";
 import styles from "./ReportsComposer.module.css";
 
 const date = (iso: string | null) => iso ? formatDateOnly(iso, { month: "short", day: "numeric", year: "numeric" }) : "MISSING";
@@ -38,25 +39,31 @@ function ForecastAssumptions({ brief }: { brief: DecisionBriefV1 }) {
 function CapabilityEstimateBasis({ brief }: { brief: DecisionBriefV1 }) {
   const records = brief.forecast?.basis?.capabilityEstimates;
   if (!records?.length) return null;
-  return <div style={{ marginTop: 12 }}>
-    <div className={styles.label}>Frozen capability estimate basis</div>
-    <div className={styles.list} style={{ marginTop: 7 }}>
-      {records.map((record) => {
-        const estimate = record.estimate;
-        const range = estimate.range ? `${n(estimate.range.low)} / ${n(estimate.range.likely)} / ${n(estimate.range.high)} developer-days` : "range unavailable";
-        const heading = record.auditHref ? <Link href={record.auditHref}>{record.capabilityName}</Link> : record.capabilityName;
-        return <div className={styles.listItem} key={`${record.scopeId}:${record.capabilityId}:${estimate.id}`}>
-          <span>
-            <strong>{heading}</strong>
-            <small style={{ display: "block" }}>{record.authority} · {estimate.basis.replaceAll("_", " ")} · {range} · source {estimate.observedAt ? date(estimate.observedAt) : "date unavailable"}</small>
-            <small style={{ display: "block", marginTop: 5 }}>Original statement: “{estimate.excerpt ?? estimate.statement}”</small>
-            <small style={{ display: "block" }}>Raw estimate: {estimate.rawEstimate} · immutable snapshot {estimate.contextSnapshotId}</small>
-          </span>
-          <strong>{record.replacedItemIds.length} ticket {record.replacedItemIds.length === 1 ? "estimate" : "estimates"} replaced</strong>
-        </div>;
-      })}
+  return <section className={styles.briefModule} data-module-id="forecast-estimate-provenance" aria-labelledby="forecast-estimate-provenance-heading">
+    <div className={styles.briefModuleContent} style={{ paddingTop: 14 }}>
+      <h2 className={styles.moduleTitle} id="forecast-estimate-provenance-heading">Frozen capability estimate basis</h2>
+      <div className={styles.list} style={{ marginTop: 7 }}>
+        {records.map((record) => {
+          const presentation = capabilityEstimatePresentation(record);
+          const range = presentation.range ? `${n(presentation.range.low)} / ${n(presentation.range.likely)} / ${n(presentation.range.high)} developer-days` : "range unavailable";
+          const heading = record.auditHref ? <Link href={record.auditHref}>{record.capabilityName}</Link> : record.capabilityName;
+          return <div className={styles.listItem} key={`${record.scopeId}:${record.capabilityId}:${presentation.estimateId}`}>
+            <span>
+              <strong>{heading}</strong>
+              <small style={{ display: "block" }}>{presentation.authorityLabel} · {presentation.basisLabel} · {range} · source {presentation.sourceDate ? date(presentation.sourceDate) : "date unavailable"}</small>
+              {presentation.reviewSummary && <small className={presentation.reviewRequired ? styles.warning : styles.muted} style={{ display: "block", marginTop: 5 }}>{presentation.reviewSummary}</small>}
+              {presentation.interpretation && <small style={{ display: "block", marginTop: 5 }}><strong>Reviewed interpretation:</strong> {presentation.interpretation}</small>}
+              {record.review && <small style={{ display: "block" }}>Reviewer {presentation.reviewer ?? "unavailable"} · reviewed {presentation.reviewedAt ? date(presentation.reviewedAt) : "date unavailable"}</small>}
+              {record.review && <small style={{ display: "block" }}>Covered tickets: {presentation.coveredItemIds.length ? presentation.coveredItemIds.join(", ") : "none"} · Additional tickets retained separately: {presentation.additionalItemIds.length ? presentation.additionalItemIds.join(", ") : "none"}</small>}
+              <small style={{ display: "block", marginTop: 5 }}>Original statement: “{presentation.originalQuote}”</small>
+              <small style={{ display: "block" }}>Raw assertion: {presentation.rawAssertion} · immutable snapshot {presentation.contextSnapshotId}</small>
+            </span>
+            <strong>{record.review ? (presentation.usedInSimulation ? `${presentation.coveredItemIds.length} covered ticket ${presentation.coveredItemIds.length === 1 ? "estimate" : "estimates"} replaced` : "Evidence only; ticket rollup used") : `${record.replacedItemIds.length} ticket ${record.replacedItemIds.length === 1 ? "estimate" : "estimates"} replaced`}</strong>
+          </div>;
+        })}
+      </div>
     </div>
-  </div>;
+  </section>;
 }
 
 function ModuleContent({ id, brief, recipe }: { id: BriefModuleId; brief: DecisionBriefV1; recipe: BriefRecipeV1 }) {
@@ -77,7 +84,7 @@ function ModuleContent({ id, brief, recipe }: { id: BriefModuleId; brief: Decisi
     case "next": return <p className={styles.copy}>{brief.timeline.nextMilestone.value ? `${brief.timeline.nextMilestone.value.title} · ${date(brief.timeline.nextMilestone.value.date)}` : "Next milestone MISSING."}</p>;
     case "decisions": return <ul className={styles.list}>{brief.calls.decisions.value.map((decision) => <li className={styles.listItem} key={decision.id}><Link href={decision.href}>{decision.title}</Link><strong>{decision.gated ? `${n(decision.modeledDelay.low)}/${n(decision.modeledDelay.likely)}/${n(decision.modeledDelay.high)}d · ${decision.gate?.targetScopeName}` : "UNGATED · 0d"}</strong></li>)}</ul>;
     case "dependencies": return brief.calls.dependencies.value.length ? <ul className={styles.list}>{brief.calls.dependencies.value.map((dependency) => <li className={styles.listItem} key={dependency.scopeId}><span><Link href={dependency.href}>{dependency.name}</Link><small style={{ display: "block" }}>Completion floor · own work may proceed concurrently; each run uses the later completion.</small></span><strong>{dependency.likelyDate ? `P50 ${date(dependency.likelyDate)}` : "SNAPSHOT CONSEQUENCE UNAVAILABLE"}</strong></li>)}</ul> : <p className={styles.copy}>No declared dependency finish floors in this snapshot.</p>;
-    case "scope": { const scope = brief.movable.scope.value; const quality = scope.estimateQuality; return <div><div className={styles.metric}><div className={styles.label}>Forecast work basis</div><div className={styles.metricValue}>{scope.executableItemCount} tracked source tickets</div><div className={styles.metricSub}>{scope.simulationItemCount ?? "Legacy unknown"} simulated estimate-basis items · {n(scope.remainingEffortDays.low)} / {n(scope.remainingEffortDays.likely)} / {n(scope.remainingEffortDays.high)} effort days · <Link href={scope.href}>Open Scope</Link></div>{quality && <div className={styles.metricSub} style={{ marginTop: 6 }}>Estimate quality · {quality.pointsIssueCount} Linear · {quality.aiCount} AI · {quality.placeholderIssueCount + quality.placeholderFindingCount} placeholders · {quality.placeholderEffortSharePct}% placeholder effort</div>}</div>{scope.capabilityOutlooks?.length ? <div className={styles.list} style={{ marginTop: 10 }}>{scope.capabilityOutlooks.map((outlook) => <div className={styles.listItem} key={outlook.capabilityId}><span><strong>{outlook.name}</strong><small style={{ display: "block" }}>{outlook.contributors.map((person) => `${person.name} ${n(person.fte)} FTE`).join(" · ")} · isolated · P10–P90 {date(outlook.earliestDate)}–{date(outlook.latestDate)}</small></span><strong>P50 {date(outlook.likelyDate)}</strong></div>)}</div> : null}<CapabilityEstimateBasis brief={brief} /></div>; }
+    case "scope": { const scope = brief.movable.scope.value; const quality = scope.estimateQuality; return <div><div className={styles.metric}><div className={styles.label}>Forecast work basis</div><div className={styles.metricValue}>{scope.executableItemCount} tracked source tickets</div><div className={styles.metricSub}>{scope.simulationItemCount ?? "Legacy unknown"} simulated estimate-basis items · {n(scope.remainingEffortDays.low)} / {n(scope.remainingEffortDays.likely)} / {n(scope.remainingEffortDays.high)} effort days · <Link href={scope.href}>Open Scope</Link></div>{quality && <div className={styles.metricSub} style={{ marginTop: 6 }}>Estimate quality · {quality.pointsIssueCount} Linear · {quality.aiCount} AI · {quality.placeholderIssueCount + quality.placeholderFindingCount} placeholders · {quality.placeholderEffortSharePct}% placeholder effort</div>}</div>{scope.capabilityOutlooks?.length ? <div className={styles.list} style={{ marginTop: 10 }}>{scope.capabilityOutlooks.map((outlook) => <div className={styles.listItem} key={outlook.capabilityId}><span><strong>{outlook.name}</strong><small style={{ display: "block" }}>{outlook.contributors.map((person) => `${person.name} ${n(person.fte)} FTE`).join(" · ")} · isolated · P10–P90 {date(outlook.earliestDate)}–{date(outlook.latestDate)}</small></span><strong>P50 {date(outlook.likelyDate)}</strong></div>)}</div> : null}</div>; }
     case "capacity": { const c = brief.movable.capacity.value; return c.availability === "available" ? <div><div className={styles.metric}><div className={styles.label}>Reconciled named capacity</div><div className={styles.metricValue}>{n(c.namedEffectiveFte!)} FTE</div><div className={styles.metricSub}>{n(c.namedRawFte!)} raw → {n(c.namedEffectiveFte!)} effective → {n(c.forecastEffectiveFte)} Forecast</div></div><ul className={styles.list} style={{ marginTop: 8 }}>{c.contributors.map((person) => <li className={styles.listItem} key={person.personId}><span>{person.name}</span><strong>{n(person.effectiveFte)} effective FTE</strong></li>)}</ul></div> : <div className={styles.warning}>Named Capacity {c.availability.toUpperCase()}. Forecast uses {n(c.forecastEffectiveFte)} FTE; this is not a named-staffing claim.</div>; }
     case "timeline": return <div><div className={styles.metric} style={{ "--tone": brief.timeline.currentForecast.source.currentness === "stale" ? "#e5b84b" : "#7d9eff" } as React.CSSProperties}><div className={styles.label}>Snapshot P50 forecast</div><div className={styles.metricValue}>{date(brief.timeline.currentForecast.value.likelyDate)}</div><div className={styles.metricSub}>P10–P90 {date(brief.timeline.currentForecast.value.earliestDate)}–{date(brief.timeline.currentForecast.value.latestDate)} · <Link href={brief.timeline.currentForecast.value.href}>Open Forecast</Link></div></div><SnapshotStamp brief={brief} source={brief.timeline.currentForecast.source} /><p className={styles.copy} style={{ marginTop: 8 }}>Next milestone: {brief.timeline.nextMilestone.value ? `${brief.timeline.nextMilestone.value.title} · ${date(brief.timeline.nextMilestone.value.date)}` : "MISSING"}</p></div>;
     case "audit-delta": return <p className={styles.copy}>{brief.changes.audit.value.priorRunId ?? "MISSING"} → {brief.changes.audit.value.currentRunId ?? "MISSING"} · {brief.changes.audit.value.newFindings.length} new · {brief.changes.audit.value.resolvedFindings.length} resolved</p>;
@@ -103,6 +110,7 @@ export default function AudienceBriefView({ brief, recipe, sitePreview = false }
     <div className={styles.preview}>
       <header className={styles.briefHeader}><div className={styles.mode}>{brief.identity.mode} · {p.purposeLabel}</div><h1 className={styles.briefTitle}>{p.projectName}<br />{p.audienceLabel} Brief</h1><div className={styles.fingerprint}>Immutable {brief.version} · {p.version} · {p.snapshotFingerprint} · generated {instantDate(p.generatedAt)}</div></header>
       {p.modules.map((module, index) => <BriefModule key={module.id} module={module} brief={brief} recipe={recipe} open={!sitePreview || index < 3 || module.id === "caveats"} />)}
+      <CapabilityEstimateBasis brief={brief} />
     </div>
   </article>;
 }

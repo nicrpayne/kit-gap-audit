@@ -8,14 +8,26 @@ import {
 import { runPortfolioSimulation, type ScopeSimulationSpec } from "../lib/forecast/portfolio";
 import { acceptCapabilityKnowledgeEstimate } from "../lib/scope/knowledgeEstimates";
 import { normalizeReportJsonForPersistence } from "../lib/reports/persistenceNormalization";
+import type { FrozenCapabilityEstimate } from "../lib/reports/forecastBasis";
+
+function legacyEstimate(record: FrozenCapabilityEstimate) {
+  const value = record.estimate;
+  if ("version" in value && value.version === "accepted-capability-estimate.v2") {
+    throw new Error("Expected the historical accepted fixture.");
+  }
+  return value;
+}
 
 // Synthetic control, not a claim about the actual refinement transcript.
 const estimate = acceptCapabilityKnowledgeEstimate({
   id: "estimate-1", contextSnapshotId: "snapshot-A", capabilityId: "feature-1",
   rawEstimate: "Fractional developer days remaining", range: { low: 1 / 3, likely: 2 / 3, high: 4 / 3 },
+  rawUnit: "developer_days", rawValues: [1 / 3, 2 / 3, 4 / 3], rawShape: "three_point",
+  sourceWorkMeaning: "remaining", currentness: "current", supersedes: [], supersededBy: [],
   unit: "developer_days", basis: "remaining_capability", speaker: null, owner: null,
   observedAt: "2026-09-22", sourceRef: "synthetic-transcript", excerpt: "2–4 developer days remaining",
   evidenceRefs: ["exact-passage"], statement: "Synthetic feature estimate", confidence: null,
+  passages: [{ id: "exact-passage", sourceRef: "synthetic-transcript", exactQuote: "2–4 developer days remaining", externalRef: null, sourceUrl: null, surroundingContext: null }],
 }, "2026-09-23T12:00:00Z");
 const specs: ScopeSimulationSpec[] = [{
   scopeId: "synthetic", items: [{ id: "knowledge-estimate:feature-1:estimate-1", label: "Feature", ...estimate.range }],
@@ -50,16 +62,16 @@ const persisted = normalizeReportJsonForPersistence(persistenceInput);
 assert.equal(persisted.presentationMetric, 0.666666667, "legacy presentation numbers retain nine-decimal normalization");
 assert.deepEqual(persisted.forecast.basis, saved, "persistence normalization preserves the complete frozen forecast basis exactly");
 assert.equal(persisted.forecast.basis.capacity?.modeledAllocations[0].fraction, 2 / 3);
-assert.equal(persisted.forecast.basis.capabilityEstimates[0].estimate.range?.low, 1 / 3);
+assert.equal(legacyEstimate(persisted.forecast.basis.capabilityEstimates[0]).range?.low, 1 / 3);
 assert.deepEqual(
   replayFrozenForecast(persisted.forecast.basis).get("synthetic")!.completionDaysSorted,
   expected.completionDaysSorted,
   "persistence normalization cannot move replay boundaries",
 );
 basisAtPersistence.capacity!.modeledAllocations[0].fraction = 0.25;
-basisAtPersistence.capabilityEstimates[0].estimate.range!.low = 0.25;
+legacyEstimate(basisAtPersistence.capabilityEstimates[0]).range!.low = 0.25;
 assert.equal(persisted.forecast.basis.capacity?.modeledAllocations[0].fraction, 2 / 3, "persisted basis is detached from later owner mutation");
-assert.equal(persisted.forecast.basis.capabilityEstimates[0].estimate.range?.low, 1 / 3);
+assert.equal(legacyEstimate(persisted.forecast.basis.capabilityEstimates[0]).range?.low, 1 / 3);
 assert.equal(replayFrozenForecast(saved).get("synthetic")!.likelyDate.toISOString(), expected.likelyDate.toISOString());
 assert.deepEqual(replayFrozenForecast(saved).get("synthetic")!.completionDaysSorted, expected.completionDaysSorted);
 estimate.excerpt = "Newer quote B";
@@ -86,8 +98,8 @@ assert.deepEqual(saved.capacity?.hypotheticalHires, [
 ]);
 assert.deepEqual(saved.capacity?.aggregateOverridesByScope, { synthetic: 1.75 });
 assert.equal(saved.capacity?.contextSwitchCostPct, 12);
-assert.equal(saved.capabilityEstimates[0].estimate.contextSnapshotId, "snapshot-A");
-assert.equal(saved.capabilityEstimates[0].estimate.excerpt, "2–4 developer days remaining");
+assert.equal(legacyEstimate(saved.capabilityEstimates[0]).contextSnapshotId, "snapshot-A");
+assert.equal(legacyEstimate(saved.capabilityEstimates[0]).excerpt, "2–4 developer days remaining");
 assert.deepEqual(saved.capabilityEstimates[0].replacedItemIds, ["WORK-1", "WORK-2"]);
 assert.equal(new URL(saved.capabilityEstimates[0].auditHref!, "http://localhost").searchParams.get("select"), "passage:snapshot-A:exact-passage");
 assert.throws(() => replayFrozenForecast({ ...saved, seed: 1 }), /original model version/);

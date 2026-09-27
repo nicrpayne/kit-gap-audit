@@ -58,11 +58,19 @@ assert.equal(countScenarioReportLevers({
 const serverSource = readFileSync(new URL("../lib/reports/scenario.ts", import.meta.url), "utf8");
 assert.match(serverSource, /const leverConflicts = findScenarioLeverConflicts/);
 assert.match(serverSource, /Scenario levers conflict:/);
+assert.match(serverSource, /!target\.forecastCoverage\.canonicalForecast[\s\S]*ForecastCoverageIncompleteError/,
+  "Scenario report publication must fail before using a review-required forecast basis");
+assert.match(serverSource, /reviewedEstimateSimulationDecision/,
+  "Scenario consumers must use the normalized reviewed boundary rather than raw accepted-estimate fields");
+assert.match(serverSource, /Raw meeting estimates cannot support a new delivery report[\s\S]*reviewed remaining-work interpretation[\s\S]*covered\/additional ticket boundary/,
+  "raw provisional assertions must fail closed at the report boundary");
 assert.match(serverSource, /scenario\.excludedCapabilityIds\.length[\s\S]*product capability/,
   "a capability-only product-scope change must remain visible in the frozen causal explanation");
 const clientSource = readFileSync(new URL("../components/ReportsPageClient.tsx", import.meta.url), "utf8");
 assert.match(clientSource, /countScenarioReportLevers\(\{/);
 assert.match(clientSource, /scenarioLeverConflictReason[\s\S]*Resolve in Scope/,
   "the UI must block contradictory publication without deleting independent staged levers");
+assert.match(clientSource, /unreviewedKnowledgeReason[\s\S]*other staged Scenario levers will remain unchanged/,
+  "the UI must direct explicit estimate review without silently deleting unrelated work");
 
 console.log("PASS: contradictory Scenario levers fail closed while capability-only removals remain reportable.");

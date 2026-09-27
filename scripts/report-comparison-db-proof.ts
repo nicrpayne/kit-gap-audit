@@ -5,7 +5,7 @@ import { Prisma, PrismaClient } from "@prisma/client";
 import { isDecisionBriefV1, type DecisionBriefV1 } from "../lib/reports/decisionBrief";
 import { CANONICAL_REPORT_MODE_WHERE } from "../lib/reports/history";
 import { buildCapacityPlanBaseline, createCapacityScenarioPlan } from "../lib/scenario/capacityPlan";
-import type { AcceptedCapabilityEstimate } from "../lib/scope/knowledgeEstimates";
+import { estimateBoundaryFingerprint, isAcceptedCapabilityEstimateV2, type AcceptedCapabilityEstimateV2 } from "../lib/scope/knowledgeEstimates";
 
 if (process.env.REPORTS_DB_PROOF !== "1") {
   throw new Error("Refusing to write: set REPORTS_DB_PROOF=1 only for a disposable loopback PostgreSQL database.");
@@ -39,6 +39,7 @@ const personId = `reports-db-proof-person-${fixtureKey}`;
 const snapshotId = `reports-db-proof-snapshot-${fixtureKey}`;
 const quotedCapabilityId = `reports-db-proof-quoted-${fixtureKey}`;
 const rollupCapabilityId = `reports-db-proof-rollup-${fixtureKey}`;
+const optionalCapabilityId = `reports-db-proof-optional-${fixtureKey}`;
 const hypotheticalHireId = `reports-db-proof-hire-${fixtureKey}`;
 const quotedItemId = "SOF-128";
 const excludedItemId = "SOF-135";
@@ -48,29 +49,55 @@ let fixtureDatabaseAuthorized = false;
 let applicationPrismaForCleanup: PrismaClient | null = null;
 type TransactionEntry = (...args: unknown[]) => Promise<unknown>;
 
-const acceptedEstimate: AcceptedCapabilityEstimate = {
-  id: `estimate-${fixtureKey}`,
-  contextSnapshotId: snapshotId,
-  capabilityId: quotedCapabilityId,
-  rawEstimate: "4–8 developer days",
-  range: { low: 4, likely: 6, high: 8 },
-  unit: "developer_days",
-  basis: "remaining_capability",
-  speaker: "Fixture speaker",
-  owner: "Fixture owner",
-  observedAt: "2026-09-25T15:00:00.000Z",
-  sourceRef: `fixture-transcript-${fixtureKey}`,
-  excerpt: originalQuote,
-  evidenceRefs: [`fixture-passage-${fixtureKey}`],
-  statement: "The source gives a 4–8 developer-day bound; this fixture uses 6 as the interpreted midpoint, not as a third quoted number.",
-  confidence: "explicit",
-  sourceLocator: {
+const acceptedEstimate: AcceptedCapabilityEstimateV2 = {
+  version: "accepted-capability-estimate.v2",
+  source: {
+    contextSnapshotId: snapshotId,
+    intelligenceObjectId: `estimate-${fixtureKey}`,
+    passageId: `fixture-passage-${fixtureKey}`,
+    sourceRef: `fixture-transcript-${fixtureKey}`,
+    exactQuote: originalQuote,
+    surroundingContext: "Fixture-only local evidence.",
     externalRef: `fixture-transcript-${fixtureKey}#passage`,
     sourceUrl: null,
-    surroundingContext: "Fixture-only local evidence.",
+    statement: "The source gives a 4–8 developer-day bound; this fixture uses 6 as the reviewer-interpreted midpoint, not as a third quoted number.",
+    rawEstimateText: "4–8 developer days",
+    rawUnit: "developer_days",
+    rawValues: [4, 8],
+    rawShape: "bounds",
+    speaker: "Fixture speaker",
+    observedAt: "2026-09-25T15:00:00.000Z",
+    currentnessAtReview: "current",
+    supersedes: [],
+    supersededBy: [],
   },
-  acceptedAt: "2026-09-25T16:00:00.000Z",
-  acceptedBy: "operator",
+  interpretation: {
+    sourceWorkMeaning: "remaining",
+    modeledBasis: "remaining_capability",
+    modeledUnit: "developer_days",
+    range: { low: 4, likely: 6, high: 8 },
+    rangeOrigin: { low: "verbatim", likely: "operator", high: "verbatim" },
+    rationale: "Fixture reviewer interpreted 6 as the likely remaining effort; the source itself supplied only the 4–8 bounds.",
+    quoteSupportsInterpretation: true,
+    policy: {
+      progress: "manual_remaining_no_status_discount.v1",
+      capacity: "pooled_effective_fte.v1",
+      calendar: "calendar_days.v1",
+    },
+  },
+  boundary: {
+    capabilityId: quotedCapabilityId,
+    capabilityRevisionAtReview: 1,
+    coveredOpenItemIds: [quotedItemId],
+    additionalOpenItemIds: [],
+    reviewedLinkFingerprint: estimateBoundaryFingerprint(quotedCapabilityId, [quotedItemId], []),
+    reviewedAt: "2026-09-25T16:00:00.000Z",
+    boundaryStatement: null,
+  },
+  acceptance: {
+    acceptedAt: "2026-09-25T16:00:00.000Z",
+    reviewer: { id: null, displayName: "Reports proof reviewer" },
+  },
 };
 
 const baselineAllocation = { personId, scopeId, fraction: 2 / 3 };
@@ -124,6 +151,11 @@ function frozenEstimateOf(brief: DecisionBriefV1) {
   const estimate = basisOf(brief).capabilityEstimates.find((entry) => entry.capabilityId === quotedCapabilityId);
   assert(estimate, "the accepted quoted capability estimate is frozen into the report");
   return estimate;
+}
+
+function frozenQuote(brief: DecisionBriefV1): string | null {
+  const estimate = frozenEstimateOf(brief).estimate;
+  return isAcceptedCapabilityEstimateV2(estimate) ? estimate.source.exactQuote : estimate.excerpt;
 }
 
 async function rowsForComparison(comparisonId: string) {
@@ -246,10 +278,26 @@ async function createFixture() {
     packageVersion: "1.1",
     producer: `reports-db-proof-${fixtureKey}`,
     package: {
+      version: "1.1",
+      packageId: `reports-db-proof-package-${fixtureKey}`,
+      producer: "manual",
       generatedAt: "2026-09-25T15:00:00.000Z",
-      sources: [],
-      evidence: [],
-      intelligenceObjects: [],
+      scopeId,
+      sources: [{ sourceType: "transcript", sourceRef: `fixture-transcript-${fixtureKey}`, registrationId: null, role: "estimate_evidence", status: "candidate", observedAt: "2026-09-25T15:00:00.000Z", succeeded: true, detail: null }],
+      evidence: [{ id: `fixture-passage-${fixtureKey}`, sourceRef: `fixture-transcript-${fixtureKey}`, kind: "passage", excerpt: originalQuote, externalRef: `fixture-transcript-${fixtureKey}#passage`, data: { speaker: "Fixture speaker", meetingDate: "2026-09-25", surroundingContext: "Fixture-only local evidence." } }],
+      intelligenceObjects: [{
+        id: `estimate-${fixtureKey}`,
+        intelligenceType: "Commitment",
+        trust: "external_intelligence",
+        statement: acceptedEstimate.source.statement,
+        isCurrent: true,
+        observedDate: "2026-09-25T15:00:00.000Z",
+        evidenceRefs: [`fixture-passage-${fixtureKey}`],
+        fields: { capability_id: quotedCapabilityId, duration_stated: "4–8 developer days", source_work_meaning: "remaining" },
+      }],
+      intelligenceRelations: [],
+      completeness: { expectedSources: [], missingSources: [], excludedSources: [] },
+      warnings: [],
     },
     contextHash: `reports-db-proof-hash-${fixtureKey}`,
     completenessSummary: { status: "complete", active: [], missingActive: [] },
@@ -282,13 +330,18 @@ async function createFixture() {
     revision: 1,
     sortOrder: 1,
     provenance: { kind: "reports-db-proof" },
-    workLinks: { create: remainingIds.map((externalId) => ({
+    workLinks: { create: remainingIds.filter((id) => id !== excludedItemId).map((externalId) => ({
       provider: "linear",
       externalId,
       externalUrl: `https://linear.app/fixture/issue/${externalId}`,
       state: "active",
       provenance: { kind: "reports-db-proof" },
     })) },
+  } });
+  await db.capability.create({ data: {
+    id: optionalCapabilityId, scopeId, name: "Optional fixture slice", status: "accepted", revision: 1, sortOrder: 2,
+    provenance: { kind: "reports-db-proof" },
+    workLinks: { create: [{ provider: "linear", externalId: excludedItemId, state: "active", provenance: { kind: "reports-db-proof" } }] },
   } });
   return scope;
 }
@@ -360,12 +413,31 @@ async function main() {
   }]);
   assert.equal(pair.reality.brief.movable.capacity.value.forecastEffectiveFte, 1);
   assert.equal(pair.scenario.brief.movable.capacity.value.forecastEffectiveFte, 1.5);
+  assert.equal(pair.scenario.brief.movable.capacity.value.availability, "available", "an exact Scenario plan remains named and reconciled in the saved brief");
+  assert.equal(pair.scenario.brief.movable.capacity.value.namedRawFte, 1.5);
+  assert.equal(pair.scenario.brief.movable.capacity.value.namedEffectiveFte, 1.5);
+  assert(pair.scenario.brief.movable.capacity.value.contributors.some((contributor) => contributor.personId === hypotheticalHireId && contributor.effectiveFte === 0.5));
   const realityItems = basisOf(pair.reality.brief).scopes.find((item) => item.scopeId === scopeId)?.items ?? [];
   const scenarioItems = basisOf(pair.scenario.brief).scopes.find((item) => item.scopeId === scopeId)?.items ?? [];
   assert(realityItems.some((item) => item.id === excludedItemId));
   assert(!scenarioItems.some((item) => item.id === excludedItemId), "Scenario exclusion survives into the frozen simulated input");
-  assert.equal(frozenEstimateOf(pair.reality.brief).estimate.excerpt, originalQuote);
-  assert.equal(frozenEstimateOf(pair.scenario.brief).estimate.excerpt, originalQuote);
+  assert.equal(pair.reality.brief.movable.scope.value.executableItemCount, 10, "tracked source-ticket count remains a Reality census");
+  assert.equal(pair.scenario.brief.movable.scope.value.executableItemCount, 10, "Scenario does not rewrite the tracked source-ticket census");
+  assert.equal(pair.reality.brief.movable.scope.value.simulationItemCount, 10);
+  assert.equal(pair.scenario.brief.movable.scope.value.simulationItemCount, 9, "Scenario reports the active modeled input count after exclusion");
+  const scenarioLikelyTime = Date.parse(`${pair.scenario.brief.headline.likelyWindow.value.likely}T00:00:00.000Z`);
+  for (const option of pair.scenario.brief.movable.scenarioOptions.value) {
+    const optionTime = Date.parse(`${option.likelyDate}T00:00:00.000Z`);
+    assert.equal(Math.round((optionTime - scenarioLikelyTime) / 86_400_000), option.deltaDays, `${option.id} delta is relative to the saved Scenario, not copied from Reality`);
+  }
+  assert.notDeepEqual(pair.scenario.brief.movable.scenarioOptions.value, pair.reality.brief.movable.scenarioOptions.value, "Scenario acceleration levers are recomputed from the hypothetical basis");
+  assert.match(pair.scenario.brief.movable.scenarioOptions.value.find((option) => option.id === "capacity-plus-1")?.label ?? "", /capacity 2\.5/);
+  assert.match(pair.scenario.report.summaryMarkdown, /9 simulated estimate-basis items/);
+  assert.match(pair.scenario.report.summaryMarkdown, /10 tracked source tickets/);
+  assert.match(pair.scenario.report.summaryMarkdown, /1\.5 effective Forecast FTE/);
+  assert.doesNotMatch(pair.scenario.report.summaryMarkdown, /Named Capacity unavailable/i);
+  assert.equal(frozenQuote(pair.reality.brief), originalQuote);
+  assert.equal(frozenQuote(pair.scenario.brief), originalQuote);
   assert.equal((await rowsForComparison(comparisonId)).length, 2, "a successful comparison saves exactly two rows");
 
   const retry = await generateReportComparison(scope, input);
@@ -494,6 +566,18 @@ async function main() {
   assert.equal((await rowsForComparison(ownerRaceId)).length, 0, "an owner mutation fails closed with neither report saved");
   await db.decision.delete({ where: { id: ownerMutationId } });
 
+  if (process.env.SIGNAL_REPORT_BROWSER_PROOF === "1") {
+    const acceptedState = async () => ({
+      scope: await db.scope.findUnique({ where: { id: scopeId } }),
+      capabilities: await db.capability.findMany({ where: { scopeId }, orderBy: { id: "asc" }, include: { workLinks: { orderBy: { id: "asc" } } } }),
+      person: await db.person.findUnique({ where: { id: personId } }),
+      allocations: await db.allocation.findMany({ where: { scopeId }, orderBy: { id: "asc" } }),
+    });
+    const acceptedBeforeBrowser = await acceptedState();
+    const { proveReportWorkflowInBrowser } = await import("./report-workflow-browser-proof");
+    await proveReportWorkflowInBrowser(scopeId, { rollupCapabilityId, optionalCapabilityId, excludedItemId });
+    assert.deepEqual(await acceptedState(), acceptedBeforeBrowser, "browser Scenarios and report creation never mutate accepted Scope/staffing/links");
+  }
   const persistedBeforeMutation = await db.report.findMany({ where: { id: { in: [pair.reality.report.id, pair.scenario.report.id] } }, orderBy: { id: "asc" } });
   const immutableBefore = persistedBeforeMutation.map((row) => ({ brief: row.briefSnapshot, markdown: row.summaryMarkdown, scenario: row.scenarioSnapshot }));
   await db.person.update({ where: { id: personId }, data: { name: "Changed current developer", fte: 2 } });
@@ -501,10 +585,15 @@ async function main() {
     revision: { increment: 1 },
     acceptedEstimate: {
       ...acceptedEstimate,
-      range: { low: 13, likely: 21, high: 34 },
-      rawEstimate: "13–21–34 developer days",
-      excerpt: changedQuote,
-      statement: "A newer current owner assertion has replaced the prior quote.",
+      source: {
+        ...acceptedEstimate.source,
+        rawEstimateText: "13–21–34 developer days",
+        rawValues: [13, 21, 34],
+        rawShape: "three_point",
+        exactQuote: changedQuote,
+        statement: "A newer current owner assertion has replaced the prior quote.",
+      },
+      interpretation: { ...acceptedEstimate.interpretation, range: { low: 13, likely: 21, high: 34 } },
     } as unknown as Prisma.InputJsonValue,
   } });
   await db.contextSnapshot.create({ data: {
@@ -529,8 +618,8 @@ async function main() {
     assert.equal(frozenCapacity?.namedRoster.find((person) => person.id === personId)?.fte, 1.5);
     assert.equal(frozenCapacity?.namedRoster.find((person) => person.id === personId)?.externalCommitmentFte, 0.5);
     assert.equal(frozenCapacity?.namedRoster.find((person) => person.id === personId)?.name, "Reports proof developer");
-    assert.equal(frozenEstimateOf(row.briefSnapshot).estimate.excerpt, originalQuote);
-    assert.notEqual(frozenEstimateOf(row.briefSnapshot).estimate.excerpt, changedQuote);
+    assert.equal(frozenQuote(row.briefSnapshot), originalQuote);
+    assert.notEqual(frozenQuote(row.briefSnapshot), changedQuote);
   }
   const storedScenario = persistedAfterMutation.find((row) => row.mode === "scenario");
   assert(storedScenario?.scenarioSnapshot && typeof storedScenario.scenarioSnapshot === "object" && !Array.isArray(storedScenario.scenarioSnapshot));

@@ -17,6 +17,7 @@ export type ForecastCoverageReasonCode =
   | "accepted_scope_mapping_missing_from_source"
   | "execution_work_unmapped"
   | "shape_decisions_open"
+  | "capability_estimate_review_required"
   | "dependency_coverage_incomplete";
 
 export interface ForecastCoverageReason {
@@ -55,6 +56,10 @@ export class ForecastCoverageIncompleteError extends Error {
 interface CoverageCapability {
   status: string;
   workLinks: { externalId: string; state: string }[];
+  /** True when an accepted assertion cannot support a new canonical
+      delivery claim. Reviewed v2 may remain qualified exploration; legacy
+      or malformed assertions are not applied. */
+  estimateReviewRequired?: boolean;
 }
 
 export interface ForecastCoverageInput {
@@ -171,14 +176,27 @@ export function evaluateForecastCoverage(input: ForecastCoverageInput): Forecast
       count: input.openShapeDecisionCount,
     });
   }
+  const estimatesAwaitingReview = accepted.filter((capability) => capability.estimateReviewRequired).length;
+  if (estimatesAwaitingReview > 0) {
+    reasons.push({
+      code: "capability_estimate_review_required",
+      label: `${estimatesAwaitingReview} accepted capability ${estimatesAwaitingReview === 1 ? "estimate requires" : "estimates require"} explicit boundary review`,
+      count: estimatesAwaitingReview,
+    });
+  }
 
   if (reasons.length > 0) {
+    const estimateReviewRequired = reasons.some((reason) => reason.code === "capability_estimate_review_required");
     return {
       state: "modeled_subset",
       canonicalForecast: false,
-      label: "FORECAST INCOMPLETE — EXECUTION COVERAGE UNRESOLVED",
+      label: estimateReviewRequired
+        ? "FORECAST INCOMPLETE — ESTIMATE REVIEW REQUIRED"
+        : "FORECAST INCOMPLETE — EXECUTION COVERAGE UNRESOLVED",
       reason: reasons.map((item) => item.label).join("; "),
-      caveat: "Unmapped accepted scope or unclassified execution work is excluded.",
+      caveat: estimateReviewRequired
+        ? "An accepted estimate needs review. Reviewed v2 may appear only as qualified exploration; a legacy or malformed assertion is not applied, and remaining tickets are only a ticket-only subset pending review."
+        : "Unmapped accepted scope or unclassified execution work is excluded.",
       reasons,
       census,
     };

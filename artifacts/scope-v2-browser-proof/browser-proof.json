@@ -1,10 +1,46 @@
 {
   "ok": true,
+  "fixtureProvenance": "mocked browser read model and mocked estimate PUT; no database persistence provenance",
+  "authenticationModes": [
+    "loopback_http_cookie_clone"
+  ],
   "proposalCards": 16,
   "overviewMode": true,
   "capabilityFocus": true,
   "uncertaintyLabel": true,
   "attachedEvidenceInspectable": true,
+  "estimateReviewDrawer": {
+    "emptyRangeInputs": true,
+    "unknownMeaningUnselected": true,
+    "exactPassageSelected": "passage-selected",
+    "invalidRangeDisabled": true,
+    "typedReviewer": "Browser fixture reviewer",
+    "coveredItemIds": [
+      "SOF-100"
+    ],
+    "additionalItemIds": [
+      "SOF-101"
+    ],
+    "acceptedSourceReadable": true,
+    "historicalSourceReadable": true,
+    "mockedWriteCount": 1
+  },
+  "preciseTicketEstimate": {
+    "labeledInputs": true,
+    "partialDisabled": true,
+    "unorderedDisabled": true,
+    "appliedRange": {
+      "low": 1.5,
+      "likely": 2.5,
+      "high": 5
+    },
+    "realityRangePreserved": {
+      "low": 1,
+      "likely": 2,
+      "high": 4
+    },
+    "resetToReality": true
+  },
   "releaseTitleVisible": true,
   "releaseTitleGeometry": {
     "titleTop": 238.25,

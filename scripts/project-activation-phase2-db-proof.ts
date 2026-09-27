@@ -5,7 +5,7 @@ import { POST as postBootstrapPackage } from "../app/api/project-bootstraps/[id]
 import { prisma } from "../lib/prisma";
 import { activateProjectBootstrap } from "../lib/bootstrap/activation";
 import { auditActivatedBootstrapRefresh } from "../lib/bootstrap/refresh";
-import { computeForecast, ForecastUnavailableError } from "../lib/forecast/compute";
+import { computeForecast } from "../lib/forecast/compute";
 import { bootstrapHash } from "../lib/bootstrap/hash";
 import type { CandidateDisposition, CandidateKind, ProjectBootstrapPackageV1 } from "../lib/bootstrap/contracts";
 
@@ -102,6 +102,7 @@ async function seedBootstrap(name: string, candidates: CandidateSeed[], options?
 }
 
 async function main() {
+  const configuredExecution = { state: "configured" as const, teamKey: "JSA", projectNames: ["KIT JSA"] };
   const before = await counts();
   const transportBootstrap = await prisma.projectBootstrap.create({ data: {
     canonicalName: "Transport Retry Synthetic", normalizedName: "transport retry synthetic", aliases: ["TRS"], ownerHint: null,
@@ -129,7 +130,7 @@ async function main() {
   const richSeeds: CandidateSeed[] = [
     { key: "source-1", kind: "source", title: "Synthetic transcript", status: "accepted", payload: { provider: "transcript", canonicalRef: "fixture://source/rich" } },
     { key: "cap-1", kind: "capability", title: "Offline relay", status: "accepted", payload: { name: "Offline relay", intent: "Move a payload without a connection." } },
-    { key: "cap-2", kind: "capability", title: "Approval rail", status: "accepted", payload: { name: "Approval rail", executionLinks: [{ provider: "linear", externalId: "SYN-101" }] } },
+    { key: "cap-2", kind: "capability", title: "Approval rail", status: "accepted", payload: { name: "Approval rail", executionLinks: [{ provider: "linear", externalId: "JSA-100" }] } },
     { key: "cap-3", kind: "capability", title: "Rejected ornament", status: "rejected", payload: { name: "Rejected ornament" } },
     { key: "cap-4", kind: "capability", title: "Deferred export", status: "deferred", payload: { name: "Deferred export" } },
     { key: "decision-1", kind: "decision", title: "Which approval path?", status: "accepted", payload: { question: "Which approval path?" } },
@@ -143,13 +144,26 @@ async function main() {
     { key: "manual-capability", kind: "capability", title: "Operator safety rail", status: "accepted", payload: { name: "Operator safety rail" }, operatorAssertion: true, evidence: false },
   ];
   const rich = await seedBootstrap("Harbor Relay Synthetic", richSeeds, { contradiction: true });
-  const activated = await activateProjectBootstrap(rich.id, { expectedRevision: 1, acknowledgeProviderGaps: true, execution: { state: "not_configured" } });
+  const beforeRejectedActivation = await counts();
+  // The old proof expected activation to create a not_configured Scope and
+  // let Forecast reject it later. The governed contract now rejects before
+  // any canonical write unless one exact current Linear boundary validates.
+  await assert.rejects(
+    () => activateProjectBootstrap(rich.id, { expectedRevision: 1, acknowledgeProviderGaps: true, execution: { state: "not_configured" } }),
+    /Configure and validate one Linear team\/project boundary/,
+  );
+  assert.deepEqual(await counts(), beforeRejectedActivation, "rejected unresolved execution must leave canonical owner tables unchanged");
+  const activated = await activateProjectBootstrap(rich.id, { expectedRevision: 1, acknowledgeProviderGaps: true, execution: configuredExecution });
   assert.equal(activated.reused, false);
-  assert.equal(activated.scope.executionState, "not_configured");
+  assert.equal(activated.scope.executionState, "configured");
+  assert.equal(activated.scope.teamKey, "JSA");
+  assert.deepEqual(activated.scope.projectNames, ["KIT JSA"]);
   assert.equal(activated.audit.findings.length, activated.audit.findingCount);
   assert.ok(activated.audit.findings.some((finding) => finding.title.includes("no execution work mapping")));
   assert.ok(activated.audit.findings.some((finding) => finding.type === "contradiction"));
-  await assert.rejects(() => computeForecast(activated.scope), (error: unknown) => error instanceof ForecastUnavailableError && error.reason === "Missing executable work mapping");
+  const firstForecast = await computeForecast(activated.scope);
+  assert.equal(firstForecast.forecastCoverage.canonicalForecast, false, "partial accepted mapping remains explicit instead of fabricating complete coverage");
+  assert.equal(firstForecast.forecastCoverage.state, "modeled_subset");
 
   const [richCaps, richLinks, richDecisions, richGates, richDependencies, richMilestones, richPeople, richAllocations, richSnapshots] = await Promise.all([
     prisma.capability.findMany({ where: { scopeId: activated.scope.id } }),
@@ -176,7 +190,7 @@ async function main() {
   assert.ok((richSnapshots[0].package as Record<string, unknown>).warnings);
 
   const afterFirst = await counts();
-  const retried = await activateProjectBootstrap(rich.id, { expectedRevision: 1, acknowledgeProviderGaps: true, execution: { state: "not_configured" } });
+  const retried = await activateProjectBootstrap(rich.id, { expectedRevision: 1, acknowledgeProviderGaps: true, execution: configuredExecution });
   assert.equal(retried.reused, true);
   assert.deepEqual(await counts(), afterFirst, "response-loss retry must create no duplicate canonical rows");
 
@@ -215,11 +229,11 @@ async function main() {
   assert.ok(refreshAudit.audit?.findings.some((finding) => finding.type === "contradiction"));
 
   const sparse = await seedBootstrap("Cedar Sparse Synthetic", [], { sparse: true });
-  const sparseActivation = await activateProjectBootstrap(sparse.id, { expectedRevision: 1, acknowledgeProviderGaps: true, execution: { state: "not_configured" } });
+  const sparseActivation = await activateProjectBootstrap(sparse.id, { expectedRevision: 1, acknowledgeProviderGaps: true, execution: configuredExecution });
   assert.ok(sparseActivation.audit.findings.some((finding) => finding.title === "Accepted project has no represented capabilities"));
 
   const contradictory = await seedBootstrap("Lantern Contradictory Synthetic", [], { contradiction: true, sparse: true });
-  const contradictoryActivation = await activateProjectBootstrap(contradictory.id, { expectedRevision: 1, acknowledgeProviderGaps: true, execution: { state: "not_configured" } });
+  const contradictoryActivation = await activateProjectBootstrap(contradictory.id, { expectedRevision: 1, acknowledgeProviderGaps: true, execution: configuredExecution });
   assert.equal(await prisma.decision.count({ where: { scopeId: contradictoryActivation.scope.id } }), 0);
   assert.ok(contradictoryActivation.audit.findings.some((finding) => finding.type === "contradiction"));
 
@@ -227,8 +241,8 @@ async function main() {
     { key: "concurrent-capability", kind: "capability", title: "Concurrent safety", status: "accepted", payload: { name: "Concurrent safety" } },
   ]);
   const concurrentResults = await Promise.all([
-    activateProjectBootstrap(concurrent.id, { expectedRevision: 1, acknowledgeProviderGaps: true, execution: { state: "not_configured" } }),
-    activateProjectBootstrap(concurrent.id, { expectedRevision: 1, acknowledgeProviderGaps: true, execution: { state: "not_configured" } }),
+    activateProjectBootstrap(concurrent.id, { expectedRevision: 1, acknowledgeProviderGaps: true, execution: configuredExecution }),
+    activateProjectBootstrap(concurrent.id, { expectedRevision: 1, acknowledgeProviderGaps: true, execution: configuredExecution }),
   ]);
   assert.equal(concurrentResults[0].scope.id, concurrentResults[1].scope.id, "simultaneous clicks must converge on one Scope");
   assert.equal(await prisma.projectActivation.count({ where: { bootstrapId: concurrent.id } }), 1);
@@ -236,7 +250,7 @@ async function main() {
 
   const invalid = await seedBootstrap("Atomic Failure Synthetic", [{ key: "bad-milestone", kind: "milestone", title: "Dateless accepted milestone", status: "accepted", payload: {} }]);
   const beforeFailure = await counts();
-  await assert.rejects(() => activateProjectBootstrap(invalid.id, { expectedRevision: 1, acknowledgeProviderGaps: true, execution: { state: "not_configured" } }), /explicit valid date/);
+  await assert.rejects(() => activateProjectBootstrap(invalid.id, { expectedRevision: 1, acknowledgeProviderGaps: true, execution: configuredExecution }), /explicit valid date/);
   assert.deepEqual(await counts(), beforeFailure, "validation failure must leave zero partial canonical activation writes");
 
   const after = await counts();
@@ -254,6 +268,7 @@ async function main() {
     contradictoryFirstAuditFindings: contradictoryActivation.audit.findings.length,
     concurrentRetry: { sameScope: true, activationRows: 1 },
     packageTransportRetry: { sameScan: true, scans: 1, packages: 1 },
+    executionBoundary: { unresolvedRejectedBeforeWrites: true, teamKey: "JSA", projectName: "KIT JSA", provider: "strict fixture catalog" },
     atomicFailure: "zero partial writes",
     after,
   }, null, 2));

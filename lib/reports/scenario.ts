@@ -4,8 +4,10 @@ import type { Prisma, Scope } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { buildPortfolioInputs } from "@/lib/forecast/compute";
 import { estimateQualityForItems } from "@/lib/forecast/build";
-import { runPortfolioSimulation } from "@/lib/forecast/portfolio";
+import { buildPortfolioScenarios, runPortfolioSimulation } from "@/lib/forecast/portfolio";
 import { applyScenarioInputDelta, type ScenarioInputDelta, type ScenarioInputScope } from "@/lib/scenario/inputDelta";
+import { resolveCapacity } from "@/lib/capacity/resolve";
+import { capacityForecastContract } from "@/lib/capacity/contract";
 import {
   buildCapacityPlanBaseline,
   capacityAssumptionLedger,
@@ -17,6 +19,8 @@ import { toDateOnly } from "@/lib/time/dateContract";
 import { assembleDecisionBrief, type DecisionBriefV1 } from "./decisionBrief";
 import { loadDecisionBriefOwnerInputs } from "./readModel";
 import { knowledgeEstimateItemId, substituteCapabilityKnowledgeEstimates } from "@/lib/scope/knowledgeEstimates";
+import { reviewedEstimateSimulationDecision } from "@/lib/forecast/reviewedEstimate";
+import { ForecastCoverageIncompleteError } from "@/lib/forecast/coverage";
 import { forecastCapability } from "@/lib/scope/capabilityForecast";
 import { freezeCapabilityEstimate, freezeForecastBasis, type ForecastCapacityBasisInput } from "./forecastBasis";
 import { findScenarioLeverConflicts, scenarioLeverConflictMessage } from "./scenarioConflicts";
@@ -45,6 +49,10 @@ export async function buildScenarioDecisionBriefReadModel(
   if (!scenario.capacityPlan && (Object.keys(scenario.capacityOverrideByScope).length || scenario.contextSwitchCostPct !== null)) {
     throw new ScenarioReportValidationError("A reportable Capacity or switch-cost change requires the complete named staffing plan. Recreate it in Capacity.");
   }
+  const unreviewedKnowledgeCapabilityIds = Object.keys(scenario.knowledgeEstimateByCapabilityId);
+  if (unreviewedKnowledgeCapabilityIds.length) {
+    throw new ScenarioReportValidationError(`Raw meeting estimates cannot support a new delivery report without an explicitly reviewed remaining-work interpretation and exact covered/additional ticket boundary: ${unreviewedKnowledgeCapabilityIds.join(", ")}. Return to Scope and review each assertion; other staged Scenario levers remain unchanged.`);
+  }
   const derived = await prisma.projectDerivedState.findUnique({ where: { scopeId: scope.id }, select: { realityRevision: true, computedRevision: true, status: true } });
   const realityRevision = derived?.realityRevision ?? 0;
   if (scenario.baseRealityRevision !== realityRevision || derived && (derived.computedRevision !== derived.realityRevision || derived.status !== "current")) {
@@ -54,6 +62,9 @@ export async function buildScenarioDecisionBriefReadModel(
   const portfolio = await buildPortfolioInputs();
   const target = portfolio.scopes.find((candidate) => candidate.scopeId === scope.id);
   if (!target) throw new ScenarioReportValidationError("Scenario project is no longer in the active portfolio.");
+  if (!target.forecastCoverage.canonicalForecast) {
+    throw new ForecastCoverageIncompleteError(target.forecastCoverage);
+  }
   if (
     target.realityState.realityRevision !== realityRevision ||
     target.realityState.computedRevision !== target.realityState.realityRevision ||
@@ -103,19 +114,25 @@ export async function buildScenarioDecisionBriefReadModel(
   const includedSet = new Set(scenario.includedItemIds);
   const conflictCapabilities = portfolio.scopes.flatMap((candidate) => {
     const sourceItemIds = new Set(candidate.items.map((item) => item.id));
-    return candidate.capabilities.map((capability) => ({
-      id: capability.id,
-      name: capability.name,
-      scopeId: candidate.scopeId,
-      workItemIds: [
-        ...capability.workLinks
-          .filter((link) => (link.state === "active" || link.state === "configured") && sourceItemIds.has(link.externalId))
-          .map((link) => link.externalId),
-        ...(capability.acceptedEstimate
-          ? [knowledgeEstimateItemId(capability.id, capability.acceptedEstimate.id, capability.acceptedEstimate.contextSnapshotId)]
-          : []),
-      ],
-    }));
+    return candidate.capabilities.map((capability) => {
+      const acceptedDecision = capability.status === "accepted" && capability.estimateReview
+        ? reviewedEstimateSimulationDecision(capability, capability.estimateReview)
+        : null;
+      const substitution = acceptedDecision?.substitution;
+      return {
+        id: capability.id,
+        name: capability.name,
+        scopeId: candidate.scopeId,
+        workItemIds: [
+          ...capability.workLinks
+            .filter((link) => (link.state === "active" || link.state === "configured") && sourceItemIds.has(link.externalId))
+            .map((link) => link.externalId),
+          ...(substitution
+            ? [knowledgeEstimateItemId(capability.id, substitution.estimateId, substitution.contextSnapshotId)]
+            : []),
+        ],
+      };
+    });
   });
   const leverConflicts = findScenarioLeverConflicts({
     capabilities: conflictCapabilities,
@@ -129,10 +146,14 @@ export async function buildScenarioDecisionBriefReadModel(
     throw new ScenarioReportValidationError(`Scenario levers conflict: ${scenarioLeverConflictMessage(leverConflicts)}. Resolve the conflicting choices in Scope before publishing; no staged changes were removed.`);
   }
   const conflictingIncludedItems = portfolio.scopes.flatMap((candidate) => candidate.capabilities.flatMap((capability) => {
-    const hasCapabilityBasis = Boolean(capability.acceptedEstimate || scenario.knowledgeEstimateByCapabilityId[capability.id]);
-    return hasCapabilityBasis
-      ? capability.workLinks.map((link) => link.externalId).filter((id) => includedSet.has(id))
-      : [];
+    const acceptedDecision = capability.status === "accepted" && capability.estimateReview
+      ? reviewedEstimateSimulationDecision(capability, capability.estimateReview)
+      : null;
+    const stagedWholeCapabilityBasis = Boolean(scenario.knowledgeEstimateByCapabilityId[capability.id]);
+    const basisItemIds = stagedWholeCapabilityBasis
+      ? capability.workLinks.map((link) => link.externalId)
+      : acceptedDecision?.review.coveredItemIds ?? [];
+    return basisItemIds.filter((id) => includedSet.has(id));
   }));
   if (conflictingIncludedItems.length) {
     throw new ScenarioReportValidationError(`Additional work is inside a capability estimate boundary and cannot be added independently: ${[...new Set(conflictingIncludedItems)].join(", ")}. Review whether it is genuinely additional work before publishing.`);
@@ -177,21 +198,21 @@ export async function buildScenarioDecisionBriefReadModel(
   };
   const baselineSpecs = applyScenarioInputDelta(scopes, portfolio.people, baselineDelta);
   const frozenBaselineCapabilityEstimates = portfolio.scopes.flatMap((candidate) => {
-    const sourceItemIds = new Set(candidate.items.map((item) => item.id));
     const simulatedIds = new Set(scopes.find((row) => row.scopeId === candidate.scopeId)?.items.map((item) => item.id) ?? []);
     return candidate.capabilities.flatMap((capability) => {
-      if (capability.status !== "accepted" || !capability.acceptedEstimate) return [];
-      const syntheticId = knowledgeEstimateItemId(capability.id, capability.acceptedEstimate.id, capability.acceptedEstimate.contextSnapshotId);
+      if (capability.status !== "accepted" || !capability.estimateReview) return [];
+      const decision = reviewedEstimateSimulationDecision(capability, capability.estimateReview);
+      if (!decision.substitution) return [];
+      if (!capability.estimateReview.estimate) return [];
+      const syntheticId = knowledgeEstimateItemId(capability.id, decision.substitution.estimateId, decision.substitution.contextSnapshotId);
       if (!simulatedIds.has(syntheticId)) return [];
-      const replacedSourceItemIds = capability.workLinks
-        .filter((link) => (link.state === "active" || link.state === "configured") && sourceItemIds.has(link.externalId))
-        .map((link) => link.externalId);
       return [freezeCapabilityEstimate(
         candidate.scopeId,
         capability,
-        capability.acceptedEstimate,
-        replacedSourceItemIds,
-        "accepted",
+        capability.estimateReview.estimate,
+        decision.review.coveredItemIds,
+        capability.estimateReview.status,
+        decision.review,
       )];
     });
   });
@@ -204,17 +225,25 @@ export async function buildScenarioDecisionBriefReadModel(
     const sourceItemIds = new Set(owner.items.map((item) => item.id));
     const excludedCapabilityItemIds = new Set(owner.capabilities
       .filter((capability) => excludedCapabilities.has(capability.id))
-      .flatMap((capability) => [
-        ...capability.workLinks
-          .filter((link) => (link.state === "active" || link.state === "configured") && sourceItemIds.has(link.externalId))
-          .map((link) => link.externalId),
-        ...(capability.acceptedEstimate
-          ? [knowledgeEstimateItemId(capability.id, capability.acceptedEstimate.id, capability.acceptedEstimate.contextSnapshotId)]
-          : []),
-      ]));
+      .flatMap((capability) => {
+        const decision = capability.status === "accepted" && capability.estimateReview
+          ? reviewedEstimateSimulationDecision(capability, capability.estimateReview)
+          : null;
+        return [
+          ...capability.workLinks
+            .filter((link) => (link.state === "active" || link.state === "configured") && sourceItemIds.has(link.externalId))
+            .map((link) => link.externalId),
+          ...(decision?.substitution
+            ? [knowledgeEstimateItemId(capability.id, decision.substitution.estimateId, decision.substitution.contextSnapshotId)]
+            : []),
+        ];
+      }));
     const knowledgeSubstitutions = Object.entries(scenario.knowledgeEstimateByCapabilityId).flatMap(([capabilityId, selected]) => {
       const capability = owner.capabilities.find((row) => row.id === capabilityId);
       if (!capability || excludedCapabilities.has(capabilityId)) return [];
+      const acceptedDecision = capability.status === "accepted" && capability.estimateReview
+        ? reviewedEstimateSimulationDecision(capability, capability.estimateReview)
+        : null;
       return [{
         capabilityId,
         capabilityName: capability.name,
@@ -225,8 +254,8 @@ export async function buildScenarioDecisionBriefReadModel(
           ...capability.workLinks
             .filter((link) => (link.state === "active" || link.state === "configured") && sourceItemIds.has(link.externalId))
             .map((link) => link.externalId),
-          ...(capability.acceptedEstimate
-            ? [knowledgeEstimateItemId(capabilityId, capability.acceptedEstimate.id, capability.acceptedEstimate.contextSnapshotId)]
+          ...(acceptedDecision?.substitution
+            ? [knowledgeEstimateItemId(capabilityId, acceptedDecision.substitution.estimateId, acceptedDecision.substitution.contextSnapshotId)]
             : []),
         ],
       }];
@@ -243,9 +272,9 @@ export async function buildScenarioDecisionBriefReadModel(
   const frozenCapabilityEstimates = portfolio.scopes.flatMap((candidate) => candidate.capabilities.flatMap((capability) => {
     if (excludedCapabilities.has(capability.id)) return [];
     const sourceItemIds = new Set(candidate.items.map((item) => item.id));
-    const replacedSourceItemIds = capability.workLinks
-      .filter((link) => (link.state === "active" || link.state === "configured") && sourceItemIds.has(link.externalId))
-      .map((link) => link.externalId);
+    const acceptedDecision = capability.status === "accepted" && capability.estimateReview
+      ? reviewedEstimateSimulationDecision(capability, capability.estimateReview)
+      : null;
     const simulatedIds = new Set(scenarioScopes.find((row) => row.scopeId === candidate.scopeId)?.items.map((item) => item.id) ?? []);
     const provisional = scenario.knowledgeEstimateByCapabilityId[capability.id];
     if (provisional) {
@@ -258,21 +287,24 @@ export async function buildScenarioDecisionBriefReadModel(
         capability,
         estimate,
         [
-          ...replacedSourceItemIds,
-          ...(capability.acceptedEstimate
-            ? [knowledgeEstimateItemId(capability.id, capability.acceptedEstimate.id, capability.acceptedEstimate.contextSnapshotId)]
+          ...capability.workLinks
+            .filter((link) => (link.state === "active" || link.state === "configured") && sourceItemIds.has(link.externalId))
+            .map((link) => link.externalId),
+          ...(acceptedDecision?.substitution
+            ? [knowledgeEstimateItemId(capability.id, acceptedDecision.substitution.estimateId, acceptedDecision.substitution.contextSnapshotId)]
             : []),
         ],
         "provisional",
       )];
     }
-    return capability.status === "accepted" && capability.acceptedEstimate && simulatedIds.has(knowledgeEstimateItemId(capability.id, capability.acceptedEstimate.id, capability.acceptedEstimate.contextSnapshotId))
+    return acceptedDecision?.substitution && capability.estimateReview?.estimate && simulatedIds.has(knowledgeEstimateItemId(capability.id, acceptedDecision.substitution.estimateId, acceptedDecision.substitution.contextSnapshotId))
       ? [freezeCapabilityEstimate(
           candidate.scopeId,
           capability,
-          capability.acceptedEstimate,
-          replacedSourceItemIds,
-          "accepted",
+          capability.estimateReview.estimate,
+          acceptedDecision.review.coveredItemIds,
+          capability.estimateReview.status,
+          acceptedDecision.review,
         )]
       : [];
   }));
@@ -342,8 +374,14 @@ export async function buildScenarioDecisionBriefReadModel(
     // records an aggregate override actually consumed by the simulation.
     aggregateOverridesByScope: scenarioDelta.capacityOverrideByScope ?? {},
   };
-  const baselineResult = runPortfolioSimulation(baselineSpecs).get(scope.id)!;
-  const scenarioResult = runPortfolioSimulation(scenarioSpecs).get(scope.id)!;
+  const baselineResults = runPortfolioSimulation(baselineSpecs);
+  const scenarioResults = runPortfolioSimulation(scenarioSpecs);
+  const baselineResult = baselineResults.get(scope.id)!;
+  const scenarioResult = scenarioResults.get(scope.id)!;
+  const scenarioOptions = buildPortfolioScenarios(scenarioSpecs, scope.id, scenarioResult).map((option) => ({
+    ...option,
+    likelyDate: toDateOnly(option.likelyDate),
+  }));
   const deltaDays = Math.round((scenarioResult.likelyDate.getTime() - baselineResult.likelyDate.getTime()) / day);
   const capacityLedger = scenario.capacityPlan ? capacityAssumptionLedger(scenario.capacityPlan) : undefined;
   const capacityAffectedScopeIds = scenario.capacityPlan ? capacityPlanAffectedScopeIds(scenario.capacityPlan) : [];
@@ -401,6 +439,10 @@ export async function buildScenarioDecisionBriefReadModel(
     forecastEffectiveFte: baselineSpecs.find((candidate) => candidate.scopeId === scope.id)?.teamCapacity ?? realityInput.capacity.forecastEffectiveFte,
     contextSwitchCostPct: portfolio.contextSwitchCostPct,
   };
+  realityInput.dependencies = realityInput.dependencies.map((dependency) => {
+    const result = baselineResults.get(dependency.scopeId);
+    return result ? { ...dependency, likelyDate: toDateOnly(result.likelyDate) } : dependency;
+  });
   const realityBrief = assembleDecisionBrief(realityInput);
   realityBrief.identity.comparisonId = scenario.scenarioId;
 
@@ -419,17 +461,52 @@ export async function buildScenarioDecisionBriefReadModel(
     estimateQuality: estimateQualityForItems(scenarioScopes.find((candidate) => candidate.scopeId === scope.id)?.items ?? []),
     remainingEffortDays: scenarioResult.remainingEffortDays,
     decisionDelayDays: scenarioResult.decisionDelayDays,
+    scenarios: scenarioOptions,
   };
   input.context.warnings = [...input.context.warnings, `Scenario ${scenario.scenarioId} is hypothetical and based on Reality r${realityRevision}.`, ...causalExplanation];
   input.decisions = input.decisions.map((decision) => decision.gate && resolved.has(decision.gate.id) ? { ...decision, status: "scenario-resolved" } : decision);
+  input.dependencies = input.dependencies.map((dependency) => {
+    const result = scenarioResults.get(dependency.scopeId);
+    return result ? { ...dependency, likelyDate: toDateOnly(result.likelyDate) } : dependency;
+  });
   const override = scenario.capacityOverrideByScope[scope.id];
-  if (scenario.capacityPlan || override !== undefined || scenario.contextSwitchCostPct !== null) {
+  if (scenario.capacityPlan) {
+    const scenarioPeople = [...portfolio.people, ...scenarioDelta.hypotheticalPeople];
+    const scenarioForecastEffectiveFte = scenarioSpecs.find((candidate) => candidate.scopeId === scope.id)?.teamCapacity ?? input.capacity.forecastEffectiveFte;
+    const resolvedScenarioCapacity = resolveCapacity(
+      scope.id,
+      scenarioPeople,
+      scenarioDelta.allocations,
+      scenarioDelta.contextSwitchCostPct,
+    );
+    const scenarioCapacityContract = capacityForecastContract(
+      scope.id,
+      scenarioPeople,
+      scenarioDelta.allocations,
+      scenarioDelta.contextSwitchCostPct,
+      scenarioForecastEffectiveFte,
+      "allocations",
+      "named_exact",
+    );
+    input.capacity = {
+      ...input.capacity,
+      ...scenarioCapacityContract,
+      contextSwitchCostPct: scenarioDelta.contextSwitchCostPct,
+      contributors: resolvedScenarioCapacity.contributors.map((contributor) => ({
+        personId: contributor.personId,
+        name: contributor.name,
+        rawFte: contributor.fte * contributor.fraction,
+        effectiveFte: contributor.effectiveFte,
+        scopeCount: contributor.scopeCount,
+      })),
+    };
+  } else if (override !== undefined || scenario.contextSwitchCostPct !== null) {
     input.capacity = {
       ...input.capacity,
       status: "aggregate_unreconciled",
       reconciles: false,
       forecastEffectiveFte: scenarioSpecs.find((candidate) => candidate.scopeId === scope.id)?.teamCapacity ?? input.capacity.forecastEffectiveFte,
-      contextSwitchCostPct: scenario.capacityPlan?.contextSwitchCostPct ?? scenario.contextSwitchCostPct ?? input.capacity.contextSwitchCostPct,
+      contextSwitchCostPct: scenario.contextSwitchCostPct ?? input.capacity.contextSwitchCostPct,
     };
   }
   const brief = assembleDecisionBrief(input);
@@ -440,11 +517,14 @@ export async function buildScenarioDecisionBriefReadModel(
     const capability = target.capabilities.find((candidate) => candidate.id === capabilityId);
     if (!capability || excludedCapabilities.has(capabilityId)) return [];
     const knowledge = scenario.knowledgeEstimateByCapabilityId[capabilityId];
-    const acceptedKnowledge = capability.acceptedEstimate;
+    const acceptedDecision = capability.status === "accepted" && capability.estimateReview
+      ? reviewedEstimateSimulationDecision(capability, capability.estimateReview)
+      : null;
+    const acceptedRange = acceptedDecision?.substitution?.range;
     const effortDays = knowledge
       ? { low: knowledge.low, likely: knowledge.likely, high: knowledge.high }
-      : acceptedKnowledge?.range
-        ? acceptedKnowledge.range
+      : acceptedRange
+        ? acceptedRange
       : capability.workLinks
           .filter((link) => link.state === "active" || link.state === "configured")
           .map((link) => targetItems.get(link.externalId))
@@ -460,7 +540,7 @@ export async function buildScenarioDecisionBriefReadModel(
       name: capability.name,
       estimateBasis: knowledge
         ? "knowledge_provisional" as const
-        : acceptedKnowledge
+        : acceptedRange
           ? "knowledge_accepted" as const
           : "work_rollup" as const,
       effortDays,

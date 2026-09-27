@@ -10,6 +10,13 @@ export function escapeMarkdownText(value: string): string {
   return entities.replace(/([\\`*_[\]{}()#+\-.!|])/g, "\\$1");
 }
 
+/** Untrusted values interpolated into list items must not carry their own
+ * Markdown line structure. Collapse source newlines without mutating the
+ * frozen JSON, then escape every Markdown metacharacter. */
+export function markdownInlineText(value: string): string {
+  return escapeMarkdownText(value.replace(/\s+/g, " ").trim());
+}
+
 /** Every source line remains visibly quoted, including blank lines. */
 export function markdownBlockquoteLines(value: string, indent = ""): string[] {
   return value

@@ -1,5 +1,5 @@
 "use client";
-import { knowledgeEstimateItemId } from "@/lib/scope/knowledgeEstimates";
+import { acceptedEstimateIdentity, knowledgeEstimateItemId, type EstimateReviewInput } from "@/lib/scope/knowledgeEstimates";
 
 // SCOPE COMPOSER — a physical composition instrument. You compose what ships
 // by picking capability modules up and putting them down.
@@ -209,13 +209,15 @@ export default function ScopeInstrument() {
           features.add(feature.id);
           for (const i of feature.items) items.add(i.id);
           if (feature.canonicalCapability && feature.acceptedKnowledgeEstimate) {
-            items.add(knowledgeEstimateItemId(feature.canonicalCapability.id, feature.acceptedKnowledgeEstimate.id, feature.acceptedKnowledgeEstimate.contextSnapshotId));
+            const accepted = acceptedEstimateIdentity(feature.acceptedKnowledgeEstimate);
+            items.add(knowledgeEstimateItemId(feature.canonicalCapability.id, accepted.estimateId, accepted.contextSnapshotId));
           }
         } else {
           features.delete(feature.id);
           for (const i of feature.items) items.delete(i.id);
           if (feature.canonicalCapability && feature.acceptedKnowledgeEstimate) {
-            items.delete(knowledgeEstimateItemId(feature.canonicalCapability.id, feature.acceptedKnowledgeEstimate.id, feature.acceptedKnowledgeEstimate.contextSnapshotId));
+            const accepted = acceptedEstimateIdentity(feature.acceptedKnowledgeEstimate);
+            items.delete(knowledgeEstimateItemId(feature.canonicalCapability.id, accepted.estimateId, accepted.contextSnapshotId));
           }
         }
         return { ...prev, bypassedFeatureIds: features, excludedItemIds: items };
@@ -507,7 +509,8 @@ export default function ScopeInstrument() {
             includedItemIds.delete(id);
           }
           if (pending.capability.acceptedEstimate) {
-            const acceptedId = knowledgeEstimateItemId(pending.capability.id, pending.capability.acceptedEstimate.id, pending.capability.acceptedEstimate.contextSnapshotId);
+            const accepted = acceptedEstimateIdentity(pending.capability.acceptedEstimate);
+            const acceptedId = knowledgeEstimateItemId(pending.capability.id, accepted.estimateId, accepted.contextSnapshotId);
             excludedItemIds.delete(acceptedId);
             includedItemIds.delete(acceptedId);
           }
@@ -591,9 +594,13 @@ export default function ScopeInstrument() {
     }
   };
 
-  const acceptKnowledgeEstimate = async (capabilityId: string, estimate: import("@/lib/scope/knowledgeEstimates").CapabilityKnowledgeEstimate) => {
+  const acceptKnowledgeEstimate = async (
+    capabilityId: string,
+    estimate: import("@/lib/scope/knowledgeEstimates").CapabilityKnowledgeEstimate,
+    review: EstimateReviewInput,
+  ) => {
     const capability = scope.capabilities.find((candidate) => candidate.id === capabilityId);
-    if (!capability || !estimate.range) return;
+    if (!capability) return;
     setWriting(true);
     setWriteError(null);
     try {
@@ -604,6 +611,7 @@ export default function ScopeInstrument() {
           expectedRevision: capability.revision ?? 1,
           estimateId: estimate.id,
           contextSnapshotId: estimate.contextSnapshotId,
+          review,
           idempotencyKey: crypto.randomUUID(),
         }),
       });
@@ -615,7 +623,8 @@ export default function ScopeInstrument() {
         const excludedItemIds = new Set(prev.excludedItemIds);
         const includedItemIds = new Set(prev.includedItemIds);
         if (capability.acceptedEstimate) {
-          const oldAcceptedId = knowledgeEstimateItemId(capabilityId, capability.acceptedEstimate.id, capability.acceptedEstimate.contextSnapshotId);
+          const oldAccepted = acceptedEstimateIdentity(capability.acceptedEstimate);
+          const oldAcceptedId = knowledgeEstimateItemId(capabilityId, oldAccepted.estimateId, oldAccepted.contextSnapshotId);
           excludedItemIds.delete(oldAcceptedId);
           includedItemIds.delete(oldAcceptedId);
         }
@@ -623,7 +632,7 @@ export default function ScopeInstrument() {
           excludedItemIds.add(knowledgeEstimateItemId(capabilityId, estimate.id, estimate.contextSnapshotId));
         }
         const estimateOverrideByItemId = { ...prev.estimateOverrideByItemId };
-        for (const link of capability.workLinks) delete estimateOverrideByItemId[link.externalId];
+        for (const itemId of review.coveredOpenItemIds) delete estimateOverrideByItemId[itemId];
         return { ...prev, knowledgeEstimateByCapabilityId: next, excludedItemIds, includedItemIds, estimateOverrideByItemId };
       });
     } catch (error) {
@@ -648,7 +657,8 @@ export default function ScopeInstrument() {
       if (!response.ok) throw new Error(body.error ?? "The accepted meeting estimate could not be cleared.");
       m.setScenario((prev) => {
         if (!capability.acceptedEstimate) return prev;
-        const acceptedId = knowledgeEstimateItemId(capabilityId, capability.acceptedEstimate.id, capability.acceptedEstimate.contextSnapshotId);
+        const accepted = acceptedEstimateIdentity(capability.acceptedEstimate);
+        const acceptedId = knowledgeEstimateItemId(capabilityId, accepted.estimateId, accepted.contextSnapshotId);
         const excludedItemIds = new Set(prev.excludedItemIds);
         const includedItemIds = new Set(prev.includedItemIds);
         excludedItemIds.delete(acceptedId);

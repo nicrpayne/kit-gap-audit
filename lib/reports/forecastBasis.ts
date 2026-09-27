@@ -12,9 +12,23 @@ export interface FrozenCapabilityEstimate {
   capabilityId: string;
   capabilityName: string;
   capabilityRevision: number;
-  authority: "accepted" | "provisional";
+  /** `accepted` is retained for historical forecast-basis.v1 JSON. New
+   * operator-reviewed assertions use `reviewed`; stale reviewed assertions
+   * may be retained as qualified evidence with `review_required`. */
+  authority: "accepted" | "provisional" | "reviewed" | "review_required";
   estimate: AcceptedCapabilityEstimate | CapabilityKnowledgeEstimate;
   replacedItemIds: string[];
+  /** Additive v2 review evidence. Historical records legitimately omit it. */
+  review?: {
+    status: "reviewed" | "review_required";
+    interpretation: string | null;
+    reviewedBy: string | null;
+    reviewedAt: string | null;
+    coveredItemIds: string[];
+    additionalItemIds: string[];
+    usedInSimulation: boolean;
+    reviewRequiredReason: string | null;
+  };
   auditHref: string | null;
 }
 
@@ -91,11 +105,17 @@ export function freezeCapabilityEstimate(
   estimate: FrozenCapabilityEstimate["estimate"],
   replacedItemIds: string[],
   authority: FrozenCapabilityEstimate["authority"] = "accepted",
+  review?: FrozenCapabilityEstimate["review"],
 ): FrozenCapabilityEstimate {
   return JSON.parse(JSON.stringify({
     scopeId, capabilityId: capability.id, capabilityName: capability.name,
     capabilityRevision: capability.revision, authority, estimate,
     replacedItemIds: [...new Set(replacedItemIds)].sort(),
+    ...(review ? { review: {
+      ...review,
+      coveredItemIds: [...new Set(review.coveredItemIds)].sort(),
+      additionalItemIds: [...new Set(review.additionalItemIds)].sort(),
+    } } : {}),
     auditHref: auditPassageHref(scopeId, estimate),
   }));
 }

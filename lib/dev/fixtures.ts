@@ -16,7 +16,7 @@
 // the design work untestable. Each team below declares exactly how many
 // distinct people hold its remaining tickets.
 
-import type { LinearIssueSummary, ScopeFilter } from "@/lib/linear";
+import type { LinearIssueSummary, LinearProjectSummary, LinearTeamSummary, ScopeFilter } from "@/lib/linear";
 
 interface TeamFixture {
   titles: string[];
@@ -195,6 +195,18 @@ const TEAMS: Record<string, TeamFixture> = {
     ],
   },
 };
+
+/** Exact synthetic discovery catalog for the same opt-in fixture world as
+ * devFixtureIssues. This lets local activation exercise the real
+ * one-team/one-project validation path without a provider credential. */
+export function devFixtureTeams(): LinearTeamSummary[] {
+  return Object.keys(TEAMS).sort().map((key) => ({ key, name: `${key} synthetic fixture team` }));
+}
+
+export function devFixtureProjects(teamKey: string): LinearProjectSummary[] {
+  const fixture = TEAMS[teamKey];
+  return fixture ? [{ id: `fixture-project:${teamKey}:${encodeURIComponent(fixture.epic)}`, name: fixture.epic }] : [];
+}
 
 // Points spread, cycled deterministically so effort totals are stable
 // between runs but not uniform.

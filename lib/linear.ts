@@ -288,6 +288,10 @@ export async function validateLinearBoundary(
 // Powers the Scope form's dropdowns so team key / project name can't be
 // mistyped -- both are exact-match filters in getScopedIssues above.
 export async function listTeams(): Promise<LinearTeamSummary[]> {
+  if (process.env.KIT_DEV_FIXTURES === "1") {
+    const { devFixtureTeams } = await import("@/lib/dev/fixtures");
+    return devFixtureTeams();
+  }
   const client = getClient();
   const teams: LinearTeamSummary[] = [];
   let connection = await client.teams({ first: 100 });
@@ -302,6 +306,10 @@ export async function listTeams(): Promise<LinearTeamSummary[]> {
 }
 
 export async function listTeamProjects(teamKey: string): Promise<LinearProjectSummary[]> {
+  if (process.env.KIT_DEV_FIXTURES === "1") {
+    const { devFixtureProjects } = await import("@/lib/dev/fixtures");
+    return devFixtureProjects(teamKey);
+  }
   const client = getClient();
   const teams = await client.teams({ filter: { key: { eq: teamKey } } });
   const team = teams.nodes[0];

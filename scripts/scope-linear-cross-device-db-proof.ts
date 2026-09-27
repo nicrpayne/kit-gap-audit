@@ -42,6 +42,8 @@ async function snapshot(scopeId: string) {
   return {
     state: scope.forecastCoverage.state,
     modeled: scope.forecastCoverage.census.modeledExecutionIssueCount,
+    outside: scope.forecastCoverage.census.outsideExecutionIssueCount,
+    unmapped: scope.forecastCoverage.census.unmappedExecutionIssueCount,
     total: scope.forecastCoverage.census.executionIssueCount,
     missingEstimate: scope.executionItems.filter((item) => item.estimateSource === "issue_placeholder").length,
     likely: simulation.likelyDate.toISOString().slice(0, 10),
@@ -78,6 +80,8 @@ async function main() {
   const initial = await snapshot(scope.id);
   assert.equal(initial.state, "modeled_subset");
   assert.equal(initial.modeled, 2);
+  assert.equal(initial.outside, 0);
+  assert.equal(initial.unmapped, 8);
   assert.equal(initial.total, 10);
 
   const notifications = await createCanonicalCapability(scope.id, {
@@ -135,6 +139,8 @@ async function main() {
   const complete = await snapshot(scope.id);
   assert.equal(complete.state, "forecastable");
   assert.equal(complete.modeled, 10);
+  assert.equal(complete.outside, 0);
+  assert.equal(complete.unmapped, 0);
   assert.equal(complete.total, 10);
   assert.ok(complete.missingEstimate > 0, "missing estimates remain explicit instead of becoming zero duration");
 
@@ -148,7 +154,13 @@ async function main() {
   assert.equal(browserBMove?.status, "outside");
   const outside = await snapshot(scope.id);
   assert.equal(outside.modeled, 8);
-  assert.equal(outside.state, "modeled_subset");
+  assert.equal(outside.outside, 2);
+  assert.equal(outside.unmapped, 0);
+  // The old proof expected modeled_subset merely because 8/10 issues remain
+  // modeled. That is not the coverage contract: the other two issues are now
+  // explicitly excluded by reviewed Reality, so all execution work is
+  // classified and the canonical forecast remains available.
+  assert.equal(outside.state, "forecastable");
 
   const movedBack = await updateCanonicalCapability(notifications.capability.id, {
     expectedRevision: movedOut.capability.revision,
@@ -168,11 +180,11 @@ async function main() {
   console.log(JSON.stringify({
     ok: true,
     scopeId: scope.id,
-    initial: { coverage: initial.state, modeled: initial.modeled, execution: initial.total, likely: initial.likely, window: initial.window },
-    afterNotifications: { coverage: afterNotifications.state, modeled: afterNotifications.modeled, execution: afterNotifications.total, likely: afterNotifications.likely, window: afterNotifications.window },
-    complete: { coverage: complete.state, modeled: complete.modeled, execution: complete.total, missingEstimateItems: complete.missingEstimate, likely: complete.likely, window: complete.window },
-    outside: { coverage: outside.state, modeled: outside.modeled, execution: outside.total, likely: outside.likely, window: outside.window },
-    restored: { coverage: restored.state, modeled: restored.modeled, execution: restored.total, likely: restored.likely, window: restored.window },
+    initial: { coverage: initial.state, modeled: initial.modeled, outside: initial.outside, unmapped: initial.unmapped, execution: initial.total, likely: initial.likely, window: initial.window },
+    afterNotifications: { coverage: afterNotifications.state, modeled: afterNotifications.modeled, outside: afterNotifications.outside, unmapped: afterNotifications.unmapped, execution: afterNotifications.total, likely: afterNotifications.likely, window: afterNotifications.window },
+    complete: { coverage: complete.state, modeled: complete.modeled, outside: complete.outside, unmapped: complete.unmapped, execution: complete.total, missingEstimateItems: complete.missingEstimate, likely: complete.likely, window: complete.window },
+    outside: { coverage: outside.state, modeled: outside.modeled, outside: outside.outside, unmapped: outside.unmapped, execution: outside.total, likely: outside.likely, window: outside.window },
+    restored: { coverage: restored.state, modeled: restored.modeled, outside: restored.outside, unmapped: restored.unmapped, execution: restored.total, likely: restored.likely, window: restored.window },
     concurrency: { staleWriteRejected: true, idempotentRetryCreatedDuplicate: false },
     crossDevice: { browserBReadCreate: true, browserBReadMove: true },
     derived: { realityRevision: derived.realityRevision, computedRevision: derived.computedRevision, status: derived.status },
