@@ -1,4 +1,5 @@
-import { formatDateOnly, formatInstant, toInstant } from "@/lib/time/dateContract";
+import { formatDateOnly } from "@/lib/time/dateContract";
+import { formatReportGeneratedDate } from "@/lib/reports/generatedAtPresentation";
 
 // WHAT A STORED REPORT IS, SAID ONCE.
 //
@@ -42,12 +43,8 @@ export interface SnapshotVerdict {
 export const STALE_AFTER_DAYS = 7;
 
 const fmtDateOnly = (d: Date) => formatDateOnly(d, { month: "short", day: "numeric", year: "numeric" });
-const fmtInstant = (d: Date) => formatInstant(toInstant(d), {
-  timeZone: "UTC", month: "short", day: "numeric", year: "numeric",
-});
-
 export function describeSnapshot(ctx: SnapshotContext): SnapshotVerdict {
-  const generated = fmtInstant(ctx.generatedAt);
+  const generated = formatReportGeneratedDate(ctx.generatedAt);
   const snapshot = fmtDateOnly(ctx.snapshotLikelyDate);
 
   // No live forecast to compare against. Say that plainly rather than

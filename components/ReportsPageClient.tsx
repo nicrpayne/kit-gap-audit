@@ -27,6 +27,7 @@ import {
 } from "@/lib/reports/scenarioConflicts";
 import { acceptedEstimateIdentity, knowledgeEstimateItemId } from "@/lib/scope/knowledgeEstimates";
 import { ambiguousScenarioItemLeverMessage, findAmbiguousScenarioItemLevers } from "@/lib/scenario/itemLeverScope";
+import { formatReportGeneratedDate } from "@/lib/reports/generatedAtPresentation";
 
 /** The live forecast is a comparison input, not report data. Three states,
     because "we could not resolve it" must be distinguishable from "it
@@ -540,7 +541,7 @@ export default function ReportsPageClient() {
                       : "border border-[var(--color-line)] hover:bg-black/5"
                   }`}
                 >
-                  <div className="font-medium">{formatTimestampDate(r.generatedAt)}</div>
+                  <div className="font-medium">{formatReportGeneratedDate(r.generatedAt)}</div>
                   <div className="mt-0.5 text-[9px] uppercase tracking-wider">{isBriefRecipeV1(r.briefRecipe) ? `${AUDIENCE_LABELS[r.briefRecipe.audience]} brief` : r.briefVersion ? "Decision Brief V1" : "Legacy snapshot"} · {r.mode ?? "historical"}</div>
                   <div className={selected?.id === r.id ? "text-[var(--color-accent)]" : "text-[var(--color-ink-soft)]"}>
                     {formatDateOnly(r.likelyDate, { month: "short", day: "numeric", year: "numeric" })}
