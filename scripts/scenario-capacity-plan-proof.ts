@@ -129,10 +129,8 @@ const multiLeverSpecs = applyScenarioInputDelta(
 assert.equal(multiLeverSpecs.find((scope) => scope.scopeId === "jsa")?.teamCapacity, 1);
 assert.deepEqual(multiLeverSpecs.find((scope) => scope.scopeId === "platform")?.items, []);
 
-// A changed named allocation picture can still be a Forecast no-op (the
-// unstaffed project's canonical fallback is the same 0.5 FTE). It remains a
-// changed Capacity plan for review, but the report seam below must reject it
-// instead of claiming a modeled effect.
+// Removing the last named allocation is explicit zero, never a Forecast
+// no-op that resurrects the baseline. Reject the plan before publication.
 const noOpAllocationPlan = createCapacityScenarioPlan({
   baseline,
   allocations: [{ personId: "dana", scopeId: "jsa", fraction: 0.5 }],
@@ -143,8 +141,9 @@ const noOpAllocationPlan = createCapacityScenarioPlan({
 assert.equal(capacityPlanIsChanged(noOpAllocationPlan), true);
 assert.deepEqual(
   applyScenarioInputDelta(scopes, people, resolveCapacityPlan(noOpAllocationPlan)).map((scope) => scope.teamCapacity),
-  applyScenarioInputDelta(scopes, people, { allocations, hypotheticalPeople: [], contextSwitchCostPct: 12 }).map((scope) => scope.teamCapacity),
+  [0.5, 0],
 );
+assert.equal(validateCapacityScenarioPlan(noOpAllocationPlan, baseline).ok, false, "an emptied named project must be refused");
 
 // The report blocker offers an explicit, surgical recovery. It removes only
 // the no-op Capacity assumption and its compatibility fields; independent

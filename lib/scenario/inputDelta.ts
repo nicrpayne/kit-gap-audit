@@ -139,7 +139,9 @@ export function applyScenarioInputDelta(
       teamCapacity = clampSimulatedCapacity(override);
     } else {
       const resolved = resolveCapacity(s.scopeId, people, delta.allocations, delta.contextSwitchCostPct);
-      teamCapacity = resolved.capacity ?? s.teamCapacity;
+      // An explicitly emptied named team is zero, not missing data. Never
+      // resurrect its Reality capacity while reallocating its people elsewhere.
+      teamCapacity = resolved.capacity ?? (s.capacitySource === "allocations" ? 0 : s.teamCapacity);
     }
     return {
       scopeId: s.scopeId,

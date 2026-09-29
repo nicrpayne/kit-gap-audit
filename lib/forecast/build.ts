@@ -248,6 +248,8 @@ export function buildForecastInputs(
     // "explicit" (a Scope's own teamCapacity, today's only source).
     // Irrelevant when configuredCapacity is null (falls to "inferred").
     capacitySource?: "allocations" | "explicit";
+    /** Accepted Scope membership outranks an AI relevance opinion. */
+    acceptedIssueIds?: ReadonlySet<string>;
   }
 ): ForecastInputs {
   const includeTriage = options?.includeTriage ?? false;
@@ -276,8 +278,8 @@ export function buildForecastInputs(
   // Prefer a fresh AI estimate (content-hash still matching) over the
   // points heuristic. An estimate whose ticket has changed since is stale:
   // fall back to points and count it, so the UI can prompt a re-run.
-  // AI-judged "unrelated" tickets are excluded from the simulation but
-  // listed loudly -- content-based scope filtering, no labels required.
+  // Legacy ungoverned work may use AI relevance filtering. Accepted Scope
+  // membership is authoritative and can only be removed by its owner.
   const ai: AiEstimateStats = { aiItemCount: 0, staleCount: 0, unrelatedExcluded: [], flagged: [] };
   const items: SourcedWorkItem[] = [];
 
@@ -289,7 +291,7 @@ export function buildForecastInputs(
     if (estimate && !fresh) ai.staleCount += 1;
 
     if (fresh) {
-      if (estimate.relevance === "unrelated") {
+      if (estimate.relevance === "unrelated" && !options?.acceptedIssueIds?.has(issue.identifier)) {
         ai.unrelatedExcluded.push({ id: issue.identifier, label, rationale: estimate.rationale });
         continue;
       }

@@ -19,6 +19,8 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import InstrumentShell from "@/components/instrument/InstrumentShell";
+import { presentForecastDeliveryClaim } from "@/lib/forecast/claims";
+import ScenarioPreviewRefusal from "@/components/instrument/ScenarioPreviewRefusal";
 import ScenarioStrip, { chipsFor } from "@/components/instrument/ScenarioStrip";
 import DecisionCircuit, { type CircuitNode } from "@/components/decisions/DecisionCircuit";
 import { CandidateTray, DecidedBand, DismissedBar, OpenLane } from "@/components/decisions/DecisionLanes";
@@ -107,10 +109,16 @@ export default function DecisionsPageClient() {
     const nodeFor = (id: string): CircuitNode | null => {
       const s = project.data!.scopes.find((x) => x.scopeId === id);
       if (!s) return null;
+      const likely = project.preview?.get(id)?.likelyDate ?? project.baseline?.get(id)?.likelyDate ?? null;
       return {
+        claim: presentForecastDeliveryClaim({
+          scopeName: s.name,
+          coverage: s.forecastCoverage,
+          likelyDate: likely ? fmtDay(likely) : null,
+        }),
         id: s.scopeId,
         name: s.name,
-        likely: project.preview?.get(id)?.likelyDate ?? project.baseline?.get(id)?.likelyDate ?? null,
+        likely,
         targetDate: s.targetDate ? new Date(s.targetDate) : null,
         // What is holding this node RIGHT NOW. A gate assumed decided is
         // not holding anything, and counting it would contradict the date
@@ -219,6 +227,7 @@ export default function DecisionsPageClient() {
 
   const scopeNameById = useMemo(() => new Map(scopes.map((s) => [s.id, s.name])), [scopes]);
 
+  const completeCoverage = origin?.claim.state === "forecastable";
   const baselineDate = activeScopeId ? project.baseline?.get(activeScopeId)?.likelyDate ?? null : null;
   const previewDate = activeScopeId ? project.preview?.get(activeScopeId)?.likelyDate ?? null : null;
   const deltaDays =
@@ -334,7 +343,9 @@ export default function DecisionsPageClient() {
 
           {/* ── THE INSTRUMENT ────────────────────────────────────────── */}
           <div className="min-h-0 flex-1 overflow-y-auto">
-            {loading && !data ? (
+            {project.scenarioPreviewRefusal ? (
+              <ScenarioPreviewRefusal refusal={project.scenarioPreviewRefusal} surface="Decisions" onBackToReality={() => project.setScenario(EMPTY_SCENARIO)} />
+            ) : loading && !data ? (
               <div className="px-5 py-6 text-[12px] text-[var(--i-text-faint)]">Reading decisions…</div>
             ) : error ? (
               <div className="px-5 py-6 text-[12px]" style={{ color: "var(--i-red)" }}>
@@ -357,7 +368,7 @@ export default function DecisionsPageClient() {
 
                 {/* The consequence, given a moment of presence and then
                     left to the shared strip. Never permanently large. */}
-                {flash && project.active && baselineDate && previewDate && deltaDays !== 0 && (
+                {flash && completeCoverage && project.active && baselineDate && previewDate && deltaDays !== 0 && (
                   <div className="flex px-6 pt-3">
                     <div
                       data-shoot="consequence-flash"
@@ -463,7 +474,13 @@ export default function DecisionsPageClient() {
                 scenario's landing against Reality's. Never a sum of gate
                 days -- that would be a dashboard metric, not a forecast. */}
             <div className="ml-auto flex items-center gap-2 text-[11px]">
-              {project.active && baselineDate && previewDate ? (
+              {project.scenarioPreviewRefusal ? (
+                <span>Scenario preview refused · Reality retained</span>
+              ) : !completeCoverage ? (
+                <span data-shoot="reality-landing" aria-label={origin?.claim.accessibleLabel}>
+                  {origin?.name} · {origin?.claim.outcome ?? "Delivery outcome unavailable"} · not a full-project delivery forecast
+                </span>
+              ) : project.active && baselineDate && previewDate ? (
                 <span data-shoot="scenario-consequence">
                   <span className="text-[var(--i-text-faint)]">{origin?.name ?? ""} </span>
                   <span data-shoot="reality-date" className="text-[var(--i-text-soft)]">

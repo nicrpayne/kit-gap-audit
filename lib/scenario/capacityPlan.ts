@@ -1,5 +1,6 @@
 import {
   validateAllocations,
+  resolveCapacity,
   type AllocationLike,
   type PersonLike,
 } from "@/lib/capacity/resolve";
@@ -314,6 +315,18 @@ export function validateCapacityScenarioPlan(
       return {
         ok: false,
         reason: "Reality changed after this Capacity scenario was staged. Review the roster, outside commitments, allocations, switch cost, and project revisions, then recreate the capacity plan or return to Reality.",
+      };
+    }
+    const people = [...current.people, ...normalized.hypotheticalPeople];
+    const emptied = Object.keys(current.scopeRevisionById).filter((scopeId) => {
+      const before = resolveCapacity(scopeId, current.people, current.allocations, current.contextSwitchCostPct).capacity ?? 0;
+      const after = resolveCapacity(scopeId, people, normalized.allocations, normalized.contextSwitchCostPct).capacity ?? 0;
+      return before > EPSILON && after <= EPSILON;
+    });
+    if (emptied.length) {
+      return {
+        ok: false,
+        reason: `This plan removes the last named capacity from ${emptied.join(", ")}. Signal cannot forecast or publish an unstaffed project. Keep named capacity on it or return to Reality.`,
       };
     }
     return { ok: true };

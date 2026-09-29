@@ -94,6 +94,11 @@ function topologicalOrder(specs: ScopeSimulationSpec[]): string[] {
 export function runPortfolioTrials(specs: ScopeSimulationSpec[], trials = 5000): Map<string, number[]> {
   const byId = new Map(specs.map((s) => [s.scopeId, s]));
   const order = topologicalOrder(specs);
+  for (const spec of specs) {
+    if (spec.teamCapacity <= 0 && spec.items.some((item) => item.high > 0)) {
+      throw new Error(`Scope ${spec.scopeId} has work but no capacity. Staff the project before forecasting it.`);
+    }
+  }
 
   const randomByScope = new Map(order.map((id) => [id, seededRandom(FORECAST_SEED)]));
   const daysByScope = new Map<string, number[]>(order.map((id) => [id, []]));

@@ -359,6 +359,7 @@ async function buildScopeSimInputs(
     findingEstimates,
     findingHashFor: (f) => findingContentHash(f, contextHash),
     capacitySource: resolved.source ?? undefined,
+    acceptedIssueIds: modeledIssueIds,
   };
   const sourceInputs = buildForecastInputs(modeledIssues, findings, resolved.capacity, buildOptions);
   const acceptedSubstitutions = acceptedCapabilities.flatMap((capability) => {

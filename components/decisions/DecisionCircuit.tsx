@@ -21,6 +21,7 @@
 // circuit does not draw one.
 
 import { Fragment } from "react";
+import type { ForecastDeliveryClaim } from "@/lib/forecast/claims";
 
 import DecisionModule from "@/components/decisions/DecisionModule";
 import { shortId, type DecisionRow } from "@/lib/decisions/model";
@@ -32,6 +33,7 @@ export interface CircuitNode {
   likely: Date | null;
   targetDate: Date | null;
   gateCount: number;
+  claim: ForecastDeliveryClaim;
 }
 
 // One geometry, shared by the row, the groove and every socket, so a
@@ -123,10 +125,16 @@ export default function DecisionCircuit({
           >
             {constrained
               ? `${live.length} constraint${live.length === 1 ? "" : "s"} in path`
-              : "Delivery path open"}
+              : "No modeled delay gates"}
           </span>
         </span>
       </div>
+
+      {origin.claim.state !== "forecastable" && (
+        <p className="mb-3 text-[12px] text-[var(--i-amber)]" role="status">
+          {origin.claim.badge}. {origin.claim.detail} Not a full-project delivery forecast.
+        </p>
+      )}
 
       {/* THE WELL. Everything below is cut into this one recess, which is
           what stops the circuit reading as a diagram drawn over a page. */}
@@ -507,16 +515,14 @@ function OutputTerminal({ node, constrained }: { node: CircuitNode; constrained:
 
           {/* The display window: cut in, unlit, unmistakably a readout. */}
           <div
-            className="mt-2 flex items-end gap-2 rounded px-3 py-2"
+            aria-label={node.claim.accessibleLabel}
+            className="mt-2 flex flex-wrap items-end gap-2 rounded px-3 py-2"
             style={{ background: "#05080a", boxShadow: "inset 0 3px 8px rgba(0,0,0,0.9)" }}
           >
-            <span className="i-readout text-[26px] leading-none text-[var(--i-text)]">
-              {node.likely ? fmtDay(node.likely) : "—"}
+            <span className="i-readout text-[18px] leading-tight text-[var(--i-text)]">
+              {node.claim.outcome}
             </span>
-            <span className="i-label pb-[3px]" style={{ fontSize: 8.5 }}>
-              likely
-            </span>
-            {node.targetDate && (
+            {node.claim.state === "forecastable" && node.targetDate && (
               <span className="ml-auto pb-[3px] text-[9.5px] text-[var(--i-text-faint)]">
                 target {fmtDay(node.targetDate)}
               </span>
@@ -547,8 +553,8 @@ function Downstream({ node }: { node: CircuitNode }) {
           Waits on this
         </div>
         <div className="mt-1 truncate text-[12px] font-medium text-[var(--i-text-soft)]">{node.name}</div>
-        <div className="mt-1 i-readout text-[13px] text-[var(--i-text-faint)]">
-          {node.likely ? fmtDay(node.likely) : "—"}
+        <div aria-label={node.claim.accessibleLabel} className="mt-1 i-readout text-[13px] text-[var(--i-text-faint)]">
+          {node.claim.outcome}
         </div>
       </div>
     </div>

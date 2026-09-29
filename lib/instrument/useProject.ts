@@ -543,7 +543,12 @@ export function useProject(): ProjectModel {
       : validation;
   }, [scenario.capacityPlan, capacityBaseline, data]);
   const capacityPlanError = capacityPlanValidation.ok ? null : capacityPlanValidation.reason;
-  const previewRefusal = useMemo(() => data ? scenarioPreviewRefusal({
+  const previewRefusal = useMemo<ScenarioPreviewRefusal | null>(() => capacityPlanError ? {
+    code: "invalid_capacity_plan",
+    message: capacityPlanError,
+    action: "Return to Reality and recreate the staffing experiment with capacity retained on each staffed project.",
+    itemIds: [],
+  } : data ? scenarioPreviewRefusal({
     scopes: data.scopes.map((scope) => ({
       scopeId: scope.scopeId,
       name: scope.name,
@@ -552,7 +557,7 @@ export function useProject(): ProjectModel {
     excludedItemIds: [...scenario.excludedItemIds],
     includedItemIds: [...scenario.includedItemIds],
     estimateOverrideIds: Object.keys(scenario.estimateOverrideByItemId),
-  }) : null, [data, scenario]);
+  }) : null, [data, scenario, capacityPlanError]);
 
   const baselineAttempt = useMemo(() => {
     if (!data || !scenarioScopes) return { result: null, reason: null };
@@ -583,6 +588,12 @@ export function useProject(): ProjectModel {
     if (!data || !scenarioScopes) return;
     if (debounce.current) clearTimeout(debounce.current);
     debounce.current = setTimeout(() => {
+      if (capacityPlanError) {
+        setSimFailure(capacityPlanError);
+        setPreview(baseline);
+        setFloorByScope(null);
+        return;
+      }
       const ambiguousItemLevers = findAmbiguousScenarioItemLevers({
         scopes: data.scopes.map((scope) => ({
           scopeId: scope.scopeId,
@@ -694,7 +705,7 @@ export function useProject(): ProjectModel {
     return () => {
       if (debounce.current) clearTimeout(debounce.current);
     };
-  }, [data, scenarioScopes, scenario, capacityPlanValidation.ok, baseline, previewRefusal]);
+  }, [data, scenarioScopes, scenario, capacityPlanValidation.ok, capacityPlanError, baseline, previewRefusal]);
 
   const momentumByScope = useMemo(() => {
     const out = new Map<string, MomentumTrend>();
