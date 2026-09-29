@@ -33,7 +33,7 @@ export async function GET() {
 // exists. It is created OPEN and UNGATED -- typing a decision down must
 // never move a date, which is the whole product law.
 export async function POST(req: NextRequest) {
-  let body: { scopeId?: string; title?: string; rationale?: string | null; owner?: string | null; neededBy?: string | null };
+  let body: { requestId?: string; scopeId?: string; title?: string; rationale?: string | null; owner?: string | null; neededBy?: string | null };
   try {
     body = await req.json();
   } catch {
@@ -55,23 +55,37 @@ export async function POST(req: NextRequest) {
     select: { id: true, title: true, status: true },
   });
   const similar = siblings.find(
-    (d) => d.title.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim() === normalized
+    (d) => d.id !== `manual-${body.requestId}` && d.title.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim() === normalized
   );
 
-  const decision = await prisma.decision.create({
-    data: {
-      scopeId: body.scopeId,
-      title,
-      rationale: body.rationale?.trim() || null,
-      owner: body.owner?.trim() || null,
-      neededBy: body.neededBy ? new Date(body.neededBy) : null,
-      status: "open",
-    },
+  if (body.requestId !== undefined && !/^[0-9a-f-]{36}$/i.test(body.requestId)) {
+    return NextResponse.json({ error: "Invalid creation request id." }, { status: 400 });
+  }
+  if (body.neededBy && Number.isNaN(new Date(body.neededBy).getTime())) {
+    return NextResponse.json({ error: "Needed by must be a valid date." }, { status: 400 });
+  }
+  const data = {
+    scopeId: body.scopeId, title,
+    rationale: body.rationale?.trim() || null,
+    owner: body.owner?.trim() || null,
+    neededBy: body.neededBy ? new Date(body.neededBy) : null,
+    status: "open",
+    ...(body.rationale?.trim() ? { evidence: { create: {
+      kind: "manual", excerpt: body.rationale.trim(), sourceLabel: "Manual",
+    } } } : {}),
+  };
+  // Advisory transaction lock serializes retries, including a lost response.
+  // Creation and its evidence are one transaction, never a partial write.
+  const decision = await prisma.$transaction(async (tx) => {
+    if (!body.requestId) return tx.decision.create({ data });
+    const id = `manual-${body.requestId}`;
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${id}))`;
+    const existing = await tx.decision.findUnique({ where: { id } });
+    return existing ?? tx.decision.create({ data: { ...data, id } });
   });
-  if (body.rationale?.trim()) {
-    await prisma.decisionEvidence.create({
-      data: { decisionId: decision.id, kind: "manual", excerpt: body.rationale.trim(), sourceLabel: "Manual" },
-    });
+  if (decision.scopeId !== data.scopeId || decision.title !== data.title || decision.rationale !== data.rationale
+      || decision.owner !== data.owner || decision.neededBy?.toISOString() !== data.neededBy?.toISOString()) {
+    return NextResponse.json({ error: "This request was already saved with different details. Close this draft and edit the existing decision.", decision }, { status: 409 });
   }
   return NextResponse.json({ decision, possibleDuplicate: similar ?? null });
 }

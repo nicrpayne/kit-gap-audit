@@ -939,7 +939,7 @@ export default function ScopeInstrument() {
                   {m.active ? "Scenario active" : "Reality"} · {scope.name} · {formatCapacity(capacity)} FTE
                 </span>
                 <span className="flex-1" />
-                <span>Scope owns product shape. Timeline owns when. Portfolio owns who.</span>
+                <span>Scope owns product shape. Timeline records history and plan notes. Portfolio owns capacity.</span>
               </div>
             </div>
           </div>

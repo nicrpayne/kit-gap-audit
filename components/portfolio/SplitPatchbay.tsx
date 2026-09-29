@@ -1,4 +1,5 @@
 "use client";
+import { useModalFocus } from "@/lib/instrument/useModalFocus";
 
 // ONE HUMAN, DIVIDED. Deep on demand.
 //
@@ -59,6 +60,7 @@ export default function SplitPatchbay({
   );
   const splitView = splits.find((s) => s.personId === focus?.personId) ?? null;
 
+  const modalRef = useModalFocus(open, onClose);
   if (!open) return null;
 
   const scopeIds = [...scopeNameById.keys()];
@@ -75,6 +77,8 @@ export default function SplitPatchbay({
       <div
         role="dialog"
         aria-modal="true"
+      ref={modalRef}
+      tabIndex={-1}
         aria-label="Split a person"
         data-shoot="patchbay"
         onClick={(e) => e.stopPropagation()}

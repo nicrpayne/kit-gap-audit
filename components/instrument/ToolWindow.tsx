@@ -11,6 +11,7 @@
 // explaining it would be absurd.
 
 import { useEffect } from "react";
+import { useModalFocus } from "@/lib/instrument/useModalFocus";
 
 export default function ToolWindow({
   open,
@@ -45,14 +46,15 @@ export default function ToolWindow({
   children: React.ReactNode;
   dataShoot?: string;
 }) {
+  const modalRef = useModalFocus(open && !docked, onClose);
   useEffect(() => {
-    if (!open) return;
+    if (!open || !docked) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") onClose();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [open, onClose]);
+  }, [open, onClose, docked]);
 
   if (!open) return null;
 
@@ -116,6 +118,8 @@ export default function ToolWindow({
       <div
         role="dialog"
         aria-modal="true"
+        ref={modalRef}
+        tabIndex={-1}
         aria-label={title}
         data-shoot={dataShoot}
         onClick={(e) => e.stopPropagation()}

@@ -1,4 +1,5 @@
 "use client";
+import { useModalFocus } from "@/lib/instrument/useModalFocus";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
@@ -530,9 +531,10 @@ function describeLocator(locator: Record<string, unknown>): string {
 }
 
 function CandidateEditorDialog({ editor, setEditor, submit, busy }: { editor: Exclude<CandidateEditor, null>; setEditor: (value: CandidateEditor) => void; submit: () => Promise<void>; busy: boolean }) {
+  const modalRef = useModalFocus(true, () => { if (!busy) setEditor(null); });
   const value = editor.mode === "reject" ? editor.reason : editor.title;
   const label = editor.mode === "reject" ? "Rejection reason" : editor.mode === "manual" ? "Candidate title" : "Reviewed title";
-  return <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/65 p-5" role="dialog" aria-modal="true" aria-labelledby="candidate-editor-title">
+  return <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/65 p-5" role="dialog" aria-modal="true" ref={modalRef} tabIndex={-1} aria-labelledby="candidate-editor-title">
     <div className="w-full max-w-[520px] rounded-xl border p-5 shadow-2xl" style={{ background: "var(--i-panel)", borderColor: "var(--i-border-strong)" }}>
       <div className="i-label" style={{ color: "var(--i-signal)" }}>Governed review action</div>
       <h2 id="candidate-editor-title" className="mt-2 text-[17px] font-semibold text-[var(--i-text)]">{editor.mode === "manual" ? "Add an operator-authored candidate" : editor.mode === "reject" ? "Reject candidate" : "Edit candidate"}</h2>

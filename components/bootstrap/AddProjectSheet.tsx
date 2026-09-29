@@ -1,4 +1,5 @@
 "use client";
+import { useModalFocus } from "@/lib/instrument/useModalFocus";
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
@@ -12,6 +13,7 @@ export default function AddProjectSheet({ open, onClose }: { open: boolean; onCl
   const [search, setSearch] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const modalRef = useModalFocus(open, onClose);
   if (!open) return null;
 
   async function create(searchExistingKnowledge: boolean) {
@@ -54,7 +56,7 @@ export default function AddProjectSheet({ open, onClose }: { open: boolean; onCl
     <div className="fixed inset-0 z-[70] flex justify-end" role="presentation" data-shoot="add-project-sheet">
       <button aria-label="Close Add Project" className="absolute inset-0 bg-black/65" onClick={onClose} />
       <section
-        role="dialog" aria-modal="true" aria-labelledby="add-project-title"
+        role="dialog" aria-modal="true" ref={modalRef} tabIndex={-1} aria-labelledby="add-project-title"
         className="signal-widget relative flex h-full w-[420px] max-w-[94vw] flex-col border-l p-5 shadow-2xl"
         style={{ background: "var(--i-panel)", borderColor: "var(--i-border-strong)" }}
       >

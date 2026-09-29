@@ -1,6 +1,7 @@
 "use client";
+import { useModalFocus } from "@/lib/instrument/useModalFocus";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { mutateReality } from "@/lib/instrument/reality";
 import { rosterReadings, validateRosterDraft, type RosterPersonDraft } from "@/lib/capacity/reconciliation";
 import { switchFactorFor } from "@/lib/capacity/resolve";
@@ -62,8 +63,11 @@ export default function ActualTeamDrawer({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const wasOpen = useRef(false);
   useEffect(() => {
-    if (!open) return;
+    if (!open) { wasOpen.current = false; return; }
+    if (wasOpen.current) return;
+    wasOpen.current = true;
     setDraft(initial); setRemovedIds([]); setComplete(false); setDifferencesConfirmed(false); setReviewing(false); setError(null);
   }, [initial, open]);
 
@@ -74,6 +78,7 @@ export default function ActualTeamDrawer({
     return raw > 1e-6 && Math.abs(raw - scope.forecastFte) > 1e-6;
   });
 
+  const modalRef = useModalFocus(open, onClose);
   if (!open) return null;
 
   function updatePerson(index: number, patch: Partial<RosterPersonDraft>) {
@@ -129,6 +134,8 @@ export default function ActualTeamDrawer({
     <section
       role="dialog"
       aria-modal="true"
+      ref={modalRef}
+      tabIndex={-1}
       aria-label="Set actual team"
       data-shoot="actual-team-roster"
       onClick={(event) => event.stopPropagation()}

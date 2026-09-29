@@ -1,4 +1,6 @@
 "use client";
+import Link from "@/components/instrument/SignalLink";
+import type { ScenarioChip } from "@/components/instrument/ScenarioStrip";
 
 // The state bar: what you are looking at, and the two things you can do
 // about it. Replaces the old bottom InstrumentFooter -- with the bay now
@@ -41,6 +43,7 @@ export interface BlockedMoveLine {
 }
 
 interface ScenarioBarProps {
+  sharedChips?: ScenarioChip[];
   dirty: boolean;
   /** Target dates scrubbed but not saved. Deliberately NOT part of `dirty`:
       moving a target is an evaluation, not a scenario change, and must not
@@ -65,6 +68,7 @@ interface ScenarioBarProps {
 
 export default function ScenarioBar({
   dirty,
+  sharedChips = [],
   hasPendingTargets,
   saving,
   canCommit,
@@ -101,6 +105,7 @@ export default function ScenarioBar({
           {dirty ? "Scenario · unsaved" : "Reality"}
         </span>
 
+        {sharedChips.map((chip) => <Link key={chip.id} href={chip.href ?? "/forecast"} className="rounded-full px-2.5 py-1 text-[11px] text-[var(--i-violet)] bg-[var(--i-violet-soft)]">{chip.label}</Link>)}
         {dirty && capacityLines.length > 0 && (
           <span className="i-label" style={{ color: "var(--i-violet)" }}>
             Changed

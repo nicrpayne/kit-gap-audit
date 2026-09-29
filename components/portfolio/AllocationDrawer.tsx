@@ -1,4 +1,5 @@
 "use client";
+import { useModalFocus } from "@/lib/instrument/useModalFocus";
 
 // Per-person allocation detail. Unchanged in substance from the pre-
 // Instrument version -- same grid, same handlers, same warnings -- but it
@@ -46,6 +47,7 @@ export default function AllocationDrawer({
   removingId,
   removeError,
 }: AllocationDrawerProps) {
+  const modalRef = useModalFocus(open, onClose);
   if (!open) return null;
   const overIds = new Set(overAllocated.map((o) => o.personId));
 
@@ -59,6 +61,8 @@ export default function AllocationDrawer({
       <div
         role="dialog"
         aria-modal="true"
+      ref={modalRef}
+      tabIndex={-1}
         aria-label="Per-person allocation"
         onClick={(e) => e.stopPropagation()}
         className="h-full w-[720px] max-w-[94vw] overflow-y-auto"

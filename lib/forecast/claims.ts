@@ -21,7 +21,8 @@ export interface ForecastAssumptionItem {
     | "calendar"
     | "pooled_capacity"
     | "serial_gates"
-    | "dependency_finish_floors";
+    | "dependency_finish_floors"
+    | "risk_streams";
   label: string;
   detail: string;
 }
@@ -32,6 +33,11 @@ export interface ForecastAssumptionSnapshot {
 }
 
 const FORECAST_ASSUMPTION_ITEMS: readonly ForecastAssumptionItem[] = [
+  {
+    id: "risk_streams",
+    label: "Risk sampling",
+    detail: "Own work and gate risks use independent deterministic streams keyed by project and item. Unchanged work shares samples across Reality and Scenario; dependents share the same upstream outcome in each trial. Frequencies are model outputs, not calibrated real-world probabilities.",
+  },
   {
     id: "estimate_mapping",
     label: "Estimate mapping",

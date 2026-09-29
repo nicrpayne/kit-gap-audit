@@ -1024,7 +1024,8 @@ export default function TimelinePageClient({ embedded = false }: { embedded?: bo
         }}
       >
         <div className="flex flex-col justify-center shrink-0">
-          <div className="i-label">Timeline</div>
+          <div className="i-label">Replay project history</div>
+          <p className="mt-1 max-w-[180px] text-[10px] text-[var(--i-text-faint)]">Future landmarks are annotations; they do not schedule staffing or change forecasts.</p>
         </div>
 
         <div

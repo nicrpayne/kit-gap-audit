@@ -494,3 +494,9 @@ preview effect, once per 120ms tick) — this is an explicit adapter from
 the fine-grained interaction state to the domain shape, not a restructuring
 of the interaction state itself. Debounce timing (120ms) and trial-count
 behavior are unchanged.
+
+## Stable risk streams (September 29, 2026)
+
+Portfolio simulations deliberately assume independent own-work and gate risks across scopes. Each stream is keyed by scope ID, kind and work/gate ID, and advances once per trial, even for a constant estimate. Sorting by ID keeps sums stable under reorder. Removing other work or changing capacity does not reseed retained work. Reality and Scenario use the same stream identities. Dependencies still read the same upstream outcome at the same trial index, including diamond graphs. This replaces the accidental identical-seed correlation between identical shapes. Fresh forecasts may therefore differ from older saved reports; saved snapshots remain unchanged. These assumptions and simulated frequencies are not calibrated real-world probabilities.
+
+New frozen bases use model `triangular-pooled-calendar-finish-floor.v2`. Replay dispatches v1 bases to the original shared-seed sampler; old saved distributions are never silently reinterpreted with v2.

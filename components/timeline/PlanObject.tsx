@@ -120,6 +120,17 @@ export default function PlanObject({
   // disagree about which one is draggable. `data-date` / `data-end` are the
   // dates it is DRAWN at, so a proof can check pixels against the record.
   const claims = {
+    role: "button",
+    tabIndex: 0,
+    "aria-label": `${entry.title}, ${dates ?? entry.date}. Press Enter to select; use Edit landmark to change project, start or end date.`,
+    "aria-pressed": selected,
+    onFocus: () => onHover(true),
+    onBlur: () => onHover(false),
+    onKeyDown: (event: React.KeyboardEvent<SVGGElement>) => {
+      if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault(); event.stopPropagation(); onSelect();
+      }
+    },
     "data-shoot": `plan-${entry.id}`,
     "data-plan-role": role,
     "data-planned": planned || undefined,

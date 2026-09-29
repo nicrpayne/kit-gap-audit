@@ -23,28 +23,46 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   if (body.status && !["open", "decided", "dismissed"].includes(body.status)) {
     return NextResponse.json({ error: `status must be open, decided or dismissed` }, { status: 400 });
   }
-  const existing = await prisma.decision.findUnique({ where: { id }, select: { status: true } });
-  if (!existing) return NextResponse.json({ error: "Decision not found" }, { status: 404 });
+  if (body.title !== undefined && (typeof body.title !== "string" || !body.title.trim())) {
+    return NextResponse.json({ error: "A decision needs a title." }, { status: 400 });
+  }
+  if (body.neededBy && Number.isNaN(new Date(body.neededBy).getTime())) {
+    return NextResponse.json({ error: "Needed by must be a valid date." }, { status: 400 });
+  }
+  const decision = await prisma.$transaction(async (tx) => {
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${id}))`;
+    const existing = await tx.decision.findUnique({ where: { id } });
+    if (!existing) return null;
 
-  const decidedNow = body.status === "decided" && existing.status !== "decided";
-  const decision = await prisma.decision.update({
-    where: { id },
-    data: {
-      ...(body.title !== undefined ? { title: body.title.trim() } : {}),
-      ...(body.status !== undefined ? { status: body.status } : {}),
-      ...(body.owner !== undefined ? { owner: body.owner } : {}),
-      ...(body.rationale !== undefined ? { rationale: body.rationale } : {}),
-      ...(body.neededBy !== undefined ? { neededBy: body.neededBy ? new Date(body.neededBy) : null } : {}),
-      ...(body.options !== undefined ? { options: body.options } : {}),
-      ...(body.chosenOption !== undefined ? { chosenOption: body.chosenOption } : {}),
-      ...(body.resolution !== undefined ? { resolution: body.resolution } : {}),
-      ...(body.dismissReason !== undefined ? { dismissReason: body.dismissReason } : {}),
-      ...(decidedNow ? { decidedAt: new Date() } : {}),
-      // Reopening clears the decided stamp rather than leaving a date that
-      // contradicts the status.
-      ...(body.status === "open" && existing.status === "decided" ? { decidedAt: null } : {}),
-    },
-    include: { gate: true },
+    const decidedNow = body.status === "decided" && existing.status !== "decided";
+    const updated = await tx.decision.update({
+      where: { id },
+      data: {
+        ...(body.title !== undefined ? { title: body.title.trim() } : {}),
+        ...(body.status !== undefined ? { status: body.status } : {}),
+        ...(body.owner !== undefined ? { owner: body.owner } : {}),
+        ...(body.rationale !== undefined ? { rationale: body.rationale } : {}),
+        ...(body.neededBy !== undefined ? { neededBy: body.neededBy ? new Date(body.neededBy) : null } : {}),
+        ...(body.options !== undefined ? { options: body.options } : {}),
+        ...(body.chosenOption !== undefined ? { chosenOption: body.chosenOption } : {}),
+        ...(body.resolution !== undefined ? { resolution: body.resolution } : {}),
+        ...(body.dismissReason !== undefined ? { dismissReason: body.dismissReason } : {}),
+        ...(decidedNow ? { decidedAt: new Date() } : {}),
+        // Reopening clears the decided stamp rather than leaving a date that
+        // contradicts the status.
+        ...(body.status === "open" && existing.status === "decided" ? { decidedAt: null } : {}),
+      },
+      include: { gate: true },
+    });
+    const changes = (["title", "rationale", "owner", "neededBy"] as const)
+      .filter((key) => JSON.stringify(existing[key]) !== JSON.stringify(updated[key]))
+      .map((key) => `${key}: ${JSON.stringify(existing[key])} → ${JSON.stringify(updated[key])}`);
+    if (changes.length) await tx.decisionEvidence.create({ data: {
+      decisionId: id, kind: "manual", sourceLabel: "Decision details history",
+      excerpt: `${new Date().toISOString()} · ${changes.join("\n")}`,
+    } });
+    return updated;
   });
+  if (!decision) return NextResponse.json({ error: "Decision not found" }, { status: 404 });
   return NextResponse.json({ decision });
 }

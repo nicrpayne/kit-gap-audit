@@ -124,6 +124,7 @@ assert(!/starts after|cannot start|moved with it/i.test(dependencyExplanation), 
 const assumptions = forecastAssumptionSnapshot();
 assert.equal(assumptions.version, "forecast-assumptions.v1");
 assert.deepEqual(assumptions.items.map((item) => item.id), [
+  "risk_streams",
   "estimate_mapping",
   "remaining_work",
   "calendar",

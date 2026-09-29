@@ -359,7 +359,7 @@ export default function ScenarioInspector({
         ) : (
           !capacityChanged && (
             <p className="text-[11.5px] text-[var(--i-text-faint)] leading-relaxed">
-              Nothing in this scenario is affecting {scope.name}.
+              No staffing change for {scope.name}. Scope, estimate and Decision assumptions are shared with Forecast.
             </p>
           )
         )}

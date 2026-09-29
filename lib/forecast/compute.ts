@@ -10,7 +10,6 @@ import {
   type ForecastInputs,
   type SourcedWorkItem,
 } from "@/lib/forecast/build";
-import { buildScenarios } from "@/lib/forecast/scenarios";
 import { buildPortfolioScenarios, runPortfolioSimulation, type ScopeSimulationSpec } from "@/lib/forecast/portfolio";
 import type { SimulationResult } from "@/lib/forecast/simulate";
 import { estimateContentHash, findingContentHash } from "@/lib/estimate/run";
@@ -879,15 +878,9 @@ export async function collectDependencyClosure(rootScope: Scope): Promise<Scope[
 // report generation, and POST /api/refresh so all three always agree --
 // there is exactly one place this math happens.
 //
-// A Scope with no dependsOnScopeIds (every Scope before Phase 1.5, and
-// every Scope that doesn't opt in afterward) takes EXACTLY the code path
-// this function always ran: buildScenarios computes both the base result
-// and the scenario rows in one call, untouched. Only a Scope that
-// explicitly sets dependsOnScopeIds takes the portfolio-aware branch,
-// which threads its dependencies' own simulated completion days into its
-// base result via lib/forecast/portfolio.ts. Scenario levers are evaluated
-// through that same graph so their dates and deltas stay comparable with the
-// canonical dependency-aware Reality result.
+// Both isolated scopes and dependency closures use the identity-keyed
+// portfolio sampler. The browser, frozen basis, headline and acceleration
+// options must all use the same trial streams and comparison baseline.
 export async function computeForecast(scope: Scope): Promise<ForecastResult> {
   if (scope.executionState !== "configured") {
     throw new ForecastUnavailableError(scope.executionState === "not_configured" ? "Missing executable work mapping" : `Execution source is ${scope.executionState}`);
@@ -923,9 +916,8 @@ export async function computeForecast(scope: Scope): Promise<ForecastResult> {
     frozenSpecs = [{ scopeId: scope.id, items: inputs.items, gates: inputs.gates, teamCapacity: inputs.teamCapacity,
       dependsOnScopeIds: [], startDate, targetDate: scope.targetDate }];
     captureEstimates(scope.id, own);
-    const scenarioRun = buildScenarios(inputs, startDate, scope.targetDate);
-    base = scenarioRun.base;
-    rawScenarios = scenarioRun.scenarios;
+    base = runPortfolioSimulation(frozenSpecs).get(scope.id)!;
+    rawScenarios = buildPortfolioScenarios(frozenSpecs, scope.id, base);
   } else {
     const closure = await collectDependencyClosure(scope);
     const specs: ScopeSimulationSpec[] = [];

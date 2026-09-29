@@ -12,7 +12,8 @@
 // different claims about the world and only the person adding it knows
 // which one they mean.
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
+import { useModalFocus } from "@/lib/instrument/useModalFocus";
 import type { TimelineLane, TimelineEntry } from "@/lib/timeline/entries";
 
 const KINDS = ["event", "milestone", "kickoff", "delivery", "phase"] as const;
@@ -61,11 +62,7 @@ export default function AddEventTool({ lanes, editing, defaultScopeId, defaultDa
       ? Math.round((new Date(`${endDate}T12:00:00Z`).getTime() - new Date(`${date}T12:00:00Z`).getTime()) / 86400000)
       : null;
 
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  const modalRef = useModalFocus(true, onClose);
 
   const field = {
     background: "var(--i-void)",
@@ -78,6 +75,7 @@ export default function AddEventTool({ lanes, editing, defaultScopeId, defaultDa
       <div
         onClick={(e) => e.stopPropagation()}
         data-shoot="add-event-tool"
+        ref={modalRef} tabIndex={-1} role="dialog" aria-modal="true" aria-label={editing ? "Edit landmark" : "Add event"}
         className="rounded-lg overflow-hidden"
         style={{ width: 460, background: "var(--i-panel)", border: "1px solid var(--i-border-strong)", boxShadow: "0 24px 60px rgba(0,0,0,0.7)" }}
       >

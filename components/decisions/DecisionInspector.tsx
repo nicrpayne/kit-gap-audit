@@ -18,7 +18,7 @@
 // It is also the only place a Decision's Reality can be changed, which is
 // why deciding asks for a resolution rather than flipping a status.
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "@/components/instrument/SignalLink";
 import {
   LANE_COLOR,
@@ -75,7 +75,7 @@ export default function DecisionInspector({
   onClose: () => void;
   onAssume: (assume: boolean) => void;
   onConnect: () => void;
-  onDisconnect: () => void;
+  onDisconnect: () => Promise<void>;
   onUpdate: (patch: Record<string, unknown>) => Promise<void>;
   onAcceptCandidate: () => void;
   onDismissCandidate: () => void;
@@ -118,6 +118,7 @@ export default function DecisionInspector({
           />
         ) : decision ? (
           <DecisionBody
+            key={decision.id}
             decision={decision}
             assumed={assumed}
             onAssume={onAssume}
@@ -392,18 +393,30 @@ function DecisionBody({
   assumed: boolean;
   onAssume: (assume: boolean) => void;
   onConnect: () => void;
-  onDisconnect: () => void;
+  onDisconnect: () => Promise<void>;
   onUpdate: (patch: Record<string, unknown>) => Promise<void>;
   busy: boolean;
 }) {
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const saving = useRef(false);
+  async function save(action: () => Promise<void>, success?: () => void) {
+    if (saving.current) return;
+    saving.current = true; setSaveError(null);
+    try { await action(); success?.(); }
+    catch (reason) { setSaveError(`${reason instanceof Error ? reason.message : "Connection interrupted."} Your draft is preserved. Retry the action.`); }
+    finally { saving.current = false; }
+  }
   const lane = laneOf(decision);
   const gating = forecastActive(decision);
   const tone = assumed ? "var(--i-violet)" : LANE_COLOR[lane];
+  const [editing, setEditing] = useState(false);
+  const [details, setDetails] = useState({ title: "", rationale: "", owner: "", neededBy: "" });
   const [deciding, setDeciding] = useState(false);
   const [chosen, setChosen] = useState(decision.chosenOption ?? "");
   const [resolution, setResolution] = useState(decision.resolution ?? "");
 
   useEffect(() => {
+    setSaveError(null);
     setDeciding(false);
     setChosen(decision.chosenOption ?? "");
     setResolution(decision.resolution ?? "");
@@ -594,6 +607,7 @@ function DecisionBody({
 
       {/* ── ACTIONS: SCENARIO → DELIVERY → REALITY ─────────────────────── */}
       <Actions>
+        {saveError && <p role="alert" className="text-[11px] text-[var(--i-red)]">{saveError}</p>}
         {gating ? (
           <>
             <div className="i-label">Scenario</div>
@@ -631,10 +645,11 @@ function DecisionBody({
         {decision.status === "open" && (
           <>
             <div className="i-label pt-1">Delivery</div>
+            {decision.gate && <button data-shoot="edit-gate" onClick={onConnect} disabled={busy} className="text-[11px] text-[var(--i-text-soft)]">Edit delivery gate…</button>}
             {decision.gate ? (
               <button
                 data-shoot="disconnect-gate"
-                onClick={onDisconnect}
+                onClick={() => void save(onDisconnect)}
                 disabled={busy}
                 className="w-full rounded px-3 py-1.5 text-[11px] text-[var(--i-text-soft)] disabled:opacity-40"
                 style={{ border: "1px solid var(--i-border-strong)" }}
@@ -656,6 +671,19 @@ function DecisionBody({
         )}
 
         <div className="i-label pt-1">Reality</div>
+        <button data-shoot="decision-edit-details" disabled={busy} onClick={() => {
+          setDetails({ title: decision.title, rationale: decision.rationale ?? "", owner: decision.owner ?? "", neededBy: decision.neededBy?.slice(0, 10) ?? "" });
+          setEditing(true);
+        }} className="text-[11px] text-[var(--i-text-soft)]">Edit details…</button>
+        {editing && <div className="space-y-2 rounded p-2" style={{ background: "var(--i-recess)" }}>
+          {(["title", "rationale", "owner", "neededBy"] as const).map((key) => <label key={key} className="block text-[11px]">
+            {{ title: "Title", rationale: "Context", owner: "Owner", neededBy: "Needed by" }[key]}
+            <input data-shoot={`decision-edit-${key}`} type={key === "neededBy" ? "date" : "text"} value={details[key]}
+              onChange={(e) => setDetails({ ...details, [key]: e.target.value })} className="w-full rounded p-1 text-[var(--i-text)] bg-[var(--i-panel)]" />
+          </label>)}
+          <button data-shoot="decision-edit-save" disabled={busy || !details.title.trim()} onClick={() => void save(() => onUpdate({ ...details, neededBy: details.neededBy || null }), () => setEditing(false))}>Save details</button>
+          <button disabled={busy} className="ml-3" onClick={() => setEditing(false)}>Cancel</button>
+        </div>}
         {decision.status === "open" && !deciding && (
           <button
             data-shoot="decide-open"
@@ -698,14 +726,11 @@ function DecisionBody({
               <button
                 data-shoot="decide-confirm"
                 disabled={busy}
-                onClick={async () => {
-                  await onUpdate({
+                onClick={() => void save(() => onUpdate({
                     status: "decided",
                     chosenOption: chosen || null,
                     resolution: resolution.trim() || null,
-                  });
-                  setDeciding(false);
-                }}
+                  }), () => setDeciding(false))}
                 className="flex-1 rounded px-3 py-1.5 text-[11px] font-semibold disabled:opacity-40"
                 style={{ background: "var(--i-mint-soft)", color: "var(--i-mint)", border: "1px solid rgba(74,217,168,0.5)" }}
               >
@@ -725,7 +750,7 @@ function DecisionBody({
         {decision.status === "decided" && (
           <button
             data-shoot="reopen"
-            onClick={() => void onUpdate({ status: "open" })}
+            onClick={() => void save(() => onUpdate({ status: "open" }))}
             disabled={busy}
             className="w-full rounded px-3 py-1.5 text-[11px] text-[var(--i-text-soft)] disabled:opacity-40"
             style={{ border: "1px solid var(--i-border-strong)" }}
@@ -737,7 +762,7 @@ function DecisionBody({
         {decision.status !== "dismissed" && (
           <button
             data-shoot="dismiss-decision"
-            onClick={() => void onUpdate({ status: "dismissed" })}
+            onClick={() => void save(() => onUpdate({ status: "dismissed" }))}
             disabled={busy}
             className="w-full rounded px-3 py-1.5 text-[11px] text-[var(--i-text-faint)] hover:text-[var(--i-text-soft)] disabled:opacity-40"
             style={{ border: "1px solid var(--i-border)" }}

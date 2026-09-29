@@ -93,7 +93,7 @@ export function NewDecisionTool({
   defaultScopeId: string;
   busy: boolean;
   onClose: () => void;
-  onCreate: (input: { scopeId: string; title: string; rationale: string; owner: string; neededBy: string }) => Promise<
+  onCreate: (input: { requestId: string; scopeId: string; title: string; rationale: string; owner: string; neededBy: string }) => Promise<
     { duplicateTitle: string | null } | null
   >;
 }) {
@@ -103,6 +103,8 @@ export function NewDecisionTool({
   const [owner, setOwner] = useState("");
   const [neededBy, setNeededBy] = useState("");
   const [duplicate, setDuplicate] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const requestId = useRef<string | null>(null);
   const [pending, submitOnce] = useSubmitOnce();
 
   const reset = () => {
@@ -111,6 +113,8 @@ export function NewDecisionTool({
     setOwner("");
     setNeededBy("");
     setDuplicate(null);
+    setError(null);
+    requestId.current = null;
   };
 
   return (
@@ -206,6 +210,7 @@ export function NewDecisionTool({
           </div>
         </div>
 
+        {error && <p role="alert" className="text-[12px] text-[var(--i-red)]">{error} Your draft is preserved; retry Add decision.</p>}
         {duplicate && (
           <div
             data-shoot="duplicate-warning"
@@ -229,14 +234,20 @@ export function NewDecisionTool({
           disabled={!title.trim() || busy || pending}
           onClick={() =>
             submitOnce(async () => {
-              const res = await onCreate({ scopeId, title, rationale, owner, neededBy });
-              if (res?.duplicateTitle) {
-                setDuplicate(res.duplicateTitle);
-                setTitle("");
-                return;
-              }
-              reset();
-              onClose();
+              setError(null);
+              requestId.current ??= crypto.randomUUID();
+              try {
+                const res = await onCreate({ requestId: requestId.current, scopeId, title, rationale, owner, neededBy });
+                if (!res) throw new Error("Could not create the decision.");
+                if (res?.duplicateTitle) {
+                  setDuplicate(res.duplicateTitle);
+                  requestId.current = null;
+                  setTitle("");
+                  return;
+                }
+                reset();
+                onClose();
+              } catch (reason) { setError(reason instanceof Error ? reason.message : "Connection interrupted. Retry."); }
             })
           }
           className="w-full rounded-md px-3 py-2 text-[12px] font-semibold uppercase tracking-[0.1em] disabled:opacity-30"
@@ -441,6 +452,7 @@ function ModeChoice({
 export function ConnectTool({
   open,
   decisionTitle,
+  gate,
   scopes,
   defaultScopeId,
   busy,
@@ -449,6 +461,7 @@ export function ConnectTool({
 }: {
   open: boolean;
   decisionTitle: string;
+  gate?: { targetScope: { id: string }; dependency: string; evidenceForGate: string; low: number; likely: number; high: number } | null;
   scopes: ScopeOpt[];
   defaultScopeId: string;
   busy: boolean;
@@ -471,14 +484,19 @@ export function ConnectTool({
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [pending, submitOnce] = useSubmitOnce();
 
+  const openedGate = useRef(false);
   // Opening the tool on a different decision must not inherit the last
   // one's answers -- a gate's claim belongs to exactly one decision.
   useEffect(() => {
-    if (!open) return;
-    setDependency("");
-    setEvidenceForGate("");
+    if (!open) { openedGate.current = false; return; }
+    if (openedGate.current) return;
+    openedGate.current = true;
+    setDependency(gate?.dependency ?? "");
+    setEvidenceForGate(gate?.evidenceForGate ?? "");
+    setLow(String(gate?.low ?? 1)); setLikely(String(gate?.likely ?? 4)); setHigh(String(gate?.high ?? 10));
+    if (gate) setTargetScopeId(gate.targetScope.id);
     setErrors({});
-  }, [open, decisionTitle]);
+  }, [open, decisionTitle, gate, setTargetScopeId]);
 
   return (
     <ToolWindow
@@ -595,16 +613,18 @@ export function ConnectTool({
           disabled={busy || pending}
           onClick={() =>
             submitOnce(async () => {
-              const errs = await onConnect({
-                targetScopeId,
-                dependency,
-                evidenceForGate,
-                low: Number(low),
-                likely: Number(likely),
-                high: Number(high),
-              });
-              setErrors(errs ?? {});
-              if (!errs) onClose();
+              try {
+                const errs = await onConnect({
+                  targetScopeId,
+                  dependency,
+                  evidenceForGate,
+                  low: Number(low),
+                  likely: Number(likely),
+                  high: Number(high),
+                });
+                setErrors(errs ?? {});
+                if (!errs) onClose();
+              } catch (reason) { setErrors({ dependency: reason instanceof Error ? reason.message : "Connection interrupted. Your draft is preserved; retry." }); }
             })
           }
           className="w-full rounded-md px-3 py-2 text-[12px] font-semibold uppercase tracking-[0.1em] disabled:opacity-30"
@@ -619,7 +639,7 @@ export function ConnectTool({
 
 function FieldError({ children }: { children: React.ReactNode }) {
   return (
-    <div className="mt-1 text-[10.5px]" style={{ color: "var(--i-red)" }}>
+    <div role="alert" className="mt-1 text-[10.5px]" style={{ color: "var(--i-red)" }}>
       {children}
     </div>
   );

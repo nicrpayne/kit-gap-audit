@@ -1,4 +1,5 @@
 "use client";
+import { useModalFocus } from "@/lib/instrument/useModalFocus";
 
 import Link from "@/components/instrument/SignalLink";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -82,6 +83,7 @@ export default function AuditRefreshControl({ scopeId, fixture }: { scopeId: str
     }
   }
 
+  const evidenceModalRef = useModalFocus(evidenceOpen, () => setEvidenceOpen(false));
   const disabled = Boolean(fixture) || !status || ["offline", "unavailable", "ingesting", "refreshing"].includes(status.code) || requesting;
   const tone = status?.code === "new_available" ? "var(--i-amber)" : status?.code === "offline" ? "var(--i-red)" : "var(--i-signal)";
 
@@ -108,7 +110,7 @@ export default function AuditRefreshControl({ scopeId, fixture }: { scopeId: str
     </div>}
     {notice && <span className="absolute right-0 top-10 z-[60] w-72 rounded border border-[var(--i-border)] bg-[var(--i-panel)] px-3 py-2 text-[9.5px] text-[var(--i-text-soft)]">{notice}</span>}
     {evidenceOpen && <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/65 p-6" role="presentation" onClick={() => setEvidenceOpen(false)}>
-      <section role="dialog" aria-modal="true" aria-label="Add evidence to knowledge system" data-shoot="evidence-upstream-info" onClick={(event) => event.stopPropagation()} className="signal-widget w-full max-w-[520px] p-5">
+      <section role="dialog" aria-modal="true" ref={evidenceModalRef} tabIndex={-1} aria-label="Add evidence to knowledge system" data-shoot="evidence-upstream-info" onClick={(event) => event.stopPropagation()} className="signal-widget w-full max-w-[520px] p-5">
         <div className="i-label text-[var(--i-signal)]">ADD EVIDENCE</div>
         <h2 className="mt-1 text-[17px] font-medium text-[var(--i-text)]">File new evidence upstream</h2>
         <p className="mt-2 text-[11px] leading-relaxed text-[var(--i-text-soft)]">Signal does not store a private copy of pasted evidence. Add the source through the approved KE intake and Wiki Update workflow; after compilation and Hermes ingestion complete, return here and refresh Audit.</p>

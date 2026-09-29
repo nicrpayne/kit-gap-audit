@@ -1,6 +1,7 @@
 "use client";
+import { chipsFor } from "@/components/instrument/ScenarioStrip";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
   resolveCapacity,
@@ -25,7 +26,7 @@ import {
   reductionRequirement,
 } from "@/lib/capacity/workforce";
 import { runPortfolioSimulation } from "@/lib/forecast/portfolio";
-import { confidenceAtDay, type SimulationResult, type WorkItem, type DecisionGate } from "@/lib/forecast/simulate";
+import { confidenceAtDay, type WorkItem, type DecisionGate } from "@/lib/forecast/simulate";
 import { computeMomentum } from "@/lib/momentum/compute";
 import { computeMomentumTrend, type MomentumTrend } from "@/lib/momentum/trend";
 import { applyScenarioInputDelta, type ScenarioInputDelta, type ScenarioInputScope } from "@/lib/scenario/inputDelta";
@@ -387,35 +388,10 @@ export default function PortfolioPageClient() {
   const requiredRecord = useMemo(() => Object.fromEntries(requiredByScope), [requiredByScope]);
   const totalRequired = useMemo(() => [...requiredByScope.values()].reduce((t, v) => t + v, 0), [requiredByScope]);
 
-  const previewDelta: ScenarioInputDelta = useMemo(() => activeCapacityPlan
-    ? resolveCapacityPlan(activeCapacityPlan)
-    : {
-        allocations: (data?.allocations ?? []).map((allocation) => ({
-          personId: allocation.personId,
-          scopeId: allocation.scopeId,
-          fraction: allocation.fraction,
-        })),
-        hypotheticalPeople: [],
-        contextSwitchCostPct: data?.contextSwitchCostPct ?? 0,
-      }, [activeCapacityPlan, data]);
-
-  const [preview, setPreview] = useState<Map<string, SimulationResult> | null>(null);
-  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  useEffect(() => {
-    if (!data || !scenarioScopes || overAllocated.length > 0) return;
-    if (debounceRef.current) clearTimeout(debounceRef.current);
-    debounceRef.current = setTimeout(() => {
-      const specs = applyScenarioInputDelta(scenarioScopes, data.people, previewDelta);
-      try {
-        setPreview(runPortfolioSimulation(specs));
-      } catch {
-        // A hypothetical dependsOnScopeIds cycle can't happen from this UI.
-      }
-    }, 110);
-    return () => {
-      if (debounceRef.current) clearTimeout(debounceRef.current);
-    };
-  }, [data, scenarioScopes, previewDelta, overAllocated.length]);
+  // The suite owns the complete Scenario, including Scope, estimate and
+  // Decision inputs. A staffing-only resimulation here silently disagreed
+  // with Forecast even while the shared Scenario remained staged.
+  const preview = project.preview;
 
   const startDateObj = useMemo(() => (data ? new Date(data.startDate) : null), [data]);
 
@@ -477,7 +453,8 @@ export default function PortfolioPageClient() {
   );
 
   const switchCostChanged = !!data && switchCostPct !== data.contextSwitchCostPct;
-  const dirty = project.scenario.capacityPlan !== null;
+  const staffingDirty = project.scenario.capacityPlan !== null;
+  const dirty = project.active;
 
   const selectedScopeDeps = useMemo(() => {
     const empty: { dependsOn: DependencyDelta[]; dependents: DependentDelta[] } = { dependsOn: [], dependents: [] };
@@ -1160,10 +1137,11 @@ export default function PortfolioPageClient() {
     <>
       <div className="flex-1 min-w-0 flex flex-col">
         <ScenarioBar
+          sharedChips={chipsFor(project.scenario, scopeNameById, project.scenario.excludedItemIds.size, project.scenario.resolvedGateIds.size).filter((chip) => chip.href !== "/portfolio")}
           dirty={dirty}
           hasPendingTargets={pendingTargets.size > 0}
           saving={saving}
-          canCommit={canCommit}
+          canCommit={staffingDirty && canCommit}
           overAllocated={overAllocated.length > 0}
           capacityLines={capacityLinesForBar}
           namedTransferCount={changedScopeIds.size}

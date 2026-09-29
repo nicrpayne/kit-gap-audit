@@ -1,4 +1,5 @@
 "use client";
+import { useModalFocus } from "@/lib/instrument/useModalFocus";
 
 // ⌘K. Two kinds of thing you might want to reach without moving your hands:
 // another section of the app, or another Scope on this field. Deliberately
@@ -90,6 +91,7 @@ export default function CommandMenu({
     setCursor((c) => Math.min(c, Math.max(0, items.length - 1)));
   }, [items.length]);
 
+  const modalRef = useModalFocus(open, onClose);
   if (!open) return null;
 
   function choose(item: Item | undefined) {
@@ -107,7 +109,7 @@ export default function CommandMenu({
     >
       <div
         role="dialog"
-        aria-modal="true"
+        aria-modal="true" ref={modalRef} tabIndex={-1}
         aria-label="Command menu"
         onClick={(e) => e.stopPropagation()}
         className="signal-widget w-[440px] max-w-[92vw] overflow-hidden"

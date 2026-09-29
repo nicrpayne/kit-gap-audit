@@ -25,6 +25,7 @@
     "proof:forecast-truthful-claims": "tsx scripts/forecast-truthful-claims-proof.ts",
     "proof:refresh-estimation-status": "tsx scripts/refresh-estimation-status-proof.ts",
     "proof:refresh-estimation-status-db": "tsx scripts/refresh-estimation-status-db-proof.ts",
+    "proof:stable-risk-streams": "tsx scripts/qa-stable-risk-streams-proof.ts",
     "proof:scenario-capacity-plan": "tsx scripts/scenario-capacity-plan-proof.ts",
     "proof:report-comparison": "tsx scripts/report-comparison-proof.ts",
     "proof:report-comparison-db": "tsx scripts/report-comparison-db-proof.ts",

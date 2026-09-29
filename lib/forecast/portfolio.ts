@@ -1,4 +1,4 @@
-import { sampleOwnDays, summarizeCompletionDays, type SimulationResult, type WorkItem, type DecisionGate } from "./simulate";
+import { sampleOwnDays, sampleTriangular, summarizeCompletionDays, type SimulationResult, type WorkItem, type DecisionGate } from "./simulate";
 import { buildScenarioVariants, seededRandom, FORECAST_SEED, type Scenario } from "./scenarios";
 
 export interface ScopeSimulationSpec {
@@ -86,12 +86,16 @@ function topologicalOrder(specs: ScopeSimulationSpec[]): string[] {
 // "close" was a sorting artifact (small values cluster near the front of
 // any ascending array), not real shared-scenario risk.
 //
-// Each scope gets its own dedicated seeded RNG stream for its OWN item/
-// gate sampling (reproducible per scope, same FORECAST_SEED convention
-// as every other simulation in this app) -- the correlation comes
-// entirely from the shared trial index and direct array read, not from
-// sharing a random stream across scopes.
-export function runPortfolioTrials(specs: ScopeSimulationSpec[], trials = 5000): Map<string, number[]> {
+// Own risks use independent deterministic streams keyed by scope, kind and
+// stable work/gate identity. Same work retains its trial samples across
+// Reality/Scenario, reorder and removal of unrelated work. Dependencies alone
+// share upstream trial outcomes. This is a modeling assumption, not calibration.
+function stableRiskSeed(key: string): number {
+  let hash = (2166136261 ^ FORECAST_SEED) >>> 0;
+  for (let i = 0; i < key.length; i++) hash = Math.imul(hash ^ key.charCodeAt(i), 16777619) >>> 0;
+  return hash;
+}
+export function runPortfolioTrials(specs: ScopeSimulationSpec[], trials = 5000, sampling: "stable-independent-v2" | "legacy-shared-seed-v1" = "stable-independent-v2"): Map<string, number[]> {
   const byId = new Map(specs.map((s) => [s.scopeId, s]));
   const order = topologicalOrder(specs);
   for (const spec of specs) {
@@ -100,14 +104,28 @@ export function runPortfolioTrials(specs: ScopeSimulationSpec[], trials = 5000):
     }
   }
 
-  const randomByScope = new Map(order.map((id) => [id, seededRandom(FORECAST_SEED)]));
+  const legacyStreams = new Map(order.map((id) => [id, seededRandom(FORECAST_SEED)]));
+  const samplers = new Map(specs.map((spec) => {
+    const prepare = (kind: string, values: WorkItem[]) => [...values]
+      .sort((a, b) => a.id.localeCompare(b.id))
+      .map((value) => ({ value, random: seededRandom(stableRiskSeed(JSON.stringify([spec.scopeId, kind, value.id]))) }));
+    return [spec.scopeId, { items: prepare("work", spec.items), gates: prepare("gate", spec.gates) }];
+  }));
   const daysByScope = new Map<string, number[]>(order.map((id) => [id, []]));
 
   for (let trial = 0; trial < trials; trial++) {
     for (const scopeId of order) {
       const spec = byId.get(scopeId)!;
-      const random = randomByScope.get(scopeId)!;
-      let days = sampleOwnDays(spec.items, spec.gates, spec.teamCapacity, random);
+      const streams = samplers.get(scopeId)!;
+      const sample = ({ value, random }: { value: WorkItem; random: () => number }) => {
+        const uniform = random(); // consume once even for a constant estimate
+        return sampleTriangular(value.low, value.likely, value.high, () => uniform);
+      };
+      const effort = streams.items.reduce((sum, stream) => sum + sample(stream), 0);
+      let days = sampling === "legacy-shared-seed-v1"
+        ? sampleOwnDays(spec.items, spec.gates, spec.teamCapacity, legacyStreams.get(scopeId)!)
+        : effort / (spec.teamCapacity > 0 ? spec.teamCapacity : 1)
+          + streams.gates.reduce((sum, stream) => sum + sample(stream), 0);
       for (const depId of spec.dependsOnScopeIds) {
         // Safe: topological order guarantees depId's array already has
         // this trial's entry pushed before scopeId is processed.
@@ -123,12 +141,11 @@ export function runPortfolioTrials(specs: ScopeSimulationSpec[], trials = 5000):
 
 // Runs every Scope's simulation lockstep (see runPortfolioTrials) and
 // summarizes each into the same SimulationResult shape a standalone
-// runSimulation call produces. For a scope with zero dependencies this
-// is provably identical to calling runSimulation directly with the same
-// seed and trial count -- verified in ROADMAP.md.
-export function runPortfolioSimulation(specs: ScopeSimulationSpec[], trials = 5000): Map<string, SimulationResult> {
+// runSimulation call produces. Portfolio uses identity-keyed streams; the legacy standalone helper
+// uses its explicitly supplied RNG and need not draw identical samples.
+export function runPortfolioSimulation(specs: ScopeSimulationSpec[], trials = 5000, sampling: "stable-independent-v2" | "legacy-shared-seed-v1" = "stable-independent-v2"): Map<string, SimulationResult> {
   const byId = new Map(specs.map((s) => [s.scopeId, s]));
-  const daysByScope = runPortfolioTrials(specs, trials);
+  const daysByScope = runPortfolioTrials(specs, trials, sampling);
 
   const results = new Map<string, SimulationResult>();
   for (const [scopeId, days] of daysByScope) {

@@ -211,7 +211,8 @@ export default function DecisionsPageClient() {
 
   const updateDecision = useCallback(
     async (id: string, patch: Record<string, unknown>) => {
-      await run(() => write(`/api/decisions/${id}`, { method: "PATCH", body: JSON.stringify(patch) }));
+      const res = await run(() => write(`/api/decisions/${id}`, { method: "PATCH", body: JSON.stringify(patch) }));
+      if (!res.ok) throw new Error(String(res.body.error ?? "Could not save the decision. Retry."));
     },
     [run, write]
   );
@@ -521,7 +522,8 @@ export default function DecisionsPageClient() {
           onConnect={() => setTool("connect")}
           onDisconnect={async () => {
             if (!selectedDecision) return;
-            await run(() => write(`/api/decisions/${selectedDecision.id}/gate`, { method: "DELETE" }));
+            const res = await run(() => write(`/api/decisions/${selectedDecision.id}/gate`, { method: "DELETE" }));
+            if (!res.ok) throw new Error(String(res.body.error ?? "Could not disconnect the gate. Retry."));
           }}
           onUpdate={async (patch) => {
             if (selectedDecision) await updateDecision(selectedDecision.id, patch);
@@ -558,6 +560,7 @@ export default function DecisionsPageClient() {
             write("/api/decisions", {
               method: "POST",
               body: JSON.stringify({
+                requestId: input.requestId,
                 scopeId: input.scopeId,
                 title: input.title,
                 rationale: input.rationale || null,
@@ -566,6 +569,7 @@ export default function DecisionsPageClient() {
               }),
             })
           );
+          if (!res.ok) throw new Error(String(res.body.error ?? "Could not create the decision. Retry."));
           const dup = res.body.possibleDuplicate as { title?: string } | null | undefined;
           const created = res.body.decision as { id?: string } | undefined;
           if (created?.id) selectObject({ kind: "decision", id: created.id });
@@ -597,6 +601,7 @@ export default function DecisionsPageClient() {
       <ConnectTool
         open={tool === "connect" && !!selectedDecision}
         decisionTitle={selectedDecision?.title ?? ""}
+        gate={selectedDecision?.gate}
         scopes={scopes}
         defaultScopeId={selectedDecision?.scopeId ?? activeScopeId ?? ""}
         busy={busy}

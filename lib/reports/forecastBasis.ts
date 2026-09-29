@@ -34,7 +34,7 @@ export interface FrozenCapabilityEstimate {
 
 export interface FrozenForecastBasisV1 {
   version: "forecast-basis.v1";
-  model: "triangular-pooled-calendar-finish-floor.v1";
+  model: "triangular-pooled-calendar-finish-floor.v1" | "triangular-pooled-calendar-finish-floor.v2";
   seed: number;
   trials: number;
   scopes: (Omit<ScopeSimulationSpec, "startDate" | "targetDate"> & { startDate: string; targetDate: string | null })[];
@@ -129,7 +129,7 @@ export function freezeForecastBasis(
   capacity?: ForecastCapacityBasisInput,
 ): FrozenForecastBasisV1 {
   return JSON.parse(JSON.stringify({
-    version: "forecast-basis.v1", model: "triangular-pooled-calendar-finish-floor.v1",
+    version: "forecast-basis.v1", model: "triangular-pooled-calendar-finish-floor.v2",
     seed: FORECAST_SEED, trials: 5000,
     scopes: specs.map((spec) => ({ ...spec, startDate: spec.startDate.toISOString(), targetDate: spec.targetDate?.toISOString() ?? null })),
     capabilityEstimates,
@@ -138,10 +138,10 @@ export function freezeForecastBasis(
 }
 
 export function replayFrozenForecast(basis: FrozenForecastBasisV1) {
-  if (basis.version !== "forecast-basis.v1" || basis.model !== "triangular-pooled-calendar-finish-floor.v1" || basis.seed !== FORECAST_SEED || basis.trials !== 5000) {
+  if (basis.version !== "forecast-basis.v1" || !["triangular-pooled-calendar-finish-floor.v1", "triangular-pooled-calendar-finish-floor.v2"].includes(basis.model) || basis.seed !== FORECAST_SEED || basis.trials !== 5000) {
     throw new Error("This saved forecast requires its original model version; refusing to replay with different rules.");
   }
   return runPortfolioSimulation(basis.scopes.map((spec) => ({
     ...spec, startDate: new Date(spec.startDate), targetDate: spec.targetDate ? new Date(spec.targetDate) : null,
-  })), basis.trials);
+  })), basis.trials, basis.model === "triangular-pooled-calendar-finish-floor.v1" ? "legacy-shared-seed-v1" : "stable-independent-v2");
 }
