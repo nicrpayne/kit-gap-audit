@@ -17,11 +17,11 @@ async function main() {
   });
   const reportsResponse = await get(`/api/reports?scopeId=${encodeURIComponent(scopeId)}`);
   assert.equal(reportsResponse.status, 200);
-  const { reports } = await reportsResponse.json();
+  const { reports }: { reports?: Array<{ id: string; briefSnapshot: unknown }> } = await reportsResponse.json();
   assert(Array.isArray(reports) && reports.length, "retained reports required");
-  const selected = process.env.PRINT_PROOF_IDS?.split(",") ?? reports.slice(0, 2).map((r: { id: string }) => r.id);
+  const selected: string[] = process.env.PRINT_PROOF_IDS?.split(",") ?? reports.slice(0, 2).map((r) => r.id);
   for (const id of selected) {
-    const report = reports.find((r: { id: string }) => r.id === id);
+    const report: { id: string; briefSnapshot: unknown } | undefined = reports.find((r) => r.id === id);
     assert(report, `saved report ${id} exists`);
     const path = `/reports/${encodeURIComponent(id)}/print`;
     const unauthenticated = await get(path, false);
