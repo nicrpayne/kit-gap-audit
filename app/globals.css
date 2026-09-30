@@ -31,6 +31,17 @@
     display: block !important;
   }
 
+  /* Screen-sized wrappers and clipped overflow create trailing blank pages in
+     Safari's paged layout. Let the saved report take only its printed height. */
+  html:has(.report-print-page),
+  body:has(.report-print-page),
+  body:has(.report-print-page) #__next,
+  .report-print-page {
+    height: auto !important;
+    min-height: 0 !important;
+    overflow: visible !important;
+  }
+
   .decision-brief-print {
     --i-bg: #ffffff;
     --i-panel: #ffffff;
@@ -48,6 +59,7 @@
     background: white !important;
     overflow-wrap: anywhere;
     box-shadow: none !important;
+    overflow: visible !important;
   }
 
   body:has(.decision-brief-print),

@@ -79,8 +79,13 @@
 @media (max-width: 720px) { .workspace { display: block; } .browser { display: none; } .transport { flex-wrap: wrap; } .headlineGrid { grid-template-columns: 1fr; } .preview { padding: 16px; } }
 @media print {
   .shell { --r-bg: #fff; --r-panel: #fff; --r-panel-2: #f5f7f9; --r-text: #111827; --r-muted: #42516a; --r-line: #aeb8c4; --r-cyan: #006b82; --r-mint: #006846; --r-violet: #5740a0; border: 0; box-shadow: none; background: white; color: #111; }
-  .briefModule { border-color: #aeb8c4; background: white; }
-  .briefModule summary { color: #111 !important; }
+  .preview { max-width: none; padding: 0; }
+  .briefTitle { font-size: 25px; line-height: 1.1; }
+  .briefHeader { margin-bottom: 12px; padding-bottom: 12px; }
+  /* Long assumption/evidence sections must flow between pages. Keeping an
+     entire module together strands the title on a mostly empty first page. */
+  .briefModule { border-color: #aeb8c4; background: white; overflow: visible; break-inside: auto !important; }
+  .briefModule summary { color: #111 !important; break-after: avoid-page; }
   .briefModuleContent, .briefModule:not([open]) .briefModuleContent { display: block; }
   .headlineGrid { grid-template-columns: 1.5fr 1fr 1fr; }
   .metric { background: #f5f7f9; break-inside: avoid; }
@@ -88,6 +93,8 @@
   .metricSub, .label, .stamp, .fingerprint { color: #42516a; font-size: 10px; }
   .mode { color: #006846; }
   .copy, .listItem, .muted { color: #222; }
+  .list { display: block; }
+  .listItem { margin-bottom: 7px; break-inside: avoid-page; }
   .listItem > :first-child { flex: 1 1 35%; min-width: 0; }
   .listItem > :last-child { flex: 0 1 60%; min-width: 0; }
   .warning { color: #513b00; background: #fff8df; }

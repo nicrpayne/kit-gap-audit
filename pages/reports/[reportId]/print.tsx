@@ -39,7 +39,7 @@ export default function ReportPrintPage({ report }: PrintProps) {
   const recipe = isBriefRecipeV1(report.briefRecipe) ? report.briefRecipe : null;
 
   return (
-    <main className="min-h-screen bg-[var(--i-bg)] px-6 py-8 print:bg-white print:p-0">
+    <main className="report-print-page min-h-screen bg-[var(--i-bg)] px-6 py-8 print:bg-white print:p-0">
       <Head><title>Signal · Saved report</title></Head>
       <div className="report-no-print mx-auto mb-5 flex max-w-[920px] items-center justify-between rounded border border-[var(--i-border)] bg-[var(--i-panel)] px-4 py-3 text-xs text-[var(--i-text-soft)]">
         <span>Immutable snapshot only · use your browser’s Print command to save or print.</span>
