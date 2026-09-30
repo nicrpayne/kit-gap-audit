@@ -86,7 +86,7 @@ export default function OrbitPageClient() {
   // a dependency already in mind: ?focus=<scopeId>&select=<node id>. The
   // ids are Orbit's own stable node ids, so nothing is translated on the
   // way in and an unknown one simply selects nothing.
-  const params = useSearchParams();
+  const params = useSearchParams()!; // Mounted only in the App Router, where navigation is available.
   const [selected, setSelected] = useState<string | null>(params.get("select"));
 
   const scopes = useMemo(() => m.data?.scopes ?? [], [m.data]);

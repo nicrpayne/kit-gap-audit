@@ -70,7 +70,7 @@ const MIN_CELL_W = 128;
 
 export default function TimelinePageClient({ embedded = false }: { embedded?: boolean } = {}) {
   const router = useRouter();
-  const routeParams = useSearchParams();
+  const routeParams = useSearchParams()!; // Mounted only in the App Router, where navigation is available.
   const project = useProject();
   const [data, setData] = useState<TimelineProjection | null>(null);
   const [err, setErr] = useState<string | null>(null);
@@ -97,9 +97,9 @@ export default function TimelinePageClient({ embedded = false }: { embedded?: bo
   // and stripped from the URL, because it describes an action taken, not a
   // state the page is in — leaving it would re-open the form on every
   // subsequent refresh.
-  const addParams = useSearchParams();
+  const addParams = useSearchParams()!; // Mounted only in the App Router, where navigation is available.
   const addRouter = useRouter();
-  const addPathname = usePathname();
+  const addPathname = usePathname()!; // Mounted only in the App Router, where navigation is available.
   useEffect(() => {
     if (addParams.get("add") !== "1") return;
     setTool({ editing: null });

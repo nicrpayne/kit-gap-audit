@@ -37,7 +37,7 @@ export default function InstrumentShell({
   minViewportWidth?: number;
   children: ReactNode;
 }) {
-  const pathname = usePathname();
+  const pathname = usePathname()!; // Mounted only in the App Router, where navigation is available.
   const [railHidden, setRailHidden] = useState(false);
   const [commandOpen, setCommandOpen] = useState(false);
   const [addProjectOpen, setAddProjectOpen] = useState(false);

@@ -37,7 +37,7 @@ export default function CommandMenu({
   onAddProject: () => void;
 }) {
   const router = useRouter();
-  const params = useSearchParams();
+  const params = useSearchParams()!; // Mounted only in the App Router.
   const [q, setQ] = useState("");
   const [cursor, setCursor] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);

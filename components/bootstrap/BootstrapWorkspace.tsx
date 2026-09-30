@@ -81,7 +81,7 @@ type CandidateEditor =
   | null;
 
 export default function BootstrapWorkspace({ bootstrapId }: { bootstrapId: string }) {
-  const params = useSearchParams();
+  const params = useSearchParams()!; // Mounted only in the App Router, where navigation is available.
   const [data, setData] = useState<BootstrapRead | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);

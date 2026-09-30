@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 
 function LoginForm() {
   const router = useRouter();
-  const params = useSearchParams();
+  const params = useSearchParams()!; // Mounted only in the App Router, where navigation is available.
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);

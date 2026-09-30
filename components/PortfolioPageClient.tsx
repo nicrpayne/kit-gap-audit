@@ -225,9 +225,9 @@ function axisTicks(startDate: Date, minDay: number, maxDay: number): { day: numb
 export default function PortfolioPageClient() {
   const project = useProject();
   const setScenario = project.setScenario;
-  const pathname = usePathname();
+  const pathname = usePathname()!; // Mounted only in the App Router, where navigation is available.
   const router = useRouter();
-  const params = useSearchParams();
+  const params = useSearchParams()!; // Mounted only in the App Router, where navigation is available.
 
   const [data, setData] = useState<PortfolioInputsResponse | null>(null);
   const [loading, setLoading] = useState(true);

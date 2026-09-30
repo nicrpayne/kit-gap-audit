@@ -13,8 +13,9 @@ type Props = LinkProps &
 /** Next Link with Signal's project/selection handoff contract applied. */
 const SignalLink = forwardRef<HTMLAnchorElement, Props>(function SignalLink({ href, ...props }, ref) {
   const params = useSearchParams();
-  return <NextLink ref={ref} href={contextualHref(href, params)} {...props} />;
+  // Shared with buffered print pages, where compatibility navigation can
+  // briefly be null. Frozen evidence URLs already carry their own context.
+  return <NextLink ref={ref} href={contextualHref(href, params ?? "")} {...props} />;
 });
 
 export default SignalLink;
-

@@ -38,8 +38,8 @@ export default function DecisionsPageClient() {
   const project = useProject();
   const { data, loading, error, write } = useDecisions();
   const router = useRouter();
-  const pathname = usePathname();
-  const params = useSearchParams();
+  const pathname = usePathname()!; // Mounted only in the App Router, where navigation is available.
+  const params = useSearchParams()!; // Mounted only in the App Router, where navigation is available.
 
   const [selection, setSelection] = useState<Selection>(null);
   const [filter, setFilter] = useState<Filter>("all");

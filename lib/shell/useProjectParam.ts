@@ -54,7 +54,7 @@ const LEGACY_ALIASES = ["focus"] as const;
 export function useProjectParam(available: string[] | null): ProjectParam {
   const router = useRouter();
   const pathname = usePathname();
-  const params = useSearchParams();
+  const params = useSearchParams()!; // Mounted only in the App Router, where navigation is available.
   const raw =
     params.get(PROJECT_PARAM) ?? LEGACY_ALIASES.map((k) => params.get(k)).find(Boolean) ?? null;
 
