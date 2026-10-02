@@ -15,7 +15,7 @@ import {
 } from "./changeContract";
 import { ensureReconciliationBaseline } from "./baseline";
 import { classifyProjectRelevance } from "./projectRelevance";
-import { deriveKnowledgeFreshness, type KnowledgeFreshnessCode } from "./freshness";
+import { completedKnowledgeChanged, deriveKnowledgeFreshness, type KnowledgeFreshnessCode } from "./freshness";
 
 const TERMINAL_JOBS = new Set(["complete", "partial", "failed", "stale"]);
 export const AUDIT_FRESHNESS_TTL_MS = 15 * 60 * 1000;
@@ -286,7 +286,7 @@ export async function readKnowledgeStatus(scopeId: string): Promise<KnowledgeSta
   const completed = record(knowledge.completed);
   const ingestionState = typeof knowledge.state === "string" ? knowledge.state : null;
   const watermark = iso(completed.at) ?? iso(knowledge.watermark);
-  const completedManifestId = typeof completed.manifestId === "string" ? completed.manifestId : null;
+  const completedVersion = typeof completed.version === "string" ? completed.version : typeof knowledge.version === "string" ? knowledge.version : null;
   const bootstrap = scope?.activation?.bootstrap;
   const latestScan = bootstrap?.scans[0] ?? null;
   const job = latestScan?.job ?? null;
@@ -295,14 +295,8 @@ export async function readKnowledgeStatus(scopeId: string): Promise<KnowledgeSta
   const packageIntelligenceMeta = record(packageBody.intelligenceMeta);
   const snapshotBody = record(latestSnapshot?.package);
   const snapshotIntelligenceMeta = record(snapshotBody.intelligenceMeta);
-  const packageManifests = Array.isArray(packageIntelligenceMeta.manifestsIncluded)
-    ? packageIntelligenceMeta.manifestsIncluded.filter((value): value is string => typeof value === "string")
-    : [];
-  const snapshotManifests = Array.isArray(snapshotIntelligenceMeta.manifestsIncluded)
-    ? snapshotIntelligenceMeta.manifestsIncluded.filter((value): value is string => typeof value === "string")
-    : [];
-  const packagedManifests = packageManifests.length ? packageManifests : snapshotManifests;
-  const completedIdentityAlreadyPackaged = Boolean(completedManifestId && packagedManifests.includes(completedManifestId));
+  const packagedKnowledge = record((pkg ? packageIntelligenceMeta : snapshotIntelligenceMeta).completedKnowledge);
+  const packagedVersion = typeof packagedKnowledge.version === "string" ? packagedKnowledge.version : null;
   // Production JSA/iTrack already had accepted external ContextSnapshots
   // before ProjectActivation existed. Until their first companion refresh,
   // that accepted snapshot is the comparison baseline; treating the absence
@@ -312,12 +306,11 @@ export async function readKnowledgeStatus(scopeId: string): Promise<KnowledgeSta
     ?? (iso(snapshotBody.generatedAt) ? new Date(iso(snapshotBody.generatedAt)!) : latestSnapshot?.createdAt)
     ?? null;
   const decision = deriveKnowledgeFreshness({
-    activationAvailable: Boolean(scope?.activation), companionOnline: online, ingestionState,
+    activationAvailable: Boolean(scope?.activation), companionOnline: online,
+    ingestionState: ingestionState === "current" && !watermark && !completedVersion ? "degraded" : ingestionState,
     jobRunning: Boolean(job && !TERMINAL_JOBS.has(job.status)),
     packageAheadOfSnapshot: Boolean(pkg && (!latestSnapshot || !String(latestSnapshot.packageId).includes(pkg.packageId))),
-    watermarkAheadOfPackage: Boolean(
-      watermark && !completedIdentityAlreadyPackaged && (!acceptedKnowledgeAt || new Date(watermark).getTime() > acceptedKnowledgeAt.getTime()),
-    ),
+    watermarkAheadOfPackage: completedKnowledgeChanged({ completedVersion, packagedVersion, completedAt: watermark, packagedAt: acceptedKnowledgeAt?.toISOString() ?? null }),
   });
   const observedTimes = Array.isArray(snapshotBody.sources)
     ? snapshotBody.sources

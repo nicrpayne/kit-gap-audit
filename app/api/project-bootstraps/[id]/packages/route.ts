@@ -16,7 +16,7 @@ function rejectSecrets(value: unknown, path = "package") {
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const raw = await req.text();
-  if (raw.length > 5_000_000) return NextResponse.json({ error: "Bootstrap package exceeds 5 MB" }, { status: 413 });
+  if (Buffer.byteLength(raw, "utf8") > 12 * 1024 * 1024) return NextResponse.json({ error: "Bootstrap package exceeds 12 MiB" }, { status: 413 });
   let body: unknown;
   try { body = JSON.parse(raw); } catch { return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 }); }
   let pkg;

@@ -361,7 +361,7 @@ function activationContextPackage(
       relClass: relation.relationClass, fromInPackage: relation.sourceInPackage,
       toInPackage: relation.targetInPackage, extra: { provenance: relation.provenance },
     })),
-    intelligenceMeta: { generatedAt: pkg?.generatedAt ?? activatedAt.toISOString(), objectCount: pkg?.intelligenceHeads.length ?? 0, relationCount: pkg?.relations?.length ?? 0 },
+    intelligenceMeta: { ...pkg?.intelligenceMeta, generatedAt: pkg?.generatedAt ?? activatedAt.toISOString(), objectCount: pkg?.intelligenceHeads.length ?? 0, relationCount: pkg?.relations?.length ?? 0 },
     completeness: {
       expectedSources: (pkg?.coverage ?? []).map((item) => item.provider),
       missingSources: manifest.willRemainExternal.providerGaps.map((item) => item.provider),

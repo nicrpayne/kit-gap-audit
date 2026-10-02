@@ -20,7 +20,7 @@ function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message.slice(0, 2_000) : "Refresh stage failed";
 }
 
-function toContextPackage(scopeId: string, pkg: ProjectBootstrapPackageV1): ProjectContextPackage {
+export function toContextPackage(scopeId: string, pkg: ProjectBootstrapPackageV1): ProjectContextPackage {
   const refreshRef = `signal://bootstrap-refresh/${pkg.bootstrapId}/${pkg.packageId}`;
   const artifactById = new Map(pkg.artifacts.map((artifact) => [artifact.artifactId, artifact]));
   const sources: ProjectContextPackage["sources"] = [
@@ -42,7 +42,7 @@ function toContextPackage(scopeId: string, pkg: ProjectBootstrapPackageV1): Proj
     id: item.evidenceId, sourceRef: artifactById.get(item.artifactId)?.canonicalRef ?? refreshRef,
     kind: "bootstrap_evidence", excerpt: item.exactQuote,
     externalRef: typeof item.locator.externalRef === "string" ? item.locator.externalRef : artifactById.get(item.artifactId)?.canonicalRef,
-    independence: item.independence, data: item.locator,
+    independence: item.independence, data: { ...item.locator, ...(item.speaker ? { speaker: item.speaker } : {}), ...(item.occurredAt ? { occurredAt: item.occurredAt } : {}) },
     extra: { lineageRootIds: item.lineageRootIds, passageHash: item.passageHash ?? null },
   }));
   evidence.push({
@@ -90,7 +90,7 @@ function toContextPackage(scopeId: string, pkg: ProjectBootstrapPackageV1): Proj
       relClass: relation.relationClass, fromInPackage: relation.sourceInPackage,
       toInPackage: relation.targetInPackage, extra: { provenance: relation.provenance },
     })),
-    intelligenceMeta: { generatedAt: pkg.generatedAt, objectCount: pkg.intelligenceHeads.length, relationCount: pkg.relations?.length ?? 0 },
+    intelligenceMeta: { ...pkg.intelligenceMeta, generatedAt: pkg.generatedAt, objectCount: pkg.intelligenceHeads.length, relationCount: pkg.relations?.length ?? 0 },
     completeness: {
       expectedSources: pkg.coverage.map((item) => item.provider),
       missingSources: pkg.coverage.filter((item) => item.state !== "available").map((item) => item.provider),

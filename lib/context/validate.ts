@@ -72,8 +72,11 @@ const VALID_SOURCE_STATUSES = new Set<SourceManifestStatus>([
 // instead of 94%.
 export const PACKAGE_LIMITS = {
   sources: 250,
-  evidence: 2000,
-  derivedClaims: 200,
+  // Full, lossless quote spans plus assertion-specific citation qualifiers.
+  // Oct 2026 real JSA refresh: ~2,300 evidence entries and 321 candidates.
+  // Keep the existing 12 MiB total bound; never truncate to fit entry counts.
+  evidence: 5000,
+  derivedClaims: 500,
   intelligenceObjects: 2000,
   intelligenceRelations: 20000,
   /** Total serialised weight, whatever shape it arrives in. */
@@ -305,7 +308,7 @@ function normalizeDerivedClaim(raw: unknown, index: number): DerivedClaim {
   const kind = requireString(raw.kind, `${path}.kind`);
   const statement = requireString(raw.statement, `${path}.statement`, MAX_EXCERPT_CHARS);
 
-  const evidenceRefsRaw = requireArray(raw.evidenceRefs, `${path}.evidenceRefs`, 50);
+  const evidenceRefsRaw = requireArray(raw.evidenceRefs, `${path}.evidenceRefs`, 500);
   const evidenceRefs = evidenceRefsRaw.map((r, i) => requireString(r, `${path}.evidenceRefs[${i}]`));
 
   const claim: DerivedClaim = { id, kind, statement, evidenceRefs };
@@ -464,12 +467,23 @@ function normalizeIntelligenceRelation(raw: unknown, index: number): Intelligenc
   return item;
 }
 
-const INTEL_META_KEYS = ["batchId", "generatedAt", "objectCount", "currentCount", "relationCount", "extra"];
+const INTEL_META_KEYS = ["batchId", "generatedAt", "objectCount", "currentCount", "relationCount", "completedKnowledge", "extra"];
 
 function normalizeIntelligenceMeta(raw: unknown): IntelligenceMeta {
   if (!isPlainObject(raw)) fail("intelligenceMeta must be an object when present");
 
   const meta: IntelligenceMeta = {};
+  if (raw.completedKnowledge !== undefined) {
+    const completed = raw.completedKnowledge;
+    if (!isPlainObject(completed)) fail("intelligenceMeta.completedKnowledge must be an object");
+    const at = requireString(completed.at, "intelligenceMeta.completedKnowledge.at");
+    if (!Number.isFinite(Date.parse(at))) fail("completedKnowledge.at must be an ISO timestamp");
+    meta.completedKnowledge = {
+      at,
+      version: requireString(completed.version, "intelligenceMeta.completedKnowledge.version"),
+      manifestId: requireString(completed.manifestId, "intelligenceMeta.completedKnowledge.manifestId"),
+    };
+  }
   const batchId = optionalString(raw.batchId, "intelligenceMeta.batchId");
   if (batchId !== null) meta.batchId = batchId;
   const generatedAt = optionalString(raw.generatedAt, "intelligenceMeta.generatedAt");

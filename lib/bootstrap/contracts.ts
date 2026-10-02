@@ -150,6 +150,7 @@ export interface ProjectBootstrapPackageV1 {
   compilerVersion: string;
   generatedAt: string;
   bootstrapId: string;
+  intelligenceMeta?: Record<string, JsonValue>;
   requestedIdentity: ProjectIdentityQuery;
   identity?: {
     detectedCanonicalName: string;

@@ -817,8 +817,10 @@ function rawUnit(fields: Record<string, JsonValue>, raw: string): RawEstimateUni
   return "unknown";
 }
 
-function rawValues(fields: Record<string, JsonValue>, raw: string): number[] {
-  const supplied = explicitNumbers(fields);
+function rawValues(fields: Record<string, JsonValue>, raw: string, unit: RawEstimateUnit): number[] {
+  // *_days may be a producer's conversion alongside a source stated in
+  // sprints. Do not relabel 40 days as 40 sprints (or invent a conversion).
+  const supplied = unit === "developer_days" ? explicitNumbers(fields) : [];
   if (supplied.length > 0) return supplied;
   return [...raw.matchAll(/\d+(?:\.\d+)?/g)].map((match) => Number(match[0])).filter((value) => value > 0);
 }
@@ -831,9 +833,9 @@ function rawShape(values: number[]): RawEstimateShape {
 }
 
 function explicitWorkMeaning(fields: Record<string, JsonValue>): EstimateSourceWorkMeaning {
-  const supplied = firstText(fields, ["sourceWorkMeaning", "source_work_meaning", "workMeaning", "work_meaning", "estimateBasis", "estimate_basis"]);
+  const supplied = firstText(fields, ["sourceWorkMeaning", "source_work_meaning", "workMeaning", "work_meaning", "estimateBasis", "estimate_basis", "estimate_covers"]);
   if (!supplied) return "unknown";
-  const value = normalized(supplied);
+  const value = normalized(supplied.replaceAll("_", " "));
   if (value === "remaining" || value === "remaining work" || value === "remaining capability") return "remaining";
   if (value === "total" || value === "total work" || value === "total capability") return "total";
   return "unknown";
@@ -915,8 +917,8 @@ export function capabilityKnowledgeEstimates(
     const passages = passagesFor(pkg, refs);
     const firstPassage = passages[0] ?? null;
     const firstEvidence = firstPassage ? evidenceById.get(firstPassage.id) ?? null : null;
-    const values = rawValues(fields, rawEstimate);
     const unit = rawUnit(fields, rawEstimate);
+    const values = rawValues(fields, rawEstimate, unit);
     const shape = rawShape(values);
     const range = unit === "developer_days" && shape === "three_point"
       && values[0] <= values[1] && values[1] <= values[2]

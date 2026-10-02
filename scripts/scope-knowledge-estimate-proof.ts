@@ -83,6 +83,15 @@ const pkg: ProjectContextPackage = {
 };
 
 const estimates = capabilityKnowledgeEstimates(pkg, "snapshot-1", [{ id: "notifications", name: "Notifications" }]);
+const producerMeaning = structuredClone(pkg);
+producerMeaning.intelligenceObjects![0].fields!.estimate_covers = "remaining_work";
+assert.equal(capabilityKnowledgeEstimates(producerMeaning, "snapshot-meaning", [{ id: "notifications", name: "Notifications" }])[0].sourceWorkMeaning, "remaining", "producer remaining_work qualifier survives without prose inference");
+const mixedUnitEvidence = structuredClone(pkg);
+mixedUnitEvidence.intelligenceObjects![0].fields = { capability_id: "notifications", estimate: "4–5 sprints", estimate_low_days: 40, estimate_high_days: 50, estimate_covers: "remaining_work" };
+const sprintEstimate = capabilityKnowledgeEstimates(mixedUnitEvidence, "snapshot-sprints", [{ id: "notifications", name: "Notifications" }])[0];
+assert.equal(sprintEstimate.rawUnit, "sprints");
+assert.deepEqual(sprintEstimate.rawValues, [4, 5], "producer-derived day bounds must not be mislabelled as source sprints");
+assert.equal(sprintEstimate.range, null, "sprints are not automatically converted to forecast effort");
 assert.equal(estimates.length, 2, "current and historical evidence remain inspectable");
 const current = estimates.find((estimate) => estimate.id === "estimate-current")!;
 const historical = estimates.find((estimate) => estimate.id === "estimate-historical")!;

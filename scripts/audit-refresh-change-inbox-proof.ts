@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { deriveKnowledgeFreshness } from "../lib/audit/freshness";
+import { completedKnowledgeChanged, deriveKnowledgeFreshness } from "../lib/audit/freshness";
 import { classifyProjectRelevance } from "../lib/audit/projectRelevance";
 import { resolveRefreshDisposition } from "../lib/bootstrap/rescan";
 import type { BootstrapProposal } from "../lib/bootstrap/contracts";
@@ -36,8 +36,14 @@ assert.equal(
 );
 
 assert.equal(deriveKnowledgeFreshness({ activationAvailable: true, companionOnline: true, ingestionState: "ingesting", jobRunning: false, packageAheadOfSnapshot: false, watermarkAheadOfPackage: true }).code, "ingesting", "H ingestion outranks a newer watermark");
-assert.equal(deriveKnowledgeFreshness({ activationAvailable: true, companionOnline: true, jobRunning: false, packageAheadOfSnapshot: false, watermarkAheadOfPackage: false }).code, "current", "I unchanged knowledge is current");
-assert.equal(deriveKnowledgeFreshness({ activationAvailable: true, companionOnline: true, jobRunning: false, packageAheadOfSnapshot: false, watermarkAheadOfPackage: true }).code, "new_available", "new completed knowledge is offered once");
+assert.equal(deriveKnowledgeFreshness({ activationAvailable: true, companionOnline: true, ingestionState: "current", jobRunning: false, packageAheadOfSnapshot: false, watermarkAheadOfPackage: false }).code, "current", "I unchanged knowledge is current");
+assert.equal(deriveKnowledgeFreshness({ activationAvailable: true, companionOnline: true, ingestionState: "current", jobRunning: false, packageAheadOfSnapshot: false, watermarkAheadOfPackage: true }).code, "new_available", "new completed knowledge is offered once");
+for (const state of ["degraded", "unknown", null]) {
+  assert.equal(deriveKnowledgeFreshness({ activationAvailable: true, companionOnline: true, ingestionState: state, jobRunning: false, packageAheadOfSnapshot: false, watermarkAheadOfPackage: true }).code, "unavailable", "unknown/degraded companion must not be synchronized");
+}
+assert.equal(completedKnowledgeChanged({ completedVersion: "new", packagedVersion: "old", completedAt: "2026-10-01", packagedAt: "2026-10-01" }), true, "same manifest/time with changed content still refreshes");
+assert.equal(completedKnowledgeChanged({ completedVersion: "same", packagedVersion: "same", completedAt: "2026-10-02", packagedAt: "2026-10-01" }), false, "identical content with a fresh compile time does not refresh");
+assert.equal(completedKnowledgeChanged({ completedVersion: "new", packagedVersion: null, completedAt: "2026-10-01", packagedAt: "2026-10-01" }), true, "legacy package requires one verified upgrade");
 assert.equal(deriveKnowledgeFreshness({ activationAvailable: true, companionOnline: false, jobRunning: false, packageAheadOfSnapshot: true, watermarkAheadOfPackage: true }).code, "offline", "offline is honest");
 
 assert.deepEqual(resolveRefreshDisposition({ sourceFingerprint: "same", status: "accepted", dispositionReason: null, reviewedProposal: null }, "same"), {

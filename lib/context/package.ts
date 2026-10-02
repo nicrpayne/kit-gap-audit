@@ -306,6 +306,8 @@ export function readRelationField(
 }
 
 export interface IntelligenceMeta {
+  /** Content identity shared with the companion; manifest names are not versions. */
+  completedKnowledge?: { at: string; version: string; manifestId: string };
   /** Producer's batch identity for this intelligence payload. */
   batchId?: string | null;
   generatedAt?: string | null;
