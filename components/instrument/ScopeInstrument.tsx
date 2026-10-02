@@ -140,6 +140,7 @@ export default function ScopeInstrument() {
   const [editing, setEditing] = useState<ShapeCapability | null>(null);
   const [writeError, setWriteError] = useState<string | null>(null);
   const [writing, setWriting] = useState(false);
+  const [estimateWriteState, setEstimateWriteState] = useState<{ capabilityId: string; pending: boolean; error: string | null } | null>(null);
   const [dragSize, setDragSize] = useState<{ w: number; h: number }>({ w: 250, h: MODULE_H });
   const [over, setOver] = useState<string | null>(null);
   const [proposal, setProposal] = useState<ScopeProposalView | null>(null);
@@ -619,6 +620,7 @@ export default function ScopeInstrument() {
     if (!capability) return;
     setWriting(true);
     setWriteError(null);
+    setEstimateWriteState({ capabilityId, pending: true, error: null });
     try {
       const response = await mutateReality(`/api/capabilities/${capabilityId}/estimate`, {
         method: "PUT",
@@ -653,8 +655,10 @@ export default function ScopeInstrument() {
       });
     } catch (error) {
       setWriteError(error instanceof Error ? error.message : "The meeting estimate could not be accepted into Reality.");
+      setEstimateWriteState({ capabilityId, pending: false, error: error instanceof Error ? error.message : "The meeting estimate could not be accepted into Reality." });
     } finally {
       setWriting(false);
+      setEstimateWriteState((prior) => prior?.capabilityId === capabilityId ? { ...prior, pending: false } : prior);
     }
   };
 
@@ -663,6 +667,7 @@ export default function ScopeInstrument() {
     if (!capability) return;
     setWriting(true);
     setWriteError(null);
+    setEstimateWriteState({ capabilityId, pending: true, error: null });
     try {
       const response = await mutateReality(`/api/capabilities/${capabilityId}/estimate`, {
         method: "DELETE",
@@ -683,8 +688,10 @@ export default function ScopeInstrument() {
       });
     } catch (error) {
       setWriteError(error instanceof Error ? error.message : "The accepted meeting estimate could not be cleared.");
+      setEstimateWriteState({ capabilityId, pending: false, error: error instanceof Error ? error.message : "The accepted meeting estimate could not be cleared." });
     } finally {
       setWriting(false);
+      setEstimateWriteState((prior) => prior?.capabilityId === capabilityId ? { ...prior, pending: false } : prior);
     }
   };
 
@@ -1063,6 +1070,7 @@ export default function ScopeInstrument() {
           })
         }
         onAcceptKnowledgeEstimate={acceptKnowledgeEstimate}
+        estimateWriteState={estimateWriteState}
         onClearAcceptedKnowledgeEstimate={clearAcceptedKnowledgeEstimate}
         onSetCapabilityStaffing={(capabilityId, plan) =>
           m.setScenario((prev) => ({

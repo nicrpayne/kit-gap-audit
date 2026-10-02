@@ -393,6 +393,8 @@ export async function setCanonicalCapabilityEstimate(
     estimate: AcceptedCapabilityEstimate | null;
     reviewedOpenItemIds?: string[];
     expectedContextSnapshotId?: string;
+    /** Server-read census used to establish a unique source-to-card match. */
+    expectedScopeCapabilities?: { id: string; revision: number }[];
     idempotencyKey: string;
   },
 ) {
@@ -421,6 +423,22 @@ export async function setCanonicalCapabilityEstimate(
       throw new ScopeRealityInputError("That estimate belongs to a different capability.");
     }
     if (input.estimate?.version === "accepted-capability-estimate.v2") {
+      const association = input.estimate.source.association;
+      if (association && association.method !== "native_id" && !input.expectedScopeCapabilities) {
+        throw new ScopeRealityInputError("The suggested source match requires a current Scope-card census.");
+      }
+      if (input.expectedScopeCapabilities) {
+        // A peer card can acquire the same Linear feature after the API read.
+        // Read the whole census inside the serializable write transaction so
+        // creation, removal, or any governed link edit invalidates that match.
+        const current = await tx.capability.findMany({
+          where: { scopeId: before.scopeId }, select: { id: true, revision: true }, orderBy: { id: "asc" },
+        });
+        const expected = [...input.expectedScopeCapabilities].sort((a, b) => a.id.localeCompare(b.id));
+        if (current.length !== expected.length || current.some((card, index) => card.id !== expected[index].id || card.revision !== expected[index].revision)) {
+          throw new ScopeRealityConflictError("Scope cards changed while this source match was being reviewed. Reload Scope and review the match again.");
+        }
+      }
       if (!input.expectedContextSnapshotId || input.estimate.source.contextSnapshotId !== input.expectedContextSnapshotId) {
         throw new ScopeRealityInputError("The reviewed estimate must name the immutable source snapshot it was opened from.");
       }

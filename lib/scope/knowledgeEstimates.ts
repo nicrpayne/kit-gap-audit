@@ -28,12 +28,26 @@ export interface KnowledgeEstimatePassage {
   surroundingContext: string | null;
 }
 
+/** A discovery hint, never an accepted scope or effort assertion. */
+export interface KnowledgeEstimateAssociation {
+  method: "native_id" | "exact_name" | "linked_work" | "statement_name";
+  sourceCapabilityId: string | null;
+  sourceCapabilityName: string | null;
+  sourceFeatureId: string | null;
+  sourceFeatureName: string | null;
+  matchedWorkIds: string[];
+  candidateCapabilityIds: string[];
+}
+
 /** An immutable source assertion. It is evidence until a person reviews the
  * interpretation and the exact open-work boundary. */
 export interface CapabilityKnowledgeEstimate {
   id: string;
   contextSnapshotId: string;
   capabilityId: string;
+  association?: KnowledgeEstimateAssociation;
+  sourceConditions?: string | null;
+  sourceBoundary?: string | null;
   rawEstimate: string;
   rawUnit: RawEstimateUnit;
   rawValues: number[];
@@ -97,6 +111,9 @@ export interface AcceptedCapabilityEstimateV2 {
     sourceUrl: string | null;
     statement: string;
     rawEstimateText: string;
+    association?: KnowledgeEstimateAssociation;
+    sourceConditions?: string | null;
+    sourceBoundary?: string | null;
     rawUnit: RawEstimateUnit;
     rawValues: number[];
     rawShape: RawEstimateShape;
@@ -362,6 +379,9 @@ export function reviewCapabilityKnowledgeEstimate(
   input: EstimateReviewInput,
   context: EstimateReviewContext,
 ): AcceptedCapabilityEstimateV2 {
+  if (estimate.association && estimate.association.candidateCapabilityIds.length !== 1) {
+    throw new Error("This source spans multiple Scope cards. Obtain a card-specific estimate before accepting it; the same estimate must not be counted on several cards.");
+  }
   if (!Number.isInteger(context.capabilityRevisionAtReview) || context.capabilityRevisionAtReview < 0) {
     throw new Error("A valid capability revision is required.");
   }
@@ -379,7 +399,7 @@ export function reviewCapabilityKnowledgeEstimate(
     throw new Error("Record whether each modeled range point is verbatim or operator supplied.");
   }
   for (const point of ["low", "likely", "high"] as const) {
-    if (origins[point] === "verbatim" && !estimate.rawValues.includes(range[point])) {
+    if (origins[point] === "verbatim" && (estimate.rawUnit !== "developer_days" || !estimate.rawValues.includes(range[point]))) {
       throw new Error(`${point} cannot be marked verbatim because that value is not present in the raw source assertion.`);
     }
   }
@@ -400,6 +420,9 @@ export function reviewCapabilityKnowledgeEstimate(
     throw new Error("Every currently open linked item must be classified as covered or additional.");
   }
   const boundaryStatement = nullableString(input.boundaryStatement);
+  if (estimate.association && estimate.association.method !== "native_id" && !boundaryStatement) {
+    throw new Error("Explain how this source feature maps to this card, including exclusions and the source conditions.");
+  }
   if (currentOpen.length === 0 && !boundaryStatement) {
     throw new Error("A ticketless capability requires an explicit boundary statement.");
   }
@@ -420,6 +443,9 @@ export function reviewCapabilityKnowledgeEstimate(
       sourceUrl: safeSourceUrl(passage.sourceUrl),
       statement: estimate.statement,
       rawEstimateText: estimate.rawEstimate,
+      ...(estimate.association ? { association: structuredClone(estimate.association) } : {}),
+      ...(estimate.sourceConditions !== undefined ? { sourceConditions: estimate.sourceConditions } : {}),
+      ...(estimate.sourceBoundary !== undefined ? { sourceBoundary: estimate.sourceBoundary } : {}),
       rawUnit: estimate.rawUnit,
       rawValues: [...estimate.rawValues],
       rawShape: estimate.rawShape,
@@ -529,6 +555,25 @@ function parseLegacyAccepted(candidate: Record<string, unknown>): AcceptedCapabi
   };
 }
 
+function validAssociation(value: unknown): value is KnowledgeEstimateAssociation {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const row = value as Record<string, unknown>;
+  return ["native_id", "exact_name", "linked_work", "statement_name"].includes(String(row.method))
+    && [row.sourceCapabilityId, row.sourceCapabilityName, row.sourceFeatureId, row.sourceFeatureName]
+      .every((item) => item === null || typeof item === "string")
+    && [row.matchedWorkIds, row.candidateCapabilityIds].every((items) => Array.isArray(items)
+      && items.every((item) => typeof item === "string" && item.trim()))
+    && (row.candidateCapabilityIds as string[]).length > 0;
+}
+
+function sameAssociation(a: KnowledgeEstimateAssociation | undefined, b: KnowledgeEstimateAssociation): boolean {
+  // PostgreSQL JSONB may reorder object keys. Compare meaning, not serialization.
+  return Boolean(a && a.method === b.method && a.sourceCapabilityId === b.sourceCapabilityId
+    && a.sourceCapabilityName === b.sourceCapabilityName && a.sourceFeatureId === b.sourceFeatureId
+    && a.sourceFeatureName === b.sourceFeatureName && sameIds(a.matchedWorkIds, b.matchedWorkIds)
+    && sameIds(a.candidateCapabilityIds, b.candidateCapabilityIds));
+}
+
 function parseV2Accepted(candidate: Record<string, unknown>): AcceptedCapabilityEstimateV2 | null {
   if (candidate.version !== "accepted-capability-estimate.v2") return null;
   const source = candidate.source && typeof candidate.source === "object" && !Array.isArray(candidate.source)
@@ -570,6 +615,10 @@ function parseV2Accepted(candidate: Record<string, unknown>): AcceptedCapability
     !["developer_days", "elapsed_days", "sprints", "story_points", "unknown"].includes(source.rawUnit as string) ||
     !["single", "bounds", "three_point", "unstructured"].includes(source.rawShape as string) || source.rawShape !== expectedRawShape ||
     declaredWorkMeaningAtReview === null ||
+    (source.association !== undefined && (!validAssociation(source.association)
+      || source.association.candidateCapabilityIds.length !== 1
+      || source.association.candidateCapabilityIds[0] !== boundary.capabilityId)) ||
+    [source.sourceConditions, source.sourceBoundary].some((value) => value !== undefined && value !== null && typeof value !== "string") ||
     !["current", "historical", "unknown"].includes(source.currentnessAtReview as string) ||
     supersedes === null || supersededBy === null ||
     !range || !origin || ![origin.low, origin.likely, origin.high].every((value) => value === "verbatim" || value === "operator") ||
@@ -587,6 +636,9 @@ function parseV2Accepted(candidate: Record<string, unknown>): AcceptedCapability
   ) return null;
   const boundaryStatement = boundary.boundaryStatement === null ? null : nullableString(boundary.boundaryStatement);
   if (covered.length + additional.length === 0 && !boundaryStatement) return null;
+  if (validAssociation(source.association) && source.association.method !== "native_id" && !boundaryStatement) return null;
+  if ((["low", "likely", "high"] as const).some((point) => origin[point] === "verbatim"
+    && (source.rawUnit !== "developer_days" || !rawValues.includes(range[point])))) return null;
   return {
     version: "accepted-capability-estimate.v2",
     source: {
@@ -600,6 +652,9 @@ function parseV2Accepted(candidate: Record<string, unknown>): AcceptedCapability
       sourceUrl: safeSourceUrl(source.sourceUrl),
       statement: source.statement as string,
       rawEstimateText: source.rawEstimateText as string,
+      ...(validAssociation(source.association) ? { association: structuredClone(source.association) } : {}),
+      ...(source.sourceConditions !== undefined ? { sourceConditions: source.sourceConditions as string | null } : {}),
+      ...(source.sourceBoundary !== undefined ? { sourceBoundary: source.sourceBoundary as string | null } : {}),
       rawUnit: source.rawUnit as RawEstimateUnit,
       rawValues: [...rawValues],
       rawShape: source.rawShape as RawEstimateShape,
@@ -706,6 +761,9 @@ export function reviewedCapabilityEstimate(
     || acceptedSource.rawValues.length !== estimate.source.rawValues.length
     || acceptedSource.rawValues.some((value, index) => value !== estimate.source.rawValues[index])
     || acceptedSource.statement !== estimate.source.statement
+    || (estimate.source.association !== undefined && !sameAssociation(acceptedSource.association, estimate.source.association))
+    || (estimate.source.sourceConditions !== undefined && acceptedSource.sourceConditions !== estimate.source.sourceConditions)
+    || (estimate.source.sourceBoundary !== undefined && acceptedSource.sourceBoundary !== estimate.source.sourceBoundary)
     || acceptedSource.speaker !== estimate.source.speaker
     || acceptedSource.observedAt !== estimate.source.observedAt
     || (estimate.source.declaredWorkMeaningAtReview !== undefined
@@ -736,7 +794,31 @@ export function reviewedCapabilityEstimate(
   return { status: "reviewed", estimate, range: estimate.interpretation.range, coveredItemIds, additionalItemIds, publishable: true };
 }
 
-type CapabilityRef = { id: string; name: string };
+export type CapabilityRef = { id: string; name: string; workItemIds?: string[] };
+
+/** Call with ALL cards in one scope, including out/later, so a shared feature
+ * is not mistaken for a unique match. Only accepted links and observed Linear
+ * parents establish identity; neither titles nor notes invent work links. */
+export function knowledgeEstimateCapabilityRefs(
+  capabilities: { id: string; name: string; workLinks: { externalId: string; state: string }[] }[],
+  issues: { identifier: string; parentIdentifier: string | null }[],
+): CapabilityRef[] {
+  const parents = new Map(issues.map((issue) => [issue.identifier, issue.parentIdentifier]));
+  return capabilities.map((capability) => {
+    const ids = new Set<string>();
+    for (const link of capability.workLinks) {
+      if (link.state !== "active" && link.state !== "configured") continue;
+      const visited = new Set<string>();
+      let id: string | null | undefined = link.externalId;
+      while (id && !visited.has(id)) {
+        visited.add(id);
+        ids.add(id);
+        id = parents.get(id);
+      }
+    }
+    return { id: capability.id, name: capability.name, workItemIds: [...ids].sort() };
+  });
+}
 
 function record(value: JsonValue | undefined): Record<string, JsonValue> {
   return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, JsonValue> : {};
@@ -770,21 +852,39 @@ function firstNumber(fields: Record<string, JsonValue>, keys: string[]): number 
   return null;
 }
 
-function exactCapability(object: IntelligenceObjectItem, capabilities: CapabilityRef[]): CapabilityRef | null {
+function capabilityAssociations(object: IntelligenceObjectItem, capabilities: CapabilityRef[]): { capability: CapabilityRef; association: KnowledgeEstimateAssociation }[] {
   const fields = record(object.fields);
-  const explicitId = firstText(fields, ["capabilityId", "capability_id", "featureId", "feature_id"]);
-  if (explicitId) return capabilities.find((candidate) => candidate.id === explicitId) ?? null;
-  const explicitName = firstText(fields, ["capabilityName", "capability_name", "capability", "featureName", "feature_name", "feature"]);
-  if (explicitName) {
-    const key = normalized(explicitName);
-    return capabilities.find((candidate) => normalized(candidate.name) === key) ?? null;
+  const identity = {
+    sourceCapabilityId: firstText(fields, ["capabilityId", "capability_id"]),
+    sourceCapabilityName: firstText(fields, ["capabilityName", "capability_name", "capability"]),
+    sourceFeatureId: firstText(fields, ["featureId", "feature_id"]),
+    sourceFeatureName: firstText(fields, ["featureName", "feature_name", "feature"]),
+  };
+  const ids = [identity.sourceCapabilityId, identity.sourceFeatureId].filter((id): id is string => Boolean(id));
+  const result = (matches: CapabilityRef[], method: KnowledgeEstimateAssociation["method"]) => matches.map((capability) => ({
+    capability,
+    association: { method, ...identity,
+      matchedWorkIds: method === "linked_work" ? ids.filter((id) => capability.workItemIds?.includes(id)).sort() : [],
+      candidateCapabilityIds: matches.map((match) => match.id).sort(),
+    },
+  }));
+  const native = capabilities.filter((candidate) => ids.includes(candidate.id));
+  if (native.length) return result(native, "native_id");
+  // Foreign semantic IDs are not Signal database IDs. A linked Linear feature
+  // supplies a reviewable association, not permission to use its whole range.
+  const linked = capabilities.filter((candidate) => ids.some((id) => candidate.workItemIds?.includes(id)));
+  if (linked.length) return result(linked, "linked_work");
+  const names = [identity.sourceCapabilityName, identity.sourceFeatureName].filter((name): name is string => Boolean(name)).map(normalized);
+  if (names.length) {
+    return result(capabilities.filter((candidate) => names.includes(normalized(candidate.name))), "exact_name");
   }
+  if (ids.length) return [];
   const haystack = normalized([object.statement, firstText(fields, ["action", "note", "significance"]) ?? ""].join(" "));
   const matches = capabilities.filter((candidate) => {
     const needle = normalized(candidate.name);
     return needle.length >= 4 && (` ${haystack} `).includes(` ${needle} `);
   });
-  return matches.length === 1 ? matches[0] : null;
+  return matches.length === 1 ? result(matches, "statement_name") : [];
 }
 
 function explicitNumbers(fields: Record<string, JsonValue>): number[] {
@@ -822,7 +922,17 @@ function rawValues(fields: Record<string, JsonValue>, raw: string, unit: RawEsti
   // sprints. Do not relabel 40 days as 40 sprints (or invent a conversion).
   const supplied = unit === "developer_days" ? explicitNumbers(fields) : [];
   if (supplied.length > 0) return supplied;
-  return [...raw.matchAll(/\d+(?:\.\d+)?/g)].map((match) => Number(match[0])).filter((value) => value > 0);
+  // Dates, issue identifiers and participant counts are not range points.
+  // Keep word-only or relative estimates unstructured rather than interpreting
+  // "this sprint (planned 2026-09-28)" as a three-point estimate.
+  const numbers = String.raw`\d+(?:\.\d+)?(?:\s*(?:[-–—]|to)\s*\d+(?:\.\d+)?){0,2}`;
+  const unitPattern = unit === "developer_days" ? String.raw`(?:developer|dev|engineering)[ -]+days?`
+    : unit === "elapsed_days" ? String.raw`(?:(?:calendar|elapsed|working|business)\s+)?days?`
+    : unit === "sprints" ? String.raw`sprints?`
+    : unit === "story_points" ? String.raw`(?:(?:story|Linear)\s+)?points?` : null;
+  const measured = unitPattern ? [...raw.matchAll(new RegExp(`(${numbers})\\s+${unitPattern}\\b`, "gi"))].map((match) => match[1]) : [];
+  if (measured.length === 0 && new RegExp(`^${numbers}$`).test(raw.trim())) measured.push(raw.trim());
+  return measured.flatMap((value) => [...value.matchAll(/\d+(?:\.\d+)?/g)].map((match) => Number(match[0]))).filter((value) => value > 0);
 }
 
 function rawShape(values: number[]): RawEstimateShape {
@@ -911,8 +1021,8 @@ export function capabilityKnowledgeEstimates(
     const fields = record(object.fields);
     const rawEstimate = estimateText(fields);
     if (!rawEstimate) continue;
-    const capability = exactCapability(object, capabilities);
-    if (!capability) continue;
+    const associations = capabilityAssociations(object, capabilities);
+    if (!associations.length) continue;
     const refs = object.evidenceRefs ?? [];
     const passages = passagesFor(pkg, refs);
     const firstPassage = passages[0] ?? null;
@@ -926,10 +1036,13 @@ export function capabilityKnowledgeEstimates(
       : null;
     const sourceWorkMeaning = explicitWorkMeaning(fields);
     const relations = relationRefs(pkg, object.id, contextSnapshotId);
-    estimates.push({
+    for (const { capability, association } of associations) estimates.push({
       id: object.id,
       contextSnapshotId,
       capabilityId: capability.id,
+      association,
+      sourceConditions: firstText(fields, ["note", "conditions", "caveats"]),
+      sourceBoundary: firstText(fields, ["estimateRange", "estimate_range"]),
       rawEstimate,
       rawUnit: unit,
       rawValues: values,

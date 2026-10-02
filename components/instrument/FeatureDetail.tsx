@@ -80,6 +80,7 @@ export default function FeatureDetail({
   onClearKnowledgeEstimate,
   onAcceptKnowledgeEstimate,
   onClearAcceptedKnowledgeEstimate,
+  estimateWriteState,
   staffingOptions,
   onSetCapabilityStaffing,
   onClearCapabilityStaffing,
@@ -105,6 +106,7 @@ export default function FeatureDetail({
   onClearKnowledgeEstimate: (capabilityId: string) => void;
   onAcceptKnowledgeEstimate: (capabilityId: string, estimate: CapabilityKnowledgeEstimate, review: EstimateReviewInput) => void;
   onClearAcceptedKnowledgeEstimate: (capabilityId: string) => void;
+  estimateWriteState?: { capabilityId: string; pending: boolean; error: string | null } | null;
   staffingOptions: StaffingOption[];
   onSetCapabilityStaffing: (capabilityId: string, plan: CapabilityStaffingPlan) => void;
   onClearCapabilityStaffing: (capabilityId: string) => void;
@@ -115,6 +117,7 @@ export default function FeatureDetail({
   const [mode, setMode] = useState<Mode>("overview");
   if (!feature) return null;
   const f = feature;
+  const estimateWrite = estimateWriteState?.capabilityId === f.canonicalCapability?.id ? estimateWriteState : null;
 
   return (
     <ToolWindow
@@ -128,6 +131,8 @@ export default function FeatureDetail({
       hero={<ModuleHead feature={f} capacity={capacity} releaseLoadDays={releaseLoadDays} realityRange={realityRange} maxSpread={maxSpread} />}
       footer={
         <div className="px-5 py-3 space-y-1.5">
+          {estimateWrite?.pending && <p role="status" className="text-[11px] text-[var(--i-signal)]">Saving reviewed estimate…</p>}
+          {estimateWrite?.error && <p role="alert" className="text-[11px] text-[var(--i-amber)]" data-shoot="estimate-write-error">{estimateWrite.error}</p>}
           {f.canonicalCapability && (
             <button
               onClick={() => onEditReality(f.canonicalCapability!)}
@@ -174,6 +179,7 @@ export default function FeatureDetail({
         </>
       }
     >
+      <fieldset disabled={estimateWrite?.pending} className="min-w-0">
       {mode === "overview" && (
         <Overview feature={f} />
       )}
@@ -183,6 +189,7 @@ export default function FeatureDetail({
         <Estimate feature={f} scopeId={scopeId} capacity={capacity} onSetEstimate={onSetEstimate} onClearEstimate={onClearEstimate} onStageKnowledgeEstimate={onStageKnowledgeEstimate} onClearKnowledgeEstimate={onClearKnowledgeEstimate} onAcceptKnowledgeEstimate={onAcceptKnowledgeEstimate} onClearAcceptedKnowledgeEstimate={onClearAcceptedKnowledgeEstimate} staffingOptions={staffingOptions} onSetCapabilityStaffing={onSetCapabilityStaffing} onClearCapabilityStaffing={onClearCapabilityStaffing} />
       )}
       {mode === "history" && <History feature={f} />}
+      </fieldset>
     </ToolWindow>
   );
 }
@@ -1068,6 +1075,12 @@ function AcceptedEstimateCard({
           Reviewed by “{v2.acceptance.reviewer.displayName}” — an operator-entered label, not authenticated identity.
         </div>
       ) : <p className="mt-1 text-[8.5px] text-[var(--i-amber)]">Legacy estimate not applied; ticket-only subset pending review. Interpretation, reviewer, and the replacement boundary were not captured.</p>}
+      {v2?.source.association && <details className="mt-2 text-[9px] text-[var(--i-text-soft)]"><summary className="cursor-pointer">Reviewed source match and conditions</summary>
+        <p className="mt-1">Source feature: {v2.source.association.sourceCapabilityName ?? v2.source.association.sourceFeatureName ?? v2.source.association.sourceCapabilityId}</p>
+        <p className="mt-1">Source boundary: {v2.source.sourceBoundary ?? "Not separately stated"}</p>
+        <p className="mt-1 whitespace-pre-wrap">{v2.source.sourceConditions}</p>
+        <p className="mt-1">Reviewed card boundary: {v2.boundary.boundaryStatement ?? "Native card identity"}</p>
+      </details>}
       {auditHref && <Link href={auditHref} className="mt-1.5 inline-block text-[9px] text-[var(--i-signal)] hover:underline">Open accepted quote in Audit →</Link>}
       <button type="button" onClick={onClear} className="mt-2 w-full rounded px-2 py-1.5 text-[9.5px]" style={{ border: "1px solid var(--i-border-strong)", color: "var(--i-text-soft)" }} data-shoot="clear-accepted-knowledge-estimate">Stop using this accepted assertion</button>
     </div>
@@ -1094,7 +1107,7 @@ function EstimateEvidenceGroup({
   if (estimates.length === 0) return null;
   return <div className="mt-3">
     <div className="i-label">{label}</div>
-    <div className="mt-1.5 space-y-2">{estimates.slice(0, 4).map((estimate) => (
+    <div className="mt-1.5 space-y-2">{estimates.map((estimate) => (
       <EstimateEvidenceCard key={`${estimate.contextSnapshotId}:${estimate.id}`} estimate={estimate} feature={feature} scopeId={scopeId} onAccept={onAccept} onStage={onStage} onClear={onClear} />
     ))}</div>
   </div>;
@@ -1123,14 +1136,25 @@ function EstimateEvidenceCard({
   const attribution = [estimate.speaker ?? estimate.owner, estimate.observedAt, estimate.sourceRef].filter(Boolean).join(" · ");
   const auditHref = auditPassageHref(scopeId, estimate);
   const traceable = traceableKnowledgeEstimate(estimate);
+  const association = estimate.association;
+  const ambiguousAssociation = Boolean(association && association.candidateCapabilityIds.length !== 1);
   return <div className="rounded px-2.5 py-2" style={{ border: "1px solid var(--i-border)" }} data-estimate-id={`${estimate.contextSnapshotId}:${estimate.id}`}>
-    <div className="flex items-baseline gap-2">
-      <span className="min-w-0 flex-1 text-[10.5px] text-[var(--i-text-soft)]">{estimate.statement}</span>
-      <span className="shrink-0 i-readout text-[10.5px] text-[var(--i-text)]">{estimate.rawEstimate}</span>
+    <div className="space-y-2">
+      <div className="text-[11px] leading-relaxed text-[var(--i-text)]">Source estimate: {estimate.rawEstimate}</div>
+      <details className="text-[10px] leading-relaxed text-[var(--i-text-soft)]"><summary className="cursor-pointer">Source progress summary</summary><p className="mt-1">{estimate.statement}</p></details>
     </div>
     <div className="mt-1 text-[8.5px] text-[var(--i-text-faint)]">
       source shape · {estimate.rawShape.replaceAll("_", " ")} · {estimate.rawUnit.replaceAll("_", " ")} · work meaning {estimate.sourceWorkMeaning}
     </div>
+    {association && <div className="mt-2 rounded px-2 py-2 text-[10px] leading-relaxed" style={{ background: "var(--i-recess)", border: "1px solid var(--i-border)" }} data-shoot="estimate-source-association">
+      <div className="font-medium text-[var(--i-signal)]">Suggested source match · not yet used in the forecast</div>
+      <div className="mt-1 text-[var(--i-text-soft)]">Source feature: {association.sourceCapabilityName ?? association.sourceFeatureName ?? association.sourceCapabilityId ?? "Not named"}</div>
+      {association.sourceFeatureId && <div className="text-[var(--i-text-faint)]">Feature reference: {association.sourceFeatureId}</div>}
+      <div className="text-[var(--i-text-faint)]">Matched by {association.method === "linked_work" ? `linked Linear work or its parent (${association.matchedWorkIds.join(", ")})` : association.method.replaceAll("_", " ")}. This does not prove the estimate covers every ticket on this card.</div>
+      {estimate.sourceBoundary && <p className="mt-1 text-[var(--i-text-soft)]">Source boundary: {estimate.sourceBoundary}</p>}
+      {estimate.sourceConditions && <details className="mt-2" open><summary className="cursor-pointer text-[var(--i-amber)]">Source conditions and exclusions</summary><p className="mt-1 whitespace-pre-wrap text-[var(--i-text-soft)]">{estimate.sourceConditions}</p></details>}
+      {ambiguousAssociation && <p className="mt-2 text-[var(--i-amber)]" data-shoot="estimate-ambiguous-association">This source relates to {association.candidateCapabilityIds.length} cards, including possible later work. Read it here, but obtain a card-specific estimate before using it. Applying the same whole-feature estimate to multiple cards would double-count work.</p>}
+    </div>}
     {estimate.currentness !== "current" && <div className="mt-1 text-[8.5px] text-[var(--i-amber)]">Historical source · review its currentness explicitly before use</div>}
     {estimate.supersededBy.length > 0 && <div className="mt-1 text-[8.5px] text-[var(--i-amber)]">Superseded by {estimate.supersededBy.map((ref) => ref.intelligenceObjectId).join(", ")}</div>}
     {attribution && <div className="mt-1 text-[8.5px] text-[var(--i-text-faint)]">{attribution}</div>}
@@ -1139,7 +1163,8 @@ function EstimateEvidenceCard({
       ? <a href={safeSourceUrl(estimate.sourceLocator?.sourceUrl)!} target="_blank" rel="noopener noreferrer" className="mt-1.5 block text-[9px] text-[var(--i-signal)] hover:underline">Open original source ↗</a>
       : <p className="mt-1.5 text-[9px] text-[var(--i-text-faint)]">External source link not supplied. The immutable quote remains available in Audit.</p>}
     {auditHref && <Link href={auditHref} className="mt-1.5 inline-block text-[9px] text-[var(--i-signal)] hover:underline" data-shoot="open-estimate-evidence-in-audit">Open this exact quote in Audit →</Link>}
-    {traceable ? <button type="button" onClick={() => setReviewing((open) => !open)} className="mt-2 w-full rounded px-2 py-1.5 text-[9.5px]" style={{ border: "1px solid var(--i-signal)", color: "var(--i-signal)" }} data-shoot="review-knowledge-estimate">{reviewing ? "Close estimate review" : recoversAcceptedReview ? "Review estimate boundary" : "Review interpretation and boundary"}</button>
+    {traceable && !ambiguousAssociation ? <button type="button" onClick={() => setReviewing((open) => !open)} className="mt-2 w-full rounded px-2 py-1.5 text-[9.5px]" style={{ border: "1px solid var(--i-signal)", color: "var(--i-signal)" }} data-shoot="review-knowledge-estimate">{reviewing ? "Close estimate review" : recoversAcceptedReview ? "Review estimate boundary" : "Review interpretation and boundary"}</button>
+      : ambiguousAssociation ? null
       : <div className="mt-2 text-[9px] leading-snug text-[var(--i-amber)]">Cannot be reviewed: no exact source passage is attached.</div>}
     {reviewing && <EstimateReviewForm estimate={estimate} openItems={feature.items} onSubmit={(review) => onAccept(estimate, review)} />}
     {stagedReviewRequired && <div className="mt-2 rounded px-2 py-2" style={{ border: "1px solid var(--i-amber)" }} data-shoot="staged-estimate-review-required"><div className="text-[9px] font-medium text-[var(--i-amber)]">This pre-v2 Scenario assumption is inert until reviewed.</div><p className="mt-1 text-[8.5px] text-[var(--i-text-faint)]">It remains visible but changes no forecast and cannot be published.</p><button type="button" onClick={() => onClear(estimate.capabilityId)} className="mt-1.5 w-full rounded px-2 py-1 text-[9px]" style={{ border: "1px solid var(--i-border-strong)" }}>Remove staged assumption</button></div>}
@@ -1169,12 +1194,13 @@ function EstimateReviewForm({
   const [attested, setAttested] = useState(false);
   const numeric = [low, likely, high].map(Number);
   const ordered = numeric.every((value) => Number.isFinite(value) && value > 0) && numeric[0] <= numeric[1] && numeric[1] <= numeric[2];
+  const associationBoundaryRequired = Boolean(estimate.association && estimate.association.method !== "native_id");
   const boundaryComplete = openItems.length > 0
     ? openItems.every((item) => classification[item.id] === "covered" || classification[item.id] === "additional")
     : Boolean(boundaryStatement.trim());
   const complete = Boolean(
     passageId && meaning && ordered && origins.low && origins.likely && origins.high
-    && rationale.trim() && boundaryComplete && reviewerDisplayName.trim() && attested,
+    && rationale.trim() && boundaryComplete && (!associationBoundaryRequired || boundaryStatement.trim()) && reviewerDisplayName.trim() && attested,
   );
   return <div className="mt-2 rounded px-2.5 py-2.5" style={{ border: "1px solid var(--i-border-strong)", background: "var(--i-panel-raised)" }} data-shoot="estimate-review-form">
     <div className="i-label" style={{ color: "var(--i-signal)" }}>Source said</div>
@@ -1193,11 +1219,15 @@ function EstimateReviewForm({
     <div className="mt-2 grid grid-cols-3 gap-1.5">
       {(["low", "likely", "high"] as const).map((point) => <label key={point} className="text-[8.5px] text-[var(--i-text-faint)]">{point}
         <input type="number" min="0" step="0.1" value={point === "low" ? low : point === "likely" ? likely : high} onChange={(event) => point === "low" ? setLow(event.target.value) : point === "likely" ? setLikely(event.target.value) : setHigh(event.target.value)} placeholder="required" className="mt-1 w-full rounded px-2 py-1.5 text-[9.5px]" style={{ background: "var(--i-recess)", border: "1px solid var(--i-border)" }} />
-        <select value={origins[point]} onChange={(event) => setOrigins((prior) => ({ ...prior, [point]: event.target.value as EstimatePointOrigin }))} className="mt-1 w-full rounded px-1 py-1 text-[8.5px]" style={{ background: "var(--i-recess)", border: "1px solid var(--i-border)" }}><option value="">origin…</option><option value="verbatim">verbatim</option><option value="operator">operator supplied</option></select>
+        <select value={origins[point]} onChange={(event) => setOrigins((prior) => ({ ...prior, [point]: event.target.value as EstimatePointOrigin }))} className="mt-1 w-full rounded px-1 py-1 text-[8.5px]" style={{ background: "var(--i-recess)", border: "1px solid var(--i-border)" }}><option value="">origin…</option><option value="verbatim" disabled={estimate.rawUnit !== "developer_days"}>verbatim developer-days</option><option value="operator">operator supplied</option></select>
       </label>)}
     </div>
+    {estimate.rawUnit !== "developer_days" && <p className="mt-2 text-[9px] text-[var(--i-amber)]">The source does not state developer-days. Any day range you enter is your reviewed interpretation, not a verbatim estimate. Explain the assumptions below.</p>}
     <textarea value={rationale} onChange={(event) => setRationale(event.target.value)} placeholder="Required rationale for the remaining developer-day interpretation" className="mt-2 w-full rounded px-2 py-1.5 text-[9.5px]" rows={3} style={{ background: "var(--i-recess)", border: "1px solid var(--i-border)" }} />
     <div className="i-label mt-3" style={{ color: "var(--i-signal)" }}>Open-work boundary</div>
+    {associationBoundaryRequired && openItems.length > 0 && <label className="mt-2 block text-[9px] text-[var(--i-text-soft)]">Confirm this source-to-card match. Explain what is included, excluded, and how the source conditions apply.
+      <textarea aria-label="Source-to-card boundary" value={boundaryStatement} onChange={(event) => setBoundaryStatement(event.target.value)} placeholder="Required: source feature → this card; conditions and exclusions" className="mt-1 w-full rounded px-2 py-1.5 text-[9.5px]" rows={3} style={{ background: "var(--i-recess)", border: "1px solid var(--i-border)" }} />
+    </label>}
     {openItems.length > 0 ? <div className="mt-1.5 space-y-1.5">{openItems.map((item) => <div key={item.id} className="rounded px-2 py-1.5" style={{ border: "1px solid var(--i-border)" }} data-review-item-id={item.id}>
       <div className="text-[9px] text-[var(--i-text-soft)]">{item.id} · {item.label}</div>
       <div className="mt-1 flex gap-3 text-[8.5px] text-[var(--i-text-faint)]">{(["covered", "additional"] as const).map((value) => <label key={value} className="flex items-center gap-1"><input type="radio" name={`boundary-${estimate.id}-${item.id}`} checked={classification[item.id] === value} onChange={() => setClassification((prior) => ({ ...prior, [item.id]: value }))} /> {value === "covered" ? "covered by range" : "additional work"}</label>)}</div>

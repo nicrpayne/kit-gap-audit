@@ -24,6 +24,7 @@ import { reviewedEstimateSimulationDecision } from "@/lib/forecast/reviewedEstim
 import {
   acceptedCapabilityEstimate,
   capabilityKnowledgeEstimates,
+  knowledgeEstimateCapabilityRefs,
   reviewedCapabilityEstimate,
   substituteCapabilityKnowledgeEstimates,
   type AcceptedCapabilityEstimate,
@@ -321,7 +322,7 @@ async function buildScopeSimInputs(
   const currentKnowledgeEstimates = capabilityKnowledgeEstimates(
     latestKnowledgeSnapshot?.package as unknown as ProjectContextPackage | undefined,
     latestKnowledgeSnapshot?.id,
-    capabilities.map((capability) => ({ id: capability.id, name: capability.name })),
+    knowledgeEstimateCapabilityRefs(capabilities, issues),
   );
   const currentOpenIssueIds = new Set(deliveryRelevantIssueIds(issues, scope.includeTriage));
   const simulationCapabilities = capabilities.map((capability) => {

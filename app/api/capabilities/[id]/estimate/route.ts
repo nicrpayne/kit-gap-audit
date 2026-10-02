@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import type { ProjectContextPackage } from "@/lib/context/package";
 import {
   capabilityKnowledgeEstimates,
+  knowledgeEstimateCapabilityRefs,
   reviewCapabilityKnowledgeEstimate,
   type EstimateReviewInput,
 } from "@/lib/scope/knowledgeEstimates";
@@ -51,15 +52,21 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
         { status: 409 },
       );
     }
+    // The acceptance path must see the same complete scope as the read path.
+    // A singleton would hide an all-channel source shared with an out/later card.
+    const [issues, scopeCapabilities] = await Promise.all([
+      getScopedIssues(capability.scope),
+      prisma.capability.findMany({ where: { scopeId: capability.scopeId },
+        select: { id: true, name: true, revision: true, workLinks: { select: { externalId: true, state: true } } } }),
+    ]);
     const estimate = capabilityKnowledgeEstimates(
       snapshot.package as unknown as ProjectContextPackage,
       snapshot.id,
-      [{ id: capability.id, name: capability.name }],
-    ).find((candidate) => candidate.id === body.estimateId);
+      knowledgeEstimateCapabilityRefs(scopeCapabilities, issues),
+    ).find((candidate) => candidate.id === body.estimateId && candidate.capabilityId === capability.id);
     if (!estimate) {
       return NextResponse.json({ error: "That estimate is not present in the current knowledge snapshot." }, { status: 409 });
     }
-    const issues = await getScopedIssues(capability.scope);
     const remainingIds = new Set(deliveryRelevantIssueIds(issues, capability.scope.includeTriage));
     const currentOpenItemIds = capability.workLinks
       .map((link) => link.externalId)
@@ -78,6 +85,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
       estimate: reviewed,
       reviewedOpenItemIds: currentOpenItemIds,
       expectedContextSnapshotId: snapshot.id,
+      expectedScopeCapabilities: scopeCapabilities.map(({ id, revision }) => ({ id, revision })),
       idempotencyKey: body.idempotencyKey,
     }));
   } catch (error) {
