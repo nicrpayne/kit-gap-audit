@@ -782,11 +782,18 @@ export async function persistCompiledPackage(scanRunId: string, compiled: Projec
       packageVersion: compiled.version, producer: compiled.producer, compilerVersion: compiled.compilerVersion,
       packageHash: fullHash, package: emptyJson(compiled), generatedAt: new Date(compiled.generatedAt), supersedesPackageId: previous?.id,
     } });
+    // Preserve the same review-overlay semantics, but avoid one database round
+    // trip per evidence link. Quote-complete packages contain thousands of
+    // links and previously expired the interactive transaction mid-import.
+    const candidateRows: Prisma.BootstrapCandidateCreateManyInput[] = [];
+    const evidenceRows: Prisma.BootstrapEvidenceLinkCreateManyInput[] = [];
     for (const item of compiled.proposals) {
       const history = historyByKey.get(item.candidateKey) ?? [];
       const prior = history.find((candidate) => candidate.sourceFingerprint === item.fingerprint) ?? history[0];
       const refresh = resolveRefreshDisposition(prior, item.fingerprint);
-      const row = await tx.bootstrapCandidate.create({ data: {
+      const candidateId = stableId("bootstrap-candidate", [packageRow.id, item.candidateKey], 40);
+      candidateRows.push({
+        id: candidateId,
         bootstrapId: compiled.bootstrapId, packageId: packageRow.id, candidateKey: item.candidateKey,
         kind: item.kind, title: item.title, summary: item.statement, whyProposed: item.whyProposed,
         matchBasis: item.matchBasis, currentness: item.currentness, relevance: item.relevance,
@@ -794,14 +801,22 @@ export async function persistCompiledPackage(scanRunId: string, compiled: Projec
         reviewedProposal: refresh.reviewedProposal ? (refresh.reviewedProposal as Prisma.InputJsonValue) : undefined,
         status: refresh.status, dispositionReason: refresh.dispositionReason,
         changedSincePrior: refresh.changedSincePrior, carriedFromCandidateId: prior?.id,
-      } });
+      });
       for (const evidenceId of item.evidenceRefs) {
         const previousLink = !refresh.changedSincePrior ? prior?.evidenceLinks.find((l) => l.evidenceId === evidenceId) : undefined;
-        await tx.bootstrapEvidenceLink.create({ data: {
-          candidateId: row.id, evidenceId, linkState: previousLink?.linkState ?? "attached",
+        evidenceRows.push({
+          candidateId, evidenceId, linkState: previousLink?.linkState ?? "attached",
           attachedBy: previousLink?.attachedBy ?? "compiler", reason: previousLink?.reason,
-        } });
+        });
       }
+    }
+    // Bound batch size below PostgreSQL's parameter limit, including the
+    // contract's largest accepted package. Everything remains atomic.
+    for (let offset = 0; offset < candidateRows.length; offset += 250) {
+      await tx.bootstrapCandidate.createMany({ data: candidateRows.slice(offset, offset + 250) });
+    }
+    for (let offset = 0; offset < evidenceRows.length; offset += 1000) {
+      await tx.bootstrapEvidenceLink.createMany({ data: evidenceRows.slice(offset, offset + 1000) });
     }
     await tx.projectBootstrap.update({
       where: { id: compiled.bootstrapId }, data: { activePackageId: packageRow.id, status: bootstrapState?.status === "activated" ? "activated" : "reviewing", reviewRevision: { increment: 1 } },
@@ -814,5 +829,5 @@ export async function persistCompiledPackage(scanRunId: string, compiled: Projec
         warnings: emptyJson(compiled.warnings),
       },
     });
-  });
+  }, { timeout: 30_000 });
 }
