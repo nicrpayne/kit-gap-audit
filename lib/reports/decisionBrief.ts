@@ -178,6 +178,12 @@ export interface DecisionBriefOwnerInputs {
       endDate: string | null;
       temporalState: "occurred" | "planned";
       sourceLabel: string | null;
+      semanticState?: string;
+      kind?: string;
+      source?: string;
+      contextSnapshotId?: string | null;
+      evidenceRefs?: string[];
+      evidence?: { passageId: string; quote: string; sourceRef: string }[];
     }[];
   };
   kitConstructAvailable: boolean;
@@ -272,6 +278,8 @@ export interface DecisionBriefV1 {
     scenarioOptions: Sourced<DecisionBriefOwnerInputs["forecast"]["scenarios"]>;
   };
   timeline: {
+    /** Additive immutable schedule; absent in older reports, never backfilled. */
+    schedule?: Sourced<{ version: "report-schedule.v1"; events: DecisionBriefOwnerInputs["timeline"]["events"] }>;
     nextMilestone: Sourced<DecisionBriefOwnerInputs["timeline"]["events"][number] | null>;
     conflicts: Sourced<DecisionBriefOwnerInputs["timeline"]["events"]>;
     currentForecast: Sourced<{ earliestDate: string; likelyDate: string; latestDate: string; href: string }>;
@@ -532,6 +540,7 @@ export function assembleDecisionBrief(input: DecisionBriefOwnerInputs): Decision
       },
     },
     timeline: {
+      schedule: { value: { version: "report-schedule.v1", events: structuredClone(input.timeline.events).sort((a, b) => a.date.localeCompare(b.date) || a.id.localeCompare(b.id)) }, source: timelineSource },
       nextMilestone: { value: nextMilestone, source: timelineSource },
       conflicts: { value: conflicts, source: timelineSource },
       currentForecast: {

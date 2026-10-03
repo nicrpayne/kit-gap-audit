@@ -1,5 +1,6 @@
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
+import { currentContextSnapshot } from "@/lib/context/currentSnapshot";
 import { readForecastCoverage } from "@/lib/forecast/compute";
 import type { BootstrapProposal, ProjectBootstrapPackageV1 } from "@/lib/bootstrap/contracts";
 import { createCompanionScan, COMPANION_ONLINE_MS } from "@/lib/bootstrap/jobs";
@@ -75,10 +76,14 @@ function ownerShape(proposal: BootstrapProposal): {
   }
   if (proposal.kind === "milestone") {
     const date = typeof proposal.payload.date === "string" ? proposal.payload.date : null;
+    const requirements = [
+      ...(!date ? ["Supply the explicit milestone date."] : []),
+      ...(!["planned", "occurred"].includes(String(proposal.payload.temporalState)) ? ["Choose planned or occurred; the date alone does not establish this."] : []),
+    ];
     return {
       category: "milestone", owner: "timeline", changeType: "milestone_candidate",
       proposedState: { action: "create_milestone", title: proposal.title, kind: "milestone", ...proposal.payload },
-      recommendedAction: date ? "review" : "confirm", completionRequirements: date ? [] : ["Supply the explicit milestone date."],
+      recommendedAction: requirements.length ? "confirm" : "review", completionRequirements: requirements,
     };
   }
   if (proposal.kind === "person") return {
@@ -177,14 +182,28 @@ export async function syncRefreshChangeProposals(input: {
       targetHref: defaultTargetHref(shape.owner, input.scopeId), completionRequirements: shape.completionRequirements,
       initialStatus: ["irrelevant_bleed", "neighboring_project_context"].includes(relevance.classification) || shape.recommendedAction === "information_only" ? "information_only" : "pending",
     };
-    const fingerprint = auditChangeFingerprint(draft);
-    const exists = await prisma.auditChangeProposal.findUnique({ where: { fingerprint }, select: { id: true } });
-    if (exists) continue;
+    // Each review belongs to immutable source evidence. A semantically equal
+    // proposal in a new package must not retain the previous package's quotes.
+    const fingerprint = auditChangeFingerprint({ ...draft, key: `${draft.key}:${input.snapshotId}` });
+    const legacyFingerprint = auditChangeFingerprint(draft);
+    const exists = await prisma.auditChangeProposal.findFirst({ where: { OR: [
+      { fingerprint }, { fingerprint: legacyFingerprint, contextSnapshotId: input.snapshotId },
+    ] } });
+    if (exists) {
+      if (exists.status === "information_only" && exists.dispositionReason === "Superseded by a changed proposal from a newer completed Audit refresh.") {
+        await prisma.auditChangeProposal.update({ where: { id: exists.id }, data: { status: draft.initialStatus ?? "pending", dispositionReason: null } });
+      }
+      continue;
+    }
     const prior = await prisma.auditChangeProposal.findFirst({
       where: { scopeId: draft.scopeId, sourceKind: "refresh", sourceKey: draft.key },
       orderBy: { createdAt: "desc" },
-      select: { id: true, status: true },
+      select: { id: true, status: true, proposedState: true },
     });
+    const acceptedHistory = await prisma.auditChangeProposal.findMany({ where: {
+      scopeId: draft.scopeId, sourceKind: "refresh", sourceKey: draft.key, status: "accepted",
+    }, select: { proposedState: true } });
+    const unchangedAccepted = acceptedHistory.some((accepted) => auditChangeFingerprint({ ...draft, proposedState: record(accepted.proposedState) as ProposedOwnerMutation }) === legacyFingerprint);
     await prisma.auditChangeProposal.create({ data: {
       scopeId: draft.scopeId, auditRunId: draft.auditRunId, contextSnapshotId: draft.contextSnapshotId,
       fingerprint, sourceKey: draft.key, supersedesProposalId: prior?.id ?? null,
@@ -194,7 +213,8 @@ export async function syncRefreshChangeProposals(input: {
       currentness: draft.currentness, retrievalBasis: draft.retrievalBasis, retrievalConfidence: draft.retrievalConfidence,
       relevanceClass: draft.relevanceClass, relevanceReason: draft.relevanceReason, sourceKind: draft.sourceKind,
       recommendedAction: draft.recommendedAction, targetHref: draft.targetHref,
-      completionRequirements: json(draft.completionRequirements ?? []), status: draft.initialStatus ?? "pending",
+      completionRequirements: json(draft.completionRequirements ?? []), status: unchangedAccepted ? "information_only" : draft.initialStatus ?? "pending",
+      dispositionReason: unchangedAccepted ? "The same owner change was already accepted. Refreshed evidence is retained without applying Reality again." : null,
     } });
     if (prior && prior.status !== "accepted") {
       await prisma.auditChangeProposal.update({ where: { id: prior.id }, data: {
@@ -204,7 +224,7 @@ export async function syncRefreshChangeProposals(input: {
     }
     created += 1;
     if (relevance.classification === "irrelevant_bleed") suppressed += 1;
-    else if (draft.initialStatus !== "information_only") actionable += 1;
+    else if (!unchangedAccepted && draft.initialStatus !== "information_only") actionable += 1;
   }
 
   if (actionable === 0) {
@@ -274,13 +294,15 @@ export async function readKnowledgeStatus(scopeId: string): Promise<KnowledgeSta
       packages: { orderBy: { createdAt: "desc" }, take: 1 },
     } } } } },
   });
-  const [companion, latestSnapshot, latestAudit, latestScopeProposal, derived] = await Promise.all([
+  const [companion, latestSnapshot, latestScopeProposal, derived] = await Promise.all([
     prisma.bootstrapCompanion.findFirst({ orderBy: { lastSeenAt: "desc" } }),
-    prisma.contextSnapshot.findFirst({ where: { scopeId }, orderBy: { createdAt: "desc" } }),
-    prisma.auditRun.findFirst({ where: { contextSnapshot: { scopeId } }, orderBy: { createdAt: "desc" } }),
-    prisma.scopeProposal.findFirst({ where: { scopeId }, orderBy: { generatedAt: "desc" } }),
+    currentContextSnapshot(scopeId).catch(() => null),
+    prisma.scopeProposal.findFirst({ where: { scopeId, status: "active" }, orderBy: { generatedAt: "desc" } }),
     prisma.projectDerivedState.findUnique({ where: { scopeId } }),
   ]);
+  const latestAudit = latestSnapshot ? await prisma.auditRun.findFirst({
+    where: { contextSnapshotId: latestSnapshot.id }, orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+  }) : null;
   const online = Boolean(companion && now.getTime() - companion.lastSeenAt.getTime() <= COMPANION_ONLINE_MS);
   const knowledge = record(companion?.knowledgeState);
   const completed = record(knowledge.completed);
@@ -290,7 +312,9 @@ export async function readKnowledgeStatus(scopeId: string): Promise<KnowledgeSta
   const bootstrap = scope?.activation?.bootstrap;
   const latestScan = bootstrap?.scans[0] ?? null;
   const job = latestScan?.job ?? null;
-  const pkg = bootstrap?.packages[0] ?? null;
+  const pkg = bootstrap?.activePackageId
+    ? await prisma.bootstrapPackage.findUnique({ where: { id: bootstrap.activePackageId }, include: { scanRun: true } })
+    : null;
   const packageBody = record(pkg?.package);
   const packageIntelligenceMeta = record(packageBody.intelligenceMeta);
   const snapshotBody = record(latestSnapshot?.package);
@@ -309,7 +333,7 @@ export async function readKnowledgeStatus(scopeId: string): Promise<KnowledgeSta
     activationAvailable: Boolean(scope?.activation), companionOnline: online,
     ingestionState: ingestionState === "current" && !watermark && !completedVersion ? "degraded" : ingestionState,
     jobRunning: Boolean(job && !TERMINAL_JOBS.has(job.status)),
-    packageAheadOfSnapshot: Boolean(pkg && (!latestSnapshot || !String(latestSnapshot.packageId).includes(pkg.packageId))),
+    packageAheadOfSnapshot: Boolean(pkg && !latestSnapshot),
     watermarkAheadOfPackage: completedKnowledgeChanged({ completedVersion, packagedVersion, completedAt: watermark, packagedAt: acceptedKnowledgeAt?.toISOString() ?? null }),
   });
   const observedTimes = Array.isArray(snapshotBody.sources)
@@ -318,7 +342,7 @@ export async function readKnowledgeStatus(scopeId: string): Promise<KnowledgeSta
       .filter((value): value is string => Boolean(value))
       .sort()
     : [];
-  const scanMetrics = record(latestScan?.metrics);
+  const scanMetrics = record(pkg?.scanRun.metrics ?? latestScan?.metrics);
   const storedPipeline = record(scanMetrics.signalRefresh);
   const proposalWatermark = record(latestScopeProposal?.sourceWatermark);
   const fallbackStages = {
@@ -330,7 +354,7 @@ export async function readKnowledgeStatus(scopeId: string): Promise<KnowledgeSta
       at: latestAudit.createdAt.toISOString(), auditRunId: latestAudit.id,
     } : { status: "pending", detail: "No Audit comparison exists." },
     scope: latestScopeProposal ? {
-      status: latestSnapshot && latestScopeProposal.contextSnapshotId !== latestSnapshot.id ? "stale" : "complete",
+      status: !latestSnapshot || latestScopeProposal.contextSnapshotId !== latestSnapshot.id ? "stale" : "complete",
       at: latestScopeProposal.generatedAt.toISOString(), proposalId: latestScopeProposal.id,
       contextSnapshotId: latestScopeProposal.contextSnapshotId,
       linearAsOf: iso(proposalWatermark.linearAsOf),
@@ -347,6 +371,8 @@ export async function readKnowledgeStatus(scopeId: string): Promise<KnowledgeSta
   const stage = (key: keyof typeof fallbackStages) => {
     const stored = record(storedPipeline[key]);
     const fallback = fallbackStages[key];
+    // Stored pipeline timestamps cannot certify a missing or different source.
+    if ((key === "knowledge" || key === "audit" || key === "scope") && (!latestSnapshot || record(fallback).status !== "complete")) return fallback;
     const storedAt = iso(stored.at);
     const fallbackAt = iso(record(fallback).at);
     if (fallbackAt && (!storedAt || Date.parse(fallbackAt) > Date.parse(storedAt))) return fallback;
@@ -425,13 +451,17 @@ export async function requestAuditRefresh(scopeId: string): Promise<
 }
 
 async function reportReadiness(scopeId: string) {
+  const current = await currentContextSnapshot(scopeId).catch(() => null);
+  const currentSource: Prisma.AuditChangeProposalWhereInput = { OR: [
+    { sourceKind: { not: "refresh" } }, { contextSnapshotId: { in: current ? [current.id] : [] } },
+  ] };
   const [scope, openGateTests, pendingScope, sourceHealth, reconciliation, namedAllocations, derived] = await Promise.all([
     prisma.scope.findUnique({ where: { id: scopeId } }),
     prisma.decision.count({ where: { scopeId, status: "open", gate: { isNot: null }, OR: [
       { title: { contains: "test", mode: "insensitive" } }, { title: { contains: "address", mode: "insensitive" } },
     ] } }),
-    prisma.auditChangeProposal.count({ where: { scopeId, category: "scope", status: { in: ["pending", "needs_completion"] }, relevanceClass: { not: "irrelevant_bleed" } } }),
-    prisma.auditChangeProposal.count({ where: { scopeId, category: "source_health", status: { in: ["pending", "needs_completion"] } } }),
+    prisma.auditChangeProposal.count({ where: { scopeId, category: "scope", status: { in: ["pending", "needs_completion"] }, relevanceClass: { not: "irrelevant_bleed" }, AND: currentSource } }),
+    prisma.auditChangeProposal.count({ where: { scopeId, category: "source_health", status: { in: ["pending", "needs_completion"] }, AND: currentSource } }),
     prisma.capacityReconciliation.findUnique({ where: { scopeId } }),
     prisma.allocation.count({ where: { scopeId, person: { active: true, synthetic: false } } }),
     prisma.projectDerivedState.findUnique({ where: { scopeId } }),
@@ -456,7 +486,7 @@ async function reportReadiness(scopeId: string) {
 
 export async function getAuditChangeInbox(scopeId: string) {
   const baseline = await ensureReconciliationBaseline(scopeId);
-  const [knowledge, proposals, scope, readiness] = await Promise.all([
+  const [knowledge, storedProposals, scope, readiness, current] = await Promise.all([
     readKnowledgeStatus(scopeId),
     prisma.auditChangeProposal.findMany({
       where: { scopeId, relevanceClass: { not: "irrelevant_bleed" } },
@@ -465,7 +495,11 @@ export async function getAuditChangeInbox(scopeId: string) {
     }),
     prisma.scope.findUnique({ where: { id: scopeId } }),
     reportReadiness(scopeId),
+    currentContextSnapshot(scopeId).catch(() => null),
   ]);
+  const proposals = storedProposals.map((proposal) => proposal.sourceKind === "refresh" && proposal.contextSnapshotId !== current?.id && ["pending", "needs_completion", "deferred"].includes(proposal.status)
+    ? { ...proposal, status: "information_only", currentness: "stale", dispositionReason: "Historical source proposal — not part of the current knowledge package. Its evidence is retained; it cannot be accepted as current Reality." }
+    : proposal);
   const active = proposals.filter((item) => ["pending", "needs_completion", "deferred"].includes(item.status));
   const counts = active.reduce<Record<string, number>>((out, item) => {
     out[item.category] = (out[item.category] ?? 0) + 1;

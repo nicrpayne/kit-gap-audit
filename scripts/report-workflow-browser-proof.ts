@@ -2,7 +2,8 @@ import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { mkdir, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
-import { chromium } from "playwright";
+import { chromium, webkit } from "playwright";
+import { proveRepairInteractions } from "./reliability-browser-interactions";
 
 /** Called only inside the guarded disposable report DB proof. No API mocking. */
 export async function proveReportWorkflowInBrowser(scopeId: string, fixture: { rollupCapabilityId: string; optionalCapabilityId: string; excludedItemId: string }) {
@@ -14,7 +15,7 @@ export async function proveReportWorkflowInBrowser(scopeId: string, fixture: { r
   assert.equal(process.env.KIT_DEV_FIXTURES, "1");
   assert(!process.env.LINEAR_API_KEY);
   const base = "http://127.0.0.1:4321";
-  const output = resolve("../signal-acceptance-2026-09-25/repair-execution/saved-pair-browser");
+  const output = resolve(process.env.SIGNAL_REPAIR_OUTPUT ?? "../outputs/saved-pair-browser");
   await mkdir(output, { recursive: true });
   try {
     await fetch(`${base}/api/version`, { signal: AbortSignal.timeout(800) });
@@ -23,6 +24,7 @@ export async function proveReportWorkflowInBrowser(scopeId: string, fixture: { r
     if (error instanceof Error && /occupied/.test(error.message)) throw error;
   }
   const serverMode = process.env.SIGNAL_REPORT_PRODUCTION_SERVER === "1" ? "start" : "dev";
+  const browserEngine = process.env.SIGNAL_REPORT_BROWSER_ENGINE === "webkit" ? "webkit" : "chromium";
   const server = spawn(process.execPath, ["node_modules/next/dist/bin/next", serverMode, "--hostname", "127.0.0.1", "--port", "4321"], {
     env: { ...process.env, APP_PASSWORD: "signal-local-only", NEXT_TELEMETRY_DISABLED: "1" },
     stdio: ["ignore", "pipe", "pipe"],
@@ -30,7 +32,7 @@ export async function proveReportWorkflowInBrowser(scopeId: string, fixture: { r
   let serverLog = "";
   server.stdout.on("data", (chunk) => { serverLog += String(chunk); });
   server.stderr.on("data", (chunk) => { serverLog += String(chunk); });
-  const browser = await chromium.launch({ headless: true });
+  const browser = await (browserEngine === "webkit" ? webkit : chromium).launch({ headless: true });
   try {
     let ready = false;
     for (let attempt = 0; attempt < 60; attempt++) {
@@ -42,6 +44,12 @@ export async function proveReportWorkflowInBrowser(scopeId: string, fixture: { r
     assert(ready, "local server became ready");
     const context = await browser.newContext({ viewport: { width: 1440, height: 1000 } });
     assert.equal((await context.request.post(`${base}/api/login`, { data: { password: "signal-local-only" } })).status(), 200);
+    if (browserEngine === "webkit") {
+      // WebKit does not treat loopback HTTP as a secure-cookie exception.
+      // This changes only the isolated test browser's issued cookie, not auth
+      // code or deployment settings. Staging HTTPS login is a separate gate.
+      await context.addCookies((await context.cookies()).map((cookie) => ({ ...cookie, secure: false })));
+    }
     const page = await context.newPage();
     page.setDefaultTimeout(30_000);
     const pageErrors: string[] = [];
@@ -49,6 +57,9 @@ export async function proveReportWorkflowInBrowser(scopeId: string, fixture: { r
     await page.goto(`${base}/portfolio?project=${scopeId}`);
     const fader = page.locator(`[data-shoot="fader-${scopeId}"]`);
     await fader.waitFor();
+    const accessibleClaim = await page.locator(`[data-shoot="channel-${scopeId}"] .sr-only`).innerText();
+    assert.doesNotMatch(accessibleClaim, /no target date set/i);
+    assert.match(accessibleClaim, /Jan 31/i);
     assert.equal(Number(await fader.getAttribute("aria-valuenow")), 1);
     await fader.focus();
     await page.keyboard.press("Alt+ArrowDown");
@@ -77,7 +88,36 @@ export async function proveReportWorkflowInBrowser(scopeId: string, fixture: { r
     await page.screenshot({ path: `${output}/02-scope-scenario.png`, fullPage: true });
     await page.locator('a[href^="/forecast"]').first().click();
     await page.waitForURL(/\/forecast/);
+    // The shared simulation is debounced; await its visible consequence rather
+    // than capturing the initial Reality frame while navigation hydrates.
+    await page.locator('[data-shoot="central-date"]').filter({ hasText: /\d+d later/ }).waitFor();
+    const normalizeLanding = (text: string) => text.toUpperCase().match(/\b(?:JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)\s+\d{1,2}\b/)?.[0];
+    const forecastLanding = normalizeLanding(await page.locator('[data-shoot="central-date"]').innerText());
+    assert(forecastLanding, "Forecast displays a likely landing");
     await page.screenshot({ path: `${output}/03-forecast-scenario.png`, fullPage: true });
+    await page.locator('a[href^="/portfolio"]').first().click();
+    await page.waitForURL(/\/portfolio/);
+    await page.locator('a[href^="/orbit"]').first().click();
+    await page.waitForURL(/\/orbit/);
+    await page.locator('[data-shoot="orbit-field"]').waitFor();
+    assert.match(await page.locator("body").innerText(), /Scenario/i);
+    assert.match(await page.locator("body").innerText(), /0\.5 FTE/);
+    assert.equal(normalizeLanding(await page.locator('[data-shoot="orbit-centre-p50"]').textContent() ?? ""), forecastLanding, "Orbit shows the same Scenario landing as Forecast");
+    await page.screenshot({ path: `${output}/03b-orbit-scenario.png`, fullPage: true });
+    await page.locator('a[href^="/timeline"]').first().click();
+    await page.waitForURL(/\/timeline/);
+    await page.locator('[data-shoot="time-field"]').waitFor();
+    assert.match(await page.locator('[data-shoot="scenario-strip"]').innerText(), /Scenario/i);
+    assert.equal(normalizeLanding(await page.locator(`[data-shoot="memory-likely-${scopeId}"]`).innerText()), forecastLanding, "Timeline at Now shows the same Scenario landing as Forecast");
+    const plan = page.getByRole("button", { name: /^QA integration activity,/ });
+    await plan.waitFor();
+    await plan.click();
+    await page.locator('[data-shoot="inspector-dock"]').getByText("QA integration activity", { exact: true }).first().waitFor();
+    assert.match(await page.locator('[data-shoot="inspector-dock"]').innerText(), /QA integration activity/);
+    await plan.focus();
+    await page.keyboard.press("Enter");
+    assert.match(await page.locator("body").innerText(), /QA integration activity/);
+    await page.screenshot({ path: `${output}/03c-timeline-scenario.png`, fullPage: true });
     await page.locator('a[href^="/reports"]').first().click();
     await page.waitForURL(/\/reports/);
     const generate = page.getByRole("button", { name: "Generate Reality + Scenario", exact: true });
@@ -118,6 +158,25 @@ export async function proveReportWorkflowInBrowser(scopeId: string, fixture: { r
     await page.screenshot({ path: `${output}/04-persisted-comparison.png`, fullPage: true });
     // Return values are discovered from the actual API response, never guessed URLs/IDs.
     const halves = [saved.reality, saved.scenario];
+    for (const half of halves) {
+      assert.equal(half.brief.timeline.schedule.value.events.length, 3);
+      assert.equal(half.brief.timeline.schedule.value.events[0].endDate, "2026-10-12");
+    }
+    const handoffResponse = await page.evaluate(async (url) => {
+      const response = await fetch(url);
+      return { status: response.status, body: await response.json() };
+    }, `/api/reports/${saved.reality.report.id}/handoff?pair=1`);
+    assert.equal(handoffResponse.status, 200);
+    const handoff = handoffResponse.body;
+    assert.equal((await fetch(`${base}/api/reports/${saved.reality.report.id}/handoff`)).status, 401, "private handoff rejects an unauthenticated request");
+    assert.deepEqual(handoff.reports.map((row: { reportId: string }) => row.reportId), halves.map((half) => half.report.id));
+    assert.deepEqual(handoff.reports[1].briefSnapshot, saved.scenario.brief);
+    const previewPage = await context.newPage();
+    assert.equal((await previewPage.goto(`${base}/reports/${saved.reality.report.id}/share-preview?pair=1`))?.status(), 200);
+    assert.equal(await previewPage.locator("[data-report-id]").count(), 2);
+    assert.match(await previewPage.locator("body").innerText(), /not published as a Site/);
+    await previewPage.screenshot({ path: `${output}/05-saved-pair-handoff.png`, fullPage: true });
+    await previewPage.close();
     for (let index = 0; index < halves.length; index++) {
       const half = halves[index];
       assert(half?.report?.id, `paired response has report id: ${JSON.stringify(Object.keys(saved))}`);
@@ -126,11 +185,15 @@ export async function proveReportWorkflowInBrowser(scopeId: string, fixture: { r
       assert.equal(printResponse?.status(), 200);
       await print.evaluate(() => document.fonts.ready);
       assert.match(await print.locator("body").innerText(), /four to eight developer days/);
+      for (const text of ["QA integration activity", "2026-10-12", "QA review milestone", "QA release conversation"]) {
+        assert((await print.locator("body").innerText()).includes(text), text);
+      }
       const mode = index === 0 ? "reality" : "scenario";
-      await print.pdf({ path: `${output}/${mode}.pdf`, format: "A4", printBackground: true,
+      if (browserEngine === "chromium") await print.pdf({ path: `${output}/${mode}.pdf`, format: "A4", printBackground: true,
         margin: { top: "12mm", bottom: "12mm", left: "12mm", right: "12mm" }, displayHeaderFooter: true,
         headerTemplate: '<div style="font-size:8px;width:100%;text-align:center">SYNTHETIC LOCAL PROJECT - saved report acceptance test</div>',
         footerTemplate: '<div style="font-size:8px;width:100%;text-align:center"><span class="pageNumber"></span> / <span class="totalPages"></span></div>' });
+      else await print.screenshot({ path: `${output}/${mode}-print-webkit.png`, fullPage: true });
       await print.close();
     }
     await page.locator('a[href^="/portfolio"]').first().click();
@@ -139,6 +202,9 @@ export async function proveReportWorkflowInBrowser(scopeId: string, fixture: { r
     await page.reload();
     await fader.waitFor();
     assert.equal(Number(await fader.getAttribute("aria-valuenow")), 1, "reload returns accepted Reality");
+    const quoteHref = saved.reality.brief.forecast.basis.capabilityEstimates.find((entry: { auditHref?: string }) => entry.auditHref)?.auditHref;
+    assert(quoteHref, "saved report retains its actual quote drill-down");
+    await proveRepairInteractions(context, base, output, quoteHref);
     assert.deepEqual(pageErrors, []);
     if (process.env.SIGNAL_SCOPE_BROWSER_PROOF === "1") {
       const proof = spawn(process.execPath, ["node_modules/tsx/dist/cli.mjs", "scripts/scope-v2-browser-proof.ts"], {
@@ -147,7 +213,7 @@ export async function proveReportWorkflowInBrowser(scopeId: string, fixture: { r
       const code = await new Promise<number | null>((resolve, reject) => { proof.once("error", reject); proof.once("exit", resolve); });
       assert.equal(code, 0, "the read-fixture Scope review browser proof also passes");
     }
-    await writeFile(`${output}/proof.json`, JSON.stringify({ ok: true, serverMode, scenarioFte, pageErrors, localSyntheticOnly: true, productionAccepted: false, scopeFixtureBrowserIncluded: process.env.SIGNAL_SCOPE_BROWSER_PROOF === "1" }, null, 2));
+    await writeFile(`${output}/proof.json`, JSON.stringify({ ok: true, browserEngine, serverMode, scenarioFte, pageErrors, localSyntheticOnly: true, productionAccepted: false, scopeFixtureBrowserIncluded: process.env.SIGNAL_SCOPE_BROWSER_PROOF === "1" }, null, 2));
   } catch (error) {
     for (const context of browser.contexts()) for (const page of context.pages()) {
       await page.screenshot({ path: `${output}/failure.png`, fullPage: true }).catch(() => undefined);

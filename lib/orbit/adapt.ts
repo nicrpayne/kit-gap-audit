@@ -16,8 +16,9 @@
 // PURE: no fetch, no clock, no store. It takes the payload and returns the
 // input, so it can be proven without a browser.
 
-import { composeFeatures } from "@/lib/scope/features";
-import { readChannel } from "@/lib/capacity/workforce";
+import { composeScopeFeatures } from "@/lib/scope/features";
+import { scenarioCapacityDisplay } from "@/lib/scenario/displayCapacity";
+import { scenarioDisplayShape } from "@/lib/scenario/displayShape";
 import type { SimulationResult } from "@/lib/forecast/simulate";
 import type { ProjectPayload, SuiteScenario } from "@/lib/instrument/useProject";
 import type { DecisionRow } from "@/lib/decisions/model";
@@ -50,12 +51,6 @@ export function adaptOrbitInput(i: OrbitAdaptInput): OrbitInput | null {
   if (Number.isNaN(startDate.getTime())) return null;
   if (!preview.has(focusScopeId)) return null;
 
-  const switchCostPct = scenario.contextSwitchCostPct ?? data.contextSwitchCostPct;
-  const workforce = {
-    people: data.people,
-    allocations: data.allocations.map((a) => ({ personId: a.personId, scopeId: a.scopeId, fraction: a.fraction })),
-  };
-
   const scopes: OrbitScopeInput[] = [];
   for (const s of data.scopes) {
     const sim = preview.get(s.scopeId);
@@ -63,15 +58,21 @@ export function adaptOrbitInput(i: OrbitAdaptInput): OrbitInput | null {
 
     // Scope's own call, argument for argument. A capability's load must be
     // the same number on both surfaces or the release means two things.
-    const capacity = scenario.capacityOverrideByScope[s.scopeId] ?? s.teamCapacity;
-    const composition = composeFeatures(
-      s.items,
+    const { capacity, channel } = scenarioCapacityDisplay(data, scenario, s.scopeId);
+    const shape = scenarioDisplayShape(s, scenario);
+    const composition = composeScopeFeatures(
+      shape.scenarioItems,
       s.completedWork,
+      shape.scenarioCapabilities,
       capacity,
-      scenario.bypassedFeatureIds,
+      shape.proposalBypassed,
       scenario.estimateOverrideByItemId,
-      scenario.draftFeatures,
-      scenario.acceptedCandidateIds
+      [...scenario.draftFeatures, ...shape.proposalDrafts],
+      scenario.acceptedCandidateIds,
+      scenario.knowledgeEstimateByCapabilityId,
+      scenario.capabilityStaffingById,
+      startDate,
+      s.targetDate ? new Date(s.targetDate) : null,
     );
 
     // PEOPLE ARE NOT MANUFACTURED HERE. readChannel reads the real roster.
@@ -79,11 +80,6 @@ export function adaptOrbitInput(i: OrbitAdaptInput): OrbitInput | null {
     // as `required` — capacity asked for and not found — which is exactly
     // what Portfolio does with the same call. Orbit never invents a body to
     // make a number work.
-    const realityRaw = readChannel(workforce, s.scopeId, switchCostPct).raw;
-    const override = scenario.capacityOverrideByScope[s.scopeId];
-    const required = override === undefined ? 0 : Math.max(0, override - realityRaw);
-    const channel = readChannel(workforce, s.scopeId, switchCostPct, required);
-
     const realitySim = baseline.get(s.scopeId) ?? null;
     scopes.push({
       scopeId: s.scopeId,

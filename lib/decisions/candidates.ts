@@ -13,6 +13,7 @@
 // backs a rescan of snapshots already held.
 
 import { prisma } from "@/lib/prisma";
+import { currentContextSnapshot } from "@/lib/context/currentSnapshot";
 import type { ProjectContextPackage } from "@/lib/context/package";
 
 // The claim `kind` vocabulary is deliberately open (lib/context/package.ts),
@@ -35,12 +36,21 @@ export function claimKeyFor(snapshotId: string, claimId: string): string {
   return `${snapshotId}:${claimId}`;
 }
 
-export async function harvestCandidates(where: { id?: string; scopeId?: string } = {}): Promise<HarvestResult> {
-  const snapshots = await prisma.contextSnapshot.findMany({
-    where,
-    select: { id: true, scopeId: true, producer: true, package: true },
-    orderBy: { createdAt: "asc" },
+export async function currentDecisionCandidates(scopeIds?: string[]) {
+  const scopes = scopeIds ?? (await prisma.scope.findMany({ select: { id: true } })).map((scope) => scope.id);
+  const currentIds = (await Promise.all(scopes.map((id) => currentContextSnapshot(id).catch(() => null)))).flatMap((snapshot) => snapshot ? [snapshot.id] : []);
+  return prisma.decisionCandidate.findMany({
+    where: { status: "pending", contextSnapshotId: { in: currentIds } }, orderBy: { createdAt: "asc" },
+    include: { scope: { select: { id: true, name: true } } },
   });
+}
+
+export async function harvestCandidates(where: { id?: string; scopeId?: string } = {}): Promise<HarvestResult> {
+  const scopeIds = where.scopeId ? [where.scopeId]
+    : where.id ? (await prisma.contextSnapshot.findMany({ where: { id: where.id }, select: { scopeId: true } })).map((row) => row.scopeId)
+    : (await prisma.scope.findMany({ select: { id: true } })).map((scope) => scope.id);
+  const snapshots = (await Promise.all(scopeIds.map((id) => currentContextSnapshot(id))))
+    .filter((snapshot): snapshot is NonNullable<typeof snapshot> => !!snapshot && (!where.id || snapshot.id === where.id));
 
   const result: HarvestResult = {
     scannedSnapshots: snapshots.length,

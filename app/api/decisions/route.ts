@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { currentDecisionCandidates } from "@/lib/decisions/candidates";
 
 // THE DECISION CIRCUIT'S READ, and manual creation.
 //
@@ -19,11 +20,7 @@ export async function GET() {
         scope: { select: { id: true, name: true, targetDate: true } },
       },
     }),
-    prisma.decisionCandidate.findMany({
-      where: { status: "pending" },
-      orderBy: { createdAt: "asc" },
-      include: { scope: { select: { id: true, name: true } } },
-    }),
+    currentDecisionCandidates(),
     prisma.scope.findMany({ select: { id: true, name: true, targetDate: true }, orderBy: { createdAt: "asc" } }),
   ]);
   return NextResponse.json({ decisions, candidates, scopes });

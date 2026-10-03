@@ -1,12 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { currentContextSnapshot } from "@/lib/context/currentSnapshot";
 import { proposalResponse, refreshScopeProposal } from "@/lib/scope/proposal-store";
 
 export const dynamic = "force-dynamic";
 
 async function cached(scopeId: string) {
+  let snapshot;
+  try { snapshot = await currentContextSnapshot(scopeId); } catch { return null; }
   return prisma.scopeProposal.findFirst({
-    where: { scopeId, status: "active" },
+    where: { scopeId, status: "active", contextSnapshotId: snapshot?.id ?? null },
     orderBy: { generatedAt: "desc" },
     include: { items: { orderBy: [{ confidenceScore: "desc" }, { title: "asc" }] } },
   });

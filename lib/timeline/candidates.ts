@@ -17,6 +17,7 @@
 
 import { prisma } from "@/lib/prisma";
 import type { ProjectContextPackage, JsonValue } from "@/lib/context/package";
+import { currentContextSnapshot } from "@/lib/context/currentSnapshot";
 
 // A closed vocabulary, matched against the open `kind` field a producer
 // emits. Anything else is skipped rather than swept in.
@@ -45,7 +46,7 @@ export function dateFromEvidence(
   data: Record<string, JsonValue> | undefined
 ): Date | null {
   if (!data) return null;
-  for (const key of ["occurredOn", "occurred_on", "occurredAt", "eventDate"]) {
+  for (const key of ["occurredOn", "occurred_on", "occurredAt", "eventDate", "startDate", "start_date", "date", "targetDate", "target_date", "due_date"]) {
     const v = data[key];
     if (typeof v !== "string") continue;
     const d = new Date(v);
@@ -63,7 +64,7 @@ export function endDateFromEvidence(
   data: Record<string, JsonValue> | undefined
 ): Date | null {
   if (!data) return null;
-  for (const key of ["endsOn", "ends_on", "endedOn", "endDate", "concludedOn"]) {
+  for (const key of ["endsOn", "ends_on", "endedOn", "endDate", "end_date", "concludedOn"]) {
     const v = data[key];
     if (typeof v !== "string") continue;
     const d = new Date(v);
@@ -88,14 +89,46 @@ export function timelineClaimKeyFor(snapshotId: string, claimId: string): string
   return `timeline:${snapshotId}:${claimId}`;
 }
 
+function record(value: unknown): Record<string, JsonValue> {
+  return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, JsonValue> : {};
+}
+
+/** Reviewed heads with explicit schedule fields can propose a landmark.
+ * observedDate/retrieval time is never an event date. Prose stays prose. */
+export function timelineClaims(pkg: ProjectContextPackage) {
+  const claims = (pkg.derivedClaims ?? []).map((claim) => ({
+    ...claim, schedule: record(record(claim.extra).fields),
+  }));
+  for (const object of pkg.intelligenceObjects ?? []) {
+    if (!object.isCurrent) continue;
+    const fields = { ...record(object.fields), ...record(object.dates) };
+    const timelineKind = isTimelineKind(object.intelligenceType);
+    const scheduleCommitment = normalise(object.intelligenceType) === "commitment" && dateFromEvidence(fields);
+    if (!timelineKind && !scheduleCommitment) continue;
+    // Do not duplicate a head already cited by a transported proposal.
+    if (claims.some((claim) => claim.id === object.id || (claim.statement === object.statement && [...claim.evidenceRefs].sort().join("|") === [...(object.evidenceRefs ?? [])].sort().join("|")))) continue;
+    claims.push({ id: object.id, kind: timelineKind ? object.intelligenceType : "milestone", statement: object.statement, evidenceRefs: object.evidenceRefs ?? [], schedule: fields });
+  }
+  return claims;
+}
+
+/** Pending review follows current source pointers; accepted history is untouched. */
+export async function currentTimelineCandidates(scopeIds?: string[]) {
+  const scopes = scopeIds ?? (await prisma.scope.findMany({ select: { id: true } })).map((scope) => scope.id);
+  const currentIds = (await Promise.all(scopes.map((id) => currentContextSnapshot(id).catch(() => null)))).flatMap((snapshot) => snapshot ? [snapshot.id] : []);
+  return prisma.timelineEventCandidate.findMany({
+    where: { status: "pending", contextSnapshotId: { in: currentIds } }, orderBy: { createdAt: "asc" },
+  });
+}
+
 export async function harvestTimelineCandidates(
   where: { id?: string; scopeId?: string } = {}
 ): Promise<TimelineHarvestResult> {
-  const snapshots = await prisma.contextSnapshot.findMany({
-    where,
-    select: { id: true, scopeId: true, producer: true, package: true },
-    orderBy: { createdAt: "asc" },
-  });
+  const scopeIds = where.scopeId ? [where.scopeId]
+    : where.id ? (await prisma.contextSnapshot.findMany({ where: { id: where.id }, select: { scopeId: true } })).map((row) => row.scopeId)
+    : (await prisma.scope.findMany({ select: { id: true } })).map((scope) => scope.id);
+  const snapshots = (await Promise.all(scopeIds.map((id) => currentContextSnapshot(id))))
+    .filter((snapshot): snapshot is NonNullable<typeof snapshot> => !!snapshot && (!where.id || snapshot.id === where.id));
 
   const result: TimelineHarvestResult = {
     scannedSnapshots: snapshots.length,
@@ -112,7 +145,7 @@ export async function harvestTimelineCandidates(
     const firstSource = pkg.sources?.[0];
     const sourceLabel = firstSource ? `${snap.producer} · ${firstSource.sourceRef}` : snap.producer;
 
-    for (const claim of pkg.derivedClaims ?? []) {
+    for (const claim of timelineClaims(pkg)) {
       if (!isTimelineKind(claim.kind)) {
         result.skippedKind++;
         continue;
@@ -126,9 +159,9 @@ export async function harvestTimelineCandidates(
         .map((r) => evidenceById.get(r))
         .filter((e): e is NonNullable<typeof e> => e !== undefined);
       // First evidence item that honestly states a date wins. No prose.
-      let date: Date | null = null;
-      let endDate: Date | null = null;
-      for (const e of cited) {
+      let date = dateFromEvidence(claim.schedule);
+      let endDate = date ? endDateFromEvidence(claim.schedule) : null;
+      for (const e of date ? [] : cited) {
         date = dateFromEvidence(e.data);
         if (date) {
           // The end, if any, comes from the SAME evidence item that supplied
@@ -139,6 +172,7 @@ export async function harvestTimelineCandidates(
         }
       }
       if (endDate && date && endDate.getTime() <= date.getTime()) endDate = null;
+      const accepted = await prisma.timelineEvent.findUnique({ where: { sourceClaimKey: claimKey }, select: { id: true } });
       await prisma.timelineEventCandidate.create({
         data: {
           claimKey,
@@ -151,7 +185,8 @@ export async function harvestTimelineCandidates(
           contextSnapshotId: snap.id,
           evidenceRefs: claim.evidenceRefs,
           excerpts: cited.map((e) => e.excerpt),
-          status: "pending",
+          status: accepted ? "accepted" : "pending",
+          acceptedEventId: accepted?.id ?? null,
         },
       });
       result.imported++;

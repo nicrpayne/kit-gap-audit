@@ -153,6 +153,11 @@ export function buildBriefRecipe(
   brief?: Pick<DecisionBriefV1, "identity" | "headline">
 ): BriefRecipeV1 {
   const preset = AUDIENCE_PRESETS[audience].map(([id, density]) => ({ id, density }));
+  // New leadership briefs capture the full accepted schedule. Stored recipes
+  // remain immutable and are never backfilled from this default.
+  if (audience === "delivery-leadership" && !preset.some((item) => item.id === "timeline")) {
+    preset.push({ id: "timeline", density: "expanded" });
+  }
   const promotions = PURPOSE_PROMOTIONS[purpose];
   const promoted = promotions
     .map((id) => preset.find((item) => item.id === id))

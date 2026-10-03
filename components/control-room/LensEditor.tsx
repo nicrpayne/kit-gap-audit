@@ -1,4 +1,5 @@
 "use client";
+import { useModalFocus } from "@/lib/instrument/useModalFocus";
 
 // CHOOSING HOW TO INSPECT THE PROJECT.
 //
@@ -44,6 +45,7 @@ export default function LensEditor({
   onClose: () => void;
 }) {
   const visible = visibleSurfaces(workspace);
+  const modalRef = useModalFocus(true, onClose);
 
   return (
     <div
@@ -53,6 +55,7 @@ export default function LensEditor({
       onClick={onClose}
     >
       <div
+        ref={modalRef} role="dialog" aria-modal="true" aria-label="Customize this workspace" tabIndex={-1}
         className="flex max-h-full w-[600px] flex-col overflow-hidden rounded-xl"
         style={{ background: "var(--i-panel)", border: "1px solid var(--i-border-strong)" }}
         onClick={(e) => e.stopPropagation()}

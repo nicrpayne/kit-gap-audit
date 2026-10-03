@@ -26,6 +26,8 @@ export async function GET(req: NextRequest) {
   .p-search { position: relative; }
   #signal-trace-overlay { position: fixed; inset: 0; width: 100vw; height: 100vh; z-index: 32; pointer-events: none; }
   #brain-card, #brain-viewer, #brain-panel, #brain-hud, .fab, #signal-audit-nav { z-index: 70; }
+  /* The original quote is a foreground drill-down, above its inspector. */
+  #brain-viewer { z-index: 96; }
   .signal-basis { opacity: .72; }
   .signal-phase3-line { margin-top: 8px; color: var(--signal-text-secondary); font: 500 10px/1.45 Outfit,sans-serif; }
   .signal-phase3-line strong { color: var(--signal-text-primary); font-weight: 600; }

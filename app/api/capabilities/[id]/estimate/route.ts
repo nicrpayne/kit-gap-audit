@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { currentContextSnapshot } from "@/lib/context/currentSnapshot";
 import type { ProjectContextPackage } from "@/lib/context/package";
 import {
   capabilityKnowledgeEstimates,
@@ -41,11 +42,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
         scope: { select: { teamKey: true, projectNames: true, labelFilter: true, executionState: true, includeTriage: true } },
       },
     });
-    const snapshot = await prisma.contextSnapshot.findFirst({
-      where: { scopeId: capability.scopeId },
-      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
-      select: { id: true, package: true },
-    });
+    const snapshot = await currentContextSnapshot(capability.scopeId);
     if (!snapshot || snapshot.id !== body.contextSnapshotId) {
       return NextResponse.json(
         { error: "Knowledge changed after this estimate was opened. Refresh Scope and review the current evidence before accepting it." },

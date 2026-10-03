@@ -4,6 +4,7 @@ import { hashProjectContextPackage } from "@/lib/context/hash";
 import type { JsonValue, ProjectContextPackage } from "@/lib/context/package";
 import type { PolicyEvaluatedCompleteness } from "@/lib/context/sourcePolicy";
 import { validateProjectContextPackage } from "@/lib/context/validate";
+import { harvestTimelineCandidates } from "@/lib/timeline/candidates";
 import type { ProjectBootstrapPackageV1 } from "./contracts";
 import { FIRST_AUDIT_MODEL } from "./activation";
 import { syncRefreshChangeProposals } from "@/lib/audit/changeInbox";
@@ -69,7 +70,9 @@ export function toContextPackage(scopeId: string, pkg: ProjectBootstrapPackageV1
   }
   return validateProjectContextPackage({
     version: "1.1",
-    packageId: `bootstrap-refresh:${pkg.producer}:${pkg.packageId}`,
+    // A new materializer captures structured schedule fields. Never overwrite
+    // an immutable v1 snapshot or collide with its previous content hash.
+    packageId: `bootstrap-refresh-v2:${pkg.producer}:${pkg.packageId}`,
     producer: "gap_app",
     generatedAt: pkg.generatedAt,
     scopeId,
@@ -78,7 +81,7 @@ export function toContextPackage(scopeId: string, pkg: ProjectBootstrapPackageV1
     derivedClaims: pkg.proposals.map((proposal) => ({
       id: `refresh:${proposal.proposalId}`, kind: proposal.kind, statement: proposal.statement,
       evidenceRefs: proposal.evidenceRefs,
-      extra: { trust: "external_candidate", candidateKey: proposal.candidateKey, basis: proposal.basis ?? "inferred" },
+      extra: { trust: "external_candidate", candidateKey: proposal.candidateKey, basis: proposal.basis ?? "inferred", fields: proposal.payload },
     })),
     intelligenceObjects: pkg.intelligenceHeads.map((head) => ({
       id: head.intelligenceId, intelligenceType: head.type, trust: "external_intelligence",
@@ -139,6 +142,8 @@ export async function auditActivatedBootstrapRefresh(
     })),
   ];
   const result = await prisma.$transaction(async (tx) => {
+    const current = await tx.projectBootstrap.findUnique({ where: { id: bootstrapId }, select: { activePackageId: true } });
+    if (current?.activePackageId !== packageRow.id) throw new Error("Knowledge package changed during refresh. Retry using the current package.");
     const existing = await tx.contextSnapshot.findUnique({ where: { producer_packageId: { producer: context.producer, packageId: context.packageId } } });
     if (existing) {
       if (existing.contextHash !== contextHash) throw new Error("Bootstrap refresh package identity collision");
@@ -205,6 +210,13 @@ export async function auditActivatedBootstrapRefresh(
       } : { status: "skipped", detail: "The activated Scope no longer exists." };
     } catch (error) {
       pipeline.scope = { status: "error", at: completedAt, detail: errorMessage(error) };
+    }
+
+    try {
+      const timeline = await harvestTimelineCandidates({ id: result.snapshot.id });
+      pipeline.timeline = { status: "complete", at: completedAt, ...timeline };
+    } catch (error) {
+      pipeline.timeline = { status: "error", at: completedAt, detail: errorMessage(error) };
     }
 
     try {

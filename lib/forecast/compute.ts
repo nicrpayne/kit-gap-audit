@@ -1,5 +1,6 @@
 import type { Prisma, Scope } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
+import { currentContextSnapshot } from "@/lib/context/currentSnapshot";
 import { getScopedIssues, type LinearIssueSummary } from "@/lib/linear";
 import {
   buildForecastInputs,
@@ -225,11 +226,7 @@ async function buildScopeSimInputs(
       select: { id: true, name: true, revision: true, status: true, acceptedEstimate: true, workLinks: { select: { externalId: true, state: true } } },
     }),
     prisma.decision.count({ where: { scopeId: scope.id, status: "open", gate: { is: null } } }),
-    prisma.contextSnapshot.findFirst({
-      where: { scopeId: scope.id },
-      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
-      select: { id: true, package: true },
-    }),
+    currentContextSnapshot(scope.id),
   ]);
   const estimates = new Map(
     workEstimates.filter((e) => e.source === "linear").map((e) => [e.externalId, e])

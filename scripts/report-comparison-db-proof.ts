@@ -567,6 +567,11 @@ async function main() {
   await db.decision.delete({ where: { id: ownerMutationId } });
 
   if (process.env.SIGNAL_REPORT_BROWSER_PROOF === "1") {
+    await db.timelineEvent.createMany({ data: [
+      { scopeId, title: "QA integration activity", date: new Date("2026-10-08T00:00:00Z"), endDate: new Date("2026-10-12T00:00:00Z"), temporalState: "planned", semanticState: "planned", kind: "phase", source: "manual", sourceLabel: "Synthetic QA plan" },
+      { scopeId, title: "QA review milestone", date: new Date("2026-10-15T00:00:00Z"), temporalState: "planned", semanticState: "planned", kind: "milestone", source: "manual", sourceLabel: "Synthetic QA plan" },
+      { scopeId, title: "QA release conversation", date: new Date("2026-10-22T00:00:00Z"), temporalState: "planned", semanticState: "planned", kind: "milestone", source: "manual", sourceLabel: "Synthetic QA plan" },
+    ] });
     const acceptedState = async () => ({
       scope: await db.scope.findUnique({ where: { id: scopeId } }),
       capabilities: await db.capability.findMany({ where: { scopeId }, orderBy: { id: "asc" }, include: { workLinks: { orderBy: { id: "asc" } } } }),

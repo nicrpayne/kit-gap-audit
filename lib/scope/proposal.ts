@@ -4,7 +4,7 @@ import { remainingIssuesFor } from "@/lib/forecast/build";
 import type { ProjectContextPackage } from "@/lib/context/package";
 
 export const SCOPE_PROPOSAL_CONTRACT_VERSION = "2.1" as const;
-export const SCOPE_PROPOSAL_COMPILER_VERSION = "scope-reconciler-three-source-2.3" as const;
+export const SCOPE_PROPOSAL_COMPILER_VERSION = "scope-reconciler-three-source-2.4" as const;
 
 export type ScopeProposalReleaseSignal = "likely_in" | "likely_out" | "boundary";
 export type ScopeProposalConfidence = "high" | "medium" | "low";
@@ -143,6 +143,17 @@ const BROAD_TOPICS = new Set([
 ]);
 const CANDIDATE_FIELDS = ["capability", "capability_name", "capabilityName", "product_capability", "productCapability", "feature", "feature_name", "featureName", "product_area", "productArea"] as const;
 
+/** Only dedicated mapping fields confer identity. A ticket casually mentioned
+ * in prose is evidence to review, not permission to claim its entire epic. */
+function explicitIssueIds(...records: Record<string, unknown>[]): string[] {
+  const keys = ["linearIssueIds", "linear_issue_ids", "linearIssueId", "linear_issue_id", "issueIds", "issue_ids", "ticketIds", "ticket_ids", "parentIdentifier", "linear_parent_identifier"];
+  return [...new Set(records.flatMap((record) => keys.flatMap((key) => {
+    const value = record[key];
+    return (typeof value === "string" ? [value] : strings(value))
+      .flatMap((text) => text.match(/\b[A-Z][A-Z0-9]*-\d+\b/g) ?? []);
+  })))];
+}
+
 function record(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
 }
@@ -204,6 +215,7 @@ function rootParent(issue: LinearIssueSummary, allById: Map<string, LinearIssueS
 }
 
 interface ContextRefInternal extends ProposalContextRef {
+  explicitIssueIds: string[];
   current: boolean;
   disposition: string | null;
   searchable: string;
@@ -313,6 +325,7 @@ function contextRefs(snapshot: ProposalSnapshot | null, active: ResolvedReleaseB
       disposition: typeof extra.disposition === "string" ? extra.disposition : null,
       searchable: [claim.statement, claim.kind, JSON.stringify(extra), ...topicTags].join(" "),
       explicitCandidate: Boolean(title),
+      explicitIssueIds: explicitIssueIds(fields, extra),
     });
   }
   for (const object of pkg.intelligenceObjects ?? []) {
@@ -328,6 +341,7 @@ function contextRefs(snapshot: ProposalSnapshot | null, active: ResolvedReleaseB
       current: object.isCurrent, disposition: object.status ?? null,
       searchable: [object.statement, object.statementBasis ?? "", JSON.stringify(fields), JSON.stringify(extra), ...topicTags].join(" "),
       explicitCandidate: Boolean(title),
+      explicitIssueIds: explicitIssueIds(fields, extra),
     });
   }
   return refs.filter((ref) => ref.current).sort((a, b) => a.id.localeCompare(b.id));
@@ -526,14 +540,24 @@ export function compileScopeProposal(input: {
     // Knowledge may corroborate multiple execution groups. Parent/child work
     // is already grouped above by its explicit Linear hierarchy.
     const shapeCandidates = candidates.filter((candidate) => candidate.reality || candidate.knowledgeRefs.length > 0);
+    const explicitMatches = shapeCandidates.filter((candidate) =>
+      candidate.knowledgeRefs.some((ref) => ref.candidateTitle && normalize(ref.candidateTitle) === normalize(candidate.title)
+        && ((group.parent && ref.explicitIssueIds.includes(group.parent.identifier))
+          || group.issues.every((issue) => ref.explicitIssueIds.includes(issue.identifier)))));
+    if (explicitMatches.length === 1) {
+      explicitMatches[0].linearGroups.push(group);
+      continue;
+    }
     const ranked = shapeCandidates.map((candidate) => {
       const titleMatch = similarity(groupTitle, candidate.title);
       const fullMatch = similarity(groupText, `${candidate.title} ${candidate.description ?? ""}`);
-      return { candidate, score: Math.max(titleMatch.score, fullMatch.score), shared: titleMatch.score >= fullMatch.score ? titleMatch.shared : fullMatch.shared };
+      // Broad descriptions often mention several features. They may reinforce
+      // a title match, but must not tie an exact feature title by mentioning it.
+      return { candidate, score: Math.max(titleMatch.score, fullMatch.score * 0.7), shared: titleMatch.score >= fullMatch.score * 0.7 ? titleMatch.shared : fullMatch.shared };
     })
       .sort((a, b) => b.score - a.score || a.candidate.title.localeCompare(b.candidate.title));
     const best = ranked[0];
-    const safe = best && best.score >= 0.48 && (!ranked[1] || best.score - ranked[1].score >= 0.12);
+    const safe = explicitMatches.length === 0 && best && best.score >= 0.48 && (!ranked[1] || best.score - ranked[1].score >= 0.12);
     if (safe) {
       best.candidate.linearGroups.push(group);
       continue;

@@ -23,6 +23,7 @@
 //   - claim causality between adjacent entries
 
 import { prisma } from "@/lib/prisma";
+import { currentTimelineCandidates } from "./candidates";
 import { getScopedIssues } from "@/lib/linear";
 import { toDateOnly } from "@/lib/time/dateContract";
 import { CANONICAL_REPORT_MODE_WHERE, CANONICAL_REPORT_ORDER_ASC } from "@/lib/reports/history";
@@ -491,10 +492,7 @@ export async function buildTimeline(): Promise<TimelineProjection> {
 
   entries.sort((a, b) => a.date.localeCompare(b.date) || a.id.localeCompare(b.id));
 
-  const candidateRows = await prisma.timelineEventCandidate.findMany({
-    where: { scopeId: { in: scopeIds }, status: "pending" },
-    orderBy: { createdAt: "asc" },
-  });
+  const candidateRows = await currentTimelineCandidates(scopeIds);
 
   // ── RANGE ──────────────────────────────────────────────────────────
   // Enough past to hold the story, enough future to see intent. NOW sits

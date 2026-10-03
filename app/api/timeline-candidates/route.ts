@@ -1,12 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
-import { harvestTimelineCandidates } from "@/lib/timeline/candidates";
+import { harvestTimelineCandidates, currentTimelineCandidates } from "@/lib/timeline/candidates";
 
 export async function GET() {
-  const candidates = await prisma.timelineEventCandidate.findMany({
-    where: { status: "pending" },
-    orderBy: { createdAt: "asc" },
-  });
+  const candidates = await currentTimelineCandidates();
   return NextResponse.json({ candidates });
 }
 

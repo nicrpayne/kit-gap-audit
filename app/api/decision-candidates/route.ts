@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { harvestCandidates } from "@/lib/decisions/candidates";
+import { harvestCandidates, currentDecisionCandidates } from "@/lib/decisions/candidates";
 
 // THE CANDIDATE TRAY'S READ, and a rescan of context already held.
 //
@@ -16,7 +16,7 @@ export const dynamic = "force-dynamic";
 
 export async function GET(req: NextRequest) {
   const status = req.nextUrl.searchParams.get("status") ?? "pending";
-  const candidates = await prisma.decisionCandidate.findMany({
+  const candidates = status === "pending" ? await currentDecisionCandidates() : await prisma.decisionCandidate.findMany({
     where: status === "all" ? {} : { status },
     orderBy: { createdAt: "asc" },
     include: { scope: { select: { id: true, name: true } } },

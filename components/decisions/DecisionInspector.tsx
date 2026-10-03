@@ -526,9 +526,9 @@ function DecisionBody({
         <Group label="Delivery">
           <div data-shoot="inspector-no-gate">
             <Well>
-              No delay days are attached to this choice, so it does not move the modeled date. It is still an
-              open product-shape boundary and blocks a publishable Forecast for {decision.scope.name} until it
-              is decided or dismissed.
+              No delay days are attached to this choice, so it does not move the modeled date. {decision.status === "open"
+                ? `It is still an open product-shape boundary and blocks a publishable Forecast for ${decision.scope.name} until it is decided or dismissed.`
+                : `This choice is ${decision.status} and no longer blocks forecast readiness.`}
             </Well>
           </div>
         </Group>

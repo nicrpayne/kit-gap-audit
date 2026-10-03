@@ -22,7 +22,7 @@ import { FAMILY_COLOR } from "./familyColor";
 import EventModule, { EventGroupModule } from "./EventModule";
 import PlanObjectView from "./PlanObject";
 import {
-  isPlanObject, planObjectFor, packPlanRows, labelWidth, laneZones, planRowHeight,
+  isPlanObject, planObjectFor, packPlanRows, labelWidth, planHitExtent, laneZones, planRowHeight,
   retime, snapDay, laneAtY, type LaneBox, type PlanGrip, type PlanObject,
 } from "@/lib/timeline/plan";
 import { prominenceFor, layerFor, type LayerState } from "@/lib/timeline/story";
@@ -717,7 +717,9 @@ export default function TimeField({
           : x0 + labelWidth(o.entry.title, compact);
         return { id: o.entry.id, x0, x1 };
       });
-      const { rowOf, rowCount } = packPlanRows(extents);
+      const { rowOf, rowCount } = packPlanRows(extents.map((extent, index) => ({
+        id: extent.id, ...planHitExtent(extent.x0, extent.x1, objs[index].entry.title, compact, objs[index].endT !== null),
+      })));
       rows.set(scopeId, rowCount);
       out.set(
         scopeId,

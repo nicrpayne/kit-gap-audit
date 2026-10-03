@@ -29,6 +29,8 @@ export interface ChannelView {
   name: string;
   accent: string;
   likelyDate: string;
+  targetDate?: string | null;
+  confidenceAtTarget?: number | null;
   deltaDays: number;
   raw: number;
   effective: number;
@@ -113,6 +115,8 @@ export default function MixerChannel({
     scopeName: view.name,
     coverage: view.forecastCoverage,
     likelyDate: view.likelyDate === "—" ? null : view.likelyDate,
+    targetDate: view.targetDate,
+    confidenceAtTarget: view.confidenceAtTarget,
   });
 
   return (

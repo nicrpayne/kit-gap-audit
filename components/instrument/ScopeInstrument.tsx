@@ -64,6 +64,8 @@ import {
   type ProjectScope,
 } from "@/lib/instrument/useProject";
 import { composeScopeFeatures, expectedDays, type Feature, type ThreePoint } from "@/lib/scope/features";
+import { scenarioCapacityDisplay } from "@/lib/scenario/displayCapacity";
+import { scenarioDisplayShape } from "@/lib/scenario/displayShape";
 import { readDominance } from "@/lib/scope/constraint";
 import { forecastDateAtDay } from "@/lib/forecast/simulate";
 import { formatCapacity } from "@/lib/capacity/limits";
@@ -297,40 +299,9 @@ export default function ScopeInstrument() {
       </InstrumentShell>
     );
 
-  const capacity = m.scenario.capacityOverrideByScope[scope.scopeId] ?? scope.teamCapacity;
-  const proposalSelections = m.scenario.scopeProposalSelections.filter((selection) => selection.scopeId === scope.scopeId);
-  const stagedWorkIds = new Set(proposalSelections.flatMap((selection) => selection.itemIds));
-  const scenarioItems = [
-    ...scope.items,
-    ...scope.executionItems.filter((item) => (m.scenario.includedItemIds.has(item.id) || stagedWorkIds.has(item.id)) && !scope.items.some((baseItem) => baseItem.id === item.id)),
-  ];
-  const scenarioCapabilities = scope.capabilities.map((capability) => {
-    const staged = proposalSelections.filter((selection) => selection.targetCapabilityId === capability.id);
-    const stagedStatus = staged.at(-1)?.releaseStatus;
-    const removedLinkIds = new Set(proposalSelections.flatMap((selection) => {
-      if (selection.sourceCapabilityId !== capability.id) return [];
-      if (selection.targetCapabilityId !== capability.id) return selection.itemIds;
-      const selected = new Set(selection.itemIds);
-      return selection.sourceAlreadyLinkedItemIds.filter((id) => !selected.has(id));
-    }));
-    const additionalLinks = staged.flatMap((selection) => selection.itemIds)
-      .filter((id) => !capability.workLinks.some((link) => link.externalId === id))
-      .map((externalId) => ({ id: `proposal-link:${capability.id}:${externalId}`, provider: "linear", externalId, externalUrl: null, state: "active" }));
-    return {
-      ...capability,
-      status: stagedStatus ?? (m.scenario.includedCapabilityIds.has(capability.id) ? "accepted" : capability.status),
-      workLinks: [...capability.workLinks.filter((link) => !removedLinkIds.has(link.externalId)), ...additionalLinks],
-    };
-  });
+  const { capacity } = scenarioCapacityDisplay(m.data, m.scenario, scope.scopeId);
+  const { proposalSelections, scenarioItems, scenarioCapabilities, proposalDrafts, proposalBypassed } = scenarioDisplayShape(scope, m.scenario);
   const scenarioProductShape = partitionProductShape(scenarioCapabilities);
-  const proposalDrafts = proposalSelections
-    .filter((selection) => !selection.targetCapabilityId)
-    .map((selection) => ({ id: `proposal:${selection.itemId}`, name: selection.title, intent: selection.description ?? "Proposed from current Linear hierarchy and structured context.", itemIds: selection.itemIds }));
-  const proposalBypassed = new Set(m.scenario.bypassedFeatureIds);
-  for (const selection of proposalSelections) {
-    if (selection.releaseStatus !== "outside") continue;
-    proposalBypassed.add(selection.targetCapabilityId ? `capability:${selection.targetCapabilityId}` : `proposal:${selection.itemId}`);
-  }
   const scenarioCoverageCapabilities = [
     ...scenarioCapabilities.map((capability) => ({
       status: proposalBypassed.has(`capability:${capability.id}`) ? "outside" : capability.status,

@@ -44,7 +44,9 @@ import LanesControl, { applyLaneView, EMPTY_LANE_VIEW, type LaneView } from "@/c
 import { STORY_LAYERS, type LayerState } from "@/lib/timeline/story";
 import { layoutLanes, isDormant } from "@/lib/timeline/plan";
 import { spokenSourceLabel } from "@/lib/timeline/producer";
-import { useProject } from "@/lib/instrument/useProject";
+import { useProject, EMPTY_SCENARIO } from "@/lib/instrument/useProject";
+import ScenarioStrip, { chipsFor } from "@/components/instrument/ScenarioStrip";
+import ScenarioPreviewRefusal from "@/components/instrument/ScenarioPreviewRefusal";
 import { forecastReadingForTime, liveForecastReading } from "@/lib/timeline/forecastTruth";
 import { sourceCurrentness } from "@/lib/truth/currentness";
 import {
@@ -446,7 +448,7 @@ export default function TimelinePageClient({ embedded = false }: { embedded?: bo
     const out: Record<string, ReturnType<typeof forecastReadingForTime>> = {};
     if (!data) return out;
     for (const lane of data.lanes) {
-      const sim = project.baseline?.get(lane.scopeId) ?? null;
+      const sim = project.scenarioPreviewRefusal ? null : project.preview?.get(lane.scopeId) ?? null;
       const projectScope = project.data?.scopes.find((scope) => scope.scopeId === lane.scopeId);
       const scopeSource = projectScope?.forecastSource;
       const live = sim
@@ -455,7 +457,7 @@ export default function TimelinePageClient({ embedded = false }: { embedded?: bo
       out[lane.scopeId] = forecastReadingForTime(atNow, live, memoryByScope[lane.scopeId] ?? null);
     }
     return out;
-  }, [data, project.data, project.baseline, atNow, memoryByScope]);
+  }, [data, project.data, project.preview, project.scenarioPreviewRefusal, atNow, memoryByScope]);
 
   // ── WHAT THE INSTRUMENT IS READING ─────────────────────────────────
   //
@@ -1003,6 +1005,14 @@ export default function TimelinePageClient({ embedded = false }: { embedded?: bo
 
   const stateBar = (
     <>
+      <ScenarioStrip
+        title="Timeline"
+        owns={atNow ? "Current forecast plus accepted schedule landmarks" : "Historical snapshots — today's Scenario does not rewrite history"}
+        active={project.active}
+        chips={chipsFor(project.scenario, new Map((project.data?.scopes ?? []).map((s) => [s.scopeId, s.name])), project.scenario.excludedItemIds.size, project.scenario.resolvedGateIds.size)}
+        onDiscard={() => project.setScenario(EMPTY_SCENARIO)}
+      />
+      {project.scenarioPreviewRefusal && atNow && <ScenarioPreviewRefusal refusal={project.scenarioPreviewRefusal} surface="Timeline" />}
       {/* ── THE MASTER DISPLAY ───────────────────────────────────────
           ONE readout, cut into the chassis. It used to be five separate
           bordered cards — an instrument name, an as-of panel and one tile

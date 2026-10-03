@@ -169,6 +169,7 @@ function moduleMarkdown(id: BriefModuleId, density: ModuleDensity, brief: Decisi
       out.push(`**${forecastSnapshotStamp(brief, brief.timeline.currentForecast.source)}** — [snapshot P50 ${date(brief.timeline.currentForecast.value.likelyDate)}](${brief.timeline.currentForecast.value.href})`);
       out.push(brief.timeline.nextMilestone.value ? `Next milestone: ${brief.timeline.nextMilestone.value.title} · ${date(brief.timeline.nextMilestone.value.date)}` : "Next milestone: MISSING.");
       for (const conflict of brief.timeline.conflicts.value) out.push(`- Conflict: ${conflict.title} · ${date(conflict.date)}`);
+      out.push(...reportScheduleLines(brief));
       break;
     case "audit-delta":
       heading("Audit delta");
@@ -220,3 +221,4 @@ export function renderAudienceBriefPlainText(brief: DecisionBriefV1, recipe: unk
     .replace(/^_([^\n]+)_$/gm, "$1")
     .replace(/`/g, "");
 }
+import { reportScheduleLines } from "./schedule";

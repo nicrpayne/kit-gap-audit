@@ -1,5 +1,7 @@
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
+import { currentContextSnapshot } from "@/lib/context/currentSnapshot";
+import { timelineKeyForAuditProposal } from "@/lib/timeline/sourceIdentity";
 import { dateOnlyToUtcDate, toDateOnly } from "@/lib/time/dateContract";
 import { invalidateDerivedReads, recomputeDerivedReads } from "./derivedRefresh";
 
@@ -85,19 +87,28 @@ async function applyOwnerMutation(
     return { type: "Decision", object: canonical, before: current };
   }
   if (action === "create_milestone") {
-    const existing = await tx.timelineEvent.findUnique({ where: { sourceClaimKey: proposal.fingerprint } });
-    if (existing) return { type: "TimelineEvent", object: existing, before: existing };
+    const sourceClaimKey = await timelineKeyForAuditProposal(proposal, tx);
+    const existing = await tx.timelineEvent.findFirst({ where: { sourceClaimKey: { in: [sourceClaimKey, proposal.fingerprint] } } });
+    if (existing) {
+      await tx.timelineEventCandidate.updateMany({ where: { claimKey: sourceClaimKey }, data: { status: "accepted", acceptedEventId: existing.id } });
+      return { type: "TimelineEvent", object: existing, before: existing };
+    }
     const dateValue = text(completion.date ?? state.date, "date");
     const date = dateOnlyToUtcDate(toDateOnly(dateValue));
-    const temporalState = state.temporalState === "planned" ? "planned" : "occurred";
+    const temporalState = completion.temporalState ?? state.temporalState;
+    if (temporalState !== "planned" && temporalState !== "occurred") throw new ChangeCompletionRequiredError("Choose whether this is planned or actually occurred.", ["temporalState"]);
+    const endValue = completion.endDate ?? state.endDate;
+    const endDate = typeof endValue === "string" && endValue ? dateOnlyToUtcDate(toDateOnly(endValue)) : null;
+    if (endDate && endDate <= date) throw new ChangeCompletionRequiredError("The end must be after the start date.", ["endDate"]);
     const canonical = await tx.timelineEvent.create({ data: {
-      scopeId: proposal.scopeId, title: text(state.title ?? proposal.title, "title"), date,
+      scopeId: proposal.scopeId, title: text(state.title ?? proposal.title, "title"), date, endDate,
       temporalState, semanticState: typeof state.semanticState === "string" ? state.semanticState : temporalState,
       kind: typeof state.kind === "string" ? state.kind : "milestone", source: "candidate",
       sourceLabel: "Audit Change Inbox", contextSnapshotId: proposal.contextSnapshotId,
       evidenceRefs: Array.isArray(proposal.evidence) ? proposal.evidence.map(record).map((item) => String(item.id ?? "")).filter(Boolean) : [],
-      sourceClaimKey: proposal.fingerprint,
+      sourceClaimKey,
     } });
+    await tx.timelineEventCandidate.updateMany({ where: { claimKey: sourceClaimKey }, data: { status: "accepted", acceptedEventId: canonical.id } });
     return { type: "TimelineEvent", object: canonical, before: null };
   }
   if (action === "create_dependency") {
@@ -144,6 +155,10 @@ export async function acceptAuditChange(proposalId: string, input: { idempotency
         const proposal = await tx.auditChangeProposal.findUniqueOrThrow({ where: { id: proposalId } });
         if (proposal.status === "accepted") return { proposal, created: false };
         if (["rejected", "information_only"].includes(proposal.status)) throw new Error("That proposal is closed. Reopen it before accepting.");
+        if (proposal.sourceKind === "refresh") {
+          const current = await currentContextSnapshot(proposal.scopeId, tx);
+          if (!current || current.id !== proposal.contextSnapshotId) throw new Error("Knowledge changed. Refresh Audit and review the current source before accepting.");
+        }
         const requirements = Array.isArray(proposal.completionRequirements) ? proposal.completionRequirements : [];
         if (requirements.length && completion.confirmed !== true) {
           throw new ChangeCompletionRequiredError("This owner needs a small completion step before accepting.", requirements.map(String));

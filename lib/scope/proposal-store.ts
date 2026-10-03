@@ -1,5 +1,6 @@
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
+import { currentContextSnapshot } from "@/lib/context/currentSnapshot";
 import { getScopedIssues } from "@/lib/linear";
 import { compileScopeProposal, type CompiledScopeProposal } from "@/lib/scope/proposal";
 
@@ -12,13 +13,12 @@ export async function refreshScopeProposal(scopeId: string) {
     where: { id: scopeId },
     include: {
       capabilities: { include: { workLinks: true }, orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }] },
-      contextSnapshots: { orderBy: { createdAt: "desc" }, take: 1 },
     },
   });
   if (!scope) return null;
 
   const issues = await getScopedIssues(scope);
-  const latestSnapshot = scope.contextSnapshots[0] ?? null;
+  const latestSnapshot = await currentContextSnapshot(scopeId);
   const compiled = compileScopeProposal({
     includeTriage: scope.includeTriage,
     issues,
@@ -39,16 +39,17 @@ export async function refreshScopeProposal(scopeId: string) {
   for (let attempt = 0; attempt < 3 && !proposal; attempt += 1) {
     try {
       proposal = await prisma.$transaction(async (tx) => {
+        const current = await currentContextSnapshot(scopeId, tx);
+        if (current?.id !== latestSnapshot?.id) throw new Error("Knowledge changed during reconciliation. Refresh Scope again.");
         const existing = await tx.scopeProposal.findUnique({
           where: { scopeId_fingerprint: { scopeId, fingerprint: compiled.fingerprint } },
           include,
         });
-        if (existing && existing.status === "active") return existing;
-
         await tx.scopeProposal.updateMany({
           where: { scopeId, status: "active", fingerprint: { not: compiled.fingerprint } },
           data: { status: "superseded", supersededAt: new Date() },
         });
+        if (existing && existing.status === "active") return existing;
         if (existing) {
           return tx.scopeProposal.update({
             where: { id: existing.id },
@@ -93,8 +94,6 @@ export async function refreshScopeProposal(scopeId: string) {
       }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
     } catch (error) {
       if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
-        proposal = await prisma.scopeProposal.findUnique({ where: { scopeId_fingerprint: { scopeId, fingerprint: compiled.fingerprint } }, include });
-        if (proposal?.status === "active") break;
         proposal = null;
         continue;
       }

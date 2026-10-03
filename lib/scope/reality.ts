@@ -1,5 +1,6 @@
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
+import { currentContextSnapshot } from "@/lib/context/currentSnapshot";
 import { invalidateDerivedReads, recomputeDerivedReads } from "@/lib/audit/derivedRefresh";
 import {
   acceptedCapabilityEstimate,
@@ -442,11 +443,7 @@ export async function setCanonicalCapabilityEstimate(
       if (!input.expectedContextSnapshotId || input.estimate.source.contextSnapshotId !== input.expectedContextSnapshotId) {
         throw new ScopeRealityInputError("The reviewed estimate must name the immutable source snapshot it was opened from.");
       }
-      const latestSnapshot = await tx.contextSnapshot.findFirst({
-        where: { scopeId: before.scopeId },
-        orderBy: [{ createdAt: "desc" }, { id: "desc" }],
-        select: { id: true },
-      });
+      const latestSnapshot = await currentContextSnapshot(before.scopeId, tx);
       if (!latestSnapshot || latestSnapshot.id !== input.expectedContextSnapshotId) {
         throw new ScopeRealityConflictError("Knowledge changed while this estimate was being reviewed. Reload Scope and review the current evidence.");
       }
@@ -555,6 +552,10 @@ export async function commitScopeProposal(
     if (!proposal) throw new ScopeRealityInputError("Scope proposal not found.");
     if (proposal.status !== "active") {
       throw new ScopeRealityConflictError("This proposal is stale or already committed. Refresh Scope before saving.");
+    }
+    const currentSnapshot = await currentContextSnapshot(scopeId, tx);
+    if ((currentSnapshot?.id ?? null) !== proposal.contextSnapshotId) {
+      throw new ScopeRealityConflictError("Knowledge changed after this proposal was reviewed. Refresh Scope before saving.");
     }
     const proposalItems = new Map(proposal.items.map((item) => [item.id, item]));
     if (new Set(selections.map((selection) => selection.itemId)).size !== selections.length) {

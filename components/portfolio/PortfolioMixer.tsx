@@ -50,7 +50,7 @@ interface Props {
   onHire: (fte: number) => void;
   onContextSwitch: (pct: number) => void;
   onWorkforce: (fte: number) => void;
-  onOpenSplits: (scopeId: string | null) => void;
+  onOpenSplits: (scopeId: string | null, personId?: string) => void;
   onOpenGates: (scopeId: string) => void;
   onExplainSwitchCost: () => void;
   /** Channel under the pointer -- wakes its swim lane above. */
@@ -170,7 +170,7 @@ export default function PortfolioMixer({
           {splits.slice(0, 6).map((s) => (
             <button
               key={s.personId}
-              onClick={() => onOpenSplits(null)}
+              onClick={() => onOpenSplits(null, s.personId)}
               data-shoot="bridge-person"
               className="shrink-0 flex items-center gap-1.5 rounded-md px-2 py-1 text-[9.5px] transition-colors hover:brightness-125"
               style={{ background: "var(--i-panel)", border: "1px solid var(--i-border)", color: "var(--i-text-soft)" }}

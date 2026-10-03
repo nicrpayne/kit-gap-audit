@@ -13,6 +13,7 @@
 
 import type { Scope } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
+import { currentContextSnapshot } from "@/lib/context/currentSnapshot";
 import { computeForecast, type CapacityBasis } from "@/lib/forecast/compute";
 import type { CapacitySource } from "@/lib/forecast/build";
 import { computeMomentum } from "@/lib/momentum/compute";
@@ -147,10 +148,7 @@ export async function buildProjectIntelligenceEnvelope(scope: Scope): Promise<Pr
     select: { id: true, type: true, title: true, blocking: true, owner: true, status: true, matchedIssues: true, contextSnapshotId: true, evidenceRefs: true },
   });
 
-  const latestSnapshot = await prisma.contextSnapshot.findFirst({
-    where: { scopeId: scope.id },
-    orderBy: { createdAt: "desc" },
-  });
+  const latestSnapshot = await currentContextSnapshot(scope.id);
 
   const health: EnvelopeContextHealth = latestSnapshot
     ? healthFromCompletenessSummary(latestSnapshot.completenessSummary as unknown as PolicyEvaluatedCompleteness)

@@ -459,6 +459,15 @@ export default function ReportsPageClient() {
       )}
 
       {error && <div className="text-sm text-[var(--i-red)] mb-4">{error}</div>}
+      {selected && selectedBrief && selectedRecipe && <section className="report-no-print mb-4 rounded-lg border border-[var(--i-border)] p-4" aria-label="Saved report handoff">
+        <h2 className="font-semibold">Share the saved brief</h2>
+        <p className="mt-1 text-xs text-[var(--i-text-soft)]">Preview and export this exact saved snapshot. Private names, quotes and links are included; review before sharing. No Site is published automatically.</p>
+        <div className="mt-3 flex flex-wrap gap-4 text-sm">
+          <a className="text-[var(--i-signal)] underline" href={`/reports/${encodeURIComponent(selected.id)}/share-preview`} target="_blank" rel="noreferrer">Preview saved brief</a>
+          {comparison && <a className="text-[var(--i-signal)] underline" href={`/reports/${encodeURIComponent(selected.id)}/share-preview?pair=1`} target="_blank" rel="noreferrer">Preview Reality + Scenario</a>}
+          <a className="text-[var(--i-signal)] underline" href={`/api/reports/${encodeURIComponent(selected.id)}/handoff${comparison ? "?pair=1" : ""}`}>Download Site handoff</a>
+        </div>
+      </section>}
 
       {comparison && <section className="report-no-print mb-6 rounded-xl border border-[var(--i-border)] bg-[var(--i-panel)] p-4" aria-label="Reality versus Scenario comparison">
         <div className="mb-3 flex items-center justify-between"><div><div className="i-label" style={{ color: "var(--i-signal)" }}>Persisted comparison</div><h2 className="mt-1 text-lg font-semibold text-[var(--i-text)]">Reality r{comparison.realityBrief.identity.realityRevision} versus {comparison.scenarioBrief.identity.scenarioId}</h2></div><span className="text-[10px] uppercase tracking-wider text-[var(--i-violet)]">Reality unchanged · Scenario hypothetical</span></div>

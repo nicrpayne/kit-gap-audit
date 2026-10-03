@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { currentContextSnapshot } from "@/lib/context/currentSnapshot";
 
 // PROMOTE A CANDIDATE — the moment a machine suggestion becomes a real,
 // human-owned Decision.
@@ -39,7 +40,12 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
     return NextResponse.json({ decision: already, created: false });
   }
 
+  try {
   const decision = await prisma.$transaction(async (tx) => {
+    const current = await currentContextSnapshot(candidate.scopeId, tx);
+    if (!candidate.contextSnapshotId || current?.id !== candidate.contextSnapshotId) {
+      throw new Error("Knowledge changed. Review a candidate from the current source before accepting.");
+    }
     const created = await tx.decision.create({
       data: {
         scopeId: candidate.scopeId,
@@ -68,11 +74,16 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
       data: { status: "accepted", acceptedDecisionId: created.id },
     });
     return created;
-  });
+  }, { isolationLevel: "Serializable" });
 
   const full = await prisma.decision.findUnique({
     where: { id: decision.id },
     include: { gate: true, evidence: true },
   });
   return NextResponse.json({ decision: full, created: true });
+  } catch (error) {
+    const existing = await prisma.decision.findUnique({ where: { sourceClaimKey: candidate.claimKey }, include: { gate: true, evidence: true } });
+    if (existing) return NextResponse.json({ decision: existing, created: false });
+    return NextResponse.json({ error: error instanceof Error ? error.message : "Candidate acceptance failed; retry." }, { status: 409 });
+  }
 }

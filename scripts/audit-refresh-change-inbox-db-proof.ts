@@ -5,10 +5,16 @@ import { acceptAuditChange, ChangeCompletionRequiredError, dispositionAuditChang
 import { auditChangeFingerprint, type AuditChangeDraft } from "../lib/audit/changeContract";
 import { getAuditChangeInbox, syncRefreshChangeProposals } from "../lib/audit/changeInbox";
 import type { ProjectBootstrapPackageV1 } from "../lib/bootstrap/contracts";
+import { currentContextSnapshot } from "../lib/context/currentSnapshot";
+
+const database = new URL(process.env.DATABASE_URL ?? "http://invalid");
+assert(database.hostname === "127.0.0.1" && database.port === "55434" && database.pathname === "/signal_t0_test_1004" && process.env.SIGNAL_REPAIR_DB_PROOF === "1", "Disposable repair database only");
 
 const json = (value: unknown) => value as Prisma.InputJsonValue;
 const runKey = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 const ik = (value: string) => `${value}:${runKey}`;
+const ownedScopeIds: string[] = [];
+const ownedPersonIds: string[] = [];
 
 async function change(scopeId: string, key: string, draft: Partial<AuditChangeDraft> & Pick<AuditChangeDraft, "category" | "owner" | "proposedState">) {
   const full: AuditChangeDraft = {
@@ -21,6 +27,7 @@ async function change(scopeId: string, key: string, draft: Partial<AuditChangeDr
     recommendedAction: "accept", completionRequirements: draft.completionRequirements ?? [],
   };
   return prisma.auditChangeProposal.create({ data: {
+    contextSnapshotId: (await currentContextSnapshot(scopeId))?.id,
     scopeId, fingerprint: auditChangeFingerprint(full), sourceKey: full.key, category: full.category, owner: full.owner,
     changeType: full.changeType, title: full.title, summary: full.summary, whyProposed: full.whyProposed,
     currentState: json(full.currentState), proposedState: json(full.proposedState), evidence: json(full.evidence),
@@ -46,7 +53,9 @@ function infoPackage(bootstrapId: string): ProjectBootstrapPackageV1 {
 
 async function main() {
   const scope = await prisma.scope.create({ data: { name: "Proof iTrack", teamKey: "TRK", projectNames: ["KIT iTrack"], executionState: "configured" } });
+  ownedScopeIds.push(scope.id);
   const platform = await prisma.scope.create({ data: { name: "Proof Platform", teamKey: "PLAT", projectNames: ["KIT Platform"], executionState: "configured" } });
+  ownedScopeIds.push(platform.id);
   const snapshot = await prisma.contextSnapshot.create({ data: {
     scopeId: scope.id, packageId: `proof-snapshot:${runKey}`, packageVersion: "1.1", producer: "hermes",
     package: json({ version: "1.1", evidence: [] }), contextHash: "proof-hash", completenessSummary: json({ status: "complete", activeSupplied: [], missingActive: [], paused: [], excluded: [], adHoc: [] }),
@@ -120,6 +129,7 @@ async function main() {
   const beforeCapacity = await getAuditChangeInbox(scope.id);
   assert.equal(beforeCapacity.readiness.ready, false);
   const person = await prisma.person.create({ data: { name: "Proof owner", synthetic: false } });
+  ownedPersonIds.push(person.id);
   await prisma.allocation.create({ data: { personId: person.id, scopeId: scope.id, fraction: 1 } });
   await prisma.capacityReconciliation.upsert({
     where: { scopeId: scope.id },
@@ -136,4 +146,11 @@ async function main() {
   }, ids: { scope: scope.id, snapshot: snapshot.id, audit: audit.id, openDecision: decision.id } }, null, 2));
 }
 
-main().finally(() => prisma.$disconnect());
+main().finally(async () => {
+  await prisma.finding.deleteMany({ where: { contextSnapshot: { scopeId: { in: ownedScopeIds } } } });
+  await prisma.auditRun.deleteMany({ where: { contextSnapshot: { scopeId: { in: ownedScopeIds } } } });
+  await prisma.contextSnapshot.deleteMany({ where: { scopeId: { in: ownedScopeIds } } });
+  await prisma.scope.deleteMany({ where: { id: { in: ownedScopeIds } } });
+  await prisma.person.deleteMany({ where: { id: { in: ownedPersonIds } } });
+  await prisma.$disconnect();
+});

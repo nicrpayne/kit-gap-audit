@@ -14,6 +14,7 @@
 // survive `planned -> occurred` or the canvas is lying about continuity.
 
 import type { PlanObject as Obj, PlanGrip } from "@/lib/timeline/plan";
+import { labelWidth } from "@/lib/timeline/plan";
 
 const GRIP_W = 7;
 
@@ -147,7 +148,7 @@ export default function PlanObject({
     return (
       <g
         {...claims}
-        onPointerDown={(e) => draggable && onGrip("move", e)}
+        onPointerDown={(e) => { e.stopPropagation(); if (draggable) onGrip("move", e); }}
         onClick={(e) => { e.stopPropagation(); onSelect(); }}
         onMouseEnter={() => onHover(true)}
         onMouseLeave={() => onHover(false)}
@@ -201,11 +202,16 @@ export default function PlanObject({
   return (
     <g
       {...claims}
+      onPointerDown={(e) => e.stopPropagation()}
       onClick={(e) => { e.stopPropagation(); onSelect(); }}
       onMouseEnter={() => onHover(true)}
       onMouseLeave={() => onHover(false)}
       style={common}
     >
+      {/* A short activity puts its title outside the dated bar. That title
+          must select the activity, not fall through to the composing bed.
+          Packing reserves the same extent without changing date geometry. */}
+      <rect x={-7} y={-2} width={w + 14 + (roomForLabel ? 0 : labelWidth(label, compact) + 10)} height={h + 4} fill="transparent" />
       {/* IT SITS ON THE SCORE. A cast shadow under the body is what makes
           the difference between a part resting on a surface and a bordered
           rectangle drawn onto one. */}

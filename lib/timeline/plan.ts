@@ -107,7 +107,17 @@ export function packPlanRows(extents: PlanExtent[], gapPx = 8): { rowOf: Map<str
 /** Roughly how wide a title renders at the plan object's type size. Only
     needs to be close: it decides packing, not layout. */
 export function labelWidth(title: string, compact: boolean): number {
-  return Math.min(compact ? 118 : 190, title.length * (compact ? 5.1 : 5.9) + 14);
+  return title.length * (compact ? 5.1 : 5.9) + 14;
+}
+
+/** Packing includes the actual pin hitbox and external short-span title.
+ * Date geometry is kept separate so collision avoidance never retimes work. */
+export function planHitExtent(x0: number, x1: number, title: string, compact: boolean, span: boolean): { x0: number; x1: number } {
+  const width = x1 - x0;
+  const fontSize = compact ? 8.6 : 10;
+  const maxChars = Math.floor((width - 14) / (fontSize * 0.56));
+  const outsideLabel = span && maxChars < title.length && maxChars < 14;
+  return { x0: x0 - 7, x1: span ? x1 + (outsideLabel ? labelWidth(title, compact) + 10 : 7) : x1 + 7 };
 }
 
 // ── LANE GEOMETRY ────────────────────────────────────────────────────

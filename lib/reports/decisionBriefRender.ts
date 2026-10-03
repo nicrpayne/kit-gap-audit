@@ -155,6 +155,7 @@ export function renderDecisionBriefMarkdown(brief: DecisionBriefV1): string {
   out.push(`**Snapshot generated ${instantDate(brief.identity.generatedAt)} · source ${brief.timeline.currentForecast.source.currentness.toUpperCase()} at generation · source as of ${instantDate(brief.timeline.currentForecast.source.asOf)}**`);
   out.push(`[Snapshot P50 ${date(brief.timeline.currentForecast.value.likelyDate)} · P10–P90 ${date(brief.timeline.currentForecast.value.earliestDate)}–${date(brief.timeline.currentForecast.value.latestDate)}](${brief.timeline.currentForecast.value.href})`);
   const milestone = brief.timeline.nextMilestone.value;
+  out.push(...reportScheduleLines(brief));
   out.push(milestone ? `Next committed/current milestone: ${milestone.title} · ${date(milestone.date)}.` : "Next committed/current milestone: MISSING.");
   if (brief.timeline.conflicts.value.length) {
     out.push("Conflicts");
@@ -189,3 +190,4 @@ export function renderDecisionBriefPlainText(brief: DecisionBriefV1): string {
     .replace(/^_([^\n]+)_$/gm, "$1")
     .replace(/`/g, "");
 }
+import { reportScheduleLines } from "./schedule";

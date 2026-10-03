@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { currentContextSnapshot } from "@/lib/context/currentSnapshot";
 
 // SEAT A CANDIDATE INTO TIMELINE REALITY.
 //
@@ -97,11 +98,19 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     return NextResponse.json({ error: "endDate cannot precede date" }, { status: 400 });
   }
 
-  // Stated by the accepting human, defaulting to occurred: a candidate is
-  // a machine's reading of something that already happened.
-  const temporalState = temporalStateIn === "planned" ? "planned" : "occurred";
+  // A dated statement may be a future plan or an observed event. Require the
+  // accepting human's choice; a source date is not proof that it occurred.
+  if (temporalStateIn !== "planned" && temporalStateIn !== "occurred") {
+    return NextResponse.json({ error: "Choose whether this is a plan or an event that occurred." }, { status: 422 });
+  }
+  const temporalState = temporalStateIn;
 
+  try {
   const event = await prisma.$transaction(async (tx) => {
+    const current = await currentContextSnapshot(candidate.scopeId, tx);
+    if (!candidate.contextSnapshotId || current?.id !== candidate.contextSnapshotId) {
+      throw new Error("Knowledge changed. Review a candidate from the current source before accepting.");
+    }
     const created = await tx.timelineEvent.create({
       data: {
         scopeId,
@@ -122,7 +131,12 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       data: { status: "accepted", acceptedEventId: created.id },
     });
     return created;
-  });
+  }, { isolationLevel: "Serializable" });
 
   return NextResponse.json({ event, created: true }, { status: 201 });
+  } catch (error) {
+    const existing = await prisma.timelineEvent.findUnique({ where: { sourceClaimKey: candidate.claimKey } });
+    if (existing) return NextResponse.json({ event: existing, created: false });
+    return NextResponse.json({ error: error instanceof Error ? error.message : "Candidate acceptance failed; retry." }, { status: 409 });
+  }
 }

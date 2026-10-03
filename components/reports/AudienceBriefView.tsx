@@ -9,6 +9,7 @@ import { formatDateOnly, formatInstant, toInstant } from "@/lib/time/dateContrac
 import { FORECAST_PERCENTILE_COPY } from "@/lib/forecast/claims";
 import { capabilityEstimatePresentation } from "@/lib/reports/capabilityEstimatePresentation";
 import styles from "./ReportsComposer.module.css";
+import ReportSchedule from "./ReportSchedule";
 
 const date = (iso: string | null) => iso ? formatDateOnly(iso, { month: "short", day: "numeric", year: "numeric" }) : "MISSING";
 const instantDate = (iso: string) => formatInstant(toInstant(iso), {
@@ -100,7 +101,7 @@ export function BriefModule({ module, brief, recipe, open = true, onSelect, drag
   const color = tone[definition.tone];
   return <details className={styles.briefModule} style={{ "--tone": color } as React.CSSProperties} open={open} draggable={draggable} onDragStart={onDragStart} onDragOver={(event) => event.preventDefault()} onDrop={onDrop} onClick={onSelect} data-module-id={module.id} data-density={module.density}>
     <summary><span className={styles.tone} /><span className={styles.moduleTitle}>{definition.label}</span><span className={styles.moduleMeta}>{module.density} · {definition.owner}</span></summary>
-    <div className={styles.briefModuleContent}><ModuleContent id={module.id} brief={brief} recipe={recipe} /><Stamp source={sourceForModule(brief, module.id)} /></div>
+    <div className={styles.briefModuleContent}><ModuleContent id={module.id} brief={brief} recipe={recipe} />{module.id === "timeline" && <ReportSchedule brief={brief} />}<Stamp source={sourceForModule(brief, module.id)} /></div>
   </details>;
 }
 

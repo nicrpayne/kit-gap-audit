@@ -102,6 +102,14 @@ export default function ControlRoomPageClient() {
   const [workspace, setWorkspace] = useState<Workspace>(DEFAULT_WORKSPACE);
   const [editing, setEditing] = useState(false);
   const [viewsOpen, setViewsOpen] = useState(false);
+  useEffect(() => {
+    if (!viewsOpen) return;
+    const close = (event: KeyboardEvent) => {
+      if (event.key === "Escape") { event.preventDefault(); setViewsOpen(false); }
+    };
+    document.addEventListener("keydown", close);
+    return () => document.removeEventListener("keydown", close);
+  }, [viewsOpen]);
   useEffect(() => setWorkspace(loadWorkspace()), []);
   const commit = useCallback((w: Workspace) => {
     setWorkspace(w);

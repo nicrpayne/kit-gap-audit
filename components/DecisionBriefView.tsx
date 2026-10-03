@@ -1,6 +1,7 @@
 "use client";
 
 import React from "react";
+import ReportSchedule from "./reports/ReportSchedule";
 import Link from "@/components/instrument/SignalLink";
 import type { DecisionBriefV1, SourceStamp } from "@/lib/reports/decisionBrief";
 import { briefPayloadFingerprint } from "@/lib/reports/decisionBriefRender";
@@ -212,6 +213,7 @@ export default function DecisionBriefView({ brief }: { brief: DecisionBriefV1 })
       </Section>
 
       <Section title="Timeline" source={brief.timeline.currentForecast.source}>
+        <ReportSchedule brief={brief} />
         <Link href={brief.timeline.currentForecast.value.href} className={`block rounded-lg border bg-[var(--i-panel)] p-4 ${forecastStale ? "border-[var(--i-amber)]" : "border-[var(--i-signal)]"}`}>
           <div className={`text-[9px] font-semibold uppercase tracking-wider ${forecastStale ? "text-[var(--i-amber)]" : "text-[var(--i-mint)]"}`}>Snapshot generated {instantDate(brief.identity.generatedAt)} · source {brief.timeline.currentForecast.source.currentness} at generation · source as of {instantDate(brief.timeline.currentForecast.source.asOf)}</div>
           <div className="mt-1 font-display text-lg">P50 {date(brief.timeline.currentForecast.value.likelyDate)}</div>

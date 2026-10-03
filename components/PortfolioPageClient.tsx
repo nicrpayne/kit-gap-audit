@@ -234,6 +234,7 @@ export default function PortfolioPageClient() {
   const [error, setError] = useState<string | null>(null);
 
   const [patchbayOpen, setPatchbayOpen] = useState(false);
+  const [patchbayPersonId, setPatchbayPersonId] = useState<string | null>(null);
   // Which channel the pointer is on, so its swim lane above can wake. Pure
   // presentation -- it never touches the scenario.
   const [hoveredScopeId, setHoveredScopeId] = useState<string | null>(null);
@@ -979,10 +980,13 @@ export default function PortfolioPageClient() {
       const b = baseline?.get(s.scopeId);
       const p = preview?.get(s.scopeId) ?? b;
       const deltaDays = b && p ? Math.round((p.likelyDate.getTime() - b.likelyDate.getTime()) / 86400000) : 0;
+      const target = pendingTargets.get(s.scopeId) ?? s.targetDate;
       return {
         scopeId: s.scopeId,
         name: s.name,
         accent: CHANNEL_ACCENTS[i % CHANNEL_ACCENTS.length],
+        targetDate: target ? formatDateOnly(target) : null,
+        confidenceAtTarget: target && p && startDateObj ? confidenceAtDay(p.completionDaysSorted, dayOffset(startDateObj, new Date(target))) : null,
         // The SAME simulation result the swim lane above is drawing.
         likelyDate: p
           ? formatDateOnly(p.likelyDate, { month: "short", day: "numeric" })
@@ -999,7 +1003,7 @@ export default function PortfolioPageClient() {
         completionDays: p?.completionDaysSorted ?? [],
       };
     });
-  }, [data, workforceState, switchCostPct, requiredByScope, baseline, preview, changedScopeIds]);
+  }, [data, workforceState, switchCostPct, requiredByScope, baseline, preview, changedScopeIds, pendingTargets, startDateObj]);
 
   const deficit = useMemo(() => {
     const entry = [...requiredByScope.entries()].find(([, v]) => v > 1e-6);
@@ -1144,7 +1148,11 @@ export default function PortfolioPageClient() {
           canCommit={staffingDirty && canCommit}
           overAllocated={overAllocated.length > 0}
           capacityLines={capacityLinesForBar}
-          namedTransferCount={changedScopeIds.size}
+          namedTransferCount={(data?.people ?? []).filter((person) => data!.scopes.some((scope) => {
+            const before = data!.allocations.filter((allocation) => allocation.personId === person.id && allocation.scopeId === scope.scopeId).reduce((sum, allocation) => sum + allocation.fraction, 0);
+            const after = currentAllocations.filter((allocation) => allocation.personId === person.id && allocation.scopeId === scope.scopeId).reduce((sum, allocation) => sum + allocation.fraction, 0);
+            return Math.abs(after - before) > 1e-6;
+          })).length}
           switchCostChanged={switchCostChanged}
           aggregateConversions={[]}
           blockedCapacityScopes={rosterRequiredScopes.map((scope) => ({
@@ -1237,7 +1245,7 @@ export default function PortfolioPageClient() {
               onSelect={setSelectedScopeId}
               onFader={onFader}
               onTakeFrom={onTakeFrom}
-              onSplitSomeone={() => setPatchbayOpen(true)}
+              onSplitSomeone={() => { setPatchbayPersonId(null); setPatchbayOpen(true); }}
               onHire={onHire}
               onContextSwitch={(pct) => stageCapacityPlan({
                 allocations: currentAllocations,
@@ -1246,7 +1254,10 @@ export default function PortfolioPageClient() {
                 contextSwitchCostPct: Math.round(pct),
               })}
               onWorkforce={onWorkforce}
-              onOpenSplits={() => setPatchbayOpen(true)}
+              onOpenSplits={(scopeId, personId) => {
+                setPatchbayPersonId(personId ?? splits.find((person) => person.lines.some((line) => line.scopeId === scopeId))?.personId ?? null);
+                setPatchbayOpen(true);
+              }}
               onOpenGates={() => router.push(contextualHref("/decisions", params))}
               onExplainSwitchCost={() => openInspector("switchCost")}
               hoveredScopeId={hoveredScopeId}
@@ -1308,6 +1319,7 @@ export default function PortfolioPageClient() {
 
       <SplitPatchbay
         open={patchbayOpen}
+        initialPersonId={patchbayPersonId}
         people={patchbayPeople}
         scopeNameById={scopeNameById}
         accentByScope={accentByScope}

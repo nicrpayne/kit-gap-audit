@@ -28,7 +28,7 @@ import Link from "@/components/instrument/SignalLink";
 import { useSearchParams } from "next/navigation";
 import { useProjectParam } from "@/lib/shell/useProjectParam";
 import InstrumentShell from "@/components/instrument/InstrumentShell";
-import ScenarioStrip from "@/components/instrument/ScenarioStrip";
+import ScenarioStrip, { chipsFor } from "@/components/instrument/ScenarioStrip";
 import ScenarioPreviewRefusal from "@/components/instrument/ScenarioPreviewRefusal";
 import { useProject, EMPTY_SCENARIO } from "@/lib/instrument/useProject";
 import { useDecisions } from "@/lib/decisions/useDecisions";
@@ -155,26 +155,7 @@ export default function OrbitPageClient() {
       title="Orbit"
       owns="Where the ability to move is being spent, blocked or wasted"
       active={m.active}
-      chips={[
-        ...(m.scenario.resolvedGateIds.size > 0
-          ? [
-              {
-                id: "gates",
-                label: `${m.scenario.resolvedGateIds.size} ${m.scenario.resolvedGateIds.size === 1 ? "decision" : "decisions"} assumed answered`,
-                href: "/decisions",
-              },
-            ]
-          : []),
-        ...(m.scenario.bypassedFeatureIds.size > 0
-          ? [
-              {
-                id: "cut",
-                label: `${m.scenario.bypassedFeatureIds.size} ${m.scenario.bypassedFeatureIds.size === 1 ? "capability" : "capabilities"} cut`,
-                href: "/scope",
-              },
-            ]
-          : []),
-      ]}
+      chips={chipsFor(m.scenario, new Map(scopes.map((scope) => [scope.scopeId, scope.name])), m.scenario.excludedItemIds.size, m.scenario.resolvedGateIds.size)}
       onDiscard={() => m.setScenario(EMPTY_SCENARIO)}
       right={
         <div className="flex items-center gap-1.5">

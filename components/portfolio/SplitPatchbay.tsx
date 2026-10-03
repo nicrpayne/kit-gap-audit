@@ -16,7 +16,7 @@ import { useModalFocus } from "@/lib/instrument/useModalFocus";
 // No names required. A unit labelled "Person 07" plans exactly as well as
 // one labelled with somebody's name, and the label never touches the math.
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { SplitPersonView, SplitLine } from "@/lib/capacity/workforce";
 
 export interface PatchbayPerson {
@@ -28,6 +28,7 @@ export interface PatchbayPerson {
 
 interface Props {
   open: boolean;
+  initialPersonId?: string | null;
   people: PatchbayPerson[];
   scopeNameById: Map<string, string>;
   accentByScope: Map<string, string>;
@@ -41,6 +42,7 @@ interface Props {
 
 export default function SplitPatchbay({
   open,
+  initialPersonId,
   people,
   scopeNameById,
   accentByScope,
@@ -53,10 +55,13 @@ export default function SplitPatchbay({
 }: Props) {
   const [focusId, setFocusId] = useState<string | null>(null);
   const [labelDraft, setLabelDraft] = useState<string | null>(null);
+  useEffect(() => {
+    if (open) { setFocusId(initialPersonId ?? null); setLabelDraft(null); }
+  }, [open, initialPersonId]);
 
   const focus = useMemo(
-    () => people.find((p) => p.personId === (focusId ?? people[0]?.personId)) ?? null,
-    [people, focusId]
+    () => people.find((p) => p.personId === (focusId ?? initialPersonId ?? people[0]?.personId)) ?? null,
+    [people, focusId, initialPersonId]
   );
   const splitView = splits.find((s) => s.personId === focus?.personId) ?? null;
 

@@ -2,6 +2,7 @@ import "server-only";
 
 import type { Scope } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
+import { currentContextSnapshot } from "@/lib/context/currentSnapshot";
 import { computeForecast } from "@/lib/forecast/compute";
 import { computeChangesSince } from "@/lib/reports/changes";
 import { capacityForecastContract, CapacityReconciliationIncompleteError } from "@/lib/capacity/contract";
@@ -68,9 +69,10 @@ async function findingsForRun(run: { sourceId: string | null; contextSnapshotId:
 }
 
 async function auditObservations(scopeId: string): Promise<{ current: AuditObservationInput | null; prior: AuditObservationInput | null; providerChanges: string[]; comparisonCurrentness: Currentness; warnings: string[] }> {
-  const [sources, snapshots] = await Promise.all([
+  const [sources, snapshots, selectedSnapshot] = await Promise.all([
     prisma.source.findMany({ where: { scopeId }, select: { id: true } }),
     prisma.contextSnapshot.findMany({ where: { scopeId }, select: { id: true, completenessSummary: true } }),
+    currentContextSnapshot(scopeId),
   ]);
   const sourceIds = sources.map((item) => item.id);
   const snapshotIds = snapshots.map((item) => item.id);
@@ -79,12 +81,18 @@ async function auditObservations(scopeId: string): Promise<{ current: AuditObser
     ...(snapshotIds.length ? [{ contextSnapshotId: { in: snapshotIds } }] : []),
   ];
   if (!predicates.length) return { current: null, prior: null, providerChanges: [], comparisonCurrentness: "missing", warnings: [] };
-  const runs = await prisma.auditRun.findMany({
-    where: { OR: predicates },
+  const selectedRun = selectedSnapshot ? await prisma.auditRun.findFirst({
+    where: { contextSnapshotId: selectedSnapshot.id }, orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+    select: { id: true, createdAt: true, sourceId: true, contextSnapshotId: true },
+  }) : null;
+  if (selectedSnapshot && !selectedRun) return { current: null, prior: null, providerChanges: [], comparisonCurrentness: "missing", warnings: ["The current knowledge snapshot has no completed Audit. Historical Audit findings were not substituted."] };
+  const otherRuns = await prisma.auditRun.findMany({
+    where: { OR: predicates, ...(selectedRun ? { id: { not: selectedRun.id }, createdAt: { lte: selectedRun.createdAt } } : {}) },
     orderBy: [{ createdAt: "desc" }, { id: "desc" }],
-    take: 2,
+    take: selectedRun ? 1 : 2,
     select: { id: true, createdAt: true, sourceId: true, contextSnapshotId: true },
   });
+  const runs = selectedRun ? [selectedRun, ...otherRuns] : otherRuns;
   const mapped = await Promise.all(runs.map(async (run): Promise<AuditObservationInput> => ({
     runId: run.id,
     asOf: run.createdAt.toISOString(),
@@ -152,11 +160,11 @@ export async function loadDecisionBriefOwnerInputs(
     prisma.timelineEvent.findMany({
       where: { scopeId: scope.id },
       orderBy: [{ date: "asc" }, { id: "asc" }],
-      select: { id: true, title: true, date: true, endDate: true, temporalState: true, sourceLabel: true },
+      select: { id: true, title: true, date: true, endDate: true, temporalState: true, sourceLabel: true, semanticState: true, kind: true, source: true, contextSnapshotId: true, evidenceRefs: true, contextSnapshot: { select: { package: true } } },
     }),
     options?.contextSnapshotId
       ? prisma.contextSnapshot.findFirst({ where: { id: options.contextSnapshotId, scopeId: scope.id } })
-      : prisma.contextSnapshot.findFirst({ where: { scopeId: scope.id }, orderBy: { createdAt: "desc" } }),
+      : currentContextSnapshot(scope.id),
     prisma.scope.findFirst({ where: { name: { contains: "KIT Construct", mode: "insensitive" } }, select: { id: true } }),
     prisma.projectDerivedState.findUnique({ where: { scopeId: scope.id }, select: { realityRevision: true } }),
     readKnowledgeStatus(scope.id),
@@ -280,12 +288,17 @@ export async function loadDecisionBriefOwnerInputs(
     },
     timeline: {
       asOf: generatedAt,
-      events: timelineEvents.map((event) => ({
-        ...event,
-        date: toDateOnly(event.date),
-        endDate: event.endDate ? toDateOnly(event.endDate) : null,
-        temporalState: event.temporalState === "planned" ? "planned" as const : "occurred" as const,
-      })),
+      events: timelineEvents.map(({ contextSnapshot, ...event }) => {
+        const pkg = contextSnapshot?.package as { evidence?: { id: string; excerpt: string; sourceRef: string }[] } | undefined;
+        return {
+          ...event,
+          evidence: (pkg?.evidence ?? []).filter((passage) => event.evidenceRefs.includes(passage.id))
+            .map((passage) => ({ passageId: passage.id, quote: passage.excerpt, sourceRef: passage.sourceRef })),
+          date: toDateOnly(event.date),
+          endDate: event.endDate ? toDateOnly(event.endDate) : null,
+          temporalState: event.temporalState === "planned" ? "planned" as const : "occurred" as const,
+        };
+      }),
     },
     kitConstructAvailable: !!kitConstruct,
   };
