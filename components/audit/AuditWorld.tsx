@@ -261,6 +261,7 @@ export default function AuditWorld({
         <AuditChangeInbox
           scopeId={scopeId}
           fixture={fixture}
+          focusEvidence={Boolean(initialSelectId && scopeId === initialScopeId)}
           onTrace={(canonicalId) => traceFinding(canonicalId, true)}
         />
 

@@ -11,6 +11,7 @@ export async function proveRepairInteractions(context: BrowserContext, base: str
   const key = randomUUID();
   const scopes = [0, 1].map((n) => `repair-ux-${key}-${n}`);
   const people = [0, 1].map((n) => `repair-person-${key}-${n}`);
+  const pendingQuoteChangeId = `quote-inbox-${key}`;
   const page = await context.newPage();
   page.setDefaultTimeout(20_000);
   const sh = (id: string) => page.locator(`[data-shoot="${id}"]`);
@@ -52,9 +53,22 @@ export async function proveRepairInteractions(context: BrowserContext, base: str
     await page.keyboard.press("Escape");
     await sh("cr-lens-editor").waitFor({ state: "hidden" });
 
+    const quoteScopeId = new URL(auditHref, base).searchParams.get("project")!;
+    assert(quoteScopeId);
+    await prisma.auditChangeProposal.create({ data: {
+      id: pendingQuoteChangeId, scopeId: quoteScopeId, fingerprint: pendingQuoteChangeId,
+      category: "decision", owner: "decisions", changeType: "create_open_decision",
+      title: "QA pending review must not cover quote", summary: "Synthetic inbox race regression",
+      whyProposed: "QA only", currentState: {}, proposedState: { action: "create_open_decision" },
+      evidence: [], retrievalBasis: "qa", relevanceReason: "QA project local", sourceKind: "setup", status: "pending",
+    } });
+    const inboxRead = page.waitForResponse((response) => new URL(response.url()).pathname === "/api/audit/changes");
     await page.goto(`${base}${auditHref}`);
-    const explore = page.getByRole("button", { name: "Explore project world", exact: true });
-    if (await explore.count()) await explore.click();
+    const inbox = await (await inboxRead).json();
+    assert(inbox.total > 0, "the regression requires asynchronous pending inbox content");
+    await page.getByRole("button", { name: new RegExp(`^${inbox.total} Changes since last Audit`) }).waitFor();
+    assert.equal(await page.locator('[data-shoot="audit-change-inbox"]').count(), 0,
+      "loading a pending inbox must not obscure an explicit evidence deep link");
     const frame = page.frameLocator("iframe").first();
     await frame.getByRole("button", { name: "View here", exact: true }).click();
     const viewer = frame.locator("#brain-viewer");
@@ -78,6 +92,7 @@ export async function proveRepairInteractions(context: BrowserContext, base: str
     throw error;
   } finally {
     await page.close();
+    await prisma.auditChangeProposal.deleteMany({ where: { id: pendingQuoteChangeId } });
     await prisma.scope.deleteMany({ where: { id: { in: scopes } } });
     await prisma.person.deleteMany({ where: { id: { in: people } } });
   }

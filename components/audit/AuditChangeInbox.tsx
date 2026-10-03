@@ -98,10 +98,13 @@ export default function AuditChangeInbox({
   scopeId,
   fixture,
   onTrace,
+  focusEvidence = false,
 }: {
   scopeId: string;
   fixture?: string;
   onTrace?: (canonicalId: string) => void;
+  /** An exact-passage deep link takes priority over the asynchronous inbox. */
+  focusEvidence?: boolean;
 }) {
   const [payload, setPayload] = useState<InboxPayload | null>(null);
   const [open, setOpen] = useState(false);
@@ -149,11 +152,15 @@ export default function AuditChangeInbox({
   const processed = useMemo(() => payload?.proposals.filter((item) => ["accepted", "rejected", "information_only"].includes(item.status)).slice(0, 12) ?? [], [payload]);
 
   useEffect(() => {
-    if (!payload?.total || dismissedScopeRef.current === scopeId) return;
+    if (focusEvidence) setOpen(false);
+  }, [focusEvidence]);
+
+  useEffect(() => {
+    if (focusEvidence || !payload?.total || dismissedScopeRef.current === scopeId) return;
     setTab("changes");
     setOpen(true);
     setSelectedId((current) => current ?? pending[0]?.id ?? null);
-  }, [payload?.total, pending, scopeId]);
+  }, [focusEvidence, payload?.total, pending, scopeId]);
 
   async function requestRefresh() {
     if (!scopeId || busy) return;
@@ -301,7 +308,7 @@ export default function AuditChangeInbox({
               {selected.status === "deferred" ? <SignalControl type="button" onClick={() => void disposition("reopen")} className="px-3 py-1.5 text-[10.5px]">Reopen</SignalControl> : ["pending", "needs_completion"].includes(selected.status) && <SignalControl type="button" onClick={() => void disposition("defer")} className="px-3 py-1.5 text-[10.5px]">Defer</SignalControl>}
               {["pending", "needs_completion", "deferred"].includes(selected.status) && <SignalControl type="button" onClick={() => void disposition("reject")} className="px-3 py-1.5 text-[10.5px]">Reject</SignalControl>}
               {["pending", "needs_completion", "deferred"].includes(selected.status) && <SignalControl type="button" onClick={() => void disposition("information_only")} className="px-3 py-1.5 text-[10.5px]">Information only</SignalControl>}
-              {typeof selected.proposedState.findingId === "string" && <SignalControl type="button" onClick={() => onTrace?.(selected.proposedState.findingId as string)} className="px-3 py-1.5 text-[10.5px]">Trace in world</SignalControl>}
+              {typeof selected.proposedState.findingId === "string" && <SignalControl type="button" onClick={() => { dismissedScopeRef.current = scopeId; setOpen(false); onTrace?.(selected.proposedState.findingId as string); }} className="px-3 py-1.5 text-[10.5px]">Trace in world</SignalControl>}
               {selected.targetHref && <Link href={selected.targetHref} className="ml-auto text-[10px] text-[var(--i-signal)]">Open in {words(selected.owner)} ↗</Link>}
             </div>
           </div>}
