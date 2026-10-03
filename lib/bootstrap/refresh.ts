@@ -159,13 +159,19 @@ export async function auditActivatedBootstrapRefresh(
       sourceId: null, contextSnapshotId: snapshot.id, issueCount: 0,
       findingCount: proposals.length, model: REFRESH_AUDIT_MODEL,
     } });
-    for (const item of proposals) await tx.finding.create({ data: {
-      sourceId: null, auditRunId: audit.id, contextSnapshotId: snapshot.id,
-      type: item.type, title: item.title, quote: item.rationale, rationale: item.rationale,
-      severity: item.severity, blocking: false, matchedIssues: [], evidenceRefs: [item.ref],
-    } });
+    // Quote-complete refreshes can carry hundreds of observations. Individual
+    // inserts exhausted Prisma's five-second transaction deadline on staging
+    // after the package pointer had advanced. Keep snapshot + Audit atomic,
+    // but bound database round trips instead of paying one per finding.
+    for (let offset = 0; offset < proposals.length; offset += 250) {
+      await tx.finding.createMany({ data: proposals.slice(offset, offset + 250).map((item) => ({
+        sourceId: null, auditRunId: audit.id, contextSnapshotId: snapshot.id,
+        type: item.type, title: item.title, quote: item.rationale, rationale: item.rationale,
+        severity: item.severity, blocking: false, matchedIssues: [], evidenceRefs: [item.ref],
+      })) });
+    }
     return { snapshot, audit: await tx.auditRun.findUniqueOrThrow({ where: { id: audit.id }, include: { findings: true } }), reused: false, canonicalWrites: 0 };
-  }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+  }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable, timeout: 30_000 });
   if (result.audit) {
     const inbox = await syncRefreshChangeProposals({
       scopeId: bootstrap.activation.scopeId,
