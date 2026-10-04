@@ -4,7 +4,7 @@ import { remainingIssuesFor } from "@/lib/forecast/build";
 import type { ProjectContextPackage } from "@/lib/context/package";
 
 export const SCOPE_PROPOSAL_CONTRACT_VERSION = "2.1" as const;
-export const SCOPE_PROPOSAL_COMPILER_VERSION = "scope-reconciler-three-source-2.4" as const;
+export const SCOPE_PROPOSAL_COMPILER_VERSION = "scope-reconciler-three-source-2.5" as const;
 
 export type ScopeProposalReleaseSignal = "likely_in" | "likely_out" | "boundary";
 export type ScopeProposalConfidence = "high" | "medium" | "low";
@@ -108,6 +108,8 @@ export interface CompiledScopeProposal {
     contextHash: string | null;
     contextProducer: string | null;
     contextRefCount: number;
+    /** Kept in source/Audit history, not treated as local product shape. */
+    contextOtherProjectRefCount?: number;
     realityCapabilityCount: number;
     activeRelease: {
       name: string | null;
@@ -136,6 +138,7 @@ export interface CompiledScopeProposal {
 const STOP = new Set([
   "a", "an", "and", "as", "at", "be", "by", "for", "from", "in", "into", "is", "it", "jsa", "of", "on", "or", "the", "this", "to", "with",
   "flow", "feature", "capability", "support", "workflow", "output", "work", "people", "user", "users", "can", "current",
+  "kit", "itrack", "review", "release", "beta", "production",
 ]);
 const BROAD_TOPICS = new Set([
   "jsa", "scope", "beta", "release", "prod", "production", "design", "team", "schedule", "safety", "qa", "infra", "infrastructure",
@@ -171,7 +174,7 @@ function normalize(value: string): string {
     .replace(/post[- ]beta/g, "postbeta")
     .replace(/job[- ]leads?/g, "job lead")
     .replace(/\bsubmitted\b/g, "submission")
-    .replace(/\bdecide(d)?\b|\breview(ing|ed)?\b/g, "approval")
+    .replace(/\bdecide(d)?\b/g, "approval")
     .replace(/[^a-z0-9]+/g, " ")
     .trim();
 }
@@ -180,7 +183,28 @@ function tokens(value: string): string[] {
   return [...new Set(normalize(value).split(/\s+/).filter((token) => token.length > 1 && !STOP.has(token)))];
 }
 
+/** Explicit product qualifiers in the existing KIT vocabulary. Unknown or
+ * unqualified names are NOT rejected. Do not infer ownership from prose that
+ * merely mentions another product, or equate a shared project with a feature. */
+function productQualifiers(value: string): string[] {
+  const text = normalizeBoundary(value);
+  const qualifiers: [RegExp, string][] = [
+    [/\bjsa\b|\bjob safety analysis\b/, "jsa"],
+    [/\bitrack\b/, "itrack"],
+    [/\bkit construct\b/, "construct"],
+    [/\bkit (?:design|precon)\b/, "design"],
+    [/\bkit platform\b|^platform$/, "platform"],
+  ];
+  return qualifiers.flatMap(([pattern, name]) => pattern.test(text) ? [name] : []);
+}
+
+function conflictingProducts(left: string, right: string): boolean {
+  const a = productQualifiers(left), b = productQualifiers(right);
+  return a.length > 0 && b.length > 0 && !a.some((name) => b.includes(name));
+}
+
 function similarity(left: string, right: string): { score: number; shared: string[] } {
+  if (conflictingProducts(left, right)) return { score: 0, shared: [] };
   const a = new Set(tokens(left));
   const b = new Set(tokens(right));
   const shared = [...a].filter((token) => b.has(token));
@@ -374,11 +398,13 @@ interface Candidate {
 }
 
 function contextMatches(candidate: Pick<Candidate, "title" | "description">, refs: ContextRefInternal[]): ContextRefInternal[] {
-  const search = `${candidate.title} ${candidate.description ?? ""}`;
   return refs.map((ref) => {
-    const lexical = Math.max(similarity(candidate.title, ref.searchable).score, similarity(search, ref.searchable).score);
-    const tag = Math.max(0, ...ref.topicTags.map((topic) => similarity(search, topic).score));
-    const explicit = ref.candidateTitle ? similarity(search, ref.candidateTitle).score : 0;
+    // Metadata, source paths and broad project tags are provenance, not
+    // corroboration. A broad description cannot supply a missing identity.
+    const lexical = similarity(candidate.title, ref.statement).score;
+    const tag = Math.max(0, ...ref.topicTags.filter((topic) => !BROAD_TOPICS.has(normalize(topic))).map((topic) => similarity(candidate.title, topic).score));
+    const explicit = ref.candidateTitle ? similarity(candidate.title, ref.candidateTitle).score : 0;
+    if (ref.candidateTitle && conflictingProducts(candidate.title, ref.candidateTitle)) return { ref, score: 0, exact: false };
     return { ref, score: Math.max(lexical, tag, explicit), exact: explicit >= 0.8 || tag >= 0.8 };
   }).filter((match) => match.exact || match.score >= 0.42)
     .sort((a, b) => Number(b.exact) - Number(a.exact) || b.score - a.score || a.ref.id.localeCompare(b.ref.id))
@@ -388,8 +414,7 @@ function contextMatches(candidate: Pick<Candidate, "title" | "description">, ref
 function mergeCandidate(candidates: Candidate[], title: string, description: string | null, key: string, explicitKnowledge: boolean) {
   const ranked = candidates.map((candidate) => {
     const titleMatch = similarity(title, candidate.title);
-    const fullMatch = similarity(`${title} ${description ?? ""}`, `${candidate.title} ${candidate.description ?? ""}`);
-    return { candidate, score: Math.max(titleMatch.score, fullMatch.score), shared: titleMatch.score >= fullMatch.score ? titleMatch.shared : fullMatch.shared };
+    return { candidate, score: titleMatch.score };
   })
     .sort((a, b) => b.score - a.score || a.candidate.title.localeCompare(b.candidate.title));
   if (ranked[0]?.score >= 0.58 && (!ranked[1] || ranked[0].score - ranked[1].score >= 0.12)) {
@@ -486,7 +511,17 @@ export function compileScopeProposal(input: {
   }
   const linearGroups = [...grouped.values()].sort((a, b) => a.key.localeCompare(b.key));
   const activeRelease = resolveActiveRelease(input.activeReleaseNames, input.issues);
-  const refs = contextRefs(input.snapshot, activeRelease);
+  const allRefs = contextRefs(input.snapshot, activeRelease);
+  const activeProducts = productQualifiers(activeRelease.name ?? "");
+  const refs = allRefs.filter((ref) => {
+    // Only an explicit feature qualifier or structured project tag can
+    // establish a foreign boundary. Keep shared/unknown context, and retain
+    // direct mappings to this project's work for deliberate operator review.
+    const titleProducts = productQualifiers(ref.candidateTitle ?? "");
+    const products = titleProducts.length ? titleProducts : ref.topicTags.flatMap(productQualifiers);
+    return !activeProducts.length || !products.length || products.some((name) => activeProducts.includes(name))
+      || ref.explicitIssueIds.some((id) => allById.has(id));
+  });
   const activeWorkOwners = new Map<string, { capabilityId: string; capabilityName: string; capabilityStatus: string }[]>();
   for (const capability of input.capabilities) {
     for (const link of capability.workLinks.filter((item) => item.state === "active" || item.state === "configured")) {
@@ -553,7 +588,7 @@ export function compileScopeProposal(input: {
       const fullMatch = similarity(groupText, `${candidate.title} ${candidate.description ?? ""}`);
       // Broad descriptions often mention several features. They may reinforce
       // a title match, but must not tie an exact feature title by mentioning it.
-      return { candidate, score: Math.max(titleMatch.score, fullMatch.score * 0.7), shared: titleMatch.score >= fullMatch.score * 0.7 ? titleMatch.shared : fullMatch.shared };
+      return { candidate, score: titleMatch.score >= 0.48 ? Math.max(titleMatch.score, fullMatch.score * 0.7) : 0 };
     })
       .sort((a, b) => b.score - a.score || a.candidate.title.localeCompare(b.candidate.title));
     const best = ranked[0];
@@ -620,7 +655,7 @@ export function compileScopeProposal(input: {
     const confidence: ScopeProposalConfidence = confidenceScore >= 78 ? "high" : confidenceScore >= 52 ? "medium" : "low";
     const matchState: ScopeProposalMatchState = conflicts.length ? "conflict" : corroborated ? "corroborated" : linearOnly ? "unresolved" : confidence === "high" && action === "link_existing" ? "confidently_matched" : "suggested";
     const signals = [
-      ...(candidate.knowledgeRefs.length ? [`Knowledge contributes ${candidate.knowledgeRefs.length} current, cited ${candidate.knowledgeRefs.length === 1 ? "signal" : "signals"}.`] : ["No current structured-knowledge candidate safely matched."]),
+      ...(candidate.knowledgeRefs.length ? [`Knowledge contributes ${candidate.knowledgeRefs.length} matched source ${candidate.knowledgeRefs.length === 1 ? "record" : "records"}; inspect its observation date and citations before using it as current release evidence.`] : ["No current structured-knowledge candidate safely matched."]),
       ...(target ? [`Accepted Scope Reality contributes “${target.name}” at revision ${target.revision}.`] : ["No accepted Scope Reality capability safely matched."]),
       ...(linearIssues.length ? [`Linear contributes ${linearIssues.length} executable ${linearIssues.length === 1 ? "item" : "items"}${candidate.linearGroups[0]?.parent ? ` under ${candidate.linearGroups.map((group) => group.parent?.identifier).filter(Boolean).join(", ")}` : " without a product-shape parent"}.`] : ["No current executable Linear work safely matched."]),
     ];
@@ -679,6 +714,7 @@ export function compileScopeProposal(input: {
     contextHash: input.snapshot?.contextHash ?? null,
     contextProducer: input.snapshot?.producer ?? null,
     contextRefCount: refs.length,
+    contextOtherProjectRefCount: allRefs.length - refs.length,
     realityCapabilityCount: input.capabilities.length,
     activeRelease,
     completeness: input.snapshot?.completenessSummary ?? null,

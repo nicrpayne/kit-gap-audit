@@ -1,6 +1,7 @@
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { currentContextSnapshot } from "@/lib/context/currentSnapshot";
+import { SCOPE_PROPOSAL_COMPILER_VERSION } from "@/lib/scope/proposal";
 import { invalidateDerivedReads, recomputeDerivedReads } from "@/lib/audit/derivedRefresh";
 import {
   acceptedCapabilityEstimate,
@@ -552,6 +553,9 @@ export async function commitScopeProposal(
     if (!proposal) throw new ScopeRealityInputError("Scope proposal not found.");
     if (proposal.status !== "active") {
       throw new ScopeRealityConflictError("This proposal is stale or already committed. Refresh Scope before saving.");
+    }
+    if (proposal.compilerVersion !== SCOPE_PROPOSAL_COMPILER_VERSION) {
+      throw new ScopeRealityConflictError("Matching rules changed after this proposal was reviewed. Refresh Scope before saving.");
     }
     const currentSnapshot = await currentContextSnapshot(scopeId, tx);
     if ((currentSnapshot?.id ?? null) !== proposal.contextSnapshotId) {

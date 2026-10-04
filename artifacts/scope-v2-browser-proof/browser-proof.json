@@ -2,7 +2,7 @@
   "ok": true,
   "fixtureProvenance": "mocked browser read model and mocked estimate PUT; no database persistence provenance",
   "authenticationModes": [
-    "loopback_http_cookie_clone"
+    "not_required"
   ],
   "proposalCards": 16,
   "overviewMode": true,

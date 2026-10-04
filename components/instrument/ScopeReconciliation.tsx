@@ -21,6 +21,7 @@ export interface ScopeProposalView {
     contextAcceptedAt: string | null;
     contextProducer: string | null;
     contextRefCount: number;
+    contextOtherProjectRefCount?: number;
     realityCapabilityCount: number;
     activeRelease?: {
       name: string | null;
@@ -200,6 +201,7 @@ export default function ScopeReconciliation(props: {
             <button onClick={onCommit} disabled={selections.length === 0 || committing || Boolean(proposal?.stale)} className="flex-1 rounded-md px-3 py-2.5 text-[10px] font-medium disabled:opacity-30" style={{ border: "1px solid var(--i-signal)", color: "var(--i-signal)", background: "color-mix(in srgb, var(--i-signal) 6%, transparent)" }} data-shoot="commit-reconciled-scope">{committing ? "Committing…" : selections.length > 0 ? `Commit ${selections.length} to Reality` : "Commit staged to Reality"}</button>
           </div>
           <p id="bulk-stage-explanation" className="mt-2 text-[9px] leading-snug text-[var(--i-text-faint)]" data-shoot="bulk-stage-explanation">{bulkExplanation}</p>
+          {Boolean(proposal?.sourceWatermark.contextOtherProjectRefCount) && <p className="mt-2 text-[9px] leading-snug text-[var(--i-text-faint)]" data-shoot="other-project-context-note">{proposal!.sourceWatermark.contextOtherProjectRefCount} other-project source records kept in Audit, not used as this project’s feature suggestions.</p>}
           {selections.length > 0 && <div className="mt-2 rounded-md px-2.5 py-2 text-[10px] font-medium text-[var(--i-violet)]" style={{ border: "1px solid color-mix(in srgb, var(--i-violet) 45%, var(--i-border))", background: "color-mix(in srgb, var(--i-violet) 8%, var(--i-recess))" }} role="status" aria-live="polite" data-shoot="reconciliation-scenario-feedback">Scenario · {selections.length} reviewed {selections.length === 1 ? "change" : "changes"} staged. Reality is unchanged.</div>}
           {commitError && <p className="mt-2 text-[10px] leading-snug text-[var(--i-red)]" data-shoot="reconciliation-conflict">{commitError}</p>}
           {committed && <p className="mt-2 text-[10px] text-[var(--i-mint)]">Reality committed and derived truth refreshed.</p>}
@@ -312,7 +314,8 @@ function ReconciliationFocus({ item, nextItem, selection, capabilities, committi
       </section>
 
       <section className="p-6" style={{ borderRight: "1px solid var(--i-border)" }} data-shoot="proposal-evidence-inspection">
-        <FocusHeading eyebrow="Structured evidence" title={`${item.provenance.contextRefs.length} current references`} />
+        <FocusHeading eyebrow="Structured evidence" title={`${item.provenance.contextRefs.length} matched references`} />
+        <p className="mt-2 text-[10px] leading-relaxed text-[var(--i-text-faint)]">Matched does not mean recently confirmed. Check each observation date and the release it describes.</p>
         <div className="mt-4 rounded-lg p-3.5" style={{ border: "1px solid color-mix(in srgb, var(--i-signal) 35%, var(--i-border))", background: "color-mix(in srgb, var(--i-signal) 5%, var(--i-recess))" }} data-shoot="focus-release-boundary">
           <div className="text-[9px] uppercase tracking-[0.14em] text-[var(--i-signal)]">Release interpretation</div>
           <div className="mt-1.5 text-[12px] font-medium text-[var(--i-text)]">{releaseInterpretation.activeRelease ? `Interpreted for ${releaseInterpretation.activeRelease}` : "Active release unresolved"}</div>

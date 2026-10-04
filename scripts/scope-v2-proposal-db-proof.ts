@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { prisma } from "../lib/prisma";
 import { commitScopeProposal, ScopeRealityConflictError } from "../lib/scope/reality";
+import { SCOPE_PROPOSAL_COMPILER_VERSION } from "../lib/scope/proposal";
 
 async function main() {
   const scope = await prisma.scope.create({ data: {
@@ -26,7 +27,7 @@ async function main() {
     })) });
     const proposal = await prisma.scopeProposal.create({ data: {
       scopeId: scope.id,
-      compilerVersion: "scope-reconciler-three-source-2.1",
+      compilerVersion: "scope-reconciler-three-source-2.4",
       fingerprint: "db-proof-1",
       sourceWatermark: { linearAsOf: "2026-09-15T18:00:00.000Z" },
       summary: { likelyIn: 2, likelyOut: 0, boundaryReview: 0, confidentlyMatched: 2, suggested: 2, unresolved: 0 },
@@ -57,8 +58,19 @@ async function main() {
       releaseStatus: "accepted" as const,
     }));
 
+    const before = await prisma.capability.findMany({ where: { scopeId: scope.id }, include: { workLinks: true, events: true } });
+    await assert.rejects(
+      () => commitScopeProposal(scope.id, proposal.id, selections, work, "scope-v2-db-proof-old-compiler"),
+      /Matching rules changed/,
+      "An already-open browser cannot commit proposals made by superseded matching rules",
+    );
+    assert.deepEqual(await prisma.capability.findMany({ where: { scopeId: scope.id }, include: { workLinks: true, events: true } }), before);
+    assert.equal(await prisma.scopeProposalEvent.count({ where: { proposalId: proposal.id } }), 0);
+    await prisma.scopeProposal.update({ where: { id: proposal.id }, data: { compilerVersion: SCOPE_PROPOSAL_COMPILER_VERSION } });
     const first = await commitScopeProposal(scope.id, proposal.id, selections, work, "scope-v2-db-proof-commit");
     assert.equal(first.changed, true);
+    // A deployment must not break retries of an already completed operation.
+    await prisma.scopeProposal.update({ where: { id: proposal.id }, data: { compilerVersion: "scope-reconciler-three-source-2.4" } });
     const replay = await commitScopeProposal(scope.id, proposal.id, selections, work, "scope-v2-db-proof-commit");
     assert.equal(replay.changed, false, "same idempotency key must replay without a second write");
 
@@ -71,7 +83,7 @@ async function main() {
     assert.equal((await prisma.scopeProposal.findUniqueOrThrow({ where: { id: proposal.id } })).status, "committed");
 
     const conflicting = await prisma.scopeProposal.create({ data: {
-      scopeId: scope.id, compilerVersion: "scope-reconciler-three-source-2.1", fingerprint: "db-proof-2",
+      scopeId: scope.id, compilerVersion: SCOPE_PROPOSAL_COMPILER_VERSION, fingerprint: "db-proof-2",
       sourceWatermark: {}, summary: {}, items: { create: {
         candidateKey: "reality:notifications:stale", title: "Notifications", origins: ["knowledge", "reality", "linear"], reconciliationState: "aligned", conflicts: [], releaseSignal: "likely_in", confidence: "high", confidenceScore: 90,
         matchState: "confidently_matched", action: "link_existing", targetCapabilityId: capability.id, targetRevision: 1,
@@ -83,7 +95,7 @@ async function main() {
       ScopeRealityConflictError,
     );
 
-    console.log(JSON.stringify({ ok: true, idempotentReplay: true, reviewedSubsetApplied: true, sharedTargetBatchApplied: true, optimisticConflictRejected: true, capabilityCount: reality.length, workLinkCount: 4, eventCount: 3 }, null, 2));
+    console.log(JSON.stringify({ ok: true, outdatedMatchingRejectedWithoutWrites: true, idempotentReplayAcrossCompilerChange: true, reviewedSubsetApplied: true, sharedTargetBatchApplied: true, optimisticConflictRejected: true, capabilityCount: reality.length, workLinkCount: 4, eventCount: 3 }, null, 2));
   } finally {
     await prisma.scope.delete({ where: { id: scope.id } });
     await prisma.$disconnect();
