@@ -47,8 +47,10 @@ export default function DecisionsPageClient() {
   const [showDismissed, setShowDismissed] = useState(false);
   const [busy, setBusy] = useState(false);
   const [tool, setTool] = useState<"new" | "import" | "connect" | null>(null);
+  const [candidateError, setCandidateError] = useState<string | null>(null);
 
   const selectObject = useCallback((nextSelection: Selection) => {
+    setCandidateError(null);
     setSelection(nextSelection);
     const next = new URLSearchParams(params.toString());
     if (nextSelection) next.set("select", `${nextSelection.kind}:${nextSelection.id}`);
@@ -217,13 +219,31 @@ export default function DecisionsPageClient() {
     [run, write]
   );
 
+  // A rejected candidate write must remain visible even when refresh removes
+  // the stale candidate from the tray. Read errors and write errors differ.
+  const writeCandidate = useCallback(async (url: string, init: RequestInit) => {
+    setCandidateError(null);
+    try {
+      const res = await run(() => write(url, init));
+      if (!res.ok) {
+        setCandidateError(String(res.body.error ?? "Could not save that candidate action. Review the source and retry."));
+        return null;
+      }
+      return res;
+    } catch {
+      setCandidateError("Connection interrupted. The result could not be confirmed. Refresh and retry; do not assume the action was saved.");
+      return null;
+    }
+  }, [run, write]);
+
   const acceptCandidate = useCallback(
     async (id: string) => {
-      const res = await run(() => write(`/api/decision-candidates/${id}/accept`, { method: "POST" }));
+      const res = await writeCandidate(`/api/decision-candidates/${id}/accept`, { method: "POST" });
+      if (!res) return;
       const decision = res.body.decision as { id?: string } | undefined;
       if (decision?.id) selectObject({ kind: "decision", id: decision.id });
     },
-    [run, write, selectObject]
+    [writeCandidate, selectObject]
   );
 
   const scopeNameById = useMemo(() => new Map(scopes.map((s) => [s.id, s.name])), [scopes]);
@@ -513,6 +533,7 @@ export default function DecisionsPageClient() {
         </div>
 
         <DecisionInspector
+          candidateError={candidateError}
           decision={selectedDecision}
           candidate={selectedCandidate}
           assumed={!!selectedDecision?.gate && project.scenario.resolvedGateIds.has(selectedDecision.gate.id)}
@@ -531,19 +552,17 @@ export default function DecisionsPageClient() {
           onAcceptCandidate={() => selectedCandidate && void acceptCandidate(selectedCandidate.id)}
           onDismissCandidate={async () => {
             if (!selectedCandidate) return;
-            const res = await run(() => write(`/api/decision-candidates/${selectedCandidate.id}/dismiss`, { method: "POST" }));
-            if (!res.ok) return;
+            const res = await writeCandidate(`/api/decision-candidates/${selectedCandidate.id}/dismiss`, { method: "POST" });
+            if (!res) return;
             selectObject(null);
           }}
           onAttachToExisting={async (decisionId) => {
             if (!selectedCandidate) return;
-            const res = await run(() =>
-              write(`/api/decisions/${decisionId}/evidence`, {
+            const res = await writeCandidate(`/api/decisions/${decisionId}/evidence`, {
                 method: "POST",
                 body: JSON.stringify({ fromCandidateId: selectedCandidate.id }),
-              })
-            );
-            if (!res.ok) return;
+              });
+            if (!res) return;
             selectObject({ kind: "decision", id: decisionId });
           }}
           attachTargets={attachTargetsFor(decisions, selectedCandidate?.scopeId ?? null)}

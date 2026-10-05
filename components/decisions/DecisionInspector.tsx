@@ -68,6 +68,7 @@ export default function DecisionInspector({
   onAttachToExisting,
   attachTargets,
   busy,
+  candidateError,
 }: {
   decision: DecisionRow | null;
   candidate: CandidateRow | null;
@@ -84,6 +85,7 @@ export default function DecisionInspector({
       existing decision instead of creating a second one" path. */
   attachTargets: DecisionRow[];
   busy: boolean;
+  candidateError: string | null;
 }) {
   return (
     <aside
@@ -106,6 +108,11 @@ export default function DecisionInspector({
         </button>
       </div>
 
+      {candidateError && (
+        <div role="alert" data-shoot="candidate-action-error" className="shrink-0 px-4 py-3 text-[11.5px] leading-relaxed" style={{ color: "var(--i-amber)", borderBottom: "1px solid var(--i-border)" }}>
+          {candidateError}
+        </div>
+      )}
       <div className="flex min-h-0 flex-1 flex-col">
         {candidate ? (
           <CandidateBody
