@@ -94,7 +94,7 @@
     if (url.pathname === '/api/search') {
       const q = (url.searchParams.get('q') || '').trim();
       if (!q) return json({ results: [] });
-      const response = await nativeFetch(endpoint('search', q));
+      const response = await nativeFetch(endpoint('search', q), { signal: init && init.signal });
       return new Response(await response.text(), { status: response.status, headers: { 'content-type': 'application/json' } });
     }
     if (url.pathname === '/api/expand') return json({ nodes: [] });
@@ -372,7 +372,7 @@
   function restoreSearch() {
     const input = document.getElementById('brain-search');
     const results = document.getElementById('brain-results');
-    if (input) input.value = '';
+    if (input) { input.value = ''; input.dispatchEvent(new Event('input', { bubbles: true })); }
     if (input) input.setAttribute('aria-expanded', 'false');
     if (results) { results.innerHTML = ''; results.style.display = 'none'; }
     if (searchRestore) {

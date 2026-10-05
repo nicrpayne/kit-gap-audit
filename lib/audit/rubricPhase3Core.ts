@@ -1,5 +1,5 @@
 /**
- * The Phase 3 Rubric extension is deliberately expressed as five guarded
+ * The Phase 3 Rubric extension is deliberately expressed as guarded
  * textual patches over the accepted, byte-identical Phase 1 `_core.js`.
  *
  * This keeps the actual Rubric chassis reviewable: if upstream source moves,
@@ -16,6 +16,38 @@ export interface RubricCorePatch {
 }
 
 export const PHASE_3_CORE_PATCHES: RubricCorePatch[] = [
+  {
+    id: "cancel-obsolete-search",
+    purpose: "Cancel pending search when the query changes, clears, or the Audit page unloads.",
+    before: ["let debounce = null;", "    input.oninput = () => {", "      clearTimeout(debounce);"].join("\r\n"),
+    after: `let debounce = null;
+    let searchController = null;
+    const cancelSearch = () => { clearTimeout(debounce); if (searchController) searchController.abort(); };
+    window.addEventListener('pagehide', cancelSearch);
+    input.oninput = () => {
+      cancelSearch();
+      results.innerHTML = ''; results.style.display = 'none';`,
+  },
+  {
+    id: "handle-search-failure-and-stale-results",
+    purpose: "Handle search read failures explicitly and never revive results for a cleared or superseded query.",
+    before: ["const r = await fetch('/api/search?q=' + encodeURIComponent(q));", "        const d = await r.json();"].join("\r\n"),
+    after: `const request = new AbortController();
+        searchController = request;
+        let d;
+        try {
+          const r = await fetch('/api/search?q=' + encodeURIComponent(q), { signal: request.signal });
+          if (!r.ok) throw new Error('Search unavailable');
+          d = await r.json();
+        } catch {
+          if (!request.signal.aborted && input.value.trim() === q) {
+            results.style.display = 'block';
+            results.innerHTML = '<div class="res-none" role="status">Search unavailable. Try again.</div>';
+          }
+          return;
+        }
+        if (request.signal.aborted || input.value.trim() !== q) return;`,
+  },
   {
     id: "preserve-link-semantics",
     purpose: "Carry canonical basis/currentness metadata through Rubric's native link aggregation.",
