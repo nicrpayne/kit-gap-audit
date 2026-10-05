@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { currentContextSnapshot } from "@/lib/context/currentSnapshot";
 
 // ATTACH EVIDENCE TO AN EXISTING DECISION.
 //
@@ -35,19 +36,31 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   // Folding a candidate in: its cited excerpts move across verbatim, and
   // the candidate is consumed. No second canonical Decision is born.
   if (body.fromCandidateId) {
-    const candidate = await prisma.decisionCandidate.findUnique({ where: { id: body.fromCandidateId } });
-    if (!candidate) return NextResponse.json({ error: "Candidate not found" }, { status: 404 });
-    if (candidate.status === "accepted") {
-      return NextResponse.json({ error: "That candidate has already been accepted." }, { status: 409 });
-    }
-    const rows = await prisma.$transaction(async (tx) => {
+    try {
+    const result = await prisma.$transaction(async (tx) => {
+      const target = await tx.decision.findUniqueOrThrow({ where: { id }, select: { scopeId: true } });
+      const candidate = await tx.decisionCandidate.findUnique({ where: { id: body.fromCandidateId } });
+      if (!candidate) throw new CandidateEvidenceConflict("Candidate not found.");
+      if (candidate.scopeId !== target.scopeId) throw new CandidateEvidenceConflict("Choose a Decision in the candidate's own project.");
+      if (candidate.status === "accepted") {
+        if (candidate.acceptedDecisionId === id) return { evidence: [], attachedFromCandidate: candidate.id, alreadyAttached: true };
+        throw new CandidateEvidenceConflict("That candidate has already been accepted against another Decision.");
+      }
+      if (candidate.status !== "pending") throw new CandidateEvidenceConflict("That candidate was dismissed. Review a pending candidate instead.");
+      const manual = candidate.contextSnapshotId === null && candidate.claimKey.startsWith("paste:");
+      if (!manual) {
+        const current = await currentContextSnapshot(candidate.scopeId, tx);
+        if (!candidate.contextSnapshotId || current?.id !== candidate.contextSnapshotId) {
+          throw new CandidateEvidenceConflict("Knowledge changed. Review a candidate from the current source before attaching evidence.");
+        }
+      }
       const made = [];
       for (let i = 0; i < candidate.excerpts.length; i++) {
         made.push(
           await tx.decisionEvidence.create({
             data: {
               decisionId: id,
-              kind: "context_package",
+              kind: manual ? "manual" : "context_package",
               excerpt: candidate.excerpts[i],
               contextSnapshotId: candidate.contextSnapshotId,
               evidenceItemId: candidate.evidenceRefs[i] ?? null,
@@ -60,9 +73,12 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         where: { id: candidate.id },
         data: { status: "accepted", acceptedDecisionId: id },
       });
-      return made;
-    });
-    return NextResponse.json({ evidence: rows, attachedFromCandidate: candidate.id });
+      return { evidence: made, attachedFromCandidate: candidate.id, alreadyAttached: false };
+    }, { isolationLevel: "Serializable" });
+    return NextResponse.json(result);
+    } catch (error) {
+      return NextResponse.json({ error: error instanceof CandidateEvidenceConflict ? error.message : "Evidence inputs changed or could not be read. Refresh and retry; the attachment was not saved." }, { status: 409 });
+    }
   }
 
   const excerpt = body.excerpt?.trim();
@@ -85,3 +101,5 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   });
   return NextResponse.json({ evidence: [evidence] });
 }
+
+class CandidateEvidenceConflict extends Error {}

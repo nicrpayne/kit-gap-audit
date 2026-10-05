@@ -531,17 +531,19 @@ export default function DecisionsPageClient() {
           onAcceptCandidate={() => selectedCandidate && void acceptCandidate(selectedCandidate.id)}
           onDismissCandidate={async () => {
             if (!selectedCandidate) return;
-            await run(() => write(`/api/decision-candidates/${selectedCandidate.id}/dismiss`, { method: "POST" }));
+            const res = await run(() => write(`/api/decision-candidates/${selectedCandidate.id}/dismiss`, { method: "POST" }));
+            if (!res.ok) return;
             selectObject(null);
           }}
           onAttachToExisting={async (decisionId) => {
             if (!selectedCandidate) return;
-            await run(() =>
+            const res = await run(() =>
               write(`/api/decisions/${decisionId}/evidence`, {
                 method: "POST",
                 body: JSON.stringify({ fromCandidateId: selectedCandidate.id }),
               })
             );
+            if (!res.ok) return;
             selectObject({ kind: "decision", id: decisionId });
           }}
           attachTargets={attachTargetsFor(decisions, selectedCandidate?.scopeId ?? null)}
