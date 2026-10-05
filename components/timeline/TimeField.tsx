@@ -1436,6 +1436,7 @@ export default function TimeField({
                 <rect
                   x={0} y={HEADER_H + box.top} width={view.width} height={box.height}
                   fill="var(--i-text)" opacity={box.expanded ? 0.028 : 0.02}
+                  pointerEvents="none"
                 />
               )}
               {/* THE PROJECT THE STORY IS IN. Not a highlight competing with
@@ -1447,6 +1448,7 @@ export default function TimeField({
                   data-shoot={`lane-woken-${box.scopeId}`}
                   x={0} y={HEADER_H + box.top} width={view.width} height={box.height}
                   fill="var(--i-violet)" opacity={0.05}
+                  pointerEvents="none"
                   style={reducedMotion ? undefined : { transition: "opacity 260ms ease" }}
                 />
               )}

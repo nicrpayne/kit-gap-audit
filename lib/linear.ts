@@ -28,7 +28,7 @@ export interface LinearIssueSummary {
   description: string | null;
   state: string;
   // Workflow state type: triage | backlog | unstarted | started | completed
-  // | canceled. Distinct from `state` (the display name, e.g. "In Review")
+  // | canceled | duplicate. Distinct from `state` (the display name, e.g. "In Review")
   // -- needed to tell "done" from "remaining" work for the Forecast engine.
   stateType: string;
   estimate: number | null;
@@ -37,6 +37,7 @@ export interface LinearIssueSummary {
   // Null unless the issue is in a "completed" state. Powers "what shipped
   // since the last report" without a second fetch.
   completedAt: string | null;
+  canceledAt?: string | null;
   /** Linear's canonical content-update timestamp. Optional so historical
       fixtures remain valid; live reads always request it. */
   updatedAt?: string | null;
@@ -76,6 +77,7 @@ const SCOPED_ISSUES_QUERY = `
         description
         estimate
         completedAt
+        canceledAt
         updatedAt
         state { name type }
         assignee { name }
@@ -97,6 +99,7 @@ interface ScopedIssuesQueryData {
       description: string | null;
       estimate: number | null;
       completedAt: string | null;
+      canceledAt: string | null;
       updatedAt: string;
       state: { name: string; type: string } | null;
       assignee: { name: string } | null;
@@ -169,7 +172,7 @@ async function readScopedIssues(scope: ScopeFilter): Promise<LinearIssueSummary[
 
   const filter: LinearDocument.IssueFilter = {
     team: { key: { eq: scope.teamKey } },
-    state: { type: { nin: ["canceled"] } },
+    state: { type: { nin: ["canceled", "duplicate"] } },
   };
   if (projectNames.length > 0) {
     filter.project = { name: { in: projectNames } };
@@ -201,6 +204,7 @@ async function readScopedIssues(scope: ScopeFilter): Promise<LinearIssueSummary[
         assignee: node.assignee?.name ?? null,
         labels: node.labels.nodes.map((l) => l.name),
         completedAt: node.completedAt ?? null,
+        canceledAt: node.canceledAt ?? null,
         updatedAt: node.updatedAt ?? null,
         parentIdentifier: node.parent?.identifier ?? null,
         parentTitle: node.parent?.title ?? null,

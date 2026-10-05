@@ -2,6 +2,14 @@ import { createHash } from "node:crypto";
 import type { Prisma } from "@prisma/client";
 import { COMPANION_ONLINE_MS } from "@/lib/bootstrap/jobs";
 
+export class ReportOwnerInputsChangedError extends Error {
+  readonly code = "REPORT_INPUTS_CHANGED";
+  constructor() {
+    super("Report inputs changed during generation. No report was saved. Refresh, review the current project inputs, and try again.");
+    this.name = "ReportOwnerInputsChangedError";
+  }
+}
+
 /** Optimistic guard around slow report assembly. No provider I/O in the final
  * transaction. Include the whole portfolio: upstream work and donor staffing
  * can affect a selected project's result. Raw values are hashed in memory,

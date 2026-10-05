@@ -42,9 +42,12 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
 
   try {
   const decision = await prisma.$transaction(async (tx) => {
-    const current = await currentContextSnapshot(candidate.scopeId, tx);
-    if (!candidate.contextSnapshotId || current?.id !== candidate.contextSnapshotId) {
-      throw new Error("Knowledge changed. Review a candidate from the current source before accepting.");
+    const manual = candidate.contextSnapshotId === null && candidate.claimKey.startsWith("paste:");
+    if (!manual) {
+      const current = await currentContextSnapshot(candidate.scopeId, tx);
+      if (!candidate.contextSnapshotId || current?.id !== candidate.contextSnapshotId) {
+        throw new Error("Knowledge changed. Review a candidate from the current source before accepting.");
+      }
     }
     const created = await tx.decision.create({
       data: {
@@ -61,7 +64,7 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
       await tx.decisionEvidence.create({
         data: {
           decisionId: created.id,
-          kind: "context_package",
+          kind: manual ? "manual" : "context_package",
           excerpt: candidate.excerpts[i],
           contextSnapshotId: candidate.contextSnapshotId,
           evidenceItemId: candidate.evidenceRefs[i] ?? null,

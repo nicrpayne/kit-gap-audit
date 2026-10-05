@@ -54,6 +54,7 @@ interface ScenarioInspectorProps {
   baseline: SimulationResult | undefined;
   preview: SimulationResult | undefined;
   dirty: boolean;
+  realityCoverage?: ForecastCoverageContract;
   /** Scopes carrying a scenario change -- NOT the same as the selected one. */
   changedScopeNames: string[];
   dependsOn: DependencyDelta[];
@@ -82,6 +83,7 @@ export default function ScenarioInspector({
   baseline,
   preview,
   dirty,
+  realityCoverage,
   changedScopeNames,
   dependsOn,
   dependents,
@@ -139,7 +141,7 @@ export default function ScenarioInspector({
     <aside
       className="shrink-0 hidden xl:flex flex-col overflow-y-auto"
       style={{ width: 296, background: "var(--i-bg)", borderLeft: "1px solid var(--i-border)" }}
-      aria-label={`${scope.name} detail. ${claim.accessibleLabel}`}
+      aria-label={`${scope.name} detail. ${dirty ? "Scenario. " : ""}${claim.accessibleLabel}`}
     >
       {/* INSPECTING is structural/neutral. CHANGED is violet. They are
           different questions and must never share a visual state. */}
@@ -182,6 +184,13 @@ export default function ScenarioInspector({
             <div className="i-label text-[var(--i-amber)]">{claim.badge}</div>
             <div className="mt-1 text-[10px] leading-relaxed text-[var(--i-text-soft)]">{claim.detail ?? claim.targetConfidence}</div>
             <div className="mt-1 text-[9px] leading-relaxed text-[var(--i-text-faint)]">{claim.targetConfidence}</div>
+          </div>
+        )}
+
+        {dirty && (
+          <div className="mt-2 text-[10px] leading-relaxed text-[var(--i-text-faint)]" data-shoot="portfolio-scenario-coverage-basis">
+            Coverage above describes this Scenario. Accepted Reality is unchanged.
+            {realityCoverage && !realityCoverage.canonicalForecast && " Accepted Reality remains incomplete; review it before publishing a delivery report."}
           </div>
         )}
 

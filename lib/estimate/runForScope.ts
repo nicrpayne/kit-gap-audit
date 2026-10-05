@@ -4,7 +4,7 @@ import { getScopedIssues } from "@/lib/linear";
 import { runEstimation, issueEstimateInputs, findingEstimateInputs, type EstimateRunSummary } from "@/lib/estimate/run";
 import { buildReleaseContext, type ReleaseContext } from "@/lib/estimate/context";
 
-const DONE_STATE_TYPES = new Set(["completed", "canceled"]);
+import { isTerminalIssue } from "@/lib/linearIssueState";
 
 export interface EstimateForScopeResult {
   summary: EstimateRunSummary;
@@ -26,7 +26,7 @@ export async function runEstimationForScope(scope: Scope): Promise<EstimateForSc
 
   // Estimate everything not done -- including Triage, so flipping the
   // include-Triage toggle later doesn't require a new estimation run.
-  const openIssues = issues.filter((i) => !DONE_STATE_TYPES.has(i.stateType));
+  const openIssues = issues.filter((i) => !isTerminalIssue(i));
 
   // Same OR as lib/forecast/compute.ts's buildScopeSimInputs -- a Finding
   // may reach this Scope via a legacy audit Source or a package-derived

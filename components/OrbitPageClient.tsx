@@ -226,7 +226,7 @@ export default function OrbitPageClient() {
       <div className="flex-1 min-h-0 flex">
         {/* THE FIELD */}
         <div className="relative flex-1 min-w-0 flex items-center justify-center" style={{ background: "var(--i-void)" }}>
-          {centreClaim && centreClaim.state !== "forecastable" && (
+          {centreClaim && (centreClaim.state !== "forecastable" || m.active) && (
             <div
               role="status"
               aria-label={centreAccessibleLabel}
@@ -235,11 +235,12 @@ export default function OrbitPageClient() {
               style={{ borderColor: "var(--i-amber)", background: "var(--i-panel)", color: "var(--i-text-soft)" }}
             >
               <strong className="block text-[10px] tracking-wider" style={{ color: "var(--i-amber)" }}>
-                {centreClaim.badge}
+                {m.active ? "SCENARIO COVERAGE" : centreClaim.badge}
               </strong>
               <span className="block text-[var(--i-text)]">{centreClaim.outcome}</span>
               <span className="block">{centreClaim.detail}</span>
-              <span className="block">{centreClaim.targetConfidence}. {centreClaim.state === "modeled_subset" ? "Shown dates are modeled-subset consequences, not a full-project delivery forecast." : "No delivery date is claimed."}</span>
+              <span className="block">{centreClaim.targetConfidence}. {centreClaim.state === "modeled_subset" ? "Shown dates are modeled-subset consequences, not a full-project delivery forecast." : centreClaim.state === "unavailable" ? "No delivery date is claimed." : "This is a hypothetical modeled outcome, not an approved delivery commitment."}</span>
+              {m.active && <span className="block" data-shoot="orbit-scenario-coverage-basis">Coverage describes this Scenario. Accepted Reality is unchanged; this preview does not approve inputs or unlock delivery reports.</span>}
             </div>
           )}
           <svg

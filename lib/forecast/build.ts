@@ -1,4 +1,5 @@
 import type { LinearIssueSummary } from "@/lib/linear";
+import { isTerminalIssue } from "@/lib/linearIssueState";
 import type { ThreePoint, WorkItem, DecisionGate } from "./simulate";
 
 export interface FindingLike {
@@ -9,8 +10,6 @@ export interface FindingLike {
   blocking: boolean;
   estimateHint: string | null;
 }
-
-const DONE_STATE_TYPES = new Set(["completed", "canceled"]);
 
 function round1(n: number): number {
   return Math.round(n * 10) / 10;
@@ -175,7 +174,7 @@ export type CapacitySource = "allocations" | "explicit" | "inferred";
 // explanation read from one definition instead of two that can drift.
 export function remainingIssuesFor(issues: LinearIssueSummary[], includeTriage: boolean): LinearIssueSummary[] {
   const remaining = issues.filter(
-    (i) => !DONE_STATE_TYPES.has(i.stateType) && (includeTriage || i.stateType !== "triage")
+    (i) => !isTerminalIssue(i) && (includeTriage || i.stateType !== "triage")
   );
   const representedParents = new Set(
     remaining.map((i) => i.parentIdentifier).filter((id): id is string => id !== null)

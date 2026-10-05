@@ -275,6 +275,8 @@ export default function ControlRoomPageClient() {
       <div className="relative">
         <SignalControl
           data-shoot="cr-views"
+          aria-expanded={viewsOpen}
+          aria-controls="control-room-views-menu"
           onClick={() => setViewsOpen((v) => !v)}
           selected={viewsOpen}
           className="flex items-center gap-2 px-2.5 py-1.5 text-[11px] transition-colors"
@@ -289,8 +291,12 @@ export default function ControlRoomPageClient() {
           <>
             <div className="fixed inset-0 z-40" onClick={() => setViewsOpen(false)} />
             <div
+              id="control-room-views-menu"
               data-shoot="cr-views-menu"
               className="signal-widget absolute right-0 z-50 mt-1.5 w-[268px] overflow-hidden"
+              // signal-widget's unlayered panel rule otherwise overrides the
+              // Tailwind position utility and pushes the header out of view.
+              style={{ position: "absolute", top: "100%" }}
             >
               {LENSES.filter((l) => l.surfaces !== null || workspace.lens === "custom").map((l) => {
                 const active = workspace.lens === l.id;

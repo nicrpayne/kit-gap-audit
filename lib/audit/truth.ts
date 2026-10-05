@@ -1,3 +1,4 @@
+import { isTerminalIssue } from "@/lib/linearIssueState";
 // THE PROJECT TRUTH MODEL — what Audit actually knows, before anything is drawn.
 //
 // Audit answers one question: WHERE DOES ACCEPTED DELIVERY REALITY DISAGREE
@@ -279,7 +280,7 @@ export function buildTruthMap(input: TruthInputs): TruthMapModel {
 
   // ── EXECUTION (Linear) ───────────────────────────────────────────────
   const remaining = input.issues.filter(
-    (i) => i.stateType !== "completed" && i.stateType !== "canceled"
+    (i) => !isTerminalIssue(i)
   );
   const estimated = remaining.filter((i) => i.estimate != null);
   const linearSupplied = input.issues.length > 0;

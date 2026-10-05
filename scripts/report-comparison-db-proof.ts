@@ -374,7 +374,7 @@ async function main() {
     if (request === "server-only") return {};
     return Reflect.apply(originalModuleLoad, this, [request, parent, isMain]);
   };
-  const [{ generateReportComparison }, { loadDecisionBriefOwnerInputs }, { prisma: applicationPrisma }] = await Promise.all([
+  const [{ generateReport, generateReportComparison }, { loadDecisionBriefOwnerInputs }, { prisma: applicationPrisma }] = await Promise.all([
     import("../lib/reports/generate"),
     import("../lib/reports/readModel"),
     import("../lib/prisma"),
@@ -382,6 +382,80 @@ async function main() {
     moduleRuntime._load = originalModuleLoad;
   });
   applicationPrismaForCleanup = applicationPrisma;
+
+  // D01: standalone reports must have the same coherent owner boundary as
+  // comparisons. A caller holding an older Scope must not freeze its old target.
+  const freshTarget = new Date("2027-02-03T00:00:00.000Z");
+  await db.scope.update({ where: { id: scopeId }, data: { targetDate: freshTarget } });
+  const standalone = await generateReport(scope);
+  assert.equal(standalone.brief.headline.targetDate.value, "2027-02-03");
+  assert.equal(frozenQuote(standalone.brief), originalQuote);
+  assert.equal((await db.report.findUniqueOrThrow({ where: { id: standalone.report.id } })).mode, "reality");
+  await db.report.delete({ where: { id: standalone.report.id } });
+  await db.scope.update({ where: { id: scopeId }, data: { targetDate: scope.targetDate } });
+
+  // Real owner write after the forecast has been computed but before the
+  // Decision read returns. Intercept timing only, never the query's data.
+  const decisionDelegate = applicationPrisma.decision as unknown as {
+    findMany(args: unknown): Promise<unknown>;
+  };
+  const originalDecisionRead = decisionDelegate.findMany;
+  let standaloneMutationId: string | null = null;
+  decisionDelegate.findMany = async function (args: unknown) {
+    const query = args as { include?: { evidence?: { select?: { id?: boolean } } }; where?: { OR?: unknown } };
+    if (!standaloneMutationId && query?.include?.evidence?.select?.id && query?.where?.OR) {
+      await db.$transaction(async (tx) => {
+        const decision = await tx.decision.create({ data: {
+          scopeId, title: "Standalone proof shape question during owner assembly", status: "open",
+        } });
+        standaloneMutationId = decision.id;
+        await tx.projectDerivedState.update({ where: { scopeId }, data: { realityRevision: { increment: 1 } } });
+      });
+    }
+    return Reflect.apply(originalDecisionRead, this, [args]);
+  };
+  try {
+    await assert.rejects(() => generateReport(scope), (error: unknown) =>
+      error instanceof Error && error.name === "ReportOwnerInputsChangedError" &&
+      /No report was saved.*Refresh/.test(error.message));
+  } finally {
+    decisionDelegate.findMany = originalDecisionRead;
+  }
+  assert(standaloneMutationId, "the standalone owner interleaving actually ran");
+  assert.equal(await db.report.count({ where: { scopeId } }), 0, "mixed standalone owner inputs never persist");
+  await db.decision.delete({ where: { id: standaloneMutationId } });
+  await db.projectDerivedState.update({ where: { scopeId }, data: { realityRevision: 1 } });
+
+  // Also cover a mutation after assembly, at the final insert boundary, and
+  // prove the actual route returns an actionable conflict rather than a 502.
+  const standaloneTransactionHost = applicationPrisma as unknown as { $transaction: TransactionEntry };
+  const originalStandaloneTransaction = standaloneTransactionHost.$transaction;
+  let lateMutationId: string | null = null;
+  standaloneTransactionHost.$transaction = async (...args: unknown[]) => {
+    if (!lateMutationId && typeof args[0] === "function") {
+      lateMutationId = (await db.decision.create({ data: {
+        scopeId, title: "Standalone proof owner mutation before save", status: "decided",
+        resolution: "Fixture-only owner drift", decidedAt: new Date(),
+      } })).id;
+    }
+    return Reflect.apply(originalStandaloneTransaction, applicationPrisma, args) as Promise<unknown>;
+  };
+  try {
+    const { POST } = await import("../app/api/reports/route");
+    const { NextRequest } = await import("next/server");
+    const response = await POST(new NextRequest("http://localhost/api/reports", {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ scopeId }),
+    }));
+    assert.equal(response.status, 409);
+    const body = await response.json();
+    assert.equal(body.code, "REPORT_INPUTS_CHANGED");
+    assert.match(body.error, /No report was saved.*Refresh/);
+  } finally {
+    standaloneTransactionHost.$transaction = originalStandaloneTransaction;
+  }
+  assert(lateMutationId, "the standalone late owner mutation actually ran");
+  assert.equal(await db.report.count({ where: { scopeId } }), 0);
+  await db.decision.delete({ where: { id: lateMutationId } });
 
   const comparisonId = `comparison-success-${fixtureKey}`;
   const input = scenarioSnapshot(comparisonId);
@@ -634,6 +708,9 @@ async function main() {
     ok: true,
     database: `${databaseUrl.hostname}:${databaseUrl.port}/${databaseName}`,
     cases: {
+      standaloneFreshScopeAndQuote: true,
+      standaloneMixedOwnerReadRefused: true,
+      standaloneLateOwnerDriftConflict409: true,
       successfulSameBaselinePair: true,
       duplicateRetryIdempotent: true,
       concurrentRetryConverged: true,

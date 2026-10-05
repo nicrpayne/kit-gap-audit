@@ -299,7 +299,7 @@ export function nodeColor(attrs: Record<string, unknown>): string {
   }
   if (kind === "work") {
     // Completed work recedes: it is no longer part of what remains.
-    return attrs.stateType === "completed" || attrs.stateType === "canceled"
+    return ["completed", "canceled", "duplicate"].includes(String(attrs.stateType))
       ? "var(--i-text-faint)"
       : "var(--i-text-soft)";
   }

@@ -7,7 +7,8 @@ import type { CompiledScopeProposalItem } from '../lib/scope/proposal';
 import { evaluateForecastCoverage } from '../lib/forecast/coverage';
 
 // Usage: tsx scripts/forecast-scenario-browser-proof.ts <captured-input-dir> <output-dir>
-// The captured input directory contains production-chromium/{instrument,proposal}.json.
+// The captured input directory contains production-chromium/{instrument,proposal}.json
+// and portfolio-inputs-fixture.json. These are private read-only snapshots.
 // All API calls are intercepted. This proof must never point at a live environment.
 const source=resolve(process.argv[2]);
 const out=resolve(process.argv[3]);
@@ -16,6 +17,7 @@ assert(['localhost','127.0.0.1'].includes(new URL(base).hostname));
 mkdirSync(out,{recursive:true,mode:0o700});
 const read=(file:string)=>JSON.parse(readFileSync(resolve(source,file),'utf8'));
 const original=read('production-chromium/instrument.json') as ProjectPayload;
+const portfolioOriginal=read('portfolio-inputs-fixture.json');
 const proposalBody=read('production-chromium/proposal.json') as {proposal:{scopeId:string;items:(CompiledScopeProposalItem & {id:string})[]}};
 const sid=proposalBody.proposal.scopeId;
 const selected=proposalBody.proposal.items.find(i=>i.title==='iTrack notification engine')!;
@@ -49,13 +51,22 @@ for(const [name,engine] of [['chromium',chromium],['webkit',webkit]] as const){
   // Other projects remain available for project-isolation checks, but remove
   // their upstream graph so no unrelated fixture delay affects this case.
   for(const s of payload.scopes)if(s.scopeId!==sid)s.dependsOnScopeIds=[];
+  const portfolioPayload={...portfolioOriginal,startDate:payload.startDate,people:payload.people,allocations:payload.allocations,
+    scopes:payload.scopes.map(s=>({...portfolioOriginal.scopes.find((p:{scopeId:string})=>p.scopeId===s.scopeId),...s,
+      capacityBasis:{kind:'explicit',value:s.teamCapacity},reportHistory:[],lastReport:null}))};
   const browser=await engine.launch({headless:true});const context=await browser.newContext({viewport:{width:1440,height:900}});
+  if(process.env.SIGNAL_PROOF_PASSWORD)assert.equal((await context.request.post(base+'/api/login',{data:{password:process.env.SIGNAL_PROOF_PASSWORD}})).status(),200);
+  // WebKit's secure cookie policy excludes HTTP loopback. Relax only this
+  // isolated test cookie, never the app's real HTTPS session settings.
+  if(name==='webkit')await context.addCookies((await context.cookies()).map(cookie=>({...cookie,secure:false})));
   const errors:string[]=[],unexpected:string[]=[];const checks:string[]=[];
   await context.route('**/*',route=>{
     const r=route.request(),url=new URL(r.url());
     if(url.origin!==new URL(base).origin)return route.abort();
     if(!url.pathname.startsWith('/api/'))return route.continue();
     if(url.pathname==='/api/instrument/project'&&r.method()==='GET')return route.fulfill({json:payload});
+    if(url.pathname==='/api/portfolio/inputs'&&r.method()==='GET')return route.fulfill({json:portfolioPayload});
+    if(url.pathname==='/api/decisions'&&r.method()==='GET')return route.fulfill({json:{decisions:[]}});
     if(url.pathname==='/api/version'&&r.method()==='GET')return route.fulfill({json:{shortCommit:'local-proof'}});
     if(url.pathname===`/api/scopes/${sid}/proposal`&&['GET','POST'].includes(r.method()))return route.fulfill({json:proposalBody});
     unexpected.push(`${r.method()} ${url.pathname}`);return route.fulfill({status:405,json:{error:'Read-only controlled browser proof'}});
@@ -89,6 +100,22 @@ for(const [name,engine] of [['chromium',chromium],['webkit',webkit]] as const){
     assert.match(await sh('forecast-coverage-reasons').innerText(),/Unestimated tickets retain provisional ranges/);
     checks.push('Scenario does not approve Reality, reports, or provisional estimates');
     await page.screenshot({path:resolve(out,label+'-scenario.png')});
+    await page.locator('a[href^="/portfolio"]').first().click();await page.waitForURL('**/portfolio*');
+    await sh('portfolio-scenario-coverage-basis').waitFor();
+    const inspector=page.locator('aside').filter({has:sh('portfolio-scenario-coverage-basis')});
+    if(!full){
+      assert((await inspector.innerText()).includes(`${scenarioCount} current execution`));
+      assert(await page.locator(`[role="button"][aria-label*="${scope.name}"][aria-label*="${scenarioCount} current execution"]`).count()>0);
+    }
+    assert.match(await sh('portfolio-scenario-coverage-basis').innerText(),/Accepted Reality remains incomplete/);
+    await page.screenshot({path:resolve(out,label+'-portfolio.png')});
+    await page.locator('a[href^="/orbit"]').first().click();await page.waitForURL('**/orbit*');
+    await sh('orbit-scenario-coverage-basis').waitFor();
+    if(!full)assert((await sh('orbit-coverage-warning').innerText()).includes(`${scenarioCount} current execution`));
+    assert.match(await sh('orbit-scenario-coverage-basis').innerText(),/does not approve inputs or unlock/);
+    await page.screenshot({path:resolve(out,label+'-orbit.png')});
+    checks.push('Portfolio lanes/inspector and Dependencies match Scenario coverage without approving Reality');
+    await page.locator('a[href^="/forecast"]').first().click();await sh('forecast-coverage-reasons').filter({hasText:scenarioReason}).waitFor();
     const other=payload.scopes.find(s=>s.scopeId!==sid)!;await sh(`scope-${other.scopeId}`).click();await page.waitForURL(new RegExp(`project=${other.scopeId}`));
     assert(!((await page.locator('body').innerText()).includes(scenarioReason)));await sh(`scope-${sid}`).click();await sh('forecast-coverage-reasons').filter({hasText:scenarioReason}).waitFor();checks.push('Project switching does not leak iTrack Scenario coverage');
     await sh('scenario-strip').locator('a[href^="/scope"]').click();await sh('reconciliation-scenario-feedback').waitFor();await page.locator(`[data-proposal-item="${selected.id}"]`).click();await focus.waitFor();assert.equal(await focus.getByRole('checkbox').first().isChecked(),full);await focus.getByRole('button',{name:'Close',exact:true}).click();

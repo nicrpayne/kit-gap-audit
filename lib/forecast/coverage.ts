@@ -62,6 +62,8 @@ interface CoverageCapability {
   estimateReviewRequired?: boolean;
 }
 
+import { isTerminalIssue } from "@/lib/linearIssueState";
+
 export interface ForecastCoverageInput {
   executionState: string;
   issueIds: string[];
@@ -76,13 +78,11 @@ const ACTIVE_LINK_STATES = new Set(["active", "configured"]);
     open child. A dangling parent still counts because no child represents
     its delivery work. */
 export function deliveryRelevantIssueIds(
-  issues: { identifier: string; completedAt: string | null; stateType?: string; parentIdentifier?: string | null }[],
+  issues: { identifier: string; completedAt: string | null; canceledAt?: string | null; stateType?: string; parentIdentifier?: string | null }[],
   includeTriage = true,
 ): string[] {
   const remaining = issues.filter((issue) =>
-    issue.completedAt === null
-    && issue.stateType !== "completed"
-    && issue.stateType !== "canceled"
+    !isTerminalIssue(issue)
     && (includeTriage || issue.stateType !== "triage")
   );
   const representedParents = new Set(

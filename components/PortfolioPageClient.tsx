@@ -393,6 +393,10 @@ export default function PortfolioPageClient() {
   // Decision inputs. A staffing-only resimulation here silently disagreed
   // with Forecast even while the shared Scenario remained staged.
   const preview = project.preview;
+  const displayedCoverageByScope = useMemo(() => new Map((data?.scopes ?? []).map((scope) => [
+    scope.scopeId,
+    project.active ? project.coverageByScope.get(scope.scopeId) ?? scope.forecastCoverage : scope.forecastCoverage,
+  ])), [data, project.active, project.coverageByScope]);
 
   const startDateObj = useMemo(() => (data ? new Date(data.startDate) : null), [data]);
 
@@ -519,14 +523,14 @@ export default function PortfolioPageClient() {
       dependsOnScopeIds: s.dependsOnScopeIds,
       targetDate: s.targetDate,
       changed: changedScopeIds.has(s.scopeId),
-      forecastCoverage: s.forecastCoverage,
+      forecastCoverage: displayedCoverageByScope.get(s.scopeId) ?? s.forecastCoverage,
       // The lane wakes when its channel below is touched -- the coupling
       // that makes "this fader controls THAT project" instant.
       active: hoveredScopeId === s.scopeId || transferPair.includes(s.scopeId),
       recede: (!!hoveredScopeId || transferPair.length > 0) &&
         hoveredScopeId !== s.scopeId && !transferPair.includes(s.scopeId),
     }));
-  }, [data, changedScopeIds, hoveredScopeId, transferPair]);
+  }, [data, changedScopeIds, hoveredScopeId, transferPair, displayedCoverageByScope]);
 
   // Every channel whose allocation the scenario has moved. Under the
   // embodied model there is no such thing as an unpersistable capacity
@@ -998,12 +1002,12 @@ export default function PortfolioPageClient() {
         splitPeople: reading.splitPeople,
         required: reading.required,
         changed: changedScopeIds.has(s.scopeId),
-        forecastCoverage: s.forecastCoverage,
+        forecastCoverage: displayedCoverageByScope.get(s.scopeId) ?? s.forecastCoverage,
         gateCount: s.gates.length,
         completionDays: p?.completionDaysSorted ?? [],
       };
     });
-  }, [data, workforceState, switchCostPct, requiredByScope, baseline, preview, changedScopeIds, pendingTargets, startDateObj]);
+  }, [data, workforceState, switchCostPct, requiredByScope, baseline, preview, changedScopeIds, pendingTargets, startDateObj, displayedCoverageByScope]);
 
   const deficit = useMemo(() => {
     const entry = [...requiredByScope.entries()].find(([, v]) => v > 1e-6);
@@ -1276,11 +1280,12 @@ export default function PortfolioPageClient() {
                 name: selectedScope.name,
                 targetDate: selectedScope.targetDate,
                 capacitySource: selectedScope.capacitySource,
-                forecastCoverage: selectedScope.forecastCoverage,
+                forecastCoverage: displayedCoverageByScope.get(selectedScope.scopeId) ?? selectedScope.forecastCoverage,
               }}
               baseline={selectedBaseline}
               preview={selectedPreview}
               dirty={dirty}
+              realityCoverage={selectedScope.forecastCoverage}
               changedScopeNames={changedScopeNames}
               dependsOn={selectedScopeDeps.dependsOn}
               dependents={selectedScopeDeps.dependents}

@@ -40,7 +40,12 @@ export async function currentDecisionCandidates(scopeIds?: string[]) {
   const scopes = scopeIds ?? (await prisma.scope.findMany({ select: { id: true } })).map((scope) => scope.id);
   const currentIds = (await Promise.all(scopes.map((id) => currentContextSnapshot(id).catch(() => null)))).flatMap((snapshot) => snapshot ? [snapshot.id] : []);
   return prisma.decisionCandidate.findMany({
-    where: { status: "pending", contextSnapshotId: { in: currentIds } }, orderBy: { createdAt: "asc" },
+    // Manual imports have no package pointer. Keep them reviewable without
+    // reviving candidates from a superseded/restored knowledge package.
+    where: { status: "pending", scopeId: { in: scopes }, OR: [
+      { contextSnapshotId: { in: currentIds } },
+      { contextSnapshotId: null, claimKey: { startsWith: "paste:" } },
+    ] }, orderBy: { createdAt: "asc" },
     include: { scope: { select: { id: true, name: true } } },
   });
 }

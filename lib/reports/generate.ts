@@ -10,7 +10,7 @@ import { renderAudienceBriefMarkdown } from "./audienceBriefRender";
 import { assertGeneratedReportProse } from "./legacySanitization";
 import { buildScenarioDecisionBriefReadModel, scenarioSnapshotJson } from "./scenario";
 import { ScenarioReportValidationError, parseScenarioReportSnapshot } from "./scenario";
-import { reportOwnerFingerprint } from "./ownerFingerprint";
+import { reportOwnerFingerprint, ReportOwnerInputsChangedError } from "./ownerFingerprint";
 import { withScopedIssueReadSnapshot } from "@/lib/linear";
 import { normalizeReportJsonForPersistence } from "./persistenceNormalization";
 
@@ -41,13 +41,22 @@ export async function generateReport(
   if (requestedMode !== undefined && requestedMode !== "reality") {
     throw new ScenarioReportValidationError("A Scenario or comparison report must be published as an atomic Reality/Scenario pair.");
   }
-  const assembled = await buildDecisionBriefReadModel(scope, {
+  const baseline = await reportOwnerFingerprint(prisma);
+  // The caller's Scope may predate this generation attempt. Pin each Linear
+  // read for the entire assembly and refuse changed owners before persistence,
+  // just as the atomic comparison path does. Provider I/O stays outside the
+  // short database transaction.
+  const currentScope = await prisma.scope.findUniqueOrThrow({ where: { id: scope.id } });
+  const assembled = await withScopedIssueReadSnapshot(() => buildDecisionBriefReadModel(currentScope, {
     contextSnapshotId,
     mode: "reality",
     scenarioId: null,
-  });
+  }));
   const prepared = prepareReport(scope.id, assembled, contextSnapshotId, options?.recipe);
-  const report = await prisma.report.create({ data: prepared.data });
+  const report = await prisma.$transaction(async (tx) => {
+    if (await reportOwnerFingerprint(tx) !== baseline) throw new ReportOwnerInputsChangedError();
+    return tx.report.create({ data: prepared.data });
+  }, { isolationLevel: "Serializable", timeout: 15_000 });
   return { report, brief: prepared.brief, recipe: prepared.recipe, presentation: prepared.presentation };
 }
 

@@ -19,6 +19,7 @@
 import { composeScopeFeatures } from "@/lib/scope/features";
 import { scenarioCapacityDisplay } from "@/lib/scenario/displayCapacity";
 import { scenarioDisplayShape } from "@/lib/scenario/displayShape";
+import { scenarioForecastCoverage } from "@/lib/scenario/forecastCoverage";
 import type { SimulationResult } from "@/lib/forecast/simulate";
 import type { ProjectPayload, SuiteScenario } from "@/lib/instrument/useProject";
 import type { DecisionRow } from "@/lib/decisions/model";
@@ -50,6 +51,7 @@ export function adaptOrbitInput(i: OrbitAdaptInput): OrbitInput | null {
   const startDate = new Date(data.startDate);
   if (Number.isNaN(startDate.getTime())) return null;
   if (!preview.has(focusScopeId)) return null;
+  const coverageByScope = scenarioForecastCoverage(data.scopes, scenario, i.scenarioActive);
 
   const scopes: OrbitScopeInput[] = [];
   for (const s of data.scopes) {
@@ -86,7 +88,7 @@ export function adaptOrbitInput(i: OrbitAdaptInput): OrbitInput | null {
       name: s.name,
       targetDate: s.targetDate ? new Date(s.targetDate) : null,
       dependsOnScopeIds: s.dependsOnScopeIds,
-      forecastCoverage: s.forecastCoverage,
+      forecastCoverage: coverageByScope.get(s.scopeId) ?? s.forecastCoverage,
       composition,
       channel,
       sim,

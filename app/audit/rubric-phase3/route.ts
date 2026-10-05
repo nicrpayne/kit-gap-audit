@@ -70,7 +70,8 @@ export async function GET(req: NextRequest) {
   body.signal-audit-embedded.menu-open #fab-menu { color: var(--signal-reality); border-color: var(--signal-border-selected) !important; box-shadow: inset 0 0 0 1px var(--signal-border-selected), 0 0 0 3px var(--signal-selected-overlay) !important; }
   body.signal-audit-embedded #brain-panel { top: 54px; left: 12px; right: auto; width: 310px; max-height: calc(100vh - 66px); margin-top: 0; }
   body.signal-audit-embedded #signal-search-widget { position: fixed; z-index: 72; top: 12px; right: 416px; width: min(286px, calc(100vw - 456px)); min-width: 246px; padding: 10px; transition: right .16s ease, width .16s ease; }
-  body.signal-audit-embedded.signal-inspector-closed #signal-search-widget { right: 12px; width: 286px; }
+  /* Reserve a separate row for reopen; it must never cover search or its clear button. */
+  body.signal-audit-embedded.signal-inspector-closed #signal-search-widget { right: 12px; top: 58px; width: 286px; }
   body.signal-audit-embedded #signal-search-widget #brain-results { top: 38px; }
   body.signal-audit-embedded #fab-legend { bottom: 12px; left: 12px; min-height: 32px; color: var(--signal-text-secondary); padding: 9px 13px; }
   body.signal-audit-embedded.lg-open #fab-legend { color: var(--signal-reality); border-color: var(--signal-border-selected) !important; box-shadow: inset 0 0 0 1px var(--signal-border-selected), 0 0 0 3px var(--signal-selected-overlay) !important; }

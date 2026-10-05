@@ -5,6 +5,7 @@ import { ForecastUnavailableError } from "@/lib/forecast/compute";
 import { ForecastCoverageIncompleteError } from "@/lib/forecast/coverage";
 import { CapacityReconciliationIncompleteError } from "@/lib/capacity/contract";
 import { ScenarioReportValidationError } from "@/lib/reports/scenario";
+import { ReportOwnerInputsChangedError } from "@/lib/reports/ownerFingerprint";
 
 export async function GET(req: NextRequest) {
   const scopeId = req.nextUrl.searchParams.get("scopeId");
@@ -58,6 +59,9 @@ export async function POST(req: NextRequest) {
       recipe: body.recipe,
     });
   } catch (error) {
+    if (error instanceof ReportOwnerInputsChangedError) {
+      return NextResponse.json({ unavailable: true, code: error.code, error: error.message }, { status: 409 });
+    }
     if (error instanceof ForecastUnavailableError) {
       return NextResponse.json({ unavailable: true, code: error.code, error: `Report unavailable: ${error.reason}. Signal will not fabricate a delivery brief without a reliable Forecast.` }, { status: 409 });
     }

@@ -62,15 +62,19 @@ function LoginForm() {
             <div className="i-label mt-1">KIT</div>
           </div>
         </div>
-        <label className="mb-2 block text-[12px] text-[var(--i-text-soft)]">Password</label>
+        <label htmlFor="signal-password" className="mb-2 block text-[12px] text-[var(--i-text-soft)]">Password</label>
         <input
+          id="signal-password"
           type="password"
+          autoComplete="current-password"
+          aria-invalid={!!error}
+          aria-describedby={error ? "signal-login-error" : undefined}
           autoFocus
           value={password}
           onChange={(e) => setPassword(e.target.value)}
           className="mb-4 w-full rounded-md border px-3 py-2 text-sm"
         />
-        {error && <div className="mb-4 text-[12px] text-[var(--i-red)]">{error}</div>}
+        {error && <div id="signal-login-error" role="alert" className="mb-4 text-[12px] text-[var(--i-red)]">{error}</div>}
         <button type="submit" disabled={loading || !password} className="i-btn-primary w-full py-2 text-sm">
           {loading ? "Checking…" : "Enter"}
         </button>
