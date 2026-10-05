@@ -71,7 +71,7 @@ import { forecastDateAtDay } from "@/lib/forecast/simulate";
 import { formatCapacity } from "@/lib/capacity/limits";
 import { formatDateOnly } from "@/lib/time/dateContract";
 import { partitionProductShape, type ShapeCapability } from "@/lib/scope/productShape";
-import { evaluateForecastCoverage, type ForecastCoverageContract } from "@/lib/forecast/coverage";
+import type { ForecastCoverageContract } from "@/lib/forecast/coverage";
 import { mutateReality } from "@/lib/instrument/reality";
 import type { ScopeWorkItem } from "@/lib/instrument/useProject";
 import ToolWindow from "@/components/instrument/ToolWindow";
@@ -302,29 +302,7 @@ export default function ScopeInstrument() {
   const { capacity } = scenarioCapacityDisplay(m.data, m.scenario, scope.scopeId);
   const { proposalSelections, scenarioItems, scenarioCapabilities, proposalDrafts, proposalBypassed } = scenarioDisplayShape(scope, m.scenario);
   const scenarioProductShape = partitionProductShape(scenarioCapabilities);
-  const scenarioCoverageCapabilities = [
-    ...scenarioCapabilities.map((capability) => ({
-      status: proposalBypassed.has(`capability:${capability.id}`) ? "outside" : capability.status,
-      workLinks: capability.workLinks,
-    })),
-    ...proposalSelections
-      .filter((selection) => !selection.targetCapabilityId)
-      .map((selection) => ({
-        status: selection.releaseStatus,
-        workLinks: selection.itemIds.map((externalId) => ({ externalId, state: "active" })),
-      })),
-    ...m.scenario.draftFeatures.map((draft) => ({
-      status: "accepted",
-      workLinks: draft.itemIds.map((externalId) => ({ externalId, state: "active" })),
-    })),
-  ];
-  const scenarioCoverage = evaluateForecastCoverage({
-    executionState: scope.executionState,
-    issueIds: scope.executionItems.map((item) => item.id),
-    capabilities: scenarioCoverageCapabilities,
-    openShapeDecisionCount: scope.openShapeQuestions.filter((question) => !m.scenario.resolvedGateIds.has(question.id)).length,
-  });
-  const displayedCoverage = m.active ? scenarioCoverage : scope.forecastCoverage;
+  const displayedCoverage = m.coverageByScope.get(scope.scopeId) ?? scope.forecastCoverage;
   const composition = composeScopeFeatures(
     scenarioItems,
     scope.completedWork,

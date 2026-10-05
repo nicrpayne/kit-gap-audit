@@ -29,6 +29,7 @@ import { formatDateOnly } from "@/lib/time/dateContract";
 import type { ForecastCoverageContract } from "@/lib/forecast/coverage";
 import { acceptedEstimateIdentity, knowledgeEstimateItemId, substituteCapabilityKnowledgeEstimates, type AcceptedCapabilityEstimate, type CapabilityKnowledgeEstimate, type ReviewedCapabilityEstimateResult } from "@/lib/scope/knowledgeEstimates";
 import type { CapabilityStaffingPlan } from "@/lib/scope/capabilityForecast";
+import { scenarioForecastCoverage } from "@/lib/scenario/forecastCoverage";
 
 // The provenance the Scope instrument reads. Produced by describeItems in
 // lib/forecast/compute.ts by joining each simulated item back to the Linear
@@ -454,6 +455,10 @@ export interface ProjectModel {
   baseline: Map<string, SimulationResult> | null;
   /** Scenario: the hypothetical, or Reality when nothing is set. */
   preview: Map<string, SimulationResult> | null;
+  /** The active Scenario changed since its last successful simulation. */
+  previewPending: boolean;
+  /** Read-only coverage of the displayed Reality or temporary Scenario. */
+  coverageByScope: Map<string, ForecastCoverageContract>;
   scenario: SuiteScenario;
   setScenario: React.Dispatch<React.SetStateAction<SuiteScenario>>;
   active: boolean;
@@ -583,6 +588,7 @@ export function useProject(): ProjectModel {
   const [simFailure, setSimFailure] = useState<string | null>(null);
   const [preview, setPreview] = useState<Map<string, SimulationResult> | null>(null);
   const [floorByScope, setFloorByScope] = useState<Map<string, SimulationResult> | null>(null);
+  const [previewBasis, setPreviewBasis] = useState<{ data: ProjectPayload; scenario: SuiteScenario } | null>(null);
   const debounce = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
     if (!data || !scenarioScopes) return;
@@ -692,6 +698,7 @@ export function useProject(): ProjectModel {
         }
         setFloorByScope(floors);
         setSimFailure(null);
+        setPreviewBasis({ data, scenario });
       } catch (e) {
         // A CYCLE *CAN* REACH THIS. Two ordinary PATCHes to /api/scopes/:id
         // — A depends on B, then B depends on A — are each individually
@@ -761,6 +768,9 @@ export function useProject(): ProjectModel {
     };
   }, [data, baseline, preview]);
 
+  const active = scenarioIsActive(scenario);
+  const coverageByScope = useMemo(() => data ? scenarioForecastCoverage(data.scopes, scenario, active) : new Map<string, ForecastCoverageContract>(), [data, scenario, active]);
+
   return {
     data,
     loading,
@@ -772,9 +782,11 @@ export function useProject(): ProjectModel {
     startDate,
     baseline,
     preview,
+    previewPending: active && (previewBasis?.data !== data || previewBasis?.scenario !== scenario),
+    coverageByScope,
     scenario,
     setScenario,
-    active: scenarioIsActive(scenario),
+    active,
     momentumByScope,
     portfolioLikely,
     floorByScope,

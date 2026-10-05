@@ -31,6 +31,7 @@ import { confidenceAtDay, forecastDateAtDay } from "@/lib/forecast/simulate";
 import { formatCapacity } from "@/lib/capacity/limits";
 import { currentnessLabel, sourceCurrentness } from "@/lib/truth/currentness";
 import { formatDateOnly } from "@/lib/time/dateContract";
+import { readDominance } from "@/lib/scope/constraint";
 
 type Tool =
   | null
@@ -122,13 +123,14 @@ export default function ForecastInstrument() {
     );
   }
 
-  if (scope.forecastReadiness.state === "unavailable") {
+  const coverage = m.coverageByScope.get(scope.scopeId) ?? scope.forecastCoverage;
+  if (coverage.state === "unavailable") {
     return <InstrumentShell stateBar={strip} scopes={m.data.scopes.map((s) => ({ scopeId: s.scopeId, name: s.name }))} onSelectScope={setSelected}>
       <div className="flex flex-1 items-center justify-center p-8" style={{ background: "var(--i-void)" }}>
         <section className="max-w-[560px] rounded-xl border p-6 text-center" style={{ background: "var(--i-panel)", borderColor: "var(--i-amber)" }} data-shoot="forecast-unavailable">
           <div className="i-label" style={{ color: "var(--i-amber)" }}>FORECAST UNAVAILABLE</div>
           <h1 className="mt-3 text-[22px] font-semibold text-[var(--i-text)]">{scope.name}</h1>
-          <p className="mt-3 text-[13px] text-[var(--i-text-soft)]">{scope.forecastReadiness.reason ?? "Execution truth is incomplete."}</p>
+          <p className="mt-3 text-[13px] text-[var(--i-text-soft)]">{coverage.reason ?? "Execution truth is incomplete."}</p>
           <p className="mt-2 text-[11px] leading-relaxed text-[var(--i-text-faint)]">Activation is valid. Signal will show a forecast only after executable work is configured; it will not turn accepted capabilities into invented delivery output.</p>
           <Link href="/scope" className="signal-control mt-5 inline-block rounded px-4 py-2 text-[10px]">OPEN SCOPE</Link>
         </section>
@@ -136,30 +138,51 @@ export default function ForecastInstrument() {
     </InstrumentShell>;
   }
 
-  if (scope.forecastCoverage.state === "modeled_subset") {
-    const modeled = m.baseline?.get(scope.scopeId) ?? null;
+  const capacityUnreconciled = !scope.capacityContract.reconciles;
+  const capacityRequired = m.scenario.capacityPlan?.requiredByScope[scope.scopeId] ?? 0;
+  // A complete hypothetical mapping does not approve the accepted baseline
+  // or make a report publishable. Keep that boundary visible independently.
+  const realityIncomplete = m.active && !scope.forecastCoverage.canonicalForecast;
+  if (!coverage.canonicalForecast || realityIncomplete || capacityUnreconciled || capacityRequired > 0 || m.simulationError) {
+    const reality = m.baseline?.get(scope.scopeId) ?? null;
+    // Never place a stale/baseline date beside newly staged Scenario counts
+    // while the debounced preview is pending or the simulation has failed.
+    const modeled = m.simulationError ? null : m.active ? (m.previewPending ? null : m.preview?.get(scope.scopeId) ?? null) : reality;
+    const delta = modeled && reality ? Math.round((modeled.likelyDate.getTime() - reality.likelyDate.getTime()) / 86400000) : null;
+    const dominance = modeled ? readDominance(modeled, m.floorByScope?.get(scope.scopeId), m.startDate, scope.gates, m.scenario.resolvedGateIds, scope.dependsOnScopeIds.map(id => scopeNameById.get(id) ?? id)) : null;
+    const label = m.simulationError ? "FORECAST UNAVAILABLE — SIMULATION STOPPED" : !coverage.canonicalForecast ? coverage.label : capacityUnreconciled || capacityRequired > 0 ? "FORECAST INCOMPLETE — CAPACITY UNRESOLVED" : "SCENARIO PREVIEW — ACCEPTED REALITY STILL INCOMPLETE";
     const ownFreshness = sourceCurrentness(scope.executionSource.asOf, new Date());
     return <InstrumentShell stateBar={strip} scopes={m.data.scopes.map((s) => ({ scopeId: s.scopeId, name: s.name }))} onSelectScope={setSelected}>
       <div className="flex flex-1 items-center justify-center p-8" style={{ background: "var(--i-void)" }}>
         <section className="w-full max-w-[760px] overflow-hidden rounded-2xl border" style={{ background: "linear-gradient(180deg, #10151a 0%, #0b0f12 100%)", borderColor: "var(--i-border)" }} data-shoot="forecast-modeled-subset">
           <div className="border-b border-[var(--i-amber)]/25 bg-[var(--i-amber)]/[0.04] px-6 py-4">
-            <div className="i-label text-[var(--i-amber)]">{scope.forecastCoverage.label}</div>
+            <div className="i-label text-[var(--i-amber)]">{label}</div>
             <h1 className="mt-2 text-[24px] font-semibold text-[var(--i-text)]">{scope.name}</h1>
           </div>
           <div className="grid gap-6 px-6 py-6 md:grid-cols-[1fr_260px]">
-            <div>
-              <p className="text-[13px] leading-relaxed text-[var(--i-text-soft)]">Signal has simulated the inputs it can currently see, but that result is not a project delivery forecast.</p>
-              <p className="mt-3 text-[11px] leading-relaxed text-[var(--i-text-faint)]">{scope.forecastCoverage.caveat}</p>
+            <div className="min-w-0">
+              <p className="text-[13px] leading-relaxed text-[var(--i-text-soft)]">{m.active ? "This is a hypothetical Scenario, not a project delivery forecast. Accepted Reality is unchanged." : "Signal has simulated the inputs it can currently see, but that result is not a project delivery forecast."}</p>
+              <p className="mt-3 text-[11px] leading-relaxed text-[var(--i-text-faint)]">{coverage.caveat ?? "Complete the accepted delivery inputs before treating this as a commitment."}</p>
               <div className="mt-5 space-y-2" data-shoot="forecast-coverage-reasons">
-                {scope.forecastCoverage.reasons.map((reason) => <div key={reason.code} className="flex items-center gap-2 rounded-md border border-[var(--i-border)] bg-black/20 px-3 py-2 text-[10.5px] text-[var(--i-text-soft)]"><span className="h-1.5 w-1.5 shrink-0 rounded-full bg-[var(--i-amber)]" />{reason.label}</div>)}
+                {coverage.reasons.map((reason) => <div key={reason.code} className="flex items-center gap-2 rounded-md border border-[var(--i-border)] bg-black/20 px-3 py-2 text-[10.5px] text-[var(--i-text-soft)]"><span className="h-1.5 w-1.5 shrink-0 rounded-full bg-[var(--i-amber)]" /><span className="min-w-0 flex-1 leading-relaxed">{reason.label}</span></div>)}
+                {capacityUnreconciled && <p className="text-[10.5px] text-[var(--i-amber)]">Named capacity has not been reconciled to forecast capacity.</p>}
+                {capacityRequired > 0 && <p className="text-[10.5px] text-[var(--i-amber)]">This Scenario still requires {formatCapacity(capacityRequired)} FTE that has not been staffed.</p>}
+                {realityIncomplete && <p className="text-[10.5px] text-[var(--i-text-faint)]">{coverage.canonicalForecast ? "All current work is classified in this Scenario." : "Counts above describe this Scenario."} Accepted Reality remains incomplete; report publication still requires the accepted baseline to be reviewed.</p>}
+                {scope.executionItems.some(item => item.estimateSource === "issue_placeholder") && <p className="text-[10.5px] text-[var(--i-text-faint)]">Unestimated tickets retain provisional ranges, not developer commitments.</p>}
+                {m.simulationError && <p role="alert" className="text-[10.5px] text-[var(--i-amber)]">Preview unavailable: {m.simulationError}</p>}
               </div>
               <Link href={`/scope?project=${encodeURIComponent(scope.scopeId)}`} className="signal-control mt-5 inline-block rounded px-4 py-2 text-[10px]">OPEN SCOPE COVERAGE</Link>
             </div>
             <div className="rounded-xl border border-[var(--i-border)] bg-[var(--i-recess)] p-5 text-center" data-shoot="modeled-subset-outcome">
-              <div className="i-label text-[var(--i-text-faint)]">MODELED SUBSET OUTCOME</div>
+              <div className="i-label text-[var(--i-text-faint)]">{m.active ? "SCENARIO MODELED OUTCOME" : "REALITY MODELED OUTCOME"}</div>
               <div className="i-readout mt-4 text-[31px] text-[var(--i-text-soft)]">{modeled ? `~${fmtDay(modeled.likelyDate)}` : "—"}</div>
+              {m.active && m.previewPending && !m.simulationError && <div role="status" className="mt-2 text-[10px] text-[var(--i-text-faint)]">Recalculating Scenario…</div>}
               {modeled && <div className="mt-2 text-[9.5px] text-[var(--i-text-faint)]">window {fmtDay(modeled.earliestDate)}–{fmtDay(modeled.latestDate)}</div>}
-              <div className="mt-4 border-t border-[var(--i-border)] pt-3 text-[9px] leading-relaxed text-[var(--i-text-faint)]">No project-level target confidence is shown for a subset.</div>
+              {m.active && modeled && reality && <div className="mt-3 text-[10px] leading-relaxed text-[var(--i-violet)]" data-shoot="forecast-scenario-impact">
+                Reality ~{fmtDay(reality.likelyDate)} · {deltaLabel(delta!)}
+                {delta === 0 && dominance?.dominated && <p className="mt-1">Date held: {dominance.phrase || "the modeled floor remains unchanged"}.</p>}
+              </div>}
+              <div className="mt-4 border-t border-[var(--i-border)] pt-3 text-[9px] leading-relaxed text-[var(--i-text-faint)]">No project-level target confidence is shown until delivery inputs are reconciled.</div>
               <div className="mt-3 text-[8.5px] uppercase tracking-[0.1em] text-[var(--i-text-faint)]">Linear {ownFreshness.currentness} · {scope.executionSource.availability} · as of {fmtFull(new Date(scope.executionSource.asOf))}</div>
             </div>
           </div>

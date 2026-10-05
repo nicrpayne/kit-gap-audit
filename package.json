@@ -22,6 +22,7 @@
     "proof:operator-cleanup": "tsx scripts/operator-cleanup-proof.ts",
     "proof:operator-cleanup-db": "tsx scripts/operator-cleanup-db-proof.ts",
     "proof:forecast-coverage-scope": "tsx scripts/forecast-coverage-scope-composer-proof.ts",
+    "proof:scenario-forecast-coverage": "tsx scripts/scenario-forecast-coverage-proof.ts",
     "proof:forecast-truthful-claims": "tsx scripts/forecast-truthful-claims-proof.ts",
     "proof:refresh-estimation-status": "tsx scripts/refresh-estimation-status-proof.ts",
     "proof:refresh-estimation-status-db": "tsx scripts/refresh-estimation-status-db-proof.ts",

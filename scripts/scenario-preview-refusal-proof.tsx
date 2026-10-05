@@ -47,7 +47,7 @@ assert.match(html, /role="alert"/);
 
 const seams = [
   ["components/instrument/ScopeInstrument.tsx", "const productShape"],
-  ["components/instrument/ForecastInstrument.tsx", "if (scope.forecastReadiness.state"],
+  ["components/instrument/ForecastInstrument.tsx", "const coverage ="],
   ["components/OrbitPageClient.tsx", "if (!graph || !m.startDate)"],
   ["components/PortfolioPageClient.tsx", "const selectedScope ="],
 ] as const;
