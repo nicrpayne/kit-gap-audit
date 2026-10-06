@@ -167,7 +167,7 @@ export default function ScopeReconciliation(props: {
 
   return (
     <>
-      <aside ref={reviewRegion} tabIndex={-1} aria-label="Review Scope mappings" className="flex h-full min-h-0 w-[360px] shrink-0 flex-col overflow-hidden rounded-xl" style={{ border: "1px solid var(--i-border)", background: "linear-gradient(180deg, #11171b, #0b1013)" }} data-shoot={committed ? "reconciliation-commit-success" : warning ? "reconciliation-stale" : partial ? "reconciliation-partial" : "reconciliation-workspace"}>
+      <aside ref={reviewRegion} tabIndex={-1} aria-label="Review Scope mappings" className="flex h-full min-h-0 w-[360px] shrink-0 flex-col overflow-hidden rounded-xl" style={{ border: "1px solid var(--i-border)", background: "var(--signal-widget-fill)" }} data-shoot={committed ? "reconciliation-commit-success" : warning ? "reconciliation-stale" : partial ? "reconciliation-partial" : "reconciliation-workspace"}>
         <div className="shrink-0 px-4 pb-3 pt-3.5" style={{ borderBottom: "1px solid var(--i-border)" }}>
           <div className="flex items-center gap-2">
             <div>
