@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import ToolWindow from "@/components/instrument/ToolWindow";
 import type { ScopeWorkItem } from "@/lib/instrument/useProject";
 
@@ -8,8 +8,9 @@ export interface WorkResolution {
   status?: "accepted" | "outside"; note?: string; workItemIds: string[];
 }
 
-export default function ResolveScopeWork({ item, capabilities, saving, error, onClose, onSave }: {
+export default function ResolveScopeWork({ item, scopeId, capabilities, saving, error, onClose, onSave }: {
   item: ScopeWorkItem;
+  scopeId: string;
   capabilities: { id: string; name: string; status: string; revision: number }[];
   saving: boolean; error: string | null; onClose: () => void;
   onSave: (input: WorkResolution) => void;
@@ -17,7 +18,29 @@ export default function ResolveScopeWork({ item, capabilities, saving, error, on
   const [target, setTarget] = useState("");
   const [name, setName] = useState("");
   const [note, setNote] = useState("");
-  const selected = capabilities.find((capability) => capability.id === target);
+  const [checked, setChecked] = useState<{ id: string; name: string; status: string; revision: number } | null>(null);
+  const [readError, setReadError] = useState<string | null>(null);
+  const [readAttempt, setReadAttempt] = useState(0);
+  const existingTarget = Boolean(target && !target.startsWith("new-"));
+  useEffect(() => {
+    setChecked(null); setReadError(null);
+    if (!existingTarget) return;
+    const controller = new AbortController();
+    void (async () => {
+      try {
+        // Check the chosen feature directly. The whole-project refresh may
+        // still be in flight after the preceding ticket was saved.
+        const response = await fetch(`/api/capabilities/${target}?summary=1`, { cache: "no-store", signal: controller.signal });
+        const body = await response.json();
+        if (!response.ok || body.capability?.id !== target || body.capability?.scopeId !== scopeId) throw new Error("Feature read unavailable");
+        if (!controller.signal.aborted) setChecked(body.capability);
+      } catch {
+        if (!controller.signal.aborted) setReadError("Could not check the current feature. Retry below; your choice is kept.");
+      }
+    })();
+    return () => controller.abort();
+  }, [target, existingTarget, scopeId, readAttempt]);
+  const selected = checked?.id === target ? checked : null;
   const creating = target === "new-in" || target === "new-out";
   const outside = target === "new-out" || (selected && selected.status !== "accepted");
   const destination = selected?.name ?? name.trim();
@@ -50,6 +73,10 @@ export default function ResolveScopeWork({ item, capabilities, saving, error, on
             <option value="new-out">+ New out / later feature</option>
           </select>
         </label>
+        {existingTarget && <div className="text-[12px] text-[var(--i-text-soft)]">
+          {readError ? <p role="alert">{readError}</p> : !selected ? <p role="status">Checking current feature…</p> : <p>Current feature: {selected.name} · revision {selected.revision}</p>}
+          {(selected || readError) && <button type="button" className="mt-1 text-[var(--i-signal)] underline" onClick={() => { setChecked(null); setReadAttempt((value) => value + 1); }}>Refresh feature details</button>}
+        </div>}
         {creating && <label className="block">Feature name<input aria-label="New feature name" value={name} onChange={(event) => setName(event.target.value)} className="mt-2 w-full rounded-md p-3" style={inputStyle} /></label>}
         <label className="block">Reason (optional)<input value={note} onChange={(event) => setNote(event.target.value)} className="mt-2 w-full rounded-md p-3" style={inputStyle} /></label>
       </fieldset>

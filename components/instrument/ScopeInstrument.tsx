@@ -1086,7 +1086,7 @@ export default function ScopeInstrument() {
         onSave={saveCapabilityEdit}
       />
 
-      {resolvingWork && <ResolveScopeWork key={resolvingWork.id} item={resolvingWork} capabilities={scope.capabilities} saving={writing} error={writeError} onClose={() => { if (!writing) { setResolvingWork(null); setWriteError(null); } }} onSave={saveWorkResolution} />}
+      {resolvingWork && <ResolveScopeWork key={resolvingWork.id} item={resolvingWork} scopeId={scope.scopeId} capabilities={scope.capabilities} saving={writing} error={writeError} onClose={() => { if (!writing) { setResolvingWork(null); setWriteError(null); } }} onSave={saveWorkResolution} />}
 
       <ScopeImpactPreview
         change={pending}

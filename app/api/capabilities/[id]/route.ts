@@ -5,8 +5,12 @@ import { currentOwnerWork, scopeRealityError } from "@/lib/scope/http";
 
 export const dynamic = "force-dynamic";
 
-export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
+  if (req.nextUrl.searchParams.get("summary") === "1") {
+    const capability = await prisma.capability.findUnique({ where: { id }, select: { id: true, scopeId: true, name: true, status: true, revision: true } });
+    return NextResponse.json(capability ? { capability } : { error: "Capability not found." }, { status: capability ? 200 : 404, headers: { "Cache-Control": "no-store" } });
+  }
   const capability = await prisma.capability.findUnique({
     where: { id },
     include: { workLinks: { orderBy: { createdAt: "asc" } }, events: { orderBy: { createdAt: "desc" }, take: 50 } },

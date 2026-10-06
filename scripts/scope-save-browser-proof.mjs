@@ -28,7 +28,8 @@ for(const engine of engines){
   const model=async()=>(await request('GET','/api/instrument/project')).scopes.find(s=>s.scopeId===sid);
   const opened=async id=>{await page.getByRole('tab',{name:/Unresolved/}).click();await page.getByRole('button',{name:`Resolve ${id}`,exact:true}).click();await panel.waitFor();await panel.evaluate(el=>Promise.all(el.getAnimations().map(a=>a.finished)));};
   const saved=async()=>{await panel.waitFor({state:'hidden'});await sh('scope-save-confirmation').waitFor();};
-  let mode='normal',patches=0;
+  let mode='normal',patches=0,holdProjectReads=false;
+  const heldReads=[];
   try{
     await request('PATCH',`/api/scopes/${sid}`,{teamCapacity:2});
     const first=(await request('POST',`/api/scopes/${sid}/capabilities`,{name:'QA In-release feature',workItemIds:[],idempotencyKey:randomUUID()})).capability;
@@ -36,13 +37,16 @@ for(const engine of engines){
     const initial=await model(),items=initial.executionItems;assert(items.length>=9);
     // Only intercept our own fixture writes. The real server still performs all successful saves.
     await page.route('**/api/capabilities/*',async route=>{
-      const r=route.request();if(r.method()!=='PATCH')return route.continue();
+      const r=route.request();
+      if(r.method()==='GET'&&mode==='feature-read-fail'){mode='normal';return route.abort('failed');}
+      if(r.method()!=='PATCH')return route.continue();
       const body=r.postDataJSON();assert(keys.includes(body.idempotencyKey)||body.idempotencyKey);keys.push(body.idempotencyKey);patches++;
       if(mode==='fail'){mode='normal';return route.fulfill({status:503,json:{error:'Injected ambiguous failure'}});}
-      if(mode==='lost'){mode='normal';const result=await route.fetch();assert.equal(result.status(),200);return route.abort('failed');}
+      if(mode==='lost'){mode='normal';const result=await route.fetch();if(result.status()!==200){errors.push(`Lost-reply test expected a committed save: ${result.status()} ${await result.text()}`);return route.fulfill({response:result});}return route.abort('failed');}
       if(mode==='slow'){mode='normal';await new Promise(resolve=>setTimeout(resolve,6500));}
       return route.continue();
     });
+    await page.route('**/api/instrument/project',route=>{if(holdProjectReads){heldReads.push(route);return;}return route.continue();});
     await page.route(`**/api/scopes/${sid}/capabilities`,async route=>{
       if(route.request().method()!=='POST'||mode!=='create-lost')return route.continue();
       mode='normal';const response=await route.fetch();assert.equal(response.status(),201);await route.abort('failed');
@@ -55,7 +59,10 @@ for(const engine of engines){
     await page.keyboard.press('Escape');await panel.waitFor({state:'hidden'});
     assert.equal((await caps()).reduce((n,c)=>n+c.workLinks.length,0),0);
     mark('readiness shortcut, accessible ticket list, blank choice disabled, keyboard/cancel preserve Reality');
-    await opened(items[0].id);await panel.getByLabel('Assign ticket to').selectOption(first.id);await sh('ticket-assignment-preview').filter({hasText:'In this release'}).waitFor();
+    await opened(items[0].id);mode='feature-read-fail';await panel.getByLabel('Assign ticket to').selectOption(first.id);
+    await panel.getByRole('alert').filter({hasText:'Could not check'}).waitFor();assert(await panel.getByRole('button',{name:'Save ticket assignment'}).isDisabled());
+    await panel.getByRole('button',{name:'Refresh feature details'}).click();await sh('ticket-assignment-preview').filter({hasText:'In this release'}).waitFor();
+    mark('failed feature read keeps the choice, disables save and supports retry');
     await page.screenshot({path:`${out}/direct-assignment.png`});
     mode='slow';const beforePatches=patches;await panel.getByRole('button',{name:'Save ticket assignment'}).click();
     await panel.getByRole('button',{name:'Saving and checking…'}).waitFor();assert(await panel.getByLabel('Assign ticket to').isDisabled());
@@ -66,13 +73,14 @@ for(const engine of engines){
     await opened(items[1].id);await panel.getByLabel('Assign ticket to').selectOption(first.id);
     mode='fail';await panel.getByRole('button',{name:'Save ticket assignment'}).click();await panel.getByRole('alert').filter({hasText:'could not confirm'}).waitFor();
     assert.equal(await panel.getByLabel('Assign ticket to').inputValue(),first.id);
-    const retryKey=keys.at(-1);await panel.getByRole('button',{name:'Save ticket assignment'}).click();await saved();assert.equal(keys.at(-1),retryKey);
+    const retryKey=keys.at(-1);holdProjectReads=true;await panel.getByRole('button',{name:'Save ticket assignment'}).click();await saved();assert.equal(keys.at(-1),retryKey);
     mark('failed save keeps choice and draft; retry uses the same save key');
     await opened(items[2].id);await panel.getByLabel('Assign ticket to').selectOption(first.id);
     mode='lost';await panel.getByRole('button',{name:'Save ticket assignment'}).click();await saved();
     await sh('scope-save-confirmation').filter({hasText:'confirmed'}).waitFor();
     const current=(await caps()).find(c=>c.id===first.id);assert.equal(current.revision,4);assert.equal(current.workLinks.length,3);assert.equal(current.events.length,4);
-    mark('server commits but response disappears: receipt confirms save, exactly one event/revision');
+    assert(heldReads.length>0);holdProjectReads=false;for(const route of heldReads.splice(0))await route.continue();
+    mark('next assignment uses fresh feature revision while whole-project read is held; lost response still confirms once');
     await opened(items[3].id);await panel.getByLabel('Assign ticket to').selectOption(later.id);await sh('ticket-assignment-preview').filter({hasText:'excluded'}).waitFor();await panel.getByRole('button',{name:'Save ticket assignment'}).click();await saved();
     assert.equal((await model()).forecastCoverage.census.outsideExecutionIssueCount,1);
     await opened(items[4].id);await panel.getByLabel('Assign ticket to').selectOption('new-in');await panel.getByLabel('New feature name').fill('QA Created feature');await panel.getByRole('button',{name:'Save ticket assignment'}).click();await saved();
@@ -99,6 +107,7 @@ for(const engine of engines){
     writeFileSync(`${out}/result.json`,JSON.stringify({passed:true,engine,base,scopeId:sid,checks,errors,localFaultInjection:true,productionDataChanged:false},null,2));
   }catch(error){await page.screenshot({path:`${out}/failure.png`});writeFileSync(`${out}/result.json`,JSON.stringify({passed:false,error:String(error),checks,errors,text:await page.locator('body').innerText()},null,2));throw error;}
   finally{
+    for(const route of heldReads.splice(0))await route.abort().catch(()=>{});
     await page.close();const cleanup=await request('DELETE',`/api/scopes/${sid}`);assert(cleanup.ok);
     writeFileSync(`${out}/cleanup.json`,JSON.stringify({removedOnlyOwnedFixture:sid,preexistingScopesPreserved:(await request('GET','/api/scopes')).scopes.length===roots.scopes.length}));
     await browser.close();
