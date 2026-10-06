@@ -94,12 +94,14 @@ export default function AuditRefreshControl({ scopeId, fixture }: { scopeId: str
       disabled={disabled}
       status="reality"
       data-shoot="audit-refresh-primary"
+      data-attention={!disabled && status?.code === "new_available" ? "review" : undefined}
       className="shrink-0 px-3 py-1.5 text-[11.5px] font-medium text-[var(--signal-status-color)]"
       title={fixture ? "Refresh is disabled for deterministic fixtures" : status?.detail}
     >
       <span className="mr-1.5 inline-block h-1.5 w-1.5 rounded-full" style={{ background: tone }} />
       {fixture ? "Refresh disabled" : actionLabel(status, requesting)}
     </SignalControl>
+    {!fixture && status && ["offline", "unavailable"].includes(status.code) && <SignalControl type="button" onClick={() => window.dispatchEvent(new CustomEvent("signal-audit-open-source-health"))} className="px-3 py-1.5 text-[11px]">Check source connection →</SignalControl>}
     <SignalControl type="button" aria-label="Audit actions" aria-expanded={menuOpen} onClick={() => setMenuOpen((value) => !value)} className="px-2 py-1.5 text-[11px]">•••</SignalControl>
     {menuOpen && <div className="absolute right-0 top-9 z-[70] w-64 rounded-md border border-[var(--i-border-strong)] bg-[var(--i-panel)] p-1 shadow-2xl" data-shoot="audit-secondary-menu">
       <button type="button" onClick={() => void refresh()} disabled={disabled} className="block w-full rounded px-3 py-2 text-left text-[10.5px] text-[var(--i-text-soft)] hover:bg-white/[0.04] disabled:opacity-35">Refresh Signal</button>
@@ -108,7 +110,7 @@ export default function AuditRefreshControl({ scopeId, fixture }: { scopeId: str
       <Link href={`/audit/history${scopeId ? `?scope=${encodeURIComponent(scopeId)}` : ""}`} className="block rounded px-3 py-2 text-[10.5px] text-[var(--i-text-soft)] hover:bg-white/[0.04]">Audit history</Link>
       <button type="button" onClick={() => { setMenuOpen(false); window.dispatchEvent(new CustomEvent("signal-audit-open-source-health")); }} className="block w-full rounded px-3 py-2 text-left text-[10.5px] text-[var(--i-text-soft)] hover:bg-white/[0.04]">Source health</button>
     </div>}
-    {notice && <span className="absolute right-0 top-10 z-[60] w-72 rounded border border-[var(--i-border)] bg-[var(--i-panel)] px-3 py-2 text-[9.5px] text-[var(--i-text-soft)]">{notice}</span>}
+    {notice && <div role="status" data-attention="notice" className="absolute right-0 top-10 z-[60] w-72 rounded border border-[var(--i-border)] bg-[var(--i-panel)] px-3 py-2 text-[10.5px] text-[var(--i-text-soft)]">{notice}<button type="button" onClick={() => setNotice(null)} className="mt-2 block underline" aria-label="Dismiss refresh notice">Dismiss</button></div>}
     {evidenceOpen && <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/65 p-6" role="presentation" onClick={() => setEvidenceOpen(false)}>
       <section role="dialog" aria-modal="true" ref={evidenceModalRef} tabIndex={-1} aria-label="Add evidence to knowledge system" data-shoot="evidence-upstream-info" onClick={(event) => event.stopPropagation()} className="signal-widget w-full max-w-[520px] p-5">
         <div className="i-label text-[var(--i-signal)]">ADD EVIDENCE</div>

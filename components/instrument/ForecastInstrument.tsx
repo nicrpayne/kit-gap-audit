@@ -20,6 +20,8 @@
 import { useMemo, useState } from "react";
 import { useProjectParam } from "@/lib/shell/useProjectParam";
 import Link from "@/components/instrument/SignalLink";
+import { AttentionCallout, AttentionError } from "@/components/instrument/Attention";
+import { deliveryNextAction } from "@/lib/instrument/nextAction";
 import InstrumentShell from "@/components/instrument/InstrumentShell";
 import ScenarioStrip, { chipsFor } from "@/components/instrument/ScenarioStrip";
 import ScenarioPreviewRefusal from "@/components/instrument/ScenarioPreviewRefusal";
@@ -106,7 +108,7 @@ export default function ForecastInstrument() {
     return (
       <InstrumentShell stateBar={strip}>
         <div className="flex-1 flex items-center justify-center text-[12px] text-[var(--i-text-faint)]">
-          {m.error ?? "Loading…"}
+          {m.error ? <AttentionError message={m.error} /> : "Loading…"}
         </div>
       </InstrumentShell>
     );
@@ -132,7 +134,7 @@ export default function ForecastInstrument() {
           <h1 className="mt-3 text-[22px] font-semibold text-[var(--i-text)]">{scope.name}</h1>
           <p className="mt-3 text-[13px] text-[var(--i-text-soft)]">{coverage.reason ?? "Execution truth is incomplete."}</p>
           <p className="mt-2 text-[11px] leading-relaxed text-[var(--i-text-faint)]">Activation is valid. Signal will show a forecast only after executable work is configured; it will not turn accepted capabilities into invented delivery output.</p>
-          <Link href="/scope" className="signal-control mt-5 inline-block rounded px-4 py-2 text-[10px]">OPEN SCOPE</Link>
+          <AttentionCallout {...deliveryNextAction({ scopeId: scope.scopeId, coverage })!} />
         </section>
       </div>
     </InstrumentShell>;
@@ -171,7 +173,7 @@ export default function ForecastInstrument() {
                 {scope.executionItems.some(item => item.estimateSource === "issue_placeholder") && <p className="text-[10.5px] text-[var(--i-text-faint)]">Unestimated tickets retain provisional ranges, not developer commitments.</p>}
                 {m.simulationError && <p role="alert" className="text-[10.5px] text-[var(--i-amber)]">Preview unavailable: {m.simulationError}</p>}
               </div>
-              <Link href={`/scope?project=${encodeURIComponent(scope.scopeId)}`} className="signal-control mt-5 inline-block rounded px-4 py-2 text-[10px]">OPEN SCOPE COVERAGE</Link>
+              {m.simulationError ? <AttentionError message={m.simulationError} /> : <AttentionCallout {...deliveryNextAction({ scopeId: scope.scopeId, coverage: realityIncomplete ? scope.forecastCoverage : coverage, capacityReconciles: scope.capacityContract.reconciles, capacityRequired })!} />}
             </div>
             <div className="rounded-xl border border-[var(--i-border)] bg-[var(--i-recess)] p-5 text-center" data-shoot="modeled-subset-outcome">
               <div className="i-label text-[var(--i-text-faint)]">{m.active ? "SCENARIO MODELED OUTCOME" : "REALITY MODELED OUTCOME"}</div>

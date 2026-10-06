@@ -2,6 +2,45 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Shared action attention. Only explicit, available next steps animate —
+   not every button, status, disabled control, or destructive confirmation. */
+[data-attention] {
+  --attention-rgb: 222, 177, 80;
+  outline: 1px solid rgba(var(--attention-rgb), .65);
+  outline-offset: 2px;
+  box-shadow: 0 0 12px rgba(var(--attention-rgb), .10);
+}
+[data-attention="review"] { --attention-rgb: 70, 195, 214; }
+[data-attention="error"] { --attention-rgb: 236, 130, 110; }
+[data-attention="required"], [data-attention="review"], [data-attention="error"] {
+  animation: signal-action-glow 4.8s ease-in-out infinite;
+}
+@keyframes signal-action-glow {
+  0%, 100% { outline-color: rgba(var(--attention-rgb), .40); box-shadow: 0 0 5px rgba(var(--attention-rgb), .05); }
+  50% { outline-color: rgba(var(--attention-rgb), .90); box-shadow: 0 0 19px rgba(var(--attention-rgb), .22); }
+}
+[data-attention]:hover, [data-attention]:focus-within { animation-play-state: paused; }
+[data-attention]:disabled, [data-attention][aria-disabled="true"], [data-attention][aria-busy="true"] {
+  animation: none; outline: none; box-shadow: none;
+}
+html[data-attention-motion="paused"] [data-attention] { animation: none; }
+.signal-next-step {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 12px;
+  flex-shrink: 0; border: 1px solid var(--i-border-strong); border-radius: 9px;
+  padding: 12px 16px; background: var(--i-panel); margin: 12px 16px;
+}
+.signal-next-step__eyebrow { color: rgb(var(--attention-rgb, 222, 177, 80)); font-size: 9px; letter-spacing: .13em; font-weight: 700; margin-bottom: 4px; }
+.signal-next-step__action {
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  flex-shrink: 0; border: 1px solid rgba(var(--attention-rgb, 222, 177, 80), .65);
+  border-radius: 6px; padding: 9px 12px; font-size: 12px; font-weight: 600;
+  color: var(--i-text); background: rgba(var(--attention-rgb, 222, 177, 80), .10);
+}
+.signal-next-step__action:disabled { opacity: .45; cursor: not-allowed; }
+.signal-next-step__action:focus-visible { outline: 2px solid var(--i-text); outline-offset: 3px; }
+@media (prefers-reduced-motion: reduce) { [data-attention] { animation: none !important; } }
+@media print { [data-attention] { animation: none !important; outline: none !important; box-shadow: none !important; } .signal-next-step { display: none !important; } }
+
 :root {
   --color-paper: #f1f0e8;
   --color-ink: #10201b;

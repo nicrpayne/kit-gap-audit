@@ -20,6 +20,7 @@ import Link from "@/components/instrument/SignalLink";
 import { AnimatePresence, MotionConfig, motion } from "motion/react";
 import { DESTINATIONS, type ShellDestination } from "@/lib/shell/mode";
 import BuildId from "@/components/instrument/BuildId";
+import { AttentionMotionControl } from "@/components/instrument/Attention";
 
 // Drawn rather than typed. A 14px text glyph is at the mercy of whatever
 // font resolves it, and the two most important marks here (Portfolio and
@@ -488,6 +489,8 @@ export default function InstrumentRail({
       </MotionConfig>
 
       <div className="flex-1" />
+
+      <AttentionMotionControl />
 
       <button
         onClick={onAddProject}

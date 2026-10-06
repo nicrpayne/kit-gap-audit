@@ -28,6 +28,8 @@ import Link from "@/components/instrument/SignalLink";
 import { useSearchParams } from "next/navigation";
 import { useProjectParam } from "@/lib/shell/useProjectParam";
 import InstrumentShell from "@/components/instrument/InstrumentShell";
+import { AttentionCallout, AttentionError } from "@/components/instrument/Attention";
+import { deliveryNextAction } from "@/lib/instrument/nextAction";
 import ScenarioStrip, { chipsFor } from "@/components/instrument/ScenarioStrip";
 import ScenarioPreviewRefusal from "@/components/instrument/ScenarioPreviewRefusal";
 import { useProject, EMPTY_SCENARIO } from "@/lib/instrument/useProject";
@@ -199,7 +201,7 @@ export default function OrbitPageClient() {
     return (
       <InstrumentShell stateBar={strip}>
         <div className="flex-1 flex items-center justify-center i-label" data-shoot="orbit-empty">
-          {m.error ?? d.error ?? "Reading the project…"}
+          {m.error || d.error ? <AttentionError message={(m.error ?? d.error)!} /> : "Reading the project…"}
         </div>
       </InstrumentShell>
     );
@@ -220,9 +222,12 @@ export default function OrbitPageClient() {
     : undefined;
   const dim = (id: string) => (related && !related.nodes.has(id) ? 0.18 : 1);
   const edgeDim = (id: string) => (related && !related.edges.has(id) ? 0.1 : 1);
+  const attentionScope = scopes.find((scope) => scope.scopeId === focus);
+  const nextStep = attentionScope && centre?.kind === "forecast" ? deliveryNextAction({ scopeId: attentionScope.scopeId, coverage: centre.forecastCoverage, capacityReconciles: attentionScope.capacityContract.reconciles }) : null;
 
   return (
     <InstrumentShell stateBar={strip}>
+      {nextStep && <AttentionCallout {...nextStep} />}
       <div className="flex-1 min-h-0 flex">
         {/* THE FIELD */}
         <div className="relative flex-1 min-w-0 flex items-center justify-center" style={{ background: "var(--i-void)" }}>

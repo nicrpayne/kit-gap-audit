@@ -35,6 +35,7 @@ import { momentOf, idsAt } from "@/lib/timeline/moment";
 import { DAY, fmtDay, fmtFull, scaleFor, zoomAbout, windowFollowing } from "@/lib/timeline/geometry";
 import { mutateReality, subscribeReality } from "@/lib/instrument/reality";
 import InstrumentShell from "@/components/instrument/InstrumentShell";
+import { AttentionError } from "@/components/instrument/Attention";
 import TimeField, { HEADER_H, MIN_LANE_H, MAX_LANE_H, LANE_HEADER_W } from "@/components/timeline/TimeField";
 import TimelineInspector, { SEAM_W, PANEL_W } from "@/components/timeline/TimelineInspector";
 import Transport, { type Speed } from "@/components/timeline/Transport";
@@ -970,7 +971,7 @@ export default function TimelinePageClient({ embedded = false }: { embedded?: bo
   if (err) {
     const content = (
       <div className={frame}>
-        <p className="text-[12px]" style={{ color: "var(--i-red)" }}>{err}</p>
+        <AttentionError message={err} onRetry={() => void load()} />
       </div>
     );
     return embedded ? content : <InstrumentShell>{content}</InstrumentShell>;
@@ -1244,6 +1245,8 @@ export default function TimelinePageClient({ embedded = false }: { embedded?: bo
           {pending.length > 0 && (
             <button
               onClick={() => setIntakeOpen((v) => !v)}
+              data-attention={!embedded && !intakeOpen ? "review" : undefined}
+              aria-label={`Review ${pending.length} suggested Timeline events`}
               data-shoot="event-intake-toggle"
               data-count={pending.length}
               className="rounded-md px-2.5 py-2 text-[10px] hover:brightness-125"
@@ -1253,7 +1256,7 @@ export default function TimelinePageClient({ embedded = false }: { embedded?: bo
                 color: "var(--i-violet)",
               }}
             >
-              Event intake · {pending.length}
+              Review events · {pending.length} →
             </button>
           )}
           <button

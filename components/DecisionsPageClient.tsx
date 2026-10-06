@@ -19,6 +19,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import InstrumentShell from "@/components/instrument/InstrumentShell";
+import { AttentionCallout, AttentionError } from "@/components/instrument/Attention";
 import { presentForecastDeliveryClaim } from "@/lib/forecast/claims";
 import ScenarioPreviewRefusal from "@/components/instrument/ScenarioPreviewRefusal";
 import ScenarioStrip, { chipsFor } from "@/components/instrument/ScenarioStrip";
@@ -171,6 +172,9 @@ export default function DecisionsPageClient() {
     selection?.kind === "decision" ? decisions.find((d) => d.id === selection.id) ?? null : null;
   const selectedCandidate =
     selection?.kind === "candidate" ? candidates.find((c) => c.id === selection.id) ?? null : null;
+  const nextDecision = decisions.find((d) => forecastActive(d) && d.gate?.targetScopeId === activeScopeId)
+    ?? decisions.find((d) => d.scopeId === activeScopeId && d.status === "open");
+  const nextCandidate = candidates.find((c) => c.scopeId === activeScopeId);
 
   // ── SCENARIO ──────────────────────────────────────────────────────────
   // CONSEQUENCE LAST. Releasing a gate is a physical event; the date it
@@ -369,11 +373,15 @@ export default function DecisionsPageClient() {
             ) : loading && !data ? (
               <div className="px-5 py-6 text-[12px] text-[var(--i-text-faint)]">Reading decisions…</div>
             ) : error ? (
-              <div className="px-5 py-6 text-[12px]" style={{ color: "var(--i-red)" }}>
-                {error}
-              </div>
+              <AttentionError message={error} />
             ) : (
               <>
+                {!selection && (nextDecision || nextCandidate) && <AttentionCallout
+                  title={nextDecision ? "Review the next open choice" : "Review a suggested decision"}
+                  detail={nextDecision?.title ?? nextCandidate!.title}
+                  label={nextDecision ? "Open decision" : "Review suggestion"}
+                  tone={nextDecision ? "required" : "review"}
+                  onAction={() => { setFilter("all"); selectObject(nextDecision ? { kind: "decision", id: nextDecision.id } : { kind: "candidate", id: nextCandidate!.id }); }} />}
                 {origin && (
                   <DecisionCircuit
                     startDate={project.startDate}

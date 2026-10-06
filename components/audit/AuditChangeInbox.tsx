@@ -244,19 +244,19 @@ export default function AuditChangeInbox({
 
   return <>
     <div className={`${styles.worldWidget} ${styles.changeSummaryWidget}`} data-shoot="audit-change-summary">
-      <button type="button" className="flex w-full items-center gap-2 px-3 py-2 text-left" onClick={() => { setTab("sources"); setOpen(true); }}>
+      <button type="button" data-attention={!open && payload && ["offline", "unavailable"].includes(payload.knowledge.code) ? "required" : undefined} className="flex w-full items-center gap-2 px-3 py-2 text-left" onClick={() => { setTab("sources"); setOpen(true); }}>
         <span className="h-1.5 w-1.5 rounded-full" style={{ background: knowledgeTone }} />
         <span className="min-w-0 flex-1 truncate text-[10.5px] font-medium text-[var(--i-text)]">{payload?.knowledge.label ?? "Checking knowledge…"}</span>
         <span className="text-[9.5px] text-[var(--i-text-faint)]">package {ago(payload?.knowledge.lastPackageAt ?? null)}</span>
       </button>
       <div className="grid grid-cols-2 border-t border-[var(--i-border)]">
-        <button type="button" className="px-3 py-2 text-left hover:bg-white/[0.03]" onClick={() => { setTab("changes"); setOpen(true); }}>
+        <button type="button" data-attention={!open && pending.length > 0 && !["offline", "unavailable", "new_available"].includes(payload?.knowledge.code ?? "") ? "review" : undefined} className="px-3 py-2 text-left hover:bg-white/[0.03]" onClick={() => { setTab("changes"); setOpen(true); }}>
           <span className="block text-[16px] font-semibold text-[var(--i-text)]">{payload?.total ?? "—"}</span>
-          <span className="text-[9.5px] text-[var(--i-text-faint)]">Changes since last Audit</span>
+          <span className="text-[9.5px] text-[var(--i-text-soft)]">Review Audit changes →</span>
         </button>
-        <button type="button" className="border-l border-[var(--i-border)] px-3 py-2 text-left hover:bg-white/[0.03]" onClick={() => { setTab("readiness"); setOpen(true); }}>
+        <button type="button" data-attention={!open && payload && !payload.readiness.ready && pending.length === 0 && payload.knowledge.code === "current" ? "required" : undefined} className="border-l border-[var(--i-border)] px-3 py-2 text-left hover:bg-white/[0.03]" onClick={() => { setTab("readiness"); setOpen(true); }}>
           <span className="block truncate text-[9.5px] font-semibold" style={{ color: payload?.readiness.ready ? "var(--i-signal)" : "var(--i-amber)" }}>{payload?.readiness.ready ? "REPORT READY" : "REPORT NOT READY"}</span>
-          <span className="text-[9.5px] text-[var(--i-text-faint)]">{payload?.readiness.blockers.length ?? "—"} blockers</span>
+          <span className="text-[9.5px] text-[var(--i-text-soft)]">{payload?.readiness.blockers.length ?? "—"} blockers · Review →</span>
         </button>
       </div>
     </div>
@@ -309,7 +309,7 @@ export default function AuditChangeInbox({
               {["pending", "needs_completion", "deferred"].includes(selected.status) && <SignalControl type="button" onClick={() => void disposition("reject")} className="px-3 py-1.5 text-[10.5px]">Reject</SignalControl>}
               {["pending", "needs_completion", "deferred"].includes(selected.status) && <SignalControl type="button" onClick={() => void disposition("information_only")} className="px-3 py-1.5 text-[10.5px]">Information only</SignalControl>}
               {typeof selected.proposedState.findingId === "string" && <SignalControl type="button" onClick={() => { dismissedScopeRef.current = scopeId; setOpen(false); onTrace?.(selected.proposedState.findingId as string); }} className="px-3 py-1.5 text-[10.5px]">Trace in world</SignalControl>}
-              {selected.targetHref && <Link href={selected.targetHref} className="ml-auto text-[10px] text-[var(--i-signal)]">Open in {words(selected.owner)} ↗</Link>}
+              {selected.targetHref && <Link href={selected.targetHref} data-attention={!busy && ["pending", "needs_completion"].includes(selected.status) ? "review" : undefined} className="ml-auto rounded px-3 py-2 text-[11px] text-[var(--i-signal)]">Review in {words(selected.owner)} →</Link>}
             </div>
           </div>}
         </div>

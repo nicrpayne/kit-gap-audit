@@ -2,6 +2,8 @@
 
 import { useEffect, useState, useCallback, useMemo, useRef } from "react";
 import Link from "@/components/instrument/SignalLink";
+import { AttentionCallout, AttentionError } from "@/components/instrument/Attention";
+import { deliveryNextAction } from "@/lib/instrument/nextAction";
 import ReportView, { CopyMarkdownButton } from "./ReportView";
 import DecisionBriefView from "./DecisionBriefView";
 import MomentumChip from "./MomentumChip";
@@ -201,6 +203,8 @@ export default function ReportsPageClient() {
   const forecastPending = live === null || live.state === "loading";
   const forecastUnavailable = live?.state === "error" && live.reason.includes("FORECAST UNAVAILABLE");
   const forecastIncomplete = live?.state === "ready" && live.coverageState !== "forecastable";
+  const attentionScope = project.data?.scopes.find((scope) => scope.scopeId === scopeId);
+  const nextStep = attentionScope ? deliveryNextAction({ scopeId: attentionScope.scopeId, coverage: attentionScope.forecastCoverage, capacityReconciles: attentionScope.capacityContract.reconciles }) : null;
   const unstaffedCapacityFte = project.scenario.capacityPlan
     ? Object.values(project.scenario.capacityPlan.requiredByScope).reduce((total, fte) => total + fte, 0)
     : 0;
@@ -384,6 +388,8 @@ export default function ReportsPageClient() {
 
   return (
     <div>
+      {!forecastPending && nextStep && <AttentionCallout {...nextStep} />}
+      {!forecastPending && !nextStep && (forecastUnavailable || forecastIncomplete) && <AttentionCallout title="Review the inputs blocking this report" detail={live?.state === "ready" ? live.coverageReason ?? live.coverageLabel : live?.state === "error" ? live.reason : "Delivery inputs need review."} label="Review sources in Audit" href={`/audit?project=${encodeURIComponent(scopeId ?? "")}`} />}
       <div className="flex items-center gap-3 mb-6 flex-wrap">
         {scopes.length > 1 && (
           <select
@@ -400,6 +406,7 @@ export default function ReportsPageClient() {
         )}
         <button
           onClick={generate}
+          data-attention={!generating && scopeId && !forecastPending && !forecastUnavailable && !forecastIncomplete && !nextStep && !error && reports?.length === 0 ? "review" : undefined}
           disabled={generating || !scopeId || forecastPending || forecastUnavailable || forecastIncomplete}
           title={forecastPending ? "Signal is checking the current Forecast and coverage gate." : forecastIncomplete ? `${live.coverageReason ?? live.coverageLabel}. Reconcile execution coverage in Scope before publishing a delivery brief.` : undefined}
           className="i-btn-primary px-4 py-2 text-sm"
@@ -458,7 +465,8 @@ export default function ReportsPageClient() {
         </div>
       )}
 
-      {error && <div className="text-sm text-[var(--i-red)] mb-4">{error}</div>}
+      {error && <div role="alert" data-attention="notice" className="rounded p-3 text-sm text-[var(--i-red)] mb-4">{error}</div>}
+      {live?.state === "error" && !forecastUnavailable && !error && <AttentionError message={live.reason} />}
       {selected && selectedBrief && selectedRecipe && <section className="report-no-print mb-4 rounded-lg border border-[var(--i-border)] p-4" aria-label="Saved report handoff">
         <h2 className="font-semibold">Share the saved brief</h2>
         <p className="mt-1 text-xs text-[var(--i-text-soft)]">Preview and export this exact saved snapshot. Private names, quotes and links are included; review before sharing. No Site is published automatically.</p>

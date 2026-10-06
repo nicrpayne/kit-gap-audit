@@ -23,7 +23,7 @@ export default function GlobalError({
             ? "Check that DATABASE_URL is set and the Postgres service is running."
             : error.message || "An unexpected error occurred."}
         </p>
-        <button onClick={reset} className="i-btn-primary px-4 py-2 text-sm">
+        <button onClick={reset} data-attention="error" className="i-btn-primary px-4 py-2 text-sm">
           Try again
         </button>
       </div>

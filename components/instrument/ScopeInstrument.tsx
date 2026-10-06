@@ -33,6 +33,7 @@ import { acceptedEstimateIdentity, knowledgeEstimateItemId, type EstimateReviewI
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "@/components/instrument/SignalLink";
+import { deliveryNextAction } from "@/lib/instrument/nextAction";
 import {
   DndContext,
   DragOverlay,
@@ -149,6 +150,7 @@ export default function ScopeInstrument() {
   const [writeSuccess, setWriteSuccess] = useState<string | null>(null);
   const [resolvingWork, setResolvingWork] = useState<ScopeWorkItem | null>(null);
   const [openWorkRequest, setOpenWorkRequest] = useState(0);
+  const [openReviewRequest, setOpenReviewRequest] = useState(0);
   const [estimateWriteState, setEstimateWriteState] = useState<{ capabilityId: string; pending: boolean; error: string | null } | null>(null);
   const [dragSize, setDragSize] = useState<{ w: number; h: number }>({ w: 250, h: MODULE_H });
   const [over, setOver] = useState<string | null>(null);
@@ -803,6 +805,8 @@ export default function ScopeInstrument() {
               </div>
 
               <ProductShapeSummary
+                scopeId={scope.scopeId}
+                onReview={() => setOpenReviewRequest((v) => v + 1)}
                 accepted={m.active ? scenarioProductShape.accepted : productShape.accepted}
                 coverage={displayedCoverage}
                 executionSource={scope.executionSource}
@@ -841,6 +845,7 @@ export default function ScopeInstrument() {
 
                   <ScopeReconciliation
                     openWorkRequest={openWorkRequest}
+                    openReviewRequest={openReviewRequest}
                     onResolveWork={(item) => { setOpenFeatureId(null); setEditing(null); setWriteError(null); setResolvingWork(item); }}
                     proposal={proposal}
                     loading={proposalLoading}
@@ -1220,6 +1225,8 @@ function ScopeImpactPreview({
 }
 
 function ProductShapeSummary({
+  scopeId,
+  onReview,
   accepted,
   coverage,
   executionSource,
@@ -1228,6 +1235,8 @@ function ProductShapeSummary({
   onResolveWork,
   unresolvedRealityCount,
 }: {
+  scopeId: string;
+  onReview: () => void;
   accepted: ShapeCapability[];
   coverage: ForecastCoverageContract;
   executionSource: { asOf: string; availability: "available" | "empty" };
@@ -1238,12 +1247,17 @@ function ProductShapeSummary({
 }) {
   const ready = coverage.state === "forecastable" && capacityReconciles;
   const tone = ready ? "var(--i-signal)" : "var(--i-amber)";
+  const next = deliveryNextAction({ scopeId, coverage, capacityReconciles });
   return (
     <div className="mx-5 mb-3 grid shrink-0 grid-cols-3 gap-2" data-shoot="scope-product-shape-summary">
-      <div className="min-w-0 rounded-lg border bg-[var(--i-panel)] px-3 py-2" style={{ borderColor: `color-mix(in srgb, ${tone} 35%, var(--i-border))` }} data-shoot="scope-coverage-state">
+      <div className="min-w-0 rounded-lg border bg-[var(--i-panel)] px-3 py-2" style={{ borderColor: `color-mix(in srgb, ${tone} 35%, var(--i-border))` }} data-shoot="scope-coverage-state" data-attention={unresolvedRealityCount > 0 || next ? "required" : undefined}>
+        {(unresolvedRealityCount > 0 || next) && <div className="signal-next-step__eyebrow">NEXT STEP</div>}
         <div className="i-label" style={{ color: tone }}>{scenario ? ready ? "SCENARIO COVERAGE COMPLETE" : "SCENARIO READINESS BLOCKED" : ready ? "DELIVERY CLAIM READY" : "FORECAST READINESS BLOCKED"}</div>
         <div className="mt-1 truncate text-[9px] text-[var(--i-text-soft)]">{!capacityReconciles ? "Named capacity has not been reconciled to forecast capacity" : coverage.reason ?? "Canonical delivery forecast is supported"}</div>
         {unresolvedRealityCount > 0 && <button onClick={onResolveWork} className="mt-2 rounded border border-[var(--i-amber)]/50 px-3 py-1.5 text-[11px] text-[var(--i-amber)]" data-shoot="resolve-unmapped-work">Resolve {unresolvedRealityCount} unresolved ticket{unresolvedRealityCount === 1 ? "" : "s"}{scenario ? " in Reality" : ""} →</button>}
+        {unresolvedRealityCount === 0 && next && (next.href.startsWith("/scope?")
+          ? <button className="signal-next-step__action mt-2" onClick={onReview}>{next.label} →</button>
+          : <Link className="signal-next-step__action mt-2" href={next.href}>{next.label} →</Link>)}
       </div>
       <div className="min-w-0 rounded-lg border border-[var(--i-border)] bg-[var(--i-recess)] px-3 py-2">
         <div className="i-label">{scenario ? "Scenario shape mapped" : "Accepted shape mapped"}</div>

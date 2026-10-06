@@ -116,6 +116,7 @@ export default function ScopeReconciliation(props: {
   onStageConfident: () => void;
   onCommit: () => void;
   openWorkRequest: number;
+  openReviewRequest: number;
   onResolveWork: (item: ScopeWorkItem) => void;
 }) {
   const { proposal, loading, warning, error, realityRevision, capabilities, unmapped, selections, committing, commitError, committed, onRefresh, onStage, onUnstage, onStageConfident, onCommit } = props;
@@ -123,6 +124,12 @@ export default function ScopeReconciliation(props: {
   const [query, setQuery] = useState("");
   const [focusedId, setFocusedId] = useState<string | null>(null);
   const workList = useRef<HTMLDivElement>(null);
+  const reviewRegion = useRef<HTMLElement>(null);
+  useEffect(() => {
+    if (!props.openReviewRequest) return;
+    setBank("review"); setQuery("");
+    requestAnimationFrame(() => reviewRegion.current?.focus());
+  }, [props.openReviewRequest]);
   useEffect(() => {
     if (!props.openWorkRequest) return;
     setBank("work"); setQuery("");
@@ -160,14 +167,14 @@ export default function ScopeReconciliation(props: {
 
   return (
     <>
-      <aside className="flex h-full min-h-0 w-[360px] shrink-0 flex-col overflow-hidden rounded-xl" style={{ border: "1px solid var(--i-border)", background: "linear-gradient(180deg, #11171b, #0b1013)" }} data-shoot={committed ? "reconciliation-commit-success" : warning ? "reconciliation-stale" : partial ? "reconciliation-partial" : "reconciliation-workspace"}>
+      <aside ref={reviewRegion} tabIndex={-1} aria-label="Review Scope mappings" className="flex h-full min-h-0 w-[360px] shrink-0 flex-col overflow-hidden rounded-xl" style={{ border: "1px solid var(--i-border)", background: "linear-gradient(180deg, #11171b, #0b1013)" }} data-shoot={committed ? "reconciliation-commit-success" : warning ? "reconciliation-stale" : partial ? "reconciliation-partial" : "reconciliation-workspace"}>
         <div className="shrink-0 px-4 pb-3 pt-3.5" style={{ borderBottom: "1px solid var(--i-border)" }}>
           <div className="flex items-center gap-2">
             <div>
               <div className="text-[11px] font-semibold uppercase tracking-[0.16em]" style={{ color: fresh ? "var(--i-signal)" : "var(--i-amber)" }}>Reconcile shape</div>
               <div className="mt-1 text-[10px] text-[var(--i-text-faint)]">Knowledge + Reality + Linear</div>
             </div>
-            <button onClick={onRefresh} disabled={loading} className="ml-auto rounded-md px-2.5 py-1.5 text-[9.5px] text-[var(--i-text-soft)]" style={{ border: "1px solid var(--i-border-strong)" }}>{loading ? "Reading…" : "Refresh"}</button>
+            <button onClick={onRefresh} disabled={loading} data-attention={!loading && (error || warning || proposal?.stale) ? "review" : undefined} className="ml-auto rounded-md px-2.5 py-1.5 text-[9.5px] text-[var(--i-text-soft)]" style={{ border: "1px solid var(--i-border-strong)" }}>{loading ? "Reading…" : "Refresh"}</button>
           </div>
           <div className="mt-3 grid grid-cols-3 gap-1.5">
             <Freshness label="Knowledge" value={knowledgeDate ? shortDate(knowledgeDate) : "missing"} />

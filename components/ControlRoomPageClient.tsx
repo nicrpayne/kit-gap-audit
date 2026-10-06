@@ -39,6 +39,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "@/components/instrument/SignalLink";
 import InstrumentShell from "@/components/instrument/InstrumentShell";
+import { AttentionCallout } from "@/components/instrument/Attention";
+import { deliveryNextAction } from "@/lib/instrument/nextAction";
 import { SignalControl, SignalStateMark } from "@/components/instrument/SignalPrimitives";
 import TimelinePageClient from "@/components/TimelinePageClient";
 import { Panel, PanelDoor, Row } from "@/components/control-room/Panels";
@@ -414,9 +416,16 @@ export default function ControlRoomPageClient() {
   // uses the flexible layout below, which honours whatever surfaces are
   // switched on. That is the whole customization contract: the default is
   // designed, and the moment you change it, it is yours.
+  const nextStep = m.data?.scopes.flatMap((scope) => {
+    const action = deliveryNextAction({ scopeId: scope.scopeId, coverage: scope.forecastCoverage, capacityReconciles: scope.capacityContract.reconciles });
+    return action ? [{ ...action, title: `${scope.name}: ${action.title}` }] : [];
+  })[0];
   if (workspace.lens === "command" && m.data) {
     return (
       <InstrumentShell stateBar={strip}>
+        {nextStep && <AttentionCallout {...nextStep} />}
+        <div className="min-h-0 flex-1 overflow-y-auto" data-shoot="command-workspace-scroll">
+        <div className="flex h-full min-h-[820px] flex-col">
         <CommandWorkspace
           r={r}
           data={m.data}
@@ -424,6 +433,8 @@ export default function ControlRoomPageClient() {
           scenarioActive={m.active}
           realityLikely={r.outcome.realityLikely}
         />
+        </div>
+        </div>
         {dialog}
       </InstrumentShell>
     );
@@ -444,6 +455,7 @@ export default function ControlRoomPageClient() {
 
   return (
     <InstrumentShell stateBar={strip}>
+      {nextStep && <AttentionCallout {...nextStep} />}
       <div className="flex min-h-0 flex-1 flex-col overflow-hidden" style={{ background: "var(--i-void)" }}>
         <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-hidden px-3 pb-2 pt-2">
           {/* ── TITLE BLOCK ──────────────────────────────────────────── */}

@@ -20,6 +20,7 @@ export default function ScenarioPreviewRefusal({
     >
       <section
         role="alert"
+        data-attention={onBackToReality ? "required" : "notice"}
         aria-live="assertive"
         className="w-full max-w-[640px] rounded-xl border p-6"
         style={{ background: "var(--i-panel)", borderColor: "var(--i-amber)" }}

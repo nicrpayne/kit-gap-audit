@@ -50,6 +50,7 @@ import PortfolioMixer, { CHANNEL_ACCENTS } from "@/components/portfolio/Portfoli
 import SplitPatchbay from "@/components/portfolio/SplitPatchbay";
 import type { ChannelView } from "@/components/portfolio/MixerChannel";
 import InstrumentRail from "@/components/instrument/InstrumentRail";
+import { AttentionCallout, AttentionError } from "@/components/instrument/Attention";
 import CommandMenu from "@/components/instrument/CommandMenu";
 import AddProjectSheet from "@/components/bootstrap/AddProjectSheet";
 import { mutateReality } from "@/lib/instrument/reality";
@@ -1062,7 +1063,7 @@ export default function PortfolioPageClient() {
     );
   }
   if (error) {
-    return shell(<div className="flex-1 flex items-center justify-center text-[12px] text-[var(--i-red)]">{error}</div>);
+    return shell(<AttentionError message={error} onRetry={() => void load()} />);
   }
   if (!data) return null;
 
@@ -1183,6 +1184,13 @@ export default function PortfolioPageClient() {
           saveError={capacityPlanError ?? saveError}
           saveSummary={saveSummary}
         />
+
+        {(requiresRoster || data.scopes.some((scope) => !scope.capacityContract.reconciles)) && <AttentionCallout
+          title="Check the team behind these dates" detail="Some staffing totals still need reconciliation with the named team. Opening this review does not save any changes."
+          label="Review actual team" onAction={() => setAllocationsOpen(true)} />}
+        {!(requiresRoster || data.scopes.some((scope) => !scope.capacityContract.reconciles)) && (overAllocated.length > 0 || totalRequired > 1e-6 || capacityPlanError) && <AttentionCallout
+          title="Your staffing Scenario needs a review" detail={capacityPlanError ?? "This Scenario uses more capacity than is available. Review the people and allocations before committing."}
+          label="Review team and allocations" onAction={() => setAllocationsOpen(true)} />}
 
         <div className="flex-1 min-h-0 flex">
           <div className="flex-1 min-w-0 flex flex-col" style={{ background: "var(--i-bg)" }}>
