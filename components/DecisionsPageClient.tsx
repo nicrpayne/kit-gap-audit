@@ -32,6 +32,9 @@ import { useDecisions } from "@/lib/decisions/useDecisions";
 import { useFlip } from "@/lib/decisions/useFlip";
 import { EMPTY_SCENARIO, fmtDay, useProject } from "@/lib/instrument/useProject";
 import { LANE_COLOR, decisionCounts, forecastActive, openNotGating, type DecisionRow } from "@/lib/decisions/model";
+import { DecisionDragProvider, DecisionDropZone, type DecisionDrop } from "@/components/decisions/DecisionDrag";
+import DecisionModule from "@/components/decisions/DecisionModule";
+import { decisionScenarioBasis, gateDraftError, type DecisionPlan } from "@/lib/scenario/decisionPlan";
 
 type Filter = "all" | "candidates" | "open" | "gating" | "decided";
 
@@ -47,21 +50,26 @@ export default function DecisionsPageClient() {
 
   const [showDismissed, setShowDismissed] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [tool, setTool] = useState<"new" | "import" | "connect" | null>(null);
+  const [tool, setTool] = useState<"new" | "import" | "connect" | "scenario-connect" | null>(null);
   const [candidateError, setCandidateError] = useState<string | null>(null);
 
   const selectObject = useCallback((nextSelection: Selection) => {
     setCandidateError(null);
     setSelection(nextSelection);
     const next = new URLSearchParams(params.toString());
-    if (nextSelection) next.set("select", `${nextSelection.kind}:${nextSelection.id}`);
+    if (nextSelection) {
+      next.set("select", `${nextSelection.kind}:${nextSelection.id}`);
+      const owner = nextSelection.kind === "decision" ? data?.decisions.find(row => row.id === nextSelection.id) : data?.candidates.find(row => row.id === nextSelection.id);
+      const target = owner && "gate" in owner ? owner.gate?.targetScopeId : null;
+      if (owner && owner.scopeId !== params.get("project") && target !== params.get("project")) next.set("project", owner.scopeId);
+    }
     else if (/^(decision|candidate):/.test(next.get("select") ?? "")) next.delete("select");
     const query = next.toString();
     router.push(query ? `${pathname}?${query}` : pathname, { scroll: false });
-  }, [params, pathname, router]);
+  }, [params, pathname, router, data]);
 
   const decisions = useMemo(() => data?.decisions ?? [], [data]);
-  const candidates = useMemo(() => data?.candidates ?? [], [data]);
+  const allCandidates = useMemo(() => data?.candidates ?? [], [data]);
   const scopes = useMemo(() => data?.scopes ?? [], [data]);
 
   // URL-owned object identity makes Decision links shareable and lets
@@ -77,14 +85,23 @@ export default function DecisionsPageClient() {
     const [kind, ...idParts] = raw.split(":");
     const id = idParts.join(":");
     if (kind === "decision" && decisions.some((d) => d.id === id)) setSelection({ kind, id });
-    else if (kind === "candidate" && candidates.some((c) => c.id === id)) setSelection({ kind, id });
+    else if (kind === "candidate" && allCandidates.some((c) => c.id === id)) setSelection({ kind, id });
     else setSelection(null);
-  }, [params, loading, decisions, candidates]);
+  }, [params, loading, decisions, allCandidates]);
 
   // Which delivery path the circuit is about. Defaults to whichever project
   // actually has gates -- opening on a clear path when another is blocked
   // would be showing the least interesting truth first.
-  const gatingAll = useMemo(() => decisions.filter(forecastActive), [decisions]);
+  const displayedDecisions = useMemo(() => decisions.map(decision => {
+    const plan = project.scenario.decisionPlans?.[decision.id];
+    if (!plan) return decision;
+    if (plan.state === "resolved") return { ...decision, status: "decided" as const, gate: null };
+    if (plan.state === "open") return { ...decision, gate: null };
+    const gate = plan.gate!;
+    return { ...decision, gate: { ...gate, id: `scenario-decision:${decision.id}`, decisionId: decision.id, serial: true,
+      provenance: "scenario", targetScope: scopes.find(scope => scope.id === gate.targetScopeId)! } };
+  }), [decisions, project.scenario.decisionPlans, scopes]);
+  const gatingAll = useMemo(() => displayedDecisions.filter(forecastActive), [displayedDecisions]);
 
   // That preference is expressed as ORDER rather than as a setState, so the
   // URL can win while the fallback stays exactly as clever as it was: the
@@ -104,6 +121,9 @@ export default function DecisionsPageClient() {
   const { projectId: activeScopeId, select: setScopeId } = useProjectParam(
     loading ? null : orderedScopeIds
   );
+  const visibleDecisions = useMemo(() => displayedDecisions.filter(row => row.scopeId === activeScopeId || row.gate?.targetScopeId === activeScopeId), [displayedDecisions, activeScopeId]);
+  const candidates = useMemo(() => allCandidates.filter(row => row.scopeId === activeScopeId), [allCandidates, activeScopeId]);
+  const scenarioResolved = visibleDecisions.filter(row => project.scenario.decisionPlans?.[row.id]?.state === "resolved");
 
   // ── THE CIRCUIT'S NODES, from real structure only ─────────────────────
   const { origin, downstream } = useMemo(() => {
@@ -116,7 +136,7 @@ export default function DecisionsPageClient() {
       return {
         claim: presentForecastDeliveryClaim({
           scopeName: s.name,
-          coverage: s.forecastCoverage,
+          coverage: project.coverageByScope.get(id) ?? s.forecastCoverage,
           likelyDate: likely ? fmtDay(likely) : null,
         }),
         id: s.scopeId,
@@ -140,7 +160,7 @@ export default function DecisionsPageClient() {
       .map((s) => nodeFor(s.scopeId))
       .filter((n): n is CircuitNode => n !== null);
     return { origin: o, downstream: down };
-  }, [project.data, project.preview, project.baseline, project.scenario.resolvedGateIds, activeScopeId, gatingAll]);
+  }, [project.data, project.coverageByScope, project.preview, project.baseline, project.scenario.resolvedGateIds, activeScopeId, gatingAll]);
 
   // DETERMINISTIC PRESENTATION ORDER, and nothing more. The engine sums
   // gate durations in series and knows of no ordering between two gates on
@@ -163,10 +183,10 @@ export default function DecisionsPageClient() {
     }
     return [...byScope.entries()];
   }, [gatingAll, activeScopeId]);
-  const openLane = useMemo(() => decisions.filter(openNotGating), [decisions]);
-  const counts = useMemo(() => decisionCounts(decisions), [decisions]);
-  const decided = useMemo(() => decisions.filter((d) => d.status === "decided"), [decisions]);
-  const dismissed = useMemo(() => decisions.filter((d) => d.status === "dismissed"), [decisions]);
+  const openLane = useMemo(() => visibleDecisions.filter(openNotGating), [visibleDecisions]);
+  const counts = useMemo(() => decisionCounts(visibleDecisions), [visibleDecisions]);
+  const decided = visibleDecisions.filter(d => d.status === "decided" && !project.scenario.decisionPlans?.[d.id]);
+  const dismissed = visibleDecisions.filter(d => d.status === "dismissed");
 
   const selectedDecision =
     selection?.kind === "decision" ? decisions.find((d) => d.id === selection.id) ?? null : null;
@@ -175,6 +195,30 @@ export default function DecisionsPageClient() {
   const nextDecision = decisions.find((d) => forecastActive(d) && d.gate?.targetScopeId === activeScopeId)
     ?? decisions.find((d) => d.scopeId === activeScopeId && d.status === "open");
   const nextCandidate = candidates.find((c) => c.scopeId === activeScopeId);
+  const selectedPlan = selectedDecision ? project.scenario.decisionPlans?.[selectedDecision.id] : undefined;
+
+  const setScenario = project.setScenario;
+  const stageDecision = useCallback((id: string, plan: DecisionPlan | null) => {
+    const decision = decisions.find(row => row.id === id);
+    setScenario(current => {
+      const decisionPlans = { ...current.decisionPlans };
+      if (plan) decisionPlans[id] = plan; else delete decisionPlans[id];
+      const resolvedGateIds = new Set(current.resolvedGateIds);
+      if (decision?.gate) resolvedGateIds.delete(decision.gate.id);
+      return { ...current, decisionPlans, resolvedGateIds };
+    });
+    setFlash(true);
+  }, [decisions, setScenario]);
+  function moveDecision(id: string, target: DecisionDrop) {
+    const decision = decisions.find(row => row.id === id);
+    if (!decision || decision.status !== "open") return;
+    selectObject({ kind: "decision", id });
+    if (target === "gating") {
+      if (decision.gate?.serial && !project.scenario.decisionPlans?.[id]?.gate) stageDecision(id, null);
+      else setTool("scenario-connect");
+    } else if (target === "open" && !decision.gate) stageDecision(id, null);
+    else stageDecision(id, { basis: decisionScenarioBasis(decision), state: target });
+  }
 
   // ── SCENARIO ──────────────────────────────────────────────────────────
   // CONSEQUENCE LAST. Releasing a gate is a physical event; the date it
@@ -191,15 +235,10 @@ export default function DecisionsPageClient() {
 
   const assumeGate = useCallback(
     (gateId: string, assume: boolean) => {
-      project.setScenario((s) => {
-        const next = new Set(s.resolvedGateIds);
-        if (assume) next.add(gateId);
-        else next.delete(gateId);
-        return { ...s, resolvedGateIds: next };
-      });
-      setFlash(true);
+      const decision = decisions.find(row => gateId === `scenario-decision:${row.id}` || row.gate?.id === gateId);
+      if (decision) stageDecision(decision.id, assume ? { basis: decisionScenarioBasis(decision), state: "resolved" } : null);
     },
-    [project]
+    [decisions, stageDecision]
   );
 
   // ── WRITES ────────────────────────────────────────────────────────────
@@ -217,10 +256,11 @@ export default function DecisionsPageClient() {
 
   const updateDecision = useCallback(
     async (id: string, patch: Record<string, unknown>) => {
-      const res = await run(() => write(`/api/decisions/${id}`, { method: "PATCH", body: JSON.stringify(patch) }));
+      const res = await run(() => write(`/api/decisions/${id}`, { method: "PATCH", body: JSON.stringify({ ...patch, expectedUpdatedAt: decisions.find(row => row.id === id)?.updatedAt }) }));
       if (!res.ok) throw new Error(String(res.body.error ?? "Could not save the decision. Retry."));
+      stageDecision(id, null);
     },
-    [run, write]
+    [run, write, decisions, stageDecision]
   );
 
   // A rejected candidate write must remain visible even when refresh removes
@@ -264,9 +304,10 @@ export default function DecisionsPageClient() {
   // bank, open decision inserted into a socket, gate decided into memory --
   // is ONE object moving, and the eye should be able to follow it. These
   // are the generations that can move a module between bays.
-  useFlip([decisions, candidates, activeScopeId, filter, project.scenario.resolvedGateIds]);
+  useFlip([decisions, candidates, activeScopeId, filter, project.scenario.resolvedGateIds, project.scenario.decisionPlans]);
 
   return (
+    <DecisionDragProvider decisions={decisions.filter(row => row.status === "open")} onMove={moveDecision}>
     <InstrumentShell
       scopes={scopes.map((s) => ({ scopeId: s.id, name: s.name }))}
       onSelectScope={(id) => setScopeId(id)}
@@ -318,7 +359,7 @@ export default function DecisionsPageClient() {
             <div className="i-meter flex items-stretch overflow-hidden rounded-md">
               {(
                 [
-                  ["all", "All", decisions.length + candidates.length, "var(--i-text-soft)"],
+                  ["all", "All", visibleDecisions.length + candidates.length, "var(--i-text-soft)"],
                   ["candidates", "Cand", candidates.length, LANE_COLOR.candidate],
                   ["open", "Open", counts.open, LANE_COLOR.open],
                   ["gating", "Gating", counts.gating, LANE_COLOR.gating],
@@ -349,7 +390,7 @@ export default function DecisionsPageClient() {
             </div>
 
             <div className="ml-auto flex items-center gap-2">
-              <span className="i-label">Delivery path</span>
+              <span className="i-label">Project</span>
               <select
                 data-shoot="circuit-scope"
                 value={activeScopeId ?? ""}
@@ -376,6 +417,7 @@ export default function DecisionsPageClient() {
               <AttentionError message={error} />
             ) : (
               <>
+                <p className="px-6 pt-3 text-[12px] text-[var(--i-text-soft)]">Drag a card to try a what-if. Blocking delay breaks the circuit; Assume resolved reconnects it. Reality stays unchanged until you explicitly record a decision.</p>
                 {!selection && (nextDecision || nextCandidate) && <AttentionCallout
                   title={nextDecision ? "Review the next open choice" : "Review a suggested decision"}
                   detail={nextDecision?.title ?? nextCandidate!.title}
@@ -383,6 +425,7 @@ export default function DecisionsPageClient() {
                   tone={nextDecision ? "required" : "review"}
                   onAction={() => { setFilter("all"); selectObject(nextDecision ? { kind: "decision", id: nextDecision.id } : { kind: "candidate", id: nextCandidate!.id }); }} />}
                 {origin && (
+                  <DecisionDropZone target="gating" title="1 · Blocking delay" detail="Drop here to test a serial wait. You supply the reason and delay range.">
                   <DecisionCircuit
                     startDate={project.startDate}
                     origin={origin}
@@ -393,6 +436,7 @@ export default function DecisionsPageClient() {
                     onSelect={(id) => selectObject({ kind: "decision", id })}
                     onAssume={assumeGate}
                   />
+                  </DecisionDropZone>
                 )}
 
                 {/* The consequence, given a moment of presence and then
@@ -458,12 +502,22 @@ export default function DecisionsPageClient() {
                     />
                   )}
                   {show("open") && (
+                    <DecisionDropZone target="open" title="2 · Open, without a delay" detail="The question stays open. No delay days are added.">
                     <OpenLane
                       decisions={openLane}
                       selectedId={selectedDecision?.id ?? null}
                       onSelect={(id) => selectObject({ kind: "decision", id })}
                     />
+                    </DecisionDropZone>
                   )}
+                  <DecisionDropZone target="resolved" title="3 · Assume resolved" detail="Scenario only. A choice without a delay gate saves no days.">
+                    <div className="flex min-h-24 gap-3 overflow-x-auto p-3" data-testid="scenario-resolved-decisions">
+                      {!scenarioResolved.length && <p className="p-3 text-[12px] text-[var(--i-text-faint)]">Drop an open choice here to explore it being settled.</p>}
+                      {scenarioResolved.map(row => <DecisionModule key={row.id} flipId={row.id} shoot={`scenario-resolved-${row.id}`}
+                        seating="banked" accent="var(--i-violet)" chip="Assumed resolved" ident="Scenario" title={row.title} width={226}
+                        onClick={() => selectObject({ kind: "decision", id: row.id })} />)}
+                    </div>
+                  </DecisionDropZone>
                   {show("decided") && (
                     <DecidedBand
                       decisions={decided}
@@ -492,7 +546,7 @@ export default function DecisionsPageClient() {
             className="shrink-0 flex flex-wrap items-center gap-x-5 gap-y-1 px-6 py-2"
             style={{ background: "var(--i-panel)", borderTop: "1px solid var(--i-border)" }}
           >
-            <span className="i-label">Shared</span>
+            <span className="i-label">{scopeNameById.get(activeScopeId ?? "")} · {project.active ? "Scenario" : "Reality"}</span>
             <Count value={counts.open} label="open decisions" tone={LANE_COLOR.open} shoot="count-open" />
             <Count value={counts.gating} label="gating · subset of open" tone={LANE_COLOR.gating} shoot="count-gating" />
             <Count value={candidates.length} label="candidates" tone={LANE_COLOR.candidate} shoot="count-candidates" />
@@ -541,10 +595,21 @@ export default function DecisionsPageClient() {
         </div>
 
         <DecisionInspector
+          scenarioControls={selectedDecision?.status === "open" ? <div className="space-y-2 border-b border-[var(--i-border)] p-3 text-[12px]">
+            <strong className="text-[var(--i-violet)]">{selectedPlan ? `What-if: ${selectedPlan.state === "gating" ? "blocking delay" : selectedPlan.state}` : "Try a what-if"}</strong>
+            <div className="flex flex-wrap gap-2">
+              <button className="i-control min-h-8 px-2 py-1" onClick={() => moveDecision(selectedDecision.id, "gating")}>Blocking delay</button>
+              <button className="i-control min-h-8 px-2 py-1" onClick={() => moveDecision(selectedDecision.id, "open")}>Keep open</button>
+              <button className="i-control min-h-8 px-2 py-1" onClick={() => moveDecision(selectedDecision.id, "resolved")}>Assume resolved</button>
+              {selectedPlan && <button className="i-control min-h-8 px-2 py-1" data-testid="undo-decision-scenario" onClick={() => stageDecision(selectedDecision.id, null)}>Undo this what-if</button>}
+            </div>
+            <p className="text-[var(--i-text-faint)]">Below is the saved Reality record. To make an actual change, review the evidence and use the Reality actions.</p>
+            {selectedPlan?.gate && <button className="i-control min-h-8 px-2 py-1" onClick={() => setTool("connect")}>Review & save real delay…</button>}
+          </div> : undefined}
           candidateError={candidateError}
           decision={selectedDecision}
           candidate={selectedCandidate}
-          assumed={!!selectedDecision?.gate && project.scenario.resolvedGateIds.has(selectedDecision.gate.id)}
+          assumed={selectedPlan?.state === "resolved" || !!selectedDecision?.gate && project.scenario.resolvedGateIds.has(selectedDecision.gate.id)}
           busy={busy}
           onClose={() => selectObject(null)}
           onAssume={(assume) => selectedDecision?.gate && assumeGate(selectedDecision.gate.id, assume)}
@@ -628,19 +693,28 @@ export default function DecisionsPageClient() {
       />
 
       <ConnectTool
-        open={tool === "connect" && !!selectedDecision}
+        open={(tool === "connect" || tool === "scenario-connect") && !!selectedDecision}
+        scenario={tool === "scenario-connect"}
         decisionTitle={selectedDecision?.title ?? ""}
-        gate={selectedDecision?.gate}
+        gate={selectedPlan?.gate ? { ...selectedPlan.gate, targetScope: { id: selectedPlan.gate.targetScopeId } } : selectedDecision?.gate}
         scopes={scopes}
         defaultScopeId={selectedDecision?.scopeId ?? activeScopeId ?? ""}
         busy={busy}
         onClose={() => setTool(null)}
         onConnect={async (input) => {
           if (!selectedDecision) return null;
+          const validation = gateDraftError(input);
+          if (validation) return { estimate: validation };
+          if (tool === "scenario-connect") {
+            stageDecision(selectedDecision.id, { basis: decisionScenarioBasis(selectedDecision), state: "gating", gate: input });
+            setScopeId(input.targetScopeId);
+            return null;
+          }
           const res = await run(() =>
             write(`/api/decisions/${selectedDecision.id}/gate`, { method: "POST", body: JSON.stringify(input) })
           );
           if (res.ok) {
+            stageDecision(selectedDecision.id, null);
             setScopeId(input.targetScopeId);
             return null;
           }
@@ -649,6 +723,7 @@ export default function DecisionsPageClient() {
         }}
       />
     </InstrumentShell>
+    </DecisionDragProvider>
   );
 }
 

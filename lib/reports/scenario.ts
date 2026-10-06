@@ -2,6 +2,7 @@ import "server-only";
 
 import type { Prisma, Scope } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
+import { decisionScenarioGates, validateDecisionPlans } from "@/lib/scenario/decisionPlan";
 import { buildPortfolioInputs } from "@/lib/forecast/compute";
 import { estimateQualityForItems } from "@/lib/forecast/build";
 import { buildPortfolioScenarios, runPortfolioSimulation } from "@/lib/forecast/portfolio";
@@ -61,6 +62,14 @@ export async function buildScenarioDecisionBriefReadModel(
   }
 
   const portfolio = await buildPortfolioInputs();
+  const decisionError = validateDecisionPlans(scenario.decisionPlans, portfolio.decisions, portfolio.scopes.map(row => row.scopeId), scenario.resolvedGateIds);
+  if (decisionError) throw new ScenarioReportValidationError(decisionError);
+  const relevantScopes = new Set<string>();
+  const collect = (id: string) => { if (relevantScopes.has(id)) return; relevantScopes.add(id); portfolio.scopes.find(row => row.scopeId === id)?.dependsOnScopeIds.forEach(collect); };
+  collect(scope.id);
+  if (portfolio.decisions.some(decision => relevantScopes.has(decision.scopeId) && decision.readinessRole !== "reference" && decision.gate && scenario.decisionPlans?.[decision.id]?.state === "open")) {
+    throw new ScenarioReportValidationError("This Scenario removes a delay but leaves its release choice unresolved. Review that choice before publishing a delivery report.");
+  }
   const target = portfolio.scopes.find((candidate) => candidate.scopeId === scope.id);
   if (!target) throw new ScenarioReportValidationError("Scenario project is no longer in the active portfolio.");
   if (!target.forecastCoverage.canonicalForecast) {
@@ -280,7 +289,7 @@ export async function buildScenarioDecisionBriefReadModel(
     return {
       ...candidate,
       items: substituteCapabilityKnowledgeEstimates(baseItems, knowledgeSubstitutions),
-      gates: candidate.gates.filter((gate) => !resolved.has(gate.id)),
+      gates: decisionScenarioGates(candidate.scopeId, candidate.gates, portfolio.decisions, scenario.decisionPlans, resolved),
     };
   });
   const frozenCapabilityEstimates = portfolio.scopes.flatMap((candidate) => candidate.capabilities.flatMap((capability) => {
@@ -404,6 +413,7 @@ export async function buildScenarioDecisionBriefReadModel(
     ...(scenario.excludedItemIds.length ? [`Removed ${scenario.excludedItemIds.length} executable work item${scenario.excludedItemIds.length === 1 ? "" : "s"}.`] : []),
     ...(scenario.includedItemIds.length ? [`Added ${scenario.includedItemIds.length} mapped execution item${scenario.includedItemIds.length === 1 ? "" : "s"}.`] : []),
     ...(scenario.resolvedGateIds.length ? [`Assumed ${scenario.resolvedGateIds.length} decision gate${scenario.resolvedGateIds.length === 1 ? "" : "s"} resolved.`] : []),
+    ...Object.entries(scenario.decisionPlans ?? {}).map(([id, plan]) => `${portfolio.decisions.find(row => row.id === id)?.title ?? id}: assumed ${plan.state}${plan.gate ? ` with ${plan.gate.low}/${plan.gate.likely}/${plan.gate.high} days of serial delay; ${plan.gate.dependency}; basis: ${plan.gate.evidenceForGate}` : "; no new delay invented"}. Not an accepted decision.`),
     ...(Object.keys(scenario.estimateOverrideByItemId).length ? [`Changed ${Object.keys(scenario.estimateOverrideByItemId).length} governed estimate assumption${Object.keys(scenario.estimateOverrideByItemId).length === 1 ? "" : "s"}.`] : []),
     ...(Object.keys(scenario.knowledgeEstimateByCapabilityId).length ? [`Used ${Object.keys(scenario.knowledgeEstimateByCapabilityId).length} source-attributed meeting estimate${Object.keys(scenario.knowledgeEstimateByCapabilityId).length === 1 ? "" : "s"} provisionally, replacing rather than adding to ticket rollups.`] : []),
     ...(Object.keys(scenario.capabilityStaffingById).length ? [`Added ${Object.keys(scenario.capabilityStaffingById).length} isolated capability staffing outlook${Object.keys(scenario.capabilityStaffingById).length === 1 ? "" : "s"}; these do not claim the same people can execute multiple cards simultaneously.`] : []),
@@ -478,7 +488,27 @@ export async function buildScenarioDecisionBriefReadModel(
     scenarios: scenarioOptions,
   };
   input.context.warnings = [...input.context.warnings, `Scenario ${scenario.scenarioId} is hypothetical and based on Reality r${realityRevision}.`, ...causalExplanation];
-  input.decisions = input.decisions.map((decision) => decision.gate && resolved.has(decision.gate.id) ? { ...decision, status: "scenario-resolved" } : decision);
+  // A new hypothetical gate may originate in another project. Include its
+  // actual owner/evidence metadata in the target's brief, not only its days.
+  const additionalDecisionIds = Object.entries(scenario.decisionPlans ?? {})
+    .filter(([id, plan]) => plan.gate?.targetScopeId === scope.id && !input.decisions.some(row => row.id === id))
+    .map(([id]) => id);
+  if (additionalDecisionIds.length) {
+    const additional = await prisma.decision.findMany({ where: { id: { in: additionalDecisionIds } }, include: { evidence: { select: { id: true } } } });
+    input.decisions.push(...additional.map(decision => ({
+      id: decision.id, scopeId: decision.scopeId, title: decision.title, status: decision.status,
+      owner: decision.owner, neededBy: decision.neededBy ? toDateOnly(decision.neededBy) : null,
+      createdAt: decision.createdAt.toISOString(), evidenceCount: decision.evidence.length, gate: null,
+    })));
+  }
+  input.decisions = input.decisions.map((decision) => {
+    const plan = scenario.decisionPlans?.[decision.id];
+    if (plan?.state === "resolved" || decision.gate && resolved.has(decision.gate.id)) return { ...decision, status: "scenario-resolved" };
+    if (plan?.state === "open") return { ...decision, gate: null };
+    if (plan?.gate) return { ...decision, gate: { ...plan.gate, id: `scenario-decision:${decision.id}`, serial: true, provenance: "scenario",
+      targetScopeName: portfolio.scopes.find(row => row.scopeId === plan.gate!.targetScopeId)?.name ?? plan.gate.targetScopeId } };
+    return decision;
+  });
   input.dependencies = input.dependencies.map((dependency) => {
     const result = scenarioResults.get(dependency.scopeId);
     return result ? { ...dependency, likelyDate: toDateOnly(result.likelyDate) } : dependency;
@@ -567,6 +597,10 @@ export async function buildScenarioDecisionBriefReadModel(
     }] : [];
   });
   brief.caveats.value.push({ code: "SCENARIO_HYPOTHETICAL", message: `Hypothetical ${scenario.scenarioId}; canonical Reality r${realityRevision} was not mutated.` });
+  for (const [id, plan] of Object.entries(scenario.decisionPlans ?? {})) {
+    const decision = portfolio.decisions.find(row => row.id === id)!;
+    brief.caveats.value.push({ code: "SCENARIO_DECISION_ASSUMPTION", message: `${decision.title}: assumed ${plan.state}${plan.gate ? `; ${plan.gate.low}/${plan.gate.likely}/${plan.gate.high} days of serial delay on ${portfolio.scopes.find(row => row.scopeId === plan.gate!.targetScopeId)?.name}. ${plan.gate.dependency}. Basis: ${plan.gate.evidenceForGate}` : "; no new delay invented"}. Not an accepted decision.` });
+  }
   if (brief.movable.scope.value.capabilityOutlooks.length) {
     brief.caveats.value.push({ code: "CAPABILITY_OUTLOOK_ISOLATED", message: "Capability dates assume the named contributors stay focused on that card. They do not assert sequencing or simultaneous availability across other cards." });
   }

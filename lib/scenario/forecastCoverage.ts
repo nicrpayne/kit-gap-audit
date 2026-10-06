@@ -2,13 +2,14 @@ import type { ProjectScope, SuiteScenario } from '@/lib/instrument/useProject';
 import { evaluateForecastCoverage, inheritDependencyCoverage, type ForecastCoverageContract } from '@/lib/forecast/coverage';
 import { scenarioDisplayShape } from './displayShape';
 import { reviewedCapabilityEstimate } from '@/lib/scope/knowledgeEstimates';
+import { decisionScenarioOpenCount, validateDecisionPlans, type DecisionScenarioInput } from './decisionPlan';
 
 const linksFor = (ids: string[]) => ids.map(externalId => ({ externalId, state: 'active' }));
 
 /** Coverage of the same temporary product shape shown in Scope. Never writes
  * accepted Reality, and never promotes a draft to a reportable baseline. */
-export function scenarioForecastCoverage(scopes: ProjectScope[], scenario: SuiteScenario, active: boolean): Map<string, ForecastCoverageContract> {
-  if (!active) return new Map(scopes.map(scope => [scope.scopeId, scope.forecastCoverage]));
+export function scenarioForecastCoverage(scopes: ProjectScope[], scenario: SuiteScenario, active: boolean, decisions: DecisionScenarioInput[] = []): Map<string, ForecastCoverageContract> {
+  if (!active || validateDecisionPlans(scenario.decisionPlans, decisions, scopes.map(scope => scope.scopeId), scenario.resolvedGateIds)) return new Map(scopes.map(scope => [scope.scopeId, scope.forecastCoverage]));
   const own = new Map(scopes.map(scope => {
     const shape = scenarioDisplayShape(scope, scenario);
     const ids = new Set(scope.executionItems.map(item => item.id));
@@ -53,7 +54,7 @@ export function scenarioForecastCoverage(scopes: ProjectScope[], scenario: Suite
       executionState: scope.executionState,
       issueIds: [...ids],
       capabilities: [...capabilities, ...directWork],
-      openShapeDecisionCount: scope.openShapeQuestions.length,
+      openShapeDecisionCount: decisionScenarioOpenCount(scope.scopeId, scope.openShapeQuestions, decisions, scenario.decisionPlans),
     });
     // Direct ticket classifications are not invented product capabilities.
     if (directIds.length) {

@@ -558,6 +558,8 @@ model Decision {
   // The question, phrased as a question.
   title         String
   status        String    @default("open") // open | decided | dismissed
+  // Unknown legacy relevance stays visible for review, never silently cleared.
+  readinessRole String    @default("needs_review") // release_scope | reference | needs_review
   owner         String?
   rationale     String?
   // When the answer is needed by. Advisory only -- it feeds no simulation.

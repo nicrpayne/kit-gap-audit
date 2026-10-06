@@ -49,6 +49,8 @@ export interface DecisionRow {
   scopeId: string;
   title: string;
   status: DecisionStatus;
+  readinessRole?: string;
+  updatedAt?: string;
   owner: string | null;
   rationale: string | null;
   neededBy: string | null;
@@ -67,6 +69,7 @@ export interface DecisionRow {
 }
 
 export interface CandidateRow {
+  suggestedStatus?: "open" | "decided";
   id: string;
   claimKey: string;
   scopeId: string;

@@ -17,6 +17,7 @@
 // whole point: a real decision is not a delivery gate.
 
 import type { ReactNode } from "react";
+import { useDecisionDrag } from "./DecisionDrag";
 
 export type Seating = "unseated" | "banked" | "inserted" | "latched";
 
@@ -96,13 +97,16 @@ export default function DecisionModule({
   footer?: ReactNode;
 }) {
   const base = seating === "banked" || seating === "inserted" ? "dc-cartridge" : "";
+  const drag = useDecisionDrag(flipId);
   return (
     <div
+      ref={drag.setNodeRef}
       data-flip-id={flipId}
       className="shrink-0"
-      style={{ width, opacity: dimmed ? 0.62 : 1, transition: "opacity 420ms ease" }}
+      style={{ width, opacity: drag.isDragging ? 0.3 : dimmed ? 0.62 : 1, transition: "opacity 420ms ease" }}
     >
       <button
+        onPointerDown={drag.allowed ? event => drag.listeners?.onPointerDown?.(event) : undefined}
         data-shoot={shoot}
         data-assumed={assumed === undefined ? undefined : assumed ? "true" : "false"}
         onClick={onClick}
@@ -179,6 +183,10 @@ export default function DecisionModule({
           />
         )}
       </button>
+      {drag.allowed && <button ref={drag.setActivatorNodeRef} {...drag.attributes} {...drag.listeners}
+        aria-label={`Move ${title}`} data-testid={`decision-drag-${flipId}`}
+        className="min-h-8 w-full cursor-grab rounded-b px-2 py-1 text-left text-[10px] text-[var(--i-violet)] active:cursor-grabbing"
+        style={{ touchAction: "none", background: "var(--i-recess)" }}>⠿ Drag to try a what-if</button>}
       {footer}
     </div>
   );

@@ -105,7 +105,7 @@ async function main() {
     assert.equal(sameMeaningNewSource.status, "information_only", "refresh does not reapply an already accepted owner change");
     assert.equal((await prisma.auditChangeProposal.findUniqueOrThrow({ where: { id: changeA.id } })).status, "accepted", "accepted history is immutable across restoration");
     const rematerialized = toContextPackage(scope.id, auditPackage("A"));
-    assert.match(rematerialized.packageId, /^bootstrap-refresh-v2:/);
+    assert.match(rematerialized.packageId, /^bootstrap-refresh-v3:/);
     assert.equal((rematerialized.derivedClaims?.[0].extra?.fields as { date: string }).date, "2026-10-15", "schedule fields cross the actual package boundary");
     const schedulePackage = auditPackage("B");
     schedulePackage.proposals = ["audit-first", "timeline-first"].map((order) => ({

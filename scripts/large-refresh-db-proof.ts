@@ -34,7 +34,7 @@ async function main() {
     const start = Date.now();
     const first = await auditActivatedBootstrapRefresh(bootstrap.id);
     assert(first);
-    const snapshots = await prisma.contextSnapshot.findMany({ where: { scopeId: scope.id, packageId: { startsWith: "bootstrap-refresh-v2:" } } });
+    const snapshots = await prisma.contextSnapshot.findMany({ where: { scopeId: scope.id, packageId: { startsWith: "bootstrap-refresh-v3:" } } });
     assert.equal(snapshots.length, 1);
     const runs = await prisma.auditRun.findMany({ where: { contextSnapshotId: snapshots[0].id }, include: { findings: true } });
     assert.equal(runs.length, 1);

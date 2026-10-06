@@ -69,6 +69,7 @@ export default function DecisionInspector({
   attachTargets,
   busy,
   candidateError,
+  scenarioControls,
 }: {
   decision: DecisionRow | null;
   candidate: CandidateRow | null;
@@ -86,6 +87,7 @@ export default function DecisionInspector({
   attachTargets: DecisionRow[];
   busy: boolean;
   candidateError: string | null;
+  scenarioControls?: React.ReactNode;
 }) {
   return (
     <aside
@@ -107,6 +109,7 @@ export default function DecisionInspector({
           ×
         </button>
       </div>
+      {scenarioControls}
 
       {candidateError && (
         <div role="alert" data-shoot="candidate-action-error" className="shrink-0 px-4 py-3 text-[11.5px] leading-relaxed" style={{ color: "var(--i-amber)", borderBottom: "1px solid var(--i-border)" }}>
@@ -337,10 +340,10 @@ function CandidateBody({
             border: "1px solid var(--i-violet)",
           }}
         >
-          Accept as open decision
+          {candidate.suggestedStatus === "decided" ? "Accept historical agreement" : "Accept as open decision"}
         </button>
         <p className="text-[10px] leading-relaxed text-[var(--i-text-faint)]">
-          Creates a real open decision with this evidence attached. It still gates nothing.
+          {candidate.suggestedStatus === "decided" ? "The source explicitly records an approved/decided agreement. Accepting preserves it as historical, with this evidence attached; it creates no blocker." : "Creates an open decision for relevance review, with this evidence attached. It adds no delay days."}
         </p>
 
         {attachTargets.length > 0 && (
@@ -417,7 +420,7 @@ function DecisionBody({
   const gating = forecastActive(decision);
   const tone = assumed ? "var(--i-violet)" : LANE_COLOR[lane];
   const [editing, setEditing] = useState(false);
-  const [details, setDetails] = useState({ title: "", rationale: "", owner: "", neededBy: "" });
+  const [details, setDetails] = useState({ title: "", rationale: "", owner: "", neededBy: "", readinessRole: "needs_review" });
   const [deciding, setDeciding] = useState(false);
   const [chosen, setChosen] = useState(decision.chosenOption ?? "");
   const [resolution, setResolution] = useState(decision.resolution ?? "");
@@ -470,7 +473,7 @@ function DecisionBody({
             style={{ background: tone, boxShadow: `0 0 6px ${tone}` }}
           />
           <span className="text-[10.5px]" style={{ color: tone }}>
-            {gating ? `Holding ${decision.gate!.targetScope.name}` : decision.status === "open" ? "Open · blocks forecast readiness" : decision.status}
+            {gating ? `Holding ${decision.gate!.targetScope.name}` : decision.status === "open" ? decision.readinessRole === "reference" ? "Open reference · no release blocker" : decision.readinessRole === "release_scope" ? "Open release choice · readiness blocked" : "Relevance needs review · readiness held" : decision.status}
           </span>
           <span className="ml-auto i-label" style={{ fontSize: 8.5 }}>
             Decision home · {decision.scope.name}
@@ -534,7 +537,9 @@ function DecisionBody({
           <div data-shoot="inspector-no-gate">
             <Well>
               No delay days are attached to this choice, so it does not move the modeled date. {decision.status === "open"
-                ? `It is still an open product-shape boundary and blocks a publishable Forecast for ${decision.scope.name} until it is decided or dismissed.`
+                ? decision.readinessRole === "reference" ? "It is a reference/process question, not an unresolved release boundary. It does not block readiness."
+                  : decision.readinessRole === "release_scope" ? `It is an open release boundary for ${decision.scope.name}. Record the actual answer when agreed.`
+                  : "Its release relevance has not been reviewed. In Edit details, choose Release scope if it defines what ships, or Reference/process if it does not. Unknown relevance stays visible until reviewed."
                 : `This choice is ${decision.status} and no longer blocks forecast readiness.`}
             </Well>
           </div>
@@ -679,7 +684,7 @@ function DecisionBody({
 
         <div className="i-label pt-1">Reality</div>
         <button data-shoot="decision-edit-details" disabled={busy} onClick={() => {
-          setDetails({ title: decision.title, rationale: decision.rationale ?? "", owner: decision.owner ?? "", neededBy: decision.neededBy?.slice(0, 10) ?? "" });
+          setDetails({ title: decision.title, rationale: decision.rationale ?? "", owner: decision.owner ?? "", neededBy: decision.neededBy?.slice(0, 10) ?? "", readinessRole: decision.readinessRole ?? "needs_review" });
           setEditing(true);
         }} className="text-[11px] text-[var(--i-text-soft)]">Edit details…</button>
         {editing && <div className="space-y-2 rounded p-2" style={{ background: "var(--i-recess)" }}>
@@ -688,6 +693,13 @@ function DecisionBody({
             <input data-shoot={`decision-edit-${key}`} type={key === "neededBy" ? "date" : "text"} value={details[key]}
               onChange={(e) => setDetails({ ...details, [key]: e.target.value })} className="w-full rounded p-1 text-[var(--i-text)] bg-[var(--i-panel)]" />
           </label>)}
+          <label className="block text-[11px]">Release relevance
+            <select data-testid="decision-readiness-role" value={details.readinessRole} onChange={event => setDetails({ ...details, readinessRole: event.target.value })} className="w-full rounded bg-[var(--i-panel)] p-1">
+              <option value="needs_review">Needs review — keep visible</option>
+              <option value="release_scope">Release scope — defines what ships</option>
+              <option value="reference">Reference/process — not a release blocker</option>
+            </select>
+          </label>
           <button data-shoot="decision-edit-save" disabled={busy || !details.title.trim()} onClick={() => void save(() => onUpdate({ ...details, neededBy: details.neededBy || null }), () => setEditing(false))}>Save details</button>
           <button disabled={busy} className="ml-3" onClick={() => setEditing(false)}>Cancel</button>
         </div>}

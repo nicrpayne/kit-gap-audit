@@ -16,7 +16,7 @@ export async function GET() {
       orderBy: [{ status: "asc" }, { createdAt: "asc" }],
       include: {
         gate: { include: { targetScope: { select: { id: true, name: true, targetDate: true } } } },
-        evidence: { select: { id: true, kind: true, sourceLabel: true, excerpt: true, externalRef: true, contextSnapshotId: true } },
+        evidence: { select: { id: true, kind: true, sourceLabel: true, excerpt: true, externalRef: true, contextSnapshotId: true, evidenceItemId: true } },
         scope: { select: { id: true, name: true, targetDate: true } },
       },
     }),

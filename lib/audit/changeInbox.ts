@@ -1,5 +1,6 @@
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
+import { decisionSourceDisposition } from "@/lib/decisions/sourceDisposition";
 import { currentContextSnapshot } from "@/lib/context/currentSnapshot";
 import { readForecastCoverage } from "@/lib/forecast/compute";
 import type { BootstrapProposal, ProjectBootstrapPackageV1 } from "@/lib/bootstrap/contracts";
@@ -61,8 +62,8 @@ function ownerShape(proposal: BootstrapProposal): {
     recommendedAction: "review", completionRequirements: [],
   };
   if (proposal.kind === "decision") return {
-    category: "decision", owner: "decisions", changeType: "create_open_decision",
-    proposedState: { action: "create_open_decision", title: proposal.title, rationale: proposal.statement, ...proposal.payload },
+    category: "decision", owner: "decisions", changeType: decisionSourceDisposition(proposal.payload).status === "decided" ? "create_decided_decision" : "create_open_decision",
+    proposedState: { ...proposal.payload, action: decisionSourceDisposition(proposal.payload).status === "decided" ? "create_decided_decision" : "create_open_decision", title: proposal.title, rationale: proposal.statement, ...decisionSourceDisposition(proposal.payload) },
     recommendedAction: "review", completionRequirements: [],
   };
   if (proposal.kind === "dependency") {

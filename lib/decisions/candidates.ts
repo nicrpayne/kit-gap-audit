@@ -15,6 +15,13 @@
 import { prisma } from "@/lib/prisma";
 import { currentContextSnapshot } from "@/lib/context/currentSnapshot";
 import type { ProjectContextPackage } from "@/lib/context/package";
+import { decisionSourceDisposition } from "./sourceDisposition";
+
+export function candidateDisposition(candidate: { claimKey: string; excerpts: string[] }, pkg?: ProjectContextPackage) {
+  const claim = pkg?.derivedClaims?.find(item => candidate.claimKey.endsWith(`:${item.id}`));
+  const fields = claim?.extra?.fields;
+  return decisionSourceDisposition(fields && typeof fields === "object" && !Array.isArray(fields) ? fields : {}, candidate.excerpts);
+}
 
 // The claim `kind` vocabulary is deliberately open (lib/context/package.ts),
 // so this matches the kinds that actually name a choice and ignores
@@ -38,8 +45,9 @@ export function claimKeyFor(snapshotId: string, claimId: string): string {
 
 export async function currentDecisionCandidates(scopeIds?: string[]) {
   const scopes = scopeIds ?? (await prisma.scope.findMany({ select: { id: true } })).map((scope) => scope.id);
-  const currentIds = (await Promise.all(scopes.map((id) => currentContextSnapshot(id).catch(() => null)))).flatMap((snapshot) => snapshot ? [snapshot.id] : []);
-  return prisma.decisionCandidate.findMany({
+  const snapshots = (await Promise.all(scopes.map((id) => currentContextSnapshot(id).catch(() => null)))).filter(snapshot => snapshot !== null);
+  const currentIds = snapshots.map(snapshot => snapshot.id);
+  const candidates = await prisma.decisionCandidate.findMany({
     // Manual imports have no package pointer. Keep them reviewable without
     // reviving candidates from a superseded/restored knowledge package.
     where: { status: "pending", scopeId: { in: scopes }, OR: [
@@ -48,6 +56,9 @@ export async function currentDecisionCandidates(scopeIds?: string[]) {
     ] }, orderBy: { createdAt: "asc" },
     include: { scope: { select: { id: true, name: true } } },
   });
+  return candidates.map(candidate => ({ ...candidate,
+    suggestedStatus: candidateDisposition(candidate, snapshots.find(snapshot => snapshot.id === candidate.contextSnapshotId)?.package as unknown as ProjectContextPackage).status,
+  }));
 }
 
 export async function harvestCandidates(where: { id?: string; scopeId?: string } = {}): Promise<HarvestResult> {
@@ -77,6 +88,10 @@ export async function harvestCandidates(where: { id?: string; scopeId?: string }
         continue;
       }
       const claimKey = claimKeyFor(snap.id, claim.id);
+      if (await prisma.decision.findFirst({ where: { scopeId: snap.scopeId, title: { equals: claim.statement, mode: "insensitive" } }, select: { id: true } })) {
+        result.alreadyKnown++;
+        continue;
+      }
       if (await prisma.decisionCandidate.findUnique({ where: { claimKey }, select: { id: true } })) {
         result.alreadyKnown++;
         continue;
@@ -92,7 +107,7 @@ export async function harvestCandidates(where: { id?: string; scopeId?: string }
           title: claim.statement,
           sourceLabel,
           contextSnapshotId: snap.id,
-          evidenceRefs: claim.evidenceRefs,
+          evidenceRefs: cited.map(e => e.id),
           excerpts: cited.map((e) => e.excerpt),
           status: "pending",
         },

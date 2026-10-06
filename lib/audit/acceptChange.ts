@@ -57,10 +57,16 @@ async function applyOwnerMutation(
     const existing = await tx.decision.findUnique({ where: { sourceClaimKey: proposal.fingerprint } });
     if (existing) return { type: "Decision", object: existing, before: existing };
     const title = text(state.title ?? proposal.title, "title");
+    // Refresh fingerprints include the new snapshot. A new snapshot must not
+    // recreate a question the owner has already settled, dismissed or edited.
+    // Exact identity only: similar but different questions still need review.
+    const prior = await tx.decision.findFirst({ where: { scopeId: proposal.scopeId, title: { equals: title, mode: "insensitive" } } });
+    if (prior) return { type: "Decision", object: prior, before: prior };
     const decided = action === "create_decided_decision";
     const options = Array.isArray(state.options) ? state.options : [];
     const created = await tx.decision.create({ data: {
       scopeId: proposal.scopeId, title, status: decided ? "decided" : "open",
+      readinessRole: ["release_scope", "reference"].includes(String(state.readinessRole)) ? String(state.readinessRole) : "needs_review",
       rationale: typeof state.rationale === "string" ? state.rationale : proposal.summary,
       options: json(options), chosenOption: decided && typeof state.chosenOption === "string" ? state.chosenOption : null,
       resolution: decided ? text(state.resolution, "resolution") : null, decidedAt: decided ? new Date() : null,

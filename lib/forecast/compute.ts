@@ -225,7 +225,7 @@ async function buildScopeSimInputs(
       where: { scopeId: scope.id },
       select: { id: true, name: true, revision: true, status: true, acceptedEstimate: true, workLinks: { select: { externalId: true, state: true } } },
     }),
-    prisma.decision.count({ where: { scopeId: scope.id, status: "open", gate: { is: null } } }),
+    prisma.decision.count({ where: { scopeId: scope.id, status: "open", readinessRole: { not: "reference" }, gate: { is: null } } }),
     currentContextSnapshot(scope.id),
   ]);
   const estimates = new Map(
@@ -651,6 +651,7 @@ function capacityBasisFor(scope: Scope, bundle: ScopeSimBundle): CapacityBasis {
 }
 
 export interface PortfolioInputs {
+  decisions: import("@/lib/scenario/decisionPlan").DecisionScenarioInput[];
   startDate: Date;
   forecastSource: ForecastSourceStamp;
   scopes: PortfolioScopeInput[];
@@ -671,7 +672,7 @@ export interface PortfolioInputs {
 // against this payload rather than round-tripping to a server route.
 export async function buildPortfolioInputs(): Promise<PortfolioInputs> {
   const readAt = new Date();
-  const [scopes, people, allAllocations, portfolioSettings, reconciliations] = await Promise.all([
+  const [scopes, people, allAllocations, portfolioSettings, reconciliations, decisions] = await Promise.all([
     prisma.scope.findMany({
       orderBy: { createdAt: "asc" },
       include: {
@@ -682,7 +683,7 @@ export async function buildPortfolioInputs(): Promise<PortfolioInputs> {
           },
           orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
         },
-        decisions: { where: { status: "open", gate: { is: null } }, orderBy: { createdAt: "asc" } },
+        decisions: { where: { status: "open", readinessRole: { not: "reference" }, gate: { is: null } }, orderBy: { createdAt: "asc" } },
         derivedState: true,
       },
     }),
@@ -690,6 +691,7 @@ export async function buildPortfolioInputs(): Promise<PortfolioInputs> {
     prisma.allocation.findMany(),
     prisma.portfolioSettings.findUnique({ where: { id: "singleton" } }),
     prisma.capacityReconciliation.findMany(),
+    prisma.decision.findMany({ select: { id: true, scopeId: true, title: true, status: true, updatedAt: true, readinessRole: true, gate: true } }),
   ]);
   const reconciliationByScope = new Map(reconciliations.map((item) => [item.scopeId, item]));
   const exactScopeIds = new Set(reconciliations.filter((item) => item.status === "named_exact" && item.completenessConfirmed).map((item) => item.scopeId));
@@ -838,6 +840,7 @@ export async function buildPortfolioInputs(): Promise<PortfolioInputs> {
     startDate,
     forecastSource: weakestSourceStamp(scopeInputs.map((scope) => scope.forecastSource), readAt),
     scopes: scopeInputs,
+    decisions,
     people,
     allocations,
     contextSwitchCostPct: portfolioSettings?.contextSwitchCostPct ?? 0,

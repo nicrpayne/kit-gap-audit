@@ -30,6 +30,7 @@ import type { ForecastCoverageContract } from "@/lib/forecast/coverage";
 import { acceptedEstimateIdentity, knowledgeEstimateItemId, substituteCapabilityKnowledgeEstimates, type AcceptedCapabilityEstimate, type CapabilityKnowledgeEstimate, type ReviewedCapabilityEstimateResult } from "@/lib/scope/knowledgeEstimates";
 import type { CapabilityStaffingPlan } from "@/lib/scope/capabilityForecast";
 import { scenarioForecastCoverage } from "@/lib/scenario/forecastCoverage";
+import { decisionScenarioGates, validateDecisionPlans, type DecisionPlans, type DecisionScenarioInput } from "@/lib/scenario/decisionPlan";
 
 // The provenance the Scope instrument reads. Produced by describeItems in
 // lib/forecast/compute.ts by joining each simulated item back to the Linear
@@ -160,6 +161,7 @@ export interface ProjectReport {
 }
 
 export interface ProjectPayload {
+  decisions?: DecisionScenarioInput[];
   startDate: string;
   forecastSource: { asOf: string; provider: "Linear"; temporalRole: "live"; availability: "available" | "empty" };
   scopes: ProjectScope[];
@@ -174,6 +176,7 @@ export interface ProjectPayload {
 // The scenario levers the ENGINE genuinely honours today. Anything not in
 // this shape is not simulable, and the UI must say so rather than pretend.
 export interface SuiteScenario {
+  decisionPlans?: DecisionPlans;
   /** Exact cross-project Portfolio plan. This is the durable capacity owner;
       aggregate overrides below are only a backward-compatible projection. */
   capacityPlan: CapacityScenarioPlanV1 | null;
@@ -276,6 +279,7 @@ export function scenarioIsActive(s: SuiteScenario): boolean {
     s.excludedItemIds.size > 0 ||
     s.includedItemIds.size > 0 ||
     s.resolvedGateIds.size > 0 ||
+    Object.keys(s.decisionPlans ?? {}).length > 0 ||
     Object.keys(s.estimateOverrideByItemId).length > 0 ||
     Object.keys(s.knowledgeEstimateByCapabilityId).length > 0 ||
     Object.keys(s.capabilityStaffingById).length > 0 ||
@@ -549,12 +553,13 @@ export function useProject(): ProjectModel {
       : validation;
   }, [scenario.capacityPlan, capacityBaseline, data]);
   const capacityPlanError = capacityPlanValidation.ok ? null : capacityPlanValidation.reason;
+  const decisionPlanError = data ? validateDecisionPlans(scenario.decisionPlans, data.decisions ?? [], data.scopes.map(scope => scope.scopeId), scenario.resolvedGateIds) : null;
   const previewRefusal = useMemo<ScenarioPreviewRefusal | null>(() => capacityPlanError ? {
     code: "invalid_capacity_plan",
     message: capacityPlanError,
     action: "Return to Reality and recreate the staffing experiment with capacity retained on each staffed project.",
     itemIds: [],
-  } : data ? scenarioPreviewRefusal({
+  } : decisionPlanError ? { code: "stale_decision_plan", message: decisionPlanError, action: "Return to Reality and review the changed decision.", itemIds: [] } : data ? scenarioPreviewRefusal({
     scopes: data.scopes.map((scope) => ({
       scopeId: scope.scopeId,
       name: scope.name,
@@ -563,7 +568,7 @@ export function useProject(): ProjectModel {
     excludedItemIds: [...scenario.excludedItemIds],
     includedItemIds: [...scenario.includedItemIds],
     estimateOverrideIds: Object.keys(scenario.estimateOverrideByItemId),
-  }) : null, [data, scenario, capacityPlanError]);
+  }) : null, [data, scenario, capacityPlanError, decisionPlanError]);
 
   const baselineAttempt = useMemo(() => {
     if (!data || !scenarioScopes) return { result: null, reason: null };
@@ -595,6 +600,10 @@ export function useProject(): ProjectModel {
     if (!data || !scenarioScopes) return;
     if (debounce.current) clearTimeout(debounce.current);
     debounce.current = setTimeout(() => {
+      const decisionError = validateDecisionPlans(scenario.decisionPlans, data.decisions ?? [], data.scopes.map(scope => scope.scopeId), scenario.resolvedGateIds);
+      if (decisionError) {
+        setSimFailure(decisionError); setPreview(baseline); setFloorByScope(null); return;
+      }
       if (capacityPlanError) {
         setSimFailure(capacityPlanError);
         setPreview(baseline);
@@ -685,7 +694,7 @@ export function useProject(): ProjectModel {
                 s.scopeId === emptyScopeId
                   ? []
                   : substituteCapabilityKnowledgeEstimates(baseItems, knowledgeSubstitutions),
-              gates: s.gates.filter((g) => !scenario.resolvedGateIds.has(g.id)),
+              gates: decisionScenarioGates(s.scopeId, s.gates, data.decisions ?? [], scenario.decisionPlans, scenario.resolvedGateIds),
             };
           }),
           data.people,
@@ -770,7 +779,7 @@ export function useProject(): ProjectModel {
   }, [data, baseline, preview]);
 
   const active = scenarioIsActive(scenario);
-  const coverageByScope = useMemo(() => data ? scenarioForecastCoverage(data.scopes, scenario, active) : new Map<string, ForecastCoverageContract>(), [data, scenario, active]);
+  const coverageByScope = useMemo(() => data ? scenarioForecastCoverage(data.scopes, scenario, active, data.decisions) : new Map<string, ForecastCoverageContract>(), [data, scenario, active]);
 
   return {
     data,

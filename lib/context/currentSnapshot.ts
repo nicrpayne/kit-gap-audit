@@ -19,7 +19,7 @@ export async function currentContextSnapshot(scopeId: string, db: SnapshotReader
   const active = await db.bootstrapPackage.findUnique({ where: { id: activeId } });
   if (!active) throw new Error("Current knowledge package is unavailable. Complete the knowledge refresh before continuing.");
   const pkg = active.package as { producer?: string; packageId?: string };
-  for (const prefix of ["bootstrap-refresh-v2", "bootstrap-refresh"]) {
+  for (const prefix of ["bootstrap-refresh-v3", "bootstrap-refresh-v2", "bootstrap-refresh"]) {
     const snapshot = await db.contextSnapshot.findFirst({ where: {
       scopeId, producer: "gap_app", packageId: `${prefix}:${pkg.producer}:${pkg.packageId}`,
     } });

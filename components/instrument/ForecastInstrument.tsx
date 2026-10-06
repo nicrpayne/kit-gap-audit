@@ -34,6 +34,7 @@ import { formatCapacity } from "@/lib/capacity/limits";
 import { currentnessLabel, sourceCurrentness } from "@/lib/truth/currentness";
 import { formatDateOnly } from "@/lib/time/dateContract";
 import { readDominance } from "@/lib/scope/constraint";
+import { decisionScenarioBasis, decisionScenarioGates } from "@/lib/scenario/decisionPlan";
 
 type Tool =
   | null
@@ -58,15 +59,28 @@ export default function ForecastInstrument() {
     m.data ? m.data.scopes.map((s) => s.scopeId) : null
   );
   const scope = m.data?.scopes.find((s) => s.scopeId === scopeId) ?? null;
+  const effectiveGates = useMemo(() => decisionScenarioGates(scopeId ?? "", scope?.gates ?? [], m.data?.decisions ?? [], m.scenario.decisionPlans, m.scenario.resolvedGateIds), [scopeId, scope, m.data, m.scenario]);
+  const gateControls = [...(scope?.gates ?? []), ...effectiveGates.filter(g => g.id.startsWith("scenario-decision:"))];
+  function toggleGate(id: string) {
+    m.setScenario(prev => {
+      const decision = m.data?.decisions?.find(d => d.gate?.id === id || `scenario-decision:${d.id}` === id);
+      const decisionPlans = { ...prev.decisionPlans };
+      const resolvedGateIds = new Set(prev.resolvedGateIds);
+      if (decision && id.startsWith("scenario-decision:")) decisionPlans[decision.id] = { basis: decisionScenarioBasis(decision), state: "resolved" };
+      else if (decision && decisionPlans[decision.id]) { delete decisionPlans[decision.id]; resolvedGateIds.delete(id); }
+      else if (resolvedGateIds.has(id)) resolvedGateIds.delete(id);
+      else resolvedGateIds.add(id);
+      return { ...prev, decisionPlans, resolvedGateIds };
+    });
+  }
 
   // Memoised so LivingForecast's gate diffing sees a stable identity — a
   // fresh array every render would re-trigger the enter/leave machinery.
   const openGates = useMemo<GateMark[]>(
     () =>
-      (scope?.gates ?? [])
-        .filter((g) => !m.scenario.resolvedGateIds.has(g.id))
+      effectiveGates
         .map((g) => ({ id: g.id, label: g.label, day: g.likely })),
-    [scope, m.scenario.resolvedGateIds]
+    [effectiveGates]
   );
 
   const strip = (
@@ -151,7 +165,7 @@ export default function ForecastInstrument() {
     // while the debounced preview is pending or the simulation has failed.
     const modeled = m.simulationError ? null : m.active ? (m.previewPending ? null : m.preview?.get(scope.scopeId) ?? null) : reality;
     const delta = modeled && reality ? Math.round((modeled.likelyDate.getTime() - reality.likelyDate.getTime()) / 86400000) : null;
-    const dominance = modeled ? readDominance(modeled, m.floorByScope?.get(scope.scopeId), m.startDate, scope.gates, m.scenario.resolvedGateIds, scope.dependsOnScopeIds.map(id => scopeNameById.get(id) ?? id)) : null;
+    const dominance = modeled ? readDominance(modeled, m.floorByScope?.get(scope.scopeId), m.startDate, effectiveGates, new Set(), scope.dependsOnScopeIds.map(id => scopeNameById.get(id) ?? id)) : null;
     const label = m.simulationError ? "FORECAST UNAVAILABLE — SIMULATION STOPPED" : !coverage.canonicalForecast ? coverage.label : capacityUnreconciled || capacityRequired > 0 ? "FORECAST INCOMPLETE — CAPACITY UNRESOLVED" : "SCENARIO PREVIEW — ACCEPTED REALITY STILL INCOMPLETE";
     const ownFreshness = sourceCurrentness(scope.executionSource.asOf, new Date());
     return <InstrumentShell stateBar={strip} scopes={m.data.scopes.map((s) => ({ scopeId: s.scopeId, name: s.name }))} onSelectScope={setSelected}>
@@ -399,20 +413,13 @@ export default function ForecastInstrument() {
               <div className="min-w-[168px]">
                 <div className="i-label mb-2">Assume decided — hypothetical</div>
                 <div className="flex flex-wrap gap-1.5 max-w-[280px]">
-                  {scope.gates.map((g) => {
-                    const on = m.scenario.resolvedGateIds.has(g.id);
+                  {gateControls.map((g) => {
+                    const on = !effectiveGates.some(gate => gate.id === g.id);
                     return (
                       <button
                         key={g.id}
                         data-shoot="macro-gate"
-                        onClick={() =>
-                          m.setScenario((prev) => {
-                            const n = new Set(prev.resolvedGateIds);
-                            if (n.has(g.id)) n.delete(g.id);
-                            else n.add(g.id);
-                            return { ...prev, resolvedGateIds: n };
-                          })
-                        }
+                        onClick={() => toggleGate(g.id)}
                         className="rounded-full px-2.5 py-1.5 text-[10.5px] max-w-[230px] truncate transition-colors"
                         style={{
                           background: on ? "var(--i-violet)" : "var(--i-panel-raised)",
@@ -424,7 +431,7 @@ export default function ForecastInstrument() {
                       </button>
                     );
                   })}
-                  {scope.gates.length === 0 && (
+                  {gateControls.length === 0 && (
                     <span className="text-[10.5px] text-[var(--i-text-faint)]">No gates on this scope.</span>
                   )}
                 </div>
@@ -539,16 +546,9 @@ export default function ForecastInstrument() {
 
       {tool?.kind === "gate" && (
         <GateDetail
-          gate={scope.gates.find((g) => g.id === tool.id) ?? null}
-          resolved={m.scenario.resolvedGateIds.has(tool.id)}
-          onToggle={() =>
-            m.setScenario((prev) => {
-              const n = new Set(prev.resolvedGateIds);
-              if (n.has(tool.id)) n.delete(tool.id);
-              else n.add(tool.id);
-              return { ...prev, resolvedGateIds: n };
-            })
-          }
+          gate={gateControls.find((g) => g.id === tool.id) ?? null}
+          resolved={!effectiveGates.some(g => g.id === tool.id)}
+          onToggle={() => toggleGate(tool.id)}
           onClose={() => setTool(null)}
         />
       )}

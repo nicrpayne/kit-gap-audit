@@ -463,6 +463,11 @@ export default function OrbitPageClient() {
                       node.scenarioLever?.kind === "resolve-gate" &&
                       m.setScenario((s) => {
                         const { gateId } = node.scenarioLever as { gateId: string };
+                        if (gateId.startsWith("scenario-decision:")) {
+                          const id = gateId.slice("scenario-decision:".length);
+                          const plan = s.decisionPlans?.[id];
+                          return plan ? { ...s, decisionPlans: { ...s.decisionPlans, [id]: { basis: plan.basis, state: "resolved" } } } : s;
+                        }
                         const next = new Set(s.resolvedGateIds);
                         if (next.has(gateId)) next.delete(gateId);
                         else next.add(gateId);

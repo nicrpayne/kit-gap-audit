@@ -63,6 +63,7 @@ import ActualTeamDrawer from "@/components/portfolio/ActualTeamDrawer";
 import { EMPTY_SCENARIO, useProject } from "@/lib/instrument/useProject";
 import ScenarioPreviewRefusal from "@/components/instrument/ScenarioPreviewRefusal";
 import type { ForecastCoverageContract } from "@/lib/forecast/coverage";
+import { decisionScenarioGates } from "@/lib/scenario/decisionPlan";
 
 // The Instrument. GET /api/portfolio/inputs is the one expensive network
 // call (Linear + findings + context, per Scope), fetched once on mount;
@@ -1004,11 +1005,11 @@ export default function PortfolioPageClient() {
         required: reading.required,
         changed: changedScopeIds.has(s.scopeId),
         forecastCoverage: displayedCoverageByScope.get(s.scopeId) ?? s.forecastCoverage,
-        gateCount: s.gates.length,
+        gateCount: decisionScenarioGates(s.scopeId, s.gates, project.data?.decisions ?? [], project.scenario.decisionPlans, project.scenario.resolvedGateIds).length,
         completionDays: p?.completionDaysSorted ?? [],
       };
     });
-  }, [data, workforceState, switchCostPct, requiredByScope, baseline, preview, changedScopeIds, pendingTargets, startDateObj, displayedCoverageByScope]);
+  }, [data, workforceState, switchCostPct, requiredByScope, baseline, preview, changedScopeIds, pendingTargets, startDateObj, displayedCoverageByScope, project.data, project.scenario]);
 
   const deficit = useMemo(() => {
     const entry = [...requiredByScope.entries()].find(([, v]) => v > 1e-6);

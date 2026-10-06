@@ -6,6 +6,7 @@ import { isDecisionBriefV1, type DecisionBriefV1 } from "../lib/reports/decision
 import { CANONICAL_REPORT_MODE_WHERE } from "../lib/reports/history";
 import { buildCapacityPlanBaseline, createCapacityScenarioPlan } from "../lib/scenario/capacityPlan";
 import { estimateBoundaryFingerprint, isAcceptedCapabilityEstimateV2, type AcceptedCapabilityEstimateV2 } from "../lib/scope/knowledgeEstimates";
+import { decisionScenarioBasis } from "../lib/scenario/decisionPlan";
 
 if (process.env.REPORTS_DB_PROOF !== "1") {
   throw new Error("Refusing to write: set REPORTS_DB_PROOF=1 only for a disposable loopback PostgreSQL database.");
@@ -351,7 +352,7 @@ async function cleanupFixture() {
   await db.decision.deleteMany({ where: { scopeId } }).catch(() => undefined);
   await db.report.deleteMany({ where: { scopeId } }).catch(() => undefined);
   await db.contextSnapshot.deleteMany({ where: { scopeId } }).catch(() => undefined);
-  await db.scope.deleteMany({ where: { id: scopeId } }).catch(() => undefined);
+  await db.scope.deleteMany({ where: { id: { in: [scopeId, `${scopeId}-other`] } } }).catch(() => undefined);
   await db.person.deleteMany({ where: { id: personId } }).catch(() => undefined);
   await db.portfolioSettings.deleteMany({ where: { id: "singleton" } }).catch(() => undefined);
 }
@@ -456,6 +457,32 @@ async function main() {
   assert(lateMutationId, "the standalone late owner mutation actually ran");
   assert.equal(await db.report.count({ where: { scopeId } }), 0);
   await db.decision.delete({ where: { id: lateMutationId } });
+
+  // Decision drag plans must replay through the real report generator, with
+  // the same Reality basis and exact supplied timing, never an owner write.
+  const draggable = await db.decision.create({ data: { scopeId, title: "Decision drag report fixture", status: "open", readinessRole: "reference" }, include: { gate: true } });
+  const decisionPlan = { basis: decisionScenarioBasis(draggable), state: "gating" as const, gate: { targetScopeId: scopeId, dependency: "Release waits for fixture approval", evidenceForGate: "Fictional timing supplied for this test", low: 7, likely: 7, high: 7 } };
+  const dragInput = { ...scenarioSnapshot(`drag-${fixtureKey}`), excludedItemIds: [], capacityPlan: null, capacityOverrideByScope: {}, decisionPlans: { [draggable.id]: decisionPlan } };
+  const dragPair = await generateReportComparison(scope, dragInput);
+  assert.equal(Date.parse(dragPair.scenario.brief.headline.likelyWindow.value.likely!) - Date.parse(dragPair.reality.brief.headline.likelyWindow.value.likely!), 7 * 86_400_000);
+  assert(basisOf(dragPair.scenario.brief).scopes.find(s => s.scopeId === scopeId)?.gates.some(g => g.id === `scenario-decision:${draggable.id}` && g.low === 7 && g.high === 7));
+  assert.match(dragPair.scenario.report.summaryMarkdown, /Not an accepted decision/);
+  assert.doesNotMatch(dragPair.scenario.brief.headline.keyReason.value, /canonical Decision Gates/);
+  assert.equal((await db.decision.findUniqueOrThrow({ where: { id: draggable.id }, include: { gate: true } })).gate, null);
+  await db.decision.update({ where: { id: draggable.id }, data: { rationale: "Owner changed after drag" } });
+  await assert.rejects(() => generateReportComparison(scope, { ...dragInput, scenarioId: `stale-drag-${fixtureKey}` }), /Decision changed/);
+  await db.report.deleteMany({ where: { id: { in: [dragPair.reality.report.id, dragPair.scenario.report.id] } } });
+  const other = await db.scope.create({ data: { id: `${scopeId}-other`, name: "Other fixture project", teamKey: "SOF", projectNames: [], executionState: "unconfigured" } });
+  const foreignDecision = await db.decision.update({ where: { id: draggable.id }, data: { scopeId: other.id }, include: { gate: true } });
+  const foreignPair = await generateReportComparison(scope, { ...dragInput, scenarioId: `foreign-drag-${fixtureKey}`, decisionPlans: {
+    [draggable.id]: { ...decisionPlan, basis: decisionScenarioBasis(foreignDecision) },
+  } });
+  assert.equal(foreignPair.reality.brief.calls.decisions.value.some(d => d.id === draggable.id), false);
+  assert(foreignPair.scenario.brief.calls.decisions.value.some(d => d.id === draggable.id && d.gated && d.gate?.targetScopeId === scopeId));
+  await db.report.deleteMany({ where: { id: { in: [foreignPair.reality.report.id, foreignPair.scenario.report.id] } } });
+  await db.decision.delete({ where: { id: draggable.id } });
+  await db.scope.delete({ where: { id: other.id } });
+  console.log("PASS Decision drag replay freezes exact delay and assumption, preserves Reality, rejects stale plans");
 
   const comparisonId = `comparison-success-${fixtureKey}`;
   const input = scenarioSnapshot(comparisonId);

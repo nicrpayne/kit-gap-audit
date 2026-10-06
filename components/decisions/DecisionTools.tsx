@@ -450,6 +450,7 @@ function ModeChoice({
 
 // ── CONNECT TO DELIVERY ────────────────────────────────────────────────
 export function ConnectTool({
+  scenario = false,
   open,
   decisionTitle,
   gate,
@@ -459,6 +460,7 @@ export function ConnectTool({
   onClose,
   onConnect,
 }: {
+  scenario?: boolean;
   open: boolean;
   decisionTitle: string;
   gate?: { targetScope: { id: string }; dependency: string; evidenceForGate: string; low: number; likely: number; high: number } | null;
@@ -493,7 +495,7 @@ export function ConnectTool({
     openedGate.current = true;
     setDependency(gate?.dependency ?? "");
     setEvidenceForGate(gate?.evidenceForGate ?? "");
-    setLow(String(gate?.low ?? 1)); setLikely(String(gate?.likely ?? 4)); setHigh(String(gate?.high ?? 10));
+    setLow(gate ? String(gate.low) : ""); setLikely(gate ? String(gate.likely) : ""); setHigh(gate ? String(gate.high) : "");
     if (gate) setTargetScopeId(gate.targetScope.id);
     setErrors({});
   }, [open, decisionTitle, gate, setTargetScopeId]);
@@ -502,19 +504,18 @@ export function ConnectTool({
     <ToolWindow
       open={open}
       onClose={onClose}
-      title="Connect to delivery"
+      title={scenario ? "Try a blocking delay · Scenario" : "Review & save a real delivery delay"}
       subtitle={decisionTitle}
       width={470}
       dataShoot="connect-tool"
     >
       <div className="px-5 py-4 space-y-4">
         <p className="text-[11px] text-[var(--i-text-soft)] leading-relaxed">
-          This is the only way a decision reaches the forecast. Answer all four, and the claim becomes
-          auditable by anyone who later asks why a date moved.
+          {scenario ? "This changes your what-if only. Supply the assumed serial wait; no accepted decision is changed." : "Saving changes accepted Reality. Confirm what must wait, the source supporting that claim, and the time needed to resolve it."}
         </p>
 
         <div>
-          <Question n={1} text="What waits on this?" hint="V1 gates a whole project. Features have no durable identity yet, so a smaller true model beats fake precision." />
+          <Question n={1} text="What waits on this?" hint="This control models a serial wait for the whole selected project, not a delay for one feature." />
           <select
             data-shoot="gate-target"
             value={targetScopeId}
@@ -610,10 +611,11 @@ export function ConnectTool({
       <div className="px-5 py-3" style={{ borderTop: "1px solid var(--i-border)" }}>
         <button
           data-shoot="gate-submit"
-          disabled={busy || pending}
+          disabled={busy || pending || !low.trim() || !likely.trim() || !high.trim() || !dependency.trim() || !evidenceForGate.trim()}
           onClick={() =>
             submitOnce(async () => {
               try {
+                if (!low.trim() || !likely.trim() || !high.trim()) { setErrors({ estimate: "Enter all three delay estimates; no default delay is assumed." }); return; }
                 const errs = await onConnect({
                   targetScopeId,
                   dependency,
@@ -630,7 +632,7 @@ export function ConnectTool({
           className="w-full rounded-md px-3 py-2 text-[12px] font-semibold uppercase tracking-[0.1em] disabled:opacity-30"
           style={{ background: "var(--i-red-soft)", color: "var(--i-red)", border: "1px solid var(--i-red)" }}
         >
-          Insert into delivery path
+          {scenario ? "Try this delay in Scenario" : "Save real delivery delay"}
         </button>
       </div>
     </ToolWindow>

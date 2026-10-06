@@ -105,19 +105,22 @@ export function adaptOrbitInput(i: OrbitAdaptInput): OrbitInput | null {
   // endpoint, and no guessing by matching labels.
   const gates: OrbitGateInput[] = [];
   for (const d of decisions) {
-    if (!d.gate) continue;
+    const plan = scenario.decisionPlans?.[d.id];
+    if (plan?.state === "open" || plan?.state === "resolved") continue;
+    const gate = plan?.gate ? { ...plan.gate, id: `scenario-decision:${d.id}`, serial: true } : d.gate;
+    if (!gate) continue;
     gates.push({
-      gateId: d.gate.id,
+      gateId: gate.id,
       decisionId: d.id,
       decisionTitle: d.title,
       decisionStatus: d.status,
-      targetScopeId: d.gate.targetScopeId,
-      low: d.gate.low,
-      likely: d.gate.likely,
-      high: d.gate.high,
-      serial: d.gate.serial,
-      dependency: d.gate.dependency,
-      evidenceForGate: d.gate.evidenceForGate,
+      targetScopeId: gate.targetScopeId,
+      low: gate.low,
+      likely: gate.likely,
+      high: gate.high,
+      serial: gate.serial,
+      dependency: gate.dependency,
+      evidenceForGate: gate.evidenceForGate,
       evidenceCount: d.evidence.length,
     });
   }

@@ -5,11 +5,13 @@ import {
 } from "@/lib/scenario/capacityPlan";
 import type { CapabilityStaffingPlan } from "@/lib/scope/capabilityForecast";
 import { countScenarioReportLevers } from "./scenarioConflicts";
+import { parseDecisionPlans, type DecisionPlans } from "@/lib/scenario/decisionPlan";
 
 export const LEGACY_SCENARIO_REPORT_VERSION = "scenario-report.v1" as const;
 export const SCENARIO_REPORT_VERSION = "scenario-report.v2" as const;
 
 export interface ScenarioReportSnapshotV1 {
+  decisionPlans?: DecisionPlans;
   version: typeof LEGACY_SCENARIO_REPORT_VERSION | typeof SCENARIO_REPORT_VERSION;
   scenarioId: string;
   baseRealityRevision: number;
@@ -84,7 +86,7 @@ export function parseScenarioReportSnapshot(value: unknown): ScenarioReportSnaps
     "version", "scenarioId", "baseRealityRevision", "excludedItemIds", "includedItemIds",
     "resolvedGateIds", "estimateOverrideByItemId", "capacityOverrideByScope", "capacityPlan",
     "contextSwitchCostPct", "excludedCapabilityIds", "knowledgeEstimateByCapabilityId",
-    "capabilityStaffingById", "computed",
+    "capabilityStaffingById", "computed", "decisionPlans",
   ]);
   const unknownFields = Object.keys(raw).filter((key) => !knownFields.has(key));
   if (unknownFields.length) {
@@ -156,6 +158,7 @@ export function parseScenarioReportSnapshot(value: unknown): ScenarioReportSnaps
     }
   }
   const snapshot: ScenarioReportSnapshotV1 = {
+    ...(raw.decisionPlans !== undefined ? { decisionPlans: (() => { try { return parseDecisionPlans(raw.decisionPlans); } catch (error) { throw new ScenarioReportValidationError(error instanceof Error ? error.message : "Invalid Decision assumptions."); } })() } : {}),
     version,
     scenarioId,
     baseRealityRevision: baseRealityRevision as number,

@@ -72,7 +72,7 @@ export function toContextPackage(scopeId: string, pkg: ProjectBootstrapPackageV1
     version: "1.1",
     // A new materializer captures structured schedule fields. Never overwrite
     // an immutable v1 snapshot or collide with its previous content hash.
-    packageId: `bootstrap-refresh-v2:${pkg.producer}:${pkg.packageId}`,
+    packageId: `bootstrap-refresh-v3:${pkg.producer}:${pkg.packageId}`,
     producer: "gap_app",
     generatedAt: pkg.generatedAt,
     scopeId,

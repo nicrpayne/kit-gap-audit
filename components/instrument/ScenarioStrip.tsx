@@ -170,6 +170,8 @@ export function chipsFor(
       href: "/decisions",
     });
   }
+  const decisionCount = Object.keys(scenario.decisionPlans ?? {}).length;
+  if (decisionCount) chips.push({ id: "decision-plans", label: `${decisionCount} decision what-if${decisionCount === 1 ? "" : "s"}`, href: "/decisions" });
   const reEstimated = Object.keys(scenario.estimateOverrideByItemId).length;
   if (reEstimated > 0) {
     chips.push({

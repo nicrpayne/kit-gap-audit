@@ -335,7 +335,7 @@ function auditDelta(current: AuditObservationInput | null, prior: AuditObservati
 
 function headlineReason(input: DecisionBriefOwnerInputs, delta: ReturnType<typeof auditDelta>): string {
   if (input.forecast.decisionDelayDays.likely > 0) {
-    return `${input.forecast.decisionDelayDays.likely} likely serial day${input.forecast.decisionDelayDays.likely === 1 ? "" : "s"} come from open canonical Decision Gates.`;
+    return `${input.forecast.decisionDelayDays.likely} likely serial day${input.forecast.decisionDelayDays.likely === 1 ? "" : "s"} come from ${input.mode === "scenario" ? "Decision Gates in this hypothetical Scenario" : "open canonical Decision Gates"}.`;
   }
   if (input.previousReport) {
     const movement = daysBetween(input.previousReport.likelyDate, input.forecast.likelyDate);

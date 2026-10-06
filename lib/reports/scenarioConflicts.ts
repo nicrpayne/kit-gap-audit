@@ -104,6 +104,7 @@ export function scenarioLeverConflictMessage(conflicts: ScenarioLeverConflict[])
 }
 
 export interface ScenarioReportLeverSelection {
+  decisionPlans?: Record<string, unknown>;
   excludedItemIds: readonly string[];
   includedItemIds: readonly string[];
   excludedCapabilityIds: readonly string[];
@@ -117,7 +118,7 @@ export interface ScenarioReportLeverSelection {
 }
 
 export function countScenarioReportLevers(input: ScenarioReportLeverSelection): number {
-  return input.excludedItemIds.length + input.includedItemIds.length + input.excludedCapabilityIds.length +
+  return Object.keys(input.decisionPlans ?? {}).length + input.excludedItemIds.length + input.includedItemIds.length + input.excludedCapabilityIds.length +
     input.resolvedGateIds.length + input.estimateOverrideIds.length + input.knowledgeCapabilityIds.length +
     input.staffingCapabilityIds.length + (input.hasCapacityPlan ? 1 : input.capacityOverrideScopeIds.length) +
     (input.contextSwitchCostPct === null ? 0 : 1);

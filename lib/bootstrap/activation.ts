@@ -1,5 +1,6 @@
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
+import { decisionSourceDisposition } from "@/lib/decisions/sourceDisposition";
 import { normalizeSearchText } from "@/lib/audit/searchText";
 import { hashProjectContextPackage } from "@/lib/context/hash";
 import type { JsonValue, ProjectContextPackage } from "@/lib/context/package";
@@ -507,9 +508,11 @@ async function runActivationTransaction(bootstrapId: string, request: Activation
     }
 
     for (const item of manifest.willBecomeCanonical.decisions) {
+      const disposition = decisionSourceDisposition(item.payload);
       const decision = await tx.decision.create({ data: {
         scopeId: scope.id, title: typeof item.payload.question === "string" ? item.payload.question : item.title,
-        status: "open", owner: typeof item.payload.owner === "string" ? item.payload.owner : typeof item.payload.ownerHint === "string" ? item.payload.ownerHint : null,
+        ...disposition, decidedAt: disposition.status === "decided" ? new Date() : null,
+        owner: typeof item.payload.owner === "string" ? item.payload.owner : typeof item.payload.ownerHint === "string" ? item.payload.ownerHint : null,
         rationale: typeof item.payload.rationale === "string" ? item.payload.rationale : null,
         sourceClaimKey: `bootstrap:${item.candidateId}`,
       } });

@@ -268,6 +268,8 @@ export default function ReportsPageClient() {
       ? "Choose a project first."
       : !project.active
         ? "Stage at least one Scope, estimate, staffing, Capacity, or decision lever in Scenario first."
+        : project.scenarioPreviewRefusal
+          ? project.scenarioPreviewRefusal.message
         : unreviewedKnowledgeReason
           ? unreviewedKnowledgeReason
         : ambiguousItemLeverReason
@@ -316,6 +318,7 @@ export default function ReportsPageClient() {
       return;
     }
     const supportedLeverCount = countScenarioReportLevers({
+      decisionPlans: project.scenario.decisionPlans,
       excludedItemIds: [...project.scenario.excludedItemIds],
       includedItemIds: [...project.scenario.includedItemIds],
       excludedCapabilityIds,
@@ -335,6 +338,7 @@ export default function ReportsPageClient() {
     setError(null);
     let scenarioId = `scenario-${crypto.randomUUID()}`;
     const scenarioSnapshot = {
+      decisionPlans: project.scenario.decisionPlans,
       version: "scenario-report.v2",
       scenarioId,
       baseRealityRevision: scope.realityState.realityRevision,

@@ -421,7 +421,12 @@ function proposalFromIntelligence(
     const title = firstString(head.fields, ["question", "decision", "title"]) ?? head.statement;
     result.push(proposal({ ...common, kind: "decision", title,
       whyProposed: "A current external Decision object matched the requested project identity.",
-      payload: { question: title, ownerHint: firstString(head.fields, ["owner", "decision_owner"]) ?? null, createsGate: false },
+      payload: { question: title, ownerHint: firstString(head.fields, ["owner", "decision_owner"]) ?? null, createsGate: false,
+        sourceStatus: head.status ?? head.fields.status ?? null,
+        approvalBasis: head.fields.approval_basis ?? null,
+        resolution: head.statement,
+        unresolvedContradiction: head.contradictedBy.length > 0,
+      },
     }, evidenceById, head.contradictedBy.length > 0));
   } else if (type === "dependency") {
     const from = firstString(head.fields, ["from", "dependent", "subject", "project"]);
