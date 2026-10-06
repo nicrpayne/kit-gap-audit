@@ -1,6 +1,6 @@
 "use client";
 
-import { useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import ToolWindow from "@/components/instrument/ToolWindow";
 import type { ScopeWorkItem, SuiteScenario } from "@/lib/instrument/useProject";
 import { bulkStageEligibleItems, isBulkStageEligible } from "@/lib/scope/proposalEligibility";
@@ -115,11 +115,19 @@ export default function ScopeReconciliation(props: {
   onUnstage: (itemId: string) => void;
   onStageConfident: () => void;
   onCommit: () => void;
+  openWorkRequest: number;
+  onResolveWork: (item: ScopeWorkItem) => void;
 }) {
   const { proposal, loading, warning, error, realityRevision, capabilities, unmapped, selections, committing, commitError, committed, onRefresh, onStage, onUnstage, onStageConfident, onCommit } = props;
   const [bank, setBank] = useState<Bank>("review");
   const [query, setQuery] = useState("");
   const [focusedId, setFocusedId] = useState<string | null>(null);
+  const workList = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!props.openWorkRequest) return;
+    setBank("work"); setQuery("");
+    requestAnimationFrame(() => workList.current?.focus());
+  }, [props.openWorkRequest]);
   const selectionByItem = useMemo(() => new Map(selections.map((selection) => [selection.itemId, selection])), [selections]);
   const focused = proposal?.items.find((item) => item.id === focusedId) ?? null;
   const completeness = proposal?.sourceWatermark.completeness && typeof proposal.sourceWatermark.completeness === "object" ? proposal.sourceWatermark.completeness as Record<string, unknown> : null;
@@ -180,22 +188,22 @@ export default function ScopeReconciliation(props: {
           <div className="mt-3 grid grid-cols-3 gap-1.5" role="tablist" aria-label="Scope reconciliation banks">
             <BankButton active={bank === "review"} onClick={() => setBank("review")} label={`Review ${reviewItems.length}`} />
             <BankButton active={bank === "later"} onClick={() => setBank("later")} label={`Out / later ${laterItems.length}`} />
-            <BankButton active={bank === "work"} onClick={() => setBank("work")} label={`Work ${unmapped.length}`} />
+            <BankButton active={bank === "work"} onClick={() => setBank("work")} label={`Unresolved ${unmapped.length}`} />
           </div>
           <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Find capability or work" aria-label="Find reconciliation candidate" className="mt-2.5 w-full rounded-md px-3 py-2 text-[10.5px] outline-none" style={{ border: "1px solid var(--i-border)", background: "var(--i-recess)", color: "var(--i-text)" }} />
-          <p id="candidate-path-help" className="mt-2 text-[9px] leading-snug text-[var(--i-text-faint)]">Browse the candidates below. Open one to inspect evidence and stage a reviewed change.</p>
+          <p id="candidate-path-help" className="mt-2 text-[10px] leading-snug text-[var(--i-text-soft)]">{bank === "work" ? "Open a ticket below. Assign it to a feature in this release or out / later, then save." : "Browse the candidates below. Open one to inspect evidence and stage a reviewed change."}</p>
         </div>
 
-        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-3 focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--i-violet)]" tabIndex={0} role="region" aria-label="Reconciliation candidates" aria-describedby="candidate-path-help" data-shoot="candidate-scroll-region">
+        <div ref={workList} className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-3 focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--i-violet)]" tabIndex={0} role="region" aria-label="Reconciliation candidates" aria-describedby="candidate-path-help" data-shoot="candidate-scroll-region">
           {loading && !proposal && <State title="Composing current truth" body="Reading the latest accepted snapshot, accepted Scope Reality, and current Linear execution." shoot="reconciliation-loading" />}
           {!loading && !proposal && <State title="No proposal available" body="Reality is unchanged. Refresh when Knowledge and Linear are available." shoot="reconciliation-empty" />}
-          {bank === "work" ? <WorkBank items={unmapped} query={query} /> : <div className="space-y-2">
+          {bank === "work" ? <WorkBank items={unmapped} query={query} onResolve={props.onResolveWork} /> : <div className="space-y-2">
             {visibleItems.map((item) => <CandidateRow key={item.id} item={item} selected={selectionByItem.has(item.id)} onOpen={() => setFocusedId(item.id)} />)}
             {proposal && visibleItems.length === 0 && <State title={bank === "later" ? "No deferred candidates" : "No matching reconciliation"} body="The current source ledgers do not contain an item in this bank." shoot="reconciliation-no-matches" />}
           </div>}
         </div>
 
-        <div className="shrink-0 p-3.5" style={{ borderTop: "1px solid var(--i-border)" }}>
+        {bank !== "work" && <div className="shrink-0 p-3.5" style={{ borderTop: "1px solid var(--i-border)" }}>
           <div className="flex gap-2">
             <button onClick={onStageConfident} disabled={bulkEligible.length === 0 || committing} aria-describedby="bulk-stage-explanation" className="flex-1 rounded-md px-3 py-2.5 text-[10px] text-[var(--i-text-soft)] disabled:cursor-not-allowed disabled:opacity-30" style={{ border: "1px solid var(--i-border-strong)" }} data-shoot="stage-aligned">{`Stage ${bulkEligible.length} aligned`}</button>
             <button onClick={onCommit} disabled={selections.length === 0 || committing || Boolean(proposal?.stale)} className="flex-1 rounded-md px-3 py-2.5 text-[10px] font-medium disabled:opacity-30" style={{ border: "1px solid var(--i-signal)", color: "var(--i-signal)", background: "color-mix(in srgb, var(--i-signal) 6%, transparent)" }} data-shoot="commit-reconciled-scope">{committing ? "Committing…" : selections.length > 0 ? `Commit ${selections.length} to Reality` : "Commit staged to Reality"}</button>
@@ -206,7 +214,7 @@ export default function ScopeReconciliation(props: {
           {commitError && <p className="mt-2 text-[10px] leading-snug text-[var(--i-red)]" data-shoot="reconciliation-conflict">{commitError}</p>}
           {committed && <p className="mt-2 text-[10px] text-[var(--i-mint)]">Reality committed and derived truth refreshed.</p>}
           <p className="mt-2 text-[9px] leading-snug text-[var(--i-text-faint)]">Open any candidate to inspect evidence, execution, corrections, and modeled consequence together.</p>
-        </div>
+        </div>}
       </aside>
 
       <ReconciliationFocus item={focused} nextItem={nextReviewItem} selection={focused ? selectionByItem.get(focused.id) : undefined} capabilities={capabilities} committing={committing} onClose={() => setFocusedId(null)} onReviewNext={(itemId) => setFocusedId(itemId)} onStage={onStage} onUnstage={onUnstage} />
@@ -362,7 +370,12 @@ function ReconciliationFocus({ item, nextItem, selection, capabilities, committi
   </ToolWindow>;
 }
 
-function WorkBank({ items, query }: { items: ScopeWorkItem[]; query: string }) { const visible = items.filter((item) => !query || `${item.id} ${item.label}`.toLowerCase().includes(query.toLowerCase())); return <div className="space-y-2" data-shoot="execution-work-finder">{visible.slice(0, 80).map((item) => <div key={item.id} className="rounded-lg px-3.5 py-3" style={{ border: "1px solid var(--i-border)", background: "var(--i-recess)" }}><div className="text-[10.5px] font-medium leading-snug text-[var(--i-text)]">{item.label}</div><div className="mt-1.5 text-[9px] text-[var(--i-text-faint)]">{item.state ?? "unknown"} · {item.estimateSource === "issue_placeholder" ? "estimate missing" : `${item.low}–${item.likely}–${item.high}d`}</div></div>)}{visible.length === 0 && <State title="No matching work" body="Try another identifier or title." shoot="work-no-matches" />}</div>; }
+function WorkBank({ items, query, onResolve }: { items: ScopeWorkItem[]; query: string; onResolve: (item: ScopeWorkItem) => void }) {
+  const visible = items.filter((item) => !query || `${item.id} ${item.label}`.toLowerCase().includes(query.toLowerCase()));
+  return <div className="space-y-2" data-shoot="execution-work-finder">{visible.map((item) => <button key={item.id} onClick={() => onResolve(item)} aria-label={`Resolve ${item.id}`} className="w-full rounded-lg px-3.5 py-3 text-left hover:border-[var(--i-signal)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--i-signal)]" style={{ border: "1px solid var(--i-border)", background: "var(--i-recess)" }}>
+    <div className="text-[12px] font-medium leading-snug text-[var(--i-text)]">{item.label}</div><div className="mt-2 text-[10px] text-[var(--i-text-faint)]">{item.state ?? "unknown"} · {item.assignee ?? "Unassigned"}</div><div className="mt-2 text-[11px] text-[var(--i-signal)]">Resolve ticket →</div>
+  </button>)}{visible.length === 0 && <State title={items.length ? "No matching work" : "All tickets classified"} body={items.length ? "Try another identifier or title." : "No unresolved tickets in the current Linear read. Other forecast requirements may still need attention."} shoot="work-no-matches" />}</div>;
+}
 function BankButton({ active, onClick, label }: { active: boolean; onClick: () => void; label: string }) { return <button role="tab" aria-selected={active} onClick={onClick} className="rounded-md px-2 py-2 text-[9.5px] font-medium" style={{ border: `1px solid ${active ? "var(--i-violet)" : "var(--i-border)"}`, color: active ? "var(--i-text)" : "var(--i-text-faint)", background: active ? "color-mix(in srgb, var(--i-violet) 7%, transparent)" : "transparent" }}>{label}</button>; }
 function Origin({ value }: { value: string }) { const tone = value === "knowledge" ? "var(--i-signal)" : value === "reality" ? "var(--i-mint)" : "var(--i-amber)"; return <span className="rounded-full px-2 py-0.5 text-[8.5px] uppercase tracking-[0.09em]" style={{ border: `1px solid color-mix(in srgb, ${tone} 38%, var(--i-border))`, color: tone }}>{value}</span>; }
 function ReleaseClaimChip({ claim, activeRelease, effective, superseded }: { claim: ReleaseClaimView; activeRelease: string | null; effective: boolean; superseded: boolean }) { const sameNamedBoundary = Boolean(activeRelease && claim.boundary?.toLowerCase() === activeRelease.toLowerCase()); const relation = effective ? "applied" : superseded ? "superseded" : claim.specificity === "generic" ? "unqualified" : sameNamedBoundary ? "context only" : "other boundary"; const tone = effective ? "var(--i-mint)" : superseded ? "var(--i-text-faint)" : "var(--i-amber)"; return <span className="rounded-full px-2 py-0.5 text-[8px] uppercase tracking-[0.08em]" title={activeRelease ? `Interpreted for ${activeRelease}` : "Active release unresolved"} style={{ border: `1px solid color-mix(in srgb, ${tone} 38%, var(--i-border))`, color: tone }}>{claim.direction} · {claim.boundary ?? "unspecified"} · {relation}</span>; }

@@ -36,8 +36,6 @@ export function scopeRealityError(error: unknown) {
   if (error && typeof error === "object" && "code" in error && error.code === "P2025") {
     return NextResponse.json({ error: "That Scope object no longer exists." }, { status: 404 });
   }
-  return NextResponse.json(
-    { error: error instanceof Error ? error.message : "Scope Reality write failed." },
-    { status: 500 },
-  );
+  console.error("Scope Reality write failed", error);
+  return NextResponse.json({ error: "Signal could not confirm this save. Your draft is still here. Try saving again; the same request will not be applied twice.", code: "SCOPE_SAVE_UNCONFIRMED" }, { status: 503 });
 }

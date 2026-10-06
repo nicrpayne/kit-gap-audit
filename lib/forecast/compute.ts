@@ -439,6 +439,7 @@ export async function readForecastCoverage(scope: Scope): Promise<ForecastCovera
 // attribute. Anything the sources don't carry stays null rather than being
 // guessed at.
 export interface ScopeWorkItem extends SourcedWorkItem {
+  description?: string | null;
   /** "ticket" = a real Linear issue. "inferred" = an open Finding the audit
       raised that no ticket covers yet, which the engine already counts as
       real work (see buildForecastInputs). */
@@ -487,6 +488,7 @@ function describeItems(bundle: ScopeSimBundle): ScopeWorkItem[] {
         ...item,
         kind: "ticket" as const,
         state: issue.state,
+        description: issue.description,
         externalUrl: issue.url ?? null,
         updatedAt: issue.updatedAt ?? null,
         assignee: issue.assignee,

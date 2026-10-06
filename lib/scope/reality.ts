@@ -1,5 +1,6 @@
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
+import { capabilityWriteIntent } from "@/lib/scope/writeIntent";
 import { currentContextSnapshot } from "@/lib/context/currentSnapshot";
 import { SCOPE_PROPOSAL_COMPILER_VERSION } from "@/lib/scope/proposal";
 import { invalidateDerivedReads, recomputeDerivedReads } from "@/lib/audit/derivedRefresh";
@@ -114,10 +115,36 @@ function status(value: unknown): CapabilityStatus {
 }
 
 async function finish(scopeId: string, changed: boolean) {
-  const derived = changed
-    ? await recomputeDerivedReads(scopeId)
-    : await prisma.projectDerivedState.findUnique({ where: { scopeId } });
-  return { derived };
+  // The owner transaction has already committed. A derived-read failure must
+  // never turn a saved change into a misleading failed-save response.
+  try {
+    const existing = changed ? null : await prisma.projectDerivedState.findUnique({ where: { scopeId } });
+    const derived = changed || existing?.status !== "current" ? await recomputeDerivedReads(scopeId) : existing;
+    return { derived, refreshWarning: derived?.status === "error" ? "Saved. Forecast refresh needs another attempt." : null };
+  } catch (error) {
+    console.error("Scope saved; derived refresh failed", error);
+    return { derived: null, refreshWarning: "Saved. Forecast refresh needs another attempt; reload to check the latest coverage." };
+  }
+}
+
+// Remote database round trips can exceed Prisma's 5s default. Keep the write
+// bounded, and do not read thirty large historical snapshots inside its lock.
+export const SCOPE_WRITE_TRANSACTION = { isolationLevel: Prisma.TransactionIsolationLevel.Serializable, maxWait: 5_000, timeout: 20_000 };
+
+export async function capabilityWriteReceipt(idempotencyKey: string, scopeId?: string) {
+  const event = await prisma.capabilityEvent.findUnique({ where: { idempotencyKey } });
+  if (!event || (scopeId && event.scopeId !== scopeId)) return null;
+  const after = plain(event.afterState);
+  if (typeof after.writeIntent !== "string") return null;
+  return { committed: true as const, intent: after.writeIntent, scopeId: event.scopeId,
+    capabilityId: event.capabilityId, revision: after.revision, eventId: event.id };
+}
+
+async function recoveredCapability(idempotencyKey: string, intent: string) {
+  const receipt = await capabilityWriteReceipt(idempotencyKey);
+  if (!receipt) return null;
+  if (receipt.intent !== intent) throw new ScopeRealityConflictError("This save key belongs to a different change. Reload before saving.");
+  return prisma.capability.findUniqueOrThrow({ where: { id: receipt.capabilityId }, include: { workLinks: true } });
 }
 
 async function retrySerializable<T>(work: () => Promise<T>): Promise<T> {
@@ -184,10 +211,8 @@ async function assertWorkAvailable(
 }
 
 async function createLinks(tx: Prisma.TransactionClient, capabilityId: string, work: OwnerWorkItem[]) {
-  for (const item of work) {
-    await tx.capabilityWorkLink.upsert({
-      where: { capabilityId_provider_externalId: { capabilityId, provider: "linear", externalId: item.externalId } },
-      create: {
+  if (!work.length) return;
+  await tx.capabilityWorkLink.createMany({ skipDuplicates: true, data: work.map((item) => ({
         capabilityId,
         provider: "linear",
         externalId: item.externalId,
@@ -202,10 +227,9 @@ async function createLinks(tx: Prisma.TransactionClient, capabilityId: string, w
           reviewedBy: "operator",
           linkedAt: new Date().toISOString(),
         }),
-      },
-      update: { externalUrl: item.externalUrl, state: "active" },
-    });
-  }
+      })) });
+  // Existing inactive links retain their original provenance when reactivated.
+  await tx.capabilityWorkLink.updateMany({ where: { capabilityId, provider: "linear", externalId: { in: work.map((item) => item.externalId) } }, data: { state: "active" } });
 }
 
 export async function createCanonicalCapability(
@@ -223,9 +247,13 @@ export async function createCanonicalCapability(
   const idempotencyKey = required(input.idempotencyKey, "idempotencyKey");
   const name = required(input.name, "name");
   const work = input.work ?? [];
+  const intent = capabilityWriteIntent("create", scopeId, { ...input, workItemIds: work.map((item) => item.externalId) });
   const result = await retrySerializable(() => prisma.$transaction(async (tx) => {
-    const prior = await tx.capabilityEvent.findUnique({ where: { idempotencyKey }, select: { capabilityId: true } });
-    if (prior) return { capability: await tx.capability.findUniqueOrThrow({ where: { id: prior.capabilityId }, include: capabilityInclude }), created: false };
+    const prior = await tx.capabilityEvent.findUnique({ where: { idempotencyKey } });
+    if (prior) {
+      if (plain(prior.afterState).writeIntent !== intent) throw new ScopeRealityConflictError("This save key belongs to a different change. Reload before saving.");
+      return { capability: await tx.capability.findUniqueOrThrow({ where: { id: prior.capabilityId }, include: { workLinks: true } }), created: false };
+    }
     await tx.scope.findUniqueOrThrow({ where: { id: scopeId }, select: { id: true } });
     await assertNoScopeDuplicate(tx, scopeId, name);
     await assertWorkAvailable(tx, scopeId, null, work);
@@ -245,11 +273,15 @@ export async function createCanonicalCapability(
       scopeId,
       idempotencyKey,
       action: "create",
-      afterState: json(plain(after)),
+      afterState: json({ ...plain(after), writeIntent: intent }),
     } });
     await invalidateDerivedReads(tx, scopeId, `Capability ${capability.id} created in Scope.`);
-    return { capability: await tx.capability.findUniqueOrThrow({ where: { id: capability.id }, include: capabilityInclude }), created: true };
-  }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }));
+    return { capability: after, created: true };
+  }, SCOPE_WRITE_TRANSACTION)).catch(async (error) => {
+    const capability = await recoveredCapability(idempotencyKey, intent).catch(() => null);
+    if (capability) return { capability, created: false };
+    throw error;
+  });
   return { ...result, ...(await finish(scopeId, result.created)) };
 }
 
@@ -267,10 +299,12 @@ export async function updateCanonicalCapability(
   },
 ) {
   const idempotencyKey = required(input.idempotencyKey, "idempotencyKey");
+  const intent = capabilityWriteIntent("edit", capabilityId, { ...input, workItemIds: input.work?.map((item) => item.externalId) });
   const result = await retrySerializable(() => prisma.$transaction(async (tx) => {
-    const prior = await tx.capabilityEvent.findUnique({ where: { idempotencyKey }, select: { capabilityId: true } });
+    const prior = await tx.capabilityEvent.findUnique({ where: { idempotencyKey } });
     if (prior) {
-      const capability = await tx.capability.findUniqueOrThrow({ where: { id: prior.capabilityId }, include: capabilityInclude });
+      if (plain(prior.afterState).writeIntent !== intent) throw new ScopeRealityConflictError("This save key belongs to a different change. Reload before saving.");
+      const capability = await tx.capability.findUniqueOrThrow({ where: { id: prior.capabilityId }, include: { workLinks: true } });
       return { capability, scopeId: capability.scopeId, changed: false };
     }
     const before = await tx.capability.findUniqueOrThrow({ where: { id: capabilityId }, include: { workLinks: true } });
@@ -305,11 +339,15 @@ export async function updateCanonicalCapability(
       idempotencyKey,
       action: before.status !== after.status ? "move_release_state" : additions.length > 0 ? "link_work" : "edit",
       beforeState: json(plain(before)),
-      afterState: json(plain(after)),
+      afterState: json({ ...plain(after), writeIntent: intent }),
     } });
     await invalidateDerivedReads(tx, before.scopeId, `Capability ${capabilityId} changed in Scope.`);
-    return { capability: await tx.capability.findUniqueOrThrow({ where: { id: capabilityId }, include: capabilityInclude }), scopeId: before.scopeId, changed: true };
-  }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }));
+    return { capability: after, scopeId: before.scopeId, changed: true };
+  }, SCOPE_WRITE_TRANSACTION)).catch(async (error) => {
+    const capability = await recoveredCapability(idempotencyKey, intent).catch(() => null);
+    if (capability) return { capability, scopeId: capability.scopeId, changed: false };
+    throw error;
+  });
   return { capability: result.capability, changed: result.changed, ...(await finish(result.scopeId, result.changed)) };
 }
 

@@ -76,6 +76,8 @@ import { mutateReality } from "@/lib/instrument/reality";
 import type { ScopeWorkItem } from "@/lib/instrument/useProject";
 import ToolWindow from "@/components/instrument/ToolWindow";
 import ScopeReconciliation, { type ScopeProposalItemView, type ScopeProposalView } from "@/components/instrument/ScopeReconciliation";
+import ResolveScopeWork, { type WorkResolution } from "@/components/instrument/ResolveScopeWork";
+import { useCapabilitySave } from "@/lib/instrument/useCapabilitySave";
 import { bulkStageEligibleItems } from "@/lib/scope/proposalEligibility";
 
 const BAY_IN = "bay-in";
@@ -142,6 +144,11 @@ export default function ScopeInstrument() {
   const [editing, setEditing] = useState<ShapeCapability | null>(null);
   const [writeError, setWriteError] = useState<string | null>(null);
   const [writing, setWriting] = useState(false);
+  const saveCapability = useCapabilitySave();
+  const writeLock = useRef(false);
+  const [writeSuccess, setWriteSuccess] = useState<string | null>(null);
+  const [resolvingWork, setResolvingWork] = useState<ScopeWorkItem | null>(null);
+  const [openWorkRequest, setOpenWorkRequest] = useState(0);
   const [estimateWriteState, setEstimateWriteState] = useState<{ capabilityId: string; pending: boolean; error: string | null } | null>(null);
   const [dragSize, setDragSize] = useState<{ w: number; h: number }>({ w: 250, h: MODULE_H });
   const [over, setOver] = useState<string | null>(null);
@@ -494,22 +501,21 @@ export default function ScopeInstrument() {
   };
 
   const saveNewCapability = async (draft: DraftCapabilityInput) => {
+    if (writeLock.current) return false;
+    writeLock.current = true;
     setWriting(true);
     setWriteError(null);
+    setWriteSuccess(null);
     try {
-      const response = await mutateReality(`/api/scopes/${scope.scopeId}/capabilities`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...draft, idempotencyKey: crypto.randomUUID() }),
-      });
-      const body = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(body.error ?? "Capability could not be saved.");
+      const body = await saveCapability(scope.scopeId, null, draft);
+      setWriteSuccess(body.refreshWarning ?? `Saved ${draft.name} to Reality.`);
       setAdding(false);
       return true;
     } catch (error) {
       setWriteError(error instanceof Error ? error.message : "Capability could not be saved.");
       return false;
     } finally {
+      writeLock.current = false;
       setWriting(false);
     }
   };
@@ -532,32 +538,42 @@ export default function ScopeInstrument() {
   };
 
   const saveCapabilityEdit = async (input: { name: string; description: string; note: string; evidenceRef: string; workItemIds: string[] }) => {
-    if (!editing) return;
+    if (!editing || writeLock.current) return;
+    writeLock.current = true;
     setWriting(true);
     setWriteError(null);
+    setWriteSuccess(null);
     try {
-      const response = await mutateReality(`/api/capabilities/${editing.id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
+      const body = await saveCapability(scope.scopeId, editing.id, {
           expectedRevision: editing.revision ?? 1,
           name: input.name,
           description: input.description,
           note: input.note,
           evidence: input.evidenceRef.trim() ? [{ ref: input.evidenceRef.trim(), suppliedBy: "operator" }] : [],
           workItemIds: input.workItemIds,
-          idempotencyKey: crypto.randomUUID(),
-        }),
       });
-      const body = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(body.error ?? "Capability could not be saved.");
+      setWriteSuccess(body.refreshWarning ?? `Saved ${editing.name}${input.workItemIds.length ? ` · ${input.workItemIds.length} ticket assignments confirmed` : ""}.`);
       setEditing(null);
       setOpenFeatureId(null);
     } catch (error) {
       setWriteError(error instanceof Error ? error.message : "Capability could not be saved.");
     } finally {
+      writeLock.current = false;
       setWriting(false);
     }
+  };
+
+  const saveWorkResolution = async ({ capabilityId, ...input }: WorkResolution) => {
+    if (writeLock.current) return;
+    writeLock.current = true;
+    setWriting(true); setWriteError(null); setWriteSuccess(null);
+    try {
+      const body = await saveCapability(scope.scopeId, capabilityId, input);
+      setWriteSuccess(body.refreshWarning ?? `Saved ${input.workItemIds[0]} assignment. Coverage is refreshing.`);
+      setResolvingWork(null);
+    } catch (error) {
+      setWriteError(error instanceof Error ? error.message : "Ticket assignment could not be confirmed.");
+    } finally { writeLock.current = false; setWriting(false); }
   };
 
   const acceptKnowledgeEstimate = async (
@@ -792,7 +808,10 @@ export default function ScopeInstrument() {
                 executionSource={scope.executionSource}
                 capacityReconciles={scope.capacityContract.reconciles}
                 scenario={m.active}
+                onResolveWork={() => setOpenWorkRequest((value) => value + 1)}
+                unresolvedRealityCount={unmappedExecution.length}
               />
+              {writeSuccess && <div role="status" className="mx-5 mb-3 flex items-center gap-3 rounded border border-[var(--i-mint)]/40 px-3 py-2 text-[12px] text-[var(--i-mint)]" data-shoot="scope-save-confirmation"><span className="flex-1">{writeSuccess}</span><button aria-label="Dismiss saved confirmation" onClick={() => setWriteSuccess(null)}>✕</button></div>}
 
               {/* ── MAIN: the deck, then the strata it rests on ─────────── */}
               <div className="flex-1 min-h-0 flex flex-col gap-3.5 overflow-y-auto overscroll-contain px-5 pb-3.5" data-shoot="scope-workspace-scroll">
@@ -821,6 +840,8 @@ export default function ScopeInstrument() {
                   />
 
                   <ScopeReconciliation
+                    openWorkRequest={openWorkRequest}
+                    onResolveWork={(item) => { setOpenFeatureId(null); setEditing(null); setWriteError(null); setResolvingWork(item); }}
                     proposal={proposal}
                     loading={proposalLoading}
                     warning={proposalWarning}
@@ -1034,7 +1055,7 @@ export default function ScopeInstrument() {
             return { ...prev, capabilityStaffingById: next };
           })
         }
-        onEditReality={(capability) => setEditing(capability)}
+        onEditReality={(capability) => { setOpenFeatureId(null); setWriteError(null); setEditing(capability); }}
         onUnlinkReality={(capability, linkId, itemLabel) => setPending({
           kind: "unlink", capability, linkId, itemLabel, idempotencyKey: crypto.randomUUID(),
         })}
@@ -1043,7 +1064,7 @@ export default function ScopeInstrument() {
 
       <AddFeature
         open={adding}
-        onClose={() => setAdding(false)}
+        onClose={() => { if (!writing) setAdding(false); }}
         unmappedItems={unmappedExecution}
         capacity={capacity}
         saving={writing}
@@ -1061,9 +1082,11 @@ export default function ScopeInstrument() {
         unmappedItems={unmappedExecution}
         saving={writing}
         error={writeError}
-        onClose={() => { setEditing(null); setWriteError(null); }}
+        onClose={() => { if (!writing) { setEditing(null); setWriteError(null); } }}
         onSave={saveCapabilityEdit}
       />
+
+      {resolvingWork && <ResolveScopeWork key={resolvingWork.id} item={resolvingWork} capabilities={scope.capabilities} saving={writing} error={writeError} onClose={() => { if (!writing) { setResolvingWork(null); setWriteError(null); } }} onSave={saveWorkResolution} />}
 
       <ScopeImpactPreview
         change={pending}
@@ -1113,7 +1136,7 @@ function CapabilityRealityEditor({
   if (!capability) return null;
   return (
     <ToolWindow open onClose={onClose} title="Scope Reality" subtitle={`Edit · revision ${capability.revision ?? 1}`} width={430} dataShoot="edit-capability-reality">
-      <div className="space-y-3 px-5 py-4">
+      <fieldset disabled={saving} className="space-y-3 px-5 py-4">
         <label className="block"><span className="i-label">Capability</span><input value={name} onChange={(event) => setName(event.target.value)} className="mt-1.5 w-full rounded px-3 py-2 text-[12px]" style={{ background: "var(--i-recess)", border: "1px solid var(--i-border-strong)" }} /></label>
         <label className="block"><span className="i-label">Outcome / description</span><textarea value={description} onChange={(event) => setDescription(event.target.value)} rows={3} className="mt-1.5 w-full resize-none rounded px-3 py-2 text-[11px]" style={{ background: "var(--i-recess)", border: "1px solid var(--i-border-strong)" }} /></label>
         {unmappedItems.length > 0 && <div>
@@ -1123,7 +1146,7 @@ function CapabilityRealityEditor({
             {unmappedItems.map((item) => {
               const selected = picked.has(item.id);
               return <li key={item.id} style={{ borderTop: "1px solid var(--i-border)" }}>
-                <button type="button" onClick={() => setPicked((previous) => {
+                <button type="button" aria-pressed={selected} onClick={() => setPicked((previous) => {
                   const next = new Set(previous);
                   if (selected) next.delete(item.id); else next.add(item.id);
                   return next;
@@ -1140,9 +1163,9 @@ function CapabilityRealityEditor({
         <div className="rounded border border-[var(--i-border)] bg-[var(--i-recess)] px-3 py-2 text-[9.5px] text-[var(--i-text-faint)]">
           {evidenceRef.trim() ? "Operator assertion · evidence attached" : "Operator assertion · no evidence yet"} · saved server-side with history
         </div>
-        {error && <div className="text-[10px] text-[var(--i-red)]">{error}</div>}
+        {error && <div role="alert" className="text-[12px] text-[var(--i-red)]">{error}</div>}
         <button disabled={saving || !name.trim()} onClick={() => onSave({ name, description, note, evidenceRef, workItemIds: [...picked] })} className="w-full rounded-md border border-[var(--i-signal)] px-3 py-2 text-[11px] text-[var(--i-signal)] disabled:opacity-40" data-shoot="save-capability-reality">{saving ? "Saving Reality…" : `Save accepted Reality${picked.size > 0 ? ` · link ${picked.size} item${picked.size === 1 ? "" : "s"}` : ""}`}</button>
-      </div>
+      </fieldset>
     </ToolWindow>
   );
 }
@@ -1202,12 +1225,16 @@ function ProductShapeSummary({
   executionSource,
   capacityReconciles,
   scenario,
+  onResolveWork,
+  unresolvedRealityCount,
 }: {
   accepted: ShapeCapability[];
   coverage: ForecastCoverageContract;
   executionSource: { asOf: string; availability: "available" | "empty" };
   capacityReconciles: boolean;
   scenario: boolean;
+  onResolveWork: () => void;
+  unresolvedRealityCount: number;
 }) {
   const ready = coverage.state === "forecastable" && capacityReconciles;
   const tone = ready ? "var(--i-signal)" : "var(--i-amber)";
@@ -1216,6 +1243,7 @@ function ProductShapeSummary({
       <div className="min-w-0 rounded-lg border bg-[var(--i-panel)] px-3 py-2" style={{ borderColor: `color-mix(in srgb, ${tone} 35%, var(--i-border))` }} data-shoot="scope-coverage-state">
         <div className="i-label" style={{ color: tone }}>{scenario ? ready ? "SCENARIO COVERAGE COMPLETE" : "SCENARIO READINESS BLOCKED" : ready ? "DELIVERY CLAIM READY" : "FORECAST READINESS BLOCKED"}</div>
         <div className="mt-1 truncate text-[9px] text-[var(--i-text-soft)]">{!capacityReconciles ? "Named capacity has not been reconciled to forecast capacity" : coverage.reason ?? "Canonical delivery forecast is supported"}</div>
+        {unresolvedRealityCount > 0 && <button onClick={onResolveWork} className="mt-2 rounded border border-[var(--i-amber)]/50 px-3 py-1.5 text-[11px] text-[var(--i-amber)]" data-shoot="resolve-unmapped-work">Resolve {unresolvedRealityCount} unresolved ticket{unresolvedRealityCount === 1 ? "" : "s"}{scenario ? " in Reality" : ""} →</button>}
       </div>
       <div className="min-w-0 rounded-lg border border-[var(--i-border)] bg-[var(--i-recess)] px-3 py-2">
         <div className="i-label">{scenario ? "Scenario shape mapped" : "Accepted shape mapped"}</div>

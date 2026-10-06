@@ -35,6 +35,7 @@ import { scenarioForecastCoverage } from "@/lib/scenario/forecastCoverage";
 // lib/forecast/compute.ts by joining each simulated item back to the Linear
 // issue or Finding it was built from -- nothing here is inferred client-side.
 export interface ScopeWorkItem extends WorkItem {
+  description?: string | null;
   estimateSource: "ai" | "points" | "issue_placeholder" | "hint" | "finding_placeholder" | "knowledge";
   kind: "ticket" | "inferred";
   state: string | null;
