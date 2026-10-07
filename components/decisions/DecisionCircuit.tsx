@@ -20,7 +20,7 @@
 // in dependsOnScopeIds. There is no Release model in this app and the
 // circuit does not draw one.
 
-import { Fragment } from "react";
+import { Fragment, useLayoutEffect, useRef } from "react";
 import type { ForecastDeliveryClaim } from "@/lib/forecast/claims";
 
 import DecisionModule from "@/components/decisions/DecisionModule";
@@ -82,6 +82,7 @@ export default function DecisionCircuit({
   selectedId,
   onSelect,
   onAssume,
+  pendingDecision,
 }: {
   startDate: Date | null;
   origin: CircuitNode;
@@ -95,6 +96,8 @@ export default function DecisionCircuit({
   selectedId: string | null;
   onSelect: (id: string) => void;
   onAssume: (gateId: string, assume: boolean) => void;
+  /** Visual draft only. Never counted or passed into forecast math. */
+  pendingDecision?: DecisionRow | null;
 }) {
   const live = gates.filter((d) => d.gate && !assumedGateIds.has(d.gate.id));
   const constrained = live.length > 0;
@@ -149,6 +152,8 @@ export default function DecisionCircuit({
         >
           <InputTerminal value={startDate ? fmtDay(startDate) : "—"} />
 
+          {pendingDecision && !gates.some(row => row.id === pendingDecision.id) && <><Conductor lit /><PendingDecision decision={pendingDecision} /></>}
+
           {gates.length === 0 ? (
             <Conductor lit />
           ) : (
@@ -157,14 +162,14 @@ export default function DecisionCircuit({
               return (
                 <Fragment key={d.id}>
                   <Conductor lit={released} broken={!released} />
-                  <GateSocket
+                  {d.id === pendingDecision?.id ? <PendingDecision decision={pendingDecision} /> : <GateSocket
                     decision={d}
                     width={gateW}
                     released={released}
                     selected={selectedId === d.id}
                     onSelect={() => onSelect(d.id)}
                     onAssume={(assume) => d.gate && onAssume(d.gate.id, assume)}
-                  />
+                  />}
                 </Fragment>
               );
             })
@@ -197,6 +202,24 @@ export default function DecisionCircuit({
       </div>
     </div>
   );
+}
+
+function PendingDecision({ decision }: { decision: DecisionRow }) {
+  const ref = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    ref.current?.scrollIntoView({ block: "center", inline: "center", behavior: "instant" });
+  }, [decision.id]);
+  return <div className="relative shrink-0" style={{ width: GATE_W_WIDE, height: ROW_H }}>
+    <div ref={ref} id={`pending-decision-${decision.id}`} data-testid="pending-delay-card" data-decision-id={decision.id}
+      data-attention="decision" className="absolute left-0 right-0 rounded-lg p-4"
+      style={{ bottom: ROW_H - LINE_Y, background: "var(--i-panel)", border: "1px solid var(--i-violet)" }}>
+      <div className="i-label text-[var(--i-violet)]">Pending delay · Scenario</div>
+      <div className="mt-2 text-[13px] font-semibold leading-snug text-[var(--i-text)]">{decision.title}</div>
+      <div className="mt-3 text-[11px] text-[var(--i-text-soft)]">Set the delay beside this card.<br />Your forecast has not changed.</div>
+    </div>
+    <ContactFace side="left" color="var(--i-violet)" lit />
+    <ContactFace side="right" color="var(--i-violet)" lit />
+  </div>;
 }
 
 // ── THE CONDUCTOR, IN ITS GROOVE ───────────────────────────────────────

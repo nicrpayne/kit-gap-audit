@@ -12,7 +12,8 @@
 }
 [data-attention="review"] { --attention-rgb: 70, 195, 214; }
 [data-attention="error"] { --attention-rgb: 236, 130, 110; }
-[data-attention="required"], [data-attention="review"], [data-attention="error"] {
+[data-attention="decision"] { --attention-rgb: 163, 151, 250; }
+[data-attention="required"], [data-attention="review"], [data-attention="error"], [data-attention="decision"] {
   animation: signal-action-glow 4.8s ease-in-out infinite;
 }
 @keyframes signal-action-glow {

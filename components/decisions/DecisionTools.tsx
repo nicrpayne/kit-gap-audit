@@ -12,6 +12,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import ToolWindow from "@/components/instrument/ToolWindow";
+import DecisionBloom from "@/components/decisions/DecisionBloom";
 
 // SUBMIT EXACTLY ONCE.
 //
@@ -450,6 +451,7 @@ function ModeChoice({
 
 // ── CONNECT TO DELIVERY ────────────────────────────────────────────────
 export function ConnectTool({
+  anchorId,
   scenario = false,
   open,
   decisionTitle,
@@ -460,6 +462,7 @@ export function ConnectTool({
   onClose,
   onConnect,
 }: {
+  anchorId?: string;
   scenario?: boolean;
   open: boolean;
   decisionTitle: string;
@@ -500,22 +503,13 @@ export function ConnectTool({
     setErrors({});
   }, [open, decisionTitle, gate, setTargetScopeId]);
 
-  return (
-    <ToolWindow
-      open={open}
-      onClose={onClose}
-      title={scenario ? "Try a blocking delay · Scenario" : "Review & save a real delivery delay"}
-      subtitle={decisionTitle}
-      width={470}
-      dataShoot="connect-tool"
-    >
-      <div className="px-5 py-4 space-y-4">
+  const content = <div className="px-4 py-3 space-y-3">
         <p className="text-[11px] text-[var(--i-text-soft)] leading-relaxed">
-          {scenario ? "This changes your what-if only. Supply the assumed serial wait; no accepted decision is changed." : "Saving changes accepted Reality. Confirm what must wait, the source supporting that claim, and the time needed to resolve it."}
+          {scenario ? "Set a delay to try in Scenario. Nothing changes in Reality." : "Saving changes accepted Reality. Confirm what must wait, the source supporting that claim, and the time needed to resolve it."}
         </p>
 
         <div>
-          <Question n={1} text="What waits on this?" hint="This control models a serial wait for the whole selected project, not a delay for one feature." />
+          <Question n={1} text="What waits on this?" hint="Delays the whole selected project, not just one feature." />
           <select
             data-shoot="gate-target"
             value={targetScopeId}
@@ -532,13 +526,13 @@ export function ConnectTool({
         </div>
 
         <div>
-          <Question n={2} text="Why can't it proceed?" hint="The engine adds gate time in series. If the work could genuinely continue in parallel, this is not a gate." />
+          <Question n={2} text="Why must it wait?" hint="If work can continue alongside this choice, leave it open without a delay." />
           <textarea
             data-shoot="gate-dependency"
             value={dependency}
             onChange={(e) => setDependency(e.target.value)}
             rows={2}
-            placeholder="Users cannot sign in before this is decided."
+            placeholder="Describe what cannot continue until this choice is made."
             className="mt-1.5 w-full rounded-md px-2.5 py-2 text-[12px]"
             style={{ ...inputStyle, borderColor: errors.dependency ? "var(--i-red)" : "var(--i-border-strong)" }}
           />
@@ -546,13 +540,13 @@ export function ConnectTool({
         </div>
 
         <div>
-          <Question n={3} text="What evidence supports that?" />
+          <Question n={3} text={scenario ? "Basis for this what-if" : "What evidence supports that?"} />
           <textarea
             data-shoot="gate-evidence"
             value={evidenceForGate}
             onChange={(e) => setEvidenceForGate(e.target.value)}
             rows={2}
-            placeholder="Refinement call on Aug 14 where we confirmed all sign-in depends on this choice."
+            placeholder={scenario ? "A source, conversation quote, or explicitly hypothetical assumption." : "The actual source or conversation quote supporting this delay."}
             className="mt-1.5 w-full rounded-md px-2.5 py-2 text-[12px]"
             style={{ ...inputStyle, borderColor: errors.evidenceForGate ? "var(--i-red)" : "var(--i-border-strong)" }}
           />
@@ -560,7 +554,7 @@ export function ConnectTool({
         </div>
 
         <div>
-          <Question n={4} text="How long could resolving it take?" hint="Sampled exactly like any other three-point estimate — this is uncertainty, not a deadline." />
+          <Question n={4} text="Delay in days" hint="Shortest, most likely, and longest wait — not a deadline." />
           {/* One timing module, matching the readout the gate and the
               inspector both use — the same estimate, entered in the same
               shape it will be read in. */}
@@ -606,9 +600,9 @@ export function ConnectTool({
         </div>
 
         {errors.targetScopeId && <FieldError>{errors.targetScopeId}</FieldError>}
-      </div>
-
-      <div className="px-5 py-3" style={{ borderTop: "1px solid var(--i-border)" }}>
+      </div>;
+  const actions = <div className="flex gap-2 px-4 py-3" style={{ borderTop: "1px solid var(--i-border)" }}>
+        {scenario && <button type="button" onClick={onClose} className="i-control shrink-0 px-3 py-2 text-[12px]" aria-label="Cancel · put card back">Cancel</button>}
         <button
           data-shoot="gate-submit"
           disabled={busy || pending || !low.trim() || !likely.trim() || !high.trim() || !dependency.trim() || !evidenceForGate.trim()}
@@ -630,13 +624,14 @@ export function ConnectTool({
             })
           }
           className="w-full rounded-md px-3 py-2 text-[12px] font-semibold uppercase tracking-[0.1em] disabled:opacity-30"
-          style={{ background: "var(--i-red-soft)", color: "var(--i-red)", border: "1px solid var(--i-red)" }}
+          style={{ background: scenario ? "var(--i-violet-soft)" : "var(--i-red-soft)", color: scenario ? "var(--i-violet)" : "var(--i-red)", border: `1px solid ${scenario ? "var(--i-violet)" : "var(--i-red)"}` }}
         >
-          {scenario ? "Try this delay in Scenario" : "Save real delivery delay"}
+          {scenario ? "Try delay in Scenario" : "Save real delivery delay"}
         </button>
-      </div>
-    </ToolWindow>
-  );
+      </div>;
+  return scenario && anchorId ? <DecisionBloom open={open} anchorId={anchorId} title="Try a blocking delay" onClose={onClose} footer={actions}>{content}</DecisionBloom>
+    : <ToolWindow open={open} onClose={onClose} title={scenario ? "Try a blocking delay · Scenario" : "Review & save a real delivery delay"}
+      subtitle={decisionTitle} width={470} dataShoot="connect-tool" footer={actions}>{content}</ToolWindow>;
 }
 
 function FieldError({ children }: { children: React.ReactNode }) {

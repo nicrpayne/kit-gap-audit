@@ -132,7 +132,7 @@ export default function DecisionsPageClient() {
     const nodeFor = (id: string): CircuitNode | null => {
       const s = project.data!.scopes.find((x) => x.scopeId === id);
       if (!s) return null;
-      const likely = project.preview?.get(id)?.likelyDate ?? project.baseline?.get(id)?.likelyDate ?? null;
+      const likely = (project.active ? project.preview?.get(id)?.likelyDate : null) ?? project.baseline?.get(id)?.likelyDate ?? null;
       return {
         claim: presentForecastDeliveryClaim({
           scopeName: s.name,
@@ -160,7 +160,7 @@ export default function DecisionsPageClient() {
       .map((s) => nodeFor(s.scopeId))
       .filter((n): n is CircuitNode => n !== null);
     return { origin: o, downstream: down };
-  }, [project.data, project.coverageByScope, project.preview, project.baseline, project.scenario.resolvedGateIds, activeScopeId, gatingAll]);
+  }, [project.data, project.coverageByScope, project.active, project.preview, project.baseline, project.scenario.resolvedGateIds, activeScopeId, gatingAll]);
 
   // DETERMINISTIC PRESENTATION ORDER, and nothing more. The engine sums
   // gate durations in series and knows of no ordering between two gates on
@@ -196,6 +196,12 @@ export default function DecisionsPageClient() {
     ?? decisions.find((d) => d.scopeId === activeScopeId && d.status === "open");
   const nextCandidate = candidates.find((c) => c.scopeId === activeScopeId);
   const selectedPlan = selectedDecision ? project.scenario.decisionPlans?.[selectedDecision.id] : undefined;
+  const pendingDecision = tool === "scenario-connect" ? selectedDecision : null;
+  const closeConnectTool = () => {
+    const id = pendingDecision?.id;
+    setTool(null);
+    if (id) requestAnimationFrame(() => document.querySelector<HTMLElement>(`[data-testid="decision-drag-${id}"]`)?.focus({ preventScroll: true }));
+  };
 
   const setScenario = project.setScenario;
   const stageDecision = useCallback((id: string, plan: DecisionPlan | null) => {
@@ -431,6 +437,7 @@ export default function DecisionsPageClient() {
                     origin={origin}
                     downstream={downstream}
                     gates={circuitGates}
+                    pendingDecision={pendingDecision}
                     assumedGateIds={project.scenario.resolvedGateIds}
                     selectedId={selectedDecision?.id ?? null}
                     onSelect={(id) => selectObject({ kind: "decision", id })}
@@ -504,7 +511,7 @@ export default function DecisionsPageClient() {
                   {show("open") && (
                     <DecisionDropZone target="open" title="2 · Open, without a delay" detail="The question stays open. No delay days are added.">
                     <OpenLane
-                      decisions={openLane}
+                      decisions={openLane.filter(row => row.id !== pendingDecision?.id)}
                       selectedId={selectedDecision?.id ?? null}
                       onSelect={(id) => selectObject({ kind: "decision", id })}
                     />
@@ -513,7 +520,7 @@ export default function DecisionsPageClient() {
                   <DecisionDropZone target="resolved" title="3 · Assume resolved" detail="Scenario only. A choice without a delay gate saves no days.">
                     <div className="flex min-h-24 gap-3 overflow-x-auto p-3" data-testid="scenario-resolved-decisions">
                       {!scenarioResolved.length && <p className="p-3 text-[12px] text-[var(--i-text-faint)]">Drop an open choice here to explore it being settled.</p>}
-                      {scenarioResolved.map(row => <DecisionModule key={row.id} flipId={row.id} shoot={`scenario-resolved-${row.id}`}
+                      {scenarioResolved.filter(row => row.id !== pendingDecision?.id).map(row => <DecisionModule key={row.id} flipId={row.id} shoot={`scenario-resolved-${row.id}`}
                         seating="banked" accent="var(--i-violet)" chip="Assumed resolved" ident="Scenario" title={row.title} width={226}
                         onClick={() => selectObject({ kind: "decision", id: row.id })} />)}
                     </div>
@@ -695,12 +702,13 @@ export default function DecisionsPageClient() {
       <ConnectTool
         open={(tool === "connect" || tool === "scenario-connect") && !!selectedDecision}
         scenario={tool === "scenario-connect"}
+        anchorId={pendingDecision ? `pending-decision-${pendingDecision.id}` : undefined}
         decisionTitle={selectedDecision?.title ?? ""}
         gate={selectedPlan?.gate ? { ...selectedPlan.gate, targetScope: { id: selectedPlan.gate.targetScopeId } } : selectedDecision?.gate}
         scopes={scopes}
         defaultScopeId={selectedDecision?.scopeId ?? activeScopeId ?? ""}
         busy={busy}
-        onClose={() => setTool(null)}
+        onClose={closeConnectTool}
         onConnect={async (input) => {
           if (!selectedDecision) return null;
           const validation = gateDraftError(input);
