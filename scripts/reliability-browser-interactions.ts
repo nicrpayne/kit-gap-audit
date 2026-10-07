@@ -7,7 +7,11 @@ import { prisma } from "../lib/prisma";
 /** Actual DOM interactions against disposable rows, never production fixtures. */
 export async function proveRepairInteractions(context: BrowserContext, base: string, output: string, auditHref: string) {
   const database = new URL(process.env.DATABASE_URL!);
-  assert(database.hostname === "127.0.0.1" && database.port === "55434" && database.pathname === "/signal_t0_test_1004");
+  const originalFixture = database.port === "55434" && database.pathname === "/signal_t0_test_1004";
+  const dependencyFixture = database.port === "55436" && database.pathname === "/signal_t0_test_10071255"
+    && database.username === "signal_t0_local" && process.env.REPORTS_DB_PROOF === "1"
+    && process.env.SIGNAL_REPORT_BROWSER_PROOF === "1";
+  assert(database.hostname === "127.0.0.1" && (originalFixture || dependencyFixture), "Only the explicitly isolated local QA databases are writable");
   const key = randomUUID();
   const scopes = [0, 1].map((n) => `repair-ux-${key}-${n}`);
   const people = [0, 1].map((n) => `repair-person-${key}-${n}`);
@@ -66,7 +70,7 @@ export async function proveRepairInteractions(context: BrowserContext, base: str
     await page.goto(`${base}${auditHref}`);
     const inbox = await (await inboxRead).json();
     assert(inbox.total > 0, "the regression requires asynchronous pending inbox content");
-    await page.getByRole("button", { name: new RegExp(`^${inbox.total} Changes since last Audit`) }).waitFor();
+    await page.getByRole("button", { name: /Review Audit changes/ }).waitFor();
     assert.equal(await page.locator('[data-shoot="audit-change-inbox"]').count(), 0,
       "loading a pending inbox must not obscure an explicit evidence deep link");
     const frame = page.frameLocator("iframe").first();
