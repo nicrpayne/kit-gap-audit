@@ -4,6 +4,7 @@ import { decisionSourceDisposition } from "@/lib/decisions/sourceDisposition";
 import { currentContextSnapshot } from "@/lib/context/currentSnapshot";
 import { readForecastCoverage } from "@/lib/forecast/compute";
 import type { BootstrapProposal, ProjectBootstrapPackageV1 } from "@/lib/bootstrap/contracts";
+import { bootstrapCapabilityAdmissionReason, contextCapabilityAdmissionReason } from "@/lib/bootstrap/capabilityAdmission";
 import { createCompanionScan, COMPANION_ONLINE_MS } from "@/lib/bootstrap/jobs";
 import { refreshScopeProposal } from "@/lib/scope/proposal-store";
 import { recomputeDerivedReads } from "./derivedRefresh";
@@ -48,7 +49,7 @@ function proposalEvidence(pkg: ProjectBootstrapPackageV1, proposal: BootstrapPro
     }));
 }
 
-function ownerShape(proposal: BootstrapProposal): {
+function ownerShape(proposal: BootstrapProposal, admissionReason: string | null): {
   category: AuditChangeCategory;
   owner: string;
   changeType: string;
@@ -56,6 +57,11 @@ function ownerShape(proposal: BootstrapProposal): {
   recommendedAction: string;
   completionRequirements: string[];
 } {
+  if (admissionReason) return {
+    category: "information", owner: "audit", changeType: "opportunity_context",
+    proposedState: { action: "information_only", admissionReason },
+    recommendedAction: "information_only", completionRequirements: [],
+  };
   if (proposal.kind === "capability") return {
     category: "scope", owner: "scope", changeType: "capability_changed",
     proposedState: { action: "upsert_capability", name: proposal.title, description: proposal.statement, status: "accepted", ...proposal.payload },
@@ -166,14 +172,15 @@ export async function syncRefreshChangeProposals(input: {
       continue;
     }
     packageSemantics.add(semanticKey);
-    const shape = ownerShape(proposal);
+    const admissionReason = bootstrapCapabilityAdmissionReason(proposal, input.pkg);
+    const shape = ownerShape(proposal, admissionReason);
     const relevance = classifyProjectRelevance(proposal, project, identities);
     const currentState = await currentOwnerState(input.scopeId, shape.proposedState);
     const draft: AuditChangeDraft = {
       key: `refresh:${proposal.candidateKey}`,
       scopeId: input.scopeId, auditRunId: input.auditRunId, contextSnapshotId: input.snapshotId,
       category: shape.category, owner: shape.owner, changeType: shape.changeType,
-      title: proposal.title, summary: proposal.statement, whyProposed: proposal.whyProposed,
+      title: proposal.title, summary: proposal.statement, whyProposed: admissionReason ?? proposal.whyProposed,
       currentState,
       proposedState: shape.proposedState, evidence: proposalEvidence(input.pkg, proposal),
       currentness: proposal.currentness, retrievalBasis: proposal.matchBasis,
@@ -456,17 +463,18 @@ async function reportReadiness(scopeId: string) {
   const currentSource: Prisma.AuditChangeProposalWhereInput = { OR: [
     { sourceKind: { not: "refresh" } }, { contextSnapshotId: { in: current ? [current.id] : [] } },
   ] };
-  const [scope, openGateTests, pendingScope, sourceHealth, reconciliation, namedAllocations, derived] = await Promise.all([
+  const [scope, openGateTests, scopeProposals, sourceHealth, reconciliation, namedAllocations, derived] = await Promise.all([
     prisma.scope.findUnique({ where: { id: scopeId } }),
     prisma.decision.count({ where: { scopeId, status: "open", gate: { isNot: null }, OR: [
       { title: { contains: "test", mode: "insensitive" } }, { title: { contains: "address", mode: "insensitive" } },
     ] } }),
-    prisma.auditChangeProposal.count({ where: { scopeId, category: "scope", status: { in: ["pending", "needs_completion"] }, relevanceClass: { not: "irrelevant_bleed" }, AND: currentSource } }),
+    prisma.auditChangeProposal.findMany({ where: { scopeId, category: "scope", status: { in: ["pending", "needs_completion"] }, relevanceClass: { not: "irrelevant_bleed" }, AND: currentSource }, select: { sourceKind: true, sourceKey: true } }),
     prisma.auditChangeProposal.count({ where: { scopeId, category: "source_health", status: { in: ["pending", "needs_completion"] }, AND: currentSource } }),
     prisma.capacityReconciliation.findUnique({ where: { scopeId } }),
     prisma.allocation.count({ where: { scopeId, person: { active: true, synthetic: false } } }),
     prisma.projectDerivedState.findUnique({ where: { scopeId } }),
   ]);
+  const pendingScope = scopeProposals.filter(item => item.sourceKind !== "refresh" || !contextCapabilityAdmissionReason(item.sourceKey, current?.package)).length;
   const blockers: { code: string; label: string; targetHref: string }[] = [];
   if (!scope || scope.executionState !== "configured") blockers.push({ code: "execution_truth", label: "Execution truth unavailable", targetHref: `/scope?project=${scopeId}` });
   if (scope?.executionState === "configured") {
@@ -498,9 +506,17 @@ export async function getAuditChangeInbox(scopeId: string) {
     reportReadiness(scopeId),
     currentContextSnapshot(scopeId).catch(() => null),
   ]);
-  const proposals = storedProposals.map((proposal) => proposal.sourceKind === "refresh" && proposal.contextSnapshotId !== current?.id && ["pending", "needs_completion", "deferred"].includes(proposal.status)
-    ? { ...proposal, status: "information_only", currentness: "stale", dispositionReason: "Historical source proposal — not part of the current knowledge package. Its evidence is retained; it cannot be accepted as current Reality." }
-    : proposal);
+  const proposals = storedProposals.map((proposal) => {
+    if (proposal.sourceKind !== "refresh" || ["accepted", "rejected"].includes(proposal.status)) return proposal;
+    if (proposal.contextSnapshotId !== current?.id && ["pending", "needs_completion", "deferred"].includes(proposal.status)) {
+      return { ...proposal, status: "information_only", currentness: "stale", dispositionReason: "Historical source proposal — not part of the current knowledge package. Its evidence is retained; it cannot be accepted as current Reality." };
+    }
+    const reason = proposal.category === "scope" && proposal.contextSnapshotId === current?.id
+      ? contextCapabilityAdmissionReason(proposal.sourceKey, current?.package) : null;
+    // Presentation-only correction of legacy machine proposals. Stored review
+    // history, source quotes and every accepted Reality object remain intact.
+    return reason ? { ...proposal, category: "information", owner: "audit", status: "information_only", recommendedAction: "information_only", proposedState: { action: "information_only" }, dispositionReason: reason, whyProposed: reason } : proposal;
+  });
   const active = proposals.filter((item) => ["pending", "needs_completion", "deferred"].includes(item.status));
   const counts = active.reduce<Record<string, number>>((out, item) => {
     out[item.category] = (out[item.category] ?? 0) + 1;

@@ -14,13 +14,19 @@ import {
 
 const sourceRoot = resolve(".");
 const sourceBase = "02afba325ddf30fdd8620822dfa9bb870e2ca949";
-const expectedFingerprint = "764dcf8c189358753051e7c2679081c03e1db192d7e2877d875c410ac9eb0c94";
+const expectedFingerprint = "ee91c5a1762d457362b23c81b926a5d96c6d85eccca37c4f24bf1dd2ab847439";
 const evidencePath = "docs/AUDIT-INSPECTOR-USEFULNESS-REBASELINE-EVIDENCE.md";
 const reviewedExceptions = {
+  "components/audit/graphTokens.ts": {
+    baseBlob: "17c438015ea94168acf54beae9e3b1fcf454dc72",
+    reviewedBlob: "c3d6f55a0a8c17e809736b6c98b96c90c39e4af1",
+    rationale: "Inherited a65eacc duplicate-work color correction, reviewed unchanged.",
+    evidence: evidencePath,
+  },
   "public/audit-rubric-phase2/phase2-host.js": {
     baseBlob: "de42e297da8232e2917b47054920d61858436c00",
-    reviewedBlob: "0ec853e1952b22b1ac0bcdb0be69b2595f01fb1d",
-    rationale: "Exact navigation and keyboard search result access reviewed by lead.",
+    reviewedBlob: "a21a90235cdfee7b3c8346d98a00e00a0421ed0e",
+    rationale: "Exact navigation, keyboard search and safe source-context quote viewer reviewed by lead.",
     evidence: evidencePath,
   },
   "public/audit-rubric-phase3/phase3-host.js": {
@@ -88,7 +94,7 @@ try {
     expectedWorldCount: 33, reviewedExceptions,
   }), /Unexpected protected Audit files added/);
 
-  console.log("PASS Audit integrity self-test: both reviewed working-tree blobs accepted");
+  console.log("PASS Audit integrity self-test: all three exact reviewed working-tree blobs accepted");
   console.log("PASS Audit integrity self-test: mutation of each exception and an ordinary protected file rejected");
   console.log("PASS Audit integrity self-test: added protected path rejected");
 } finally {

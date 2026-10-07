@@ -152,6 +152,66 @@
     if (skin && skin.tipHTML !== signalTooltipHTML) skin.tipHTML = signalTooltipHTML;
   }
 
+  function openPassageViewer(n) {
+    const viewer = document.getElementById('brain-viewer');
+    if (!viewer) return;
+    const attrs = n.attributes || {};
+    const sourceRef = n.sourceRef || attrs.sourceRef || '';
+    const connection = (n.connections || []).find(c => c.direction === 'out' && c.rel === 'extracted_from');
+    const source = connection && window.BrainCore.S.byId.get(connection.transportId);
+    const fileLabel = sourceRef.split('/').pop() || '';
+    const dated = /^([0-9]{4}-[0-9]{2}-[0-9]{2})_(.+)$/.exec(fileLabel);
+    const title = source && source.label !== sourceRef ? source.label
+      : dated ? dated[2].replace(/-/g, ' ') : fileLabel || 'Source not supplied';
+    viewer.classList.add('open');
+    viewer.querySelector('.v-title').textContent = title;
+    viewer.querySelector('.v-path').textContent = sourceRef;
+    const body = viewer.querySelector('.v-body');
+    body.replaceChildren();
+    const panel = document.createElement('section');
+    panel.className = 'signal-quote-panel';
+    panel.dataset.exactPassage = n.canonicalId || n.id;
+    const add = (tag, text, parent = panel) => {
+      const element = document.createElement(tag);
+      element.textContent = text;
+      parent.appendChild(element);
+      return element;
+    };
+    add('h2', 'Original quote');
+    add('p', title, panel).className = 'signal-quote-source-title';
+    if (dated) add('p', `Conversation date in source reference: ${dated[1]}`);
+    else add('p', 'Conversation date not supplied. A refresh date is not the conversation date.');
+    add('blockquote', typeof attrs.excerpt === 'string' ? attrs.excerpt : n.desc || 'Quote not supplied.');
+    if (typeof attrs.surroundingContext === 'string' && attrs.surroundingContext.trim()) {
+      add('h3', 'Captured surrounding context');
+      add('p', attrs.surroundingContext).className = 'signal-quote-context';
+    } else {
+      add('p', 'Only this captured passage is included here; the full conversation text was not supplied in this snapshot.').className = 'signal-quote-limit';
+    }
+    add('h3', 'Find the conversation');
+    add('p', sourceRef || 'Source reference not supplied.').className = 'signal-quote-reference';
+    if (sourceRef) {
+      const copy = add('button', 'Copy conversation reference');
+      copy.type = 'button'; copy.className = 'act';
+      copy.onclick = async () => {
+        try { await navigator.clipboard.writeText(sourceRef); window.BrainCore.toast('Conversation reference copied'); }
+        catch { window.BrainCore.toast('Could not copy. Select the reference above to copy it.'); }
+      };
+    }
+    const resolver = [n.sourceResolver, source && source.sourceResolver].find(value => typeof value === 'string' && /^https?:\/\//i.test(value));
+    if (resolver) {
+      const link = add('a', 'Open original source');
+      link.href = resolver; link.target = '_blank'; link.rel = 'noopener noreferrer';
+    } else add('p', 'No original web link was supplied. Use the conversation reference to locate the source.').className = 'signal-quote-limit';
+    const details = add('details', '');
+    add('summary', 'Evidence details', details);
+    add('p', `Snapshot-qualified passage: ${n.canonicalId || n.id}`, details);
+    if (attrs.anchor && Object.keys(attrs.anchor).length) add('pre', JSON.stringify(attrs.anchor, null, 2), details);
+    body.appendChild(panel);
+    const close = viewer.querySelector('.v-close');
+    if (close) { close.setAttribute('aria-label', 'Close original quote'); close.focus(); }
+  }
+
   function action(event) {
     const button = event.target.closest && event.target.closest('#brain-card .act');
     if (!button) return;
@@ -163,7 +223,8 @@
       event.preventDefault(); event.stopImmediatePropagation();
       if (n.kind === 'finding' && n.canonicalId && window.parent !== window) {
         window.parent.postMessage({ type: 'signal-audit-open-finding', canonicalId: n.canonicalId }, window.location.origin);
-      } else window.BrainCore.openViewer(n.id);
+      } else if (n.kind === 'passage') openPassageViewer(n);
+      else window.BrainCore.openViewer(n.id);
     } else if (act === 'copy') {
       event.preventDefault(); event.stopImmediatePropagation();
       navigator.clipboard.writeText(n.canonicalRef || n.canonicalId || n.id);
@@ -247,6 +308,8 @@
   function patchViewer() {
     const viewer = document.getElementById('brain-viewer');
     if (!viewer || !viewer.classList.contains('open')) return;
+    // The captured quote owns its identity, even if selection behind it moves.
+    if (viewer.querySelector('[data-exact-passage]')) return;
     const n = signalNode();
     const path = viewer.querySelector('.v-path');
     if (n && path) {

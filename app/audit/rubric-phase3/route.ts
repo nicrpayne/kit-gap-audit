@@ -28,6 +28,20 @@ export async function GET(req: NextRequest) {
   #brain-card, #brain-viewer, #brain-panel, #brain-hud, .fab, #signal-audit-nav { z-index: 70; }
   /* The original quote is a foreground drill-down, above its inspector. */
   #brain-viewer { z-index: 96; }
+  .signal-quote-panel { color: var(--signal-text-primary); font: 400 14px/1.65 Outfit,sans-serif; overflow-wrap: anywhere; }
+  .signal-quote-panel h2 { margin: 0 0 12px; font-size: 22px; }
+  .signal-quote-panel h3 { margin: 24px 0 8px; font-size: 14px; }
+  .signal-quote-panel p { margin: 8px 0; }
+  .signal-quote-source-title { font-weight: 600; }
+  .signal-quote-panel blockquote { margin: 20px 0; padding: 14px 16px; border-left: 3px solid var(--signal-source); background: var(--signal-surface-raised); white-space: pre-wrap; }
+  .signal-quote-context { white-space: pre-wrap; }
+  .signal-quote-limit { color: var(--signal-text-secondary); font-size: 12px; }
+  .signal-quote-reference { font-size: 12px; }
+  .signal-quote-panel button, .signal-quote-panel a { display: inline-block; margin: 6px 10px 6px 0; min-height: 36px; }
+  .signal-quote-panel a { color: var(--signal-source); }
+  .signal-quote-panel details { margin-top: 24px; font-size: 12px; color: var(--signal-text-secondary); }
+  .signal-quote-panel summary { cursor: pointer; }
+  .signal-quote-panel pre { white-space: pre-wrap; }
   .signal-basis { opacity: .72; }
   .signal-phase3-line { margin-top: 8px; color: var(--signal-text-secondary); font: 500 10px/1.45 Outfit,sans-serif; }
   .signal-phase3-line strong { color: var(--signal-text-primary); font-weight: 600; }

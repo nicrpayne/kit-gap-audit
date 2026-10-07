@@ -21,6 +21,7 @@ import {
 } from "./contracts";
 import { bootstrapHash, stableId } from "./hash";
 import { resolveRefreshDisposition } from "./rescan";
+import { explicitCapabilityName, bootstrapCapabilityAdmissionReason } from "./capabilityAdmission";
 
 export interface CorpusArtifact {
   id: string;
@@ -456,12 +457,13 @@ function proposalFromIntelligence(
       }, evidenceById, head.contradictedBy.length > 0));
     }
   } else if (type === "opportunity") {
-    const name = firstString(head.fields, ["capability", "feature", "name", "title"]);
+    const name = explicitCapabilityName(head.fields);
     if (name) {
-      result.push(proposal({ ...common, kind: "capability", title: name,
+      const candidate = proposal({ ...common, kind: "capability", title: name,
         whyProposed: "A matched external Opportunity named a capability explicitly.",
         payload: { name, intent: head.statement, executionLink: null },
-      }, evidenceById, head.contradictedBy.length > 0));
+      }, evidenceById, head.contradictedBy.length > 0);
+      if (!bootstrapCapabilityAdmissionReason(candidate, { intelligenceHeads: [head] })) result.push(candidate);
     }
   }
   return result;

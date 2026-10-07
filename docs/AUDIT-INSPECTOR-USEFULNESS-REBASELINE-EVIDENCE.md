@@ -8,7 +8,8 @@ not authorize a broad protected Audit rebaseline.
 ### `public/audit-rubric-phase2/phase2-host.js`
 
 - Protected-base blob: `de42e297da8232e2917b47054920d61858436c00`
-- Approved reviewed blob: `0ec853e1952b22b1ac0bcdb0be69b2595f01fb1d`
+- Original reviewed blob: `0ec853e1952b22b1ac0bcdb0be69b2595f01fb1d`
+- October 7 source-context repair reviewed blob: `a21a90235cdfee7b3c8346d98a00e00a0421ed0e`
 
 The existing exact snapshot-qualified navigation remains intact. The bounded
 addition makes the native Rubric search results a labelled listbox, makes each
@@ -72,12 +73,41 @@ The DB-backed graph proof still requires an explicit disposable
 
 ## Protected-manifest decision
 
-The lead approved exactly the two reviewed blobs above against unchanged
+The lead reviewed the bounded exceptions listed here against unchanged
 protected base `02afba325ddf30fdd8620822dfa9bb870e2ca949` and unchanged protected
-world count 33. With no other protected exceptions, their aggregate
+world count 33. With the inherited graph-token exception below, their aggregate
 working-tree fingerprint is
-`764dcf8c189358753051e7c2679081c03e1db192d7e2877d875c410ac9eb0c94`.
+`ee91c5a1762d457362b23c81b926a5d96c6d85eccca37c4f24bf1dd2ab847439`.
 The integrity self-test reconstructs that original base in a disposable Git
 repository, applies both exact reviewed hosts, and independently rejects a
 mutation of either reviewed host, an ordinary protected file, or an added
 protected path.
+
+## October 7: quote viewer context
+
+The user authorized the next Scope-admission and original-conversation repair.
+The bounded Phase 2 change renders a passage with DOM `textContent`, preserving
+its exact text, source reference and snapshot-qualified identity. It presents
+the source title and date explicitly found in a dated source reference, never a
+retrieval date or inferred speaker. Missing context and missing original web
+links are disclosed; only supplied HTTP(S) source resolvers become links.
+Background graph selection cannot relabel an already-open quote. The native
+core, all geometry, every graph identity, the Phase 3 host and the protected
+world of 33 files are unchanged. This is not a wholesale rebaseline.
+
+`node scripts/audit-quote-viewer-proof.mjs` exercises the actual host in Chromium
+and WebKit: verbatim multiline quote, inert HTML/script text, dated and undated
+sources, supplied and missing surrounding context, stable snapshot identity,
+safe links and missing-link honesty. The integrity negative tests still reject
+unreviewed edits of either exception, ordinary protected files and added paths.
+
+### Inherited graph token exception discovered during verification
+
+The baseline integrity check had not recorded an existing change from commit
+`a65eacc`: completed, canceled **and duplicate** work uses the faint color. The
+entire diff is one condition in `components/audit/graphTokens.ts`, from base blob
+`17c438015ea94168acf54beae9e3b1fcf454dc72` to existing HEAD blob
+`c3d6f55a0a8c17e809736b6c98b96c90c39e4af1`. This repair does not modify that file.
+The exact exception is now recorded and covered by the negative mutation test;
+no other baseline change is allowed. Layout, camera and canonical data remain
+unchanged. This accounts for all three exceptions in the aggregate fingerprint.

@@ -1,6 +1,7 @@
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { currentContextSnapshot } from "@/lib/context/currentSnapshot";
+import { contextCapabilityAdmissionReason } from "@/lib/bootstrap/capabilityAdmission";
 import { timelineKeyForAuditProposal } from "@/lib/timeline/sourceIdentity";
 import { dateOnlyToUtcDate, toDateOnly } from "@/lib/time/dateContract";
 import { invalidateDerivedReads, recomputeDerivedReads } from "./derivedRefresh";
@@ -164,6 +165,9 @@ export async function acceptAuditChange(proposalId: string, input: { idempotency
         if (proposal.sourceKind === "refresh") {
           const current = await currentContextSnapshot(proposal.scopeId, tx);
           if (!current || current.id !== proposal.contextSnapshotId) throw new Error("Knowledge changed. Refresh Audit and review the current source before accepting.");
+          const reason = record(proposal.proposedState).action === "upsert_capability"
+            ? contextCapabilityAdmissionReason(proposal.sourceKey, current.package) : null;
+          if (reason) throw new ChangeCompletionRequiredError(reason, ["Create or edit an explicit capability in Scope if this is genuinely product work."]);
         }
         const requirements = Array.isArray(proposal.completionRequirements) ? proposal.completionRequirements : [];
         if (requirements.length && completion.confirmed !== true) {
