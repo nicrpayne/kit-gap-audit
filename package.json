@@ -58,7 +58,8 @@
     "proof:knowledge-estimate-association": "tsx scripts/knowledge-estimate-association-proof.ts",
     "proof:knowledge-estimate-association-db": "tsx scripts/knowledge-estimate-association-db-proof.ts",
     "proof:scope-capability-forecast": "tsx scripts/scope-capability-forecast-proof.ts",
-    "proof:signal-e2e-recovery": "tsx scripts/signal-e2e-recovery-proof.ts"
+    "proof:signal-e2e-recovery": "tsx scripts/signal-e2e-recovery-proof.ts",
+    "proof:control-room-scenario-recovery": "tsx scripts/control-room-scenario-recovery-proof.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.32",

@@ -40,6 +40,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "@/components/instrument/SignalLink";
 import InstrumentShell from "@/components/instrument/InstrumentShell";
+import ScenarioPreviewRefusal from "@/components/instrument/ScenarioPreviewRefusal";
 import { AttentionCallout } from "@/components/instrument/Attention";
 import { SignalControl, SignalStateMark } from "@/components/instrument/SignalPrimitives";
 import TimelinePageClient from "@/components/TimelinePageClient";
@@ -417,6 +418,19 @@ export default function ControlRoomPageClient() {
       onClose={() => setEditing(false)}
     />
   ) : null;
+
+  if (m.scenarioPreviewRefusal) {
+    return (
+      <InstrumentShell stateBar={strip}>
+        <ScenarioPreviewRefusal
+          refusal={m.scenarioPreviewRefusal}
+          surface="Control Room"
+          onBackToReality={() => m.setScenario(EMPTY_SCENARIO)}
+        />
+        {dialog}
+      </InstrumentShell>
+    );
+  }
 
   if (!reading || !field || !m.startDate) {
     // A COMPUTATION THAT REFUSED IS NOT A PAGE THAT IS STILL LOADING.
