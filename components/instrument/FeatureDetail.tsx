@@ -38,6 +38,7 @@ import {
 } from "@/lib/scope/knowledgeEstimates";
 import type { CapabilityStaffingPlan } from "@/lib/scope/capabilityForecast";
 import { formatDateOnly } from "@/lib/time/dateContract";
+import { isSignalEstimate } from "@/lib/scope/signalEstimates";
 
 type Mode = "overview" | "work" | "evidence" | "estimate" | "history";
 
@@ -49,11 +50,11 @@ interface StaffingOption {
 
 const ESTIMATE_SOURCE: Record<string, string> = {
   ai: "Estimated by the model from the ticket's own content",
-  points: "The team's Linear points, read as days with a fixed spread",
-  issue_placeholder: "No estimate on the ticket — a deliberately wide 1–7 day guess",
+  points: "Historical points-to-days assumption; not a calibrated effort estimate",
+  issue_placeholder: "No supported effort-day estimate — provisional 1–7 day range. Story points are not days.",
   hint: "Parsed from a range someone actually stated",
   finding_placeholder: "Nobody sized this — a deliberately wide 2–12 day guess",
-  knowledge: "Accepted source-attributed developer estimate",
+  knowledge: "Reviewed remaining-work estimate; see its recorded basis",
 };
 
 function hasModeledEstimate(feature: Feature): boolean {
@@ -81,6 +82,7 @@ export default function FeatureDetail({
   onAcceptKnowledgeEstimate,
   onClearAcceptedKnowledgeEstimate,
   estimateWriteState,
+  remainingEstimateEditor,
   staffingOptions,
   onSetCapabilityStaffing,
   onClearCapabilityStaffing,
@@ -107,6 +109,7 @@ export default function FeatureDetail({
   onAcceptKnowledgeEstimate: (capabilityId: string, estimate: CapabilityKnowledgeEstimate, review: EstimateReviewInput) => void;
   onClearAcceptedKnowledgeEstimate: (capabilityId: string) => void;
   estimateWriteState?: { capabilityId: string; pending: boolean; error: string | null } | null;
+  remainingEstimateEditor?: React.ReactNode;
   staffingOptions: StaffingOption[];
   onSetCapabilityStaffing: (capabilityId: string, plan: CapabilityStaffingPlan) => void;
   onClearCapabilityStaffing: (capabilityId: string) => void;
@@ -186,7 +189,7 @@ export default function FeatureDetail({
       {mode === "work" && <Work feature={f} capacity={capacity} onUnlinkReality={onUnlinkReality} />}
       {mode === "evidence" && <Evidence feature={f} scopeId={scopeId} onAccept={onAccept} onStageKnowledgeEstimate={onStageKnowledgeEstimate} onClearKnowledgeEstimate={onClearKnowledgeEstimate} onAcceptKnowledgeEstimate={onAcceptKnowledgeEstimate} onClearAcceptedKnowledgeEstimate={onClearAcceptedKnowledgeEstimate} />}
       {mode === "estimate" && (
-        <Estimate feature={f} scopeId={scopeId} capacity={capacity} onSetEstimate={onSetEstimate} onClearEstimate={onClearEstimate} onStageKnowledgeEstimate={onStageKnowledgeEstimate} onClearKnowledgeEstimate={onClearKnowledgeEstimate} onAcceptKnowledgeEstimate={onAcceptKnowledgeEstimate} onClearAcceptedKnowledgeEstimate={onClearAcceptedKnowledgeEstimate} staffingOptions={staffingOptions} onSetCapabilityStaffing={onSetCapabilityStaffing} onClearCapabilityStaffing={onClearCapabilityStaffing} />
+        <>{remainingEstimateEditor}<Estimate feature={f} scopeId={scopeId} capacity={capacity} onSetEstimate={onSetEstimate} onClearEstimate={onClearEstimate} onStageKnowledgeEstimate={onStageKnowledgeEstimate} onClearKnowledgeEstimate={onClearKnowledgeEstimate} onAcceptKnowledgeEstimate={onAcceptKnowledgeEstimate} onClearAcceptedKnowledgeEstimate={onClearAcceptedKnowledgeEstimate} staffingOptions={staffingOptions} onSetCapabilityStaffing={onSetCapabilityStaffing} onClearCapabilityStaffing={onClearCapabilityStaffing} /></>
       )}
       {mode === "history" && <History feature={f} />}
       </fieldset>
@@ -279,7 +282,7 @@ function ModuleHead({
             : f.activeKnowledgeEstimate
               ? `provisional · ÷ ${capacity.toFixed(2)} FTE`
               : f.acceptedKnowledgeReview?.status === "reviewed"
-                ? `accepted meeting estimate · ÷ ${capacity.toFixed(2)} FTE`
+                ? `${f.canonicalCapability?.signalScenarioEstimate ? "Scenario remaining effort" : "accepted remaining effort"} · ÷ ${capacity.toFixed(2)} FTE`
               : f.acceptedKnowledgeReview?.status === "review_required" && f.acceptedKnowledgeReview.exploration
                 ? `qualified prior range · review required`
               : hasEstimate ? `÷ ${capacity.toFixed(2)} FTE` : "no mapped work"}
@@ -292,7 +295,7 @@ function ModuleHead({
         <HeadStat
           k="Uncertainty"
           v={uncertaintyLabel(f.uncertainty)}
-          n={legacyEstimateReviewRequired ? "ticket-only subset" : f.activeKnowledgeEstimate || f.acceptedKnowledgeReview ? "meeting evidence" : f.placeholderCount > 0 ? `${f.placeholderCount} unestimated` : "all sized"}
+          n={legacyEstimateReviewRequired ? "ticket-only subset" : isSignalEstimate(f.acceptedKnowledgeEstimate) ? "operator judgment" : f.activeKnowledgeEstimate || f.acceptedKnowledgeReview ? "meeting evidence" : f.placeholderCount > 0 ? `${f.placeholderCount} unestimated` : "all sized"}
         />
         {f.capabilityForecast && (
           <HeadStat
@@ -378,7 +381,7 @@ function Overview({ feature: f }: { feature: Feature }) {
           note={f.activeKnowledgeEstimate
             ? `provisional meeting range · ${f.range.low.toFixed(0)}–${f.range.high.toFixed(0)} developer-days`
             : f.acceptedKnowledgeReview?.status === "reviewed"
-              ? `accepted meeting range · ${f.range.low.toFixed(0)}–${f.range.high.toFixed(0)} developer-days`
+              ? `remaining-work range · ${f.range.low.toFixed(0)}–${f.range.high.toFixed(0)} developer-days`
             : f.acceptedKnowledgeReview?.status === "review_required" && f.acceptedKnowledgeReview.exploration
               ? `qualified prior range · ${f.range.low.toFixed(0)}–${f.range.high.toFixed(0)} developer-days · not publishable`
             : f.acceptedKnowledgeReview?.status === "review_required"
@@ -777,7 +780,7 @@ function Estimate({
         {f.activeKnowledgeEstimate
           ? "The staged meeting estimate is replacing the current Reality basis in this Scenario. Remove it to return to accepted Reality."
           : f.acceptedKnowledgeReview?.status === "reviewed"
-            ? "The reviewed developer estimate replaces only its covered tickets. Tickets reviewed as additional remain in this rollup once."
+            ? "The reviewed remaining-work estimate replaces only its covered tickets. Tickets reviewed as additional remain in this rollup once."
           : f.acceptedKnowledgeReview?.status === "review_required" && f.acceptedKnowledgeReview.exploration
             ? "The last reviewed range is shown only as qualified exploration. Boundary or source drift blocks publication until review."
           : f.acceptedKnowledgeReview?.status === "review_required"
@@ -876,7 +879,7 @@ function CapabilityStaffingEditor({
   const total = selected.reduce((sum, person) => sum + person.fte, 0);
   const acceptedAttribution = feature.acceptedKnowledgeEstimate?.version === "accepted-capability-estimate.v2"
     ? feature.acceptedKnowledgeEstimate.source.speaker
-    : feature.acceptedKnowledgeEstimate?.owner;
+    : isSignalEstimate(feature.acceptedKnowledgeEstimate) ? null : feature.acceptedKnowledgeEstimate?.owner;
   const suggested = feature.activeKnowledgeEstimate?.owner ?? acceptedAttribution ?? feature.knowledgeEstimates[0]?.owner ?? null;
 
   return (
@@ -990,14 +993,15 @@ function KnowledgeEstimateEvidence({
   return (
     <div className="mt-4 rounded-md px-3 py-3" style={{ border: "1px solid color-mix(in srgb, var(--i-violet) 45%, var(--i-border))", background: "var(--i-recess)" }} data-shoot="knowledge-estimate-evidence">
       <div className="flex items-baseline justify-between gap-3">
-        <span className="i-label" style={{ color: "var(--i-violet)" }}>Developer estimate evidence</span>
-        <span className="text-[8.5px] text-[var(--i-text-faint)]">from a saved source record</span>
+        <span className="i-label" style={{ color: "var(--i-violet)" }}>Estimate basis and supporting evidence</span>
+        <span className="text-[8.5px] text-[var(--i-text-faint)]">{capability.signalScenarioEstimate ? "Scenario assumption · not saved" : "from a saved source record"}</span>
       </div>
       {feature.acceptedKnowledgeEstimate && (
         <AcceptedEstimateCard
           estimate={feature.acceptedKnowledgeEstimate}
           review={feature.acceptedKnowledgeReview}
           scopeId={scopeId}
+          scenario={Boolean(capability.signalScenarioEstimate)}
           onClear={() => onClearReality(capability.id)}
         />
       )}
@@ -1044,12 +1048,23 @@ function AcceptedEstimateCard({
   review,
   scopeId,
   onClear,
+  scenario = false,
 }: {
   estimate: AcceptedCapabilityEstimate;
   review: Feature["acceptedKnowledgeReview"];
   scopeId: string;
   onClear: () => void;
+  scenario?: boolean;
 }) {
+  if (isSignalEstimate(estimate)) return <div className="mt-2 rounded p-3 text-[11px] space-y-2" style={{border:"1px solid var(--i-signal)"}} data-shoot="accepted-signal-estimate">
+    <div className="font-semibold">{scenario ? "Scenario assumption" : "Accepted Signal estimate"} · operator judgment</div>
+    <div>{estimate.input.range.low}–{estimate.input.range.likely}–{estimate.input.range.high} developer-days · as of {estimate.input.asOfDate}</div>
+    <p>Already done: {estimate.input.alreadyDone || "Not stated"}</p><p>Reuse from: {estimate.input.reuseFrom || "None stated"}</p><p>Still needed: {estimate.input.remainingWork}</p><p>{estimate.input.rationale}</p>
+    <p>{estimate.input.coveredOpenItemIds.length} tickets covered · {estimate.input.additionalOpenItemIds.length} additional. Reviewer label: {estimate.input.reviewerDisplayName}.</p>
+    {estimate.input.evidenceReference && <p className="break-words">Reference: {estimate.input.evidenceReference}</p>}
+    {review?.status === "review_required" && <p role="alert" className="text-[var(--i-amber)]">{review.reviewRequiredReason}</p>}
+    {!scenario && <button onClick={onClear} className="underline">Stop using this accepted estimate</button>}
+  </div>;
   const v2 = isAcceptedCapabilityEstimateV2(estimate) ? estimate : null;
   const legacy = v2 ? null : estimate as AcceptedCapabilityEstimateV1;
   const statement = v2 ? v2.source.statement : legacy!.statement;

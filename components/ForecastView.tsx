@@ -742,12 +742,12 @@ export default function ForecastView({ scopeId }: { scopeId: string }) {
               {breakdown.estimateQuality.aiCount > 0 && (
                 <li>
                   <strong className="text-[var(--color-ink)]">{breakdown.estimateQuality.aiCount}</strong>{" "}
-                  tickets estimated by AI from their content (used ahead of points where both exist)
+                  tickets with an AI effort-day estimate from their content
                 </li>
               )}
               <li>
                 <strong className="text-[var(--color-ink)]">{breakdown.estimateQuality.pointsIssueCount}</strong>{" "}
-                tickets with a real Linear estimate
+                historical points-to-days inputs (not calibrated effort)
               </li>
               {breakdown.estimateQuality.hintFindingCount > 0 && (
                 <li>
@@ -761,7 +761,7 @@ export default function ForecastView({ scopeId }: { scopeId: string }) {
                   <strong className="text-[var(--color-ink)]">
                     {breakdown.estimateQuality.placeholderIssueCount + breakdown.estimateQuality.placeholderFindingCount}
                   </strong>{" "}
-                  items with no estimate at all — carried as deliberately wide guesses, and together they
+                  items without a supported effort-day estimate — story points are not days. These provisional ranges
                   make up{" "}
                   <strong className="text-[var(--color-ink)]">
                     {breakdown.estimateQuality.placeholderEffortSharePct}%

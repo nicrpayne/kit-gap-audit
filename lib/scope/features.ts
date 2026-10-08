@@ -424,7 +424,7 @@ export function composeScopeFeatures(
     // Raw source evidence has no reviewed ticket boundary. Retain its staged
     // state for recovery UI, but never let it change a simulation.
     const activeKnowledgeEstimate = null;
-    const acceptedKnowledgeReview = reviewedCapabilityEstimate(
+    const acceptedKnowledgeReview = capability.signalScenarioEstimate && capability.estimateReview ? capability.estimateReview : reviewedCapabilityEstimate(
       capability.acceptedEstimate,
       mappedItems.map((item) => item.id),
       capability.knowledgeEstimates ?? [],

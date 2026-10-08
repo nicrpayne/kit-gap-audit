@@ -87,6 +87,8 @@
   .briefModule { border-color: #aeb8c4; background: white; overflow: visible; break-inside: auto !important; }
   .briefModule summary { color: #111 !important; break-after: avoid-page; }
   .moduleTitle { break-after: avoid-page; }
+  /* Keep the provenance appendix heading with its first evidence record. */
+  .briefModule[data-module-id="forecast-estimate-provenance"] { break-before: page; }
   .warning { break-inside: avoid-page; }
   .briefModuleContent, .briefModule:not([open]) .briefModuleContent { display: block; }
   .headlineGrid { grid-template-columns: 1.5fr 1fr 1fr; }

@@ -48,9 +48,11 @@ function capabilityEstimateMarkdown(brief: DecisionBriefV1): string[] {
       out.push(`  - Covered tickets: ${presentation.coveredItemIds.length ? presentation.coveredItemIds.map(markdownInlineText).join(", ") : "none"}`);
       out.push(`  - Additional tickets retained separately: ${presentation.additionalItemIds.length ? presentation.additionalItemIds.map(markdownInlineText).join(", ") : "none"}`);
     }
-    out.push("  - Original statement (verbatim from frozen snapshot):");
-    out.push(...markdownBlockquoteLines(presentation.originalQuote, "    "));
-    out.push(`  - Raw assertion: ${markdownInlineText(presentation.rawAssertion)} · immutable snapshot ${markdownInlineText(presentation.contextSnapshotId)}`);
+    if (presentation.originalQuote) {
+      out.push("  - Original statement (verbatim from frozen snapshot):");
+      out.push(...markdownBlockquoteLines(presentation.originalQuote, "    "));
+    } else out.push("  - Operator judgment; no transcript quote asserted.");
+    out.push(`  - Raw assertion: ${markdownInlineText(presentation.rawAssertion)} · ${presentation.contextSnapshotId ? `immutable snapshot ${markdownInlineText(presentation.contextSnapshotId)}` : "Signal operator record, frozen in this report"}`);
   }
   return out;
 }
@@ -144,7 +146,9 @@ function moduleMarkdown(id: BriefModuleId, density: ModuleDensity, brief: Decisi
       if (scope.capabilityOutlooks?.length) {
         out.push("", "Isolated capability outlooks — each assumes its named contributors stay focused on that card:");
         for (const outlook of scope.capabilityOutlooks) {
-          const basis = outlook.estimateBasis === "knowledge_provisional"
+          const basis = outlook.estimateBasis === "signal_provisional" ? "Scenario Signal estimate · operator judgment"
+            : outlook.estimateBasis === "signal_accepted" ? "accepted Signal estimate · operator judgment"
+            : outlook.estimateBasis === "knowledge_provisional"
             ? "provisional meeting estimate"
             : outlook.estimateBasis === "knowledge_accepted"
               ? "accepted meeting estimate"

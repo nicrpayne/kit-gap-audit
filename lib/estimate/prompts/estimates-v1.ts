@@ -1,4 +1,4 @@
-export const ESTIMATE_PROMPT_VERSION = "v1";
+export const ESTIMATE_PROMPT_VERSION = "v2-remaining-effort-no-point-conversion";
 
 export interface EstimateCandidate {
   externalId: string;
@@ -28,10 +28,9 @@ what the work actually is, not what the title suggests.
 Rules:
 - Give a three-point estimate in days: "lowDays" (goes smoothly),
   "likelyDays" (realistic), "highDays" (hits complications).
-- The team's own points are a signal, not the answer. If your reading of
-  the ticket disagrees with their pointing by 2x or more, keep YOUR
-  estimate and add the flag "bigger_than_pointed" or
-  "smaller_than_pointed".
+- Story points are not days. No points-to-time calibration is provided.
+  Do not convert or numerically compare points with days, and do not emit
+  bigger_than_pointed or smaller_than_pointed flags.
 - If the description is missing, one-liner-vague, or the scope is
   ambiguous, widen the range substantially and add "unclear_scope".
 - If the description implies work beyond what's written (migrations,
@@ -41,8 +40,11 @@ Rules:
   release described in (A). "core" = required for it. "peripheral" =
   related but could ship after. "unrelated" = a different product or
   workstream entirely. Do not rely on labels for this; read the ticket.
-- A ticket already in a "started" state is partially done -- estimate the
-  REMAINING work, slightly reduced from a cold start.
+- Estimate REMAINING work. A "started" state does not quantify completion;
+  never invent a percentage discount from workflow state alone. Use explicit
+  progress or reusable implementation evidence when available. Reuse still
+  requires adaptation, integration, review, and testing. If progress or
+  compatibility is unknown, explain that limitation and widen the range.
 - rationale: one sentence, concrete, referencing what in the ticket drove
   the number. No hedging boilerplate.
 

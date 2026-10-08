@@ -1,4 +1,5 @@
 import type { ProjectPayload, SuiteScenario } from "@/lib/instrument/useProject";
+import { remainingEstimateCapabilities, remainingEstimateConflict } from "./remainingEstimates";
 
 /** Scope and Orbit must render the same staged shape, including link moves. */
 export function scenarioDisplayShape(scope: ProjectPayload["scopes"][number], scenario: SuiteScenario) {
@@ -8,7 +9,11 @@ export function scenarioDisplayShape(scope: ProjectPayload["scopes"][number], sc
     ...scope.items,
     ...scope.executionItems.filter((item) => (scenario.includedItemIds.has(item.id) || stagedWorkIds.has(item.id)) && !scope.items.some((baseItem) => baseItem.id === item.id)),
   ].filter((item) => !scenario.excludedItemIds.has(item.id));
-  const scenarioCapabilities = scope.capabilities.map((capability) => {
+  const drafts = Object.fromEntries(Object.entries(scenario.remainingEstimateByCapabilityId ?? {}).filter(([id]) => scope.capabilities.some(card => card.id === id)));
+  // Coverage is read before the page's refusal panel. Invalid drafts must
+  // remain recoverable state, not throw during render or become new truth.
+  const estimateCapabilities = remainingEstimateCapabilities(scope.capabilities, scope.items, remainingEstimateConflict([scope], drafts) ? {} : drafts);
+  const scenarioCapabilities = estimateCapabilities.map((capability) => {
     const staged = proposalSelections.filter((selection) => selection.targetCapabilityId === capability.id);
     const removedLinkIds = new Set(proposalSelections.flatMap((selection) => {
       if (selection.sourceCapabilityId !== capability.id) return [];

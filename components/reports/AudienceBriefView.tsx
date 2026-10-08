@@ -56,8 +56,8 @@ function CapabilityEstimateBasis({ brief }: { brief: DecisionBriefV1 }) {
               {presentation.interpretation && <small style={{ display: "block", marginTop: 5 }}><strong>Reviewed interpretation:</strong> {presentation.interpretation}</small>}
               {record.review && <small style={{ display: "block" }}>Reviewer {presentation.reviewer ?? "unavailable"} · reviewed {presentation.reviewedAt ? date(presentation.reviewedAt) : "date unavailable"}</small>}
               {record.review && <small style={{ display: "block" }}>Covered tickets: {presentation.coveredItemIds.length ? presentation.coveredItemIds.join(", ") : "none"} · Additional tickets retained separately: {presentation.additionalItemIds.length ? presentation.additionalItemIds.join(", ") : "none"}</small>}
-              <small style={{ display: "block", marginTop: 5 }}>Original statement: “{presentation.originalQuote}”</small>
-              <small style={{ display: "block" }}>Raw assertion: {presentation.rawAssertion} · immutable snapshot {presentation.contextSnapshotId}</small>
+              <small style={{ display: "block", marginTop: 5 }}>{presentation.originalQuote ? `Original statement: “${presentation.originalQuote}”` : "Operator judgment; no transcript quote asserted."}</small>
+              <small style={{ display: "block" }}>Raw assertion: {presentation.rawAssertion} · {presentation.contextSnapshotId ? `immutable snapshot ${presentation.contextSnapshotId}` : "Signal operator record, frozen in this report"}</small>
             </span>
             <strong>{record.review ? (presentation.usedInSimulation ? `${presentation.coveredItemIds.length} covered ticket ${presentation.coveredItemIds.length === 1 ? "estimate" : "estimates"} replaced` : "Evidence only; ticket rollup used") : `${record.replacedItemIds.length} ticket ${record.replacedItemIds.length === 1 ? "estimate" : "estimates"} replaced`}</strong>
           </div>;

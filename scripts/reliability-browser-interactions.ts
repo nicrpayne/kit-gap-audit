@@ -8,7 +8,7 @@ import { prisma } from "../lib/prisma";
 export async function proveRepairInteractions(context: BrowserContext, base: string, output: string, auditHref: string) {
   const database = new URL(process.env.DATABASE_URL!);
   const originalFixture = database.port === "55434" && database.pathname === "/signal_t0_test_1004";
-  const dependencyFixture = database.port === "55436" && database.pathname === "/signal_t0_test_10071255"
+  const dependencyFixture = database.port === "55436" && ["/signal_t0_test_10071255", "/signal_t0_test_10071841"].includes(database.pathname)
     && database.username === "signal_t0_local" && process.env.REPORTS_DB_PROOF === "1"
     && process.env.SIGNAL_REPORT_BROWSER_PROOF === "1";
   assert(database.hostname === "127.0.0.1" && (originalFixture || dependencyFixture), "Only the explicitly isolated local QA databases are writable");
@@ -47,6 +47,39 @@ export async function proveRepairInteractions(context: BrowserContext, base: str
     assert.doesNotMatch(await inspector.innerText(), /An open question/i);
     assert.match(await inspector.innerText(), /closed|decided|resolved/i);
     await page.screenshot({ path: `${output}/07-closed-decision.png` });
+
+    // A dedicated disposable card exercises real browser acceptance, reload,
+    // and clearing without editing the report fixture's accepted baseline.
+    const nativeCardId = `repair-native-${key}`;
+    await prisma.capability.create({data:{id:nativeCardId,scopeId:scopes[0],name:"QA reused uploader",status:"accepted",provenance:{kind:"synthetic-native-estimate-proof"}}});
+    await page.goto(`${base}/scope?project=${scopes[0]}`);
+    await page.locator(`[data-capability="capability:${nativeCardId}"]`).click();
+    await sh("mode-estimate").click();
+    const nativeEditor=sh("remaining-estimate-editor");
+    await nativeEditor.getByLabel("Reuse from",{exact:true}).fill("Synthetic shared uploader");
+    await nativeEditor.getByLabel("Still needed",{exact:true}).fill("Adapt and test permissions");
+    await nativeEditor.getByLabel("Why this range",{exact:true}).fill("Fixture operator's remaining-effort assessment");
+    await nativeEditor.getByLabel("Remaining best days").fill("1");
+    await nativeEditor.getByLabel("Remaining likely days").fill("2");
+    await nativeEditor.getByLabel("Remaining worst days").fill("4");
+    await nativeEditor.getByLabel("Estimate reviewer").fill("QA operator");
+    const acceptedResponse=page.waitForResponse(r=>r.url().endsWith(`/api/capabilities/${nativeCardId}/remaining-estimate`)&&r.request().method()==="PUT");
+    await nativeEditor.getByRole("button",{name:"Accept into Reality",exact:true}).click();
+    assert.equal((await acceptedResponse).status(),200);
+    await nativeEditor.getByText(/Saved Signal estimate/).waitFor();
+    await page.reload();
+    await page.locator(`[data-capability="capability:${nativeCardId}"]`).click();await sh("mode-estimate").click();
+    assert.equal(await nativeEditor.getByLabel("Remaining likely days").inputValue(),"2");
+    assert.equal(await nativeEditor.getByLabel("Reuse from",{exact:true}).inputValue(),"Synthetic shared uploader");
+    assert.match(await page.locator(`[data-capability="capability:${nativeCardId}"]`).innerText(),/Signal estimate · Reality/i);
+    await page.screenshot({path:`${output}/09-native-accepted-reload.png`});
+    const clearResponse=page.waitForResponse(r=>r.url().endsWith(`/api/capabilities/${nativeCardId}/estimate`)&&r.request().method()==="DELETE");
+    await page.getByRole("button",{name:"Stop using this accepted estimate",exact:true}).click();
+    assert.equal((await clearResponse).status(),200);
+    const nativeAfter=await prisma.capability.findUniqueOrThrow({where:{id:nativeCardId},include:{events:true}});
+    assert.equal(nativeAfter.acceptedEstimate,null);
+    assert.equal(nativeAfter.events.filter(event=>event.action==="accept_signal_estimate").length,1);
+    assert.equal(nativeAfter.events.length,2,"Accept and clear both retain durable history");
     await page.goto(`${base}/control-room?project=${scopes[0]}`);
     await sh("cr-views").click();
     await sh("cr-views-menu").waitFor();

@@ -1,4 +1,5 @@
 import type { FrozenCapabilityEstimate } from "./forecastBasis";
+import { isSignalEstimate } from "@/lib/scope/signalEstimates";
 
 export interface CapabilityEstimatePresentation {
   estimateId: string;
@@ -24,7 +25,12 @@ export interface CapabilityEstimatePresentation {
  * missing review boundary from current tickets. */
 export function capabilityEstimatePresentation(record: FrozenCapabilityEstimate): CapabilityEstimatePresentation {
   const estimate = record.estimate;
-  const normalized = "version" in estimate && estimate.version === "accepted-capability-estimate.v2"
+  const normalized = isSignalEstimate(estimate) ? {
+    estimateId: estimate.id, range: estimate.input.range, basisLabel: "Signal remaining work · operator judgment",
+    sourceDate: estimate.input.asOfDate, originalQuote: "",
+    rawAssertion: `Already done: ${estimate.input.alreadyDone || "Not stated"}. Reuse: ${estimate.input.reuseFrom || "None stated"}. Remaining: ${estimate.input.remainingWork}. Reference: ${estimate.input.evidenceReference || "None supplied"}.`,
+    contextSnapshotId: "",
+  } : "version" in estimate && estimate.version === "accepted-capability-estimate.v2"
     ? {
         estimateId: estimate.source.intelligenceObjectId,
         range: estimate.interpretation.range,
@@ -59,7 +65,7 @@ export function capabilityEstimatePresentation(record: FrozenCapabilityEstimate)
   }
   return {
     ...normalized,
-    authorityLabel: record.review.status === "reviewed" ? "REVIEWED" : "REVIEW REQUIRED",
+    authorityLabel: record.authority === "provisional" ? "SCENARIO · OPERATOR ASSUMPTION" : record.review.status === "reviewed" ? "REVIEWED" : "REVIEW REQUIRED",
     reviewRequired: record.review.status === "review_required",
     reviewSummary: record.review.status === "review_required"
       ? `${record.review.reviewRequiredReason ?? "The reviewed boundary is no longer current."} Full delivery claims are suppressed; any retained assertion is qualified exploration only.`

@@ -1,4 +1,5 @@
 import { Prisma } from "@prisma/client";
+import { isSignalEstimate, parseSignalEstimate, parseSignalEstimateInput, signalEstimateBoundaryMatches, type SignalEstimateInput } from "./signalEstimates";
 import { prisma } from "@/lib/prisma";
 import { capabilityWriteIntent } from "@/lib/scope/writeIntent";
 import { currentContextSnapshot } from "@/lib/context/currentSnapshot";
@@ -439,7 +440,7 @@ export async function setCanonicalCapabilityEstimate(
   },
 ) {
   const idempotencyKey = required(input.idempotencyKey, "idempotencyKey");
-  const expectedAction = input.estimate?.version === "accepted-capability-estimate.v2"
+  const expectedAction = isSignalEstimate(input.estimate) ? "accept_signal_estimate" : input.estimate?.version === "accepted-capability-estimate.v2"
     ? "accept_estimate_v2"
     : input.estimate ? "accept_knowledge_estimate" : "clear_knowledge_estimate";
   const result = await retrySerializable(() => prisma.$transaction(async (tx) => {
@@ -449,7 +450,8 @@ export async function setCanonicalCapabilityEstimate(
         throw new ScopeRealityConflictError("That idempotency key belongs to a different capability write or action.");
       }
       const priorEstimate = eventAcceptedEstimate(prior.afterState);
-      if (input.estimate && JSON.stringify(priorEstimate) !== JSON.stringify(input.estimate)) {
+      const sameNative = isSignalEstimate(priorEstimate) && isSignalEstimate(input.estimate) && priorEstimate.capabilityRevisionAtReview === input.estimate.capabilityRevisionAtReview && JSON.stringify(priorEstimate.input) === JSON.stringify(input.estimate.input);
+      if (input.estimate && !sameNative && JSON.stringify(priorEstimate) !== JSON.stringify(input.estimate)) {
         throw new ScopeRealityConflictError("That idempotency key belongs to a different estimate acceptance request.");
       }
       const capability = await tx.capability.findUniqueOrThrow({ where: { id: prior.capabilityId }, include: capabilityInclude });
@@ -461,6 +463,12 @@ export async function setCanonicalCapabilityEstimate(
     }
     if (input.estimate && acceptedEstimateIdentity(input.estimate).capabilityId !== before.id) {
       throw new ScopeRealityInputError("That estimate belongs to a different capability.");
+    }
+    if (isSignalEstimate(input.estimate)) {
+      if (before.status !== "accepted") throw new ScopeRealityConflictError("This Scope card is no longer accepted. Review it before saving an estimate.");
+      if (!parseSignalEstimate(input.estimate) || input.estimate.capabilityRevisionAtReview !== before.revision || !input.reviewedOpenItemIds || !signalEstimateBoundaryMatches(input.estimate.input, input.reviewedOpenItemIds)) throw new ScopeRealityConflictError("The remaining-work estimate or ticket boundary changed. Reload and review it again.");
+      const active = new Set(before.workLinks.filter(link => ["active", "configured"].includes(link.state)).map(link => link.externalId));
+      if ([...input.estimate.input.coveredOpenItemIds, ...input.estimate.input.additionalOpenItemIds].some(id => !active.has(id))) throw new ScopeRealityConflictError("A reviewed ticket is no longer linked to this card.");
     }
     if (input.estimate?.version === "accepted-capability-estimate.v2") {
       const association = input.estimate.source.association;
@@ -520,7 +528,7 @@ export async function setCanonicalCapabilityEstimate(
       afterState: json(plain(after)),
     } });
     await invalidateDerivedReads(tx, before.scopeId, input.estimate
-      ? `Accepted meeting estimate for Capability ${capabilityId}.`
+      ? `Accepted remaining-work estimate for Capability ${capabilityId}.`
       : `Cleared accepted meeting estimate for Capability ${capabilityId}.`);
     return { capability: await tx.capability.findUniqueOrThrow({ where: { id: capabilityId }, include: capabilityInclude }), scopeId: before.scopeId, changed: true };
   }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }));
@@ -534,8 +542,8 @@ export async function setCanonicalCapabilityEstimate(
 export async function replayCanonicalCapabilityEstimate(
   capabilityId: string,
   idempotencyKeyValue: string,
-  expectedAction: "accept_estimate_v2" | "clear_knowledge_estimate",
-  intent?: CapabilityEstimateReplayIntent,
+  expectedAction: "accept_estimate_v2" | "accept_signal_estimate" | "clear_knowledge_estimate",
+  intent?: CapabilityEstimateReplayIntent | { expectedRevision: number; input: SignalEstimateInput },
 ) {
   const idempotencyKey = required(idempotencyKeyValue, "idempotencyKey");
   const prior = await prisma.capabilityEvent.findUnique({
@@ -546,8 +554,12 @@ export async function replayCanonicalCapabilityEstimate(
   if (prior.capabilityId !== capabilityId || prior.action !== expectedAction) {
     throw new ScopeRealityConflictError("That idempotency key belongs to a different capability write or action.");
   }
-  if (expectedAction === "accept_estimate_v2" && (!intent || !replayIntentMatchesAccepted(eventAcceptedEstimate(prior.afterState), intent))) {
+  if (expectedAction === "accept_estimate_v2" && (!intent || !("review" in intent) || !replayIntentMatchesAccepted(eventAcceptedEstimate(prior.afterState), intent))) {
     throw new ScopeRealityConflictError("That idempotency key belongs to a different estimate acceptance request.");
+  }
+  if (expectedAction === "accept_signal_estimate") {
+    const accepted = eventAcceptedEstimate(prior.afterState);
+    if (!isSignalEstimate(accepted) || !intent || !("input" in intent) || accepted.capabilityRevisionAtReview !== intent.expectedRevision || JSON.stringify(accepted.input) !== JSON.stringify(parseSignalEstimateInput(intent.input))) throw new ScopeRealityConflictError("That idempotency key belongs to a different remaining-work estimate.");
   }
   const capability = await prisma.capability.findUniqueOrThrow({ where: { id: capabilityId }, include: capabilityInclude });
   return { capability, changed: false, ...(await finish(capability.scopeId, false)) };

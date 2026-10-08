@@ -6,6 +6,8 @@ export type CapabilityExecutionState =
   | "mapping_stale";
 
 export interface ShapeCapability {
+  signalScenarioEstimate?: boolean;
+  estimateReview?: import("@/lib/scope/knowledgeEstimates").ReviewedCapabilityEstimateResult;
   id: string;
   name: string;
   description: string | null;

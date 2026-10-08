@@ -156,6 +156,7 @@ function frozenEstimateOf(brief: DecisionBriefV1) {
 
 function frozenQuote(brief: DecisionBriefV1): string | null {
   const estimate = frozenEstimateOf(brief).estimate;
+  if ("version" in estimate && estimate.version === "signal-remaining-estimate.v1") throw new Error("Expected quoted meeting estimate fixture.");
   return isAcceptedCapabilityEstimateV2(estimate) ? estimate.source.exactQuote : estimate.excerpt;
 }
 
@@ -684,6 +685,32 @@ async function main() {
     await proveReportWorkflowInBrowser(scopeId, { rollupCapabilityId, optionalCapabilityId, excludedItemId });
     assert.deepEqual(await acceptedState(), acceptedBeforeBrowser, "browser Scenarios and report creation never mutate accepted Scope/staffing/links");
   }
+  const {makeSignalEstimate} = await import("../lib/scope/signalEstimates");
+  const {capabilityEstimatePresentation} = await import("../lib/reports/capabilityEstimatePresentation");
+  const native = makeSignalEstimate(quotedCapabilityId,1,{alreadyDone:"Shared service exists",reuseFrom:"JSA uploader",remainingWork:"iTrack adaptation and tests",rationale:"Operator estimated integration and testing",evidenceReference:"Fixture reference",asOfDate:"2026-10-07",reviewerDisplayName:"Fixture operator",range:{low:1,likely:2,high:3},coveredOpenItemIds:[quotedItemId],additionalOpenItemIds:[]},[quotedItemId],"native-report-proof");
+  const nativePair = await generateReportComparison(scope,{...scenarioSnapshot(`native-report-${fixtureKey}`),remainingEstimateByCapabilityId:{[quotedCapabilityId]:native}});
+  const nativeFrozen=frozenEstimateOf(nativePair.scenario.brief);
+  assert.equal(nativeFrozen.authority,"provisional");assert("version" in nativeFrozen.estimate);assert.equal(nativeFrozen.estimate.version,"signal-remaining-estimate.v1");
+  assert.equal(capabilityEstimatePresentation(nativeFrozen).originalQuote,"");
+  assert.match(nativePair.scenario.report.summaryMarkdown,/JSA uploader/);
+  assert.match(nativePair.scenario.report.summaryMarkdown,/operator judgment/i);
+  assert.equal(frozenQuote(nativePair.reality.brief),originalQuote,"Scenario must not replace the accepted original quote");
+  const nativeBasis=basisOf(nativePair.scenario.brief);
+  const nativeItems=nativeBasis.scopes.find(row=>row.scopeId===scopeId)!.items;
+  assert(!nativeItems.some(item=>item.id===quotedItemId));
+  assert.equal(nativeItems.find(item=>item.id.includes("native-report-proof"))?.likely,2);
+  assert.deepEqual((await db.capability.findUniqueOrThrow({where:{id:quotedCapabilityId}})).acceptedEstimate,acceptedEstimate);
+  console.log("PASS real report pair freezes native Scenario effort and reuse basis without rewriting Reality or fabricating a quote.");
+  const rollupLinks=await db.capabilityWorkLink.findMany({where:{capabilityId:rollupCapabilityId},orderBy:{externalId:"asc"}});
+  const additionalId=rollupLinks[0].externalId;
+  const partialNative=makeSignalEstimate(rollupCapabilityId,1,{...native.input,coveredOpenItemIds:rollupLinks.slice(1).map(link=>link.externalId),additionalOpenItemIds:[additionalId]},rollupLinks.map(link=>link.externalId),"native-partial-report-proof");
+  const partialPair=await generateReportComparison(scope,{...scenarioSnapshot(`native-partial-report-${fixtureKey}`),remainingEstimateByCapabilityId:{[rollupCapabilityId]:partialNative},estimateOverrideByItemId:{[additionalId]:{low:5,likely:9,high:13}},capabilityStaffingById:{[rollupCapabilityId]:{contributors:[{personId,name:"Reports proof developer",fte:0.5}]}}});
+  const partialOutlook=partialPair.scenario.brief.movable.scope.value.capabilityOutlooks?.find(row=>row.capabilityId===rollupCapabilityId);
+  assert.deepEqual(partialOutlook?.effortDays,{low:6,likely:11,high:16},"Card outlook retains additional ticket override alongside the 1/2/3 covered-work range");
+  assert.equal(partialOutlook?.estimateBasis,"signal_provisional");
+  const {renderDecisionBriefMarkdown}=await import("../lib/reports/decisionBriefRender");
+  assert.match(renderDecisionBriefMarkdown(partialPair.scenario.brief),/Scenario Signal estimate · operator judgment/);
+  console.log("PASS native card staffing outlook preserves additional ticket effort and labels Scenario operator judgment.");
   const persistedBeforeMutation = await db.report.findMany({ where: { id: { in: [pair.reality.report.id, pair.scenario.report.id] } }, orderBy: { id: "asc" } });
   const immutableBefore = persistedBeforeMutation.map((row) => ({ brief: row.briefSnapshot, markdown: row.summaryMarkdown, scenario: row.scenarioSnapshot }));
   await db.person.update({ where: { id: personId }, data: { name: "Changed current developer", fte: 2 } });

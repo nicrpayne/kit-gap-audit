@@ -7,6 +7,7 @@ import {
 } from "@/lib/context/package";
 import type { ThreePoint } from "@/lib/scope/features";
 import type { WorkItem } from "@/lib/forecast/simulate";
+import { isSignalEstimate, parseSignalEstimate, signalEstimateBoundaryMatches, type AcceptedSignalEstimate } from "./signalEstimates";
 
 export type RawEstimateUnit = "developer_days" | "elapsed_days" | "sprints" | "story_points" | "unknown";
 export type RawEstimateShape = "single" | "bounds" | "three_point" | "unstructured";
@@ -157,7 +158,7 @@ export interface AcceptedCapabilityEstimateV2 {
   };
 }
 
-export type AcceptedCapabilityEstimate = AcceptedCapabilityEstimateV1 | AcceptedCapabilityEstimateV2;
+export type AcceptedCapabilityEstimate = AcceptedCapabilityEstimateV1 | AcceptedCapabilityEstimateV2 | AcceptedSignalEstimate;
 
 export function isAcceptedCapabilityEstimateV2(value: unknown): value is AcceptedCapabilityEstimateV2 {
   return Boolean(value && typeof value === "object" && !Array.isArray(value)
@@ -187,7 +188,7 @@ export interface EstimateReviewContext {
 export type ReviewedCapabilityEstimateResult =
   | {
       status: "reviewed";
-      estimate: AcceptedCapabilityEstimateV2;
+      estimate: AcceptedCapabilityEstimateV2 | AcceptedSignalEstimate;
       range: ThreePoint;
       coveredItemIds: string[];
       additionalItemIds: string[];
@@ -233,6 +234,7 @@ export function acceptedEstimateIdentity(estimate: AcceptedCapabilityEstimate): 
   capabilityId: string;
   passageId: string;
 } {
+  if (isSignalEstimate(estimate)) return { estimateId: estimate.id, contextSnapshotId: "", capabilityId: estimate.capabilityId, passageId: "" };
   return isAcceptedCapabilityEstimateV2(estimate)
     ? {
         estimateId: estimate.source.intelligenceObjectId,
@@ -261,6 +263,7 @@ export function auditPassageHref(
   scopeId: string,
   estimate: CapabilityKnowledgeEstimate | AcceptedCapabilityEstimate,
 ): string | null {
+  if (isSignalEstimate(estimate)) return null; // Never fabricate a conversation quote for an operator assertion.
   const identity = isAcceptedCapabilityEstimateV2(estimate)
     ? { contextSnapshotId: estimate.source.contextSnapshotId, passageId: estimate.source.passageId }
     : "acceptedAt" in estimate
@@ -697,6 +700,7 @@ function parseV2Accepted(candidate: Record<string, unknown>): AcceptedCapability
 
 /** Fail closed when reading the JSON Reality field. */
 export function acceptedCapabilityEstimate(value: unknown): AcceptedCapabilityEstimate | null {
+  if (isSignalEstimate(value)) return parseSignalEstimate(value);
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
   const candidate = value as Record<string, unknown>;
   return candidate.version === "accepted-capability-estimate.v2"
@@ -718,6 +722,15 @@ export function reviewedCapabilityEstimate(
     invalidStoredAssertion: true,
     reviewRequiredReason: "The stored accepted estimate is malformed or unsupported. It is not applied; explicit review is required.",
   } : null;
+  if (isSignalEstimate(estimate)) {
+    const { range, coveredOpenItemIds: coveredItemIds, additionalOpenItemIds: additionalItemIds } = estimate.input;
+    if (!signalEstimateBoundaryMatches(estimate.input, currentOpenItemIds)) return {
+      status: "review_required", estimate, publishable: false,
+      exploration: { range, coveredItemIds, additionalItemIds },
+      reviewRequiredReason: "The tickets covered by this Signal estimate changed. The saved judgment is preserved; review remaining work before using it in a delivery report.",
+    };
+    return { status: "reviewed", estimate, range, coveredItemIds, additionalItemIds, publishable: true };
+  }
   if (!isAcceptedCapabilityEstimateV2(estimate)) {
     return {
       status: "review_required",

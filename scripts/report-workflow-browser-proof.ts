@@ -54,6 +54,64 @@ export async function proveReportWorkflowInBrowser(scopeId: string, fixture: { r
     page.setDefaultTimeout(30_000);
     const pageErrors: string[] = [];
     page.on("pageerror", (error) => pageErrors.push(error.message));
+    // New feature-level remaining effort: actual form, shared navigation,
+    // server simulation, frozen pair and read-only report handoff.
+    await page.goto(`${base}/scope?project=${scopeId}`);
+    await page.locator(`[data-capability="capability:${fixture.rollupCapabilityId}"]`).click();
+    await page.locator('[data-shoot="mode-estimate"]').click();
+    const remainingEditor=page.locator('[data-shoot="remaining-estimate-editor"]');
+    await remainingEditor.getByRole("button",{name:"Try in Scenario",exact:true}).click();
+    assert.match(await remainingEditor.innerText(),/Enter best, likely, and worst/);
+    await remainingEditor.getByLabel("Already done",{exact:true}).fill("JSA shared uploader is implemented");
+    await remainingEditor.getByLabel("Reuse from",{exact:true}).fill("JSA upload component; compatibility must be tested");
+    await remainingEditor.getByLabel("Still needed",{exact:true}).fill("Adapt, integrate, review and test iTrack");
+    await remainingEditor.getByLabel("Why this range",{exact:true}).fill("Fixture operator assessment of remaining integration effort");
+    await remainingEditor.getByLabel("Remaining best days").fill("1");
+    await remainingEditor.getByLabel("Remaining likely days").fill("2");
+    await remainingEditor.getByLabel("Remaining worst days").fill("3");
+    await remainingEditor.getByLabel("Estimate reviewer").fill("Fixture operator");
+    const savePath=`**/api/capabilities/${fixture.rollupCapabilityId}/remaining-estimate`;
+    await page.route(savePath,route=>route.fulfill({status:503,json:{error:"Synthetic save interruption; retry is safe"}}));
+    await remainingEditor.getByRole("button",{name:"Accept into Reality",exact:true}).click();
+    await remainingEditor.getByText("Synthetic save interruption; retry is safe",{exact:true}).waitFor();
+    assert.equal(await remainingEditor.getByLabel("Remaining likely days").inputValue(),"2");
+    await page.unroute(savePath);
+    await remainingEditor.getByRole("button",{name:"Try in Scenario",exact:true}).click();
+    await remainingEditor.getByRole("button",{name:"Clear experiment",exact:true}).waitFor();
+    assert.match(await page.locator(`[data-capability="capability:${fixture.rollupCapabilityId}"]`).innerText(),/Signal estimate · Scenario/i);
+    assert.doesNotMatch(await page.locator(`[data-capability="capability:${fixture.rollupCapabilityId}"]`).innerText(),/meeting estimate/i);
+    await page.screenshot({path:`${output}/00-native-remaining-estimate.png`,fullPage:true});
+    await page.locator('[data-shoot="feature-detail"]').getByRole('button',{name:'Close',exact:true}).click();
+    const landingOf=(text:string)=>text.toUpperCase().match(/\b(?:JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)\s+\d{1,2}\b/)?.[0];
+    await page.locator('a[href^="/forecast"]').first().click();
+    await page.locator('[data-shoot="central-date"]').filter({hasText:/\d+d earlier/}).waitFor();
+    const nativeLanding=landingOf(await page.locator('[data-shoot="central-date"]').innerText());
+    for(const route of ["portfolio","orbit","timeline"]) {
+      await page.locator(`a[href^="/${route}"]`).first().click();await page.waitForURL(new RegExp(`/${route}`));
+      if(route==="orbit") {await page.locator('[data-shoot="orbit-centre-p50"]').waitFor();assert.equal(landingOf(await page.locator('[data-shoot="orbit-centre-p50"]').textContent() ?? ""),nativeLanding);}
+      if(route==="timeline") {await page.locator(`[data-shoot="memory-likely-${scopeId}"]`).waitFor();assert.equal(landingOf(await page.locator(`[data-shoot="memory-likely-${scopeId}"]`).innerText()),nativeLanding);}
+    }
+    await page.locator('a[href^="/reports"]').first().click();
+    const nativePost=page.waitForResponse(response=>new URL(response.url()).pathname==="/api/reports"&&response.request().method()==="POST");
+    await page.getByRole('button',{name:'Generate Reality + Scenario',exact:true}).click();
+    const nativeResponse=await nativePost;const nativePair=await nativeResponse.json();assert.equal(nativeResponse.status(),200,JSON.stringify(nativePair));
+    await writeFile(`${output}/native-response.json`,JSON.stringify(nativePair,null,2));
+    const nativeRecord=nativePair.scenario.brief.forecast.basis.capabilityEstimates.find((row:{capabilityId:string})=>row.capabilityId===fixture.rollupCapabilityId);
+    assert.equal(nativeRecord.authority,"provisional");assert.equal(nativeRecord.estimate.version,"signal-remaining-estimate.v1");assert.equal(nativeRecord.estimate.input.range.likely,2);
+    assert.equal(nativePair.scenario.brief.movable.scope.value.simulationItemCount,3,"Eight ticket ranges are replaced by one card estimate, not counted twice");
+    assert.match(nativePair.scenario.report.summaryMarkdown,/JSA upload component/);
+    assert.match(nativePair.scenario.report.summaryMarkdown,/Operator judgment; no transcript quote asserted/);
+    assert.equal(landingOf(new Date(nativePair.scenario.brief.headline.likelyWindow.value.likely+"T12:00:00Z").toLocaleDateString('en-US',{month:'short',day:'numeric',timeZone:'UTC'})),nativeLanding);
+    const nativePrint=await context.newPage();await nativePrint.goto(`${base}/reports/${nativePair.scenario.report.id}/print`,{waitUntil:'networkidle'});
+    assert.match(await nativePrint.locator('body').innerText(),/JSA upload component/);
+    assert.match(await nativePrint.locator('body').innerText(),/Operator judgment; no transcript quote asserted/);
+    await nativePrint.screenshot({path:`${output}/00-native-report.png`,fullPage:true});
+    if(browserEngine==="chromium")await nativePrint.pdf({path:`${output}/native-scenario.pdf`,format:"A4",printBackground:true,margin:{top:"12mm",bottom:"12mm",left:"12mm",right:"12mm"},displayHeaderFooter:true,headerTemplate:'<div style="font-size:8px;width:100%;text-align:center">SYNTHETIC LOCAL PROJECT - native estimate report test</div>',footerTemplate:'<div style="font-size:8px;width:100%;text-align:center"><span class="pageNumber"></span> / <span class="totalPages"></span></div>'});
+    await nativePrint.close();
+    await page.locator('a[href^="/scope"]').first().click();
+    await page.locator(`[data-capability="capability:${fixture.rollupCapabilityId}"]`).click();await page.locator('[data-shoot="mode-estimate"]').click();
+    await page.getByRole('button',{name:'Clear experiment',exact:true}).click();
+    await page.locator('[data-shoot="feature-detail"]').getByRole('button',{name:'Close',exact:true}).click();
     await page.goto(`${base}/portfolio?project=${scopeId}`);
     const fader = page.locator(`[data-shoot="fader-${scopeId}"]`);
     await fader.waitFor();

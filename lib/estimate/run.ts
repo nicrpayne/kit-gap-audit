@@ -2,7 +2,7 @@ import { createHash } from "crypto";
 import { prisma } from "@/lib/prisma";
 import { completeJson, AUDIT_MODEL } from "@/lib/model";
 import type { LinearIssueSummary } from "@/lib/linear";
-import { buildEstimatePrompt, type EstimateCandidate } from "./prompts/estimates-v1";
+import { buildEstimatePrompt, ESTIMATE_PROMPT_VERSION, type EstimateCandidate } from "./prompts/estimates-v1";
 
 const BATCH_SIZE = 25;
 
@@ -20,7 +20,7 @@ export function estimateContentHash(
   contextHash?: string
 ): string {
   return createHash("sha256")
-    .update(`${issue.title}\n${issue.description ?? ""}\n${issue.estimate ?? ""}\n${contextHash ?? ""}`)
+    .update(`${ESTIMATE_PROMPT_VERSION}\n${issue.title}\n${issue.description ?? ""}\n${issue.estimate ?? ""}\n${contextHash ?? ""}`)
     .digest("hex")
     .slice(0, 24);
 }

@@ -55,6 +55,9 @@ import InstrumentShell from "@/components/instrument/InstrumentShell";
 import ScenarioStrip, { chipsFor } from "@/components/instrument/ScenarioStrip";
 import ScenarioPreviewRefusal from "@/components/instrument/ScenarioPreviewRefusal";
 import FeatureDetail, { AddFeature } from "@/components/instrument/FeatureDetail";
+import RemainingEstimateEditor from "@/components/instrument/RemainingEstimateEditor";
+import { makeSignalEstimate, type SignalEstimateInput } from "@/lib/scope/signalEstimates";
+import { remainingEstimateConflict } from "@/lib/scenario/remainingEstimates";
 import CapabilityTile, { Seat, materialOf, sigilPathFor, MODULE_H } from "@/components/instrument/CapabilityTile";
 import {
   useProject,
@@ -147,6 +150,7 @@ export default function ScopeInstrument() {
   const [writing, setWriting] = useState(false);
   const saveCapability = useCapabilitySave();
   const writeLock = useRef(false);
+  const remainingEstimateRequest = useRef<{signature: string; key: string} | null>(null);
   const [writeSuccess, setWriteSuccess] = useState<string | null>(null);
   const [resolvingWork, setResolvingWork] = useState<ScopeWorkItem | null>(null);
   const [openWorkRequest, setOpenWorkRequest] = useState(0);
@@ -578,6 +582,41 @@ export default function ScopeInstrument() {
     } finally { writeLock.current = false; setWriting(false); }
   };
 
+  const saveRemainingEstimate = async (input: SignalEstimateInput, accept: boolean) => {
+    const capability = scope.capabilities.find(card => card.id === openFeature?.canonicalCapability?.id);
+    if (!capability || !openFeature || writeLock.current) return;
+    const signature = JSON.stringify({capabilityId: capability.id, revision: capability.revision, input});
+    if (remainingEstimateRequest.current?.signature !== signature) remainingEstimateRequest.current = {signature, key:crypto.randomUUID()};
+    const key = remainingEstimateRequest.current.key;
+    const estimate = makeSignalEstimate(capability.id, capability.revision, input, openFeature.items.map(item => item.id), `signal:${key}`);
+    const drafts = {...m.scenario.remainingEstimateByCapabilityId, [capability.id]:estimate};
+    const conflict = remainingEstimateConflict(m.data!.scopes, drafts, [...m.scenario.excludedItemIds, ...m.scenario.includedItemIds, ...Object.keys(m.scenario.estimateOverrideByItemId)], Object.keys(m.scenario.knowledgeEstimateByCapabilityId));
+    if (conflict) throw new Error(conflict);
+    if (m.scenario.bypassedFeatureIds.has(`capability:${capability.id}`) || m.scenario.scopeProposalSelections.some(row => row.targetCapabilityId === capability.id)) throw new Error("Restore this card and finish its staged ticket mapping before trying or accepting a remaining-work estimate.");
+    if (!accept) {
+      m.setScenario(prev => ({...prev, remainingEstimateByCapabilityId:{...prev.remainingEstimateByCapabilityId, [capability.id]:estimate}}));
+      setEstimateWriteState(null); setWriteError(null);
+      return;
+    }
+    writeLock.current = true;
+    setWriting(true); setWriteError(null);
+    setEstimateWriteState({capabilityId:capability.id,pending:true,error:null});
+    try {
+      const response = await mutateReality(`/api/capabilities/${capability.id}/remaining-estimate`, {method:"PUT", headers:{"Content-Type":"application/json"}, body:JSON.stringify({expectedRevision:capability.revision,input,idempotencyKey:key})});
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(body.error ?? "The remaining-work estimate could not be saved.");
+      m.setScenario(prev => {
+        const remaining = {...prev.remainingEstimateByCapabilityId}; delete remaining[capability.id];
+        return {...prev, remainingEstimateByCapabilityId:remaining};
+      });
+      setWriteSuccess("Remaining-work estimate saved in Reality. Linear points and original evidence are unchanged.");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "The estimate could not be saved.";
+      setEstimateWriteState({capabilityId:capability.id,pending:false,error:message});
+      throw error;
+    } finally { writeLock.current = false; setWriting(false); setEstimateWriteState(prior => prior ? {...prior,pending:false} : prior); }
+  };
+
   const acceptKnowledgeEstimate = async (
     capabilityId: string,
     estimate: import("@/lib/scope/knowledgeEstimates").CapabilityKnowledgeEstimate,
@@ -972,6 +1011,15 @@ export default function ScopeInstrument() {
 
       <FeatureDetail
         feature={openFeature}
+        remainingEstimateEditor={openFeature?.canonicalCapability?.status === "accepted" ? <RemainingEstimateEditor
+          key={`${openFeature.id}:${m.scenario.remainingEstimateByCapabilityId?.[openFeature.canonicalCapability.id]?.id ?? ""}:${openFeature.acceptedKnowledgeEstimate ? acceptedEstimateIdentity(openFeature.acceptedKnowledgeEstimate).estimateId : ""}`}
+          feature={openFeature}
+          draft={m.scenario.remainingEstimateByCapabilityId?.[openFeature.canonicalCapability.id]}
+          busy={writing}
+          onTry={input => saveRemainingEstimate(input, false)}
+          onAccept={input => saveRemainingEstimate(input, true)}
+          onClearDraft={() => m.setScenario(prev => { const next = {...prev.remainingEstimateByCapabilityId}; delete next[openFeature.canonicalCapability!.id]; return {...prev,remainingEstimateByCapabilityId:next}; })}
+        /> : undefined}
         onClose={() => setOpenFeatureId(null)}
         scopeId={scope.scopeId}
         scopeName={scope.name}

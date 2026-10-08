@@ -20,9 +20,9 @@ export function scenarioForecastCoverage(scopes: ProjectScope[], scenario: Suite
         status: shape.proposalBypassed.has(`capability:${capability.id}`) ? 'outside' : capability.status,
         workLinks: capability.workLinks.filter(link => !excluded.has(link.externalId)),
         estimateReviewRequired: capability.estimateReview?.status === 'review_required'
-          || reviewedCapabilityEstimate(capability.acceptedEstimate,
+          || (!capability.signalScenarioEstimate && reviewedCapabilityEstimate(capability.acceptedEstimate,
             capability.workLinks.filter(link => (link.state === 'active' || link.state === 'configured') && ids.has(link.externalId) && !excluded.has(link.externalId)).map(link => link.externalId),
-            capability.knowledgeEstimates)?.status === 'review_required',
+            capability.knowledgeEstimates)?.status === 'review_required'),
       })),
       ...shape.proposalSelections.filter(selection => !selection.targetCapabilityId).map(selection => ({
         status: selection.releaseStatus,

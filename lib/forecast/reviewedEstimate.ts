@@ -1,4 +1,5 @@
 import type { FrozenCapabilityEstimate } from "@/lib/reports/forecastBasis";
+import { isSignalEstimate } from "@/lib/scope/signalEstimates";
 import {
   acceptedEstimateIdentity,
   type KnowledgeEstimateSubstitution,
@@ -36,6 +37,7 @@ export function reviewedEstimateSimulationDecision(
   }
   const identity = acceptedEstimateIdentity(result.estimate);
   const reviewedV2 = result.estimate.version === "accepted-capability-estimate.v2" ? result.estimate : null;
+  const native = isSignalEstimate(result.estimate) ? result.estimate : null;
   const boundary = result.status === "reviewed" ? result : result.exploration;
   const usedInSimulation = Boolean(boundary);
   return {
@@ -50,9 +52,9 @@ export function reviewedEstimateSimulationDecision(
     } : null,
     review: {
       status: result.status,
-      interpretation: reviewedV2?.interpretation.rationale ?? null,
-      reviewedBy: reviewedV2?.acceptance.reviewer.displayName ?? null,
-      reviewedAt: reviewedV2?.boundary.reviewedAt ?? null,
+      interpretation: native ? `Operator judgment. Already done: ${native.input.alreadyDone || "Not stated"}. Reuse: ${native.input.reuseFrom || "None stated"}. Remaining: ${native.input.remainingWork}. ${native.input.rationale}` : reviewedV2?.interpretation.rationale ?? null,
+      reviewedBy: native?.input.reviewerDisplayName ?? reviewedV2?.acceptance.reviewer.displayName ?? null,
+      reviewedAt: native?.acceptedAt ?? reviewedV2?.boundary.reviewedAt ?? null,
       coveredItemIds: boundary ? [...boundary.coveredItemIds] : [],
       additionalItemIds: boundary ? [...boundary.additionalItemIds] : [],
       usedInSimulation,

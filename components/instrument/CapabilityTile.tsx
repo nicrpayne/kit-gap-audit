@@ -36,6 +36,7 @@
 import { motion } from "motion/react";
 import { uncertaintyLabel, type Feature, type ThreePoint } from "@/lib/scope/features";
 import { formatDateOnly } from "@/lib/time/dateContract";
+import { isSignalEstimate } from "@/lib/scope/signalEstimates";
 
 export type Material = "seated" | "spectral" | "raw" | "out";
 
@@ -639,8 +640,8 @@ export default function CapabilityTile({
               </span>
             )}
             {!f.activeKnowledgeEstimate && f.acceptedKnowledgeEstimate && (
-              <span className="text-[8px] font-semibold uppercase tracking-[0.1em]" style={{ color: "var(--i-mint)" }}>
-                meeting estimate · Reality
+              <span className="text-[8px] font-semibold uppercase tracking-[0.1em]" style={{ color: f.canonicalCapability?.signalScenarioEstimate ? "var(--i-violet)" : "var(--i-mint)" }}>
+                {isSignalEstimate(f.acceptedKnowledgeEstimate) ? `Signal estimate · ${f.canonicalCapability?.signalScenarioEstimate ? "Scenario" : "Reality"}` : "meeting estimate · Reality"}
               </span>
             )}
           </div>
@@ -681,6 +682,8 @@ export default function CapabilityTile({
             <span>
               {f.activeKnowledgeEstimate
                 ? f.capabilityForecast ? "MEETING ESTIMATE + STAFFING · SCENARIO" : "MEETING ESTIMATE · SCENARIO"
+                : isSignalEstimate(f.acceptedKnowledgeEstimate)
+                ? `OPERATOR ESTIMATE · ${f.canonicalCapability?.signalScenarioEstimate ? "SCENARIO" : "REALITY"}${f.capabilityForecast ? " + STAFFING" : ""}`
                 : f.acceptedKnowledgeEstimate
                 ? f.capabilityForecast ? "ACCEPTED MEETING ESTIMATE + STAFFING" : "ACCEPTED MEETING ESTIMATE"
                 : f.capabilityForecast

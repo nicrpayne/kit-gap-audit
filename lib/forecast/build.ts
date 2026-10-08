@@ -38,20 +38,12 @@ export interface SourcedWorkItem extends WorkItem {
   estimateSource: EstimateSource;
 }
 
-// Linear issue estimate (points) -> three-point day estimate. There's no
-// team-specific velocity data yet, so this treats the point value as a
-// likely day count with a fixed uncertainty spread -- a documented
-// assumption surfaced in the Forecast page's explainer, not hidden magic.
+// Story points have no calibrated time conversion. Preserve them on the
+// source ticket, but never treat one point as one day. Until reviewed effort
+// or an estimator result exists, use the explicitly provisional fallback.
 function issueEstimateToThreePoint(estimate: number | null): { tp: ThreePoint; source: EstimateSource } {
-  if (estimate == null || estimate <= 0) {
-    // No estimate on the ticket -- common on a fresh Linear team. Wide
-    // placeholder rather than pretending to know.
-    return { tp: { low: 1, likely: 3, high: 7 }, source: "issue_placeholder" };
-  }
-  return {
-    tp: { low: round1(estimate * 0.7), likely: estimate, high: round1(estimate * 1.6) },
-    source: "points",
-  };
+  void estimate;
+  return { tp: { low: 1, likely: 3, high: 7 }, source: "issue_placeholder" };
 }
 
 const DAY_RANGE_RE = /(\d+(?:\.\d+)?)\s*-\s*(\d+(?:\.\d+)?)\s*d/i;

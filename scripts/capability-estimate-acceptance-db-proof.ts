@@ -325,6 +325,31 @@ async function main() {
   assert.deepEqual(storedFirst.acceptedEstimate, acceptedEstimate, "source refresh and rejected attempts must not mutate the accepted immutable package");
   assert.equal(newerSnapshot.scopeId, scope.id);
 
+  const {PUT: saveRemaining} = await import("../app/api/capabilities/[id]/remaining-estimate/route");
+  const {acceptedCapabilityEstimate, reviewedCapabilityEstimate} = await import("../lib/scope/knowledgeEstimates");
+  const nativeBody = {expectedRevision:storedFirst.revision,idempotencyKey:"native-proof:save",input:{alreadyDone:"Shared service exists",reuseFrom:"JSA fixture uploader",remainingWork:"Adapt and test integration",rationale:"Explicit fixture operator judgment",evidenceReference:"fixture reference",asOfDate:"2026-10-07",reviewerDisplayName:"Fixture operator",range:{low:1,likely:2,high:4},coveredOpenItemIds:[firstWork.externalId],additionalOpenItemIds:[]}};
+  const nativeContext={params:Promise.resolve({id:first.capability.id})};
+  const nativeResponse=await saveRemaining(request(first.capability.id,nativeBody),nativeContext);
+  assert.equal(nativeResponse.status,200,await nativeResponse.clone().text());
+  const nativeSaved=await nativeResponse.json();assert(nativeSaved.changed);
+  const nativeEvent=await prisma.capabilityEvent.findUniqueOrThrow({where:{idempotencyKey:nativeBody.idempotencyKey}});
+  assert.equal(nativeEvent.action,"accept_signal_estimate");
+  assert.deepEqual((nativeEvent.beforeState as Record<string,unknown>).acceptedEstimate,acceptedEstimate,"Original developer quote remains in history");
+  const native=acceptedCapabilityEstimate(nativeSaved.capability.acceptedEstimate)!;
+  assert.equal(native.version,"signal-remaining-estimate.v1");
+  await snapshot(scope.id,{...packageB(scope.id,first.capability.id),packageId:"estimate-acceptance-proof:C"},"2026-10-07T15:00:00Z");
+  assert.equal(reviewedCapabilityEstimate(native,[firstWork.externalId],[])?.status,"reviewed","Wiki refresh cannot erase operator judgment");
+  const nativeRetry=await saveRemaining(request(first.capability.id,nativeBody),nativeContext);
+  assert.equal(nativeRetry.status,200);assert.equal((await nativeRetry.json()).changed,false);
+  const changedNativeRetry=await saveRemaining(request(first.capability.id,{...nativeBody,input:{...nativeBody.input,rationale:"Changed intent"}}),nativeContext);
+  assert.equal(changedNativeRetry.status,409);
+  const staleNative=await saveRemaining(request(first.capability.id,{...nativeBody,idempotencyKey:"native-proof:stale"}),nativeContext);
+  assert.equal(staleNative.status,409);
+  const boundaryNative=await saveRemaining(request(first.capability.id,{...nativeBody,expectedRevision:nativeSaved.capability.revision,idempotencyKey:"native-proof:boundary",input:{...nativeBody.input,coveredOpenItemIds:[secondWork.externalId]}}),nativeContext);
+  assert.equal(boundaryNative.status,400);
+  assert.equal(await prisma.capabilityEvent.count({where:{idempotencyKey:nativeBody.idempotencyKey}}),1);
+  console.log("PASS native estimate DB: accepted write, quote history retained, wiki refresh preservation, response-loss retry, changed-intent/stale/boundary rejection.");
+
   console.log(JSON.stringify({
     ok: true,
     fixtureOnly: { linearCredentialPresent: false, issueCount: issues.length },

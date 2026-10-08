@@ -66,8 +66,8 @@ function FrozenEstimateBasis({ brief }: { brief: DecisionBriefV1 }) {
         {presentation.interpretation && <div className="mt-2 text-[10px] text-[var(--i-text-soft)]"><strong>Reviewed interpretation:</strong> {presentation.interpretation}</div>}
         {record.review && <div className="mt-1 text-[10px] text-[var(--i-text-faint)]">Reviewer {presentation.reviewer ?? "unavailable"} · reviewed {presentation.reviewedAt ? date(presentation.reviewedAt) : "date unavailable"}</div>}
         {record.review && <div className="mt-2 font-mono text-[9px] leading-relaxed text-[var(--i-text-faint)]">Covered tickets: {presentation.coveredItemIds.length ? presentation.coveredItemIds.join(", ") : "none"}<br />Additional tickets retained separately: {presentation.additionalItemIds.length ? presentation.additionalItemIds.join(", ") : "none"}</div>}
-        <blockquote className="mt-2 border-l-2 border-[var(--i-signal)] pl-2 text-[11px] leading-relaxed text-[var(--i-text-soft)]">“{presentation.originalQuote}”</blockquote>
-        <div className="mt-2 font-mono text-[9px] text-[var(--i-text-faint)]">Raw assertion: {presentation.rawAssertion} · snapshot {presentation.contextSnapshotId}</div>
+        {presentation.originalQuote ? <blockquote className="mt-2 border-l-2 border-[var(--i-signal)] pl-2 text-[11px] leading-relaxed text-[var(--i-text-soft)]">“{presentation.originalQuote}”</blockquote> : <p className="mt-2 text-[11px]">Operator judgment; no transcript quote asserted.</p>}
+        <div className="mt-2 font-mono text-[9px] text-[var(--i-text-faint)]">Raw assertion: {presentation.rawAssertion} · {presentation.contextSnapshotId ? `snapshot ${presentation.contextSnapshotId}` : "Signal operator record, frozen in this report"}</div>
       </div>;
     })}
   </div>;

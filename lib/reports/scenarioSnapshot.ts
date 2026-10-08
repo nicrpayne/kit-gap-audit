@@ -6,11 +6,14 @@ import {
 import type { CapabilityStaffingPlan } from "@/lib/scope/capabilityForecast";
 import { countScenarioReportLevers } from "./scenarioConflicts";
 import { parseDecisionPlans, type DecisionPlans } from "@/lib/scenario/decisionPlan";
+import { parseSignalEstimate } from "@/lib/scope/signalEstimates";
+import type { RemainingEstimateDrafts } from "@/lib/scenario/remainingEstimates";
 
 export const LEGACY_SCENARIO_REPORT_VERSION = "scenario-report.v1" as const;
 export const SCENARIO_REPORT_VERSION = "scenario-report.v2" as const;
 
 export interface ScenarioReportSnapshotV1 {
+  remainingEstimateByCapabilityId?: RemainingEstimateDrafts;
   decisionPlans?: DecisionPlans;
   version: typeof LEGACY_SCENARIO_REPORT_VERSION | typeof SCENARIO_REPORT_VERSION;
   scenarioId: string;
@@ -86,7 +89,7 @@ export function parseScenarioReportSnapshot(value: unknown): ScenarioReportSnaps
     "version", "scenarioId", "baseRealityRevision", "excludedItemIds", "includedItemIds",
     "resolvedGateIds", "estimateOverrideByItemId", "capacityOverrideByScope", "capacityPlan",
     "contextSwitchCostPct", "excludedCapabilityIds", "knowledgeEstimateByCapabilityId",
-    "capabilityStaffingById", "computed", "decisionPlans",
+    "capabilityStaffingById", "computed", "decisionPlans", "remainingEstimateByCapabilityId",
   ]);
   const unknownFields = Object.keys(raw).filter((key) => !knownFields.has(key));
   if (unknownFields.length) {
@@ -157,7 +160,14 @@ export function parseScenarioReportSnapshot(value: unknown): ScenarioReportSnaps
       };
     }
   }
+  const remaining: RemainingEstimateDrafts = {};
+  for (const [id, value] of entries(raw.remainingEstimateByCapabilityId, "Remaining-work estimates")) {
+    const estimate = parseSignalEstimate(value);
+    if (!estimate || estimate.capabilityId !== id) throw new ScenarioReportValidationError(`Remaining-work estimate ${id} is invalid.`);
+    remaining[id] = estimate;
+  }
   const snapshot: ScenarioReportSnapshotV1 = {
+    ...(Object.keys(remaining).length ? {remainingEstimateByCapabilityId:remaining} : {}),
     ...(raw.decisionPlans !== undefined ? { decisionPlans: (() => { try { return parseDecisionPlans(raw.decisionPlans); } catch (error) { throw new ScenarioReportValidationError(error instanceof Error ? error.message : "Invalid Decision assumptions."); } })() } : {}),
     version,
     scenarioId,
@@ -176,7 +186,7 @@ export function parseScenarioReportSnapshot(value: unknown): ScenarioReportSnaps
   const leverCount = countScenarioReportLevers({
     ...snapshot,
     estimateOverrideIds: Object.keys(estimates),
-    knowledgeCapabilityIds: Object.keys(knowledge),
+    knowledgeCapabilityIds: [...Object.keys(knowledge), ...Object.keys(remaining)],
     staffingCapabilityIds: Object.keys(staffing),
     capacityOverrideScopeIds: Object.keys(capacity),
     hasCapacityPlan: capacityPlan !== null,

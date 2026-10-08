@@ -12,7 +12,7 @@ import type { FrozenCapabilityEstimate } from "../lib/reports/forecastBasis";
 
 function legacyEstimate(record: FrozenCapabilityEstimate) {
   const value = record.estimate;
-  if ("version" in value && value.version === "accepted-capability-estimate.v2") {
+  if ("version" in value && (value.version === "accepted-capability-estimate.v2" || value.version === "signal-remaining-estimate.v1")) {
     throw new Error("Expected the historical accepted fixture.");
   }
   return value;

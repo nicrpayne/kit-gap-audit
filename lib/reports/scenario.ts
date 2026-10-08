@@ -21,6 +21,8 @@ import { assembleDecisionBrief, type DecisionBriefV1 } from "./decisionBrief";
 import { loadDecisionBriefOwnerInputs } from "./readModel";
 import { knowledgeEstimateItemId, substituteCapabilityKnowledgeEstimates } from "@/lib/scope/knowledgeEstimates";
 import { reviewedEstimateSimulationDecision } from "@/lib/forecast/reviewedEstimate";
+import { remainingEstimateItems, remainingEstimateCapabilities, remainingEstimateConflict } from "@/lib/scenario/remainingEstimates";
+import { isSignalEstimate } from "@/lib/scope/signalEstimates";
 import { ForecastCoverageIncompleteError } from "@/lib/forecast/coverage";
 import { forecastCapability } from "@/lib/scope/capabilityForecast";
 import { freezeCapabilityEstimate, freezeForecastBasis, type ForecastCapacityBasisInput } from "./forecastBasis";
@@ -62,6 +64,8 @@ export async function buildScenarioDecisionBriefReadModel(
   }
 
   const portfolio = await buildPortfolioInputs();
+  const remainingError = remainingEstimateConflict(portfolio.scopes, scenario.remainingEstimateByCapabilityId, [...scenario.excludedItemIds, ...Object.keys(scenario.estimateOverrideByItemId)], Object.keys(scenario.knowledgeEstimateByCapabilityId));
+  if (remainingError) throw new ScenarioReportValidationError(remainingError);
   const decisionError = validateDecisionPlans(scenario.decisionPlans, portfolio.decisions, portfolio.scopes.map(row => row.scopeId), scenario.resolvedGateIds);
   if (decisionError) throw new ScenarioReportValidationError(decisionError);
   const relevantScopes = new Set<string>();
@@ -162,7 +166,7 @@ export async function buildScenarioDecisionBriefReadModel(
     excludedCapabilityIds: scenario.excludedCapabilityIds,
     excludedItemIds: scenario.excludedItemIds,
     includedItemIds: scenario.includedItemIds,
-    knowledgeCapabilityIds: Object.keys(scenario.knowledgeEstimateByCapabilityId),
+    knowledgeCapabilityIds: [...Object.keys(scenario.knowledgeEstimateByCapabilityId), ...Object.keys(scenario.remainingEstimateByCapabilityId ?? {})],
     staffingCapabilityIds: Object.keys(scenario.capabilityStaffingById),
   });
   if (leverConflicts.length) {
@@ -173,9 +177,9 @@ export async function buildScenarioDecisionBriefReadModel(
       ? reviewedEstimateSimulationDecision(capability, capability.estimateReview)
       : null;
     const stagedWholeCapabilityBasis = Boolean(scenario.knowledgeEstimateByCapabilityId[capability.id]);
-    const basisItemIds = stagedWholeCapabilityBasis
+    const basisItemIds = scenario.remainingEstimateByCapabilityId?.[capability.id]?.input.coveredOpenItemIds ?? (stagedWholeCapabilityBasis
       ? capability.workLinks.map((link) => link.externalId)
-      : acceptedDecision?.review.coveredItemIds ?? [];
+      : acceptedDecision?.review.coveredItemIds ?? []);
     return basisItemIds.filter((id) => includedSet.has(id));
   }));
   if (conflictingIncludedItems.length) {
@@ -240,11 +244,12 @@ export async function buildScenarioDecisionBriefReadModel(
     });
   });
   const excluded = new Set(scenario.excludedItemIds);
+  const scenarioOwners = portfolio.scopes.map(owner => ({...owner, capabilities:remainingEstimateCapabilities(owner.capabilities, owner.items, scenario.remainingEstimateByCapabilityId)}));
   const included = new Set(scenario.includedItemIds);
   const resolved = new Set(scenario.resolvedGateIds);
   const excludedCapabilities = new Set(scenario.excludedCapabilityIds);
   const scenarioScopes = scopes.map((candidate) => {
-    const owner = portfolio.scopes.find((row) => row.scopeId === candidate.scopeId)!;
+    const owner = scenarioOwners.find((row) => row.scopeId === candidate.scopeId)!;
     const sourceItemIds = new Set(owner.items.map((item) => item.id));
     const excludedCapabilityItemIds = new Set(owner.capabilities
       .filter((capability) => excludedCapabilities.has(capability.id))
@@ -283,7 +288,8 @@ export async function buildScenarioDecisionBriefReadModel(
         ],
       }];
     });
-    const baseItems = [...candidate.items, ...owner.executionItems.filter((item) => included.has(item.id) && !candidate.items.some((base) => base.id === item.id))]
+    const modeledItems = remainingEstimateItems(owner, scenario.remainingEstimateByCapabilityId);
+    const baseItems = [...modeledItems, ...owner.executionItems.filter((item) => included.has(item.id) && !modeledItems.some((base) => base.id === item.id))]
       .filter((item) => !excluded.has(item.id) && !excludedCapabilityItemIds.has(item.id))
       .map((item) => scenario.estimateOverrideByItemId[item.id] ? { ...item, ...scenario.estimateOverrideByItemId[item.id], estimateSource: "hint" as const } : item);
     return {
@@ -292,7 +298,7 @@ export async function buildScenarioDecisionBriefReadModel(
       gates: decisionScenarioGates(candidate.scopeId, candidate.gates, portfolio.decisions, scenario.decisionPlans, resolved),
     };
   });
-  const frozenCapabilityEstimates = portfolio.scopes.flatMap((candidate) => candidate.capabilities.flatMap((capability) => {
+  const frozenCapabilityEstimates = scenarioOwners.flatMap((candidate) => candidate.capabilities.flatMap((capability) => {
     if (excludedCapabilities.has(capability.id)) return [];
     const sourceItemIds = new Set(candidate.items.map((item) => item.id));
     const acceptedDecision = capability.status === "accepted" && capability.estimateReview
@@ -326,7 +332,7 @@ export async function buildScenarioDecisionBriefReadModel(
           capability,
           capability.estimateReview.estimate,
           acceptedDecision.review.coveredItemIds,
-          capability.estimateReview.status,
+          scenario.remainingEstimateByCapabilityId?.[capability.id] ? "provisional" : capability.estimateReview.status,
           acceptedDecision.review,
         )]
       : [];
@@ -415,6 +421,7 @@ export async function buildScenarioDecisionBriefReadModel(
     ...(scenario.resolvedGateIds.length ? [`Assumed ${scenario.resolvedGateIds.length} decision gate${scenario.resolvedGateIds.length === 1 ? "" : "s"} resolved.`] : []),
     ...Object.entries(scenario.decisionPlans ?? {}).map(([id, plan]) => `${portfolio.decisions.find(row => row.id === id)?.title ?? id}: assumed ${plan.state}${plan.gate ? ` with ${plan.gate.low}/${plan.gate.likely}/${plan.gate.high} days of serial delay; ${plan.gate.dependency}; basis: ${plan.gate.evidenceForGate}` : "; no new delay invented"}. Not an accepted decision.`),
     ...(Object.keys(scenario.estimateOverrideByItemId).length ? [`Changed ${Object.keys(scenario.estimateOverrideByItemId).length} governed estimate assumption${Object.keys(scenario.estimateOverrideByItemId).length === 1 ? "" : "s"}.`] : []),
+    ...(Object.keys(scenario.remainingEstimateByCapabilityId ?? {}).length ? [`Used ${Object.keys(scenario.remainingEstimateByCapabilityId ?? {}).length} hypothetical Signal remaining-work estimates, retaining reuse assumptions and replacing only covered tickets. Accepted Reality is unchanged.`] : []),
     ...(Object.keys(scenario.knowledgeEstimateByCapabilityId).length ? [`Used ${Object.keys(scenario.knowledgeEstimateByCapabilityId).length} source-attributed meeting estimate${Object.keys(scenario.knowledgeEstimateByCapabilityId).length === 1 ? "" : "s"} provisionally, replacing rather than adding to ticket rollups.`] : []),
     ...(Object.keys(scenario.capabilityStaffingById).length ? [`Added ${Object.keys(scenario.capabilityStaffingById).length} isolated capability staffing outlook${Object.keys(scenario.capabilityStaffingById).length === 1 ? "" : "s"}; these do not claim the same people can execute multiple cards simultaneously.`] : []),
     ...(scenario.capacityPlan
@@ -558,32 +565,33 @@ export async function buildScenarioDecisionBriefReadModel(
   brief.headline.keyReason.value = causalExplanation.join(" ");
   const targetItems = new Map([...target.items, ...target.executionItems].map((item) => [item.id, item]));
   brief.movable.scope.value.capabilityOutlooks = Object.entries(scenario.capabilityStaffingById).flatMap(([capabilityId, staffing]) => {
-    const capability = target.capabilities.find((candidate) => candidate.id === capabilityId);
+    const capability = scenarioOwners.find(owner => owner.scopeId === target.scopeId)?.capabilities.find((candidate) => candidate.id === capabilityId);
     if (!capability || excludedCapabilities.has(capabilityId)) return [];
     const knowledge = scenario.knowledgeEstimateByCapabilityId[capabilityId];
     const acceptedDecision = capability.status === "accepted" && capability.estimateReview
       ? reviewedEstimateSimulationDecision(capability, capability.estimateReview)
       : null;
     const acceptedRange = acceptedDecision?.substitution?.range;
-    const effortDays = knowledge
-      ? { low: knowledge.low, likely: knowledge.likely, high: knowledge.high }
-      : acceptedRange
-        ? acceptedRange
-      : capability.workLinks
+    const retainedRange = capability.workLinks
           .filter((link) => link.state === "active" || link.state === "configured")
           .map((link) => targetItems.get(link.externalId))
-          .filter((item): item is NonNullable<typeof item> => !!item && !excluded.has(item.id))
+          .filter((item): item is NonNullable<typeof item> => !!item && !excluded.has(item.id) && !(acceptedRange && acceptedDecision?.review.coveredItemIds.includes(item.id)))
           .reduce((sum, item) => {
             const override = scenario.estimateOverrideByItemId[item.id];
             const current = override ?? item;
             return { low: sum.low + current.low, likely: sum.likely + current.likely, high: sum.high + current.high };
           }, { low: 0, likely: 0, high: 0 });
+    const effortDays = knowledge
+      ? {low:knowledge.low,likely:knowledge.likely,high:knowledge.high}
+      : acceptedRange ? {low:acceptedRange.low+retainedRange.low,likely:acceptedRange.likely+retainedRange.likely,high:acceptedRange.high+retainedRange.high} : retainedRange;
     const outlook = forecastCapability(capabilityId, effortDays, staffing, portfolio.startDate, target.targetDate);
     return outlook ? [{
       capabilityId,
       name: capability.name,
       estimateBasis: knowledge
         ? "knowledge_provisional" as const
+        : acceptedRange && isSignalEstimate(capability.acceptedEstimate)
+          ? scenario.remainingEstimateByCapabilityId?.[capability.id] ? "signal_provisional" as const : "signal_accepted" as const
         : acceptedRange
           ? "knowledge_accepted" as const
           : "work_rollup" as const,

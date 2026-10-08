@@ -181,6 +181,8 @@ export function chipsFor(
     });
   }
   const knowledgeEstimated = Object.keys(scenario.knowledgeEstimateByCapabilityId).length;
+  const remainingEstimated = Object.keys(scenario.remainingEstimateByCapabilityId ?? {}).length;
+  if (remainingEstimated) chips.push({id:"remaining-estimates", label:`${remainingEstimated} remaining-work estimate${remainingEstimated === 1 ? "" : "s"}`, href:"/scope"});
   if (knowledgeEstimated > 0) {
     chips.push({
       id: "knowledge-estimates",

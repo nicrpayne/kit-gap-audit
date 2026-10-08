@@ -238,7 +238,7 @@ export default function ReportsPageClient() {
     excludedCapabilityIds,
     excludedItemIds: [...project.scenario.excludedItemIds],
     includedItemIds: [...project.scenario.includedItemIds],
-    knowledgeCapabilityIds: Object.keys(project.scenario.knowledgeEstimateByCapabilityId),
+    knowledgeCapabilityIds: [...Object.keys(project.scenario.knowledgeEstimateByCapabilityId), ...Object.keys(project.scenario.remainingEstimateByCapabilityId ?? {})],
     staffingCapabilityIds: Object.keys(project.scenario.capabilityStaffingById),
   });
   const scenarioLeverConflictReason = scenarioLeverConflicts.length
@@ -324,7 +324,7 @@ export default function ReportsPageClient() {
       excludedCapabilityIds,
       resolvedGateIds: [...project.scenario.resolvedGateIds],
       estimateOverrideIds: Object.keys(project.scenario.estimateOverrideByItemId),
-      knowledgeCapabilityIds: Object.keys(project.scenario.knowledgeEstimateByCapabilityId),
+      knowledgeCapabilityIds: [...Object.keys(project.scenario.knowledgeEstimateByCapabilityId), ...Object.keys(project.scenario.remainingEstimateByCapabilityId ?? {})],
       staffingCapabilityIds: Object.keys(project.scenario.capabilityStaffingById),
       capacityOverrideScopeIds: Object.keys(project.scenario.capacityOverrideByScope),
       hasCapacityPlan: Boolean(project.scenario.capacityPlan),
@@ -348,6 +348,7 @@ export default function ReportsPageClient() {
       estimateOverrideByItemId: project.scenario.estimateOverrideByItemId,
       excludedCapabilityIds,
       knowledgeEstimateByCapabilityId: project.scenario.knowledgeEstimateByCapabilityId,
+      remainingEstimateByCapabilityId: project.scenario.remainingEstimateByCapabilityId,
       capabilityStaffingById: project.scenario.capabilityStaffingById,
       capacityPlan: project.scenario.capacityPlan,
       capacityOverrideByScope: project.scenario.capacityOverrideByScope,

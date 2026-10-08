@@ -252,7 +252,7 @@ export interface DecisionBriefV1 {
       capabilityOutlooks?: {
         capabilityId: string;
         name: string;
-        estimateBasis: "work_rollup" | "knowledge_provisional" | "knowledge_accepted";
+        estimateBasis: "work_rollup" | "knowledge_provisional" | "knowledge_accepted" | "signal_provisional" | "signal_accepted";
         effortDays: { low: number; likely: number; high: number };
         contributors: { personId: string; name: string; fte: number }[];
         staffingFte: number;

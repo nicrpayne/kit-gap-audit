@@ -41,7 +41,7 @@ const FORECAST_ASSUMPTION_ITEMS: readonly ForecastAssumptionItem[] = [
   {
     id: "estimate_mapping",
     label: "Estimate mapping",
-    detail: "Linear points map to low/likely/high effort days at 0.7× / 1× / 1.6×. Work without an estimate uses 1 / 3 / 7 effort days.",
+    detail: "Linear story points are retained as source context, not converted to days. Without a reviewed remaining-work or AI effort estimate, work uses a provisional 1 / 3 / 7 effort-day range. Accepted Signal or meeting estimates replace only their explicitly covered tickets.",
   },
   {
     id: "remaining_work",
