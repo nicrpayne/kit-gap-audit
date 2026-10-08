@@ -70,14 +70,20 @@
 .briefHeader { margin-bottom: 18px; padding-bottom: 18px; border-bottom: 1px solid var(--r-line); }
 .briefTitle { margin: 5px 0; font-size: clamp(25px, 4vw, 42px); line-height: 1.02; font-weight: 620; letter-spacing: -.035em; }
 .briefModule { margin: 0 0 9px; border: 1px solid var(--r-line); border-radius: 9px; background: #11191d; overflow: hidden; break-inside: avoid; }
-.briefModule summary { display: flex; align-items: center; gap: 8px; padding: 12px 14px; cursor: pointer; list-style: none; }
-.briefModule summary::-webkit-details-marker { display: none; }
+.briefModule > summary { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 12px 14px; cursor: pointer; list-style: none; }
+.briefModule > summary::-webkit-details-marker { display: none; }
+.disclosureClosed, .disclosureOpen { color: var(--r-cyan); font-size: 11px; white-space: nowrap; }
+.disclosureOpen { display: none; }
+.briefModule[open] > summary .disclosureOpen { display: inline; }
+.briefModule[open] > summary .disclosureClosed { display: none; }
+.briefModule > summary:focus-visible { outline: 2px solid var(--r-cyan); outline-offset: -3px; }
 .briefModuleContent { padding: 0 14px 14px; }
-.briefModule[open] summary { color: var(--tone); }
+.briefModule[open] > summary { color: var(--tone); }
 .fingerprint { color: var(--r-muted); font-family: ui-monospace, monospace; font-size: 8px; }
 @media (max-width: 1000px) { .workspace { grid-template-columns: 180px minmax(380px, 1fr); } .inspector { display: none; } }
 @media (max-width: 720px) { .workspace { display: block; } .browser { display: none; } .transport { flex-wrap: wrap; } .headlineGrid { grid-template-columns: 1fr; } .preview { padding: 16px; } }
 @media print {
+  .disclosureClosed, .disclosureOpen, .briefModule[open] > summary .disclosureOpen { display: none; }
   .shell { --r-bg: #fff; --r-panel: #fff; --r-panel-2: #f5f7f9; --r-text: #111827; --r-muted: #42516a; --r-line: #aeb8c4; --r-cyan: #006b82; --r-mint: #006846; --r-violet: #5740a0; border: 0; box-shadow: none; background: white; color: #111; }
   .preview { max-width: none; padding: 0; }
   .briefTitle { font-size: 25px; line-height: 1.1; }

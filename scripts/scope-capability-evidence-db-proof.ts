@@ -13,7 +13,11 @@ async function main() {
   const originalLoad = runtime._load;
   runtime._load = function(request, parent, isMain) { return request === "server-only" ? {} : originalLoad.call(this, request, parent, isMain); };
   let loadReportScopeEvidence: typeof import("../lib/reports/scopeEvidenceReadModel").loadReportScopeEvidence;
-  try { ({ loadReportScopeEvidence } = await import("../lib/reports/scopeEvidenceReadModel")); }
+  let loadAuditPassageReceipt: typeof import("../lib/audit/passageReceiptReadModel").loadAuditPassageReceipt;
+  try {
+    ({ loadReportScopeEvidence } = await import("../lib/reports/scopeEvidenceReadModel"));
+    ({ loadAuditPassageReceipt } = await import("../lib/audit/passageReceiptReadModel"));
+  }
   finally { runtime._load = originalLoad; }
   const key = randomUUID();
   const scope = await prisma.scope.create({ data: { name: `Captured evidence ${key}`, teamKey: "PRF", executionState: "not_configured" } });
@@ -55,6 +59,12 @@ async function main() {
     assert.equal(reportRef.capture?.sourceDate, "2026-08-18");
     assert(reportRef.auditHref?.includes(encodeURIComponent(`passage:${snapshots[0].id}:same-evidence-id`)));
     assert.deepEqual(await prisma.capability.findUniqueOrThrow({ where: { id: capability.id } }), before);
+    const nodeId = `passage:${snapshots[0].id}:same-evidence-id`;
+    assert.equal((await loadAuditPassageReceipt(scope.id, nodeId))?.passage?.quote, quote);
+    assert.equal((await loadAuditPassageReceipt("foreign-scope", nodeId))?.passage, null);
+    assert.equal((await loadAuditPassageReceipt(scope.id, `passage:${snapshots[0].id}:missing`))?.passage, null);
+    assert.equal((await loadAuditPassageReceipt(scope.id, `passage:${snapshots[1].id}:same-evidence-id`))?.passage?.quote, "Newer source words must not replace the accepted quote.");
+    console.log("PASS actual Audit DB read resolves original and newer evidence by exact snapshot; cross-scope and missing evidence fail closed");
     console.log("PASS actual Reports DB read freezes accepted Scope receipt and original Audit deep link without rewriting owners");
     console.log("PASS actual portfolio DB read binds Scope evidence to immutable activation, not newer knowledge; exact quote/date/anchors and accepted-row preservation");
   } finally {

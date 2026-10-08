@@ -1,6 +1,7 @@
 import InstrumentShell from "@/components/instrument/InstrumentShell";
 import AuditWorld from "@/components/audit/AuditWorld";
 import { redirect } from "next/navigation";
+import { loadAuditPassageReceipt } from "@/lib/audit/passageReceiptReadModel";
 
 export const dynamic = "force-dynamic";
 
@@ -33,6 +34,7 @@ export default async function AuditPage({
     if (fixture) params.set("fixture", fixture);
     redirect(`/audit/rubric-phase3${params.size > 0 ? `?${params}` : ""}`);
   }
+  const initialPassage = await loadAuditPassageReceipt(requestedScope, select);
   return (
     <InstrumentShell
       // AuditWorld owns the one thin context bar. A concrete hidden node is
@@ -40,7 +42,7 @@ export default async function AuditPage({
       // coalesces it back to InstrumentShell's default identity strip.
       stateBar={<div className="hidden" />}
     >
-      <AuditWorld initialScopeId={requestedScope} initialSelectId={select} fixture={fixture} />
+      <AuditWorld initialScopeId={requestedScope} initialSelectId={select} initialPassage={initialPassage} fixture={fixture} />
     </InstrumentShell>
   );
 }

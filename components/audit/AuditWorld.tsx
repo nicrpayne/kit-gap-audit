@@ -9,6 +9,8 @@ import worldStyles from "./AuditWorld.module.css";
 import { SignalControl } from "@/components/instrument/SignalPrimitives";
 import AuditChangeInbox from "./AuditChangeInbox";
 import AuditRefreshControl from "./AuditRefreshControl";
+import AuditOriginalPassage from "./AuditOriginalPassage";
+import type { AuditPassageReceipt } from "@/lib/audit/passageReceipt";
 
 interface ScopeOption {
   id: string;
@@ -38,10 +40,12 @@ function dateLabel(value: string): string {
 export default function AuditWorld({
   initialScopeId,
   initialSelectId,
+  initialPassage,
   fixture,
 }: {
   initialScopeId?: string;
   initialSelectId?: string;
+  initialPassage?: AuditPassageReceipt | null;
   fixture?: string;
 }) {
   const frameRef = useRef<HTMLIFrameElement | null>(null);
@@ -58,6 +62,8 @@ export default function AuditWorld({
   const [worldState, setWorldState] = useState<"loading" | "ready" | "updating">("loading");
   const [notice, setNotice] = useState<string | null>(null);
   const [findingReviewId, setFindingReviewId] = useState<string | null>(null);
+  const [passageOpen, setPassageOpen] = useState(Boolean(initialPassage));
+  useEffect(() => { setPassageOpen(Boolean(initialPassage)); }, [initialPassage]);
 
   useEffect(() => { scopeRef.current = scopeId; }, [scopeId]);
   useEffect(() => { auditRef.current = auditId; }, [auditId]);
@@ -154,12 +160,14 @@ export default function AuditWorld({
   }, [sendContext]);
 
   useEffect(() => {
-    if (worldState !== "ready" || !initialSelectId) return;
+    // A source deep link opens its immutable receipt independently of the
+    // current graph. Do not insert historical claims into today's world.
+    if (worldState !== "ready" || !initialSelectId || initialPassage) return;
     frameRef.current?.contentWindow?.postMessage(
       { type: "signal-audit-select-node", nodeId: initialSelectId },
       window.location.origin
     );
-  }, [initialSelectId, worldState]);
+  }, [initialSelectId, initialPassage, worldState]);
 
   const traceFinding = useCallback((canonicalId: string, active: boolean) => {
     frameRef.current?.contentWindow?.postMessage(
@@ -250,6 +258,7 @@ export default function AuditWorld({
       </header>
 
       <div className="relative min-h-0 flex-1" data-shoot="audit-world-viewport">
+        {initialPassage && passageOpen && scopeId === (initialScopeId ?? "") && <AuditOriginalPassage receipt={initialPassage} onClose={() => setPassageOpen(false)} />}
         {worldMounted && (
           <iframe
             ref={frameRef}
