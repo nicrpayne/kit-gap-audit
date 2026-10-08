@@ -16,6 +16,8 @@ import { formatReportGeneratedDate } from "@/lib/reports/generatedAtPresentation
 // Nothing here regenerates or mutates a report. It describes one.
 
 export interface SnapshotContext {
+  /** Scenario snapshots cannot be checked against the live Reality forecast. */
+  mode?: "reality" | "scenario" | null;
   /** When the stored report was generated. */
   generatedAt: Date;
   /** The landing date this report asserted at that time. */
@@ -46,6 +48,18 @@ const fmtDateOnly = (d: Date) => formatDateOnly(d, { month: "short", day: "numer
 export function describeSnapshot(ctx: SnapshotContext): SnapshotVerdict {
   const generated = formatReportGeneratedDate(ctx.generatedAt);
   const snapshot = fmtDateOnly(ctx.snapshotLikelyDate);
+
+  // The live endpoint computes Reality. Its difference from a hypothetical
+  // result is not evidence that the hypothetical's inputs have changed.
+  if (ctx.mode === "scenario") {
+    return {
+      deltaDays: null,
+      stale: false,
+      line:
+        `Historical Scenario snapshot generated ${generated}, forecasting ${snapshot} under its saved hypothetical assumptions. ` +
+        "Current Scenario freshness has not been checked; review current inputs before reusing these assumptions.",
+    };
+  }
 
   // No live forecast to compare against. Say that plainly rather than
   // letting silence imply the snapshot is current.

@@ -220,6 +220,7 @@ export default function ReportsPageClient() {
   const snapshot = useMemo(() => {
     if (!selected) return null;
     return describeSnapshot({
+      mode: selected.mode === "scenario" ? "scenario" : "reality",
       generatedAt: new Date(selected.generatedAt),
       snapshotLikelyDate: new Date(selected.likelyDate),
       liveLikelyDate: live?.state === "ready" && live.coverageState === "forecastable" ? new Date(live.likelyDate) : null,
