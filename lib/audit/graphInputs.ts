@@ -10,11 +10,13 @@
 
 import { prisma } from "@/lib/prisma";
 import { getScopedIssues } from "@/lib/linear";
+import { currentContextSnapshot } from "@/lib/context/currentSnapshot";
 import { buildTruthMap, type TruthMapModel } from "./truth";
 import { resolveProvenance, type FindingProvenance } from "./provenance";
 import { projectRequirements } from "./requirements";
 import { projectPeople } from "./capacity";
 import { projectIntelligence } from "./intelligence";
+import { selectCurrentSnapshotFromHistory } from "./currentSnapshotSelection";
 import type { GraphEntityInputs } from "./graph";
 
 export interface AuditGraphInputs {
@@ -43,12 +45,12 @@ export async function loadAuditGraphInputs(
   // Reality, accepted project structure, work, capacity and external
   // intelligence stay canonical/current: the database does not contain a
   // historical snapshot of those systems, so pretending it does would be a
-  // false reconstruction. With no lens this is byte-for-byte the existing
-  // current-world query.
+  // false reconstruction. With no lens this is the current-world query; its
+  // package-backed projections are selected by the active pointer below.
   const auditSourceId = options.auditSourceId;
   const findingScopeWhere = { OR: [{ source: { scopeId } }, { contextSnapshot: { scopeId } }] };
 
-  const [findings, decisions, sources, contextDocs, snapshots, allocations, dependsOn, runs, registrations] =
+  const [findings, decisions, sources, contextDocs, snapshots, allocations, dependsOn, runs, registrations, resolvedCurrentSnapshot] =
     await Promise.all([
       prisma.finding.findMany({
         where: auditSourceId
@@ -71,7 +73,16 @@ export async function loadAuditGraphInputs(
         where: { OR: [{ scopeIds: { isEmpty: true } }, { scopeIds: { has: scopeId } }] },
         orderBy: { createdAt: "asc" },
       }),
+      // Creation order is immutable history, not currentness. The active
+      // package pointer owns selection and also restores A after A/B/A.
+      currentContextSnapshot(scopeId),
     ]);
+
+  const currentSnapshot = selectCurrentSnapshotFromHistory(
+    snapshots,
+    resolvedCurrentSnapshot?.id ?? null
+  );
+  const currentSnapshots = currentSnapshot ? [currentSnapshot] : [];
 
   // EVERY ALLOCATION, EVERYWHERE — a second read, and a deliberate one.
   //
@@ -105,6 +116,7 @@ export async function loadAuditGraphInputs(
     sources,
     contextDocs,
     snapshots,
+    currentSnapshot,
     allocations,
     issues,
     dependsOn,
@@ -193,17 +205,21 @@ export async function loadAuditGraphInputs(
       // someone chose.
       contextSwitchCostPct: settings?.contextSwitchCostPct ?? 0,
     }),
-    // The projection law lives in ./requirements. This file only supplies the
-    // snapshots and stays the single place that touches Prisma.
+    // Current project world projects only the package selected by the active
+    // package pointer. The immutable history remains above for Finding
+    // provenance, but an omitted requirement is not kept alive by an older
+    // snapshot.
     requirements: projectRequirements(
-      snapshots.map((s) => ({ id: s.id, scopeId: s.scopeId, package: s.package }))
+      currentSnapshots.map((s) => ({ id: s.id, scopeId: s.scopeId, package: s.package }))
     ),
-    // EXTERNAL STRUCTURED INTELLIGENCE, admitted by the PRODUCER'S OWN
-    // `scope[]` and by nothing else. The same snapshots the requirements
+    // EXTERNAL STRUCTURED INTELLIGENCE, admitted by the selected snapshot's
+    // attested Scope and by nothing else. The same snapshots the requirements
     // projection reads — Signal never calls the Hermes workspace directly,
-    // and the only thing that crosses the bridge is an accepted package.
+    // and the only thing that crosses the bridge is an accepted package. A
+    // producer head remains current only inside the selected package; an old
+    // package is history even when its own head flag was true at the time.
     intelligence: projectIntelligence(
-      snapshots.map((s) => ({ id: s.id, scopeId: s.scopeId, package: s.package })),
+      currentSnapshots.map((s) => ({ id: s.id, scopeId: s.scopeId, package: s.package })),
       scopeId
     ),
     // Paired with the snapshot they were cited in, because an evidence id

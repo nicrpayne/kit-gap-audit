@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { prisma } from "../lib/prisma";
 import { currentContextSnapshot } from "../lib/context/currentSnapshot";
+import { loadAuditGraphInputs } from "../lib/audit/graphInputs";
+import { buildAuditGraph, nodeId } from "../lib/audit/graph";
 import { refreshScopeProposal } from "../lib/scope/proposal-store";
 import { commitScopeProposal } from "../lib/scope/reality";
 import { harvestTimelineCandidates, currentTimelineCandidates } from "../lib/timeline/candidates";
@@ -30,24 +32,40 @@ async function main() {
       const snapshot = await prisma.contextSnapshot.create({ data: { scopeId: scope.id, producer: "gap_app", packageId: `bootstrap-refresh:repair-proof:${packageId}`, packageVersion: "1.1", contextHash: packageId, completenessSummary: {}, package: { sources: [], evidence: [], derivedClaims: [{ id: name, kind: "capability", statement: `${name} capability`, evidenceRefs: [], extra: { capability: `${name} capability` } }], intelligenceObjects: [] } } });
       snapshots.push(snapshot); packages.push(pkg);
       await prisma.contextSnapshot.update({ where: { id: snapshot.id }, data: { package: {
-        sources: [], evidence: [{ id: `quote-${name}`, excerpt: `Review ${name} on October 15.`, sourceRef: `meeting-${name}`, data: { eventDate: "2026-10-15" } }],
+        sources: [{ sourceRef: `meeting-${name}`, sourceType: "transcript", role: "requirements_of_record", status: "active" }], evidence: [{ id: `quote-${name}`, excerpt: `Review ${name} on October 15.`, sourceRef: `meeting-${name}`, data: { eventDate: "2026-10-15", meeting_date: "2026-10-08", char_start: 0, char_end: 23, offset_unit: "unicode_code_points" } }],
         derivedClaims: [
           { id: name, kind: "capability", statement: `${name} capability`, evidenceRefs: [], extra: { capability: `${name} capability` } },
           { id: `plan-${name}`, kind: "milestone", statement: `Review ${name}`, evidenceRefs: [`quote-${name}`] },
           { id: `choice-${name}`, kind: "decision", statement: `Choose ${name}`, evidenceRefs: [`quote-${name}`] },
-        ], intelligenceObjects: [],
+        ], intelligenceObjects: [{ id: `head-${name}`, intelligenceType: "Opportunity", trust: "external_intelligence", statement: `${name} source claim`, isCurrent: true, evidenceRefs: [`quote-${name}`] }],
       } } });
     }
     const audit = await prisma.auditRun.create({ data: { contextSnapshotId: snapshots[0].id, issueCount: 0, findingCount: 0, model: "repair-proof" } });
+    const historicalFinding = await prisma.finding.create({ data: {
+      auditRunId: audit.id, contextSnapshotId: snapshots[0].id, evidenceRefs: ["quote-A"],
+      type: "risk", title: "Historical A citation", quote: "Review A on October 15.",
+      rationale: "Disposable exact provenance proof; still open but cites historical source A", severity: "low", status: "open", matchedIssues: [],
+    } });
     await prisma.projectActivation.create({ data: { bootstrapId: bootstrap.id, scopeId: scope.id, reviewRevision: 0, manifestVersion: "proof", manifest: {}, contextSnapshotId: snapshots[0].id, firstAuditRunId: audit.id } });
     const choose = (index: number) => prisma.projectBootstrap.update({ where: { id: bootstrap.id }, data: { activePackageId: packages[index].id } });
     await choose(0);
     assert.equal((await currentContextSnapshot(scope.id))?.id, snapshots[0].id, "newer B is not current while A is selected");
+    const graphA = await loadAuditGraphInputs(scope.id);
+    assert.deepEqual(graphA?.entities.intelligence.objects.map((item) => item.externalId), ["head-A"]);
+    assert.deepEqual(graphA?.entities.requirements.map((item) => item.evidenceId), ["quote-A"]);
     const proposalA = await refreshScopeProposal(scope.id);
     assert.equal(proposalA?.proposal.contextSnapshotId, snapshots[0].id);
     await harvestTimelineCandidates({ scopeId: scope.id });
     await harvestCandidates({ scopeId: scope.id });
     await choose(1);
+    const graphB = await loadAuditGraphInputs(scope.id);
+    assert.deepEqual(graphB?.entities.intelligence.objects.map((item) => item.externalId), ["head-B"], "current graph does not retain A's old head");
+    assert.deepEqual(graphB?.entities.requirements.map((item) => item.evidenceId), ["quote-B"]);
+    const graphBModel = buildAuditGraph(graphB!);
+    assert.equal(graphBModel.hasNode(nodeId.intel(snapshots[0].id, "head-A")), false);
+    assert.equal(graphBModel.getNodeAttribute(nodeId.passage(snapshots[0].id, "quote-A"), "excerpt"), historicalFinding.quote, "historical finding still points to its exact A quote while B owns current knowledge");
+    assert.equal(graphBModel.getNodeAttribute(nodeId.passage(snapshots[1].id, "quote-B"), "sourceDate"), "2026-10-08");
+    assert.deepEqual(graphBModel.getNodeAttribute(nodeId.passage(snapshots[1].id, "quote-B"), "anchor"), { charStart: 0, charEnd: 23, offsetUnit: "unicode_code_points" });
     const proposalB = await refreshScopeProposal(scope.id);
     assert.equal(proposalB?.proposal.contextSnapshotId, snapshots[1].id);
     await harvestTimelineCandidates({ scopeId: scope.id });
@@ -57,6 +75,9 @@ async function main() {
     assert.equal(timelineB.contextSnapshotId, snapshots[1].id);
     assert.equal(decisionB.contextSnapshotId, snapshots[1].id);
     await choose(0);
+    const graphRestored = await loadAuditGraphInputs(scope.id);
+    assert.deepEqual(graphRestored?.entities.intelligence, graphA?.entities.intelligence, "current graph restores A by active pointer, not creation time");
+    assert.equal(buildAuditGraph(graphRestored!).hasNode(nodeId.scope(scope.id)), true, "accepted project Reality survives source restoration");
     await assert.rejects(commitScopeProposal(scope.id, proposalB!.proposal.id, [{ itemId: "unused", workItemIds: [], releaseStatus: "accepted" }], [], `stale-${key}`), /Knowledge changed/);
     const restored = await refreshScopeProposal(scope.id);
     assert.equal(restored?.proposal.id, proposalA?.proposal.id, "A restored by identity, not duplicated");
@@ -135,16 +156,18 @@ async function main() {
     });
     await prisma.contextSnapshot.delete({ where: { id: snapshots[1].id } });
     await assert.rejects(currentContextSnapshot(scope.id), /still being processed/, "missing active materialization must not use historical A");
+    await assert.rejects(loadAuditGraphInputs(scope.id), /still being processed/, "current graph must not revive historical A during incomplete refresh");
     const processing = await readKnowledgeStatus(scope.id);
     assert.equal(processing.lastAuditAt, null, "historical Audit is not the current processing receipt");
     assert.notEqual(processing.latestRun?.stages.audit.status, "complete");
     assert.notEqual(processing.latestRun?.stages.scope.status, "complete");
-    console.log("PASS source restoration: A/B/A in Scope/Audit/Decisions/Timeline, stale acceptance refused, one active Scope proposal, current Audit queue, immutable accepted history, transaction read, in-flight refusal, accepted retries, explicit plan state, versioned schedule materialization, one canonical schedule across both acceptance surfaces");
+    console.log("PASS source restoration: A/B/A in Scope/Audit/Decisions/Timeline/current graph, historical exact finding provenance retained, source date/anchors survive DB graph loader, stale acceptance refused, immutable accepted history, in-flight refusal, accepted retries, explicit plan state, versioned schedule materialization, one canonical schedule across both acceptance surfaces");
   } finally {
     await prisma.projectActivation.deleteMany({ where: { scopeId: scope.id } });
     await prisma.scopeProposal.deleteMany({ where: { scopeId: scope.id } });
     await prisma.timelineEvent.deleteMany({ where: { scopeId: scope.id } });
     await prisma.decision.deleteMany({ where: { scopeId: scope.id } });
+    await prisma.finding.deleteMany({ where: { contextSnapshot: { scopeId: scope.id } } });
     await prisma.auditRun.deleteMany({ where: { contextSnapshot: { scopeId: scope.id } } });
     await prisma.contextSnapshot.deleteMany({ where: { scopeId: scope.id } });
     await prisma.projectBootstrap.delete({ where: { id: bootstrap.id } });

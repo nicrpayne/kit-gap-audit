@@ -12,7 +12,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getScopedIssues } from "@/lib/linear";
+import { currentContextSnapshot } from "@/lib/context/currentSnapshot";
 import { buildTruthMap } from "@/lib/audit/truth";
+import { selectCurrentSnapshotFromHistory } from "@/lib/audit/currentSnapshotSelection";
 import { resolveProvenance, groundingLabel, type FindingProvenance } from "@/lib/audit/provenance";
 
 export const dynamic = "force-dynamic";
@@ -63,7 +65,7 @@ export async function GET(req: NextRequest) {
   // A Finding belongs to this Scope through EITHER its Source or its
   // ContextSnapshot — both are real provenance paths and neither is
   // privileged (see the Finding model's own note on nullable sourceId).
-  const [findings, decisions, sources, contextDocs, snapshots, allocations, dependsOn, runs] =
+  const [findings, decisions, sources, contextDocs, snapshots, allocations, dependsOn, runs, resolvedCurrentSnapshot] =
     await Promise.all([
       prisma.finding.findMany({
         where: { OR: [{ source: { scopeId } }, { contextSnapshot: { scopeId } }] },
@@ -76,7 +78,12 @@ export async function GET(req: NextRequest) {
       prisma.allocation.findMany({ where: { scopeId }, include: { person: true } }),
       prisma.scope.findMany({ where: { id: { in: scope.dependsOnScopeIds } } }),
       prisma.auditRun.findMany({ orderBy: { createdAt: "desc" }, take: 2 }),
+      currentContextSnapshot(scopeId),
     ]);
+  const currentSnapshot = selectCurrentSnapshotFromHistory(
+    snapshots,
+    resolvedCurrentSnapshot?.id ?? null
+  );
 
   // Linear is a STRUCTURAL source (Scope.teamKey/projectNames), not a
   // registered one. It can fail independently of everything else, and the
@@ -98,6 +105,7 @@ export async function GET(req: NextRequest) {
     sources,
     contextDocs,
     snapshots,
+    currentSnapshot,
     allocations,
     issues,
     dependsOn,

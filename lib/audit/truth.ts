@@ -244,7 +244,13 @@ export interface TruthInputs {
   decisions: (Decision & { gate: DecisionGate | null })[];
   sources: Source[];
   contextDocs: ContextDoc[];
+  /** Complete immutable history, retained so old Finding citations still
+      resolve to their exact package evidence. */
   snapshots: ContextSnapshot[];
+  /** The package-pointer-selected snapshot for current knowledge supply and
+      freshness. Undefined preserves the legacy standalone caller contract;
+      null explicitly means there is no current package. */
+  currentSnapshot?: ContextSnapshot | null;
   allocations: (Allocation & { person: Person })[];
   issues: LinearIssueSummary[];
   /** Scopes this one declares a dependency on, resolved. */
@@ -386,11 +392,16 @@ export function buildTruthMap(input: TruthInputs): TruthMapModel {
   // Hermes owns organisational intelligence; Signal owns delivery Reality.
   // A snapshot being present is NOT the same as it being authoritative, and
   // this lane never claims otherwise — it reports what arrived and when.
-  const hermesSnapshots = input.snapshots.filter((s) => s.producer === "hermes");
-  const anySnapshot = input.snapshots.length > 0;
-  const newestSnapshot = input.snapshots
-    .slice()
-    .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())[0];
+  const currentKnowledgeSnapshots = input.currentSnapshot === undefined
+    ? input.snapshots
+    : input.currentSnapshot === null
+      ? []
+      : [input.currentSnapshot];
+  const hermesSnapshots = currentKnowledgeSnapshots.filter((s) => s.producer === "hermes");
+  const anySnapshot = currentKnowledgeSnapshots.length > 0;
+  const currentKnowledgeSnapshot = input.currentSnapshot === undefined
+    ? currentKnowledgeSnapshots.slice().sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())[0]
+    : currentKnowledgeSnapshots[0];
   const citedFindings = openFindings.filter(
     (f) => f.contextSnapshotId != null && f.evidenceRefs.length > 0
   );
@@ -400,7 +411,7 @@ export function buildTruthMap(input: TruthInputs): TruthMapModel {
           id: "hermes:supplied",
           label: "Intelligence supplied",
           state: "verified",
-          detail: `${input.snapshots.length} context snapshot${input.snapshots.length === 1 ? "" : "s"}${
+          detail: `${currentKnowledgeSnapshots.length} current context snapshot${currentKnowledgeSnapshots.length === 1 ? "" : "s"}${
             hermesSnapshots.length > 0 ? `, ${hermesSnapshots.length} from Hermes` : ", none from Hermes"
           }`,
         },
@@ -408,9 +419,9 @@ export function buildTruthMap(input: TruthInputs): TruthMapModel {
           id: "hermes:fresh",
           label: "Package fresh",
           state:
-            newestSnapshot && daysSince(newestSnapshot.createdAt, now) > staleAfter ? "drift" : "verified",
-          detail: newestSnapshot
-            ? `newest package accepted ${daysSince(newestSnapshot.createdAt, now)} day(s) ago`
+            currentKnowledgeSnapshot && daysSince(currentKnowledgeSnapshot.createdAt, now) > staleAfter ? "drift" : "verified",
+          detail: currentKnowledgeSnapshot
+            ? `current package accepted ${daysSince(currentKnowledgeSnapshot.createdAt, now)} day(s) ago`
             : "no package accepted",
         },
         {

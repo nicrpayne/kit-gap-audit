@@ -10,6 +10,7 @@ not authorize a broad protected Audit rebaseline.
 - Protected-base blob: `de42e297da8232e2917b47054920d61858436c00`
 - Original reviewed blob: `0ec853e1952b22b1ac0bcdb0be69b2595f01fb1d`
 - October 7 source-context repair reviewed blob: `a21a90235cdfee7b3c8346d98a00e00a0421ed0e`
+- October 8 source-date repair reviewed blob: `8c5a8836626be019f927df63d89251d64d4116b1`
 
 The existing exact snapshot-qualified navigation remains intact. The bounded
 addition makes the native Rubric search results a labelled listbox, makes each
@@ -77,7 +78,9 @@ The lead reviewed the bounded exceptions listed here against unchanged
 protected base `02afba325ddf30fdd8620822dfa9bb870e2ca949` and unchanged protected
 world count 33. With the inherited graph-token exception below, their aggregate
 working-tree fingerprint is
-`ee91c5a1762d457362b23c81b926a5d96c6d85eccca37c4f24bf1dd2ab847439`.
+`69944cdbdfd3baf2b3e11cb379956135aaf1e159fa6036a87f06a95007432be8`
+after the bounded October 8 source-date repair (previously
+`ee91c5a1762d457362b23c81b926a5d96c6d85eccca37c4f24bf1dd2ab847439`).
 The integrity self-test reconstructs that original base in a disposable Git
 repository, applies both exact reviewed hosts, and independently rejects a
 mutation of either reviewed host, an ordinary protected file, or an added
@@ -111,3 +114,22 @@ entire diff is one condition in `components/audit/graphTokens.ts`, from base blo
 The exact exception is now recorded and covered by the negative mutation test;
 no other baseline change is allowed. Layout, camera and canonical data remain
 unchanged. This accounts for all three exceptions in the aggregate fingerprint.
+
+## October 8: supplied source date and original quote anchors
+
+Independent staging acceptance on `af6268d` reproduced a supplied meeting date
+being presented as missing. A newly transported quote also used snake-case
+character offsets, which the camel-case-only projection dropped. The bounded
+Phase 2 host diff reads `attributes.sourceDate` before the existing filename
+fallback and accepts both underscore- and hyphen-delimited dated references.
+It still uses only DOM `textContent`; retrieval times do not supply source
+dates, and no original source links, speakers, or conversation text are invented.
+Only this one protected host changed. The other 32 protected files are unchanged.
+
+The pure `audit-evidence-metadata-proof.ts` exercises source-date validation,
+old-source/fresh-retrieval separation, both offset spellings, producer hashes,
+all three passage construction paths (requirement, finding, intelligence), the
+canonical graph adapter, and the actual viewer function using inert elements.
+This is not browser acceptance. The existing browser quote proof now contains
+the regression cases; independent staging browser re-verification is required
+before promotion. No changes to graph layout, geometry, search or selection.

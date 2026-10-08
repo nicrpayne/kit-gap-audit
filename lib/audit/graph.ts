@@ -786,6 +786,7 @@ export function buildAuditGraph({ model, provenance, entities }: BuildGraphInput
       sourceRef: string;
       sourceType: string | null;
       observedAt: string | null;
+      sourceDate?: string | null;
       role: string | null;
       status?: string | null;
       externalRef: string | null;
@@ -814,6 +815,7 @@ export function buildAuditGraph({ model, provenance, entities }: BuildGraphInput
         surroundingContext: psg.surroundingContext ?? null,
         externalRef: psg.externalRef,
         sourceRef: psg.sourceRef,
+        sourceDate: psg.sourceDate ?? null,
         anchor: psg.anchor ?? {},
         // Null is a real answer here and means the producer did not say.
         // Sixty of the real JSA passages are in exactly that state, and
@@ -949,6 +951,9 @@ export function buildAuditGraph({ model, provenance, entities }: BuildGraphInput
       observedAt: r.observedAt,
       role: r.sourceRole,
       externalRef: r.externalRef,
+      sourceDate: r.sourceDate,
+      anchor: r.anchor,
+      independence: r.independence,
     });
     link(nodeId.requirement(r.snapshotId, r.evidenceId), pid, "requirement-evidenced-by-passage");
   }
@@ -1091,6 +1096,7 @@ export function buildAuditGraph({ model, provenance, entities }: BuildGraphInput
         status: psg.status,
         externalRef: psg.externalRef,
         anchor: psg.anchor,
+        sourceDate: psg.sourceDate,
         independence: psg.independence,
       });
     }

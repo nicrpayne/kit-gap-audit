@@ -26,6 +26,7 @@ import {
 import { computeMomentum } from "@/lib/momentum/compute";
 import { computeMomentumTrend, type MomentumTrend } from "@/lib/momentum/trend";
 import { realityRevision, subscribeReality } from "@/lib/instrument/reality";
+import type { CapabilityEvidenceReference } from "@/lib/scope/capabilityEvidence";
 import { formatDateOnly } from "@/lib/time/dateContract";
 import type { ForecastCoverageContract } from "@/lib/forecast/coverage";
 import { acceptedEstimateIdentity, knowledgeEstimateItemId, substituteCapabilityKnowledgeEstimates, type AcceptedCapabilityEstimate, type CapabilityKnowledgeEstimate, type ReviewedCapabilityEstimateResult } from "@/lib/scope/knowledgeEstimates";
@@ -118,6 +119,7 @@ export interface ProjectScope {
   capabilities: {
     id: string; name: string; description: string | null; status: string; revision: number; sortOrder: number;
     updatedAt: string; workLinkCount: number; provenance: unknown;
+    evidenceTrace?: CapabilityEvidenceReference[];
     events: { id: string; action: string; actor: string; createdAt: string }[];
     workLinks: { id: string; provider: string; externalId: string; externalUrl: string | null; state: string }[];
     knowledgeEstimates: CapabilityKnowledgeEstimate[];

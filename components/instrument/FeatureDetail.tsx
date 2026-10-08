@@ -39,6 +39,7 @@ import {
 import type { CapabilityStaffingPlan } from "@/lib/scope/capabilityForecast";
 import { formatDateOnly } from "@/lib/time/dateContract";
 import { isSignalEstimate } from "@/lib/scope/signalEstimates";
+import type { CapabilityEvidenceReference } from "@/lib/scope/capabilityEvidence";
 
 type Mode = "overview" | "work" | "evidence" | "estimate" | "history";
 
@@ -525,6 +526,26 @@ function evidenceReferences(value: unknown): unknown[] {
   return [value];
 }
 
+function capabilityEvidenceReferences(provenance: Record<string, unknown>): unknown[] {
+  const nested = evidenceReferences(provenance.evidence);
+  const context = Array.isArray(provenance.contextRefs) ? provenance.contextRefs : [];
+  const topLevel = Array.isArray(provenance.evidenceRefs) ? provenance.evidenceRefs : [];
+  const seen = new Set<string>();
+  return [...nested, ...context, ...topLevel].filter((reference) => {
+    const record = reference && typeof reference === "object" && !Array.isArray(reference)
+      ? reference as Record<string, unknown>
+      : null;
+    const id = typeof reference === "string"
+      ? reference
+      : [record?.evidenceId, record?.id, record?.ref].find((value) => typeof value === "string");
+    if (typeof id !== "string" || !id.trim()) return true;
+    const key = id.trim();
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
 function evidenceString(record: Record<string, unknown>, keys: string[]): string | null {
   for (const key of keys) {
     const value = record[key];
@@ -533,7 +554,40 @@ function evidenceString(record: Record<string, unknown>, keys: string[]): string
   return null;
 }
 
-function EvidenceReference({ value, index }: { value: unknown; index: number }) {
+function CapturedEvidenceReference({ evidence, index }: { evidence: CapabilityEvidenceReference; index: number }) {
+  const capture = evidence.capture!;
+  const locator = Object.entries(capture.locator);
+  const sourceDate = capture.sourceDate?.slice(0, 10) ?? null;
+  return (
+    <li className="rounded px-3 py-2" style={{ background: "var(--i-recess)", border: "1px solid var(--i-border)" }}>
+      <div className="i-label">Reference {index + 1} · captured at acceptance</div>
+      <div className="mt-1 break-words text-[10.5px] leading-relaxed text-[var(--i-text-soft)]">{capture.excerpt}</div>
+      {evidence.evidenceId && <div className="mt-1 break-all text-[9px] text-[var(--i-text-faint)]">Evidence ID · {evidence.evidenceId}</div>}
+      <div className="mt-1 break-all text-[9.5px] text-[var(--i-text-faint)]">Source · {capture.sourceRef}</div>
+      {capture.externalRef && capture.externalRef !== capture.sourceRef && (
+        <div className="mt-1 break-all text-[9px] text-[var(--i-text-faint)]">Original reference · {capture.externalRef}</div>
+      )}
+      {capture.sourceUrl && (
+        <a href={capture.sourceUrl} target="_blank" rel="noopener noreferrer" className="mt-1 block break-all text-[9.5px] text-[var(--i-signal)] hover:underline">
+          Open original source ↗
+        </a>
+      )}
+      {(sourceDate || locator.length > 0) && (
+        <div className="mt-1 break-words text-[9px] text-[var(--i-text-faint)]">
+          {[sourceDate ? `Source date · ${sourceDate}` : null, ...locator.map(([key, value]) => `${key} · ${String(value)}`)].filter(Boolean).join(" · ")}
+        </div>
+      )}
+      <div className="mt-1 break-all text-[9px] text-[var(--i-text-faint)]">Original snapshot · {capture.contextSnapshotId}</div>
+      <div className="mt-0.5 text-[8.5px] text-[var(--i-text-faint)]">Captured with the accepted assertion; not a claim about current source state.</div>
+    </li>
+  );
+}
+
+function EvidenceReference({ evidence, index }: { evidence: CapabilityEvidenceReference; index: number }) {
+  if (evidence.state === "captured_at_acceptance" && evidence.capture) {
+    return <CapturedEvidenceReference evidence={evidence} index={index} />;
+  }
+  const value = evidence.reference;
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     return (
       <li className="rounded px-3 py-2" style={{ background: "var(--i-recess)", border: "1px solid var(--i-border)" }}>
@@ -576,7 +630,7 @@ function EvidenceReference({ value, index }: { value: unknown; index: number }) 
   );
 }
 
-function AttachedEvidence({ evidence }: { evidence: unknown[] }) {
+function AttachedEvidence({ evidence }: { evidence: CapabilityEvidenceReference[] }) {
   if (evidence.length === 0) {
     return <Row k="Attached evidence" v="None recorded" note="absence is shown, not inferred" />;
   }
@@ -591,7 +645,7 @@ function AttachedEvidence({ evidence }: { evidence: unknown[] }) {
       </summary>
       <p className="mt-1 text-right text-[8.5px] text-[var(--i-text-faint)]">Stored on the accepted assertion</p>
       <ul className="mt-2 space-y-2" data-shoot="attached-evidence-list">
-        {evidence.map((item, index) => <EvidenceReference key={index} value={item} index={index} />)}
+        {evidence.map((item, index) => <EvidenceReference key={`${item.evidenceId ?? "reference"}:${index}`} evidence={item} index={index} />)}
       </ul>
     </details>
   );
@@ -619,7 +673,12 @@ function Evidence({
     const provenance = f.canonicalCapability.provenance && typeof f.canonicalCapability.provenance === "object" && !Array.isArray(f.canonicalCapability.provenance)
       ? f.canonicalCapability.provenance as Record<string, unknown>
       : {};
-    const evidence = evidenceReferences(provenance.evidence);
+    const evidence = f.canonicalCapability.evidenceTrace ?? capabilityEvidenceReferences(provenance).map((reference) => ({
+      reference,
+      evidenceId: typeof reference === "string" ? reference : null,
+      state: "reference_only" as const,
+      capture: null,
+    }));
     const source = typeof provenance.source === "string" ? provenance.source.replaceAll("_", " ") : "operator-governed Scope";
     const assertion = typeof provenance.assertion === "string" ? provenance.assertion : null;
     return (

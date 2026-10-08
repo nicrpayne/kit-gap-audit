@@ -58,6 +58,7 @@ import type {
   JsonValue,
 } from "@/lib/context/package";
 import { readRelationField } from "@/lib/context/package";
+import { evidenceAnchor, evidenceIndependence, evidenceSourceDate } from "./evidenceMetadata";
 
 /** How loud a relation may be. The corpus is overwhelmingly contextual, so
     this is the difference between an instrument and a hairball. */
@@ -151,6 +152,7 @@ export interface ProjectedIntelPassage {
   sourceRef: string;
   sourceType: string | null;
   observedAt: string | null;
+  sourceDate?: string | null;
   role: string | null;
   status: string | null;
   externalRef: string | null;
@@ -229,38 +231,6 @@ export const intelKey = (snapshotId: string, externalId: string) => `intel:${sna
 
 function rec(v: Record<string, JsonValue> | undefined): Record<string, JsonValue> {
   return v ?? {};
-}
-
-/**
- * The anchoring fields, lifted out of everything else the producer sent.
- *
- * IT ARRIVES INSIDE `data`. The transport has a modelled, generic `data`
- * escape hatch and an unmodelled-field bucket, and the bridge puts passage
- * anchoring in the former — `data.quoteHash`, `data.charStart`,
- * `data.charEnd`, `data.offsetUnit`, `data.independence`, alongside its own
- * `passageId`, `segmentId`, `speakerConfidence` and the rest. Looking only in
- * the unmodelled bucket found nothing: 156 real passages, 0 anchored.
- *
- * Both are read, `data` first, because either is a legitimate place for a
- * producer to put them and neither is Signal's to dictate.
- */
-const ANCHOR_FIELDS = ["quoteHash", "charStart", "charEnd", "offsetUnit", "primaryAnchor"];
-
-function pickAnchor(...sources: (Record<string, JsonValue> | undefined)[]): Record<string, JsonValue> {
-  const out: Record<string, JsonValue> = {};
-  for (const src of sources) {
-    if (!src) continue;
-    for (const k of ANCHOR_FIELDS) if (out[k] === undefined && src[k] !== undefined) out[k] = src[k];
-  }
-  return out;
-}
-
-/** `independent` | `derivative` | null. NULL MEANS THE PRODUCER DID NOT SAY,
-    and is never read as independent. */
-function pickIndependence(item: { independence?: string; data?: Record<string, JsonValue> }): string | null {
-  if (typeof item.independence === "string") return item.independence;
-  const v = item.data?.independence;
-  return typeof v === "string" ? v : null;
 }
 
 /**
@@ -353,14 +323,15 @@ export function projectIntelligence(
           sourceRef: item.sourceRef,
           sourceType: manifest?.sourceType ?? null,
           observedAt: manifest?.observedAt ?? null,
+          sourceDate: evidenceSourceDate(item),
           role: manifest?.role ?? null,
           status: manifest?.status ?? null,
           externalRef: item.externalRef ?? null,
           // Read off the evidence row's preserved fields, so the anchoring
           // the producer sent reaches the graph rather than stopping at the
           // transport.
-          anchor: pickAnchor(item.data, item.extra),
-          independence: pickIndependence(item),
+          anchor: evidenceAnchor(item),
+          independence: evidenceIndependence(item),
         });
       }
     }

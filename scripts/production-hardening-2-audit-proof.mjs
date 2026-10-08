@@ -3,7 +3,7 @@ import { verifyAuditProtectedWorld } from "./lib/production-hardening-2-audit-in
 // The reviewed exception is relative to this exact protected base. Do not
 // advance it wholesale when approving one bounded adapter blob.
 const BASE = "02afba325ddf30fdd8620822dfa9bb870e2ca949";
-const EXPECTED_FINGERPRINT = "ee91c5a1762d457362b23c81b926a5d96c6d85eccca37c4f24bf1dd2ab847439";
+const EXPECTED_FINGERPRINT = "69944cdbdfd3baf2b3e11cb379956135aaf1e159fa6036a87f06a95007432be8";
 const REVIEWED_EXCEPTIONS = {
   "components/audit/graphTokens.ts": {
     baseBlob: "17c438015ea94168acf54beae9e3b1fcf454dc72",
@@ -13,7 +13,7 @@ const REVIEWED_EXCEPTIONS = {
   },
   "public/audit-rubric-phase2/phase2-host.js": {
     baseBlob: "de42e297da8232e2917b47054920d61858436c00",
-    reviewedBlob: "a21a90235cdfee7b3c8346d98a00e00a0421ed0e",
+    reviewedBlob: "8c5a8836626be019f927df63d89251d64d4116b1",
     rationale: "Exact snapshot-qualified navigation, keyboard search and safe quote viewer with source context; no Rubric spatial, layout, ranking, or canonical data change.",
     evidence: "docs/AUDIT-INSPECTOR-USEFULNESS-REBASELINE-EVIDENCE.md",
   },

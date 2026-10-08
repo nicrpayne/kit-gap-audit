@@ -41,6 +41,7 @@ import type {
   PackageSourceManifestEntry,
   JsonValue,
 } from "@/lib/context/package";
+import { evidenceAnchor, evidenceIndependence, evidenceSourceDate } from "./evidenceMetadata";
 
 /** The one manifest role that produces Requirement nodes. */
 export const REQUIREMENT_SOURCE_ROLE = "requirements_of_record";
@@ -71,6 +72,9 @@ export interface ProjectedRequirement {
   registrationId: string | null;
   /** When the producer last actually READ the source. Never this app's clock. */
   observedAt: string | null;
+  sourceDate?: string | null;
+  anchor?: Record<string, JsonValue>;
+  independence?: string | null;
   /** The producer's own status for the row, when it carried one — e.g.
       "Committed". Read from the generic `data` escape hatch, so it is a
       producer convention rather than a schema guarantee. Reported verbatim
@@ -146,6 +150,9 @@ export function projectRequirements(snapshots: RequirementSnapshotInput[]): Proj
         sourceStatus: manifest.status,
         registrationId: manifest.registrationId ?? null,
         observedAt: manifest.observedAt ?? null,
+        sourceDate: evidenceSourceDate(item),
+        anchor: evidenceAnchor(item),
+        independence: evidenceIndependence(item),
         dataStatus: str(data.status),
         section: str(data.section),
         externalRef: item.externalRef ?? null,

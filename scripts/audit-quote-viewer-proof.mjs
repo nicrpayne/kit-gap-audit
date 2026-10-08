@@ -40,6 +40,14 @@ for (const [engine, launcher] of Object.entries({ chromium, webkit })) {
     await page.getByText('View here', { exact: true }).click();
     assert.equal(await viewer.getByRole('link', { name: 'Open original source' }).getAttribute('href'), 'https://example.test/conversation#quote-1');
     assert.equal(await viewer.getByRole('link').getAttribute('rel'), 'noopener noreferrer');
+    await page.evaluate(() => { window.BrainCore.S.sel = { id: 'passage:C:quote-1', canonicalId: 'passage:C:quote-1', kind: 'passage', sourceRef: 'ke://source/transcript/2026-08-18-Harbor-Sync.txt', attributes: { excerpt: 'An older statement, recently retrieved.', sourceDate: '2026-08-17', observedAt: '2026-10-08', anchor: { charStart: 0, charEnd: 27, offsetUnit: 'unicode_code_points', quoteHash: 'producer-hash' } }, connections: [] }; });
+    await page.getByText('View here', { exact: true }).click();
+    assert((await viewer.innerText()).includes('Source date supplied with quote: 2026-08-17'));
+    assert(!(await viewer.innerText()).includes('Conversation date in source reference: 2026-08-18'), 'Explicit source date takes precedence over filename');
+    assert(!(await viewer.innerText()).includes('2026-10-08'), 'Retrieval date never becomes conversation date');
+    await viewer.locator('summary').click();
+    assert((await viewer.innerText()).includes('"charStart": 0'));
+    assert((await viewer.innerText()).includes('producer-hash'));
     assert.deepEqual(errors, []);
     console.log(`PASS ${engine}: exact safe quote, readable conversation/date/reference, frozen identity, context and missing-data honesty, safe original link`);
   } finally { await browser.close(); }

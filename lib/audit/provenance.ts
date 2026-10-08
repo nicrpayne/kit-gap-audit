@@ -23,6 +23,7 @@
 
 import type { ContextSnapshot, Finding, Source } from "@prisma/client";
 import type { EvidenceItem, PackageSourceManifestEntry, ProjectContextPackage } from "@/lib/context/package";
+import { evidenceAnchor, evidenceIndependence, evidenceSourceDate } from "./evidenceMetadata";
 
 /** One resolved passage: the words, and where they came from. */
 export interface ProvenancePassage {
@@ -40,6 +41,10 @@ export interface ProvenancePassage {
   /** When the underlying source was actually READ from its origin — the
       producer's own value, never this app's clock. Null when unstated. */
   observedAt: string | null;
+  /** Explicit date of the quoted source, separate from when it was read. */
+  sourceDate?: string | null;
+  anchor?: Record<string, unknown>;
+  independence?: string | null;
   /** Durable pointer back to true origin (a Linear identifier, a Notion
       block id), when the producer carried one through. */
   externalRef: string | null;
@@ -135,6 +140,9 @@ export function resolveProvenance(
         role: manifest?.role ?? null,
         status: manifest?.status ?? null,
         observedAt: manifest?.observedAt ?? null,
+        sourceDate: evidenceSourceDate(item),
+        anchor: evidenceAnchor(item),
+        independence: evidenceIndependence(item),
         externalRef: item.externalRef ?? null,
         registrationId: manifest?.registrationId ?? null,
       });

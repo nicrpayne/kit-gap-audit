@@ -32,6 +32,7 @@ import {
   type CapabilityKnowledgeEstimate,
   type ReviewedCapabilityEstimateResult,
 } from "@/lib/scope/knowledgeEstimates";
+import { createCapabilityEvidenceProjector, type CapabilityEvidenceReference } from "@/lib/scope/capabilityEvidence";
 
 export interface ForecastFinding {
   id: string;
@@ -595,6 +596,7 @@ export interface PortfolioScopeInput {
   capabilities: {
     id: string; name: string; description: string | null; status: string; provenance: Prisma.JsonValue;
     revision: number; sortOrder: number; updatedAt: Date; workLinkCount: number;
+    evidenceTrace: CapabilityEvidenceReference[];
     events: { id: string; action: string; actor: string; createdAt: Date }[];
     workLinks: { id: string; provider: string; externalId: string; externalUrl: string | null; state: string }[];
     knowledgeEstimates: CapabilityKnowledgeEstimate[];
@@ -690,6 +692,11 @@ export async function buildPortfolioInputs(): Promise<PortfolioInputs> {
           },
           orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
         },
+        activation: {
+          select: {
+            contextSnapshot: { select: { id: true, scopeId: true, createdAt: true, package: true } },
+          },
+        },
         decisions: { where: { status: "open", readinessRole: { not: "reference" }, gate: { is: null } }, orderBy: { createdAt: "asc" } },
         derivedState: true,
       },
@@ -712,6 +719,15 @@ export async function buildPortfolioInputs(): Promise<PortfolioInputs> {
   const scopeInputs: PortfolioScopeInput[] = [];
   for (const scope of scopes) {
     const bundle = await buildScopeSimInputs(scope, capacityInputs);
+    const projectEvidence = createCapabilityEvidenceProjector({
+      scopeId: scope.id,
+      activationSnapshot: scope.activation ? {
+        id: scope.activation.contextSnapshot.id,
+        scopeId: scope.activation.contextSnapshot.scopeId,
+        createdAt: scope.activation.contextSnapshot.createdAt.toISOString(),
+        package: scope.activation.contextSnapshot.package,
+      } : null,
+    });
     const knowledgeEstimates = bundle.currentKnowledgeEstimates;
     const estimatesByCapability = new Map<string, typeof knowledgeEstimates>();
     for (const estimate of knowledgeEstimates) {
@@ -788,6 +804,7 @@ export async function buildPortfolioInputs(): Promise<PortfolioInputs> {
         id: capability.id, name: capability.name, description: capability.description,
         status: capability.status, revision: capability.revision, sortOrder: capability.sortOrder,
         updatedAt: capability.updatedAt, workLinkCount: capability.workLinks.length, provenance: capability.provenance,
+        evidenceTrace: projectEvidence(capability.provenance),
         events: capability.events.map((event) => ({ id: event.id, action: event.action, actor: event.actor, createdAt: event.createdAt })),
         workLinks: capability.workLinks.map((link) => ({ id: link.id, provider: link.provider, externalId: link.externalId, externalUrl: link.externalUrl, state: link.state })),
         knowledgeEstimates: estimatesByCapability.get(capability.id) ?? [],

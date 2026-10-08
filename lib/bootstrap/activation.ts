@@ -286,7 +286,11 @@ function activationContextPackage(
       excerpt: item.exactQuote,
       externalRef: typeof item.locator.externalRef === "string" ? item.locator.externalRef : artifact?.canonicalRef,
       independence: item.independence,
-      data: item.locator,
+      data: {
+        ...item.locator,
+        ...(item.speaker ? { speaker: item.speaker } : {}),
+        ...(item.occurredAt ? { occurredAt: item.occurredAt } : {}),
+      },
       extra: { lineageRootIds: item.lineageRootIds, passageHash: item.passageHash ?? null },
     };
   });

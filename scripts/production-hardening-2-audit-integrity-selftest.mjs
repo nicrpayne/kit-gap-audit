@@ -14,7 +14,7 @@ import {
 
 const sourceRoot = resolve(".");
 const sourceBase = "02afba325ddf30fdd8620822dfa9bb870e2ca949";
-const expectedFingerprint = "ee91c5a1762d457362b23c81b926a5d96c6d85eccca37c4f24bf1dd2ab847439";
+const expectedFingerprint = "69944cdbdfd3baf2b3e11cb379956135aaf1e159fa6036a87f06a95007432be8";
 const evidencePath = "docs/AUDIT-INSPECTOR-USEFULNESS-REBASELINE-EVIDENCE.md";
 const reviewedExceptions = {
   "components/audit/graphTokens.ts": {
@@ -25,8 +25,8 @@ const reviewedExceptions = {
   },
   "public/audit-rubric-phase2/phase2-host.js": {
     baseBlob: "de42e297da8232e2917b47054920d61858436c00",
-    reviewedBlob: "a21a90235cdfee7b3c8346d98a00e00a0421ed0e",
-    rationale: "Exact navigation, keyboard search and safe source-context quote viewer reviewed by lead.",
+    reviewedBlob: "8c5a8836626be019f927df63d89251d64d4116b1",
+    rationale: "Exact navigation and safe quote viewer with explicit producer source dates; bounded October 8 review.",
     evidence: evidencePath,
   },
   "public/audit-rubric-phase3/phase3-host.js": {

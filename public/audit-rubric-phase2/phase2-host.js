@@ -160,7 +160,7 @@
     const connection = (n.connections || []).find(c => c.direction === 'out' && c.rel === 'extracted_from');
     const source = connection && window.BrainCore.S.byId.get(connection.transportId);
     const fileLabel = sourceRef.split('/').pop() || '';
-    const dated = /^([0-9]{4}-[0-9]{2}-[0-9]{2})_(.+)$/.exec(fileLabel);
+    const dated = /^([0-9]{4}-[0-9]{2}-[0-9]{2})[_-](.+)$/.exec(fileLabel);
     const title = source && source.label !== sourceRef ? source.label
       : dated ? dated[2].replace(/-/g, ' ') : fileLabel || 'Source not supplied';
     viewer.classList.add('open');
@@ -179,7 +179,8 @@
     };
     add('h2', 'Original quote');
     add('p', title, panel).className = 'signal-quote-source-title';
-    if (dated) add('p', `Conversation date in source reference: ${dated[1]}`);
+    if (typeof attrs.sourceDate === 'string' && attrs.sourceDate) add('p', `Source date supplied with quote: ${attrs.sourceDate}`);
+    else if (dated) add('p', `Conversation date in source reference: ${dated[1]}`);
     else add('p', 'Conversation date not supplied. A refresh date is not the conversation date.');
     add('blockquote', typeof attrs.excerpt === 'string' ? attrs.excerpt : n.desc || 'Quote not supplied.');
     if (typeof attrs.surroundingContext === 'string' && attrs.surroundingContext.trim()) {
