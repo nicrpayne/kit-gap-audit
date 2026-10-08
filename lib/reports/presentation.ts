@@ -233,6 +233,11 @@ function permittedReferences(brief: DecisionBriefV1, presentation: BriefPresenta
   if (enabled.has("scope")) refs.push({ label: "Executable Scope", href: brief.movable.scope.value.href, owner: "Scope" });
   if (enabled.has("capacity")) refs.push({ label: "Capacity", href: brief.movable.capacity.value.href, owner: "Capacity" });
   if (enabled.has("evidence") || enabled.has("audit-delta")) for (const evidence of brief.evidence.references.value) refs.push({ label: evidence.title, href: evidence.href, owner: "Audit" });
+  if (enabled.has("evidence")) for (const capability of brief.evidence.scopeReceipts?.capabilities ?? []) {
+    for (const reference of capability.references) if (reference.auditHref) {
+      refs.push({ label: `${capability.name} · historical Scope passage (Signal access required)`, href: reference.auditHref, owner: "Scope" });
+    }
+  }
   return [...new Map(refs.map((item) => [`${item.owner}:${item.href}`, item])).values()];
 }
 

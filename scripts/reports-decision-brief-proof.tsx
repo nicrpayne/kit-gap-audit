@@ -80,7 +80,11 @@ const issue = (identifier: string, estimate: number, parentIdentifier: string | 
 });
 const platformRows = [issue("SOF-810", 3), issue("SOF-487", 3, "SOF-810"), ...Array.from({ length: 14 }, (_, index) => issue(`SOF-F${index + 1}`, 2)), issue("SOF-F15", 10)];
 assert.equal(platformRows.reduce((sum, row) => sum + (row.estimate ?? 0), 0), 44);
-assert.equal(buildForecastInputs(platformRows, [], 4).items.reduce((sum, item) => sum + item.likely, 0), 41);
+const platformInput = buildForecastInputs(platformRows, [], 4);
+assert.equal(platformInput.items.length, 16, "parent containers are not double-counted with their children");
+assert(!platformInput.items.some(item => item.id === "SOF-810"));
+assert(platformInput.items.every(item => item.estimateSource === "issue_placeholder"), "uncalibrated story points are not effort days");
+assert.equal(platformInput.items.reduce((sum, item) => sum + item.likely, 0), 16 * 3, "remaining tickets use the explicit placeholder until reviewed effort exists");
 
 const missingCapacity = assembleDecisionBrief(missingNamedCapacityFixture()).movable.capacity.value;
 assert.equal(missingCapacity.availability, "missing");

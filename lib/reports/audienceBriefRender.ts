@@ -183,8 +183,9 @@ function moduleMarkdown(id: BriefModuleId, density: ModuleDensity, brief: Decisi
       break;
     case "evidence":
       heading("Evidence & grounding");
-      if (!brief.evidence.references.value.length) out.push("Evidence references: MISSING.");
+      if (!brief.evidence.references.value.length) out.push("Audit finding references: none captured.");
       for (const reference of brief.evidence.references.value) out.push(`- [${reference.title}](${reference.href}) · ${reference.grounding.toUpperCase()} · ${reference.currentness.toUpperCase()}`);
+      out.push(...scopeEvidenceMarkdown(brief.evidence.scopeReceipts));
       break;
     case "source-health":
       heading("Source health");
@@ -226,3 +227,4 @@ export function renderAudienceBriefPlainText(brief: DecisionBriefV1, recipe: unk
     .replace(/`/g, "");
 }
 import { reportScheduleLines } from "./schedule";
+import { scopeEvidenceMarkdown } from "./scopeEvidencePresentation";

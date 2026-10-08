@@ -2,6 +2,7 @@ const PRESENTATION_NUMBER_SCALE = 1_000_000_000;
 
 type ReportJsonWithForecastBasis = {
   forecast?: { basis?: unknown };
+  evidence?: { scopeReceipts?: unknown };
 };
 
 const exactJsonClone = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
@@ -22,6 +23,9 @@ export function normalizeReportJsonForPersistence<T extends ReportJsonWithForeca
   const basis = value.forecast?.basis;
   if (basis !== undefined && normalized.forecast) {
     normalized.forecast.basis = exactJsonClone(basis);
+  }
+  if (value.evidence?.scopeReceipts !== undefined && normalized.evidence) {
+    normalized.evidence.scopeReceipts = exactJsonClone(value.evidence.scopeReceipts);
   }
   return normalized;
 }

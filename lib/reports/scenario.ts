@@ -546,6 +546,9 @@ export async function buildScenarioDecisionBriefReadModel(
   const input = structuredClone(ownerInput);
   input.mode = "scenario";
   input.scenarioId = scenario.scenarioId;
+  for (const capability of input.scopeEvidence?.capabilities ?? []) {
+    capability.excludedFromScenario = excludedCapabilities.has(capability.id);
+  }
   input.forecast = {
     ...input.forecast,
     basis: freezeForecastBasis(scenarioSpecs, frozenCapabilityEstimates, scenarioCapacityBasis),

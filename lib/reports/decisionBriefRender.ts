@@ -169,6 +169,7 @@ export function renderDecisionBriefMarkdown(brief: DecisionBriefV1): string {
   pushSource(brief.timeline.currentForecast.source);
 
   out.push("## Evidence / provenance / data quality");
+  out.push(...scopeEvidenceMarkdown(brief.evidence.scopeReceipts));
   if (!brief.evidence.references.value.length) out.push("- Audit evidence references: MISSING.");
   for (const reference of brief.evidence.references.value) out.push(`- [${reference.title}](${reference.href}) · grounding ${reference.grounding.toUpperCase()} · currentness ${reference.currentness.toUpperCase()}${reference.evidenceRefs.length ? ` · ${reference.evidenceRefs.join(", ")}` : ""}`);
   for (const warning of brief.evidence.warnings.value) out.push(`- WARNING: ${warning}`);
@@ -195,3 +196,4 @@ export function renderDecisionBriefPlainText(brief: DecisionBriefV1): string {
     .replace(/`/g, "");
 }
 import { reportScheduleLines } from "./schedule";
+import { scopeEvidenceMarkdown } from "./scopeEvidencePresentation";

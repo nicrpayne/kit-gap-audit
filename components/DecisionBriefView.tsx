@@ -2,6 +2,7 @@
 
 import React from "react";
 import ReportSchedule from "./reports/ReportSchedule";
+import ReportScopeEvidence from "./reports/ReportScopeEvidence";
 import Link from "@/components/instrument/SignalLink";
 import type { DecisionBriefV1, SourceStamp } from "@/lib/reports/decisionBrief";
 import { briefPayloadFingerprint } from "@/lib/reports/decisionBriefRender";
@@ -224,6 +225,7 @@ export default function DecisionBriefView({ brief }: { brief: DecisionBriefV1 })
       </Section>
 
       <Section title="Evidence / provenance / data quality" source={brief.evidence.references.source}>
+        <ReportScopeEvidence receipts={brief.evidence.scopeReceipts} />
         <div className="space-y-2">{brief.evidence.references.value.map((reference) => <Link key={reference.findingId} href={reference.href} className="flex flex-wrap items-center justify-between gap-2 rounded border border-[var(--i-border)] p-2 text-xs hover:border-[var(--i-signal)]"><span>{reference.title}</span><span className={reference.grounding === "passage" ? "text-[var(--i-mint)]" : "text-[var(--i-amber)]"}>{reference.grounding} · {reference.currentness}</span></Link>)}</div>
         {!brief.evidence.references.value.length && <Empty>Audit evidence references MISSING.</Empty>}
         {brief.evidence.warnings.value.map((warning) => <div key={warning} className="mt-2 text-xs text-[var(--i-amber)]">⚠ {warning}</div>)}

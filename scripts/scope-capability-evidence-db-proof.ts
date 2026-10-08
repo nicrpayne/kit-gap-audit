@@ -1,11 +1,20 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
+import Module from "node:module";
 import { prisma } from "../lib/prisma";
 import { buildPortfolioInputs } from "../lib/forecast/compute";
 
 async function main() {
   const url = new URL(process.env.DATABASE_URL ?? "http://invalid");
   assert(process.env.SIGNAL_REPAIR_DB_PROOF === "1" && url.hostname === "127.0.0.1" && url.port === "55434" && url.pathname === "/signal_t0_test_1004", "Disposable repair DB only");
+  // Next supplies this build-time marker; the standalone proof supplies only
+  // that marker, then immediately restores the normal module loader.
+  const runtime = Module as unknown as { _load(request: string, parent: unknown, isMain: boolean): unknown };
+  const originalLoad = runtime._load;
+  runtime._load = function(request, parent, isMain) { return request === "server-only" ? {} : originalLoad.call(this, request, parent, isMain); };
+  let loadReportScopeEvidence: typeof import("../lib/reports/scopeEvidenceReadModel").loadReportScopeEvidence;
+  try { ({ loadReportScopeEvidence } = await import("../lib/reports/scopeEvidenceReadModel")); }
+  finally { runtime._load = originalLoad; }
   const key = randomUUID();
   const scope = await prisma.scope.create({ data: { name: `Captured evidence ${key}`, teamKey: "PRF", executionState: "not_configured" } });
   const bootstrap = await prisma.projectBootstrap.create({ data: { canonicalName: scope.name, normalizedName: scope.name, sourceHints: {}, status: "activated" } });
@@ -39,6 +48,14 @@ async function main() {
     assert.equal(trace?.[0].capture?.locator.charStart, 5);
     assert.equal(trace?.[0].capture?.sourceUrl, null, "no fabricated browser link for fixture reference");
     assert.deepEqual(await prisma.capability.findUniqueOrThrow({ where: { id: capability.id } }), before, "read model must not rewrite accepted capability/provenance");
+    const reportReceipts = await loadReportScopeEvidence(scope.id, "2026-10-08T18:00:00Z");
+    const reportRef = reportReceipts.capabilities[0].references[0];
+    assert.equal(reportRef.capture?.excerpt, quote, "report reads accepted origin, not newer snapshot");
+    assert.equal(reportRef.capture?.contextSnapshotId, snapshots[0].id);
+    assert.equal(reportRef.capture?.sourceDate, "2026-08-18");
+    assert(reportRef.auditHref?.includes(encodeURIComponent(`passage:${snapshots[0].id}:same-evidence-id`)));
+    assert.deepEqual(await prisma.capability.findUniqueOrThrow({ where: { id: capability.id } }), before);
+    console.log("PASS actual Reports DB read freezes accepted Scope receipt and original Audit deep link without rewriting owners");
     console.log("PASS actual portfolio DB read binds Scope evidence to immutable activation, not newer knowledge; exact quote/date/anchors and accepted-row preservation");
   } finally {
     await prisma.capability.deleteMany({ where: { scopeId: scope.id } });

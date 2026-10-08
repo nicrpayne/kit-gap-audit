@@ -8,6 +8,7 @@
  */
 
 import type { EstimateQuality } from "@/lib/forecast/build";
+import type { ReportScopeEvidenceV1 } from "./scopeEvidence";
 import type { FrozenForecastBasisV1 } from "@/lib/reports/forecastBasis";
 import type { forecastAssumptionSnapshot } from "@/lib/forecast/claims";
 
@@ -96,6 +97,7 @@ export interface CapacityContributorInput {
 }
 
 export interface DecisionBriefOwnerInputs {
+  scopeEvidence?: ReportScopeEvidenceV1;
   generatedAt: string;
   mode: BriefMode;
   scenarioId: string | null;
@@ -285,6 +287,8 @@ export interface DecisionBriefV1 {
     currentForecast: Sourced<{ earliestDate: string; likelyDate: string; latestDate: string; href: string }>;
   };
   evidence: {
+    /** Additive immutable receipts. Missing in older reports; never backfilled. */
+    scopeReceipts?: ReportScopeEvidenceV1;
     references: Sourced<{
       findingId: string;
       title: string;
@@ -549,6 +553,7 @@ export function assembleDecisionBrief(input: DecisionBriefOwnerInputs): Decision
       },
     },
     evidence: {
+      ...(input.scopeEvidence ? { scopeReceipts: structuredClone(input.scopeEvidence) } : {}),
       references: { value: references, source: auditSource },
       warnings: { value: evidenceWarnings, source: contextSource },
     },

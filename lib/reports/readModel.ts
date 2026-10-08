@@ -1,4 +1,5 @@
 import "server-only";
+import { loadReportScopeEvidence } from "./scopeEvidenceReadModel";
 
 import type { Scope } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
@@ -133,7 +134,7 @@ export async function loadDecisionBriefOwnerInputs(
   if (!forecast.forecastCoverage.canonicalForecast) {
     throw new ForecastCoverageIncompleteError(forecast.forecastCoverage);
   }
-  const [previousReport, audit, decisions, dependencyScopes, people, allocations, settings, reconciliation, timelineEvents, contextSnapshot, kitConstruct, derivedState, refreshStatus] = await Promise.all([
+  const [previousReport, audit, decisions, dependencyScopes, people, allocations, settings, reconciliation, timelineEvents, contextSnapshot, kitConstruct, derivedState, refreshStatus, scopeEvidence] = await Promise.all([
     prisma.report.findFirst({
       where: { scopeId: scope.id, ...CANONICAL_REPORT_MODE_WHERE },
       orderBy: CANONICAL_REPORT_ORDER_DESC,
@@ -168,6 +169,7 @@ export async function loadDecisionBriefOwnerInputs(
     prisma.scope.findFirst({ where: { name: { contains: "KIT Construct", mode: "insensitive" } }, select: { id: true } }),
     prisma.projectDerivedState.findUnique({ where: { scopeId: scope.id }, select: { realityRevision: true } }),
     readKnowledgeStatus(scope.id),
+    loadReportScopeEvidence(scope.id, generatedAt),
   ]);
   const changes = await computeChangesSince(scope, forecast, previousReport?.generatedAt ?? null);
   const contextHealth = completeness(contextSnapshot?.completenessSummary);
@@ -204,6 +206,7 @@ export async function loadDecisionBriefOwnerInputs(
 
   return {
     generatedAt,
+    scopeEvidence,
     mode: options?.mode ?? "reality",
     scenarioId: options?.scenarioId ?? null,
     project: { id: scope.id, name: scope.name, targetDate: scope.targetDate ? toDateOnly(scope.targetDate) : null, asOf: generatedAt, realityRevision: derivedState?.realityRevision ?? 0 },

@@ -38,6 +38,7 @@
     "proof:saved-scenarios-api": "tsx scripts/saved-scenario-api-proof.ts",
     "proof:phased-capacity": "tsx scripts/phased-capacity-proof.ts",
     "proof:report-phased-capacity": "tsx scripts/report-phased-capacity-proof.ts",
+    "proof:report-scope-evidence": "tsx scripts/report-scope-evidence-proof.tsx",
     "proof:report-client-lifecycle": "tsx scripts/report-client-lifecycle-proof.ts",
     "proof:report-comparison": "tsx scripts/report-comparison-proof.ts",
     "proof:report-comparison-db": "tsx scripts/report-comparison-db-proof.ts",
