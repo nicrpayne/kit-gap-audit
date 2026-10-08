@@ -4,9 +4,9 @@
 //
 // The approved layout ends on a thin status bar. Every cell on it is a
 // stored timestamp or a count — the mockup's "All Systems Operational" is
-// replaced by the OLDEST READING on the page, stated as a fact, because
-// the product has no health model and grading a feed needs a threshold
-// nobody set.
+// replaced by explicitly labelled timestamp roles. Successful reads,
+// historical source observations and saved reports must never collapse
+// into one faux health grade.
 
 import Link from "@/components/instrument/SignalLink";
 

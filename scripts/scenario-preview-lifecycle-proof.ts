@@ -1,0 +1,24 @@
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { selectPreviewLifecycle } from "../lib/instrument/previewLifecycle";
+
+assert.deepEqual(selectPreviewLifecycle({ active: false, basisMatches: false, hasPreview: true, hasFailure: true }), { source: "reality", pending: false }, "Back to Reality ignores cached Scenario result and error immediately");
+assert.deepEqual(selectPreviewLifecycle({ active: true, basisMatches: false, hasPreview: true, hasFailure: false }), { source: "none", pending: true }, "editing A to B does not show A during debounce");
+assert.deepEqual(selectPreviewLifecycle({ active: true, basisMatches: false, hasPreview: false, hasFailure: false }), { source: "none", pending: true }, "first draft waits for its own result");
+assert.deepEqual(selectPreviewLifecycle({ active: true, basisMatches: true, hasPreview: true, hasFailure: false }), { source: "scenario", pending: false }, "matching result may be displayed");
+assert.deepEqual(selectPreviewLifecycle({ active: true, basisMatches: true, hasPreview: true, hasFailure: true }), { source: "none", pending: false }, "failed or refused draft never displays a cached result");
+const source = readFileSync("lib/instrument/useProject.ts", "utf8");
+assert.match(source, /preview: displayedPreview/);
+assert.match(source, /previewPending: display.pending/);
+assert.match(source, /const p = displayedPreview\?\.get\(s.scopeId\)/, "portfolio summary uses the same display basis");
+assert.match(source, /floorByScope: basisMatches && !currentSimFailure && !previewRefusal/);
+assert.match(source, /failureBasis\?\.data === data && failureBasis\?\.scenario === scenario/, "old draft error cannot contaminate a new draft or Reality");
+const forecast = readFileSync("components/instrument/ForecastInstrument.tsx", "utf8");
+assert.match(forecast, /const res = m.active \? m.preview\?\.get\(scope.scopeId\) \?\? null : base/);
+const scope = readFileSync("components/instrument/ScopeInstrument.tsx", "utf8");
+assert.match(scope, /pending=\{m.previewPending\}/, "Scope keeps controls mounted and marks pending date displays");
+assert.match(scope, /previewPending=\{m.previewPending\}/, "Scope impact confirmation cannot show a baseline as its pending Scenario");
+const portfolio = readFileSync("components/PortfolioPageClient.tsx", "utf8");
+assert.match(portfolio, /const displayedForecast = project.active \? displayedPreview : displayedBaseline/);
+assert.match(portfolio, /Recalculating Scenario forecast/);
+console.log("PASS: synchronous Scenario/Reality preview selection, pending transitions, error ownership, and floor provenance.");

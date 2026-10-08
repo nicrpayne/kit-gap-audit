@@ -5,7 +5,7 @@ import {
 } from "@/lib/scenario/itemLeverScope";
 
 export interface ScenarioPreviewRefusal {
-  code: "ambiguous_item_ownership" | "invalid_capacity_plan" | "stale_decision_plan";
+  code: "ambiguous_item_ownership" | "invalid_capacity_plan" | "stale_decision_plan" | "stale_scenario_baseline";
   message: string;
   action: string;
   itemIds: string[];

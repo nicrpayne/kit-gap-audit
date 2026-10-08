@@ -2,6 +2,7 @@
 
 import React from "react";
 import type { ScenarioPreviewRefusal as ScenarioPreviewRefusalState } from "@/lib/instrument/scenarioPreviewRefusal";
+import SavedScenarios from "./SavedScenarios";
 
 export default function ScenarioPreviewRefusal({
   refusal,
@@ -38,6 +39,7 @@ export default function ScenarioPreviewRefusal({
         <p className="mt-3 text-[11px] leading-relaxed text-[var(--i-text-faint)]">
           Your staged Scenario remains intact. No staged Scope, estimate, Capacity, delivery date, or confidence overlay is shown as applied on this page.
         </p>
+        <div className="mt-4"><SavedScenarios /></div>
         {onBackToReality && (
           <button
             type="button"

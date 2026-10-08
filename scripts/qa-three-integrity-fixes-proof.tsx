@@ -26,7 +26,11 @@ for (const relevance of ["unrelated", "core"]) {
   assert.equal(result.ai.unrelatedExcluded.length, 0);
 }
 const stale = buildForecastInputs([issue], [], 1, { acceptedIssueIds, estimates: new Map([[issue.identifier, estimate]]), hashFor: () => "changed" });
-assert.equal(stale.items[0].likely, 8, "stale estimates still fall back without dropping membership");
+assert.deepEqual(
+  stale.items.map(({ id, estimateSource, low, likely, high }) => ({ id, estimateSource, low, likely, high })),
+  [{ id: "QA-1", estimateSource: "issue_placeholder", low: 1, likely: 3, high: 7 }],
+  "stale estimates retain accepted membership but use the canonical provisional issue fallback, never points-as-days",
+);
 assert.equal(buildForecastInputs([issue], [], 1, { estimates: new Map([[issue.identifier, estimate]]) }).items.length, 0, "legacy ungoverned relevance behavior is unchanged");
 console.log("PASS accepted membership survives unrelated/core/stale estimate transitions");
 

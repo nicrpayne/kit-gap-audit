@@ -17,7 +17,7 @@ TEXT** (real prose, renderable as words only).
 |---|---|---|---|---|---|
 | Live Now | Timeline | `/api/timeline` → `now` | STRUCTURED | yes | Timeline |
 | Horizon | Timeline | `rangeEnd − now`, in days | DERIVED | yes | Timeline |
-| Last forecast update | Reports | `max(Report.generatedAt)` across scopes | STRUCTURED | yes | Reports |
+| Last saved forecast report | Reports | `max(Report.generatedAt)` across scopes | STRUCTURED | yes | Reports |
 | Scenario state | `useProject` | `scenarioIsActive(scenario)` | DERIVED | yes | — |
 
 ## Primary summary row
@@ -103,7 +103,6 @@ Rows are ordered by the size of their own quantity, and the quantity is shown.
 | Capacity lost to switching | `allocated − effective` | FTE |
 | Target already missed | scope P50 − `targetDate` | days over |
 | Wide outcome | P90 − P10 | days of spread |
-| Stale evidence | age of newest `ContextSnapshot` | days |
 
 ### Recent Activity
 
@@ -293,27 +292,29 @@ events, not a derived backlog level. It is labelled *answered per week*, because
 "open decisions over time" would require reconstructing dismissals the event
 stream does not carry.
 
-## System Status — every row is something we can actually know
+## System Status — timestamp meanings stay separate
 
-| Row | Source | Known how |
-|---|---|---|
-| Project data | the browser's own fetch of `/api/instrument/project` | when this page last received it |
-| Forecast | `max(Report.generatedAt)` | stored timestamp |
-| Context | newest `context_observed` entry | `ContextSnapshot.observedAt` |
-| Work items | newest `work_completed` entry | Linear is read live on every request; this is the newest completion it returned |
-| Evidence | `Source` rows in the project payload | `Source.createdAt` of the newest one |
+| Row | Timestamp role | Source | Known how |
+|---|---|---|---|
+| Linear + project read | successful read receipt | the browser's own fetch of `/api/instrument/project` | when this page received the current computation payload |
+| Knowledge package | successful ingestion receipt | `/api/audit/knowledge` → `lastPackageAt` for each project | the oldest successful package receipt across the portfolio; a missing receipt is named |
+| Underlying source reads | historical source observation | `/api/audit/knowledge` → `evidenceObservedAt`, with Timeline context observations as the legacy fallback | producer-owned origin-read dates; packaging does not rewrite them |
+| Saved forecast report | immutable artifact age | `max(Report.generatedAt)` | when the latest stored communication artifact was generated |
 
-`SourceRegistration` (the tracked-source registry, with its `status = "active"`
-rows) was the first candidate for that last row and was **rejected**: it is not
-in `/api/instrument/project`, and the Control Room is a composition — it does
-not open a data path of its own to fill a status light. The payload's `Source`
-rows are the evidence actually stored, and that is what the row says.
+Only the first two rows participate in **oldest successful read**. Source
+observation age and saved-report age remain visible, but neither can label the
+current computation stale. The green status dots were removed and replaced by
+explicit `READ`, `SOURCE`, and `REPORT` tags.
+
+The Forecast footer's previous `Forecast owner · stale` claim was also removed.
+`forecastSource.asOf` is the least-recent project/dependency ticket update in
+the current Linear read, not when Signal read Linear. It is now shown as
+`Ticket basis · changed through …`; the successful read receipt is separate.
 
 **Not shown, because it cannot be known:** Hermes availability (no health
-endpoint), "integration health", and any overall green/amber/red verdict. A
-feed with no datable timestamp is **omitted from the panel**, not drawn as
-"unknown". The panel's header states the **oldest reading on it** as a fact
-rather than grading itself.
+endpoint), "integration health", and any overall green/amber/red verdict.
+An old quote or source observation is not a defect solely because it is old,
+and a new package receipt never upgrades the source-owned date.
 
 ## Next landmark · modelled delay · dependency reach
 

@@ -5,7 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { decisionScenarioGates, validateDecisionPlans } from "@/lib/scenario/decisionPlan";
 import { buildPortfolioInputs } from "@/lib/forecast/compute";
 import { estimateQualityForItems } from "@/lib/forecast/build";
-import { buildPortfolioScenarios, runPortfolioSimulation } from "@/lib/forecast/portfolio";
+import { buildPortfolioScenarios, runPortfolioSimulation, UnfinishableCapacityScheduleError } from "@/lib/forecast/portfolio";
 import { applyScenarioInputDelta, type ScenarioInputDelta, type ScenarioInputScope } from "@/lib/scenario/inputDelta";
 import { resolveCapacity } from "@/lib/capacity/resolve";
 import { capacityForecastContract } from "@/lib/capacity/contract";
@@ -16,6 +16,12 @@ import {
   resolveCapacityPlan,
   validateCapacityScenarioPlan,
 } from "@/lib/scenario/capacityPlan";
+import {
+  compilePhasedCapacityPlan,
+  phasedCapacityLedger,
+  phasedCapacityPlanAffectedScopeIds,
+  validatePhasedCapacityPlan,
+} from "@/lib/scenario/phasedCapacity";
 import { toDateOnly } from "@/lib/time/dateContract";
 import { assembleDecisionBrief, type DecisionBriefV1 } from "./decisionBrief";
 import { loadDecisionBriefOwnerInputs } from "./readModel";
@@ -50,7 +56,12 @@ export async function buildScenarioDecisionBriefReadModel(
   if (scenario.version !== SCENARIO_REPORT_VERSION) {
     throw new ScenarioReportValidationError("Recreate this legacy Scenario with the current controls before publishing.");
   }
-  if (!scenario.capacityPlan && (Object.keys(scenario.capacityOverrideByScope).length || scenario.contextSwitchCostPct !== null)) {
+  if (scenario.phasedCapacityPlan && (
+    scenario.capacityPlan || Object.keys(scenario.capacityOverrideByScope).length || scenario.contextSwitchCostPct !== null
+  )) {
+    throw new ScenarioReportValidationError("A phased staffing plan cannot be combined with a static Capacity plan, aggregate capacity override, or switch-cost override. Choose one capacity hypothesis; no staged assumption was discarded.");
+  }
+  if (!scenario.capacityPlan && !scenario.phasedCapacityPlan && (Object.keys(scenario.capacityOverrideByScope).length || scenario.contextSwitchCostPct !== null)) {
     throw new ScenarioReportValidationError("A reportable Capacity or switch-cost change requires the complete named staffing plan. Recreate it in Capacity.");
   }
   const unreviewedKnowledgeCapabilityIds = Object.keys(scenario.knowledgeEstimateByCapabilityId);
@@ -86,8 +97,11 @@ export async function buildScenarioDecisionBriefReadModel(
   ) {
     throw new ScenarioReportValidationError("Reality changed while the Scenario report inputs were loading. Review the refreshed Scenario and try again.");
   }
-  if (scenario.capacityPlan) {
-    const affectedScopeIds = new Set(capacityPlanAffectedScopeIds(scenario.capacityPlan));
+  let currentCapacityBaseline: ReturnType<typeof buildCapacityPlanBaseline> | null = null;
+  if (scenario.capacityPlan || scenario.phasedCapacityPlan) {
+    const affectedScopeIds = new Set(scenario.capacityPlan
+      ? capacityPlanAffectedScopeIds(scenario.capacityPlan)
+      : phasedCapacityPlanAffectedScopeIds(scenario.phasedCapacityPlan!));
     const incoherentScopes = portfolio.scopes.filter((candidate) =>
       affectedScopeIds.has(candidate.scopeId) && (
         candidate.realityState.status !== "current" ||
@@ -97,7 +111,7 @@ export async function buildScenarioDecisionBriefReadModel(
     if (incoherentScopes.length) {
       throw new ScenarioReportValidationError(`Capacity inputs are still recomputing for ${incoherentScopes.map((candidate) => candidate.name).join(", ")}. Wait for coherent Reality, then review the scenario.`);
     }
-    const currentCapacityBaseline = buildCapacityPlanBaseline({
+    currentCapacityBaseline = buildCapacityPlanBaseline({
       people: portfolio.people,
       allocations: portfolio.allocations,
       contextSwitchCostPct: portfolio.contextSwitchCostPct,
@@ -106,9 +120,13 @@ export async function buildScenarioDecisionBriefReadModel(
         candidate.realityState.realityRevision,
       ])),
     });
-    const capacityValidation = validateCapacityScenarioPlan(scenario.capacityPlan, currentCapacityBaseline);
+    const capacityValidation = scenario.capacityPlan
+      ? validateCapacityScenarioPlan(scenario.capacityPlan, currentCapacityBaseline)
+      : validatePhasedCapacityPlan(scenario.phasedCapacityPlan!, currentCapacityBaseline);
     if (!capacityValidation.ok) throw new ScenarioReportValidationError(capacityValidation.reason);
-    const unstaffed = Object.values(scenario.capacityPlan.requiredByScope).reduce((total, fte) => total + fte, 0);
+    const unstaffed = scenario.capacityPlan
+      ? Object.values(scenario.capacityPlan.requiredByScope).reduce((total, fte) => total + fte, 0)
+      : 0;
     if (unstaffed > 1e-6) {
       throw new ScenarioReportValidationError(`This Capacity scenario still requires ${unstaffed.toFixed(1)} FTE that has not been staffed. Reallocate named capacity or add an explicit hypothetical hire before publishing it.`);
     }
@@ -344,7 +362,15 @@ export async function buildScenarioDecisionBriefReadModel(
         contextSwitchCostPct: scenario.contextSwitchCostPct ?? portfolio.contextSwitchCostPct,
         capacityOverrideByScope: scenario.capacityOverrideByScope,
   };
-  const scenarioSpecs = applyScenarioInputDelta(scenarioScopes, portfolio.people, scenarioDelta);
+  const staticScenarioSpecs = applyScenarioInputDelta(scenarioScopes, portfolio.people, scenarioDelta);
+  const scenarioSpecs = scenario.phasedCapacityPlan
+    ? compilePhasedCapacityPlan(
+        scenario.phasedCapacityPlan,
+        currentCapacityBaseline!,
+        staticScenarioSpecs,
+        portfolio.startDate,
+      )
+    : staticScenarioSpecs;
   if (scenario.capacityPlan) {
     const baselineCapacityByScope = new Map(baselineSpecs.map((candidate) => [candidate.scopeId, candidate.teamCapacity]));
     const expectedCapacityProjection = Object.fromEntries(scenarioSpecs.flatMap((candidate) => {
@@ -378,6 +404,17 @@ export async function buildScenarioDecisionBriefReadModel(
       throw new ScenarioReportValidationError("The Capacity plan does not change any simulated project input. Allocate an explicit hypothetical hire or clear the no-op capacity assumption before publishing.");
     }
   }
+  if (scenario.phasedCapacityPlan) {
+    const baselineCapacityByScope = new Map(baselineSpecs.map((candidate) => [candidate.scopeId, candidate.teamCapacity]));
+    const capacityChangesSimulation = scenarioSpecs.some((candidate) =>
+      candidate.capacityPhases?.some((phase) =>
+        Math.abs(phase.teamCapacity - (baselineCapacityByScope.get(candidate.scopeId) ?? candidate.teamCapacity)) > 1e-6
+      )
+    );
+    if (!capacityChangesSimulation) {
+      throw new ScenarioReportValidationError("The phased staffing plan does not change any simulated project capacity. Add an explicit dated movement that changes effective FTE or clear the no-op staffing assumption before publishing.");
+    }
+  }
 
   // Every claimed ticket-level override must survive into the exact
   // simulation input. Excluded work or work replaced by a capability basis
@@ -404,7 +441,15 @@ export async function buildScenarioDecisionBriefReadModel(
     aggregateOverridesByScope: scenarioDelta.capacityOverrideByScope ?? {},
   };
   const baselineResults = runPortfolioSimulation(baselineSpecs);
-  const scenarioResults = runPortfolioSimulation(scenarioSpecs);
+  let scenarioResults: ReturnType<typeof runPortfolioSimulation>;
+  try {
+    scenarioResults = runPortfolioSimulation(scenarioSpecs);
+  } catch (error) {
+    if (error instanceof UnfinishableCapacityScheduleError) {
+      throw new ScenarioReportValidationError(`${error.message} Choose a later transfer date, retain enough named capacity, or change the explicit staffing hypothesis.`);
+    }
+    throw error;
+  }
   const baselineResult = baselineResults.get(scope.id)!;
   const scenarioResult = scenarioResults.get(scope.id)!;
   const scenarioOptions = buildPortfolioScenarios(scenarioSpecs, scope.id, scenarioResult).map((option) => ({
@@ -413,7 +458,21 @@ export async function buildScenarioDecisionBriefReadModel(
   }));
   const deltaDays = Math.round((scenarioResult.likelyDate.getTime() - baselineResult.likelyDate.getTime()) / day);
   const capacityLedger = scenario.capacityPlan ? capacityAssumptionLedger(scenario.capacityPlan) : undefined;
-  const capacityAffectedScopeIds = scenario.capacityPlan ? capacityPlanAffectedScopeIds(scenario.capacityPlan) : [];
+  const phasedLedger = scenario.phasedCapacityPlan ? phasedCapacityLedger(scenario.phasedCapacityPlan) : undefined;
+  const capacityAffectedScopeIds = scenario.capacityPlan
+    ? capacityPlanAffectedScopeIds(scenario.capacityPlan)
+    : scenario.phasedCapacityPlan
+      ? phasedCapacityPlanAffectedScopeIds(scenario.phasedCapacityPlan)
+      : [];
+  const phasedTransferExplanations = scenario.phasedCapacityPlan?.transfers.map((transfer) => {
+    const person = portfolio.people.find((candidate) => candidate.id === transfer.personId);
+    const personName = person?.name ?? transfer.personId;
+    const fromName = portfolio.scopes.find((candidate) => candidate.scopeId === transfer.fromScopeId)?.name ?? transfer.fromScopeId;
+    const toName = portfolio.scopes.find((candidate) => candidate.scopeId === transfer.toScopeId)?.name ?? transfer.toScopeId;
+    const fraction = Number(transfer.fraction.toFixed(4));
+    const fte = Number(((person?.fte ?? 0) * transfer.fraction).toFixed(4));
+    return `Assumed ${personName} transfers ${fraction} of their allocation (${fte} FTE) from ${fromName} to ${toName} on ${transfer.effectiveDate}. This owner-selected calendar date is a hypothesis; it does not assert ${fromName} is complete.`;
+  }) ?? [];
   const causalExplanation = [
     ...(scenario.excludedCapabilityIds.length ? [`Removed ${scenario.excludedCapabilityIds.length} product capability${scenario.excludedCapabilityIds.length === 1 ? "" : "s"} from the hypothetical release scope.`] : []),
     ...(scenario.excludedItemIds.length ? [`Removed ${scenario.excludedItemIds.length} executable work item${scenario.excludedItemIds.length === 1 ? "" : "s"}.`] : []),
@@ -426,6 +485,8 @@ export async function buildScenarioDecisionBriefReadModel(
     ...(Object.keys(scenario.capabilityStaffingById).length ? [`Added ${Object.keys(scenario.capabilityStaffingById).length} isolated capability staffing outlook${Object.keys(scenario.capabilityStaffingById).length === 1 ? "" : "s"}; these do not claim the same people can execute multiple cards simultaneously.`] : []),
     ...(scenario.capacityPlan
       ? [`Applied an exact named capacity plan across ${capacityAffectedScopeIds.length} affected project${capacityAffectedScopeIds.length === 1 ? "" : "s"}; allocations and outside-Signal commitments remain conserved.`]
+      : scenario.phasedCapacityPlan
+        ? [`Applied explicit-date named staffing phases across ${capacityAffectedScopeIds.length} affected project${capacityAffectedScopeIds.length === 1 ? "" : "s"}; physical availability and outside-Signal commitments remain conserved.`, ...phasedTransferExplanations]
       : Object.keys(scenario.capacityOverrideByScope).length
         ? [`Changed aggregate capacity for ${Object.keys(scenario.capacityOverrideByScope).length} project${Object.keys(scenario.capacityOverrideByScope).length === 1 ? "" : "s"}.`]
         : []),
@@ -435,11 +496,16 @@ export async function buildScenarioDecisionBriefReadModel(
     ...(capacityLedger && capacityLedger.scenario.externalCommitmentFte > 0
       ? [`Preserved ${capacityLedger.scenario.externalCommitmentFte.toFixed(1)} FTE committed outside Signal.`]
       : []),
+    ...(phasedLedger && phasedLedger[0].externalCommitmentFte > 0
+      ? [`Preserved ${phasedLedger[0].externalCommitmentFte.toFixed(1)} FTE committed outside Signal in every staffing phase.`]
+      : []),
     ...(scenario.capacityPlan
       ? scenario.capacityPlan.contextSwitchCostPct === scenario.capacityPlan.baselineFingerprint.contextSwitchCostPct
         ? []
         : [`Set context-switch cost to ${scenario.capacityPlan.contextSwitchCostPct}%.`]
-      : scenario.contextSwitchCostPct === null ? [] : [`Set context-switch cost to ${scenario.contextSwitchCostPct}%.`]),
+      : scenario.phasedCapacityPlan
+        ? [`Kept context-switch cost at ${scenario.phasedCapacityPlan.baselineFingerprint.contextSwitchCostPct}% across every staffing phase.`]
+        : scenario.contextSwitchCostPct === null ? [] : [`Set context-switch cost to ${scenario.contextSwitchCostPct}%.`]),
     `The protected forecast engine moved the likely date ${Math.abs(deltaDays)} day${Math.abs(deltaDays) === 1 ? "" : "s"} ${deltaDays < 0 ? "earlier" : deltaDays > 0 ? "later" : "(no net movement)"}.`,
   ];
 
@@ -551,6 +617,10 @@ export async function buildScenarioDecisionBriefReadModel(
         scopeCount: contributor.scopeCount,
       })),
     };
+  } else if (scenario.phasedCapacityPlan) {
+    // Keep the canonical Capacity block truthful about the current roster.
+    // Future phases live in the frozen forecast basis and explicit assumption
+    // provenance; they are not relabelled as current effective FTE.
   } else if (override !== undefined || scenario.contextSwitchCostPct !== null) {
     input.capacity = {
       ...input.capacity,
@@ -605,6 +675,12 @@ export async function buildScenarioDecisionBriefReadModel(
     }] : [];
   });
   brief.caveats.value.push({ code: "SCENARIO_HYPOTHETICAL", message: `Hypothetical ${scenario.scenarioId}; canonical Reality r${realityRevision} was not mutated.` });
+  if (scenario.phasedCapacityPlan) {
+    brief.caveats.value.push({
+      code: "PHASED_CAPACITY_DATE_HYPOTHESIS",
+      message: "Named staffing movements use owner-selected calendar dates. They do not assert that source-project work is complete, and completion-trigger scheduling is not modeled.",
+    });
+  }
   for (const [id, plan] of Object.entries(scenario.decisionPlans ?? {})) {
     const decision = portfolio.decisions.find(row => row.id === id)!;
     brief.caveats.value.push({ code: "SCENARIO_DECISION_ASSUMPTION", message: `${decision.title}: assumed ${plan.state}${plan.gate ? `; ${plan.gate.low}/${plan.gate.likely}/${plan.gate.high} days of serial delay on ${portfolio.scopes.find(row => row.scopeId === plan.gate!.targetScopeId)?.name}. ${plan.gate.dependency}. Basis: ${plan.gate.evidenceForGate}` : "; no new delay invented"}. Not an accepted decision.` });
@@ -623,6 +699,7 @@ export async function buildScenarioDecisionBriefReadModel(
         deltaDays,
         causalExplanation,
         capacityLedger,
+        phasedCapacityLedger: phasedLedger,
       },
     },
   };

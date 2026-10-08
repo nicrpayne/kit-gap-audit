@@ -340,7 +340,7 @@ export default function ScopeInstrument() {
   const unmappedExecution = scope.executionItems.filter((item) => !activelyLinkedIds.has(item.id));
 
   const movedDays = Math.round((res.likelyDate.getTime() - base.likelyDate.getTime()) / 86400000);
-  const dom = readDominance(
+  const dom = m.previewPending ? null : readDominance(
     res,
     m.floorByScope?.get(scope.scopeId),
     startDate,
@@ -825,6 +825,7 @@ export default function ScopeInstrument() {
                 </div>
                 <div className="flex-1" />
                 <MasterDisplay
+                  pending={m.previewPending}
                   scopeName={scope.name}
                   date={formatDateOnly(res.likelyDate, { month: "short", day: "numeric", year: "numeric" })}
                   best={formatDateOnly(res.earliestDate)}
@@ -923,6 +924,7 @@ export default function ScopeInstrument() {
                 <ConstraintStrip gates={openGates} openQuestions={scope.openShapeQuestions} scopeId={scope.scopeId} dominance={dom} startDate={startDate} truthReady={displayedCoverage.canonicalForecast && scope.capacityContract.reconciles} />
 
                 <SignalStrip
+                  pending={m.previewPending}
                   capacityLabel={formatCapacity(capacity)}
                   capacitySource={
                     scope.capacitySource === "explicit"
@@ -1142,6 +1144,7 @@ export default function ScopeInstrument() {
       {resolvingWork && <ResolveScopeWork key={resolvingWork.id} item={resolvingWork} scopeId={scope.scopeId} capabilities={scope.capabilities} saving={writing} error={writeError} onClose={() => { if (!writing) { setResolvingWork(null); setWriteError(null); } }} onSave={saveWorkResolution} />}
 
       <ScopeImpactPreview
+        previewPending={m.previewPending}
         change={pending}
         scope={scope}
         baseDate={base.likelyDate}
@@ -1224,6 +1227,7 @@ function CapabilityRealityEditor({
 }
 
 function ScopeImpactPreview({
+  previewPending,
   change,
   scope,
   baseDate,
@@ -1237,6 +1241,7 @@ function ScopeImpactPreview({
   scope: ProjectScope;
   baseDate: Date;
   previewDate: Date;
+  previewPending: boolean;
   writing: boolean;
   error: string | null;
   onKeepScenario: () => void;
@@ -1263,7 +1268,7 @@ function ScopeImpactPreview({
           <div className="rounded border border-[var(--i-border)] bg-[var(--i-recess)] px-3 py-2"><div className="i-label">Execution</div><div className="mt-1 i-readout text-[15px]">{change.kind === "unlink" ? "−1" : `${change.kind === "move" && change.status === "outside" ? "−" : "+"}${items.length}`}</div><div className="text-[8.5px] text-[var(--i-text-faint)]">mapped item{items.length === 1 ? "" : "s"}</div></div>
           <div className="rounded border border-[var(--i-border)] bg-[var(--i-recess)] px-3 py-2"><div className="i-label">Modeled load</div><div className="mt-1 i-readout text-[15px]">{change.kind === "unlink" ? `−${schedule.toFixed(1)}d` : `${change.kind === "move" && change.status === "outside" ? "−" : "+"}${schedule.toFixed(1)}d`}</div><div className="text-[8.5px] text-[var(--i-text-faint)]">deterministic expected load</div></div>
         </div>
-        {isMove && <div className="mt-2 rounded border border-[var(--i-border)] px-3 py-2 text-[10px] text-[var(--i-text-soft)]">Scenario window: {formatDateOnly(baseDate)} → {formatDateOnly(previewDate)} {dateDelta === 0 ? "(held)" : `(${deltaLabel(dateDelta)})`}</div>}
+        {isMove && <div className="mt-2 rounded border border-[var(--i-border)] px-3 py-2 text-[10px] text-[var(--i-text-soft)]">{previewPending ? "Recalculating Scenario window…" : <>Scenario window: {formatDateOnly(baseDate)} → {formatDateOnly(previewDate)} {dateDelta === 0 ? "(held)" : `(${deltaLabel(dateDelta)})`}</>}</div>}
         <p className="mt-3 text-[10px] leading-relaxed text-[var(--i-text-faint)]">Commit writes canonical server Reality, increments the derived revision, recomputes Forecast coverage/readiness, and becomes visible to other devices. Keeping the preview leaves Reality unchanged.</p>
         {error && <div className="mt-2 text-[10px] text-[var(--i-red)]">{error}</div>}
         <div className="mt-4 flex gap-2"><button onClick={onKeepScenario} disabled={writing} className="flex-1 rounded-md border border-[var(--i-border-strong)] px-3 py-2 text-[11px] text-[var(--i-text-soft)]">{isMove ? "Keep hypothetical" : "Cancel"}</button><button onClick={onCommit} disabled={writing} className="flex-1 rounded-md border border-[var(--i-signal)] px-3 py-2 text-[11px] text-[var(--i-signal)]" data-shoot="commit-scope-reality">{writing ? "Committing…" : "Commit to Reality"}</button></div>
@@ -1353,6 +1358,7 @@ function VelocityLean({
 const STAGE = { load: 0.24, date: 0.42, impact: 0.58 };
 
 function MasterDisplay({
+  pending,
   scopeName,
   date,
   best,
@@ -1368,6 +1374,7 @@ function MasterDisplay({
   previewRelief,
 }: {
   scopeName: string;
+  pending: boolean;
   date: string;
   best: string;
   worst: string;
@@ -1407,11 +1414,11 @@ function MasterDisplay({
             className="inline-block i-readout"
             style={{ color: canonicalForecast ? (moved ? "var(--i-violet)" : "var(--i-text)") : "var(--i-amber)" }}
           >
-            {canonicalForecast ? date : "Forecast not ready"}
+            {pending ? "Recalculating…" : canonicalForecast ? date : "Forecast not ready"}
           </motion.span>
         </div>
         <div className="mt-1.5 text-[9.5px] text-[var(--i-text-faint)]">
-          {canonicalForecast ? `P10 ${best} · P90 ${worst} · middle 80% of simulated outcomes` : `Modeled subset consequence ~${date} · not a delivery claim`}
+          {pending ? "Waiting for this Scenario’s updated result" : canonicalForecast ? `P10 ${best} · P90 ${worst} · middle 80% of simulated outcomes` : `Modeled subset consequence ~${date} · not a delivery claim`}
         </div>
       </div>
 
@@ -1458,11 +1465,11 @@ function MasterDisplay({
             className="inline-block i-readout"
             style={{ color: impactTone }}
           >
-            {moved ? deltaLabel(movedDays) : active ? "held" : "—"}
+            {pending ? "Recalculating…" : moved ? deltaLabel(movedDays) : active ? "held" : "—"}
           </motion.span>
         </div>
         <div className="mt-1.5 text-[9.5px] leading-snug" style={{ color: previewRelief !== null ? "var(--i-violet)" : "var(--i-text-faint)" }}>
-          {previewRelief !== null ? (
+          {pending ? "No new date yet" : previewRelief !== null ? (
             `setting down removes ${previewRelief.toFixed(1)}d of load`
           ) : active ? (
             // The dominated case: the date did not move, and saying so is the
@@ -2093,6 +2100,7 @@ function ConstraintStrip({
 // instrument that owns it), then what the current composition COSTS (loud
 // only when there is a scenario), then the actions.
 function SignalStrip({
+  pending,
   capacityLabel,
   capacitySource,
   capacityChanged,
@@ -2106,6 +2114,7 @@ function SignalStrip({
   onDiscard,
 }: {
   capacityLabel: string;
+  pending: boolean;
   capacitySource: string;
   capacityChanged: boolean;
   contextPct: number;
@@ -2159,9 +2168,9 @@ function SignalStrip({
         />
         <Consequence
           label="Landing"
-          value={movedDays !== 0 ? deltaLabel(movedDays) : active ? "held" : "—"}
+          value={pending ? "Recalculating…" : movedDays !== 0 ? deltaLabel(movedDays) : active ? "held" : "—"}
           tone={movedDays !== 0 ? deltaTone(movedDays) : active ? "var(--i-text-soft)" : "var(--i-text-faint)"}
-          note={movedDays !== 0 ? "against Reality" : active ? "this scenario does not move it" : "no scenario"}
+          note={pending ? "waiting for updated result" : movedDays !== 0 ? "against Reality" : active ? "this scenario does not move it" : "no scenario"}
           delay={0.42}
         />
       </motion.div>

@@ -16,6 +16,7 @@ const valid = {
   estimateOverrideByItemId: { "TICKET-2": { low: 1, likely: 2, high: 3 } },
   capacityOverrideByScope: {},
   capacityPlan: null,
+  phasedCapacityPlan: null,
   contextSwitchCostPct: null,
   knowledgeEstimateByCapabilityId: {},
   capabilityStaffingById: {},

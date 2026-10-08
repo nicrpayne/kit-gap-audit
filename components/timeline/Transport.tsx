@@ -12,7 +12,6 @@
 // comes from material and layout rather than from borrowed vocabulary.
 // There is no undo/redo because Timeline has no edit stack to undo.
 
-import { fmtFull } from "@/lib/timeline/geometry";
 import type { Moment } from "@/lib/timeline/moment";
 import NowPlaying from "./NowPlaying";
 
@@ -20,9 +19,10 @@ export type Speed = 0.5 | 1 | 2;
 
 interface Props {
   playing: boolean;
-  playheadT: number;
-  nowT: number;
   atNow: boolean;
+  /** Already formatted by Timeline's owner: local user date at Live Now,
+      UTC DateOnly label while held in history. */
+  playheadDateLabel: string;
   speed: Speed;
   scaleLabel: string;
   zoomPct: number;
@@ -98,7 +98,7 @@ const Btn = ({
 );
 
 export default function Transport({
-  playing, playheadT, nowT, atNow, speed, scaleLabel, zoomPct, crossedCount, totalPast,
+  playing, atNow, playheadDateLabel, speed, scaleLabel, zoomPct, crossedCount, totalPast,
   moment, laneNames, momentLive, timePct, reducedMotion,
   onPlayPause, onPrev, onNext, onToBeginning, onToNow, onSpeed, onZoom, onScale,
 }: Props) {
@@ -177,7 +177,7 @@ export default function Transport({
           data-shoot="playhead-date"
           style={{ color: atNow ? "var(--i-signal)" : "var(--i-violet)" }}
         >
-          {fmtFull(playheadT)}
+          {playheadDateLabel}
         </div>
         {/* TIME, THEN EVENTS.
             The bar used to fill by EVENTS CROSSED, which is exactly the

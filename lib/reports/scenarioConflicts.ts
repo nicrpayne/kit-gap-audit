@@ -114,12 +114,13 @@ export interface ScenarioReportLeverSelection {
   staffingCapabilityIds: readonly string[];
   capacityOverrideScopeIds: readonly string[];
   hasCapacityPlan: boolean;
+  hasPhasedCapacityPlan: boolean;
   contextSwitchCostPct: number | null;
 }
 
 export function countScenarioReportLevers(input: ScenarioReportLeverSelection): number {
   return Object.keys(input.decisionPlans ?? {}).length + input.excludedItemIds.length + input.includedItemIds.length + input.excludedCapabilityIds.length +
     input.resolvedGateIds.length + input.estimateOverrideIds.length + input.knowledgeCapabilityIds.length +
-    input.staffingCapabilityIds.length + (input.hasCapacityPlan ? 1 : input.capacityOverrideScopeIds.length) +
+    input.staffingCapabilityIds.length + (input.hasCapacityPlan || input.hasPhasedCapacityPlan ? 1 : input.capacityOverrideScopeIds.length) +
     (input.contextSwitchCostPct === null ? 0 : 1);
 }

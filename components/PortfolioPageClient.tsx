@@ -64,6 +64,8 @@ import { EMPTY_SCENARIO, useProject } from "@/lib/instrument/useProject";
 import ScenarioPreviewRefusal from "@/components/instrument/ScenarioPreviewRefusal";
 import type { ForecastCoverageContract } from "@/lib/forecast/coverage";
 import { decisionScenarioGates } from "@/lib/scenario/decisionPlan";
+import SavedScenarios from "@/components/instrument/SavedScenarios";
+import PhasedStaffingEditor from "@/components/portfolio/PhasedStaffingEditor";
 
 // The Instrument. GET /api/portfolio/inputs is the one expensive network
 // call (Linear + findings + context, per Scope), fetched once on mount;
@@ -395,6 +397,15 @@ export default function PortfolioPageClient() {
   // Decision inputs. A staffing-only resimulation here silently disagreed
   // with Forecast even while the shared Scenario remained staged.
   const preview = project.preview;
+  // A shared preview belongs to one exact data/scenario pair. While a new
+  // pair is being simulated, never let Portfolio's presentation-level
+  // fallbacks relabel Reality (or the prior preview) as the active Scenario.
+  // The mixer remains mounted below so a continuous fader gesture is not
+  // interrupted while the forecast catches up.
+  const scenarioForecastPending = project.active && project.previewPending;
+  const displayedBaseline = scenarioForecastPending ? null : baseline;
+  const displayedPreview = project.active && !scenarioForecastPending ? preview : null;
+  const displayedForecast = project.active ? displayedPreview : displayedBaseline;
   const displayedCoverageByScope = useMemo(() => new Map((data?.scopes ?? []).map((scope) => [
     scope.scopeId,
     project.active ? project.coverageByScope.get(scope.scopeId) ?? scope.forecastCoverage : scope.forecastCoverage,
@@ -406,7 +417,7 @@ export default function PortfolioPageClient() {
     if (!data || !startDateObj) return null;
     const days: number[] = [0];
     for (const s of data.scopes) {
-      for (const r of [baseline?.get(s.scopeId), preview?.get(s.scopeId)]) {
+      for (const r of [displayedBaseline?.get(s.scopeId), displayedForecast?.get(s.scopeId)]) {
         if (!r) continue;
         days.push(r.percentiles.p10, r.percentiles.p90);
       }
@@ -417,7 +428,7 @@ export default function PortfolioPageClient() {
     const maxDayRaw = Math.max(...days);
     const maxDay = maxDayRaw + Math.max(8, maxDayRaw * 0.16);
     return { minDay, maxDay, ticks: axisTicks(startDateObj, minDay, maxDay) };
-  }, [data, startDateObj, baseline, preview, pendingTargets]);
+  }, [data, startDateObj, displayedBaseline, displayedForecast, pendingTargets]);
 
   // What each Scope will actually be simulated at -- read straight off the
   // embodied model, the same call applyScenarioInputDelta makes, so the
@@ -470,7 +481,7 @@ export default function PortfolioPageClient() {
     if (!scope) return empty;
     const deltaFor = (scopeId: string): number => {
       const b = baseline?.get(scopeId);
-      const p = preview?.get(scopeId) ?? b;
+      const p = displayedForecast?.get(scopeId);
       return compareToBaseline(b, p).deltaDays;
     };
     const dependsOn: DependencyDelta[] = scope.dependsOnScopeIds.map((id) => ({
@@ -482,7 +493,7 @@ export default function PortfolioPageClient() {
       .filter((s) => s.dependsOnScopeIds.includes(effectiveSelectedScopeId))
       .map((s) => ({ scopeId: s.scopeId, name: s.name, deltaDays: deltaFor(s.scopeId) }));
     return { dependsOn, dependents };
-  }, [data, baseline, preview, effectiveSelectedScopeId]);
+  }, [data, baseline, displayedForecast, effectiveSelectedScopeId]);
 
   const momentumByScope = useMemo(() => {
     const out = new Map<string, MomentumTrend>();
@@ -587,6 +598,7 @@ export default function PortfolioPageClient() {
     contextSwitchCostPct: number;
   }) => {
     if (!data || !capacityBaseline || !scenarioScopes) return;
+    if (project.scenario.phasedCapacityPlan) { setSaveError("A dated staffing plan is active. Use Review dated staffing moves to clear it before moving the immediate capacity faders."); return; }
     const plan = createCapacityScenarioPlan({
       baseline: capacityBaseline,
       allocations: next.allocations,
@@ -621,7 +633,7 @@ export default function PortfolioPageClient() {
         ? null
         : plan.contextSwitchCostPct,
     }));
-  }, [capacityBaseline, data, setScenario, scenarioScopes]);
+  }, [capacityBaseline, data, setScenario, scenarioScopes, project.scenario.phasedCapacityPlan]);
 
   // ---- interaction handlers -------------------------------------------
 
@@ -984,7 +996,7 @@ export default function PortfolioPageClient() {
     return data.scopes.map((s, i) => {
       const reading = readChannel(workforceState, s.scopeId, switchCostPct, requiredByScope.get(s.scopeId) ?? 0);
       const b = baseline?.get(s.scopeId);
-      const p = preview?.get(s.scopeId) ?? b;
+      const p = displayedForecast?.get(s.scopeId);
       const deltaDays = b && p ? Math.round((p.likelyDate.getTime() - b.likelyDate.getTime()) / 86400000) : 0;
       const target = pendingTargets.get(s.scopeId) ?? s.targetDate;
       return {
@@ -1009,7 +1021,7 @@ export default function PortfolioPageClient() {
         completionDays: p?.completionDaysSorted ?? [],
       };
     });
-  }, [data, workforceState, switchCostPct, requiredByScope, baseline, preview, changedScopeIds, pendingTargets, startDateObj, displayedCoverageByScope, project.data, project.scenario]);
+  }, [data, workforceState, switchCostPct, requiredByScope, baseline, displayedForecast, changedScopeIds, pendingTargets, startDateObj, displayedCoverageByScope, project.data, project.scenario]);
 
   const deficit = useMemo(() => {
     const entry = [...requiredByScope.entries()].find(([, v]) => v > 1e-6);
@@ -1078,20 +1090,22 @@ export default function PortfolioPageClient() {
 
   if (project.scenarioPreviewRefusal) {
     return shell(
+      <div className="flex min-w-0 flex-1 flex-col"><div className="p-4"><PhasedStaffingEditor project={project} /></div>
       <ScenarioPreviewRefusal
         refusal={project.scenarioPreviewRefusal}
         surface="Portfolio"
         onBackToReality={discard}
       />
+      </div>
     );
   }
 
   const selectedScope = effectiveSelectedScopeId
     ? data.scopes.find((s) => s.scopeId === effectiveSelectedScopeId) ?? null
     : null;
-  const selectedBaseline = effectiveSelectedScopeId ? baseline?.get(effectiveSelectedScopeId) : undefined;
-  const selectedPreview = effectiveSelectedScopeId ? preview?.get(effectiveSelectedScopeId) : undefined;
-  const selectedActive = selectedPreview ?? selectedBaseline;
+  const selectedBaseline = effectiveSelectedScopeId ? displayedBaseline?.get(effectiveSelectedScopeId) : undefined;
+  const selectedPreview = effectiveSelectedScopeId ? displayedPreview?.get(effectiveSelectedScopeId) : undefined;
+  const selectedActive = effectiveSelectedScopeId ? displayedForecast?.get(effectiveSelectedScopeId) : undefined;
 
   const selectedTargetIso = selectedScope
     ? pendingTargets.get(selectedScope.scopeId) ?? selectedScope.targetDate
@@ -1186,6 +1200,11 @@ export default function PortfolioPageClient() {
           saveSummary={saveSummary}
         />
 
+        <div className="flex flex-wrap items-center gap-3 border-b border-[var(--i-border)] bg-[var(--i-panel)] px-4 py-2">
+          <SavedScenarios /><PhasedStaffingEditor project={project} />
+          {project.scenario.phasedCapacityPlan && <p className="text-[11px] text-[var(--i-violet)]">Dated staffing Scenario · faders below show today’s team, forecast includes future moves.</p>}
+        </div>
+
         {(requiresRoster || data.scopes.some((scope) => !scope.capacityContract.reconciles)) && <AttentionCallout
           title="Check the team behind these dates" detail="Some staffing totals still need reconciliation with the named team. Opening this review does not save any changes."
           label="Review actual team" onAction={() => setAllocationsOpen(true)} />}
@@ -1195,10 +1214,22 @@ export default function PortfolioPageClient() {
 
         <div className="flex-1 min-h-0 flex">
           <div className="flex-1 min-w-0 flex flex-col" style={{ background: "var(--i-bg)" }}>
+            {scenarioForecastPending && (
+              <div
+                role="status"
+                aria-live="polite"
+                data-testid="portfolio-scenario-recalculating"
+                className="shrink-0 flex flex-wrap items-center gap-x-2 gap-y-1 border-b border-[var(--i-border)] px-4 py-2 text-[11px]"
+                style={{ background: "var(--i-violet-soft)", color: "var(--i-violet)" }}
+              >
+                <strong>Recalculating Scenario forecast…</strong>
+                <span className="text-[var(--i-text-soft)]">Staffing controls remain available; no prior or Reality dates are shown as this Scenario.</span>
+              </div>
+            )}
             <ForecastField
               scopes={fieldScopes}
-              baseline={baseline}
-              preview={preview}
+              baseline={displayedBaseline}
+              preview={displayedPreview}
               axis={axis}
               startDate={startDateObj!}
               dirty={dirty}
@@ -1211,7 +1242,7 @@ export default function PortfolioPageClient() {
                 (() => {
                   let max: number | null = null;
                   for (const s of data.scopes) {
-                    const r = preview?.get(s.scopeId) ?? baseline?.get(s.scopeId);
+                    const r = displayedForecast?.get(s.scopeId);
                     if (r) max = Math.max(max ?? -Infinity, r.likelyDate.getTime());
                   }
                   return max === null ? null : new Date(max);
@@ -1221,7 +1252,7 @@ export default function PortfolioPageClient() {
                 let a: number | null = null;
                 let b: number | null = null;
                 for (const s of data.scopes) {
-                  const pr = preview?.get(s.scopeId) ?? baseline?.get(s.scopeId);
+                  const pr = displayedForecast?.get(s.scopeId);
                   const bl = baseline?.get(s.scopeId);
                   if (pr) a = Math.max(a ?? -Infinity, pr.likelyDate.getTime());
                   if (bl) b = Math.max(b ?? -Infinity, bl.likelyDate.getTime());
@@ -1232,7 +1263,7 @@ export default function PortfolioPageClient() {
                 let max: number | null = null;
                 let name: string | null = null;
                 for (const s of data.scopes) {
-                  const r = preview?.get(s.scopeId) ?? baseline?.get(s.scopeId);
+                  const r = displayedForecast?.get(s.scopeId);
                   if (r && (max === null || r.likelyDate.getTime() > max)) {
                     max = r.likelyDate.getTime();
                     name = s.name;

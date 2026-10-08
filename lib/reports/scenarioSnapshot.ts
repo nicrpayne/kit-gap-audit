@@ -3,6 +3,11 @@ import {
   type CapacityAssumptionLedgerV1,
   type CapacityScenarioPlanV1,
 } from "@/lib/scenario/capacityPlan";
+import {
+  parsePhasedCapacityPlan,
+  type PhasedCapacityLedgerPhaseV1,
+  type PhasedCapacityPlanV1,
+} from "@/lib/scenario/phasedCapacity";
 import type { CapabilityStaffingPlan } from "@/lib/scope/capabilityForecast";
 import { countScenarioReportLevers } from "./scenarioConflicts";
 import { parseDecisionPlans, type DecisionPlans } from "@/lib/scenario/decisionPlan";
@@ -26,6 +31,9 @@ export interface ScenarioReportSnapshotV1 {
   /** Exact named capacity owner. Null only for legacy aggregate snapshots or
       Scenarios without a capacity lever. */
   capacityPlan: CapacityScenarioPlanV1 | null;
+  /** Explicit-date named-person movements. Mutually exclusive with every
+      static/aggregate Capacity lever. */
+  phasedCapacityPlan: PhasedCapacityPlanV1 | null;
   contextSwitchCostPct: number | null;
   /** Product-level removal provenance. Item ids remain the engine input. */
   excludedCapabilityIds: string[];
@@ -45,6 +53,7 @@ export interface ScenarioReportSnapshotV1 {
     deltaDays: number;
     causalExplanation: string[];
     capacityLedger?: CapacityAssumptionLedgerV1;
+    phasedCapacityLedger?: PhasedCapacityLedgerPhaseV1[];
   };
 }
 
@@ -87,7 +96,7 @@ export function parseScenarioReportSnapshot(value: unknown): ScenarioReportSnaps
   const raw = value as Record<string, unknown>;
   const knownFields = new Set([
     "version", "scenarioId", "baseRealityRevision", "excludedItemIds", "includedItemIds",
-    "resolvedGateIds", "estimateOverrideByItemId", "capacityOverrideByScope", "capacityPlan",
+    "resolvedGateIds", "estimateOverrideByItemId", "capacityOverrideByScope", "capacityPlan", "phasedCapacityPlan",
     "contextSwitchCostPct", "excludedCapabilityIds", "knowledgeEstimateByCapabilityId",
     "capabilityStaffingById", "computed", "decisionPlans", "remainingEstimateByCapabilityId",
   ]);
@@ -125,11 +134,24 @@ export function parseScenarioReportSnapshot(value: unknown): ScenarioReportSnaps
       throw new ScenarioReportValidationError(error instanceof Error ? error.message : "Capacity plan is invalid.");
     }
   }
+  let phasedCapacityPlan: PhasedCapacityPlanV1 | null = null;
+  if (raw.phasedCapacityPlan !== null && raw.phasedCapacityPlan !== undefined) {
+    try {
+      phasedCapacityPlan = parsePhasedCapacityPlan(raw.phasedCapacityPlan);
+    } catch (error) {
+      throw new ScenarioReportValidationError(error instanceof Error ? error.message : "Phased capacity plan is invalid.");
+    }
+  }
   const contextSwitchCostPct = raw.contextSwitchCostPct === null || raw.contextSwitchCostPct === undefined
     ? null
     : typeof raw.contextSwitchCostPct === "number" && raw.contextSwitchCostPct >= 0 && raw.contextSwitchCostPct <= 100
       ? raw.contextSwitchCostPct
       : (() => { throw new ScenarioReportValidationError("contextSwitchCostPct must be between 0 and 100."); })();
+  if (phasedCapacityPlan && (capacityPlan || Object.keys(capacity).length || contextSwitchCostPct !== null)) {
+    throw new ScenarioReportValidationError(
+      "A phased staffing plan cannot be combined with a static Capacity plan, aggregate capacity override, or switch-cost override. Choose one capacity hypothesis; no staged assumption was discarded.",
+    );
+  }
   const knowledge: ScenarioReportSnapshotV1["knowledgeEstimateByCapabilityId"] = {};
   {
     for (const [capabilityId, candidate] of entries(raw.knowledgeEstimateByCapabilityId, "Knowledge estimates")) {
@@ -178,6 +200,7 @@ export function parseScenarioReportSnapshot(value: unknown): ScenarioReportSnaps
     estimateOverrideByItemId: estimates,
     capacityOverrideByScope: capacity,
     capacityPlan,
+    phasedCapacityPlan,
     contextSwitchCostPct,
     excludedCapabilityIds: strings(raw.excludedCapabilityIds, "Excluded capabilities"),
     knowledgeEstimateByCapabilityId: knowledge,
@@ -190,6 +213,7 @@ export function parseScenarioReportSnapshot(value: unknown): ScenarioReportSnaps
     staffingCapabilityIds: Object.keys(staffing),
     capacityOverrideScopeIds: Object.keys(capacity),
     hasCapacityPlan: capacityPlan !== null,
+    hasPhasedCapacityPlan: phasedCapacityPlan !== null,
   });
   if (leverCount === 0) throw new ScenarioReportValidationError("Scenario reports require at least one explicit hypothetical lever.");
   return snapshot;

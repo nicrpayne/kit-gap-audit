@@ -132,7 +132,9 @@ export default function DecisionsPageClient() {
     const nodeFor = (id: string): CircuitNode | null => {
       const s = project.data!.scopes.find((x) => x.scopeId === id);
       if (!s) return null;
-      const likely = (project.active ? project.preview?.get(id)?.likelyDate : null) ?? project.baseline?.get(id)?.likelyDate ?? null;
+      const likely = project.active
+        ? project.previewPending ? null : project.preview?.get(id)?.likelyDate ?? null
+        : project.baseline?.get(id)?.likelyDate ?? null;
       return {
         claim: presentForecastDeliveryClaim({
           scopeName: s.name,
@@ -160,7 +162,7 @@ export default function DecisionsPageClient() {
       .map((s) => nodeFor(s.scopeId))
       .filter((n): n is CircuitNode => n !== null);
     return { origin: o, downstream: down };
-  }, [project.data, project.coverageByScope, project.active, project.preview, project.baseline, project.scenario.resolvedGateIds, activeScopeId, gatingAll]);
+  }, [project.data, project.coverageByScope, project.active, project.preview, project.previewPending, project.baseline, project.scenario.resolvedGateIds, activeScopeId, gatingAll]);
 
   // DETERMINISTIC PRESENTATION ORDER, and nothing more. The engine sums
   // gate durations in series and knows of no ordering between two gates on
@@ -301,6 +303,7 @@ export default function DecisionsPageClient() {
   const completeCoverage = origin?.claim.state === "forecastable";
   const baselineDate = activeScopeId ? project.baseline?.get(activeScopeId)?.likelyDate ?? null : null;
   const previewDate = activeScopeId ? project.preview?.get(activeScopeId)?.likelyDate ?? null : null;
+  const scenarioForecastPending = project.active && project.previewPending;
   const deltaDays =
     baselineDate && previewDate ? Math.round((previewDate.getTime() - baselineDate.getTime()) / 86400000) : 0;
 
@@ -566,6 +569,8 @@ export default function DecisionsPageClient() {
             <div className="ml-auto flex items-center gap-2 text-[11px]">
               {project.scenarioPreviewRefusal ? (
                 <span>Scenario preview refused · Reality retained</span>
+              ) : scenarioForecastPending ? (
+                <span role="status" aria-live="polite" data-shoot="scenario-recalculating">Recalculating Scenario forecast…</span>
               ) : !completeCoverage ? (
                 <span data-shoot="reality-landing" aria-label={origin?.claim.accessibleLabel}>
                   {origin?.name} · {origin?.claim.outcome ?? "Delivery outcome unavailable"} · not a full-project delivery forecast

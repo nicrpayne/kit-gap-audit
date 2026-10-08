@@ -26,13 +26,14 @@
 // reading. Every one of those swaps is listed in
 // docs/CONTROL-ROOM-TRUTH-AUDIT.md — "Utilization" is ARRIVING, the health
 // donut is release composition, the risk list is current constraints with
-// their own real quantities, and "All systems nominal" is the oldest
-// reading on the page.
+// their own real quantities, and "All systems nominal" is replaced by
+// explicit read receipts, source observations and saved-report age.
 
 import Link from "@/components/instrument/SignalLink";
 import type { ReactNode } from "react";
 import TimelinePageClient from "@/components/TimelinePageClient";
 import type { ControlRoomReading, Point, Series } from "@/lib/control-room/read";
+import type { FreshnessKind } from "@/lib/control-room/freshness";
 import type { ProjectPayload, SuiteScenario } from "@/lib/instrument/useProject";
 import { composeFeatures } from "@/lib/scope/features";
 import { formatDateOnly } from "@/lib/time/dateContract";
@@ -75,6 +76,10 @@ const age = (days: number) => {
   return `${Math.round(days)}d ago`;
 };
 const plural = (n: number, one: string, many: string) => (n === 1 ? one : many);
+const freshnessKindLabel = (kind: FreshnessKind) =>
+  kind === "read_receipt" ? "READ" : kind === "source_observation" ? "SOURCE" : "REPORT";
+const freshnessKindTone = (kind: FreshnessKind) =>
+  kind === "read_receipt" ? "var(--i-signal)" : kind === "source_observation" ? "var(--i-source)" : "var(--i-cool)";
 
 // The last sentence of a dependency's `detail` is the consequence — "If it
 // slips, they both slip", "Answering this releases 2 projects at once". The
@@ -124,7 +129,7 @@ export default function CommandWorkspace({
   scenarioActive: boolean;
   realityLikely: Date | null;
 }) {
-  const outcomeHue = scenarioActive ? "var(--i-violet)" : r.time.forecastCurrentness === "stale" ? "var(--i-amber)" : HUE.outcome;
+  const outcomeHue = scenarioActive ? "var(--i-violet)" : HUE.outcome;
 
   // WHAT CHANGED, with its subjects kept distinct. The same work item title
   // can land on two different projects — the seed has `jsa` and `jsa-seed`,
@@ -225,9 +230,7 @@ export default function CommandWorkspace({
             question={
               r.outcome.coverageState !== "forecastable"
                 ? "Execution coverage unresolved"
-                : r.time.forecastCurrentness === "stale"
-                  ? `Live owner · Stale ${r.time.forecastAgeDays}d · as of ${dShort(r.time.forecastAsOf)}`
-                  : "Live owner · Current"
+                : `Current read · inputs changed through ${dShort(r.time.executionInputsAsOf)}`
             }
             a={r.outcome.coverageState === "forecastable" ? (r.outcome.likely ? deliveryDay(r.outcome.likely) : "—") : "INCOMPLETE"}
             aLabel={
@@ -586,18 +589,20 @@ export default function CommandWorkspace({
           </div>
 
           <div data-shoot="cr-rail" className="flex w-[269px] shrink-0 flex-col" style={{ gap: 11 }}>
-            {/* SYSTEM STATUS — ages, never grades. There is no health model,
-                so the header states the OLDEST reading as a fact rather
-                than inventing a verdict for the whole page. */}
+            {/* SYSTEM STATUS — three timestamp contracts, never one grade.
+                Only successful ingestion/read receipts enter the header;
+                source history and saved reports retain their own labels. */}
             <RailPanel
               title="System Status"
               hue="var(--i-text)"
               sub={
-                r.oldestReading
-                  ? `Oldest ${r.oldestReading.label.toLowerCase()}, ${age(r.oldestReading.ageDays ?? 0)}`
-                  : "Nothing is dated"
+                r.missingPackageScopeNames.length
+                  ? `${r.missingPackageScopeNames.length} missing package ${plural(r.missingPackageScopeNames.length, "receipt", "receipts")}`
+                  : r.oldestSuccessfulRead
+                    ? `Oldest successful read ${age(r.oldestSuccessfulRead.ageDays ?? 0)}`
+                    : "No successful read receipt"
               }
-              dot="var(--i-mint)"
+              dot={r.missingPackageScopeNames.length ? "var(--i-amber)" : "var(--i-signal)"}
               shoot="cr-system-panel"
             >
               <div className="flex flex-col gap-[2px] pt-[6px]">
@@ -611,11 +616,13 @@ export default function CommandWorkspace({
                     <span className="truncate text-[11px]" style={{ color: "var(--i-text-soft)" }}>
                       {s.label}
                     </span>
-                    <span className="flex shrink-0 items-center gap-[7px]">
+                    <span className="flex shrink-0 items-center gap-[7px]" title={s.state}>
                       <span className="i-readout text-[11px]" style={{ color: "var(--i-text)" }}>
                         {s.ageDays === null ? "—" : age(s.ageDays)}
                       </span>
-                      <Dot colour="var(--i-mint)" />
+                      <span className="text-[7px] font-semibold tracking-[0.08em]" style={{ color: freshnessKindTone(s.kind) }}>
+                        {freshnessKindLabel(s.kind)}
+                      </span>
                     </span>
                   </Link>
                 ))}
@@ -829,26 +836,28 @@ export default function CommandWorkspace({
       >
         <StatusCell
           id="system"
-          label="System"
+          label="Successful reads"
           value={
-            r.oldestReading
-              ? `Oldest reading ${r.oldestReading.label.toLowerCase()}, ${age(r.oldestReading.ageDays ?? 0)}`
-              : "Nothing is dated"
+            r.missingPackageScopeNames.length
+              ? `${r.missingPackageScopeNames.length} package ${plural(r.missingPackageScopeNames.length, "receipt", "receipts")} missing`
+              : r.oldestSuccessfulRead
+                ? `Oldest ${r.oldestSuccessfulRead.label.toLowerCase()}, ${age(r.oldestSuccessfulRead.ageDays ?? 0)}`
+                : "No successful receipt"
           }
-          tone="var(--i-mint)"
+          tone={r.missingPackageScopeNames.length ? "var(--i-amber)" : "var(--i-signal)"}
         />
         <StatusCell
           id="data"
-          label="Data"
-          value={age(r.system.find((s) => s.id === "project")?.ageDays ?? 0)}
-          tone="var(--i-mint)"
+          label="Current read"
+          value={age(r.system.find((s) => s.id === "project-read")?.ageDays ?? 0)}
+          tone="var(--i-signal)"
           href="/portfolio"
         />
         <StatusCell
           id="forecast"
-          label="Forecast owner"
-          value={`${r.time.forecastCurrentness === "stale" ? `Stale · ${r.time.forecastAgeDays}d` : "Current"} · ${dLong(r.time.forecastAsOf)}`}
-          tone={r.time.forecastCurrentness === "stale" ? "var(--i-amber)" : "var(--i-signal)"}
+          label="Ticket basis"
+          value={`Changed through ${dLong(r.time.executionInputsAsOf)}`}
+          tone="var(--i-text-soft)"
           href="/forecast"
         />
         <StatusCell

@@ -55,6 +55,7 @@ import {
   type UndoState, type TimelineCommand, type PlanSnapshot,
 } from "@/lib/timeline/undo";
 import { contextualHref } from "@/lib/shell/context";
+import { formatInstantDate } from "@/lib/time/dateContract";
 
 const MIN_SPAN = 21 * DAY;
 /** How long a crossed event stays articulated before settling back into
@@ -186,6 +187,7 @@ export default function TimelinePageClient({ embedded = false }: { embedded?: bo
   useEffect(() => subscribeReality(() => { void load(); }), [load]);
 
   const nowT = data ? new Date(data.now).getTime() : Date.now();
+  const userTimeZone = useMemo(() => Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC", []);
   const bounds = useMemo(
     () => (data ? { startT: new Date(data.rangeStart).getTime(), endT: new Date(data.rangeEnd).getTime() } : { startT: 0, endT: 1 }),
     [data]
@@ -438,6 +440,17 @@ export default function TimelinePageClient({ embedded = false }: { embedded?: bo
   }, [memoryByScope]);
 
   const atNow = playheadT !== null && Math.abs(playheadT - nowT) < 12 * 3600 * 1000;
+  // NOW is an instant, so its visible calendar day belongs to the user's
+  // timezone. Every forecast, target and remembered date keeps using
+  // fmtDay/fmtFull's UTC DateOnly contract below and elsewhere.
+  const playheadDateLabel = atNow
+    ? formatInstantDate(new Date(nowT), {
+        timeZone: userTimeZone,
+        month: "short",
+        day: "numeric",
+        year: "numeric",
+      })
+    : fmtFull(playheadT ?? nowT);
   const liveFreshness = project.data && data
     ? sourceCurrentness(project.data.forecastSource.asOf, data.now)
     : null;
@@ -1081,7 +1094,7 @@ export default function TimelinePageClient({ embedded = false }: { embedded?: bo
                 className="i-readout text-[25px] leading-none mt-1.5"
                 style={{ color: atNow ? "var(--i-signal)" : "var(--i-violet)" }}
               >
-                {fmtFull(playheadT)}
+                {playheadDateLabel}
               </div>
               <div
                 className="text-[8.5px] mt-1.5"
@@ -1510,9 +1523,8 @@ export default function TimelinePageClient({ embedded = false }: { embedded?: bo
       {/* ── BOTTOM ──────────────────────────────────────────────────── */}
       <Transport
         playing={playing}
-        playheadT={playheadT}
-        nowT={nowT}
         atNow={atNow}
+        playheadDateLabel={playheadDateLabel}
         speed={speed}
         scaleLabel={scaleFor({ ...view, width: fieldW })}
         zoomPct={zoomPct}

@@ -1,4 +1,4 @@
-import { sampleOwnDays, sampleTriangular, summarizeCompletionDays, type SimulationResult, type WorkItem, type DecisionGate } from "./simulate";
+import { effortCompletionDay, sampleOwnDays, sampleTriangular, summarizeCompletionDays, type CapacityPhase, type SimulationResult, type WorkItem, type DecisionGate } from "./simulate";
 import { buildScenarioVariants, seededRandom, FORECAST_SEED, type Scenario } from "./scenarios";
 
 export interface ScopeSimulationSpec {
@@ -6,6 +6,10 @@ export interface ScopeSimulationSpec {
   items: WorkItem[];
   gates: DecisionGate[];
   teamCapacity: number;
+  /** Optional explicit-date capacity schedule, in calendar days from the
+      scenario's canonical simulation start. Omission preserves the static
+      Reality model exactly. */
+  capacityPhases?: CapacityPhase[];
   dependsOnScopeIds: string[];
   startDate: Date;
   targetDate: Date | null;
@@ -28,6 +32,15 @@ export class MissingDependencyError extends Error {
     this.name = "MissingDependencyError";
     this.scopeId = scopeId;
     this.missingDependencyId = missingDependencyId;
+  }
+}
+
+export class UnfinishableCapacityScheduleError extends Error {
+  scopeId: string;
+  constructor(scopeId: string, reason: string) {
+    super(`Scope ${scopeId} cannot finish under its phased capacity plan: ${reason}`);
+    this.name = "UnfinishableCapacityScheduleError";
+    this.scopeId = scopeId;
   }
 }
 
@@ -99,8 +112,29 @@ export function runPortfolioTrials(specs: ScopeSimulationSpec[], trials = 5000, 
   const byId = new Map(specs.map((s) => [s.scopeId, s]));
   const order = topologicalOrder(specs);
   for (const spec of specs) {
-    if (spec.teamCapacity <= 0 && spec.items.some((item) => item.high > 0)) {
-      throw new Error(`Scope ${spec.scopeId} has work but no capacity. Staff the project before forecasting it.`);
+    const maximumEffort = spec.items.reduce(
+      (total, item) => total + Math.max(0, item.low, item.likely, item.high),
+      0,
+    );
+    if (maximumEffort <= 0) continue;
+    if (!spec.capacityPhases) {
+      if (spec.teamCapacity <= 0) {
+        throw new Error(`Scope ${spec.scopeId} has work but no capacity. Staff the project before forecasting it.`);
+      }
+      continue;
+    }
+    const maximumGateDelay = spec.gates.reduce(
+      (total, gate) => total + Math.max(0, gate.low, gate.likely, gate.high),
+      0,
+    );
+    try {
+      // Preflight the full stated estimate range. A plan that funds only the
+      // optimistic draws is not published as a distribution containing
+      // hidden infinite outcomes.
+      effortCompletionDay(maximumEffort, spec.teamCapacity, spec.capacityPhases, maximumGateDelay);
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : "Work has no funded future capacity.";
+      throw new UnfinishableCapacityScheduleError(spec.scopeId, reason);
     }
   }
 
@@ -122,10 +156,32 @@ export function runPortfolioTrials(specs: ScopeSimulationSpec[], trials = 5000, 
         return sampleTriangular(value.low, value.likely, value.high, () => uniform);
       };
       const effort = streams.items.reduce((sum, stream) => sum + sample(stream), 0);
-      let days = sampling === "legacy-shared-seed-v1"
-        ? sampleOwnDays(spec.items, spec.gates, spec.teamCapacity, legacyStreams.get(scopeId)!)
-        : effort / (spec.teamCapacity > 0 ? spec.teamCapacity : 1)
-          + streams.gates.reduce((sum, stream) => sum + sample(stream), 0);
+      let days: number;
+      if (sampling === "legacy-shared-seed-v1" && !spec.capacityPhases) {
+        days = sampleOwnDays(spec.items, spec.gates, spec.teamCapacity, legacyStreams.get(scopeId)!);
+      } else if (sampling === "legacy-shared-seed-v1") {
+        // Historical replay never contains capacityPhases. Keep this branch
+        // deterministic if a caller nevertheless explicitly requests it.
+        const random = legacyStreams.get(scopeId)!;
+        const sampledEffort = spec.items.reduce(
+          (sum, item) => sum + sampleTriangular(item.low, item.likely, item.high, random),
+          0,
+        );
+        const decisionDelay = spec.gates.reduce(
+          (sum, gate) => sum + sampleTriangular(gate.low, gate.likely, gate.high, random),
+          0,
+        );
+        days = effortCompletionDay(sampledEffort, spec.teamCapacity, spec.capacityPhases, decisionDelay);
+      } else {
+        const decisionDelay = streams.gates.reduce((sum, stream) => sum + sample(stream), 0);
+        // With dated capacity a blocking decision consumes calendar time before
+        // work can start. Integrate effort from that absolute day so capacity
+        // which leaves during the gate cannot be spent retroactively. Keep the
+        // static expression unchanged to preserve established outputs exactly.
+        days = spec.capacityPhases
+          ? effortCompletionDay(effort, spec.teamCapacity, spec.capacityPhases, decisionDelay)
+          : effort / (spec.teamCapacity > 0 ? spec.teamCapacity : 1) + decisionDelay;
+      }
       for (const depId of spec.dependsOnScopeIds) {
         // Safe: topological order guarantees depId's array already has
         // this trial's entry pushed before scopeId is processed.
@@ -179,6 +235,14 @@ export function buildPortfolioScenarios(
             items: variant.items,
             gates: variant.gates,
             teamCapacity: variant.teamCapacity,
+            ...(spec.capacityPhases && variant.teamCapacity !== spec.teamCapacity
+              ? {
+                  capacityPhases: spec.capacityPhases.map((phase) => ({
+                    ...phase,
+                    teamCapacity: phase.teamCapacity + (variant.teamCapacity - spec.teamCapacity),
+                  })),
+                }
+              : {}),
           }
         : spec
     );

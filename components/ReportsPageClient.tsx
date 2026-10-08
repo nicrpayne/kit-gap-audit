@@ -1,4 +1,5 @@
 "use client";
+import SavedScenarios from "@/components/instrument/SavedScenarios";
 
 import { useEffect, useState, useCallback, useMemo, useRef } from "react";
 import Link from "@/components/instrument/SignalLink";
@@ -30,6 +31,15 @@ import {
 import { acceptedEstimateIdentity, knowledgeEstimateItemId } from "@/lib/scope/knowledgeEstimates";
 import { ambiguousScenarioItemLeverMessage, findAmbiguousScenarioItemLevers } from "@/lib/scenario/itemLeverScope";
 import { formatReportGeneratedDate } from "@/lib/reports/generatedAtPresentation";
+import {
+  classifyReportLiveForecast,
+  comparisonAttemptAfterHistoryRefresh,
+  mergeReportReceipts,
+  parseReportHistoryEnvelope,
+  reportsFromMutationReceipt,
+  responseErrorMessage,
+  type ClientReportRow,
+} from "@/lib/reports/clientLifecycle";
 
 /** The live forecast is a comparison input, not report data. Three states,
     because "we could not resolve it" must be distinguishable from "it
@@ -44,25 +54,7 @@ interface ScopeOption {
   name: string;
 }
 
-interface ReportRow {
-  id: string;
-  generatedAt: string;
-  targetDate: string | null;
-  likelyDate: string;
-  confidenceAtTarget: number | null;
-  likelyDateDeltaDays: number | null;
-  shippedCount: number;
-  blockingCount: number;
-  resolvedSinceLastCount: number;
-  summaryMarkdown: string;
-  briefVersion: string | null;
-  briefSnapshot: unknown;
-  mode: string | null;
-  recipeVersion: string | null;
-  briefRecipe: unknown;
-  presentationVersion: string | null;
-  scenarioSnapshot: unknown;
-}
+type ReportRow = ClientReportRow;
 
 function formatTimestampDate(iso: string): string {
   return new Date(iso).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
@@ -78,9 +70,11 @@ export default function ReportsPageClient() {
   );
   const [reports, setReports] = useState<ReportRow[] | null>(null);
   const [selected, setSelected] = useState<ReportRow | null>(null);
+  const historyRequest = useRef(0);
   const [generating, setGenerating] = useState(false);
   const comparisonAttempt = useRef<{ signature: string; id: string } | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const [live, setLive] = useState<LiveForecast | null>(null);
   const [audience, setAudience] = useState<AudienceLens>("delivery-leadership");
   const [purpose, setPurpose] = useState<BriefPurpose>("weekly-update");
@@ -140,14 +134,46 @@ export default function ReportsPageClient() {
   }, []);
 
   const loadReports = useCallback(async (id: string) => {
+    const request = ++historyRequest.current;
     const res = await fetch(`/api/reports?scopeId=${encodeURIComponent(id)}`);
-    const body = await res.json();
-    setReports(body.reports);
-    setSelected(body.reports[0] ?? null);
+    const body: unknown = await res.json().catch(() => null);
+    if (!res.ok) throw new Error(responseErrorMessage(body, `Report history could not be loaded (${res.status}).`));
+    const nextReports = parseReportHistoryEnvelope(body);
+    if (request !== historyRequest.current) return nextReports;
+    setReports(nextReports);
+    setSelected(nextReports[0] ?? null);
+    return nextReports;
   }, []);
 
+  function installMutationReceipts(body: unknown) {
+    const receipts = reportsFromMutationReceipt(body);
+    if (!receipts.length) return;
+    setReports((current) => mergeReportReceipts(current ?? [], receipts));
+    setSelected(mergeReportReceipts([], receipts)[0] ?? null);
+  }
+
+  async function refreshAfterPersist(id: string, success: string): Promise<boolean> {
+    try {
+      await loadReports(id);
+      setNotice(success);
+      return true;
+    } catch (cause) {
+      setNotice(`${success} History refresh failed: ${cause instanceof Error ? cause.message : "unknown response"} Close and reopen Reports to retry the read.`);
+      return false;
+    }
+  }
+
   useEffect(() => {
-    if (scopeId) loadReports(scopeId);
+    if (!scopeId) return;
+    let cancelled = false;
+    setReports(null);
+    setSelected(null);
+    setError(null);
+    setNotice(null);
+    void loadReports(scopeId).catch((cause: unknown) => {
+      if (!cancelled) setError(cause instanceof Error ? cause.message : "Report history could not be loaded.");
+    });
+    return () => { cancelled = true; };
   }, [scopeId, loadReports]);
 
   // THE LIVE FORECAST, FOR COMPARISON ONLY. A stored report cannot say
@@ -200,9 +226,14 @@ export default function ReportsPageClient() {
       liveUnavailableReason: live?.state === "error" ? live.reason : live?.state === "loading" ? "still loading" : live?.state === "ready" && live.coverageState !== "forecastable" ? live.coverageLabel : null,
     });
   }, [selected, live]);
-  const forecastPending = live === null || live.state === "loading";
-  const forecastUnavailable = live?.state === "error" && live.reason.includes("FORECAST UNAVAILABLE");
-  const forecastIncomplete = live?.state === "ready" && live.coverageState !== "forecastable";
+  const liveGate = classifyReportLiveForecast(live);
+  const forecastPending = liveGate === "pending";
+  const forecastUnavailable = liveGate === "unavailable";
+  const forecastIncomplete = liveGate === "incomplete";
+  const forecastUnavailableReason = live?.state === "error" ? live.reason : null;
+  const forecastIncompleteReason = live?.state === "ready" && live.coverageState !== "forecastable"
+    ? live.coverageReason ?? live.coverageLabel
+    : null;
   const attentionScope = project.data?.scopes.find((scope) => scope.scopeId === scopeId);
   const nextStep = attentionScope ? deliveryNextAction({ scopeId: attentionScope.scopeId, coverage: attentionScope.forecastCoverage, capacityReconciles: attentionScope.capacityContract.reconciles }) : null;
   const unstaffedCapacityFte = project.scenario.capacityPlan
@@ -270,6 +301,10 @@ export default function ReportsPageClient() {
         ? "Stage at least one Scope, estimate, staffing, Capacity, or decision lever in Scenario first."
         : project.scenarioPreviewRefusal
           ? project.scenarioPreviewRefusal.message
+        : project.previewPending
+          ? "Signal is recalculating this Scenario. Wait for the updated preview before generating its comparison."
+        : project.simulationError
+          ? project.simulationError
         : unreviewedKnowledgeReason
           ? unreviewedKnowledgeReason
         : ambiguousItemLeverReason
@@ -285,24 +320,26 @@ export default function ReportsPageClient() {
         : forecastPending
           ? "Signal is checking the current Forecast and coverage gate."
         : forecastUnavailable
-          ? live.reason
+          ? forecastUnavailableReason ?? "Current Forecast is unavailable."
           : forecastIncomplete
-            ? `${live.coverageReason ?? live.coverageLabel}. Reconcile execution coverage in Scope before publishing a Reality versus Scenario delivery brief.`
+            ? `${forecastIncompleteReason ?? "Delivery inputs need review"}. Reconcile execution coverage in Scope before publishing a Reality versus Scenario delivery brief.`
             : null;
 
   async function generate() {
     if (!scopeId) return;
     setGenerating(true);
     setError(null);
+    setNotice(null);
     try {
       const res = await fetch("/api/reports", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ scopeId, recipe: buildBriefRecipe(audience, purpose) }),
       });
-      const body = await res.json();
-      if (!res.ok) throw new Error(body.error ?? "Couldn't generate report.");
-      await loadReports(scopeId);
+      const body: unknown = await res.json().catch(() => null);
+      if (!res.ok) throw new Error(responseErrorMessage(body, "Couldn't generate report."));
+      installMutationReceipts(body);
+      await refreshAfterPersist(scopeId, "Report saved successfully.");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong.");
     } finally {
@@ -328,6 +365,7 @@ export default function ReportsPageClient() {
       staffingCapabilityIds: Object.keys(project.scenario.capabilityStaffingById),
       capacityOverrideScopeIds: Object.keys(project.scenario.capacityOverrideByScope),
       hasCapacityPlan: Boolean(project.scenario.capacityPlan),
+      hasPhasedCapacityPlan: Boolean(project.scenario.phasedCapacityPlan),
       contextSwitchCostPct: project.scenario.contextSwitchCostPct,
     });
     if (supportedLeverCount === 0) {
@@ -336,6 +374,7 @@ export default function ReportsPageClient() {
     }
     setGenerating(true);
     setError(null);
+    setNotice(null);
     let scenarioId = `scenario-${crypto.randomUUID()}`;
     const scenarioSnapshot = {
       decisionPlans: project.scenario.decisionPlans,
@@ -351,6 +390,7 @@ export default function ReportsPageClient() {
       remainingEstimateByCapabilityId: project.scenario.remainingEstimateByCapabilityId,
       capabilityStaffingById: project.scenario.capabilityStaffingById,
       capacityPlan: project.scenario.capacityPlan,
+      phasedCapacityPlan: project.scenario.phasedCapacityPlan,
       capacityOverrideByScope: project.scenario.capacityOverrideByScope,
       contextSwitchCostPct: project.scenario.contextSwitchCostPct,
     };
@@ -364,10 +404,13 @@ export default function ReportsPageClient() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ scopeId, mode: "comparison", scenarioId, scenarioSnapshot, recipe: buildBriefRecipe(audience, purpose) }),
       });
-      const body = await response.json();
-      if (!response.ok) throw new Error(body.error ?? "Couldn't save the comparison. Neither report was saved.");
-      await loadReports(scopeId);
-      comparisonAttempt.current = null;
+      const body: unknown = await response.json().catch(() => null);
+      if (!response.ok) throw new Error(responseErrorMessage(body, "Couldn't save the comparison. Neither report was saved."));
+      installMutationReceipts(body);
+      const refreshed = await refreshAfterPersist(scopeId, "Reality and Scenario reports saved successfully.");
+      // If the read failed, retain the stable comparison id. Retrying the
+      // exact snapshot replays the persisted pair instead of creating another.
+      comparisonAttempt.current = comparisonAttemptAfterHistoryRefresh(comparisonAttempt.current, refreshed);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Couldn't generate Scenario report.");
     } finally {
@@ -394,12 +437,14 @@ export default function ReportsPageClient() {
   return (
     <div>
       {!forecastPending && nextStep && <AttentionCallout {...nextStep} />}
-      {!forecastPending && !nextStep && (forecastUnavailable || forecastIncomplete) && <AttentionCallout title="Review the inputs blocking this report" detail={live?.state === "ready" ? live.coverageReason ?? live.coverageLabel : live?.state === "error" ? live.reason : "Delivery inputs need review."} label="Review sources in Audit" href={`/audit?project=${encodeURIComponent(scopeId ?? "")}`} />}
+      {!forecastPending && !nextStep && forecastIncomplete && <AttentionCallout title="Review the inputs blocking this report" detail={live?.state === "ready" ? live.coverageReason ?? live.coverageLabel : "Delivery inputs need review."} label="Review sources in Audit" href={`/audit?project=${encodeURIComponent(scopeId ?? "")}`} />}
       <div className="flex items-center gap-3 mb-6 flex-wrap">
+        <SavedScenarios />
         {scopes.length > 1 && (
           <select
             value={scopeId ?? ""}
             onChange={(e) => setScopeId(e.target.value)}
+            disabled={generating}
             className="rounded-md border border-[var(--i-border)] bg-[var(--i-panel)] px-3 py-2 text-sm text-[var(--i-text)]"
           >
             {scopes.map((s) => (
@@ -413,7 +458,7 @@ export default function ReportsPageClient() {
           onClick={generate}
           data-attention={!generating && scopeId && !forecastPending && !forecastUnavailable && !forecastIncomplete && !nextStep && !error && reports?.length === 0 ? "review" : undefined}
           disabled={generating || !scopeId || forecastPending || forecastUnavailable || forecastIncomplete}
-          title={forecastPending ? "Signal is checking the current Forecast and coverage gate." : forecastIncomplete ? `${live.coverageReason ?? live.coverageLabel}. Reconcile execution coverage in Scope before publishing a delivery brief.` : undefined}
+          title={forecastPending ? "Signal is checking the current Forecast and coverage gate." : forecastIncomplete ? `${forecastIncompleteReason ?? "Delivery inputs need review"}. Reconcile execution coverage in Scope before publishing a delivery brief.` : undefined}
           className="i-btn-primary px-4 py-2 text-sm"
         >
           {generating ? "Generating…" : forecastPending ? "Checking readiness…" : forecastIncomplete ? "Resolve coverage to report" : "Generate report"}
@@ -471,7 +516,8 @@ export default function ReportsPageClient() {
       )}
 
       {error && <div role="alert" data-attention="notice" className="rounded p-3 text-sm text-[var(--i-red)] mb-4">{error}</div>}
-      {live?.state === "error" && !forecastUnavailable && !error && <AttentionError message={live.reason} />}
+      {notice && <div role="status" className="rounded p-3 text-sm text-[var(--i-mint)] mb-4">{notice}</div>}
+      {live?.state === "error" && !error && <AttentionError message={live.reason} />}
       {selected && selectedBrief && selectedRecipe && <section className="report-no-print mb-4 rounded-lg border border-[var(--i-border)] p-4" aria-label="Saved report handoff">
         <h2 className="font-semibold">Share the saved brief</h2>
         <p className="mt-1 text-xs text-[var(--i-text-soft)]">Preview and export this exact saved snapshot. Private names, quotes and links are included; review before sharing. No Site is published automatically.</p>
@@ -542,7 +588,7 @@ export default function ReportsPageClient() {
             </>
           ) : (
             <div className="text-sm text-[var(--color-ink-soft)] py-8 text-center">
-              {forecastUnavailable ? <><strong className="block text-[var(--i-amber)]">REPORT UNAVAILABLE</strong><span className="mt-2 block">{live.reason}. The project remains selectable; Signal will not fabricate a finished brief from absent execution data.</span></> : forecastIncomplete ? <><strong className="block text-[var(--i-amber)]">REPORT NOT READY</strong><span className="mt-2 block">{live.coverageReason}. The modeled subset is not promoted into a project delivery brief.</span></> : <>No reports yet for this scope — click &ldquo;Generate report&rdquo;.</>}
+              {forecastUnavailable ? <><strong className="block text-[var(--i-amber)]">REPORT UNAVAILABLE</strong><span className="mt-2 block">{forecastUnavailableReason ?? "Current Forecast could not be read"}. The project remains selectable; Signal will not fabricate a finished brief from absent execution data.</span></> : forecastIncomplete ? <><strong className="block text-[var(--i-amber)]">REPORT NOT READY</strong><span className="mt-2 block">{forecastIncompleteReason ?? "Delivery inputs need review"}. The modeled subset is not promoted into a project delivery brief.</span></> : <>No reports yet for this scope — click &ldquo;Generate report&rdquo;.</>}
             </div>
           )}
         </div>

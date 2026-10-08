@@ -30,6 +30,12 @@ export interface SimulationInput {
   random?: () => number; // injectable for tests
 }
 
+/** Effective developer capacity from a calendar-day offset onward. */
+export interface CapacityPhase {
+  startDay: number;
+  teamCapacity: number;
+}
+
 export interface SimulationResult {
   likelyDate: Date;
   earliestDate: Date;
@@ -131,6 +137,66 @@ export function sampleOwnDays(
     decisionDelay += sampleTriangular(gate.low, gate.likely, gate.high, random);
   }
   return effort / capacity + decisionDelay;
+}
+
+/**
+ * Convert sampled developer-days into calendar days under a dated capacity
+ * schedule. `startDay` is the absolute calendar offset after any blocking
+ * serial delay. A zero-capacity opening waits for a later funded phase; a
+ * final zero-capacity phase is an explicit impossibility, never a hidden 1 FTE
+ * fallback or an Infinity date.
+ */
+export function effortCompletionDay(
+  effort: number,
+  teamCapacity: number,
+  capacityPhases?: CapacityPhase[],
+  startDay = 0,
+): number {
+  if (!Number.isFinite(startDay) || startDay < 0) {
+    throw new Error("Phased work start must be a finite non-negative calendar-day offset.");
+  }
+  if (effort <= 0) return startDay;
+  if (!capacityPhases) {
+    if (!Number.isFinite(teamCapacity) || teamCapacity <= 0) {
+      throw new Error("Work has no funded capacity and cannot complete.");
+    }
+    return startDay + effort / teamCapacity;
+  }
+  if (capacityPhases.length === 0 || capacityPhases[0].startDay !== 0) {
+    throw new Error("A phased capacity schedule must begin at calendar day 0.");
+  }
+  let previousDay = -1;
+  for (const phase of capacityPhases) {
+    if (!Number.isInteger(phase.startDay) || phase.startDay < 0 || phase.startDay <= previousDay) {
+      throw new Error("Phased capacity dates must be strictly increasing whole calendar-day offsets.");
+    }
+    if (!Number.isFinite(phase.teamCapacity) || phase.teamCapacity < 0) {
+      throw new Error("Phased capacity must be a finite non-negative FTE value.");
+    }
+    previousDay = phase.startDay;
+  }
+
+  let remaining = effort;
+  let cursor = startDay;
+  for (let index = 0; index < capacityPhases.length; index += 1) {
+    const phase = capacityPhases[index];
+    const next = capacityPhases[index + 1];
+    if (next && cursor >= next.startDay) continue;
+    const segmentStart = Math.max(cursor, phase.startDay);
+    if (!next) {
+      if (phase.teamCapacity <= 0) throw new Error("Work has no funded future capacity and cannot complete.");
+      return segmentStart + remaining / phase.teamCapacity;
+    }
+    if (phase.teamCapacity <= 0) {
+      cursor = next.startDay;
+      continue;
+    }
+    const available = (next.startDay - segmentStart) * phase.teamCapacity;
+    if (remaining <= available) return segmentStart + remaining / phase.teamCapacity;
+    remaining -= available;
+    cursor = next.startDay;
+  }
+  throw new Error("Work has no funded future capacity and cannot complete.");
 }
 
 // Turns a raw (any order) array of per-trial completion days into the

@@ -29,8 +29,9 @@
 // truthful value. "Portfolio Health" becomes release composition;
 // "Risk Signals · High/Medium" becomes current constraints with their own
 // real quantities; "Scope Alignment 98%" and "Capacity Health: Good"
-// become dated feeds; "All systems nominal" becomes the oldest reading on
-// the page. None of those substitutions is silent — each is in the audit.
+// become dated feeds; "All systems nominal" becomes the oldest successful
+// ingestion/read receipt, while source and report ages remain separately
+// labelled. None of those substitutions is silent — each is in the audit.
 //
 // The mockup's "+ Add event" is deliberately absent: this surface writes
 // nothing, and a control that implies otherwise would be the one lie on
@@ -40,11 +41,10 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "@/components/instrument/SignalLink";
 import InstrumentShell from "@/components/instrument/InstrumentShell";
 import { AttentionCallout } from "@/components/instrument/Attention";
-import { deliveryNextAction } from "@/lib/instrument/nextAction";
 import { SignalControl, SignalStateMark } from "@/components/instrument/SignalPrimitives";
 import TimelinePageClient from "@/components/TimelinePageClient";
 import { Panel, PanelDoor, Row } from "@/components/control-room/Panels";
-import { Telemetry, TelemetryStrip, DOMAIN_ACCENT } from "@/components/control-room/Telemetry";
+import { Telemetry, TelemetryStrip } from "@/components/control-room/Telemetry";
 import StatusBar from "@/components/control-room/StatusBar";
 import ProjectField from "@/components/control-room/ProjectField";
 import Inspector from "@/components/control-room/Inspector";
@@ -55,6 +55,8 @@ import { useProject, EMPTY_SCENARIO } from "@/lib/instrument/useProject";
 import { useDecisions } from "@/lib/decisions/useDecisions";
 import { subscribeReality } from "@/lib/instrument/reality";
 import { readControlRoom, type ControlRoomReading } from "@/lib/control-room/read";
+import type { ControlRoomRefreshReceipt, FreshnessKind } from "@/lib/control-room/freshness";
+import { controlRoomNextAction } from "@/lib/control-room/readiness";
 import { readProjectField, type Selection } from "@/lib/control-room/field";
 import {
   DEFAULT_WORKSPACE,
@@ -90,12 +92,18 @@ const age = (days: number) => {
   return `${Math.round(days)}d`;
 };
 const plural = (n: number, one: string, many: string) => (n === 1 ? one : many);
+const freshnessKindLabel = (kind: FreshnessKind) =>
+  kind === "read_receipt" ? "READ" : kind === "source_observation" ? "SOURCE" : "REPORT";
+const freshnessKindTone = (kind: FreshnessKind) =>
+  kind === "read_receipt" ? "var(--i-signal)" : kind === "source_observation" ? "var(--i-source)" : "var(--i-cool)";
 
 export default function ControlRoomPageClient() {
   const m = useProject();
   const dec = useDecisions();
   const [timeline, setTimeline] = useState<TimelineProjection | null>(null);
   const [tlError, setTlError] = useState<string | null>(null);
+  const [refreshReceipts, setRefreshReceipts] = useState<ControlRoomRefreshReceipt[] | null>(null);
+  const refreshReceiptRequest = useRef(0);
 
   // WHICH WORKSPACE THIS PERSON IS IN. Read from localStorage after mount,
   // so the server and the first client render agree; a stored preference is
@@ -144,6 +152,63 @@ export default function ControlRoomPageClient() {
   }, [loadTimeline]);
   useEffect(() => subscribeReality(() => void loadTimeline()), [loadTimeline]);
 
+  // Refresh receipts live beside Audit rather than inside the forecast
+  // payload. Read them separately so a package receipt, an origin read and
+  // a ticket's own update date cannot be collapsed into one faux freshness
+  // timestamp. This is GET-only and never starts a refresh.
+  const freshnessScopeKey = JSON.stringify((m.data?.scopes ?? []).map((scope) => ({
+    scopeId: scope.scopeId,
+    scopeName: scope.name,
+  })));
+  const loadRefreshReceipts = useCallback(async () => {
+    const token = ++refreshReceiptRequest.current;
+    const scopes = JSON.parse(freshnessScopeKey) as { scopeId: string; scopeName: string }[];
+    if (!scopes.length) {
+      setRefreshReceipts([]);
+      return;
+    }
+    const receipts = await Promise.all(scopes.map(async (scope): Promise<ControlRoomRefreshReceipt> => {
+      try {
+        const response = await fetch(`/api/audit/knowledge?scopeId=${encodeURIComponent(scope.scopeId)}`, { cache: "no-store" });
+        const body = await response.json().catch(() => ({})) as {
+          error?: string;
+          knowledge?: {
+            lastPackageAt: string | null;
+            evidenceObservedAt: { oldest: string | null; newest: string | null };
+            latestRun: { status: string; completedAt: string | null } | null;
+          };
+        };
+        if (!response.ok || !body.knowledge) throw new Error(body.error ?? `Receipt unavailable (${response.status})`);
+        return {
+          scopeId: scope.scopeId,
+          scopeName: scope.scopeName,
+          lastPackageAt: body.knowledge.lastPackageAt,
+          evidenceObservedAt: body.knowledge.evidenceObservedAt,
+          latestRun: body.knowledge.latestRun,
+        };
+      } catch (error) {
+        return {
+          scopeId: scope.scopeId,
+          scopeName: scope.scopeName,
+          lastPackageAt: null,
+          evidenceObservedAt: { oldest: null, newest: null },
+          latestRun: null,
+          error: error instanceof Error ? error.message : "Receipt unavailable",
+        };
+      }
+    }));
+    if (refreshReceiptRequest.current === token) setRefreshReceipts(receipts);
+  }, [freshnessScopeKey]);
+  useEffect(() => {
+    setRefreshReceipts(null);
+    void loadRefreshReceipts();
+  }, [loadRefreshReceipts]);
+  useEffect(() => {
+    const refresh = () => void loadRefreshReceipts();
+    window.addEventListener("signal-audit-refresh-complete", refresh);
+    return () => window.removeEventListener("signal-audit-refresh-complete", refresh);
+  }, [loadRefreshReceipts]);
+
   // WHEN THIS BROWSER LAST RECEIVED THE PROJECT PAYLOAD. Nothing on the
   // server knows when a particular client last asked, and the payload
   // carries no stamp of its own — so the only honest answer is the one this
@@ -163,6 +228,7 @@ export default function ControlRoomPageClient() {
     if (!m.data || !m.preview || !m.baseline || !timeline) return null;
     return readControlRoom({
       dataReceivedAt: received.current.at,
+      refreshReceipts,
       // The Timeline's own NOW, so the whole page agrees with the score at
       // its centre rather than with whatever the browser clock says.
       now: new Date(timeline.now),
@@ -178,7 +244,7 @@ export default function ControlRoomPageClient() {
       timelineCandidates: timeline.candidates ?? [],
       timelineRangeEnd: timeline.rangeEnd ? new Date(timeline.rangeEnd) : null,
     });
-  }, [m.data, m.preview, m.baseline, m.floorByScope, m.scenario, m.active, dec.data, timeline]);
+  }, [m.data, m.preview, m.baseline, m.floorByScope, m.scenario, m.active, dec.data, timeline, refreshReceipts]);
 
   const field = useMemo(() => {
     if (!m.data || !m.preview || !m.baseline || !timeline) return null;
@@ -237,7 +303,7 @@ export default function ControlRoomPageClient() {
           <HeaderField
             label="Last saved forecast report"
             value={reading.time.lastForecastAt ? dLong(reading.time.lastForecastAt) : "never run"}
-            tone={reading.time.lastForecastAt ? "var(--i-amber)" : "var(--i-text-faint)"}
+            tone={reading.time.lastForecastAt ? "var(--i-cool)" : "var(--i-text-faint)"}
             shoot="cr-forecast-age"
           />
         </>
@@ -405,7 +471,7 @@ export default function ControlRoomPageClient() {
 
   const r = reading;
   const gatingConfidence = r.outcome.confidenceHistory.find((s) => s.id === r.outcome.gatedByScopeId) ?? null;
-  const forecastTone = m.active ? "var(--i-violet)" : r.time.forecastCurrentness === "stale" ? "var(--i-amber)" : "var(--i-signal)";
+  const forecastTone = m.active ? "var(--i-violet)" : "var(--i-signal)";
 
   // THE COMMAND WORKSPACE IS A FIXED COMPOSITION, not a set of surfaces
   // that happen to be on. It is the approved Master Control Room layout,
@@ -416,10 +482,7 @@ export default function ControlRoomPageClient() {
   // uses the flexible layout below, which honours whatever surfaces are
   // switched on. That is the whole customization contract: the default is
   // designed, and the moment you change it, it is yours.
-  const nextStep = m.data?.scopes.flatMap((scope) => {
-    const action = deliveryNextAction({ scopeId: scope.scopeId, coverage: scope.forecastCoverage, capacityReconciles: scope.capacityContract.reconciles });
-    return action ? [{ ...action, title: `${scope.name}: ${action.title}` }] : [];
-  })[0];
+  const nextStep = controlRoomNextAction(m.data?.scopes ?? []);
   if (workspace.lens === "command" && m.data) {
     return (
       <InstrumentShell stateBar={strip}>
@@ -553,7 +616,7 @@ export default function ControlRoomPageClient() {
                   label="Likely outcome"
                   question="What we believe will happen"
                   value={r.outcome.coverageState === "forecastable" ? (r.outcome.likely ? deliveryDay(r.outcome.likely) : "—") : "INCOMPLETE"}
-                  unit={r.outcome.coverageState === "forecastable" ? (r.time.forecastCurrentness === "stale" ? `Stale · ${r.time.forecastAgeDays}d · as of ${dShort(r.time.forecastAsOf)}` : r.outcome.gatedBy ? `${r.outcome.gatedBy} lands last` : "Nothing simulated") : `${r.outcome.coverageScopeNames.join(", ")} execution coverage`}
+                  unit={r.outcome.coverageState === "forecastable" ? (r.outcome.gatedBy ? `${r.outcome.gatedBy} lands last` : "Nothing simulated") : `${r.outcome.coverageScopeNames.join(", ")} execution coverage`}
                   valueTone={forecastTone}
                   second={r.outcome.coverageState === "modeled_subset" && r.outcome.likely ? `~${deliveryDay(r.outcome.likely)}` : r.outcome.confidence !== null ? `${r.outcome.confidence}%` : "No target"}
                   secondLabel={r.outcome.coverageState === "modeled_subset" ? "Modeled subset" : r.outcome.confidence !== null ? "Confidence" : "to measure against"}
@@ -676,19 +739,16 @@ export default function ControlRoomPageClient() {
                       title="System status"
                       shoot="cr-system-panel"
                       className="shrink-0"
-                      accent="var(--i-mint)"
-                      note={
-                        r.oldestReading
-                          ? `oldest ${r.oldestReading.label.toLowerCase()}, ${age(r.oldestReading.ageDays ?? 0)}`
-                          : null
-                      }
+                      accent={r.missingPackageScopeNames.length ? "var(--i-amber)" : "var(--i-signal)"}
+                      note={r.missingPackageScopeNames.length
+                        ? `${r.missingPackageScopeNames.length} missing package ${plural(r.missingPackageScopeNames.length, "receipt", "receipts")}`
+                        : r.oldestSuccessfulRead
+                          ? `oldest successful read ${age(r.oldestSuccessfulRead.ageDays ?? 0)}`
+                          : null}
                     >
-                      {/* HOW OLD IS WHAT I AM LOOKING AT. Timestamps only —
-                          no green/amber/red verdict, because grading a feed
-                          needs a threshold nobody has set, and a feed we
-                          cannot date is left out rather than guessed at.
-                          Two columns, so five feeds cost three rows of the
-                          rail instead of five. */}
+                      {/* READ, SOURCE and REPORT are different contracts.
+                          The tag replaces the old green status dot: an old
+                          quote is history, not proof that ingestion failed. */}
                       <div className="grid grid-cols-2 gap-x-2 gap-y-[3px]">
                         {r.system.map((s) => (
                           <Link
@@ -700,14 +760,13 @@ export default function ControlRoomPageClient() {
                             <span className="truncate text-[10px]" style={{ color: "var(--i-text-soft)" }}>
                               {s.label}
                             </span>
-                            <span className="flex shrink-0 items-center gap-1">
+                            <span className="flex shrink-0 items-center gap-1.5" title={s.state}>
                               <span className="i-readout text-[10px]" style={{ color: "var(--i-text)" }}>
                                 {s.ageDays === null ? "—" : age(s.ageDays)}
                               </span>
-                              <span
-                                className="h-[5px] w-[5px] rounded-full"
-                                style={{ background: "var(--i-mint)", opacity: 0.85 }}
-                              />
+                              <span className="text-[7px] font-semibold tracking-[0.08em]" style={{ color: freshnessKindTone(s.kind) }}>
+                                {freshnessKindLabel(s.kind)}
+                              </span>
                             </span>
                           </Link>
                         ))}
@@ -939,7 +998,7 @@ export default function ControlRoomPageClient() {
                   href="/portfolio"
                   action="Portfolio"
                   shoot="cr-surf-capacity"
-                  accent="var(--i-mint)"
+                  accent={r.missingPackageScopeNames.length ? "var(--i-amber)" : "var(--i-signal)"}
                   // THE GAP, IN THE HEADER. Allocations carry no timestamps
                   // and there is no capacity snapshot anywhere in the schema,
                   // so no trend can be drawn honestly — and today's value
@@ -1113,11 +1172,11 @@ export default function ControlRoomPageClient() {
                   title="System status"
                   shoot="cr-surf-system"
                   accent="var(--i-mint)"
-                  note={
-                    r.oldestReading
-                      ? `oldest ${r.oldestReading.label.toLowerCase()}, ${age(r.oldestReading.ageDays ?? 0)}`
-                      : null
-                  }
+                  note={r.missingPackageScopeNames.length
+                    ? `${r.missingPackageScopeNames.length} missing package ${plural(r.missingPackageScopeNames.length, "receipt", "receipts")}`
+                    : r.oldestSuccessfulRead
+                      ? `oldest successful read ${age(r.oldestSuccessfulRead.ageDays ?? 0)}`
+                      : null}
                 >
                   <div className="i-noscrollbar i-fade-b flex h-full flex-col gap-[3px] overflow-y-auto">
                     {r.system.map((s) => (
@@ -1130,11 +1189,13 @@ export default function ControlRoomPageClient() {
                         <span className="truncate text-[11px]" style={{ color: "var(--i-text-soft)" }}>
                           {s.label}
                         </span>
-                        <span className="flex shrink-0 items-center gap-1.5">
+                        <span className="flex shrink-0 items-center gap-1.5" title={s.state}>
                           <span className="i-readout text-[10.5px]" style={{ color: "var(--i-text)" }}>
                             {s.ageDays === null ? "—" : age(s.ageDays)}
                           </span>
-                          <span className="h-1.5 w-1.5 rounded-full" style={{ background: "var(--i-mint)", opacity: 0.85 }} />
+                          <span className="text-[7px] font-semibold tracking-[0.08em]" style={{ color: freshnessKindTone(s.kind) }}>
+                            {freshnessKindLabel(s.kind)}
+                          </span>
                         </span>
                       </Link>
                     ))}
@@ -1158,24 +1219,26 @@ export default function ControlRoomPageClient() {
           cells={[
             {
               id: "oldest",
-              label: "Oldest reading",
-              value: r.oldestReading
-                ? `${r.oldestReading.label}, ${age(r.oldestReading.ageDays ?? 0)}`
-                : "nothing dated",
-              tone: "var(--i-mint)",
+              label: "Successful reads",
+              value: r.missingPackageScopeNames.length
+                ? `${r.missingPackageScopeNames.length} package ${plural(r.missingPackageScopeNames.length, "receipt", "receipts")} missing`
+                : r.oldestSuccessfulRead
+                  ? `${r.oldestSuccessfulRead.label}, ${age(r.oldestSuccessfulRead.ageDays ?? 0)}`
+                  : "no successful receipt",
+              tone: r.missingPackageScopeNames.length ? "var(--i-amber)" : "var(--i-signal)",
             },
             {
               id: "data",
-              label: "Data",
-              value: age(r.system.find((s) => s.id === "project")?.ageDays ?? 0),
-              tone: "var(--i-mint)",
+              label: "Current read",
+              value: age(r.system.find((s) => s.id === "project-read")?.ageDays ?? 0),
+              tone: "var(--i-signal)",
               href: "/portfolio",
             },
             {
               id: "forecast",
-              label: "Forecast owner",
-              value: `${r.time.forecastCurrentness === "stale" ? `Stale · ${r.time.forecastAgeDays}d` : "Current"} · ${dLong(r.time.forecastAsOf)}`,
-              tone: r.time.forecastCurrentness === "stale" ? "var(--i-amber)" : "var(--i-signal)",
+              label: "Ticket basis",
+              value: `changed through ${dLong(r.time.executionInputsAsOf)}`,
+              tone: "var(--i-text-soft)",
               href: "/forecast",
             },
             {

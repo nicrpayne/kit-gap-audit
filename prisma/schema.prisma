@@ -807,6 +807,50 @@ model ProjectDerivedState {
   updatedAt        DateTime @updatedAt
 }
 
+// A named, reopenable hypothetical. The namespace and workspace are fixed by
+// server code today (Signal / its one shared workspace); they live in the key
+// so adding another app later cannot collide with Signal's records. This is a
+// storage boundary, not user authorization. The payload has no relation to
+// accepted Scope owner tables.
+model SavedScenario {
+  id             String    @id @default(cuid())
+  appNamespace   String
+  workspaceKey   String
+  name           String
+  normalizedName String
+  status         String    @default("active") // active | archived
+  revision       Int       @default(1)
+  payload        Json
+  baseline       Json
+  archivedAt     DateTime?
+  archiveReason  String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  mutations SavedScenarioMutation[]
+
+  @@unique([appNamespace, workspaceKey, normalizedName])
+  @@index([appNamespace, workspaceKey, status, updatedAt])
+}
+
+// Durable idempotency ledger for create and optimistic updates. Every key is
+// retained, so a delayed retry cannot rename/archive twice after newer edits.
+model SavedScenarioMutation {
+  id                 String        @id @default(cuid())
+  appNamespace       String
+  workspaceKey       String
+  idempotencyKey     String
+  scenarioId         String
+  scenario           SavedScenario @relation(fields: [scenarioId], references: [id], onDelete: Cascade)
+  operation          String
+  requestFingerprint String
+  resultingRevision  Int
+  createdAt          DateTime      @default(now())
+
+  @@unique([appNamespace, workspaceKey, idempotencyKey])
+  @@index([scenarioId, createdAt])
+}
+
 // ── TIMELINE ───────────────────────────────────────────────────────────
 //
 // Timeline is a PROJECTION over records that already exist. A Report, a

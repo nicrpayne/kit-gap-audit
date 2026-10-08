@@ -54,12 +54,21 @@ assert.equal(weakestSourceStamp([
   linearStamp,
 ], new Date(facts.now)).asOf.toISOString(), facts.forecastAsOf);
 
-// Control Room consumes that same stamped owner read and keeps the last
-// immutable Report timestamp as a separate concept.
+// Control Room keeps four timestamp meanings separate: successful current
+// read, successful package receipt, historical source observation, and the
+// immutable Report timestamp. The ticket update basis remains visible but
+// cannot classify the current read as stale.
 const controlRoom = readControlRoom({
   now: new Date(facts.now),
   data: hardeningProjectPayload,
   dataReceivedAt: new Date(facts.now),
+  refreshReceipts: hardeningProjectPayload.scopes.map((scope) => ({
+    scopeId: scope.scopeId,
+    scopeName: scope.name,
+    lastPackageAt: facts.now,
+    evidenceObservedAt: { oldest: facts.forecastAsOf, newest: facts.forecastAsOf },
+    latestRun: { status: "complete", completedAt: facts.now },
+  })),
   scenario: EMPTY_SCENARIO,
   scenarioActive: false,
   preview: simulations,
@@ -71,10 +80,13 @@ const controlRoom = readControlRoom({
   timelineCandidates: [],
   timelineRangeEnd: null,
 });
-assert.equal(controlRoom.time.forecastCurrentness, "stale");
-assert.equal(controlRoom.time.forecastAgeDays, 31);
-assert.equal(controlRoom.time.forecastAsOf.toISOString(), facts.forecastAsOf);
+assert.equal(controlRoom.time.executionInputAgeDays, 31);
+assert.equal(controlRoom.time.executionInputsAsOf.toISOString(), facts.forecastAsOf);
 assert.equal(controlRoom.time.lastForecastAt?.toISOString(), facts.historicalReportAsOf);
+assert.equal(controlRoom.oldestSuccessfulRead?.kind, "read_receipt");
+assert.equal(controlRoom.oldestSuccessfulRead?.ageDays, 0);
+assert.equal(controlRoom.system.find((row) => row.id === "source-observations")?.kind, "source_observation");
+assert.equal(controlRoom.system.find((row) => row.id === "saved-report")?.kind, "saved_report");
 assert.equal(controlRoom.choices.open, 2);
 assert.equal(controlRoom.choices.gating, 1);
 
@@ -247,7 +259,7 @@ assert.equal(facts.audit.protectedFingerprint, "5a798edc490b9f3c127899ad88e94aca
 console.log(JSON.stringify({
   fixture: facts.id,
   consumers: {
-    controlRoom: { temporalRole: "live", currentness: controlRoom.time.forecastCurrentness, ageDays: controlRoom.time.forecastAgeDays, openDecisions: controlRoom.choices.open, gatingSubset: controlRoom.choices.gating },
+    controlRoom: { temporalRole: "live", oldestSuccessfulReadAgeDays: controlRoom.oldestSuccessfulRead?.ageDays, inputBasisAgeDays: controlRoom.time.executionInputAgeDays, openDecisions: controlRoom.choices.open, gatingSubset: controlRoom.choices.gating },
     audit: facts.audit,
     decisions: counts,
     forecast: { temporalRole: liveTimeline.temporalRole, currentness: liveTimeline.currentness, ageDays: liveTimeline.ageDays, likelyDate: liveTimeline.likelyDate },

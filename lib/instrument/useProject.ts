@@ -12,6 +12,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { runPortfolioSimulation } from "@/lib/forecast/portfolio";
 import { scenarioPreviewRefusal, type ScenarioPreviewRefusal } from "@/lib/instrument/scenarioPreviewRefusal";
+import { selectPreviewLifecycle } from "@/lib/instrument/previewLifecycle";
 import { ambiguousScenarioItemLeverMessage, findAmbiguousScenarioItemLevers } from "@/lib/scenario/itemLeverScope";
 import type { SimulationResult, WorkItem, DecisionGate } from "@/lib/forecast/simulate";
 import { applyScenarioInputDelta, type ScenarioInputDelta, type ScenarioInputScope } from "@/lib/scenario/inputDelta";
@@ -32,6 +33,14 @@ import type { CapabilityStaffingPlan } from "@/lib/scope/capabilityForecast";
 import { scenarioForecastCoverage } from "@/lib/scenario/forecastCoverage";
 import { remainingEstimateItems, remainingEstimateConflict, type RemainingEstimateDrafts } from "@/lib/scenario/remainingEstimates";
 import { decisionScenarioGates, validateDecisionPlans, type DecisionPlans, type DecisionScenarioInput } from "@/lib/scenario/decisionPlan";
+import { compilePhasedCapacityPlan, phasedCapacityPlanAffectedScopeIds, validatePhasedCapacityPlan, type PhasedCapacityPlanV1 } from "@/lib/scenario/phasedCapacity";
+import { buildSavedScenarioBaseline, compareSavedScenarioBaseline, decodeSavedScenario, encodeSavedScenario, type SavedScenarioBaselineV1, type SavedScenarioDetail } from "@/lib/scenario/saved";
+import {
+  decodeWorkspaceDraft,
+  encodeWorkspaceDraft,
+  savedScenarioReplyDisposition,
+  SCENARIO_DRAFT_STORAGE_KEY,
+} from "@/lib/scenario/workspaceRecovery";
 
 // The provenance the Scope instrument reads. Produced by describeItems in
 // lib/forecast/compute.ts by joining each simulated item back to the Linear
@@ -55,6 +64,7 @@ export interface ScopeWorkItem extends WorkItem {
 
 export interface ProjectScope {
   scopeId: string;
+  currentContextSnapshotId: string | null;
   name: string;
   targetDate: string | null;
   dependsOnScopeIds: string[];
@@ -177,6 +187,7 @@ export interface ProjectPayload {
 // The scenario levers the ENGINE genuinely honours today. Anything not in
 // this shape is not simulable, and the UI must say so rather than pretend.
 export interface SuiteScenario {
+  phasedCapacityPlan?: PhasedCapacityPlanV1 | null;
   remainingEstimateByCapabilityId?: RemainingEstimateDrafts;
   decisionPlans?: DecisionPlans;
   /** Exact cross-project Portfolio plan. This is the durable capacity owner;
@@ -249,6 +260,7 @@ export interface SuiteScenario {
 }
 
 export const EMPTY_SCENARIO: SuiteScenario = {
+  phasedCapacityPlan: null,
   capacityPlan: null,
   capacityOverrideByScope: {},
   excludedItemIds: new Set(),
@@ -269,7 +281,7 @@ export const EMPTY_SCENARIO: SuiteScenario = {
 export const SCENARIO_SESSION_POLICY = Object.freeze({
   navigation: "survives-same-tab-navigation",
   realityRevalidation: "retain-and-mark-stale",
-  documentReload: "return-to-reality",
+  documentReload: "recover-tab-draft-and-check-current-inputs",
   newTab: "isolated-reality-session",
   reset: "clear-all-levers",
 } as const);
@@ -277,6 +289,7 @@ export const SCENARIO_SESSION_POLICY = Object.freeze({
 export function scenarioIsActive(s: SuiteScenario): boolean {
   if (Object.keys(s.remainingEstimateByCapabilityId ?? {}).length) return true;
   return (
+    !!s.phasedCapacityPlan ||
     s.capacityPlan !== null ||
     Object.keys(s.capacityOverrideByScope).length > 0 ||
     s.excludedItemIds.size > 0 ||
@@ -325,9 +338,47 @@ interface ProjectStore {
   loading: boolean;
   error: string | null;
   scenario: SuiteScenario;
+  currentBaseline: SavedScenarioBaselineV1 | null;
+  scenarioBaseline: SavedScenarioBaselineV1 | null;
+  savedScenario: { id: string; name: string; revision: number } | null;
+  scenarioDirty: boolean;
+  recoveryNotice: string | null;
+  inputVerificationError: string | null;
+  draftGeneration: number;
 }
 
-let store: ProjectStore = { data: null, loading: true, error: null, scenario: EMPTY_SCENARIO };
+let store: ProjectStore = { data: null, loading: true, error: null, scenario: EMPTY_SCENARIO, currentBaseline: null, scenarioBaseline: null, savedScenario: null, scenarioDirty: false, recoveryNotice: null, inputVerificationError: null, draftGeneration: 0 };
+let recoveryAttempted = false;
+
+function persistDraft() {
+  if (typeof window === "undefined") return;
+  try {
+    if (!scenarioIsActive(store.scenario)) window.sessionStorage.removeItem(SCENARIO_DRAFT_STORAGE_KEY);
+    else if (store.scenarioBaseline) window.sessionStorage.setItem(SCENARIO_DRAFT_STORAGE_KEY, encodeWorkspaceDraft({
+      payload: encodeSavedScenario(store.scenario),
+      baseline: store.scenarioBaseline,
+      saved: store.savedScenario,
+      dirty: store.scenarioDirty,
+      inputVerificationError: store.inputVerificationError,
+    }));
+  } catch {
+    store = { ...store, recoveryNotice: "This browser could not keep a recovery copy. Save a named Scenario before closing or refreshing." };
+  }
+}
+
+function recoverDraft() {
+  if (recoveryAttempted || typeof window === "undefined") return;
+  recoveryAttempted = true;
+  try {
+    const raw = window.sessionStorage.getItem(SCENARIO_DRAFT_STORAGE_KEY);
+    if (!raw) return;
+    const value = decodeWorkspaceDraft(raw);
+    const scenario = decodeSavedScenario(value.payload);
+    store = { ...store, scenario, scenarioBaseline: value.baseline, savedScenario: value.saved, scenarioDirty: value.dirty, inputVerificationError: value.inputVerificationError, draftGeneration: store.draftGeneration + 1, recoveryNotice: "Recovered this tab’s Scenario. Named saves are available on other devices; this recovery copy stays in this tab." };
+  } catch {
+    store = { ...store, recoveryNotice: "This tab’s recovery copy could not be read. It was not applied or erased. Open a named Scenario or return to Reality to clear it." };
+  }
+}
 let inFlight: Promise<void> | null = null;
 // Distinguishes "the request I am about to settle" from "a newer request has
 // since replaced it", so a slow response can never null out a fresh inFlight.
@@ -340,6 +391,7 @@ const listeners = new Set<() => void>();
 
 function publish(patch: Partial<ProjectStore>) {
   store = { ...store, ...patch };
+  if ("scenario" in patch || "savedScenario" in patch || "scenarioBaseline" in patch || "inputVerificationError" in patch) persistDraft();
   for (const l of listeners) l();
 }
 
@@ -351,8 +403,8 @@ function subscribe(l: () => void) {
 // force only bypasses request deduplication. A refresh never drops Scenario:
 // exact capacity plans retain their baseline fingerprint and become visibly
 // stale if Reality changed, rather than being silently discarded or rebased.
-// Back to Reality is the explicit reset. A full document reload/new tab starts
-// Reality naturally because this session store is deliberately not persisted.
+// Reload recovers this tab's draft and checks its saved input fingerprint.
+// A fresh tab starts Reality; named server saves can be opened explicitly.
 //
 // Every other call is a REVALIDATION: fetch current truth, swap it in, leave
 // the scenario exactly where it was. Mounting an instrument is one of these,
@@ -366,6 +418,7 @@ function subscribe(l: () => void) {
 // look at something rather than opening a page -- the property the module
 // store was built for, now without the staleness it was paying for it with.
 function load(force: boolean): Promise<void> {
+  recoverDraft();
   // Dedupe concurrent revalidations. `inFlight` means a request is genuinely
   // in the air and is cleared when it settles; leaving it set after the first
   // load is what made this store permanently stale until a browser refresh.
@@ -388,10 +441,13 @@ function load(force: boolean): Promise<void> {
         throw new Error(body.error ?? "Couldn't load the project model.");
       }
       const data: ProjectPayload = await res.json();
+      const currentBaseline = await buildSavedScenarioBaseline(data);
+      if (inFlightToken !== token) return;
       dataRevision = startedAt;
-      publish({ data, loading: false, scenario: store.scenario });
+      publish({ data, currentBaseline, loading: false, inputVerificationError: null });
     } catch (err) {
-      publish({ error: err instanceof Error ? err.message : "Something went wrong.", loading: false });
+      if (inFlightToken !== token) return;
+      publish({ error: err instanceof Error ? err.message : "Something went wrong.", loading: false, inputVerificationError: "Signal could not verify current project inputs. Your Scenario is retained but its preview is held until a successful refresh." });
     } finally {
       if (inFlightToken === token) inFlight = null;
     }
@@ -405,6 +461,48 @@ function load(force: boolean): Promise<void> {
 
   inFlight = request;
   return request;
+}
+
+/** Lightweight access for the global Scenario library; does not run simulations. */
+export function useScenarioWorkspace() {
+  return useSyncExternalStore(subscribe, () => store, () => store);
+}
+
+export function openSavedScenario(detail: SavedScenarioDetail) {
+  publish({ scenario: decodeSavedScenario(detail.payload), scenarioBaseline: detail.baseline, savedScenario: { id: detail.id, name: detail.name, revision: detail.revision }, scenarioDirty: false, draftGeneration: store.draftGeneration + 1, inputVerificationError: "Checking this saved Scenario against current project inputs…", recoveryNotice: detail.freshness.state === "unavailable" ? detail.freshness.reason : null });
+  void load(true);
+}
+
+export function recordScenarioSaved(detail: SavedScenarioDetail, savedPayloadSignature: string, draftGeneration: number) {
+  const disposition = savedScenarioReplyDisposition({
+    requestGeneration: draftGeneration,
+    currentGeneration: store.draftGeneration,
+    savedPayloadSignature,
+    currentPayloadSignature: JSON.stringify(encodeSavedScenario(store.scenario)),
+    responseStatus: detail.status,
+  });
+  if (disposition === "ignore") return;
+  if (disposition === "detach-archived") {
+    if (store.savedScenario?.id === detail.id) publish({ savedScenario: null, scenarioDirty: scenarioIsActive(store.scenario) });
+    return;
+  }
+  // A save response may arrive after the operator has edited the same draft.
+  publish({ savedScenario: { id: detail.id, name: detail.name, revision: detail.revision }, scenarioDirty: disposition === "attach-dirty" });
+}
+
+export function detachArchivedScenario(id: string) {
+  if (store.savedScenario?.id === id) publish({ savedScenario: null, scenarioDirty: scenarioIsActive(store.scenario) });
+}
+
+export function reviewScenarioAgainstCurrentReality() {
+  if (!store.currentBaseline || store.inputVerificationError) throw new Error("Current project inputs could not be verified. Refresh first.");
+  // Only the overall comparison baseline changes. Individual capacity/estimate/
+  // decision fingerprints remain intact and must pass their own safety checks.
+  publish({ scenarioBaseline: store.currentBaseline, scenarioDirty: true, recoveryNotice: "Current sources acknowledged. Any stale staffing, estimate, or Decision assumptions still need their own review." });
+}
+
+export function resetScenarioWorkspace() {
+  publish({ scenario: EMPTY_SCENARIO, scenarioBaseline: null, savedScenario: null, scenarioDirty: false, recoveryNotice: null, draftGeneration: store.draftGeneration + 1 });
 }
 
 // A persisted Reality mutation anywhere in the app revalidates the snapshot
@@ -490,7 +588,9 @@ export function useProject(): ProjectModel {
   }, []);
 
   const setScenario = useCallback<React.Dispatch<React.SetStateAction<SuiteScenario>>>((update) => {
-    publish({ scenario: typeof update === "function" ? update(store.scenario) : update });
+    const next = typeof update === "function" ? update(store.scenario) : update;
+    if (!scenarioIsActive(next)) { resetScenarioWorkspace(); return; }
+    publish({ scenario: next, scenarioBaseline: store.scenarioBaseline ?? store.currentBaseline, scenarioDirty: true });
   }, []);
 
   // Entering an instrument revalidates. Whatever the suite already holds
@@ -543,6 +643,16 @@ export function useProject(): ProjectModel {
     scopeRevisionById: Object.fromEntries(data.scopes.map((scope) => [scope.scopeId, scope.realityState.realityRevision])),
   }) : null, [data]);
   const capacityPlanValidation = useMemo(() => {
+    if (scenario.phasedCapacityPlan && capacityBaseline) {
+      if (scenario.capacityPlan || Object.keys(scenario.capacityOverrideByScope).length || scenario.contextSwitchCostPct !== null) {
+        return { ok: false as const, reason: "Dated staffing moves cannot be combined with an immediate staffing or switch-cost experiment. Clear one staffing experiment; nothing was discarded." };
+      }
+      const validation = validatePhasedCapacityPlan(scenario.phasedCapacityPlan, capacityBaseline);
+      if (!validation.ok) return validation;
+      const affected = new Set(phasedCapacityPlanAffectedScopeIds(scenario.phasedCapacityPlan));
+      const incoherent = data?.scopes.filter(scope => affected.has(scope.scopeId) && (scope.realityState.status !== "current" || scope.realityState.computedRevision !== scope.realityState.realityRevision)) ?? [];
+      return incoherent.length ? { ok: false as const, reason: `Staffing inputs are still recomputing for ${incoherent.map(scope => scope.name).join(", ")}. Wait for current Reality before trying dated moves.` } : validation;
+    }
     if (!scenario.capacityPlan || !capacityBaseline) return { ok: true } as const;
     const validation = validateCapacityScenarioPlan(scenario.capacityPlan, capacityBaseline);
     if (!validation.ok) return validation;
@@ -554,13 +664,17 @@ export function useProject(): ProjectModel {
     return incoherent.length
       ? { ok: false as const, reason: `Capacity inputs are still recomputing for ${incoherent.map((scope) => scope.name).join(", ")}. Wait for coherent Reality, then review the scenario.` }
       : validation;
-  }, [scenario.capacityPlan, capacityBaseline, data]);
+  }, [scenario.capacityPlan, scenario.phasedCapacityPlan, scenario.capacityOverrideByScope, scenario.contextSwitchCostPct, capacityBaseline, data]);
   const capacityPlanError = capacityPlanValidation.ok ? null : capacityPlanValidation.reason;
   const decisionPlanError = data ? validateDecisionPlans(scenario.decisionPlans, data.decisions ?? [], data.scopes.map(scope => scope.scopeId), scenario.resolvedGateIds) : null;
   const remainingEstimateError = Object.keys(scenario.remainingEstimateByCapabilityId ?? {}).some(id => scenario.bypassedFeatureIds.has(`capability:${id}`) || scenario.scopeProposalSelections.some(row => row.targetCapabilityId === id))
     ? "A remaining-work experiment overlaps a removed card or a ticket-mapping proposal. Clear one experiment before continuing; nothing was discarded."
     : data ? remainingEstimateConflict(data.scopes, scenario.remainingEstimateByCapabilityId, [...scenario.excludedItemIds, ...scenario.includedItemIds, ...Object.keys(scenario.estimateOverrideByItemId)], Object.keys(scenario.knowledgeEstimateByCapabilityId)) : null;
-  const previewRefusal = useMemo<ScenarioPreviewRefusal | null>(() => capacityPlanError ? {
+  const scenarioBaselineError = scenarioIsActive(scenario) && snapshot.inputVerificationError ? snapshot.inputVerificationError : scenarioIsActive(scenario) && snapshot.scenarioBaseline && snapshot.currentBaseline && compareSavedScenarioBaseline(snapshot.scenarioBaseline, snapshot.currentBaseline).state === "stale"
+    ? "Reality has changed since this Scenario was started or saved. Your edits are preserved; review the changed inputs before showing a new forecast." : null;
+  const previewRefusal = useMemo<ScenarioPreviewRefusal | null>(() => scenarioBaselineError ? {
+    code: "stale_scenario_baseline", message: scenarioBaselineError, action: "Open Saved Scenarios to review this draft against current Reality, or return to Reality. Named saved versions remain available.", itemIds: [],
+  } : capacityPlanError ? {
     code: "invalid_capacity_plan",
     message: capacityPlanError,
     action: "Return to Reality and recreate the staffing experiment with capacity retained on each staffed project.",
@@ -574,7 +688,7 @@ export function useProject(): ProjectModel {
     excludedItemIds: [...scenario.excludedItemIds],
     includedItemIds: [...scenario.includedItemIds],
     estimateOverrideIds: Object.keys(scenario.estimateOverrideByItemId),
-  }) : null, [data, scenario, capacityPlanError, decisionPlanError, remainingEstimateError]);
+  }) : null, [data, scenario, capacityPlanError, decisionPlanError, remainingEstimateError, scenarioBaselineError]);
 
   const baselineAttempt = useMemo(() => {
     if (!data || !scenarioScopes) return { result: null, reason: null };
@@ -598,6 +712,7 @@ export function useProject(): ProjectModel {
   // hypothetical one. All three are input substitutions on the existing spec;
   // no new math, and runPortfolioSimulation is called exactly as before.
   const [simFailure, setSimFailure] = useState<string | null>(null);
+  const [failureBasis, setFailureBasis] = useState<{ data: ProjectPayload; scenario: SuiteScenario } | null>(null);
   const [preview, setPreview] = useState<Map<string, SimulationResult> | null>(null);
   const [floorByScope, setFloorByScope] = useState<Map<string, SimulationResult> | null>(null);
   const [previewBasis, setPreviewBasis] = useState<{ data: ProjectPayload; scenario: SuiteScenario } | null>(null);
@@ -605,14 +720,16 @@ export function useProject(): ProjectModel {
   useEffect(() => {
     if (!data || !scenarioScopes) return;
     if (debounce.current) clearTimeout(debounce.current);
+    const fail = (message: string) => { setSimFailure(message); setFailureBasis({ data, scenario }); };
     debounce.current = setTimeout(() => {
-      if (remainingEstimateError) { setSimFailure(remainingEstimateError); setPreview(baseline); setFloorByScope(null); return; }
+      if (scenarioBaselineError) { fail(scenarioBaselineError); setPreview(baseline); setFloorByScope(null); return; }
+      if (remainingEstimateError) { fail(remainingEstimateError); setPreview(baseline); setFloorByScope(null); return; }
       const decisionError = validateDecisionPlans(scenario.decisionPlans, data.decisions ?? [], data.scopes.map(scope => scope.scopeId), scenario.resolvedGateIds);
       if (decisionError) {
-        setSimFailure(decisionError); setPreview(baseline); setFloorByScope(null); return;
+        fail(decisionError); setPreview(baseline); setFloorByScope(null); return;
       }
       if (capacityPlanError) {
-        setSimFailure(capacityPlanError);
+        fail(capacityPlanError);
         setPreview(baseline);
         setFloorByScope(null);
         return;
@@ -628,7 +745,7 @@ export function useProject(): ProjectModel {
         estimateOverrideIds: Object.keys(scenario.estimateOverrideByItemId),
       });
       if (ambiguousItemLevers.length) {
-        setSimFailure(`Scenario work-item controls are ambiguous: ${ambiguousScenarioItemLeverMessage(ambiguousItemLevers)}. The same ticket cannot be changed across multiple projects by an unscoped control. Return to Reality and remove overlapping execution ownership; no Scenario input was applied.`);
+        fail(`Scenario work-item controls are ambiguous: ${ambiguousScenarioItemLeverMessage(ambiguousItemLevers)}. The same ticket cannot be changed across multiple projects by an unscoped control. Return to Reality and remove overlapping execution ownership; no Scenario input was applied.`);
         setPreview(baseline);
         setFloorByScope(null);
         return;
@@ -708,28 +825,34 @@ export function useProject(): ProjectModel {
           delta
         );
       try {
-        setPreview(runPortfolioSimulation(specsFor()));
+        const compiledSpecs = (emptyScopeId?: string) => scenario.phasedCapacityPlan && capacityBaseline
+          ? compilePhasedCapacityPlan(scenario.phasedCapacityPlan, capacityBaseline, specsFor(emptyScopeId), data.startDate.slice(0, 10))
+          : specsFor(emptyScopeId);
+        setPreview(runPortfolioSimulation(compiledSpecs()));
         const floors = new Map<string, SimulationResult>();
         for (const s of scenarioScopes) {
-          floors.set(s.scopeId, runPortfolioSimulation(specsFor(s.scopeId)).get(s.scopeId)!);
+          floors.set(s.scopeId, runPortfolioSimulation(compiledSpecs(s.scopeId)).get(s.scopeId)!);
         }
         setFloorByScope(floors);
         setSimFailure(null);
+        setFailureBasis(null);
         setPreviewBasis({ data, scenario });
       } catch (e) {
         // A CYCLE *CAN* REACH THIS. Two ordinary PATCHes to /api/scopes/:id
         // — A depends on B, then B depends on A — are each individually
         // valid and together close a loop the engine refuses to order. The
-        // reason is surfaced rather than swallowed; the last good preview is
-        // left in place so the page can say what is wrong instead of going
-        // blank.
-        setSimFailure(describeSimulationFailure(e));
+        // reason is surfaced rather than swallowed; a previous successful
+        // forecast must not be displayed as the result of the failed draft.
+        fail(describeSimulationFailure(e));
+        setPreview(null);
+        setFloorByScope(null);
+        setPreviewBasis(null);
       }
     }, 110);
     return () => {
       if (debounce.current) clearTimeout(debounce.current);
     };
-  }, [data, scenarioScopes, scenario, capacityPlanValidation.ok, capacityPlanError, baseline, previewRefusal, remainingEstimateError]);
+  }, [data, scenarioScopes, scenario, capacityPlanValidation.ok, capacityPlanError, capacityBaseline, baseline, previewRefusal, remainingEstimateError, scenarioBaselineError]);
 
   const momentumByScope = useMemo(() => {
     const out = new Map<string, MomentumTrend>();
@@ -764,13 +887,18 @@ export function useProject(): ProjectModel {
     return out;
   }, [data, baseline]);
 
+  const active = scenarioIsActive(scenario);
+  const basisMatches = previewBasis?.data === data && previewBasis?.scenario === scenario;
+  const currentSimFailure = active && failureBasis?.data === data && failureBasis?.scenario === scenario ? simFailure : null;
+  const display = selectPreviewLifecycle({ active, basisMatches, hasPreview: preview !== null, hasFailure: !!previewRefusal || !!currentSimFailure });
+  const displayedPreview = display.source === "reality" ? baseline : display.source === "scenario" ? preview : null;
   const portfolioLikely = useMemo(() => {
     if (!data) return { date: null as Date | null, gatedBy: null as string | null, deltaDays: 0 };
     let active: number | null = null;
     let base: number | null = null;
     let gatedBy: string | null = null;
     for (const s of data.scopes) {
-      const p = preview?.get(s.scopeId) ?? baseline?.get(s.scopeId);
+      const p = displayedPreview?.get(s.scopeId);
       const b = baseline?.get(s.scopeId);
       if (p && (active === null || p.likelyDate.getTime() > active)) {
         active = p.likelyDate.getTime();
@@ -783,30 +911,29 @@ export function useProject(): ProjectModel {
       gatedBy,
       deltaDays: active !== null && base !== null ? Math.round((active - base) / 86400000) : 0,
     };
-  }, [data, baseline, preview]);
+  }, [data, baseline, displayedPreview]);
 
-  const active = scenarioIsActive(scenario);
   const coverageByScope = useMemo(() => data ? scenarioForecastCoverage(data.scopes, scenario, active, data.decisions) : new Map<string, ForecastCoverageContract>(), [data, scenario, active]);
 
   return {
     data,
     loading,
     error,
-    simulationError: capacityPlanError ?? simFailure ?? baselineAttempt.reason,
-    scenarioPreviewRefusal: previewRefusal,
+    simulationError: capacityPlanError ?? currentSimFailure ?? baselineAttempt.reason,
+    scenarioPreviewRefusal: previewRefusal ?? (currentSimFailure ? { code: "invalid_capacity_plan", message: currentSimFailure, action: "Review the staged assumptions. For dated staffing, open Portfolio and adjust or clear the dated moves. No previous Scenario forecast is being displayed.", itemIds: [] } : null),
     capacityPlanError,
     reload,
     startDate,
     baseline,
-    preview,
-    previewPending: active && (previewBasis?.data !== data || previewBasis?.scenario !== scenario),
+    preview: displayedPreview,
+    previewPending: display.pending,
     coverageByScope,
     scenario,
     setScenario,
     active,
     momentumByScope,
     portfolioLikely,
-    floorByScope,
+    floorByScope: basisMatches && !currentSimFailure && !previewRefusal ? floorByScope : null,
   };
 }
 

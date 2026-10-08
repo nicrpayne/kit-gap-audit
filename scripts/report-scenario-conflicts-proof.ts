@@ -52,7 +52,7 @@ assert.equal(capabilityOnly.length, 0);
 assert.equal(countScenarioReportLevers({
   excludedItemIds: [], includedItemIds: [], excludedCapabilityIds: ["capability-2"], resolvedGateIds: [],
   estimateOverrideIds: [], knowledgeCapabilityIds: [], staffingCapabilityIds: [], capacityOverrideScopeIds: [],
-  hasCapacityPlan: false, contextSwitchCostPct: null,
+  hasCapacityPlan: false, hasPhasedCapacityPlan: false, contextSwitchCostPct: null,
 }), 1, "a canonical capability-only removal is a reportable product-scope lever");
 
 const serverSource = readFileSync(new URL("../lib/reports/scenario.ts", import.meta.url), "utf8");

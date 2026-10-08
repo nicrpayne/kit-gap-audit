@@ -37,6 +37,7 @@ const scope = (
   gates: ProjectScope["gates"] = []
 ): ProjectScope => ({
   scopeId,
+  currentContextSnapshotId: null,
   name,
   targetDate: null,
   dependsOnScopeIds,

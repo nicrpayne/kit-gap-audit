@@ -208,8 +208,8 @@ export default function ForecastInstrument() {
   }
 
   const base = m.baseline?.get(scope.scopeId) ?? null;
-  const res = m.preview?.get(scope.scopeId) ?? base;
-  if (!res) return <InstrumentShell stateBar={strip}><div className="flex-1" /></InstrumentShell>;
+  const res = m.active ? m.preview?.get(scope.scopeId) ?? null : base;
+  if (!res) return <InstrumentShell stateBar={strip}><div role="status" className="flex-1 flex items-center justify-center text-sm text-[var(--i-text-soft)]">{m.previewPending ? "Recalculating Scenario…" : "Forecast is unavailable for these inputs."}</div></InstrumentShell>;
 
   const moved = m.active && base ? Math.round((res.likelyDate.getTime() - base.likelyDate.getTime()) / 86400000) : 0;
   const savedTargetDay = scope.targetDate

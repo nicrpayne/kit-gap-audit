@@ -12,6 +12,7 @@
 
 import Link from "@/components/instrument/SignalLink";
 import type { SuiteScenario } from "@/lib/instrument/useProject";
+import SavedScenarios from "./SavedScenarios";
 
 export interface ScenarioChip {
   id: string;
@@ -83,6 +84,7 @@ export default function ScenarioStrip({
 
       <div className="flex-1" />
       {right}
+      <SavedScenarios />
       <button
         onClick={onDiscard}
         disabled={!active}
@@ -103,6 +105,7 @@ export function chipsFor(
   gateCount: number
 ): ScenarioChip[] {
   const chips: ScenarioChip[] = [];
+  if (scenario.phasedCapacityPlan) chips.push({ id: "dated-staffing", label: `${scenario.phasedCapacityPlan.transfers.length} dated staffing move${scenario.phasedCapacityPlan.transfers.length === 1 ? "" : "s"}`, href: "/portfolio" });
   for (const [scopeId, fte] of Object.entries(scenario.capacityOverrideByScope)) {
     chips.push({
       id: `cap-${scopeId}`,

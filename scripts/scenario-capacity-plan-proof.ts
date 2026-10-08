@@ -226,7 +226,7 @@ assert.throws(() => parseCapacityScenarioPlan({ ...hirePlan, requiredByScope: { 
 const scenarioReportSource = readFileSync(new URL("../lib/reports/scenario.ts", import.meta.url), "utf8");
 assert.match(scenarioReportSource, /projectionScopeIds[\s\S]*expected === undefined \|\| supplied === undefined/);
 assert.match(scenarioReportSource, /expectedLegacySwitchCost[\s\S]*scenario\.contextSwitchCostPct !== expectedLegacySwitchCost/);
-assert.match(scenarioReportSource, /!scenario\.capacityPlan && \(Object\.keys\(scenario\.capacityOverrideByScope\)\.length \|\| scenario\.contextSwitchCostPct !== null\)/);
+assert.match(scenarioReportSource, /!scenario\.capacityPlan && !scenario\.phasedCapacityPlan && \(Object\.keys\(scenario\.capacityOverrideByScope\)\.length \|\| scenario\.contextSwitchCostPct !== null\)/);
 assert.match(scenarioReportSource, /if \(!capacityChangesSimulation\)[\s\S]*does not change any simulated project input/);
 
 console.log(JSON.stringify({ ok: true, cases: {

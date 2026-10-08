@@ -24,9 +24,13 @@ import { composeFeatures } from "@/lib/scope/features";
 import type { ProjectPayload, SuiteScenario } from "@/lib/instrument/useProject";
 import type { DecisionRow } from "@/lib/decisions/model";
 import type { TimelineEntry, TimelineCandidate, TimelineLane } from "@/lib/timeline/entries";
-import { sourceCurrentness, type SourceCurrentness } from "@/lib/truth/currentness";
 import { formatDateOnly } from "@/lib/time/dateContract";
 import type { ForecastCoverageState } from "@/lib/forecast/coverage";
+import {
+  readControlRoomFreshness,
+  type ControlRoomRefreshReceipt,
+  type FreshnessKind,
+} from "@/lib/control-room/freshness";
 
 const DAY = 86400000;
 const days = (a: Date, b: Date) => (a.getTime() - b.getTime()) / DAY;
@@ -39,6 +43,10 @@ export interface ControlRoomInput {
       its own, and there is nothing on the server that knows when a
       particular client last asked. */
   dataReceivedAt: Date;
+  /** Null while the separate refresh receipts are loading. These receipts
+      are not added to ProjectPayload because they answer source-operation
+      questions, not forecast computation questions. */
+  refreshReceipts: ControlRoomRefreshReceipt[] | null;
   scenario: SuiteScenario;
   scenarioActive: boolean;
   /** The Scenario's simulations, or Reality's when none is set. */
@@ -179,10 +187,10 @@ export interface TimeSummary {
   now: Date;
   horizonDays: number | null;
   lastForecastAt: Date | null;
-  /** Source-owner read timestamp, independent of the last saved Report. */
-  forecastAsOf: Date;
-  forecastAgeDays: number;
-  forecastCurrentness: SourceCurrentness;
+  /** Least-recent project/dependency input change in the live Linear read.
+      This is an evidence basis, not when Signal successfully read Linear. */
+  executionInputsAsOf: Date;
+  executionInputAgeDays: number;
   nextLandmark: { title: string; date: Date; scopeId: string; inDays: number } | null;
   nextTarget: { name: string; date: Date; scopeId: string; inDays: number } | null;
 }
@@ -220,6 +228,10 @@ export interface SystemRow {
   label: string;
   /** What is true, in a few words. */
   state: string;
+  /** What the timestamp means. Only read receipts belong in operational
+      freshness; historical evidence and immutable reports remain visible
+      without grading the current computation. */
+  kind: FreshnessKind;
   /** How old the reading is, in days. Null where age is not the point. */
   ageDays: number | null;
   href: string;
@@ -271,9 +283,10 @@ export interface ControlRoomReading {
   constraints: ConstraintRow[];
   activity: ActivityRow[];
   system: SystemRow[];
-  /** The oldest reading on the System Status panel, so the header can state
-      a fact instead of grading itself. */
-  oldestReading: SystemRow | null;
+  /** The oldest successful ingestion/read receipt. Source observation and
+      saved-report dates deliberately cannot win this comparison. */
+  oldestSuccessfulRead: SystemRow | null;
+  missingPackageScopeNames: string[];
   scenarioActive: boolean;
 }
 
@@ -521,9 +534,8 @@ export function readControlRoom(i: ControlRoomInput): ControlRoomReading {
     now,
     horizonDays: i.timelineRangeEnd ? Math.round(days(i.timelineRangeEnd, now)) : null,
     lastForecastAt: reportDates.length ? new Date(Math.max(...reportDates.map((d) => +d))) : null,
-    forecastAsOf: new Date(data.forecastSource.asOf),
-    forecastAgeDays: sourceCurrentness(data.forecastSource.asOf, now).ageDays,
-    forecastCurrentness: sourceCurrentness(data.forecastSource.asOf, now).currentness,
+    executionInputsAsOf: new Date(data.forecastSource.asOf),
+    executionInputAgeDays: Math.max(0, Math.floor(days(now, new Date(data.forecastSource.asOf)))),
     nextLandmark: landmarks[0]
       ? {
           title: landmarks[0].title,
@@ -773,16 +785,9 @@ export function readControlRoom(i: ControlRoomInput): ControlRoomReading {
       href: "/forecast",
     });
   }
-  if (reality.evidenceAgeDays !== null && reality.evidenceAgeDays > 7) {
-    constraints.push({
-      id: "stale-context",
-      label: `Newest evidence is ${reality.newestEvidenceLabel ?? "context"}`,
-      detail: "Nothing newer has been recorded about this project",
-      quantity: `${Math.round(reality.evidenceAgeDays)}d ago`,
-      magnitude: reality.evidenceAgeDays,
-      href: "/audit",
-    });
-  }
+  // Evidence age alone is not a delivery constraint. A quote or decision
+  // record can be old and still be the right historical source, while a new
+  // package receipt does not rewrite the source-owned observation date.
   if (outcome.coverageState === "forecastable" && outcome.spreadDays !== null && outcome.spreadDays > 14) {
     constraints.push({
       id: "spread",
@@ -861,77 +866,18 @@ export function readControlRoom(i: ControlRoomInput): ControlRoomReading {
 
   // ── SYSTEM STATUS ────────────────────────────────────────────────────
   //
-  // HOW OLD IS WHAT I AM LOOKING AT — one row per feed, each one a
-  // timestamp somebody actually stored, and NOTHING ELSE. There is no
-  // green/amber/red verdict here and no "integration health": grading a
-  // feed would require a threshold nobody has set. A feed we cannot date is
-  // OMITTED rather than shown as unknown, per the brief.
-  //
-  // Deliberately absent: Hermes availability. There is no health endpoint,
-  // so "Hermes: OK" would be a guess wearing a status light.
-  const newestWork = entries
-    .filter((e) => e.kind === "work_completed" && new Date(e.date) <= now)
-    .sort((a, b) => +new Date(b.date) - +new Date(a.date))[0];
-  const newestSource = data.sources
-    .map((s) => new Date(s.createdAt))
-    .filter((d) => d <= now)
-    .sort((a, b) => +b - +a)[0];
-  const age = (d: Date | null | undefined) => (d ? Math.max(0, days(now, d)) : null);
-  const plural = (n: number, one: string) => `${n} ${one}${n === 1 ? "" : "s"}`;
-
-  const system: SystemRow[] = [
-    {
-      id: "project",
-      label: "Project data",
-      state: `${plural(data.scopes.length, "project")} · ${data.people.filter((p) => p.active).length} on the roster`,
-      ageDays: age(i.dataReceivedAt),
-      href: "/portfolio",
-    },
-    {
-      id: "forecast",
-      label: "Saved forecast reports",
-      state: plural(data.scopes.filter((s) => s.lastReport).length, "project") + " reported",
-      ageDays: age(time.lastForecastAt),
-      href: "/forecast",
-    },
-    newestContext
-      ? {
-          id: "context",
-          label: "Context",
-          state: newestContext.sourceLabel ?? newestContext.title,
-          ageDays: age(new Date(newestContext.date)),
-          href: "/timeline",
-        }
-      : null,
-    newestWork
-      ? {
-          id: "work",
-          label: "Work items",
-          // Linear is read live on every request, so the freshest thing we
-          // can date is the newest completion that read returned.
-          state: "read live · newest completion",
-          ageDays: age(new Date(newestWork.date)),
-          href: "/scope",
-        }
-      : null,
-    newestSource
-      ? {
-          id: "evidence",
-          label: "Evidence",
-          state: plural(data.sources.length, "document"),
-          ageDays: age(newestSource),
-          href: "/audit",
-        }
-      : null,
-  ].filter((r): r is SystemRow => r !== null);
-
-  // A FACT, NOT A GRADE. The header says how stale the stalest feed is and
-  // names it, which a person can act on; "System: Good" is not something
-  // this model can say.
-  const dated = system.filter((r) => r.ageDays !== null);
-  const oldestReading = dated.length
-    ? dated.reduce((worst, r) => (r.ageDays! > worst.ageDays! ? r : worst))
-    : null;
+  // Operational receipts, historical source observations and saved-report
+  // age are deliberately separate. In particular, an old quote can no
+  // longer make a fresh live read look stale, and a refresh cannot make the
+  // quote look newer than its source says it is.
+  const freshness = readControlRoomFreshness({
+    now,
+    dataReceivedAt: i.dataReceivedAt,
+    lastReportAt: time.lastForecastAt,
+    refreshReceipts: i.refreshReceipts,
+    contextObservedAt: contextEntries.map((entry) => new Date(entry.date)),
+  });
+  const system: SystemRow[] = freshness.rows;
 
   return {
     reality,
@@ -944,7 +890,8 @@ export function readControlRoom(i: ControlRoomInput): ControlRoomReading {
     constraints,
     activity,
     system,
-    oldestReading,
+    oldestSuccessfulRead: freshness.oldestSuccessfulRead,
+    missingPackageScopeNames: freshness.missingPackageScopeNames,
     scenarioActive: i.scenarioActive,
   };
 }

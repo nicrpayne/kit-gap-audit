@@ -178,6 +178,10 @@ interface ScopeSimBundle {
     estimateReviewRequired: boolean;
   }[];
   currentKnowledgeEstimates: CapabilityKnowledgeEstimate[];
+  /** Exact immutable knowledge snapshot that produced those estimates. A
+      snapshot with zero estimates still matters to Scenario freshness, so
+      callers must not try to infer this id from the estimate array. */
+  currentContextSnapshotId: string | null;
   openShapeDecisionCount: number;
   forecastCoverage: ForecastCoverageContract;
 }
@@ -399,6 +403,7 @@ async function buildScopeSimInputs(
     contextIssues,
     capabilities: simulationCapabilities,
     currentKnowledgeEstimates,
+    currentContextSnapshotId: latestKnowledgeSnapshot?.id ?? null,
     openShapeDecisionCount,
     forecastCoverage,
   };
@@ -596,6 +601,8 @@ export interface PortfolioScopeInput {
     acceptedEstimate: AcceptedCapabilityEstimate | null;
     estimateReview: ReviewedCapabilityEstimateResult;
   }[];
+  /** Current immutable knowledge basis, including an empty package. */
+  currentContextSnapshotId: string | null;
   openShapeQuestions: { id: string; title: string; rationale: string | null; status: string }[];
 }
 
@@ -787,6 +794,7 @@ export async function buildPortfolioInputs(): Promise<PortfolioInputs> {
         acceptedEstimate: acceptedCapabilityEstimate(capability.acceptedEstimate),
         estimateReview: bundle.capabilities.find((row) => row.id === capability.id)?.estimateReview ?? null,
       })),
+      currentContextSnapshotId: bundle.currentContextSnapshotId,
       openShapeQuestions: scope.decisions.map((decision) => ({ id: decision.id, title: decision.title, rationale: decision.rationale, status: decision.status })),
     });
   }

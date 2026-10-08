@@ -21,6 +21,7 @@ type CalendarFormatOptions = Pick<
   "weekday" | "era" | "year" | "month" | "day"
 >;
 type InstantFormatOptions = Intl.DateTimeFormatOptions & { timeZone: string };
+type InstantDateFormatOptions = CalendarFormatOptions & { timeZone: string };
 
 function validDateOnly(value: string): boolean {
   if (!DATE_ONLY_PATTERN.test(value)) return false;
@@ -82,4 +83,16 @@ export function formatInstant(
 ): string {
   const instant = toInstant(value);
   return new Intl.DateTimeFormat(locale, options).format(new Date(instant));
+}
+
+/** Format an instant as a calendar date in an explicitly named user
+ * timezone. This is deliberately separate from `formatDateOnly`: a live
+ * instant may be Oct 7 in Chicago while a canonical `2026-10-08` target
+ * must remain Oct 8 everywhere. */
+export function formatInstantDate(
+  value: Instant | string | Date,
+  options: InstantDateFormatOptions,
+  locale = "en-US"
+): string {
+  return formatInstant(value, options, locale);
 }
