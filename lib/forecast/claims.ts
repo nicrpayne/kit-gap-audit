@@ -56,12 +56,12 @@ const FORECAST_ASSUMPTION_ITEMS: readonly ForecastAssumptionItem[] = [
   {
     id: "pooled_capacity",
     label: "Pooled capacity",
-    detail: "Item effort is summed and divided by pooled effective FTE. This is not a task-level resource scheduler and does not model skills, assignments, sequencing, or work-in-progress limits.",
+    detail: "With constant staffing, item effort is summed and divided by pooled effective FTE. With dated staffing phases, effort uses only the effective FTE available in each phase. This is not a task-level resource scheduler and does not model skills, assignments, task sequencing, or work-in-progress limits.",
   },
   {
     id: "serial_gates",
     label: "Serial gates",
-    detail: "Open Decision-gate delay is added after capacity is applied and is not reduced by adding FTE.",
+    detail: "Open Decision-gate delay is a serial calendar wait and is not reduced by adding FTE. With constant staffing, completion is work effort divided by effective FTE plus this wait. With dated staffing phases, work starts after the sampled wait and uses only capacity available from that point onward; capacity before the gate clears is not banked.",
   },
   {
     id: "dependency_finish_floors",

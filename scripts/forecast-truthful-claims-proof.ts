@@ -134,6 +134,12 @@ assert.deepEqual(assumptions.items.map((item) => item.id), [
 ]);
 assert.match(assumptions.items.find((item) => item.id === "calendar")!.detail, /calendar days/i);
 assert.match(assumptions.items.find((item) => item.id === "pooled_capacity")!.detail, /not a task-level resource scheduler/i);
+assert.match(assumptions.items.find((item) => item.id === "pooled_capacity")!.detail, /dated staffing phases.*available in each phase/i);
+assert.match(assumptions.items.find((item) => item.id === "serial_gates")!.detail, /work starts after the sampled wait.*capacity before the gate clears is not banked/i);
+assert.match(assumptions.items.find((item) => item.id === "serial_gates")!.detail, /not reduced by adding FTE/i);
+const retainedAssumptions = structuredClone(assumptions);
+assumptions.items[0].detail = "Changed only in a consumer's copy";
+assert.deepEqual(forecastAssumptionSnapshot(), retainedAssumptions, "new disclosures must not mutate existing frozen report assumptions");
 
 for (const path of [
   "components/instrument/ForecastDetail.tsx",
