@@ -1,0 +1,11 @@
+import assert from "node:assert/strict";
+import { scenarioWorkExplanation } from "../lib/reports/scenarioWorkExplanation";
+const base = { executionItemIds:["JSA-100","JSA-101"], excludedItemIds:["JSA-100","knowledge-estimate:optional:signal:estimate"], includedItemIds:[], excludedCapabilityWorkIds:["JSA-100"] };
+const explanation = scenarioWorkExplanation(base).join(" ");
+assert.match(explanation, /Removed 1 tracked execution item from/);
+assert.match(explanation, /Excluded 1 modeled estimate or finding input; these are not additional tickets/);
+assert(!explanation.includes("Removed 2"));
+assert.match(scenarioWorkExplanation({...base,excludedItemIds:[]}).join(" "),/Removed 1 tracked/);
+assert.match(scenarioWorkExplanation({...base,includedItemIds:["JSA-101","JSA-101"]}).join(" "),/Added 1 mapped/);
+assert.deepEqual(scenarioWorkExplanation({...base,excludedItemIds:[],excludedCapabilityWorkIds:[]}),[]);
+console.log("PASS report explanations count actual execution once, keep model rows separate, and cover capability-only removal");

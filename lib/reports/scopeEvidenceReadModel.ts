@@ -1,6 +1,7 @@
 import "server-only";
 import { prisma } from "@/lib/prisma";
 import { freezeScopeEvidence } from "./scopeEvidence";
+import { loadCapabilityAuditEvidenceOrigins } from "@/lib/scope/capabilityEvidenceReadModel";
 
 export async function loadReportScopeEvidence(scopeId: string, capturedAt: string) {
   const scope = await prisma.scope.findUniqueOrThrow({
@@ -13,6 +14,7 @@ export async function loadReportScopeEvidence(scopeId: string, capturedAt: strin
   const snapshot = scope.activation?.contextSnapshot;
   return freezeScopeEvidence({
     scopeId, capturedAt, capabilities: scope.capabilities,
+    auditOrigins: await loadCapabilityAuditEvidenceOrigins(scopeId, scope.capabilities),
     activationSnapshot: snapshot ? { ...snapshot, createdAt: snapshot.createdAt.toISOString() } : null,
   });
 }

@@ -10,6 +10,7 @@
 // <Prototype/> rather than this module inventing data.
 
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { retainProjectReader } from "./projectMountRefresh";
 import { runPortfolioSimulation } from "@/lib/forecast/portfolio";
 import { scenarioPreviewRefusal, type ScenarioPreviewRefusal } from "@/lib/instrument/scenarioPreviewRefusal";
 import { selectPreviewLifecycle } from "@/lib/instrument/previewLifecycle";
@@ -599,7 +600,7 @@ export function useProject(): ProjectModel {
   // renders on this same frame; if truth has moved since it was fetched, the
   // current answer replaces it a moment later, scenario untouched.
   useEffect(() => {
-    void load(false);
+    return retainProjectReader(() => { void load(false); });
   }, []);
 
   // Cross-device coherence cannot use the in-document revision bus: Browser B

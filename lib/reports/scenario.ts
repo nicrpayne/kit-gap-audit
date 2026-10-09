@@ -34,6 +34,7 @@ import { forecastCapability } from "@/lib/scope/capabilityForecast";
 import { freezeCapabilityEstimate, freezeForecastBasis, type ForecastCapacityBasisInput } from "./forecastBasis";
 import { findScenarioLeverConflicts, scenarioLeverConflictMessage } from "./scenarioConflicts";
 import { ambiguousScenarioItemLeverMessage, findAmbiguousScenarioItemLevers } from "@/lib/scenario/itemLeverScope";
+import { scenarioWorkExplanation } from "./scenarioWorkExplanation";
 
 export * from "./scenarioSnapshot";
 import {
@@ -475,8 +476,12 @@ export async function buildScenarioDecisionBriefReadModel(
   }) ?? [];
   const causalExplanation = [
     ...(scenario.excludedCapabilityIds.length ? [`Removed ${scenario.excludedCapabilityIds.length} product capability${scenario.excludedCapabilityIds.length === 1 ? "" : "s"} from the hypothetical release scope.`] : []),
-    ...(scenario.excludedItemIds.length ? [`Removed ${scenario.excludedItemIds.length} executable work item${scenario.excludedItemIds.length === 1 ? "" : "s"}.`] : []),
-    ...(scenario.includedItemIds.length ? [`Added ${scenario.includedItemIds.length} mapped execution item${scenario.includedItemIds.length === 1 ? "" : "s"}.`] : []),
+    ...scenarioWorkExplanation({
+      executionItemIds: portfolio.scopes.flatMap(owner => owner.executionItems.map(item => item.id)),
+      excludedItemIds: scenario.excludedItemIds,
+      includedItemIds: scenario.includedItemIds,
+      excludedCapabilityWorkIds: conflictCapabilities.filter(capability => excludedCapabilities.has(capability.id)).flatMap(capability => capability.workItemIds),
+    }),
     ...(scenario.resolvedGateIds.length ? [`Assumed ${scenario.resolvedGateIds.length} decision gate${scenario.resolvedGateIds.length === 1 ? "" : "s"} resolved.`] : []),
     ...Object.entries(scenario.decisionPlans ?? {}).map(([id, plan]) => `${portfolio.decisions.find(row => row.id === id)?.title ?? id}: assumed ${plan.state}${plan.gate ? ` with ${plan.gate.low}/${plan.gate.likely}/${plan.gate.high} days of serial delay; ${plan.gate.dependency}; basis: ${plan.gate.evidenceForGate}` : "; no new delay invented"}. Not an accepted decision.`),
     ...(Object.keys(scenario.estimateOverrideByItemId).length ? [`Changed ${Object.keys(scenario.estimateOverrideByItemId).length} governed estimate assumption${Object.keys(scenario.estimateOverrideByItemId).length === 1 ? "" : "s"}.`] : []),

@@ -2,7 +2,7 @@
 // unless an IPC parent and the exact disposable loopback database are present.
 const assert = require('node:assert/strict');
 const db = new URL(process.env.DATABASE_URL || 'http://invalid');
-assert(process.send && process.env.SIGNAL_REPAIR_DB_PROOF === '1' && db.hostname === '127.0.0.1' && db.port === '55434' && db.pathname === '/signal_t0_test_1004');
+assert(process.send && process.env.SIGNAL_REPAIR_DB_PROOF === '1' && db.hostname === '127.0.0.1' && db.port === '55434' && (db.pathname === '/signal_t0_test_1004' || (db.pathname === '/signal_t0_test_1008' && db.username === 'signal_t0_local')));
 const original = global.fetch;
 global.fetch = async (input, init) => {
   const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;

@@ -10,7 +10,7 @@ import { REQUEST_MESSAGE } from "../lib/reports/sharingPolicy";
 
 async function main() {
   const db = new URL(process.env.DATABASE_URL ?? "http://invalid");
-  assert(process.env.SIGNAL_REPAIR_DB_PROOF === "1" && db.hostname === "127.0.0.1" && db.port === "55434" && db.pathname === "/signal_t0_test_1004", "Disposable repair DB only");
+  assert(process.env.SIGNAL_REPAIR_DB_PROOF === "1" && db.hostname === "127.0.0.1" && db.port === "55434" && (db.pathname === "/signal_t0_test_1004" || (db.pathname === "/signal_t0_test_1008" && db.username === "signal_t0_local")), "Disposable repair DB only");
   const origin = "https://signal.example", local = "http://127.0.0.1:4277", password = randomUUID(), secret = randomUUID() + randomUUID();
   const mails: { body: { text: string; to: string[] }; key: string }[] = [];
   const rateKeys = (await prisma.reportShareRateLimit.findMany({ select: { key: true } })).map(r => r.key);

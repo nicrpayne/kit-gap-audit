@@ -157,3 +157,32 @@ assert.equal(scopeProjector({ authority: "Scope", evidence: [operatorEvidence] }
 assert.equal(packageReads, readsAfterPreparation, "the prepared Scope projector does not re-read or revalidate its activation package per capability");
 
 console.log("scope capability evidence proof: captured bootstrap quotes stay bound to the immutable acceptance snapshot");
+
+const auditPackage = packageFor("candidate-accepted");
+const auditEvidence = auditPackage.evidence.map(item=>({id:item.id,excerpt:item.excerpt,sourceRef:item.sourceRef}));
+const auditProvenance = {auditChangeProposalId:"accepted-proposal",auditRunId:"accepted-audit",contextSnapshotId:"audit-snapshot",evidence:auditEvidence};
+const auditOrigin = {proposalId:"accepted-proposal",capabilityId:"accepted-capability",scopeId:"scope-accepted",auditRunId:"accepted-audit",status:"accepted",acceptedAt:"2026-10-08T18:00:00Z",evidence:auditEvidence,snapshot:{...activationSnapshot(),id:"audit-snapshot"}};
+const auditInput = {scopeId:"scope-accepted",capabilityId:"accepted-capability",provenance:auditProvenance,auditOrigins:[auditOrigin]};
+const auditProjected=projectCapabilityEvidence(auditInput);
+assert.equal(auditProjected[0].capture?.excerpt,auditPackage.evidence[0].excerpt);
+assert.equal(auditProjected[0].capture?.acceptedAt,auditOrigin.acceptedAt,"actual acceptance time, not snapshot creation time");
+assert.equal(auditProjected[0].capture?.sourceDate,"2026-10-07");
+assert.equal(auditProjected[0].capture?.locator.charStart,20);
+assert.equal(auditProjected[0].capture?.contextSnapshotId,"audit-snapshot");
+for (const changed of [
+  {...auditInput,capabilityId:"wrong-capability"},
+  {...auditInput,scopeId:"wrong-scope"},
+  {...auditInput,auditOrigins:[]},
+  {...auditInput,auditOrigins:[{...auditOrigin,status:"pending"}]},
+  {...auditInput,auditOrigins:[{...auditOrigin,snapshot:{...auditOrigin.snapshot,id:"newer-snapshot"}}]},
+  {...auditInput,provenance:{...auditProvenance,auditRunId:"wrong-audit"}},
+  {...auditInput,provenance:{...auditProvenance,evidence:[{...auditEvidence[0],excerpt:"Changed words"}]}},
+  {...auditInput,provenance:{...auditProvenance,evidence:[{...auditEvidence[0],sourceRef:"https://source.example/wrong-origin"}]}},
+  {...auditInput,provenance:{...auditProvenance,evidence:[],operatorEvidence:[auditEvidence[0]]}},
+  {...auditInput,provenance:{...auditProvenance,evidence:[],operatorEvidence:[{...auditEvidence[0],sourceRef:"https://source.example/operator",sourceUrl:"https://source.example/operator",suppliedBy:"operator"}]}},
+  {...auditInput,auditOrigins:[{...auditOrigin,evidence:[{...auditEvidence[0],excerpt:"Changed acceptance"}]}]},
+]) assert(projectCapabilityEvidence(changed).every(entry=>entry.state==="reference_only"),"unverified Audit origin stays reference-only");
+const mixed=projectCapabilityEvidence({...auditInput,provenance:{...auditProvenance,operatorEvidence:[{ref:"https://source.example/operator",suppliedBy:"operator"}]}});
+assert.equal(mixed[0].state,"captured_at_acceptance");
+assert.equal(mixed.at(-1)?.state,"reference_only","operator references do not become transcript quotes");
+console.log("scope Audit evidence proof: exact accepted proposal/capability/snapshot/words, date+locator, negative cross-project/wrong-owner/unaccepted/drift, independent operator references");

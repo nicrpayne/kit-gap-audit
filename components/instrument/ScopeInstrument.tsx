@@ -67,7 +67,7 @@ import {
   deltaTone,
   type ProjectScope,
 } from "@/lib/instrument/useProject";
-import { composeScopeFeatures, expectedDays, type Feature, type ThreePoint } from "@/lib/scope/features";
+import { composeScopeFeatures, type Feature, type ThreePoint } from "@/lib/scope/features";
 import { scenarioCapacityDisplay } from "@/lib/scenario/displayCapacity";
 import { scenarioDisplayShape } from "@/lib/scenario/displayShape";
 import { readDominance } from "@/lib/scope/constraint";
@@ -83,12 +83,13 @@ import ScopeReconciliation, { type ScopeProposalItemView, type ScopeProposalView
 import ResolveScopeWork, { type WorkResolution } from "@/components/instrument/ResolveScopeWork";
 import { useCapabilitySave } from "@/lib/instrument/useCapabilitySave";
 import { bulkStageEligibleItems } from "@/lib/scope/proposalEligibility";
+import { capabilityReleaseLoadDelta } from "@/lib/scope/releaseImpact";
 
 const BAY_IN = "bay-in";
 const BAY_OUT = "bay-out";
 const FRAME_BG = "#0c1013";
 type PendingScopeChange =
-  | { kind: "move"; capability: ShapeCapability; status: "accepted" | "outside"; itemIds: string[]; idempotencyKey: string }
+  | { kind: "move"; capability: ShapeCapability; status: "accepted" | "outside"; itemIds: string[]; idempotencyKey: string; loadDelta?: number | null }
   | { kind: "link"; capability: ShapeCapability; item: ScopeWorkItem; idempotencyKey: string }
   | { kind: "unlink"; capability: ShapeCapability; linkId: string; itemLabel: string; idempotencyKey: string };
 type DraftCapabilityInput = {
@@ -447,7 +448,7 @@ export default function ScopeInstrument() {
     if (!f || !target) return;
     if (target === BAY_OUT && !f.bypassed) {
       setBypassed(f, true);
-      if (f.canonicalCapability) setPending({ kind: "move", capability: f.canonicalCapability, status: "outside", itemIds: f.items.map((item) => item.id), idempotencyKey: crypto.randomUUID() });
+      if (f.canonicalCapability) setPending({ kind: "move", capability: f.canonicalCapability, status: "outside", itemIds: f.items.map((item) => item.id), idempotencyKey: crypto.randomUUID(), loadDelta: capabilityReleaseLoadDelta(f, "outside") });
     }
     if (target === BAY_IN && f.bypassed) setBypassed(f, false);
   };
@@ -1045,6 +1046,7 @@ export default function ScopeInstrument() {
               capability: openFeature.canonicalCapability,
               status: out ? "outside" : "accepted",
               itemIds: openFeature.items.map((item) => item.id),
+              loadDelta: capabilityReleaseLoadDelta(openFeature, out ? "outside" : "accepted"),
               idempotencyKey: crypto.randomUUID(),
             });
           }
@@ -1147,6 +1149,7 @@ export default function ScopeInstrument() {
         previewPending={m.previewPending}
         change={pending}
         scope={scope}
+        feature={pending ? composition.features.find((item) => item.id === `capability:${pending.capability.id}`) : undefined}
         baseDate={base.likelyDate}
         previewDate={res.likelyDate}
         writing={writing}
@@ -1215,9 +1218,9 @@ function CapabilityRealityEditor({
           </ul>
         </div>}
         <label className="block"><span className="i-label">Change note</span><input value={note} onChange={(event) => setNote(event.target.value)} placeholder="Why accepted Reality is changing" className="mt-1.5 w-full rounded px-3 py-2 text-[11px]" style={{ background: "var(--i-recess)", border: "1px solid var(--i-border-strong)" }} /></label>
-        <label className="block"><span className="i-label">Evidence reference · optional</span><input value={evidenceRef} onChange={(event) => setEvidenceRef(event.target.value)} placeholder="URL, document id, or source reference" className="mt-1.5 w-full rounded px-3 py-2 text-[11px]" style={{ background: "var(--i-recess)", border: "1px solid var(--i-border-strong)" }} /></label>
+        <label className="block"><span className="i-label">Add evidence reference · optional</span><input value={evidenceRef} onChange={(event) => setEvidenceRef(event.target.value)} placeholder="URL, document id, or source reference" className="mt-1.5 w-full rounded px-3 py-2 text-[11px]" style={{ background: "var(--i-recess)", border: "1px solid var(--i-border-strong)" }} /></label>
         <div className="rounded border border-[var(--i-border)] bg-[var(--i-recess)] px-3 py-2 text-[9.5px] text-[var(--i-text-faint)]">
-          {evidenceRef.trim() ? "Operator assertion · evidence attached" : "Operator assertion · no evidence yet"} · saved server-side with history
+          Original evidence is kept. {evidenceRef.trim() ? "This reference will be added." : "Leave blank to keep existing references."} Your change is saved with history.
         </div>
         {error && <div role="alert" className="text-[12px] text-[var(--i-red)]">{error}</div>}
         <button disabled={saving || !name.trim()} onClick={() => onSave({ name, description, note, evidenceRef, workItemIds: [...picked] })} className="w-full rounded-md border border-[var(--i-signal)] px-3 py-2 text-[11px] text-[var(--i-signal)] disabled:opacity-40" data-shoot="save-capability-reality">{saving ? "Saving Reality…" : `Save accepted Reality${picked.size > 0 ? ` · link ${picked.size} item${picked.size === 1 ? "" : "s"}` : ""}`}</button>
@@ -1230,6 +1233,7 @@ function ScopeImpactPreview({
   previewPending,
   change,
   scope,
+  feature,
   baseDate,
   previewDate,
   writing,
@@ -1239,6 +1243,7 @@ function ScopeImpactPreview({
 }: {
   change: PendingScopeChange | null;
   scope: ProjectScope;
+  feature: Feature | undefined;
   baseDate: Date;
   previewDate: Date;
   previewPending: boolean;
@@ -1252,8 +1257,7 @@ function ScopeImpactPreview({
   const items = isMove
     ? scope.executionItems.filter((item) => change.itemIds.includes(item.id))
     : change.kind === "link" ? [change.item] : [];
-  const effort = items.reduce((sum, item) => sum + expectedDays(item), 0);
-  const schedule = effort / (scope.teamCapacity || 1);
+  const loadDelta = isMove ? change.loadDelta ?? capabilityReleaseLoadDelta(feature, change.status) : null;
   const dateDelta = Math.round((previewDate.getTime() - baseDate.getTime()) / 86_400_000);
   const title = change.kind === "link"
     ? `Link ${change.item.id} → ${change.capability.name}`
@@ -1266,7 +1270,7 @@ function ScopeImpactPreview({
         <div className="i-label text-[var(--i-violet)]">Preview · not Reality yet</div>
         <div className="mt-3 grid grid-cols-2 gap-2">
           <div className="rounded border border-[var(--i-border)] bg-[var(--i-recess)] px-3 py-2"><div className="i-label">Execution</div><div className="mt-1 i-readout text-[15px]">{change.kind === "unlink" ? "−1" : `${change.kind === "move" && change.status === "outside" ? "−" : "+"}${items.length}`}</div><div className="text-[8.5px] text-[var(--i-text-faint)]">mapped item{items.length === 1 ? "" : "s"}</div></div>
-          <div className="rounded border border-[var(--i-border)] bg-[var(--i-recess)] px-3 py-2"><div className="i-label">Modeled load</div><div className="mt-1 i-readout text-[15px]">{change.kind === "unlink" ? `−${schedule.toFixed(1)}d` : `${change.kind === "move" && change.status === "outside" ? "−" : "+"}${schedule.toFixed(1)}d`}</div><div className="text-[8.5px] text-[var(--i-text-faint)]">deterministic expected load</div></div>
+          <div className="rounded border border-[var(--i-border)] bg-[var(--i-recess)] px-3 py-2"><div className="i-label">Modeled load</div><div className="mt-1 i-readout text-[15px]">{loadDelta === null ? "Recheck after save" : `${loadDelta < 0 ? "−" : "+"}${Math.abs(loadDelta).toFixed(1)}d`}</div><div className="text-[8.5px] text-[var(--i-text-faint)]">{isMove ? "feature estimate at current staffing · not elapsed time" : "mapping changes may require estimate review"}</div></div>
         </div>
         {isMove && <div className="mt-2 rounded border border-[var(--i-border)] px-3 py-2 text-[10px] text-[var(--i-text-soft)]">{previewPending ? "Recalculating Scenario window…" : <>Scenario window: {formatDateOnly(baseDate)} → {formatDateOnly(previewDate)} {dateDelta === 0 ? "(held)" : `(${deltaLabel(dateDelta)})`}</>}</div>}
         <p className="mt-3 text-[10px] leading-relaxed text-[var(--i-text-faint)]">Commit writes canonical server Reality, increments the derived revision, recomputes Forecast coverage/readiness, and becomes visible to other devices. Keeping the preview leaves Reality unchanged.</p>

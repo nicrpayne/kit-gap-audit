@@ -72,7 +72,7 @@ import {
   type SurfaceId,
   type Workspace,
 } from "@/lib/control-room/lenses";
-import { composeFeatures } from "@/lib/scope/features";
+import { controlRoomComposition } from "@/lib/control-room/composition";
 import type { TimelineProjection } from "@/lib/timeline/entries";
 import { formatDateOnly } from "@/lib/time/dateContract";
 
@@ -1132,27 +1132,8 @@ export default function ControlRoomPageClient() {
                   note="load remaining"
                 >
                   <div className="i-noscrollbar i-fade-b flex h-full flex-col gap-1 overflow-y-auto">
-                    {(m.data?.scopes ?? []).map((s) => {
-                      const comp = composeFeatures(
-                        s.items,
-                        s.completedWork,
-                        m.scenario.capacityOverrideByScope[s.scopeId] ?? s.teamCapacity,
-                        m.scenario.bypassedFeatureIds,
-                        m.scenario.estimateOverrideByItemId,
-                        m.scenario.draftFeatures,
-                        m.scenario.acceptedCandidateIds
-                      );
-                      const all = (m.data?.scopes ?? []).map((x) =>
-                        composeFeatures(
-                          x.items,
-                          x.completedWork,
-                          m.scenario.capacityOverrideByScope[x.scopeId] ?? x.teamCapacity,
-                          m.scenario.bypassedFeatureIds,
-                          m.scenario.estimateOverrideByItemId,
-                          m.scenario.draftFeatures,
-                          m.scenario.acceptedCandidateIds
-                        ).loadDays
-                      );
+                    {(m.data ? controlRoomComposition(m.data, m.scenario) : []).map((s, _, parts) => {
+                      const all = parts.map(part => part.days);
                       const w = Math.max(0.001, ...all);
                       return (
                         <div key={s.scopeId}>
@@ -1161,14 +1142,14 @@ export default function ControlRoomPageClient() {
                               {s.name}
                             </span>
                             <span className="i-readout shrink-0 text-[10px]" style={{ color: "var(--i-text-faint)" }}>
-                              {comp.loadDays.toFixed(1)}d · {comp.engaged.length}
+                              {s.days.toFixed(1)}d · {s.features}
                             </span>
                           </div>
                           <div className="mt-[3px] h-[5px] rounded-full" style={{ background: "var(--i-recess)" }}>
                             <div
                               className="h-full rounded-full"
                               style={{
-                                width: `${Math.min(100, (comp.loadDays / w) * 100)}%`,
+                                width: `${Math.min(100, (s.days / w) * 100)}%`,
                                 background: forecastTone,
                                 opacity: 0.7,
                               }}

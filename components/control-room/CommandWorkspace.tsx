@@ -35,7 +35,7 @@ import TimelinePageClient from "@/components/TimelinePageClient";
 import type { ControlRoomReading, Point, Series } from "@/lib/control-room/read";
 import type { FreshnessKind } from "@/lib/control-room/freshness";
 import type { ProjectPayload, SuiteScenario } from "@/lib/instrument/useProject";
-import { composeFeatures } from "@/lib/scope/features";
+import { controlRoomComposition } from "@/lib/control-room/composition";
 import { formatDateOnly } from "@/lib/time/dateContract";
 
 // ── THE APPROVED PALETTE ───────────────────────────────────────────────
@@ -1306,21 +1306,9 @@ function StatusCell({
   );
 }
 
-/** The layout's health donut, carrying the one composition this product
-    genuinely has: remaining load days per project, from composeFeatures. */
+/** Remaining reviewed load from the same Scope composition as the cards. */
 function Composition({ data, scenario }: { data: ProjectPayload; scenario: SuiteScenario }) {
-  const parts = data.scopes.map((s) => {
-    const comp = composeFeatures(
-      s.items,
-      s.completedWork,
-      scenario.capacityOverrideByScope[s.scopeId] ?? s.teamCapacity,
-      scenario.bypassedFeatureIds,
-      scenario.estimateOverrideByItemId,
-      scenario.draftFeatures,
-      scenario.acceptedCandidateIds
-    );
-    return { scopeId: s.scopeId, id: s.scopeId, name: s.name, days: comp.loadDays, features: comp.engaged.length };
-  });
+  const parts = controlRoomComposition(data, scenario);
   const named = disambiguate(parts);
   const total = parts.reduce((n, p) => n + p.days, 0);
 
@@ -1364,7 +1352,7 @@ function Composition({ data, scenario }: { data: ProjectPayload; scenario: Suite
             {total.toFixed(0)}d
           </span>
           <span className="pt-[3px] text-[8.5px] uppercase tracking-[0.09em]" style={{ color: "var(--i-text-faint)" }}>
-            remaining
+            load · not elapsed
           </span>
         </div>
       </div>

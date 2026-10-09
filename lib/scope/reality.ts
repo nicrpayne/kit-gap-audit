@@ -2,6 +2,7 @@ import { Prisma } from "@prisma/client";
 import { isSignalEstimate, parseSignalEstimate, parseSignalEstimateInput, signalEstimateBoundaryMatches, type SignalEstimateInput } from "./signalEstimates";
 import { prisma } from "@/lib/prisma";
 import { capabilityWriteIntent } from "@/lib/scope/writeIntent";
+import { appendCapabilityEditEvidence } from "@/lib/scope/editEvidence";
 import { currentContextSnapshot } from "@/lib/context/currentSnapshot";
 import { SCOPE_PROPOSAL_COMPILER_VERSION } from "@/lib/scope/proposal";
 import { invalidateDerivedReads, recomputeDerivedReads } from "@/lib/audit/derivedRefresh";
@@ -328,7 +329,7 @@ export async function updateCanonicalCapability(
         name,
         ...(input.description !== undefined ? { description: input.description?.trim() || null } : {}),
         ...(input.status !== undefined ? { status: status(input.status) } : {}),
-        ...(input.note !== undefined || input.evidence !== undefined ? { provenance: json(assertionProvenance(input)) } : {}),
+        ...(input.evidence?.length ? { provenance: json(appendCapabilityEditEvidence(before.provenance, input.evidence)) } : {}),
         revision: { increment: 1 },
       },
     });
@@ -340,7 +341,7 @@ export async function updateCanonicalCapability(
       idempotencyKey,
       action: before.status !== after.status ? "move_release_state" : additions.length > 0 ? "link_work" : "edit",
       beforeState: json(plain(before)),
-      afterState: json({ ...plain(after), writeIntent: intent }),
+      afterState: json({ ...plain(after), writeIntent: intent, operatorEdit: assertionProvenance(input) }),
     } });
     await invalidateDerivedReads(tx, before.scopeId, `Capability ${capabilityId} changed in Scope.`);
     return { capability: after, scopeId: before.scopeId, changed: true };

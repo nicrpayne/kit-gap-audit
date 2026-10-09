@@ -33,6 +33,7 @@ import {
   type ReviewedCapabilityEstimateResult,
 } from "@/lib/scope/knowledgeEstimates";
 import { createCapabilityEvidenceProjector, type CapabilityEvidenceReference } from "@/lib/scope/capabilityEvidence";
+import { loadCapabilityAuditEvidenceOrigins } from "@/lib/scope/capabilityEvidenceReadModel";
 
 export interface ForecastFinding {
   id: string;
@@ -721,6 +722,7 @@ export async function buildPortfolioInputs(): Promise<PortfolioInputs> {
     const bundle = await buildScopeSimInputs(scope, capacityInputs);
     const projectEvidence = createCapabilityEvidenceProjector({
       scopeId: scope.id,
+      auditOrigins: await loadCapabilityAuditEvidenceOrigins(scope.id, scope.capabilities),
       activationSnapshot: scope.activation ? {
         id: scope.activation.contextSnapshot.id,
         scopeId: scope.activation.contextSnapshot.scopeId,
@@ -804,7 +806,7 @@ export async function buildPortfolioInputs(): Promise<PortfolioInputs> {
         id: capability.id, name: capability.name, description: capability.description,
         status: capability.status, revision: capability.revision, sortOrder: capability.sortOrder,
         updatedAt: capability.updatedAt, workLinkCount: capability.workLinks.length, provenance: capability.provenance,
-        evidenceTrace: projectEvidence(capability.provenance),
+        evidenceTrace: projectEvidence(capability.provenance, capability.id),
         events: capability.events.map((event) => ({ id: event.id, action: event.action, actor: event.actor, createdAt: event.createdAt })),
         workLinks: capability.workLinks.map((link) => ({ id: link.id, provider: link.provider, externalId: link.externalId, externalUrl: link.externalUrl, state: link.state })),
         knowledgeEstimates: estimatesByCapability.get(capability.id) ?? [],

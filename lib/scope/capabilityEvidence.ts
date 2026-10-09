@@ -9,6 +9,17 @@ export interface CapabilityEvidenceOriginSnapshot {
   package: unknown;
 }
 
+export interface CapabilityAuditEvidenceOrigin {
+  proposalId: string;
+  scopeId: string;
+  capabilityId: string;
+  auditRunId: string | null;
+  status: string;
+  acceptedAt: string;
+  evidence: unknown;
+  snapshot: CapabilityEvidenceOriginSnapshot;
+}
+
 export interface CapturedCapabilityEvidence {
   contextSnapshotId: string;
   acceptedAt: string;
@@ -75,6 +86,7 @@ export function capabilityEvidenceReferences(provenance: unknown): unknown[] {
     ...nestedEvidenceReferences(source.evidence),
     ...arrayOrValue(source.contextRefs),
     ...arrayOrValue(source.evidenceRefs),
+    ...arrayOrValue(source.operatorEvidence),
   ];
   const seen = new Set<string>();
   return references.filter((reference) => {
@@ -149,6 +161,7 @@ function prepareCapabilityEvidenceOrigin(input: {
 function projectWithOrigin(provenanceValue: unknown, origin: PreparedCapabilityEvidenceOrigin | null): CapabilityEvidenceReference[] {
   const references = capabilityEvidenceReferences(provenanceValue);
   const provenance = record(provenanceValue);
+  const originalReferences = new Set(capabilityEvidenceReferences({ ...provenance, operatorEvidence: undefined }));
   if (provenance.boundary !== "human_accepted_bootstrap") return references.map(referenceOnly);
 
   const candidateId = nonEmptyString(provenance.sourceCandidateId);
@@ -159,7 +172,7 @@ function projectWithOrigin(provenanceValue: unknown, origin: PreparedCapabilityE
 
   return references.map((reference) => {
     const id = evidenceId(reference);
-    if (!id || !acceptedEvidenceIds.has(id)) return referenceOnly(reference);
+    if (!originalReferences.has(reference) || !id || !acceptedEvidenceIds.has(id)) return referenceOnly(reference);
     const item = origin.evidenceById.get(id);
     if (!item) return referenceOnly(reference);
     return {
@@ -182,21 +195,68 @@ function projectWithOrigin(provenanceValue: unknown, origin: PreparedCapabilityE
   });
 }
 
+function prepareAuditOrigins(scopeId: string, origins: CapabilityAuditEvidenceOrigin[]) {
+  const prepared = new Map<string, { origin: CapabilityAuditEvidenceOrigin; items: Map<string, EvidenceItem>; evidence: Map<string, Record<string, unknown>> }>();
+  for (const origin of origins) {
+    if (origin.status !== "accepted" || origin.scopeId !== scopeId || origin.snapshot.scopeId !== scopeId || !Number.isFinite(Date.parse(origin.acceptedAt))) continue;
+    try {
+      const pkg = validateProjectContextPackage(origin.snapshot.package);
+      if (pkg.scopeId !== scopeId) continue;
+      const evidence = new Map(arrayOrValue(origin.evidence).flatMap(value => {
+        const id = evidenceId(value);
+        return id ? [[id, record(value)] as const] : [];
+      }));
+      prepared.set(origin.proposalId, { origin, evidence, items: new Map(pkg.evidence.map(item => [item.id,item])) });
+    } catch { /* Keep unresolved references; never borrow a newer package. */ }
+  }
+  return prepared;
+}
+
+function projectAuditEvidence(provenanceValue: unknown, capabilityId: string | undefined, origins: ReturnType<typeof prepareAuditOrigins>): CapabilityEvidenceReference[] {
+  const provenance = record(provenanceValue);
+  const prepared = origins.get(String(provenance.auditChangeProposalId ?? ""));
+  const references = capabilityEvidenceReferences(provenance);
+  const originalReferences = new Set(nestedEvidenceReferences(provenance.evidence));
+  if (!prepared || !capabilityId || prepared.origin.capabilityId !== capabilityId ||
+    prepared.origin.snapshot.id !== provenance.contextSnapshotId || prepared.origin.auditRunId !== (provenance.auditRunId ?? null)) return references.map(referenceOnly);
+  return references.map(reference => {
+    const id = evidenceId(reference);
+    const accepted = id ? prepared.evidence.get(id) : undefined;
+    const item = id ? prepared.items.get(id) : undefined;
+    // The saved acceptance and its exact snapshot must agree on the words.
+    // An operator reference sharing an id cannot become source authority.
+    if (!originalReferences.has(reference) || !item || !accepted || record(reference).sourceRef !== item.sourceRef || record(reference).excerpt !== item.excerpt || accepted.excerpt !== item.excerpt || accepted.sourceRef !== item.sourceRef) return referenceOnly(reference);
+    return {
+      reference, evidenceId: id, state: "captured_at_acceptance" as const,
+      capture: { contextSnapshotId: prepared.origin.snapshot.id, acceptedAt: prepared.origin.acceptedAt,
+        excerpt: item.excerpt, sourceRef: item.sourceRef, externalRef: nonEmptyString(item.externalRef),
+        sourceUrl: sourceUrl(item), sourceDate: evidenceSourceDate(item), locator: evidenceAnchor(item),
+        kind: item.kind, independence: evidenceIndependence(item) },
+    };
+  });
+}
+
 /** Prepare and validate one Scope's immutable activation origin once, then
  * project every capability in that Scope without reparsing the package. The
  * returned closure is request-local; no cross-request cache is retained. */
 export function createCapabilityEvidenceProjector(input: {
   scopeId: string;
   activationSnapshot?: CapabilityEvidenceOriginSnapshot | null;
-}): (provenance: unknown) => CapabilityEvidenceReference[] {
+  auditOrigins?: CapabilityAuditEvidenceOrigin[];
+}): (provenance: unknown, capabilityId?: string) => CapabilityEvidenceReference[] {
   const origin = prepareCapabilityEvidenceOrigin(input);
-  return (provenance) => projectWithOrigin(provenance, origin);
+  const auditOrigins = prepareAuditOrigins(input.scopeId, input.auditOrigins ?? []);
+  return (provenance, capabilityId) => record(provenance).auditChangeProposalId
+    ? projectAuditEvidence(provenance, capabilityId, auditOrigins)
+    : projectWithOrigin(provenance, origin);
 }
 
 export function projectCapabilityEvidence(input: {
   scopeId: string;
   provenance: unknown;
   activationSnapshot?: CapabilityEvidenceOriginSnapshot | null;
+  auditOrigins?: CapabilityAuditEvidenceOrigin[];
+  capabilityId?: string;
 }): CapabilityEvidenceReference[] {
-  return createCapabilityEvidenceProjector(input)(input.provenance);
+  return createCapabilityEvidenceProjector(input)(input.provenance, input.capabilityId);
 }

@@ -530,8 +530,9 @@ function capabilityEvidenceReferences(provenance: Record<string, unknown>): unkn
   const nested = evidenceReferences(provenance.evidence);
   const context = Array.isArray(provenance.contextRefs) ? provenance.contextRefs : [];
   const topLevel = Array.isArray(provenance.evidenceRefs) ? provenance.evidenceRefs : [];
+  const operator = Array.isArray(provenance.operatorEvidence) ? provenance.operatorEvidence : [];
   const seen = new Set<string>();
-  return [...nested, ...context, ...topLevel].filter((reference) => {
+  return [...nested, ...context, ...topLevel, ...operator].filter((reference) => {
     const record = reference && typeof reference === "object" && !Array.isArray(reference)
       ? reference as Record<string, unknown>
       : null;
@@ -684,7 +685,7 @@ function Evidence({
     return (
       <div className="px-5 py-4">
         <div className="i-label" style={{ color: "var(--i-signal)" }}>Accepted truth and provenance</div>
-        <p className="mt-2 text-[11px] leading-relaxed text-[var(--i-text-soft)]">{assertion ?? "This capability is accepted Scope Reality and its work is connected through explicit CapabilityWorkLink records."}</p>
+        <p className="mt-2 text-[11px] leading-relaxed text-[var(--i-text-soft)]">{assertion ? `Original acceptance: ${assertion}` : "This capability is accepted Scope Reality and its work is connected through explicit CapabilityWorkLink records."}</p>
         <div className="mt-3">
           <Row k="Authority" v={typeof provenance.authority === "string" ? provenance.authority : "Scope"} note={`source · ${source}`} />
           <Row k="Reality revision" v={`r${f.canonicalCapability.revision}`} note={`${ownerEvents.length} recent event${ownerEvents.length === 1 ? "" : "s"} retained`} />
