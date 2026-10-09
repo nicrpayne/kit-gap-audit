@@ -479,9 +479,11 @@ export default function PortfolioPageClient() {
     if (!data || !effectiveSelectedScopeId) return empty;
     const scope = data.scopes.find((s) => s.scopeId === effectiveSelectedScopeId);
     if (!scope) return empty;
-    const deltaFor = (scopeId: string): number => {
+    const deltaFor = (scopeId: string): number | null => {
       const b = baseline?.get(scopeId);
       const p = displayedForecast?.get(scopeId);
+      if (!b || !p || displayedCoverageByScope.get(scopeId)?.state === "unavailable"
+        || data.scopes.find(scope => scope.scopeId === scopeId)?.forecastCoverage.state === "unavailable") return null;
       return compareToBaseline(b, p).deltaDays;
     };
     const dependsOn: DependencyDelta[] = scope.dependsOnScopeIds.map((id) => ({
@@ -493,7 +495,7 @@ export default function PortfolioPageClient() {
       .filter((s) => s.dependsOnScopeIds.includes(effectiveSelectedScopeId))
       .map((s) => ({ scopeId: s.scopeId, name: s.name, deltaDays: deltaFor(s.scopeId) }));
     return { dependsOn, dependents };
-  }, [data, baseline, displayedForecast, effectiveSelectedScopeId]);
+  }, [data, baseline, displayedForecast, displayedCoverageByScope, effectiveSelectedScopeId]);
 
   const momentumByScope = useMemo(() => {
     const out = new Map<string, MomentumTrend>();
@@ -537,6 +539,7 @@ export default function PortfolioPageClient() {
       targetDate: s.targetDate,
       changed: changedScopeIds.has(s.scopeId),
       forecastCoverage: displayedCoverageByScope.get(s.scopeId) ?? s.forecastCoverage,
+      realityCoverage: s.forecastCoverage,
       // The lane wakes when its channel below is touched -- the coupling
       // that makes "this fader controls THAT project" instant.
       active: hoveredScopeId === s.scopeId || transferPair.includes(s.scopeId),

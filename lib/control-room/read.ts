@@ -26,6 +26,7 @@ import type { DecisionRow } from "@/lib/decisions/model";
 import type { TimelineEntry, TimelineCandidate, TimelineLane } from "@/lib/timeline/entries";
 import { formatDateOnly } from "@/lib/time/dateContract";
 import type { ForecastCoverageState } from "@/lib/forecast/coverage";
+import { scenarioForecastCoverage } from "@/lib/scenario/forecastCoverage";
 import {
   readControlRoomFreshness,
   type ControlRoomRefreshReceipt,
@@ -316,7 +317,9 @@ function dateWithYear(d: Date, now: Date = new Date()): string {
 }
 
 export function readControlRoom(i: ControlRoomInput): ControlRoomReading {
-  const { now, data, scenario, preview, baseline, floorByScope, decisions, entries, lanes } = i;
+  const { now, data: realityData, scenario, preview, baseline, floorByScope, decisions, entries, lanes } = i;
+  const coverageByScope = scenarioForecastCoverage(realityData.scopes, scenario, i.scenarioActive, realityData.decisions ?? []);
+  const data = {...realityData, scopes: realityData.scopes.map(scope => ({...scope, forecastCoverage: coverageByScope.get(scope.scopeId) ?? scope.forecastCoverage}))};
   const startDate = new Date(data.startDate);
   const laneById = new Map(lanes.map((l) => [l.scopeId, l]));
   const scopeName = new Map(data.scopes.map((s) => [s.scopeId, s.name]));
@@ -464,7 +467,8 @@ export function readControlRoom(i: ControlRoomInput): ControlRoomReading {
   }
   const gatingScope = data.scopes.find((s) => s.scopeId === gatedByScopeId) ?? null;
   const gatingSim = gatedByScopeId ? preview.get(gatedByScopeId) ?? null : null;
-  const gatingReality = gatedByScopeId ? baseline.get(gatedByScopeId) ?? null : null;
+  const gatingReality = gatedByScopeId && realityData.scopes.find(scope => scope.scopeId === gatedByScopeId)?.forecastCoverage.state !== "unavailable"
+    ? baseline.get(gatedByScopeId) ?? null : null;
   const target = gatingScope?.targetDate ? new Date(gatingScope.targetDate) : null;
   const unavailableScopes = data.scopes.filter((scope) => scope.forecastCoverage.state === "unavailable");
   const partialScopes = data.scopes.filter((scope) => scope.forecastCoverage.state === "modeled_subset");

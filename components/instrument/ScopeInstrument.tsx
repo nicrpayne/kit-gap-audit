@@ -340,8 +340,9 @@ export default function ScopeInstrument() {
   );
   const unmappedExecution = scope.executionItems.filter((item) => !activelyLinkedIds.has(item.id));
 
-  const movedDays = Math.round((res.likelyDate.getTime() - base.likelyDate.getTime()) / 86400000);
-  const dom = m.previewPending ? null : readDominance(
+  const movedDays = displayedCoverage.state === "unavailable" || scope.forecastCoverage.state === "unavailable"
+    ? null : Math.round((res.likelyDate.getTime() - base.likelyDate.getTime()) / 86400000);
+  const dom = m.previewPending || displayedCoverage.state === "unavailable" ? null : readDominance(
     res,
     m.floorByScope?.get(scope.scopeId),
     startDate,
@@ -1362,7 +1363,7 @@ function VelocityLean({
 // animates on its own — every arrival is caused by something the user did.
 const STAGE = { load: 0.24, date: 0.42, impact: 0.58 };
 
-function MasterDisplay({
+export function MasterDisplay({
   pending,
   scopeName,
   date,
@@ -1387,7 +1388,7 @@ function MasterDisplay({
   loadDays: number;
   realityLoadDays: number;
   capacityLabel: string;
-  movedDays: number;
+  movedDays: number | null;
   effortRemoved: number;
   active: boolean;
   canonicalForecast: boolean;
@@ -1397,7 +1398,7 @@ function MasterDisplay({
   /** Live during a carry: what setting this module down would remove. */
   previewRelief: number | null;
 }) {
-  const moved = movedDays !== 0;
+  const moved = movedDays !== null && movedDays !== 0;
   const impactTone = moved ? deltaTone(movedDays) : active ? "var(--i-text-soft)" : "var(--i-text-faint)";
   return (
     <div
@@ -1472,11 +1473,11 @@ function MasterDisplay({
             className="inline-block i-readout"
             style={{ color: impactTone }}
           >
-            {unavailableLabel ? "—" : pending ? "Recalculating…" : moved ? deltaLabel(movedDays) : active ? "held" : "—"}
+            {unavailableLabel || movedDays === null ? "—" : pending ? "Recalculating…" : moved ? deltaLabel(movedDays) : active ? "held" : "—"}
           </motion.span>
         </div>
         <div className="mt-1.5 text-[9.5px] leading-snug" style={{ color: previewRelief !== null ? "var(--i-violet)" : "var(--i-text-faint)" }}>
-          {unavailableLabel ? "No date comparison available" : pending ? "No new date yet" : previewRelief !== null ? (
+          {unavailableLabel || movedDays === null ? "No date comparison available" : pending ? "No new date yet" : previewRelief !== null ? (
             `setting down removes ${previewRelief.toFixed(1)}d of load`
           ) : active ? (
             // The dominated case: the date did not move, and saying so is the
@@ -2106,7 +2107,7 @@ function ConstraintStrip({
 // carrying, left to right: what Scope INHERITED (quiet, with doors to the
 // instrument that owns it), then what the current composition COSTS (loud
 // only when there is a scenario), then the actions.
-function SignalStrip({
+export function SignalStrip({
   pending,
   capacityLabel,
   capacitySource,
@@ -2127,7 +2128,7 @@ function SignalStrip({
   contextPct: number;
   contextChanged: boolean;
   loadRemoved: number;
-  movedDays: number;
+  movedDays: number | null;
   included: number;
   out: number;
   active: boolean;
@@ -2175,9 +2176,9 @@ function SignalStrip({
         />
         <Consequence
           label="Landing"
-          value={pending ? "Recalculating…" : movedDays !== 0 ? deltaLabel(movedDays) : active ? "held" : "—"}
-          tone={movedDays !== 0 ? deltaTone(movedDays) : active ? "var(--i-text-soft)" : "var(--i-text-faint)"}
-          note={pending ? "waiting for updated result" : movedDays !== 0 ? "against Reality" : active ? "this scenario does not move it" : "no scenario"}
+          value={movedDays === null ? "—" : pending ? "Recalculating…" : movedDays !== 0 ? deltaLabel(movedDays) : active ? "held" : "—"}
+          tone={movedDays !== null && movedDays !== 0 ? deltaTone(movedDays) : active ? "var(--i-text-soft)" : "var(--i-text-faint)"}
+          note={movedDays === null ? "No date comparison available" : pending ? "waiting for updated result" : movedDays !== 0 ? "against Reality" : active ? "this scenario does not move it" : "no scenario"}
           delay={0.42}
         />
       </motion.div>

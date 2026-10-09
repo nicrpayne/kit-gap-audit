@@ -99,8 +99,9 @@ export default function ScenarioInspector({
   onCollapse,
 }: ScenarioInspectorProps) {
   const active = preview ?? baseline;
+  const comparable = scope.forecastCoverage.state !== "unavailable" && realityCoverage?.state !== "unavailable" && !!baseline && !!active;
   const deltaDays =
-    dirty && baseline && active
+    comparable && dirty && baseline && active
       ? Math.round((active.likelyDate.getTime() - baseline.likelyDate.getTime()) / 86400000)
       : 0;
 
@@ -122,8 +123,9 @@ export default function ScenarioInspector({
   });
 
   const explanation = useMemo(
-    () =>
-      explainScope({
+    () => !comparable ? [scope.forecastCoverage.state === "unavailable"
+      ? scope.forecastCoverage.reason ?? "No supported delivery outcome is available. Review the remaining work and its estimates."
+      : "No date comparison is available against accepted Reality."] : explainScope({
         scopeName: scope.name,
         deltaDays,
         // The aggregate fader is not a named-person move; explainScope's
@@ -134,7 +136,7 @@ export default function ScenarioInspector({
         dependsOn,
         dependents,
       }),
-    [scope.name, deltaDays, dependsOn, dependents]
+    [scope.name, scope.forecastCoverage.state, scope.forecastCoverage.reason, comparable, deltaDays, dependsOn, dependents]
   );
 
   return (
@@ -338,8 +340,8 @@ export default function ScenarioInspector({
             {dependents.map((d) => (
               <li key={d.scopeId} className="flex items-center justify-between text-[12px]">
                 <span className="text-[var(--i-text-soft)] truncate pr-2">{d.name}</span>
-                <span className="font-medium tabular-nums shrink-0" style={{ color: moveColor(d.deltaDays) }}>
-                  {d.deltaDays === 0 ? "no change" : d.deltaDays < 0 ? `${Math.abs(d.deltaDays)}d earlier` : `${d.deltaDays}d later`}
+                <span className="font-medium tabular-nums shrink-0" style={{ color: d.deltaDays === null ? "var(--i-text-faint)" : moveColor(d.deltaDays) }}>
+                  {d.deltaDays === null ? "No date comparison" : d.deltaDays === 0 ? "no change" : d.deltaDays < 0 ? `${Math.abs(d.deltaDays)}d earlier` : `${d.deltaDays}d later`}
                 </span>
               </li>
             ))}

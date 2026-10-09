@@ -9,6 +9,9 @@ import { scenarioForecastCoverage } from "../lib/scenario/forecastCoverage";
 import { scenarioWorkItems } from "../lib/scenario/workItems";
 import { makeSignalEstimate } from "../lib/scope/signalEstimates";
 import { remainingEstimateConflict } from "../lib/scenario/remainingEstimates";
+import ForecastField from "../components/portfolio/ForecastField";
+import ScenarioInspector from "../components/portfolio/ScenarioInspector";
+import { capacityForecastContract } from "../lib/capacity/contract";
 import { EMPTY_SCENARIO, type ProjectScope, type ScopeWorkItem } from "../lib/instrument/useProject";
 import CapabilityTile from "../components/instrument/CapabilityTile";
 import FeatureDetail from "../components/instrument/FeatureDetail";
@@ -22,6 +25,8 @@ import { forecastReadingForTime, historicalForecastReading, liveForecastReading 
 import type { ProjectPayload } from "../lib/instrument/useProject";
 // tsx's classic JSX transform for imported Next client components.
 (globalThis as unknown as {React:typeof React}).React=React;
+// InstrumentRail has module-level JSX under tsx's classic transform.
+const { SignalStrip, MasterDisplay } = require("../components/instrument/ScopeInstrument") as typeof import("../components/instrument/ScopeInstrument");
 
 const checkNames: string[] = [];
 const check = (name: string, run: () => void) => { run(); checkNames.push(name); };
@@ -221,5 +226,55 @@ check("Unavailable Control Room dates/floors/comparisons are absent; gates and t
   assert.equal(historical.likelyDate,"2026-10-13");assert.equal(historical.temporalRole,"historical");
   assert.equal(forecastReadingForTime(true,{...qualified,coverageState:"unavailable"},null),null);
   assert.match(readFileSync("components/TimelinePageClient.tsx","utf8"),/project\.coverageByScope\.get\(lane.scopeId\)\?\.state/);
+});
+check("Scope footer and hero cannot imply a landing delta from an unavailable side", () => {
+  const stripProps={pending:false,capacityLabel:"1",capacitySource:"fixture",capacityChanged:false,contextPct:0,contextChanged:false,loadRemoved:2,movedDays:null,included:1,out:1,active:true,onDiscard:()=>{}};
+  for (const pending of [false,true]) {
+    const strip=renderToStaticMarkup(<SignalStrip {...stripProps} pending={pending}/>);
+    assert(strip.includes("No date comparison available"));assert(!strip.includes("against Reality")&&!strip.includes("earlier")&&!strip.includes("held"));
+  }
+  const positive=renderToStaticMarkup(<SignalStrip {...stripProps} movedDays={-4}/>);
+  assert(positive.includes("4d earlier")&&positive.includes("against Reality"));
+  const hero=renderToStaticMarkup(<MasterDisplay pending={false} scopeName="Fixture" date="Oct 12" best="Oct 10" worst="Oct 15" loadDays={2} realityLoadDays={0} capacityLabel="1" movedDays={null} effortRemoved={-2} active canonicalForecast unavailableLabel={null} dominancePhrase={null} previewRelief={null}/>);
+  assert(hero.includes("Oct 12"),"supported new work may have an outcome");
+  assert(hero.includes("No date comparison available")&&!hero.includes("held"),"unavailable baseline cannot create a comparison");
+  assert.match(readFileSync("components/instrument/ScopeInstrument.tsx","utf8"),/displayedCoverage\.state === "unavailable" \|\| scope\.forecastCoverage\.state === "unavailable"/);
+});
+check("Single-project Control Room uses Scenario coverage rather than a forecastable Reality", () => {
+  const now=new Date("2026-10-08T00:00:00Z"),target=new Date("2026-10-31T00:00:00Z");
+  const s={...scope,forecastItems:[item],gates:[],targetDate:target.toISOString(),teamCapacity:1,capacitySource:"explicit" as const,reportHistory:[],lastReport:null};
+  const data={startDate:now.toISOString(),scopes:[s],people:[],allocations:[],contextSwitchCostPct:0,findings:[],sources:[],reports:[],forecastSource:{asOf:now.toISOString(),provider:"Linear",availability:"available"}} as unknown as ProjectPayload;
+  const before=structuredClone(data),state=structuredClone(EMPTY_SCENARIO);
+  state.estimateOverrideByItemId.OPEN={low:0,likely:0,high:0};
+  const spec={scopeId:s.scopeId,items:[item],gates:[],teamCapacity:1,dependsOnScopeIds:[],startDate:now,targetDate:target};
+  const baseline=runPortfolioSimulation([spec],10),preview=runPortfolioSimulation([{...spec,items:scenarioWorkItems(s,state)}],10);
+  assert.equal(preview.get(s.scopeId)!.confidenceAtTarget,100,"raw zero-work engine result deliberately exercises the refusal");
+  const params={now,data,scenario:state,scenarioActive:true,preview,baseline,floorByScope:preview,decisions:[]};
+  const field=readProjectField(params),lane=field.lanes[0];
+  assert.equal(lane.coverageState,"unavailable");
+  for(const key of ["p10","p50","p90","realityP50","floorDays","headroomDays","gapDays","confidence"] as const) assert.equal(lane[key],null,key);
+  const reading=readControlRoom({...params,dataReceivedAt:now,refreshReceipts:[],entries:[],lanes:[],timelineCandidates:[],timelineRangeEnd:null});
+  assert.equal(reading.outcome.coverageState,"unavailable");
+  for(const key of ["likely","p10","p90","realityLikely","gapDays","spreadDays","confidence"] as const) assert.equal(reading.outcome[key],null,key);
+  const inspector=renderToStaticMarkup(<Inspector field={field} reading={reading} selection={{kind:"lane",id:s.scopeId}} onSelect={()=>{}} scenarioActive/>);
+  assert(!inspector.includes("100%")&&!inspector.includes("Oct 8"));
+  assert.equal(readProjectField({...params,scenarioActive:false,scenario:structuredClone(EMPTY_SCENARIO),preview:baseline}).lanes[0].coverageState,"forecastable");
+  assert.deepEqual(data,before);
+});
+check("Portfolio rows and inspector withhold unavailable comparisons, including dependencies", () => {
+  const now=new Date("2026-10-08T00:00:00Z"),target=new Date("2026-10-31T00:00:00Z");
+  const state=structuredClone(EMPTY_SCENARIO);state.estimateOverrideByItemId.OPEN={low:0,likely:0,high:0};
+  const zero=project(scope,state);
+  const spec={scopeId:scope.scopeId,items:[item],gates:[],teamCapacity:1,dependsOnScopeIds:[],startDate:now,targetDate:target};
+  const baseline=runPortfolioSimulation([spec],10),preview=runPortfolioSimulation([{...spec,items:scenarioWorkItems(scope,state)}],10);
+  const fieldScope={scopeId:scope.scopeId,name:scope.name,dependsOnScopeIds:[],targetDate:target.toISOString(),forecastCoverage:zero,realityCoverage:coverage(),changed:true};
+  const field=renderToStaticMarkup(<ForecastField scopes={[fieldScope]} baseline={baseline} preview={preview} axis={{minDay:0,maxDay:40,ticks:[]}} startDate={now} dirty selectedScopeId={scope.scopeId} onSelectScope={()=>{}} onScrubTarget={()=>{}} pendingTargets={new Map()} onSaveTarget={()=>{}} portfolioLikely={now} portfolioDeltaDays={-4} portfolioGatedBy={scope.name}/>);
+  assert(!/\d+d (earlier|later)/.test(field));assert(!field.includes("100%"));
+  const props={scope:{...fieldScope,capacitySource:"explicit" as const},baseline:baseline.get(scope.scopeId),preview:preview.get(scope.scopeId),dirty:true,realityCoverage:coverage(),changedScopeNames:[],dependsOn:[],dependents:[{scopeId:"next",name:"Next",deltaDays:null}],trend:null,realityCapacity:1,scenarioCapacity:1,capacityBasis:{kind:"explicit" as const,value:1},capacityContract:capacityForecastContract(scope.scopeId,[],[],0,1,"explicit"),onManagePeople:()=>{},switchCostPct:0,switchCostScopes:[],focus:null,onCollapse:()=>{}};
+  const inspector=renderToStaticMarkup(<ScenarioInspector {...props}/>);
+  assert(inspector.includes("Why no date")&&inspector.includes("Selected open work has no positive remaining effort"));
+  assert(inspector.includes("No date comparison"));assert(!inspector.includes("forecast moved")&&!/\d+d earlier/.test(inspector));
+  const restored=renderToStaticMarkup(<ScenarioInspector {...props} scope={{...props.scope,forecastCoverage:coverage()}}/>);
+  assert(restored.includes("forecast moved"),"supported comparison explanation remains available");
 });
 console.log(JSON.stringify({passed:true,groups:checkNames.length,checks:checkNames},null,2));

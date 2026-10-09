@@ -35,6 +35,7 @@ export interface FieldScope {
   dependsOnScopeIds: string[];
   targetDate: string | null;
   forecastCoverage: ForecastCoverageContract;
+  realityCoverage?: ForecastCoverageContract;
   /** Carries a scenario change. Deliberately independent of selection:
       "what I changed" and "what I'm looking at" are different questions and
       never share a visual state -- violet means changed, full stop. */
@@ -245,7 +246,7 @@ export default function ForecastField({
                 ? portfolioLikely ? fmtLong(portfolioLikely) : "—"
                 : portfolioClaim.headline}
             </span>
-            {portfolioClaim.state === "forecastable" && dirty && portfolioDeltaDays !== 0 && (
+            {portfolioClaim.state === "forecastable" && scopes.every(scope => scope.realityCoverage?.state !== "unavailable") && dirty && portfolioDeltaDays !== 0 && (
               <span
                 className="i-readout text-[13px]"
                 style={{ color: portfolioDeltaDays < 0 ? "var(--i-mint)" : "var(--i-red)" }}
@@ -253,7 +254,7 @@ export default function ForecastField({
                 {portfolioDeltaDays < 0 ? `${Math.abs(portfolioDeltaDays)}d earlier` : `${portfolioDeltaDays}d later`}
               </span>
             )}
-            {portfolioClaim.state === "forecastable" && dirty && portfolioDeltaDays === 0 && portfolioGatedBy && (
+            {portfolioClaim.state === "forecastable" && scopes.every(scope => scope.realityCoverage?.state !== "unavailable") && dirty && portfolioDeltaDays === 0 && portfolioGatedBy && (
               <span className="text-[11px] text-[var(--i-amber)]">still gated by {portfolioGatedBy}</span>
             )}
           </div>
@@ -362,8 +363,9 @@ export default function ForecastField({
           const p = preview?.get(s.scopeId) ?? b;
 
           const selected = s.scopeId === selectedScopeId;
-          const deltaDays = dirty && b && p ? Math.round((p.likelyDate.getTime() - b.likelyDate.getTime()) / 86400000) : 0;
-          const moved = dirty && !!b && !!p && Math.abs(deltaDays) >= 1;
+          const comparable = s.forecastCoverage.state !== "unavailable" && s.realityCoverage?.state !== "unavailable";
+          const deltaDays = comparable && dirty && b && p ? Math.round((p.likelyDate.getTime() - b.likelyDate.getTime()) / 86400000) : 0;
+          const moved = comparable && dirty && !!b && !!p && Math.abs(deltaDays) >= 1;
           const deltaColor = deltaDays < 0 ? "var(--i-mint)" : deltaDays > 0 ? "var(--i-red)" : "var(--i-text-soft)";
 
           const pendingTarget = pendingTargets.get(s.scopeId);

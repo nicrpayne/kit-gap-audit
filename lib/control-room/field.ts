@@ -28,6 +28,7 @@ import { readDominance } from "@/lib/scope/constraint";
 import type { ProjectPayload, SuiteScenario } from "@/lib/instrument/useProject";
 import type { DecisionRow } from "@/lib/decisions/model";
 import type { ForecastCoverageState } from "@/lib/forecast/coverage";
+import { scenarioForecastCoverage } from "@/lib/scenario/forecastCoverage";
 
 const DAY = 86400000;
 
@@ -196,6 +197,7 @@ export function readProjectField(i: FieldInput): ProjectField {
   const nowDay = toDays(now);
 
   const scopes = data.scopes;
+  const coverageByScope = scenarioForecastCoverage(scopes, scenario, i.scenarioActive, data.decisions ?? []);
   const nameById = new Map(scopes.map((s) => [s.scopeId, s.name]));
   const upById = new Map(scopes.map((s) => [s.scopeId, s.dependsOnScopeIds.filter((x) => nameById.has(x))]));
 
@@ -239,9 +241,10 @@ export function readProjectField(i: FieldInput): ProjectField {
   const lanes: FieldLane[] = scopes.map((s) => {
     // Presentation only: retain targets, history, gates and structural
     // dependencies, but no start-day/gate-only date for unavailable work.
-    const available = s.forecastCoverage.state !== "unavailable";
+    const coverage = coverageByScope.get(s.scopeId) ?? s.forecastCoverage;
+    const available = coverage.state !== "unavailable";
     const sim = available ? preview.get(s.scopeId) ?? null : null;
-    const real = available ? baseline.get(s.scopeId) ?? null : null;
+    const real = available && s.forecastCoverage.state !== "unavailable" ? baseline.get(s.scopeId) ?? null : null;
     const floor = available ? floorByScope?.get(s.scopeId) ?? null : null;
     const target = s.targetDate ? toDays(new Date(s.targetDate)) : null;
     const ch = readChannel(workforce, s.scopeId, switchCostPct);
@@ -280,9 +283,9 @@ export function readProjectField(i: FieldInput): ProjectField {
       p90: sim ? percentileDay(sim.completionDaysSorted, 90) : null,
       realityP50: i.scenarioActive && real ? toDays(real.likelyDate) : null,
       targetDays: target,
-      gapDays: s.forecastCoverage.canonicalForecast && sim && target !== null ? toDays(sim.likelyDate) - target : null,
-      confidence: s.forecastCoverage.canonicalForecast ? sim?.confidenceAtTarget ?? null : null,
-      coverageState: s.forecastCoverage.state,
+      gapDays: coverage.canonicalForecast && sim && target !== null ? toDays(sim.likelyDate) - target : null,
+      confidence: coverage.canonicalForecast ? sim?.confidenceAtTarget ?? null : null,
+      coverageState: coverage.state,
       floorDays: dom ? dom.floorDays : null,
       headroomDays: dom ? dom.headroomDays : null,
       dominated: dom?.dominated ?? false,

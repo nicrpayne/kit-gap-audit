@@ -10,13 +10,13 @@
 export interface DependencyDelta {
   scopeId: string;
   name: string;
-  deltaDays: number; // that dependency's own preview-vs-baseline delta
+  deltaDays: number | null; // null means no supported comparison
 }
 
 export interface DependentDelta {
   scopeId: string;
   name: string;
-  deltaDays: number; // a scope that depends on THIS one, and its own delta
+  deltaDays: number | null; // null means no supported comparison
 }
 
 export interface ScopeExplanationInput {
@@ -43,7 +43,7 @@ export function explainScope(input: ScopeExplanationInput): string[] {
   const lines: string[] = [];
 
   const capacityChanged = anonymousFteAdded > 1e-6 || namedFteChanged;
-  const movedDependencies = dependsOn.filter((d) => d.deltaDays !== 0);
+  const movedDependencies = dependsOn.filter((d): d is DependencyDelta & {deltaDays:number} => d.deltaDays !== null && d.deltaDays !== 0);
 
   if (!capacityChanged && movedDependencies.length === 0 && deltaDays === 0) {
     return lines; // nothing scenario-related is happening for this scope
@@ -81,7 +81,7 @@ export function explainScope(input: ScopeExplanationInput): string[] {
     lines.push(`${scopeName}'s forecast moved ${moveWord(deltaDays)} this scenario, from a change elsewhere in the portfolio.`);
   }
 
-  const movedDependents = dependents.filter((d) => d.deltaDays !== 0);
+  const movedDependents = dependents.filter((d): d is DependentDelta & {deltaDays:number} => d.deltaDays !== null && d.deltaDays !== 0);
   if (movedDependents.length > 0) {
     lines.push(
       `Effect on the rest of the portfolio: ${movedDependents
