@@ -16,3 +16,7 @@ Verification: `npm run proof:report-plain-text` checks literal source characters
 single entity decoding, both report renderers and frozen-data preservation.
 The clipboard fallback source-binding check is not a browser-permission test;
 actual browser clipboard behavior is tracked separately in acceptance evidence.
+Plain-text copies also carry the same historical/currentness warning as the
+screen and Markdown export. Scenario warnings do not compare a saved hypothetical
+against today's Reality forecast. The warning is prepended after plain-text
+rendering so it cannot reinterpret literal quote punctuation.

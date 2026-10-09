@@ -10,7 +10,7 @@ import DecisionBriefView from "./DecisionBriefView";
 import MomentumChip from "./MomentumChip";
 import { computeMomentum } from "@/lib/momentum/compute";
 import { reportAttributionSentence } from "@/lib/momentum/attribution";
-import { describeSnapshot, withSnapshotProvenance } from "@/lib/reports/snapshot";
+import { describeSnapshot, withSnapshotProvenance, withPlainTextSnapshotProvenance } from "@/lib/reports/snapshot";
 import { useProjectParam } from "@/lib/shell/useProjectParam";
 import { isDecisionBriefV1, type DecisionBriefV1 } from "@/lib/reports/decisionBrief";
 import { renderDecisionBriefPlainText } from "@/lib/reports/decisionBriefRender";
@@ -485,7 +485,7 @@ export default function ReportsPageClient() {
             Signal cannot annotate, so the warning has to travel inside the
             text rather than live beside it on screen. */}
         {selected && snapshot && <CopyMarkdownButton markdown={withSnapshotProvenance(presentLegacyReport(selected.summaryMarkdown).safeMarkdown, snapshot)} label="Copy Markdown" />}
-        {selectedBrief && <CopyMarkdownButton markdown={selectedRecipe ? renderAudienceBriefPlainText(selectedBrief, selectedRecipe) : renderDecisionBriefPlainText(selectedBrief)} label="Copy plain text" />}
+        {selectedBrief && snapshot && <CopyMarkdownButton markdown={withPlainTextSnapshotProvenance(selectedRecipe ? renderAudienceBriefPlainText(selectedBrief, selectedRecipe) : renderDecisionBriefPlainText(selectedBrief), snapshot)} label="Copy plain text" />}
         {process.env.NODE_ENV !== "production" && <a href="/reports/composer/fixture" className="report-no-print rounded-md border border-[var(--i-border)] px-3 py-1.5 text-xs text-[var(--i-signal)]">Open composer prototype</a>}
         {selected && <a href={`/reports/${encodeURIComponent(selected.id)}/print`} target="_blank" rel="noreferrer" className="report-no-print rounded-md border border-[var(--i-border)] px-3 py-1.5 text-xs text-[var(--i-text-soft)] hover:bg-white/5">Print view</a>}
         {live?.state === "ready" && (() => {

@@ -3,14 +3,19 @@ import { deriveKnowledgeFreshness } from "../lib/audit/freshness";
 import { rosterReadings, validateRosterDraft } from "../lib/capacity/reconciliation";
 import { capabilityExecutionState, partitionProductShape } from "../lib/scope/productShape";
 
-const current = deriveKnowledgeFreshness({ activationAvailable: true, companionOnline: true, jobRunning: false, packageAheadOfSnapshot: false, watermarkAheadOfPackage: false });
-const available = deriveKnowledgeFreshness({ activationAvailable: true, companionOnline: true, jobRunning: false, packageAheadOfSnapshot: true, watermarkAheadOfPackage: false });
+const current = deriveKnowledgeFreshness({ activationAvailable: true, companionOnline: true, ingestionState: "current", jobRunning: false, packageAheadOfSnapshot: false, watermarkAheadOfPackage: false });
+const available = deriveKnowledgeFreshness({ activationAvailable: true, companionOnline: true, ingestionState: "current", jobRunning: false, packageAheadOfSnapshot: true, watermarkAheadOfPackage: false });
 const ingesting = deriveKnowledgeFreshness({ activationAvailable: true, companionOnline: true, ingestionState: "ingesting", jobRunning: false, packageAheadOfSnapshot: true, watermarkAheadOfPackage: true });
 const refreshing = deriveKnowledgeFreshness({ activationAvailable: true, companionOnline: true, jobRunning: true, packageAheadOfSnapshot: false, watermarkAheadOfPackage: false });
 const offline = deriveKnowledgeFreshness({ activationAvailable: true, companionOnline: false, jobRunning: false, packageAheadOfSnapshot: true, watermarkAheadOfPackage: true });
 assert.deepEqual([current.code, available.code, ingesting.code, refreshing.code, offline.code], ["current", "new_available", "ingesting", "refreshing", "offline"]);
 assert.equal(ingesting.canRefresh, false);
 assert.equal(offline.canRefresh, false);
+for (const ingestionState of [undefined, null, "unknown", "failed"]) {
+  const unverified = deriveKnowledgeFreshness({ activationAvailable: true, companionOnline: true, ingestionState, jobRunning: false, packageAheadOfSnapshot: true, watermarkAheadOfPackage: true });
+  assert.equal(unverified.code, "unavailable", "an online companion alone does not establish a completed, synchronized package");
+  assert.equal(unverified.canRefresh, false);
+}
 
 const scopes = new Set(["jsa", "platform", "itrack"]);
 const split = [{ name: "Person A", fte: 1, allocations: [{ scopeId: "jsa", fte: 0.5 }, { scopeId: "itrack", fte: 0.5 }] }];

@@ -104,3 +104,10 @@ export function describeSnapshot(ctx: SnapshotContext): SnapshotVerdict {
 export function withSnapshotProvenance(markdown: string, verdict: SnapshotVerdict): string {
   return [`> **HISTORICAL SNAPSHOT.** ${verdict.line}`, "", markdown].join("\n");
 }
+
+/** Plain-text exports must carry the same warning. The body is already plain
+ * text: do not parse it as Markdown again or literal source punctuation would
+ * be mistaken for formatting. */
+export function withPlainTextSnapshotProvenance(text: string, verdict: SnapshotVerdict): string {
+  return [`HISTORICAL SNAPSHOT. ${verdict.line}`, "", text].join("\n");
+}
