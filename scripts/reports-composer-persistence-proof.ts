@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { randomUUID } from "node:crypto";
 import { Prisma, PrismaClient } from "@prisma/client";
 import { assembleDecisionBrief } from "../lib/reports/decisionBrief";
 import { briefPayloadFingerprint } from "../lib/reports/decisionBriefRender";
@@ -7,13 +8,17 @@ import { renderAudienceBriefMarkdown } from "../lib/reports/audienceBriefRender"
 import { healthyOwnerFixture } from "./lib/decision-brief-fixtures";
 
 if (process.env.REPORTS_DB_PROOF !== "1") throw new Error("Use only with a disposable proof database.");
+const database = new URL(process.env.DATABASE_URL ?? "http://invalid");
+assert(database.hostname === "127.0.0.1" && database.port === "55434" && database.pathname === "/signal_t0_test_1004", "Disposable repair DB only");
 const prisma = new PrismaClient();
 
 async function main() {
-  const brief = assembleDecisionBrief(healthyOwnerFixture());
+  const scope = await prisma.scope.create({ data: { name: `Report persistence proof ${randomUUID()}`, teamKey: "PRF", executionState: "not_configured" } });
+  try {
+  const owner = healthyOwnerFixture(); owner.project.id = scope.id; owner.project.name = scope.name;
+  const brief = assembleDecisionBrief(owner);
   const recipe = buildBriefRecipe("delivery-leadership", "weekly-update", brief);
   const before = JSON.stringify(brief);
-  const scope = await prisma.scope.findFirstOrThrow({ where: { name: "JSA" } });
   const row = await prisma.report.create({ data: {
     scopeId: scope.id,
     generatedAt: new Date(brief.identity.generatedAt),
@@ -48,8 +53,8 @@ async function main() {
     console.log(`PASS Reports composer persistence: immutable snapshot + recipe + presentation version + exact Markdown (${row.id})`);
   } finally {
     await prisma.report.delete({ where: { id: row.id } });
-    await prisma.$disconnect();
   }
+  } finally { await prisma.scope.delete({ where: { id: scope.id } }); await prisma.$disconnect(); }
 }
 
 main().catch(async (error) => { console.error(error); await prisma.$disconnect(); process.exit(1); });

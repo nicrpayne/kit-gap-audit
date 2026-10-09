@@ -12,6 +12,17 @@ const PUBLIC_PATHS = ["/login", "/api/login", "/api/version"];
 export async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
 
+  // These routes have their own fail-closed recipient authentication. Reader
+  // cookies are never accepted by the operator app or any other API route.
+  if (/^\/shared\/reports\/[^/]+\/?$/.test(pathname) || /^\/api\/report-access\/[^/]+\/(request|verify|logout)\/?$/.test(pathname)) {
+    const response = NextResponse.next();
+    response.headers.set("Cache-Control", "private, no-store, max-age=0");
+    response.headers.set("X-Robots-Tag", "noindex, nofollow, noarchive");
+    response.headers.set("Referrer-Policy", "no-referrer");
+    response.headers.set("X-Frame-Options", "DENY");
+    return response;
+  }
+
   if (PUBLIC_PATHS.some((p) => pathname === p || pathname.startsWith(p + "/"))) {
     return NextResponse.next();
   }
@@ -47,7 +58,7 @@ export async function middleware(req: NextRequest) {
   }
 
   const loginUrl = new URL("/login", req.url);
-  loginUrl.searchParams.set("next", pathname);
+  loginUrl.searchParams.set("next", pathname + req.nextUrl.search);
   return NextResponse.redirect(loginUrl);
 }
 

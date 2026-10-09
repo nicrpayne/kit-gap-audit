@@ -455,6 +455,83 @@ model Report {
   // full manifest; a Report should reference it, not duplicate it.
   contextSnapshotId String?
   contextSnapshot   ContextSnapshot? @relation(fields: [contextSnapshotId], references: [id])
+  privateShares     ReportShare[]
+}
+
+// Reader-only publication. The projected content is frozen at publication;
+// recipient sessions never grant access to the working Signal application.
+model ReportShare {
+  id          String                 @id @default(uuid())
+  reportId    String
+  report      Report                 @relation(fields: [reportId], references: [id], onDelete: Restrict)
+  requestId   String                 @unique
+  requestHash String
+  snapshot    Json
+  revision    Int                    @default(1)
+  createdAt   DateTime               @default(now())
+  expiresAt   DateTime
+  revokedAt   DateTime?
+  recipients  ReportShareRecipient[]
+  events      ReportShareEvent[]
+
+  @@index([reportId, createdAt])
+}
+
+model ReportShareRecipient {
+  id         String                  @id @default(uuid())
+  shareId    String
+  share      ReportShare             @relation(fields: [shareId], references: [id], onDelete: Cascade)
+  email      String
+  generation Int                     @default(1)
+  revokedAt  DateTime?
+  createdAt  DateTime                @default(now())
+  challenges ReportAccessChallenge[]
+  sessions   ReportReaderSession[]
+
+  @@unique([shareId, email])
+}
+
+model ReportAccessChallenge {
+  id          String               @id
+  recipientId String
+  recipient   ReportShareRecipient @relation(fields: [recipientId], references: [id], onDelete: Cascade)
+  generation  Int
+  codeHash    String
+  attempts    Int                  @default(0)
+  createdAt   DateTime             @default(now())
+  expiresAt   DateTime
+  deliveredAt DateTime?
+  consumedAt  DateTime?
+
+  @@index([expiresAt])
+}
+
+model ReportReaderSession {
+  tokenHash   String               @id
+  recipientId String
+  recipient   ReportShareRecipient @relation(fields: [recipientId], references: [id], onDelete: Cascade)
+  generation  Int
+  createdAt   DateTime             @default(now())
+  expiresAt   DateTime
+
+  @@index([expiresAt])
+}
+
+model ReportShareRateLimit {
+  key      String   @id
+  count    Int
+  resetsAt DateTime
+}
+
+model ReportShareEvent {
+  id        String      @id @default(uuid())
+  shareId   String
+  share     ReportShare @relation(fields: [shareId], references: [id], onDelete: Cascade)
+  action    String
+  detail    Json
+  createdAt DateTime    @default(now())
+
+  @@index([shareId, createdAt])
 }
 
 // An AI-produced three-point estimate for one work item, cached by content

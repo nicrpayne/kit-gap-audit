@@ -523,6 +523,7 @@ export default function ReportsPageClient() {
         <h2 className="font-semibold">Share the saved brief</h2>
         <p className="mt-1 text-xs text-[var(--i-text-soft)]">Preview and export this exact saved snapshot. Private names, quotes and links are included; review before sharing. No Site is published automatically.</p>
         <div className="mt-3 flex flex-wrap gap-4 text-sm">
+          <a className="text-[var(--i-mint)] underline font-semibold" href={`/reports/${encodeURIComponent(selected.id)}/share${comparison ? "?pair=1" : ""}`}>Share privately with named recipients →</a>
           <a className="text-[var(--i-signal)] underline" href={`/reports/${encodeURIComponent(selected.id)}/share-preview`} target="_blank" rel="noreferrer">Preview saved brief</a>
           {comparison && <a className="text-[var(--i-signal)] underline" href={`/reports/${encodeURIComponent(selected.id)}/share-preview?pair=1`} target="_blank" rel="noreferrer">Preview Reality + Scenario</a>}
           <a className="text-[var(--i-signal)] underline" href={`/api/reports/${encodeURIComponent(selected.id)}/handoff${comparison ? "?pair=1" : ""}`}>Download Site handoff</a>
