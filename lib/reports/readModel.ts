@@ -134,7 +134,7 @@ export async function loadDecisionBriefOwnerInputs(
   if (!forecast.forecastCoverage.canonicalForecast) {
     throw new ForecastCoverageIncompleteError(forecast.forecastCoverage);
   }
-  const [previousReport, audit, decisions, dependencyScopes, people, allocations, settings, reconciliation, timelineEvents, contextSnapshot, kitConstruct, derivedState, refreshStatus, scopeEvidence] = await Promise.all([
+  const [previousReport, audit, decisions, dependencyScopes, people, allocations, settings, reconciliation, timelineEvents, contextSnapshot, derivedState, refreshStatus, scopeEvidence] = await Promise.all([
     prisma.report.findFirst({
       where: { scopeId: scope.id, ...CANONICAL_REPORT_MODE_WHERE },
       orderBy: CANONICAL_REPORT_ORDER_DESC,
@@ -166,7 +166,6 @@ export async function loadDecisionBriefOwnerInputs(
     options?.contextSnapshotId
       ? prisma.contextSnapshot.findFirst({ where: { id: options.contextSnapshotId, scopeId: scope.id } })
       : currentContextSnapshot(scope.id),
-    prisma.scope.findFirst({ where: { name: { contains: "KIT Construct", mode: "insensitive" } }, select: { id: true } }),
     prisma.projectDerivedState.findUnique({ where: { scopeId: scope.id }, select: { realityRevision: true } }),
     readKnowledgeStatus(scope.id),
     loadReportScopeEvidence(scope.id, generatedAt),
@@ -303,7 +302,6 @@ export async function loadDecisionBriefOwnerInputs(
         };
       }),
     },
-    kitConstructAvailable: !!kitConstruct,
   };
 }
 

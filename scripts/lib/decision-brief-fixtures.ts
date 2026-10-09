@@ -101,7 +101,6 @@ export function healthyOwnerFixture(): DecisionBriefOwnerInputs {
         { id: "milestone-next", title: "Release candidate", date: "2026-09-20T00:00:00.000Z", endDate: null, temporalState: "planned", sourceLabel: "Committed plan" },
       ],
     },
-    kitConstructAvailable: true,
   };
 }
 
@@ -160,7 +159,7 @@ export function weakGroundingFixture(): DecisionBriefOwnerInputs {
 
 export function pivotPrototypeFixture(): DecisionBriefOwnerInputs {
   const fixture = missingNamedCapacityFixture();
-  fixture.kitConstructAvailable = false;
+  fixture.requiredProjectContexts = [{ name: "KIT Construct", available: false }];
   fixture.decisions = [fixture.decisions[0]];
   fixture.dependencies = [];
   return fixture;

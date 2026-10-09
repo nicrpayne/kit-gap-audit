@@ -145,9 +145,26 @@ assert.notEqual(refreshedLive.headline.likelyWindow.value.likely, saved.headline
 
 const pivot = assembleDecisionBrief(pivotPrototypeFixture());
 const pivotMarkdown = renderDecisionBriefMarkdown(pivot);
-assert(pivot.caveats.value.some((caveat) => caveat.code === "KIT_CONSTRUCT_MISSING"));
+assert(pivot.caveats.value.some((caveat) => caveat.code === "REQUIRED_PROJECT_MISSING"));
 assert(pivot.caveats.value.some((caveat) => caveat.code === "CAPACITY_MISSING"));
 assert(pivotMarkdown.includes("KIT Construct project world"));
 assert(pivotMarkdown.includes("Named Capacity: MISSING"));
+
+const unrelated = healthyOwnerFixture();
+unrelated.project.name = "Fictional Harbor";
+const unrelatedBrief = assembleDecisionBrief(unrelated);
+assert(!unrelatedBrief.caveats.value.some((caveat) => /PROJECT_MISSING|KIT_CONSTRUCT/.test(caveat.code)), "an unrelated project must not invent a KIT Construct pivot requirement");
+assert(!renderDecisionBriefMarkdown(unrelatedBrief).includes("KIT Construct"));
+const availableRequired = pivotPrototypeFixture();
+availableRequired.requiredProjectContexts![0].available = true;
+assert(!assembleDecisionBrief(availableRequired).caveats.value.some((caveat) => caveat.code === "REQUIRED_PROJECT_MISSING"), "available explicitly required projects need no missing warning");
+const genericRequired = healthyOwnerFixture();
+genericRequired.requiredProjectContexts = [{ name: "Fictional donor", available: false }];
+assert(renderDecisionBriefMarkdown(assembleDecisionBrief(genericRequired)).includes("Fictional donor project world"), "the boundary is explicit report context, not a hardcoded business name");
+const legacySaved = structuredClone(unrelatedBrief);
+legacySaved.caveats.value.push({ code: "KIT_CONSTRUCT_MISSING", message: "Historical caveat, preserved exactly." });
+const legacyBefore = JSON.stringify(legacySaved);
+renderDecisionBriefMarkdown(legacySaved);
+assert.equal(JSON.stringify(legacySaved), legacyBefore, "rendering preserves historical snapshot caveats without backfilling this repair");
 
 console.log(`PASS Reports DecisionBriefV1: ${cases.length} fixtures + reconciliation, immutability, renderers and pivot gaps`);

@@ -56,7 +56,7 @@ try {
   assert.equal(saved.blockingCount, brief.calls.decisions.value.filter((decision) => decision.gated).length);
   assert(brief.calls.decisions.value.every((decision) => decision.status === "open"));
   assert(brief.calls.decisions.value.filter((decision) => !decision.gated).every((decision) => decision.modeledDelay.likely === 0));
-  assert(brief.caveats.value.some((caveat) => caveat.code === "KIT_CONSTRUCT_MISSING"));
+  assert(!brief.caveats.value.some((caveat) => caveat.code === "KIT_CONSTRUCT_MISSING" || caveat.code === "REQUIRED_PROJECT_MISSING"), "ordinary JSA generation must not invent a cross-project pivot requirement");
 
   mutationDecisionId = (await prisma.decision.create({
     data: { scopeId: scope.id, title: "DB proof mutation after saved brief", status: "open" },

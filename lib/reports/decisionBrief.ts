@@ -188,7 +188,8 @@ export interface DecisionBriefOwnerInputs {
       evidence?: { passageId: string; quote: string; sourceRef: string }[];
     }[];
   };
-  kitConstructAvailable: boolean;
+  /** Explicitly required by this report's owner inputs, never global name discovery. */
+  requiredProjectContexts?: { name: string; available: boolean }[];
 }
 
 export interface DecisionBriefV1 {
@@ -429,7 +430,9 @@ export function assembleDecisionBrief(input: DecisionBriefOwnerInputs): Decision
   ];
   const caveats: { code: string; message: string }[] = [];
   if (!namedAvailable) caveats.push({ code: "CAPACITY_MISSING", message: "Named, reconciled Capacity is MISSING/UNAVAILABLE; no person or staffing claim is made." });
-  if (!input.kitConstructAvailable) caveats.push({ code: "KIT_CONSTRUCT_MISSING", message: "No canonical KIT Construct project world exists; pivot scope, staffing and option consequences remain MISSING." });
+  for (const project of input.requiredProjectContexts ?? []) {
+    if (!project.available) caveats.push({ code: "REQUIRED_PROJECT_MISSING", message: `The required ${project.name} project world is unavailable for this brief; its scope, staffing and option consequences remain MISSING.` });
+  }
   if (!input.context.snapshotId) caveats.push({ code: "CONTEXT_SNAPSHOT_MISSING", message: "No immutable ContextSnapshot is available for this brief." });
   if (input.context.missingSources.length) caveats.push({ code: "PROVIDERS_UNSUPPLIED", message: `${input.context.missingSources.length} active provider/source lane${input.context.missingSources.length === 1 ? " is" : "s are"} unsupplied.` });
   if (weak.length) caveats.push({ code: "WEAK_GROUNDING", message: `${weak.length} current Finding${weak.length === 1 ? " is" : "s are"} not grounded to passage-level evidence.` });
