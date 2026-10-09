@@ -177,12 +177,12 @@ const occurrences = (text: string, needle: string) => text.split(needle).length 
 const defaultSavedRecipe = buildBriefRecipe("delivery-leadership", "weekly-update", traceableBrief);
 assert(!defaultSavedRecipe.modules.some((module) => module.id === "scope"), "default saved recipe reproduces the no-Scope provenance boundary");
 assert.equal(occurrences(renderAudienceBriefMarkdown(traceableBrief, defaultSavedRecipe), renderedReviewedEstimateQuote), 1, "default saved Markdown exposes the frozen estimate quote exactly once without Scope");
-assert.equal(occurrences(renderAudienceBriefPlainText(traceableBrief, defaultSavedRecipe), renderedReviewedEstimateQuote), 1, "default saved plain text exposes the frozen estimate quote exactly once without Scope");
+assert.equal(occurrences(renderAudienceBriefPlainText(traceableBrief, defaultSavedRecipe), reviewedEstimateQuote), 1, "default saved plain text exposes the original frozen estimate quote exactly once without Markdown escapes or Scope");
 for (const audience of audiences) {
   for (const purpose of purposes) {
     const recipe = buildBriefRecipe(audience, purpose, traceableBrief);
     assert.equal(occurrences(renderAudienceBriefMarkdown(traceableBrief, recipe), renderedReviewedEstimateQuote), 1, `${audience}/${purpose}: Markdown estimate provenance exactly once`);
-    assert.equal(occurrences(renderAudienceBriefPlainText(traceableBrief, recipe), renderedReviewedEstimateQuote), 1, `${audience}/${purpose}: plain-text estimate provenance exactly once`);
+    assert.equal(occurrences(renderAudienceBriefPlainText(traceableBrief, recipe), reviewedEstimateQuote), 1, `${audience}/${purpose}: original plain-text estimate provenance exactly once`);
   }
 }
 const scenarioCountBrief = structuredClone(traceableBrief);

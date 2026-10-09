@@ -1,7 +1,7 @@
 import type { DecisionBriefV1, SourceStamp } from "./decisionBrief";
 import { formatDateOnly, formatInstant, toInstant } from "@/lib/time/dateContract";
 import { FORECAST_PERCENTILE_COPY } from "@/lib/forecast/claims";
-import { markdownBlockquoteLines, markdownInlineText } from "./markdown";
+import { markdownBlockquoteLines, markdownInlineText, reportMarkdownToPlainText } from "./markdown";
 import { capabilityEstimatePresentation } from "./capabilityEstimatePresentation";
 
 const date = (iso: string | null) =>
@@ -188,12 +188,7 @@ function decisionFallback(brief: DecisionBriefV1, findingId: string): string {
 }
 
 export function renderDecisionBriefPlainText(brief: DecisionBriefV1): string {
-  return renderDecisionBriefMarkdown(brief)
-    .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
-    .replace(/^#{1,6}\s+/gm, "")
-    .replace(/\*\*/g, "")
-    .replace(/^_([^\n]+)_$/gm, "$1")
-    .replace(/`/g, "");
+  return reportMarkdownToPlainText(renderDecisionBriefMarkdown(brief));
 }
 import { reportScheduleLines } from "./schedule";
 import { scopeEvidenceMarkdown } from "./scopeEvidencePresentation";

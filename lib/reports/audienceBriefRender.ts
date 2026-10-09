@@ -2,7 +2,7 @@ import type { DecisionBriefV1, SourceStamp } from "./decisionBrief";
 import { briefPayloadFingerprint } from "./decisionBriefRender";
 import type { BriefModuleId, BriefRecipeV1, ModuleDensity } from "./composer";
 import { buildBriefPresentation, sourceForModule } from "./presentation";
-import { markdownBlockquoteLines, markdownInlineText } from "./markdown";
+import { markdownBlockquoteLines, markdownInlineText, reportMarkdownToPlainText } from "./markdown";
 import { formatDateOnly, formatInstant, toInstant } from "@/lib/time/dateContract";
 import { FORECAST_PERCENTILE_COPY } from "@/lib/forecast/claims";
 import { capabilityEstimatePresentation } from "./capabilityEstimatePresentation";
@@ -219,12 +219,7 @@ export function renderAudienceBriefMarkdown(brief: DecisionBriefV1, inputRecipe:
 }
 
 export function renderAudienceBriefPlainText(brief: DecisionBriefV1, recipe: unknown): string {
-  return renderAudienceBriefMarkdown(brief, recipe)
-    .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
-    .replace(/^#{1,6}\s+/gm, "")
-    .replace(/\*\*/g, "")
-    .replace(/^_([^\n]+)_$/gm, "$1")
-    .replace(/`/g, "");
+  return reportMarkdownToPlainText(renderAudienceBriefMarkdown(brief, recipe));
 }
 import { reportScheduleLines } from "./schedule";
 import { scopeEvidenceMarkdown } from "./scopeEvidencePresentation";

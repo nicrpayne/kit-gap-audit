@@ -120,19 +120,25 @@ function LegacySourceFailure({ raw, rawLength }: { raw: string; rawLength: numbe
 
 export function CopyMarkdownButton({ markdown, label = "Copy to clipboard" }: { markdown: string; label?: string }) {
   const [copied, setCopied] = useState(false);
+  const [manualCopy, setManualCopy] = useState(false);
 
   async function copy() {
-    await navigator.clipboard.writeText(markdown);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 1800);
+    try {
+      await navigator.clipboard.writeText(markdown);
+      setManualCopy(false); setCopied(true);
+      setTimeout(() => setCopied(false), 1800);
+    } catch { setCopied(false); setManualCopy(true); }
   }
 
   return (
+    <span className="inline-flex max-w-full flex-col items-start gap-2">
     <button
       onClick={copy}
       className="rounded-md border border-[var(--color-line)] px-3 py-1.5 text-xs hover:bg-black/5"
     >
       {copied ? "Copied" : label}
     </button>
+    {manualCopy && <span className="max-w-full text-xs text-[var(--i-text-soft)]"><span role="alert">Clipboard access is unavailable. Select and copy the text below.</span><textarea aria-label={`${label} — manual copy`} className="mt-2 block w-full min-w-0 rounded border border-[var(--i-border)] bg-[var(--i-recess)] p-2" rows={6} readOnly value={markdown} onFocus={event => event.currentTarget.select()} /></span>}
+    </span>
   );
 }

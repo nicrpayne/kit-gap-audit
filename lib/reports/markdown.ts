@@ -24,3 +24,25 @@ export function markdownBlockquoteLines(value: string, indent = ""): string[] {
     .split("\n")
     .map((line) => `${indent}> ${escapeMarkdownText(line)}`);
 }
+
+/** Convert this module's escaped report Markdown into actual clipboard text.
+ * Protect source punctuation before removing presentation syntax: a quoted
+ * literal **, [link](url), underscore or backtick must survive unchanged.
+ * The result is text/plain only; never use it as HTML or executable Markdown. */
+export function reportMarkdownToPlainText(markdown: string): string {
+  let prefix = "\uE000signalPlain";
+  while (markdown.includes(prefix)) prefix += "x";
+  const literals: string[] = [];
+  const protectedText = markdown.replace(/\\([\\`*_[\]{}()#+\-.!|])/g, (_match, character: string) => {
+    literals.push(character);
+    return `${prefix}${literals.length - 1}\uE001`;
+  });
+  const text = protectedText
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
+    .replace(/^#{1,6}\s+/gm, "")
+    .replace(/\*\*/g, "")
+    .replace(/^_([^\n]+)_$/gm, "$1")
+    .replace(/`/g, "")
+    .replace(/&(amp|lt|gt);/g, (_match, entity: string) => ({ amp: "&", lt: "<", gt: ">" })[entity]!);
+  return text.replace(new RegExp(`${prefix}(\\d+)\uE001`, "g"), (_match, index: string) => literals[Number(index)]);
+}
