@@ -44,6 +44,13 @@ export interface CapabilityEvidenceReference {
   capture: CapturedCapabilityEvidence | null;
 }
 
+/** Scope and frozen reports open the same immutable Audit receipt. A raw
+ * reference alone never gains a passage link, even if it resembles an id. */
+export function capturedEvidenceAuditHref(scopeId: string, evidence: CapabilityEvidenceReference): string | null {
+  if (!scopeId || evidence.state !== "captured_at_acceptance" || !evidence.capture?.contextSnapshotId || !evidence.evidenceId) return null;
+  return `/audit?${new URLSearchParams({ project: scopeId, select: `passage:${evidence.capture.contextSnapshotId}:${evidence.evidenceId}` })}`;
+}
+
 function record(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
 }

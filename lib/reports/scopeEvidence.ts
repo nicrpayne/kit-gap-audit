@@ -1,4 +1,4 @@
-import { createCapabilityEvidenceProjector, type CapabilityAuditEvidenceOrigin, type CapabilityEvidenceOriginSnapshot, type CapabilityEvidenceReference } from "@/lib/scope/capabilityEvidence";
+import { capturedEvidenceAuditHref, createCapabilityEvidenceProjector, type CapabilityAuditEvidenceOrigin, type CapabilityEvidenceOriginSnapshot, type CapabilityEvidenceReference } from "@/lib/scope/capabilityEvidence";
 
 /** Accepted Scope receipts are not estimate authority or a current-source read. */
 export interface ReportScopeEvidenceV1 {
@@ -34,10 +34,7 @@ export function freezeScopeEvidence(input: {
         id: capability.id, name: capability.name, revision: capability.revision, excludedFromScenario: false,
         references: project(capability.provenance, capability.id).map(reference => ({
           ...reference,
-          auditHref: reference.capture && reference.evidenceId ? `/audit?${new URLSearchParams({
-            project: input.scopeId,
-            select: `passage:${reference.capture.contextSnapshotId}:${reference.evidenceId}`,
-          })}` : null,
+          auditHref: capturedEvidenceAuditHref(input.scopeId, reference),
         })),
       })),
   });

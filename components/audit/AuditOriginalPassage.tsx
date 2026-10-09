@@ -25,7 +25,7 @@ export default function AuditOriginalPassage({ receipt, onClose }: { receipt: Au
         <dt>Original reference</dt><dd>{passage.externalRef ?? "Not recorded"}</dd>
         <dt>Snapshot</dt><dd>{receipt.snapshotId}</dd>
         <dt>Evidence</dt><dd>{receipt.evidenceId}</dd>
-        <dt>Locator</dt><dd>{JSON.stringify(passage.locator)}</dd>
+        <dt>Locator</dt><dd>{Object.keys(passage.locator).length ? JSON.stringify(passage.locator) : "Quote hash / character locator not recorded; see original reference above when supplied."}</dd>
       </dl>
       {passage.surroundingContext ? <details style={{ marginTop: 16 }}><summary>Supplied surrounding context</summary><p style={{ whiteSpace: "pre-wrap" }}>{passage.surroundingContext}</p></details> : <p style={{ marginTop: 16, fontSize: 12 }}>Only this passage was supplied here; a full conversation is not attached to this receipt.</p>}
     </> : <p role="alert">The requested passage is unavailable in this project&apos;s original snapshot. No current quote has been substituted.</p>}

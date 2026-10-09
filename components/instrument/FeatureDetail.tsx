@@ -40,6 +40,7 @@ import type { CapabilityStaffingPlan } from "@/lib/scope/capabilityForecast";
 import { formatDateOnly } from "@/lib/time/dateContract";
 import { isSignalEstimate } from "@/lib/scope/signalEstimates";
 import type { CapabilityEvidenceReference } from "@/lib/scope/capabilityEvidence";
+import ScopeCapturedEvidence from "./ScopeCapturedEvidence";
 
 type Mode = "overview" | "work" | "evidence" | "estimate" | "history";
 
@@ -555,38 +556,9 @@ function evidenceString(record: Record<string, unknown>, keys: string[]): string
   return null;
 }
 
-function CapturedEvidenceReference({ evidence, index }: { evidence: CapabilityEvidenceReference; index: number }) {
-  const capture = evidence.capture!;
-  const locator = Object.entries(capture.locator);
-  const sourceDate = capture.sourceDate?.slice(0, 10) ?? null;
-  return (
-    <li className="rounded px-3 py-2" style={{ background: "var(--i-recess)", border: "1px solid var(--i-border)" }}>
-      <div className="i-label">Reference {index + 1} · captured at acceptance</div>
-      <div className="mt-1 break-words text-[10.5px] leading-relaxed text-[var(--i-text-soft)]">{capture.excerpt}</div>
-      {evidence.evidenceId && <div className="mt-1 break-all text-[9px] text-[var(--i-text-faint)]">Evidence ID · {evidence.evidenceId}</div>}
-      <div className="mt-1 break-all text-[9.5px] text-[var(--i-text-faint)]">Source · {capture.sourceRef}</div>
-      {capture.externalRef && capture.externalRef !== capture.sourceRef && (
-        <div className="mt-1 break-all text-[9px] text-[var(--i-text-faint)]">Original reference · {capture.externalRef}</div>
-      )}
-      {capture.sourceUrl && (
-        <a href={capture.sourceUrl} target="_blank" rel="noopener noreferrer" className="mt-1 block break-all text-[9.5px] text-[var(--i-signal)] hover:underline">
-          Open original source ↗
-        </a>
-      )}
-      {(sourceDate || locator.length > 0) && (
-        <div className="mt-1 break-words text-[9px] text-[var(--i-text-faint)]">
-          {[sourceDate ? `Source date · ${sourceDate}` : null, ...locator.map(([key, value]) => `${key} · ${String(value)}`)].filter(Boolean).join(" · ")}
-        </div>
-      )}
-      <div className="mt-1 break-all text-[9px] text-[var(--i-text-faint)]">Original snapshot · {capture.contextSnapshotId}</div>
-      <div className="mt-0.5 text-[8.5px] text-[var(--i-text-faint)]">Captured with the accepted assertion; not a claim about current source state.</div>
-    </li>
-  );
-}
-
-function EvidenceReference({ evidence, index }: { evidence: CapabilityEvidenceReference; index: number }) {
+function EvidenceReference({ evidence, index, scopeId }: { evidence: CapabilityEvidenceReference; index: number; scopeId: string }) {
   if (evidence.state === "captured_at_acceptance" && evidence.capture) {
-    return <CapturedEvidenceReference evidence={evidence} index={index} />;
+    return <ScopeCapturedEvidence evidence={evidence} index={index} scopeId={scopeId} />;
   }
   const value = evidence.reference;
   if (!value || typeof value !== "object" || Array.isArray(value)) {
@@ -631,7 +603,7 @@ function EvidenceReference({ evidence, index }: { evidence: CapabilityEvidenceRe
   );
 }
 
-function AttachedEvidence({ evidence }: { evidence: CapabilityEvidenceReference[] }) {
+function AttachedEvidence({ evidence, scopeId }: { evidence: CapabilityEvidenceReference[]; scopeId: string }) {
   if (evidence.length === 0) {
     return <Row k="Attached evidence" v="None recorded" note="absence is shown, not inferred" />;
   }
@@ -646,7 +618,7 @@ function AttachedEvidence({ evidence }: { evidence: CapabilityEvidenceReference[
       </summary>
       <p className="mt-1 text-right text-[8.5px] text-[var(--i-text-faint)]">Stored on the accepted assertion</p>
       <ul className="mt-2 space-y-2" data-shoot="attached-evidence-list">
-        {evidence.map((item, index) => <EvidenceReference key={`${item.evidenceId ?? "reference"}:${index}`} evidence={item} index={index} />)}
+        {evidence.map((item, index) => <EvidenceReference key={`${item.evidenceId ?? "reference"}:${index}`} evidence={item} index={index} scopeId={scopeId} />)}
       </ul>
     </details>
   );
@@ -690,7 +662,7 @@ function Evidence({
           <Row k="Authority" v={typeof provenance.authority === "string" ? provenance.authority : "Scope"} note={`source · ${source}`} />
           <Row k="Reality revision" v={`r${f.canonicalCapability.revision}`} note={`${ownerEvents.length} recent event${ownerEvents.length === 1 ? "" : "s"} retained`} />
           <Row k="Execution evidence" v={`${f.canonicalCapability.workLinks.length} explicit link${f.canonicalCapability.workLinks.length === 1 ? "" : "s"}`} note="current Linear facts remain owned by Linear" />
-          <AttachedEvidence evidence={evidence} />
+          <AttachedEvidence evidence={evidence} scopeId={scopeId} />
         </div>
         <KnowledgeEstimateEvidence feature={f} scopeId={scopeId} onStage={onStageKnowledgeEstimate} onClear={onClearKnowledgeEstimate} onAcceptReality={onAcceptKnowledgeEstimate} onClearReality={onClearAcceptedKnowledgeEstimate} />
         <div className="i-label mt-4 mb-2">Recent governed history</div>
