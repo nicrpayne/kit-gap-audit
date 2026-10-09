@@ -325,6 +325,8 @@ export default function ReportsPageClient() {
           ? forecastUnavailableReason ?? "Current Forecast is unavailable."
           : forecastIncomplete
             ? `${forecastIncompleteReason ?? "Delivery inputs need review"}. Reconcile execution coverage in Scope before publishing a Reality versus Scenario delivery brief.`
+          : project.coverageByScope.get(scopeId)?.state === "unavailable"
+            ? project.coverageByScope.get(scopeId)?.reason ?? "This Scenario has no supported delivery forecast. Review the selected work in Scope."
             : null;
 
   async function generate() {

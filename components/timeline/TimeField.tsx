@@ -388,6 +388,7 @@ function MemoryBand({
       it falls, without a number shouting from every lane at once. */
   measured?: boolean;
 }) {
+  if (snap.temporalRole === "live" && snap.coverageState === "unavailable") return null;
   const t50 = new Date(snap.likelyDate).getTime();
   const x10 = xFor(view, new Date(snap.earliestDate).getTime());
   const x50 = xFor(view, t50);
@@ -1157,7 +1158,7 @@ export default function TimeField({
                   {mem.temporalRole === "live" && mem.coverageState !== "forecastable" ? "INCOMPLETE" : fmtDay(new Date(mem.likelyDate).getTime())}
                 </span>
               ) : (
-                <span className="text-[9px] mt-1 text-[var(--i-text-faint)]">no snapshot yet</span>
+                <span className="text-[9px] mt-1 text-[var(--i-text-faint)]">{atNow ? "No live forecast" : "No snapshot yet"}</span>
               )}
               {!rail && !tight && lane.dependsOnScopeIds.length > 0 && (
                 <span className="text-[8px] mt-1 text-[var(--i-text-faint)] truncate">

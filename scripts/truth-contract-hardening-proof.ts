@@ -52,8 +52,9 @@ const represented = buildForecastInputs(
 assert.deepEqual(represented.items.map((i) => i.id), ["SIG-101"]);
 assert.equal(represented.items.reduce((n, i) => n + i.likely, 0), 3);
 
-// Secondary issue: exact production-shaped proof. 17 raw rows = 44d;
-// SOF-810 is represented by child SOF-487, so executable leaf total = 41d.
+// Production-shaped parent/leaf proof. The 17 rows carry 44 story points,
+// not days. SOF-810 is represented by SOF-487; 16 executable leaves each
+// retain the explicit unestimated 1/3/7-day placeholder until reviewed.
 const platformRows = [
   issue("SOF-810", 3),
   issue("SOF-487", 3, "SOF-810"),
@@ -63,7 +64,9 @@ const platformRows = [
 assert.equal(platformRows.length, 17);
 assert.equal(platformRows.reduce((n, i) => n + (i.estimate ?? 0), 0), 44);
 const platformInputs = buildForecastInputs(platformRows, [], 4);
-assert.equal(platformInputs.items.reduce((n, i) => n + i.likely, 0), 41);
+assert.equal(platformInputs.items.length, 16);
+assert(platformInputs.items.every(i => i.low === 1 && i.likely === 3 && i.high === 7 && i.estimateSource === "issue_placeholder"));
+assert.equal(platformInputs.items.reduce((n, i) => n + i.likely, 0), 48);
 assert(!platformInputs.items.some((i) => i.id === "SOF-810"));
 assert(platformInputs.items.some((i) => i.id === "SOF-487"));
 
@@ -213,8 +216,8 @@ const result = {
     namedRawFte: master.allocated,
     effectiveFte: master.effective,
     forecastFte: capacityContract.forecastEffectiveFte,
-    platformRawLikelyDays: 44,
-    platformExecutableLikelyDays: 41,
+    platformRawStoryPoints: 44,
+    platformExecutablePlaceholderLikelyDays: 48,
   },
 };
 

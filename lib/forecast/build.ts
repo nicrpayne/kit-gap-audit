@@ -336,7 +336,9 @@ export function buildForecastInputs(
   let teamCapacity = configuredCapacity ?? 0;
   let teamCapacityInferred = false;
   let capacitySource: CapacitySource = options?.capacitySource ?? "explicit";
-  if (teamCapacity <= 0) {
+  // A confirmed named team with nobody allocated is an explicit zero.
+  // Legacy missing/unreconciled capacity may still use labeled inference.
+  if (teamCapacity <= 0 && !(configuredCapacity === 0 && options?.capacitySource === "allocations")) {
     teamCapacity = inferCapacityFromAssignees(remainingIssues).capacity;
     teamCapacityInferred = true;
     capacitySource = "inferred";

@@ -148,6 +148,8 @@ interface CapacityComputationInputs {
   namedRoster: PersonLike[];
   /** Only allocations eligible for the modeled capacity resolution. */
   modeledAllocations: AllocationLike[];
+  /** A confirmed empty named team means zero, not missing staffing data. */
+  exactScopeIds: ReadonlySet<string>;
   contextSwitchCostPct: number;
 }
 
@@ -292,15 +294,19 @@ async function buildScopeSimInputs(
     capacityInputs = {
       namedRoster: people,
       modeledAllocations: allAllocations.filter((item) => exactScopeIds.has(item.scopeId)),
+      exactScopeIds,
       contextSwitchCostPct: portfolioSettings?.contextSwitchCostPct ?? 0,
     };
   }
-  const resolved = resolveCapacity(
+  const namedCapacity = resolveCapacity(
     scope.id,
     capacityInputs.namedRoster,
     capacityInputs.modeledAllocations,
     capacityInputs.contextSwitchCostPct,
   );
+  const resolved = namedCapacity.capacity === null && capacityInputs.exactScopeIds.has(scope.id)
+    ? { ...namedCapacity, capacity: 0, source: "allocations" as const }
+    : namedCapacity;
 
   // SERIAL GATES, from the Decision model. A Decision reaches the forecast
   // only through a DecisionGate row that names what waits, why it is
@@ -386,6 +392,7 @@ async function buildScopeSimInputs(
     // but neither is a second delivery item that must be classified.
     issueIds: deliveryRelevantIssueIds(issues, scope.includeTriage),
     completedIssueIds: issues.filter(isCompletedIssue).map((issue) => issue.identifier),
+    hasModeledRemainingEffort: inputs.items.some(item => item.high > 0),
     capabilities: simulationCapabilities,
     openShapeDecisionCount,
   });
@@ -716,6 +723,7 @@ export async function buildPortfolioInputs(): Promise<PortfolioInputs> {
   const capacityInputs: CapacityComputationInputs = {
     namedRoster: people,
     modeledAllocations: allocations,
+    exactScopeIds,
     contextSwitchCostPct: portfolioSettings?.contextSwitchCostPct ?? 0,
   };
   const startDate = new Date();

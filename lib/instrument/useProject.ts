@@ -30,10 +30,11 @@ import { realityRevision, subscribeReality } from "@/lib/instrument/reality";
 import type { CapabilityEvidenceReference } from "@/lib/scope/capabilityEvidence";
 import { formatDateOnly } from "@/lib/time/dateContract";
 import type { ForecastCoverageContract } from "@/lib/forecast/coverage";
-import { acceptedEstimateIdentity, knowledgeEstimateItemId, substituteCapabilityKnowledgeEstimates, type AcceptedCapabilityEstimate, type CapabilityKnowledgeEstimate, type ReviewedCapabilityEstimateResult } from "@/lib/scope/knowledgeEstimates";
+import type { AcceptedCapabilityEstimate, CapabilityKnowledgeEstimate, ReviewedCapabilityEstimateResult } from "@/lib/scope/knowledgeEstimates";
 import type { CapabilityStaffingPlan } from "@/lib/scope/capabilityForecast";
 import { scenarioForecastCoverage } from "@/lib/scenario/forecastCoverage";
-import { remainingEstimateItems, remainingEstimateConflict, type RemainingEstimateDrafts } from "@/lib/scenario/remainingEstimates";
+import { remainingEstimateConflict, type RemainingEstimateDrafts } from "@/lib/scenario/remainingEstimates";
+import { scenarioWorkItems } from "@/lib/scenario/workItems";
 import { decisionScenarioGates, validateDecisionPlans, type DecisionPlans, type DecisionScenarioInput } from "@/lib/scenario/decisionPlan";
 import { compilePhasedCapacityPlan, phasedCapacityPlanAffectedScopeIds, validatePhasedCapacityPlan, type PhasedCapacityPlanV1 } from "@/lib/scenario/phasedCapacity";
 import { buildSavedScenarioBaseline, compareSavedScenarioBaseline, decodeSavedScenario, encodeSavedScenario, type SavedScenarioBaselineV1, type SavedScenarioDetail } from "@/lib/scenario/saved";
@@ -774,53 +775,12 @@ export function useProject(): ProjectModel {
         applyScenarioInputDelta(
           scenarioScopes.map((s) => {
             const fullScope = data.scopes.find((scope) => scope.scopeId === s.scopeId);
-            const sourceItemIds = new Set(fullScope?.items.map((item) => item.id) ?? []);
-            const proposed = scenario.scopeProposalSelections.filter((selection) => selection.scopeId === s.scopeId);
-            const proposalIncludedIds = new Set(proposed.flatMap((selection) => selection.itemIds));
-            const proposalExcludedIds = new Set(proposed.flatMap((selection) => {
-              const selected = new Set(selection.itemIds);
-              const deselectedFromSameCapability = selection.sourceCapabilityId && selection.sourceCapabilityId === selection.targetCapabilityId
-                ? selection.sourceAlreadyLinkedItemIds.filter((id) => !selected.has(id))
-                : [];
-              if (selection.releaseStatus !== "outside") return deselectedFromSameCapability;
-              return [
-                ...deselectedFromSameCapability,
-                ...selection.itemIds,
-                ...(selection.targetCapabilityId
-                  ? fullScope?.capabilities.find((capability) => capability.id === selection.targetCapabilityId)?.workLinks.map((link) => link.externalId) ?? []
-                : []),
-              ];
-            }));
-            const bypassedCapabilityItemIds = new Set((fullScope?.capabilities ?? [])
-              .filter((capability) => scenario.bypassedFeatureIds.has(`capability:${capability.id}`))
-              .flatMap((capability) => [
-                ...capability.workLinks
-                  .filter((link) => (link.state === "active" || link.state === "configured") && sourceItemIds.has(link.externalId))
-                  .map((link) => link.externalId),
-                ...(capability.estimateReview?.estimate && (capability.estimateReview.status === "reviewed" || capability.estimateReview.exploration)
-                  ? (() => { const identity = acceptedEstimateIdentity(capability.estimateReview.estimate); return [knowledgeEstimateItemId(capability.id, identity.estimateId, identity.contextSnapshotId)]; })()
-                  : []),
-              ]));
-            // Pre-v2 raw-evidence assumptions carry no reviewed covered vs
-            // additional boundary. Preserve their Scenario state for visible
-            // recovery, but fail closed: they cannot alter new simulations.
-            const knowledgeSubstitutions: Parameters<typeof substituteCapabilityKnowledgeEstimates>[1] = [];
-            const baseItems = [
-              ...(fullScope ? remainingEstimateItems(fullScope, scenario.remainingEstimateByCapabilityId) : s.items),
-              ...(fullScope?.executionItems ?? [])
-                .filter((item) => (scenario.includedItemIds.has(item.id) || proposalIncludedIds.has(item.id)) && !s.items.some((base) => base.id === item.id)),
-            ]
-              .filter((i) => !scenario.excludedItemIds.has(i.id) && !proposalExcludedIds.has(i.id) && !bypassedCapabilityItemIds.has(i.id))
-              .map((i) => {
-                const o = scenario.estimateOverrideByItemId[i.id];
-                return o ? { ...i, low: o.low, likely: o.likely, high: o.high } : i;
-              });
             return {
               ...s,
               items:
                 s.scopeId === emptyScopeId
                   ? []
-                  : substituteCapabilityKnowledgeEstimates(baseItems, knowledgeSubstitutions),
+                  : fullScope ? scenarioWorkItems(fullScope, scenario) : s.items,
               gates: decisionScenarioGates(s.scopeId, s.gates, data.decisions ?? [], scenario.decisionPlans, scenario.resolvedGateIds),
             };
           }),

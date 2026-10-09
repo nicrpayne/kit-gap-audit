@@ -3,6 +3,7 @@ import { evaluateForecastCoverage, inheritDependencyCoverage, type ForecastCover
 import { scenarioDisplayShape } from './displayShape';
 import { reviewedCapabilityEstimate } from '@/lib/scope/knowledgeEstimates';
 import { decisionScenarioOpenCount, validateDecisionPlans, type DecisionScenarioInput } from './decisionPlan';
+import { scenarioWorkItems } from './workItems';
 
 const linksFor = (ids: string[]) => ids.map(externalId => ({ externalId, state: 'active' }));
 
@@ -50,10 +51,15 @@ export function scenarioForecastCoverage(scopes: ProjectScope[], scenario: Suite
     ];
     // Decision gate ids are not product-shape Decision ids. Resolving a
     // modeled delay cannot silently settle an unrelated release boundary.
+    // Invalid estimate drafts are handled by the shared preview refusal;
+    // coverage must not throw while rendering that recovery UI.
+    let hasModeledRemainingEffort: boolean | undefined;
+    try { hasModeledRemainingEffort = scenarioWorkItems(scope, scenario).some(item => item.high > 0); } catch { /* Preview refuses the invalid draft. */ }
     const coverage = evaluateForecastCoverage({
       executionState: scope.executionState,
       issueIds: [...ids],
       completedIssueIds: (scope.completedWork ?? []).map(item => item.id),
+      hasModeledRemainingEffort,
       capabilities: [...capabilities, ...directWork],
       openShapeDecisionCount: decisionScenarioOpenCount(scope.scopeId, scope.openShapeQuestions, decisions, scenario.decisionPlans),
     });

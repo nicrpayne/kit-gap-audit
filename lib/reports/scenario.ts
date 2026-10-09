@@ -317,6 +317,12 @@ export async function buildScenarioDecisionBriefReadModel(
       gates: decisionScenarioGates(candidate.scopeId, candidate.gates, portfolio.decisions, scenario.decisionPlans, resolved),
     };
   });
+  // The accepted Reality may be forecastable while a Scenario removes all
+  // of its work. Do not publish a start-day (or gate/dependency-only) result
+  // as a delivery date or 100% target confidence for an empty selection.
+  if (!scenarioScopes.find((candidate) => candidate.scopeId === scope.id)?.items.some((item) => item.high > 0)) {
+    throw new ScenarioReportValidationError("No remaining work is selected for this Scenario. Review the release boundary in Scope; removing all work is not a completed-project or delivery-date claim.");
+  }
   const frozenCapabilityEstimates = scenarioOwners.flatMap((candidate) => candidate.capabilities.flatMap((capability) => {
     if (excludedCapabilities.has(capability.id)) return [];
     const sourceItemIds = new Set(candidate.items.map((item) => item.id));

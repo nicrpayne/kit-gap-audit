@@ -29,7 +29,10 @@ export function liveForecastReading(
   targetDate: string | null,
   now: string = asOf,
   coverageState: ForecastCoverageState = "forecastable",
-): TimelineForecastReading {
+): TimelineForecastReading | null {
+  // A simulation may still return a start-day or gate/dependency-only date.
+  // Unavailable coverage is not a live forecast, even with those raw values.
+  if (coverageState === "unavailable") return null;
   const freshness = sourceCurrentness(asOf, now);
   return {
     id: `live:${scopeId}`,
@@ -74,6 +77,6 @@ export function forecastReadingForTime(
   live: TimelineForecastReading | null,
   historical: ForecastSnapshot | null
 ): TimelineForecastReading | null {
-  if (atNow) return live?.temporalRole === "live" ? live : null;
+  if (atNow) return live?.temporalRole === "live" && live.coverageState !== "unavailable" ? live : null;
   return historical ? historicalForecastReading(historical) : null;
 }

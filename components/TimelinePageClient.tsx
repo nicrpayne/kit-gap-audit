@@ -465,13 +465,14 @@ export default function TimelinePageClient({ embedded = false }: { embedded?: bo
       const sim = project.scenarioPreviewRefusal ? null : project.preview?.get(lane.scopeId) ?? null;
       const projectScope = project.data?.scopes.find((scope) => scope.scopeId === lane.scopeId);
       const scopeSource = projectScope?.forecastSource;
+      const coverageState = project.coverageByScope.get(lane.scopeId)?.state ?? projectScope?.forecastCoverage.state ?? "unavailable";
       const live = sim
-        ? liveForecastReading(lane.scopeId, scopeSource?.asOf ?? data.now, sim, lane.targetDate, data.now, projectScope?.forecastCoverage.state ?? "unavailable")
+        ? liveForecastReading(lane.scopeId, scopeSource?.asOf ?? data.now, sim, lane.targetDate, data.now, coverageState)
         : null;
       out[lane.scopeId] = forecastReadingForTime(atNow, live, memoryByScope[lane.scopeId] ?? null);
     }
     return out;
-  }, [data, project.data, project.preview, project.scenarioPreviewRefusal, atNow, memoryByScope]);
+  }, [data, project.data, project.preview, project.coverageByScope, project.scenarioPreviewRefusal, atNow, memoryByScope]);
 
   // ── WHAT THE INSTRUMENT IS READING ─────────────────────────────────
   //
@@ -1203,7 +1204,7 @@ export default function TimelinePageClient({ embedded = false }: { embedded?: bo
                         —
                       </div>
                       <div className="text-[8px] mt-1.5 truncate" style={{ color: "var(--i-text-faint)", opacity: live ? 1 : 0 }}>
-                        no forecast recorded yet
+                        {atNow ? "No live forecast available" : "No forecast recorded yet"}
                       </div>
                     </>
                   )}

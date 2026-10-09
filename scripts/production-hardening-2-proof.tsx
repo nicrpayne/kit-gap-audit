@@ -170,6 +170,7 @@ assert(iTrackOrbit.edges.some((edge) => edge.kind === "gates" && edge.to === "fo
 // Timeline: now reads only the stale LIVE owner; history reads only the
 // immutable Report snapshot. There is no fallback between them.
 const liveTimeline = liveForecastReading("jsa", facts.forecastAsOf, simulation(), null, facts.now);
+assert(liveTimeline);
 assert.equal(liveTimeline.temporalRole, "live");
 assert.equal(liveTimeline.currentness, "stale");
 assert.equal(liveTimeline.ageDays, 31);

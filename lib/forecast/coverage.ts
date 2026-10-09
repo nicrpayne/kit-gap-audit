@@ -14,6 +14,8 @@ export type ForecastCoverageReasonCode =
   | "execution_source_stale"
   | "execution_source_empty"
   | "no_remaining_execution_work"
+  | "no_remaining_release_work"
+  | "no_remaining_estimated_effort"
   | "accepted_scope_unmapped"
   | "accepted_scope_mapping_missing_from_source"
   | "execution_work_unmapped"
@@ -72,6 +74,8 @@ export interface ForecastCoverageInput {
   /** Completed (not canceled) records from the same current owner read.
    * Mapping evidence only: never counted or simulated as remaining work. */
   completedIssueIds?: string[];
+  /** Actual ranged work after accepted/Scenario substitutions, when known. */
+  hasModeledRemainingEffort?: boolean;
   capabilities: CoverageCapability[];
   openShapeDecisionCount: number;
 }
@@ -160,6 +164,12 @@ export function evaluateForecastCoverage(input: ForecastCoverageInput): Forecast
     reasons.push(completedIds.size > 0
       ? { code: "no_remaining_execution_work", label: "No remaining execution work to forecast; ticket completion is not release confirmation", count: 1 }
       : { code: "execution_source_empty", label: "No current execution work was returned", count: 1 });
+  } else if (hasGovernedShape && mappedIssueIds.size === 0 && classifiedIssueIds.size === issueIds.size) {
+    // A complete classification is not a remaining-work forecast. Source
+    // tickets still exist, but this release/Scenario has put them all outside.
+    reasons.push({ code: "no_remaining_release_work", label: "No remaining ticket work is selected for this release; current open work is classified out/later", count: 1 });
+  } else if (input.hasModeledRemainingEffort === false && census.modeledExecutionIssueCount > 0) {
+    reasons.push({ code: "no_remaining_estimated_effort", label: "Selected open work has no positive remaining effort to forecast; review estimates or completion status", count: 1 });
   }
   if (withoutActiveLink.length > 0) {
     reasons.push({
@@ -200,18 +210,26 @@ export function evaluateForecastCoverage(input: ForecastCoverageInput): Forecast
 
   if (reasons.length > 0) {
     const estimateReviewRequired = reasons.some((reason) => reason.code === "capability_estimate_review_required");
+    const noRemainingExecution = reasons.some((reason) => reason.code === "no_remaining_execution_work");
+    const noRemainingRelease = reasons.some((reason) => reason.code === "no_remaining_release_work");
+    const noRemainingEffort = reasons.some((reason) => reason.code === "no_remaining_estimated_effort");
     return {
       // There is no remaining-work forecast to display. Keep the real
       // source/mapping census, but suppress synthetic start-day/gate dates.
-      state: reasons.some((reason) => reason.code === "no_remaining_execution_work") ? "unavailable" : "modeled_subset",
+      state: noRemainingExecution || noRemainingRelease || noRemainingEffort ? "unavailable" : "modeled_subset",
       canonicalForecast: false,
-      label: reasons.length === 1 && reasons[0].code === "no_remaining_execution_work"
-        ? "NO REMAINING WORK TO FORECAST"
+      label: reasons.length === 1 && (noRemainingExecution || noRemainingRelease)
+        ? noRemainingRelease ? "NO REMAINING WORK SELECTED" : "NO REMAINING WORK TO FORECAST"
+        : reasons.length === 1 && noRemainingEffort ? "NO REMAINING EFFORT TO FORECAST"
         : estimateReviewRequired
         ? "FORECAST INCOMPLETE — ESTIMATE REVIEW REQUIRED"
         : "FORECAST INCOMPLETE — EXECUTION COVERAGE UNRESOLVED",
       reason: reasons.map((item) => item.label).join("; "),
-      caveat: reasons.some((reason) => reason.code === "no_remaining_execution_work")
+      caveat: noRemainingEffort
+        ? "Zero estimates do not mark open tickets complete. No delivery date or target confidence is claimed; review the estimates or source status."
+        : noRemainingRelease
+        ? "Open source tickets remain out/later. Selecting no remaining work does not mean the project is complete; no delivery date or target confidence is claimed."
+        : noRemainingExecution
         ? "Completed ticket mappings are retained. No delivery date or release approval is inferred from ticket completion."
         : estimateReviewRequired
         ? "An accepted estimate needs review. Reviewed v2 may appear only as qualified exploration; a legacy or malformed assertion is not applied, and remaining tickets are only a ticket-only subset pending review."
