@@ -40,7 +40,7 @@ export function recipientSnapshot(bundle: SavedReportHandoff) {
       }),
       sources: b.identity.sourceSnapshots.map(s => ({ owner: s.owner, asOf: s.asOf, currentness: s.currentness, note: s.note ?? null })),
       caveats: b.caveats.value.map(c => ({ code: c.code, message: c.message })),
-      sourceWarnings: [...b.evidence.warnings.value, ...b.changes.currentness.value.warnings],
+      sourceWarnings: [...new Set([...b.evidence.warnings.value, ...b.changes.currentness.value.warnings])],
     })),
   };
 }

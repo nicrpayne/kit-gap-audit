@@ -45,11 +45,18 @@ async function main() {
     const management = `/api/reports/${report.id}/shares`;
     await start(true);
     assert.equal((await get(management)).status, 401);
+    const ownerPdf = `/api/reports/${report.id}/pdf`;
+    assert.equal((await get(ownerPdf)).status, 401);
+    const exported = await get(ownerPdf, undefined, { authorization: `Bearer ${password}` });
+    assert.equal(exported.status, 200); assert.match(exported.headers.get("content-type")!, /application\/pdf/);
+    assert.match(exported.headers.get("cache-control")!, /no-store/);
+    assert.equal(Buffer.from(await exported.arrayBuffer()).subarray(0, 5).toString(), "%PDF-");
     const payload = { emails: ["reader@example.com"], pair: false, days: 7, requestId: randomUUID(), reviewedPrivateContent: true };
     assert.equal((await post(management, { ...payload, reviewedPrivateContent: false }, true)).status, 400);
     const published = await post(management, payload, true); assert.equal(published.status, 201);
     let share = (await published.json()).share;
     const path = share.path, access = `/api/report-access/${share.id}`;
+    assert.equal((await get(`${access}/pdf`)).status, 401);
     await generic(path); await generic(path, undefined, { RSC: "1" }); await generic("/shared/reports/unknown");
     const wrong = await post(`${access}/request`, { email: "not-approved@example.com" });
     assert.equal(wrong.status, 202); const wrongBody = await wrong.json(); assert.equal(wrongBody.message, REQUEST_MESSAGE); assert.equal(mails.length, 0);
@@ -68,6 +75,11 @@ async function main() {
     const authorized = await get(path, cookie), html = await authorized.text(); assert.equal(authorized.status, 200); assert(html.includes(scope.name));
     assert(html.includes("Timeline snapshot") && html.includes("Evidence you can inspect")); assert(!html.includes('href="/scope'));
     assert.match(authorized.headers.get("cache-control")!, /no-store/);
+    const readerPdf = await get(`${access}/pdf`, cookie); assert.equal(readerPdf.status, 200);
+    assert.match(readerPdf.headers.get("content-type")!, /application\/pdf/); assert.match(readerPdf.headers.get("cache-control")!, /no-store/);
+    assert.equal(Buffer.from(await readerPdf.arrayBuffer()).subarray(0, 5).toString(), "%PDF-");
+    assert.equal((await get(ownerPdf, cookie)).status, 401, "reader cannot download through operator endpoint");
+    assert.equal((await get("/api/report-access/other/pdf", cookie)).status, 401);
     assert.equal((await post(`${access}/verify`, creds)).status, 401, "HTTP replay denied");
     assert.equal((await get(management, cookie)).status, 401);
     assert.equal((await get("/api/scopes", cookie)).status, 401);
@@ -76,6 +88,7 @@ async function main() {
     await generic("/shared/reports/other", cookie);
     const updated = await post(management, { shareId: share.id, revision: share.revision, action: "recipients", emails: ["replacement@example.com"] }, true, "PATCH");
     assert.equal(updated.status, 200); share = (await updated.json()).share; await generic(path, cookie);
+    assert.equal((await get(`${access}/pdf`, cookie)).status, 401, "removed recipient cannot download PDF");
     const readded = await post(management, { shareId: share.id, revision: share.revision, action: "recipients", emails: ["reader@example.com"] }, true, "PATCH");
     assert.equal(readded.status, 200); share = (await readded.json()).share; await generic(path, cookie);
     const logout = await post(`${access}/logout`, {}, false, "POST", cookie); assert.equal(logout.status, 200); assert.match(logout.headers.get("set-cookie")!, /Max-Age=0|1970/);
@@ -85,6 +98,7 @@ async function main() {
     assert.equal((await post(management, { ...payload, requestId: randomUUID() }, true)).status, 503);
     assert.equal((await post(`${access}/request`, { email: "reader@example.com" })).status, 503);
     await generic(path, cookie);
+    assert.equal((await get(`${access}/pdf`, cookie)).status, 401, "missing mail configuration keeps recipient PDF closed");
     assert.equal((await post(management, { shareId: share.id, revision: share.revision, action: "revoke" }, true, "PATCH")).status, 200, "owner can revoke even when mail config is absent");
     assert(!output.includes(secret) && !output.includes(code) && !output.includes("reader@example.com"), "server output contains no credentials, codes or recipient emails");
     console.log("PASS actual Next HTTP: generic anonymous HTML/RSC, approved-email mock delivery via after(), secure cookie, wrong origin/code/replay, read-only snapshot, no working-app access, removal/regrant, sign-out, config fail-closed and revocation without mail");

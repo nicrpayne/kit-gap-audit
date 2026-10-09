@@ -1,6 +1,7 @@
 "use client";
 import { useState } from "react";
 import styles from "./RecipientReport.module.css";
+import ReportPdfDownload from "./ReportPdfDownload";
 
 export default function ReportReaderAccess({ shareId, signedIn = false }: { shareId: string; signedIn?: boolean }) {
   const [email, setEmail] = useState(""), [code, setCode] = useState(""), [challenge, setChallenge] = useState<string | null>(null);
@@ -15,7 +16,7 @@ export default function ReportReaderAccess({ shareId, signedIn = false }: { shar
     } catch (e) { setError(e instanceof Error ? e.message : "Please try again."); }
     finally { setBusy(false); }
   }
-  if (signedIn) return <div className={`${styles.actions} ${styles.noPrint}`}><button onClick={() => window.print()}>Print / save PDF</button><button disabled={busy} onClick={() => action("logout")}>Sign out of report</button>{error && <p role="alert">{error}</p>}</div>;
+  if (signedIn) return <div className={`${styles.actions} ${styles.noPrint}`}><ReportPdfDownload url={`/api/report-access/${encodeURIComponent(shareId)}/pdf`} /><button onClick={() => window.print()}>Print view</button><button disabled={busy} onClick={() => action("logout")}>Sign out of report</button><p className={styles.muted}>Downloaded copies cannot be revoked. Keep them private.</p>{error && <p role="alert">{error}</p>}</div>;
   return <section className={`${styles.panel} ${styles.form}`}><h1>Open your private report</h1><p>Only approved email addresses can view this report. Your sign-in here does not open the Signal working app.</p>
     <form onSubmit={e => { e.preventDefault(); void action(challenge ? "verify" : "request"); }}>
       <label htmlFor="reader-email">Your approved email address</label><input id="reader-email" type="email" autoComplete="email" value={email} required disabled={busy || Boolean(challenge)} onChange={e => setEmail(e.target.value)} />

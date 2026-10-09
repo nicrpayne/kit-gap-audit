@@ -12,7 +12,7 @@ system's normal copy command. An unsuccessful copy is not reported as success.
 The shared converter is only for this application's escaped report Markdown.
 Its result is plain text, not safe HTML or executable Markdown.
 
-Verification: `npm run test:report-plain-text` checks literal source characters,
+Verification: `npm run proof:report-plain-text` checks literal source characters,
 single entity decoding, both report renderers and frozen-data preservation.
 The clipboard fallback source-binding check is not a browser-permission test;
 actual browser clipboard behavior is tracked separately in acceptance evidence.

@@ -16,6 +16,7 @@ import { isDecisionBriefV1, type DecisionBriefV1 } from "@/lib/reports/decisionB
 import { renderDecisionBriefPlainText } from "@/lib/reports/decisionBriefRender";
 import { presentLegacyReport } from "@/lib/reports/legacySanitization";
 import AudienceBriefView from "./reports/AudienceBriefView";
+import ReportPdfDownload from "./reports/ReportPdfDownload";
 import { AUDIENCE_LABELS, PURPOSE_LABELS, buildBriefRecipe, isBriefRecipeV1, type AudienceLens, type BriefPurpose, type BriefRecipeV1 } from "@/lib/reports/composer";
 import { renderAudienceBriefPlainText } from "@/lib/reports/audienceBriefRender";
 import { currentnessLabel, sourceCurrentness } from "@/lib/truth/currentness";
@@ -527,6 +528,7 @@ export default function ReportsPageClient() {
           <a className="text-[var(--i-signal)] underline" href={`/reports/${encodeURIComponent(selected.id)}/share-preview`} target="_blank" rel="noreferrer">Preview saved brief</a>
           {comparison && <a className="text-[var(--i-signal)] underline" href={`/reports/${encodeURIComponent(selected.id)}/share-preview?pair=1`} target="_blank" rel="noreferrer">Preview Reality + Scenario</a>}
           <a className="text-[var(--i-signal)] underline" href={`/api/reports/${encodeURIComponent(selected.id)}/handoff${comparison ? "?pair=1" : ""}`}>Download Site handoff</a>
+          <ReportPdfDownload className="text-[var(--i-signal)] underline" url={`/api/reports/${encodeURIComponent(selected.id)}/pdf${comparison ? "?pair=1" : ""}`} />
         </div>
       </section>}
 

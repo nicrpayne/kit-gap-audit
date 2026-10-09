@@ -14,7 +14,7 @@ export async function middleware(req: NextRequest) {
 
   // These routes have their own fail-closed recipient authentication. Reader
   // cookies are never accepted by the operator app or any other API route.
-  if (/^\/shared\/reports\/[^/]+\/?$/.test(pathname) || /^\/api\/report-access\/[^/]+\/(request|verify|logout)\/?$/.test(pathname)) {
+  if (/^\/shared\/reports\/[^/]+\/?$/.test(pathname) || /^\/api\/report-access\/[^/]+\/(request|verify|logout|pdf)\/?$/.test(pathname)) {
     const response = NextResponse.next();
     response.headers.set("Cache-Control", "private, no-store, max-age=0");
     response.headers.set("X-Robots-Tag", "noindex, nofollow, noarchive");

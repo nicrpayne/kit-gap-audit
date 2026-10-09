@@ -7,6 +7,7 @@ import { loadSavedHandoff } from "@/lib/reports/loadSavedHandoff";
 import { recipientSnapshot } from "@/lib/reports/recipientSnapshot";
 import RecipientReportView from "@/components/reports/RecipientReportView";
 import ReportShareManager from "@/components/reports/ReportShareManager";
+import ReportPdfDownload from "@/components/reports/ReportPdfDownload";
 import styles from "@/components/reports/RecipientReport.module.css";
 
 export const dynamic = "force-dynamic";
@@ -24,6 +25,7 @@ export default async function ShareReportPage({ params, searchParams }: { params
     <a className={styles.button} href={`/reports?project=${encodeURIComponent(projectId)}`}>← Back to Reports</a><p className={styles.label}>Operator only · private executive sharing</p><h1>Review, then share</h1>
     <ReportShareManager reportId={reportId} pair={pair} ready={!!setup.config} missing={setup.missing} publicOrigin={setup.config?.origin ?? null} initialShares={JSON.parse(JSON.stringify(shares))} />
     <h2>Executive preview — exactly what this new link will contain</h2><p>Read-only captured facts, expandable evidence and a schedule snapshot. This simplified view does not include the working app&apos;s controls, raw simulation data or links into private systems.</p>
+    <ReportPdfDownload className={styles.button} url={`/api/reports/${encodeURIComponent(reportId)}/pdf${pair ? "?pair=1" : ""}`} />
     <RecipientReportView snapshot={snapshot} />
   </div></main>;
 }
