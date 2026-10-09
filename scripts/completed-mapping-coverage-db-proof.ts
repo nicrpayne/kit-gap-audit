@@ -9,6 +9,7 @@ import { buildPortfolioInputs, readForecastCoverage, computeForecast } from "../
 import { scenarioForecastCoverage } from "../lib/scenario/forecastCoverage";
 import { EMPTY_SCENARIO, type ProjectScope } from "../lib/instrument/useProject";
 import { runPortfolioSimulation } from "../lib/forecast/portfolio";
+import { makeSignalEstimate } from "../lib/scope/signalEstimates";
 
 const url=new URL(process.env.DATABASE_URL??"file:///missing");
 assert(process.env.SCOPE_SAVE_DB_PROOF==="1"&&url.hostname==="127.0.0.1"&&url.port==="55434"&&url.username==="signal_t0_local"&&url.pathname==="/signal_t0_test_1008","Dedicated disposable proof DB only");
@@ -49,8 +50,8 @@ async function main(){
     // their final work as a dated acceleration. Both use the shared generator.
     const single=await prisma.scope.create({data:{name:`One-ticket report fixture ${randomUUID()}`,teamKey:"PLAT",projectNames:["KIT Platform"],teamCapacity:1,executionState:"configured"}});ids.push(single.id);
     const makeSingle=(name:string,status:string,work:string[])=>prisma.capability.create({data:{scopeId:single.id,name,status,provenance:{source:"fixture"},workLinks:{create:work.map(externalId=>({provider:"linear",externalId,state:"active",provenance:{source:"fixture"}}))}}});
-    await makeSingle("Only remaining feature","accepted",[remaining[0]]);
-    await makeSingle("Later work","outside",remaining.slice(1));
+    const singleOpen=await makeSingle("Only remaining feature","accepted",[remaining[0]]);
+    const singleLater=await makeSingle("Later work","outside",remaining.slice(1));
     const singleDone=await makeSingle("Completed feature","accepted",completed);
     const person=await prisma.person.create({data:{name:`Report fixture person ${randomUUID()}`,fte:1}});personIds.push(person.id);
     await prisma.allocation.create({data:{personId:person.id,scopeId:single.id,fraction:1}});
@@ -61,7 +62,25 @@ async function main(){
     const pairModel=await buildScenarioDecisionBriefReadModel(single,{version:"scenario-report.v2",scenarioId:"single-work-report-proof",baseRealityRevision:0,excludedCapabilityIds:[singleDone.id]});
     for(const brief of [pairModel.realityBrief,pairModel.brief]) {
       assert.deepEqual(brief.movable.scenarioOptions.value.map(option=>option.id),["capacity-plus-1","capacity-plus-2"]);
+      assert.equal(brief.movable.scope.value.executableItemCount,1);
     }
+    // Isolate the fixture's shared PLAT identifiers before ticket-level levers;
+    // do not bypass the production duplicate-owner ambiguity guard.
+    await prisma.scope.update({where:{id:scope.id},data:{executionState:"not_configured"}});
+    const added=await buildScenarioDecisionBriefReadModel(single,{version:"scenario-report.v2",scenarioId:"zero-source-count-proof",baseRealityRevision:0,
+      includedItemIds:remaining.slice(1),estimateOverrideByItemId:Object.fromEntries(remaining.slice(1).map(id=>[id,{low:0,likely:0,high:0}]))});
+    assert.equal(added.realityBrief.movable.scope.value.executableItemCount,1);
+    assert.equal(added.brief.movable.scope.value.executableItemCount,remaining.length,"zero-day added tickets still count as source work");
+    assert.equal(added.brief.movable.scope.value.simulationItemCount,remaining.length);
+    await prisma.capability.update({where:{id:singleLater.id},data:{status:"accepted"}});
+    const combined=makeSignalEstimate(singleLater.id,1,{alreadyDone:"Fixture reuse exists",reuseFrom:"Fictional shared uploader",remainingWork:"Adapt and test the covered tickets",rationale:"Fixture operator estimate",evidenceReference:"Fixture only",asOfDate:"2026-10-08",reviewerDisplayName:"Fixture operator",range:{low:1,likely:2,high:3},coveredOpenItemIds:remaining.slice(1),additionalOpenItemIds:[]},remaining.slice(1),"count-aggregate-proof");
+    const aggregate=await buildScenarioDecisionBriefReadModel(single,{version:"scenario-report.v2",scenarioId:"aggregate-source-count-proof",baseRealityRevision:0,
+      excludedCapabilityIds:[singleOpen.id],remainingEstimateByCapabilityId:{[singleLater.id]:combined}});
+    assert.equal(aggregate.realityBrief.movable.scope.value.executableItemCount,remaining.length);
+    assert.equal(aggregate.brief.movable.scope.value.executableItemCount,remaining.length-1,"aggregate retains all distinct covered source tickets after a capability cut");
+    assert.equal(aggregate.brief.movable.scope.value.simulationItemCount,1,"one aggregate is not an additional tracked ticket");
+    assert.equal((await prisma.capability.findUniqueOrThrow({where:{id:singleLater.id}})).acceptedEstimate,null,"Scenario estimate never overwrites Reality");
+    await prisma.scope.update({where:{id:scope.id},data:{executionState:"configured"}});
     assert.equal(await prisma.report.count(),reportCount,"read models do not rewrite historical reports");
     await prisma.capability.update({where:{id:open.id},data:{status:"outside"}});
     const allOutside=await readForecastCoverage(scope);assert.equal(allOutside.label,"NO REMAINING WORK SELECTED");

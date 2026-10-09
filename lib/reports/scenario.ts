@@ -34,7 +34,7 @@ import { forecastCapability } from "@/lib/scope/capabilityForecast";
 import { freezeCapabilityEstimate, freezeForecastBasis, type ForecastCapacityBasisInput } from "./forecastBasis";
 import { findScenarioLeverConflicts, scenarioLeverConflictMessage } from "./scenarioConflicts";
 import { ambiguousScenarioItemLeverMessage, findAmbiguousScenarioItemLevers } from "@/lib/scenario/itemLeverScope";
-import { scenarioWorkExplanation } from "./scenarioWorkExplanation";
+import { countModeledSourceWork, scenarioWorkExplanation } from "./scenarioWorkExplanation";
 
 export * from "./scenarioSnapshot";
 import {
@@ -531,6 +531,12 @@ export async function buildScenarioDecisionBriefReadModel(
   const realityInput = structuredClone(ownerInput);
   realityInput.forecast = {
     ...realityInput.forecast,
+    ...countModeledSourceWork({
+      scopeId: scope.id,
+      modeledItemIds: baselineSpecs.find(candidate => candidate.scopeId === scope.id)?.items.map(item => item.id) ?? [],
+      sourceItems: [...target.items, ...target.executionItems],
+      appliedCapabilityEstimates: frozenBaselineCapabilityEstimates,
+    }),
     basis: freezeForecastBasis(baselineSpecs, frozenBaselineCapabilityEstimates, baselineCapacityBasis),
     simulationItemCount: baselineSpecs.find((candidate) => candidate.scopeId === scope.id)?.items.length ?? 0,
     sourceId: `scenario-pair:${scenario.scenarioId}:reality:${realityRevision}`,
@@ -562,6 +568,12 @@ export async function buildScenarioDecisionBriefReadModel(
   }
   input.forecast = {
     ...input.forecast,
+    ...countModeledSourceWork({
+      scopeId: scope.id,
+      modeledItemIds: scenarioSpecs.find(candidate => candidate.scopeId === scope.id)?.items.map(item => item.id) ?? [],
+      sourceItems: [...target.items, ...target.executionItems],
+      appliedCapabilityEstimates: frozenCapabilityEstimates,
+    }),
     basis: freezeForecastBasis(scenarioSpecs, frozenCapabilityEstimates, scenarioCapacityBasis),
     simulationItemCount: scenarioSpecs.find((candidate) => candidate.scopeId === scope.id)?.items.length ?? 0,
     sourceId: `scenario:${scenario.scenarioId}:reality:${realityRevision}`,

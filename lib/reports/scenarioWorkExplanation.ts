@@ -16,3 +16,27 @@ export function scenarioWorkExplanation(input: {
     ...(modelOnly.size ? [`Excluded ${modelOnly.size} modeled estimate or finding input${modelOnly.size === 1 ? "" : "s"}; these are not additional tickets.`] : []),
   ];
 }
+
+/** Count source records represented in one project's exact simulated basis.
+ * A zero-day source ticket is still a ticket; a synthetic aggregate is not an
+ * extra ticket. Applied aggregates retain their distinct covered source IDs. */
+export function countModeledSourceWork(input: {
+  scopeId: string;
+  modeledItemIds: string[];
+  sourceItems: { id: string; kind: string }[];
+  appliedCapabilityEstimates: {
+    scopeId: string;
+    replacedItemIds: string[];
+    review?: { usedInSimulation: boolean };
+  }[];
+}): { remainingIssueCount: number; unticketedFindingCount: number } {
+  const represented = new Set(input.modeledItemIds);
+  for (const estimate of input.appliedCapabilityEstimates) {
+    if (estimate.scopeId !== input.scopeId || estimate.review?.usedInSimulation === false) continue;
+    for (const id of estimate.replacedItemIds) represented.add(id);
+  }
+  const count = (kind: string) => new Set(input.sourceItems
+    .filter(item => item.kind === kind && represented.has(item.id))
+    .map(item => item.id)).size;
+  return { remainingIssueCount: count("ticket"), unticketedFindingCount: count("finding") };
+}
