@@ -5,7 +5,7 @@ import { prisma } from "../lib/prisma";
 import { getScopedIssues } from "../lib/linear";
 import { isCompletedIssue } from "../lib/linearIssueState";
 import { deliveryRelevantIssueIds } from "../lib/forecast/coverage";
-import { buildPortfolioInputs, readForecastCoverage } from "../lib/forecast/compute";
+import { buildPortfolioInputs, readForecastCoverage, computeForecast } from "../lib/forecast/compute";
 import { scenarioForecastCoverage } from "../lib/scenario/forecastCoverage";
 import { EMPTY_SCENARIO, type ProjectScope } from "../lib/instrument/useProject";
 import { runPortfolioSimulation } from "../lib/forecast/portfolio";
@@ -14,6 +14,7 @@ const url=new URL(process.env.DATABASE_URL??"file:///missing");
 assert(process.env.SCOPE_SAVE_DB_PROOF==="1"&&url.hostname==="127.0.0.1"&&url.port==="55434"&&url.username==="signal_t0_local"&&url.pathname==="/signal_t0_test_1008","Dedicated disposable proof DB only");
 process.env.KIT_DEV_FIXTURES="1"; delete process.env.LINEAR_API_KEY;
 const ids:string[]=[];
+const personIds:string[]=[];
 async function main(){
   try {
     const scope=await prisma.scope.create({data:{name:`Completed mapping fixture ${randomUUID()}`,teamKey:"PLAT",projectNames:["KIT Platform"],teamCapacity:1,executionState:"configured"}}); ids.push(scope.id);
@@ -43,6 +44,25 @@ async function main(){
       {estimateOverrideByItemId:Object.fromEntries(remaining.map(id=>[id,{low:0,likely:0,high:0}]))},
     ]) await assert.rejects(buildScenarioDecisionBriefReadModel(scope,{...scenario,...levers}),/No remaining work is selected for this Scenario/);
     assert.equal(await prisma.report.count(),reportCount,"no fabricated empty-work report or partial pair saved");
+    // Real report read models, not just a mocked renderer: a valid one-ticket
+    // Reality and its harmless completed-card cut must not recommend removing
+    // their final work as a dated acceleration. Both use the shared generator.
+    const single=await prisma.scope.create({data:{name:`One-ticket report fixture ${randomUUID()}`,teamKey:"PLAT",projectNames:["KIT Platform"],teamCapacity:1,executionState:"configured"}});ids.push(single.id);
+    const makeSingle=(name:string,status:string,work:string[])=>prisma.capability.create({data:{scopeId:single.id,name,status,provenance:{source:"fixture"},workLinks:{create:work.map(externalId=>({provider:"linear",externalId,state:"active",provenance:{source:"fixture"}}))}}});
+    await makeSingle("Only remaining feature","accepted",[remaining[0]]);
+    await makeSingle("Later work","outside",remaining.slice(1));
+    const singleDone=await makeSingle("Completed feature","accepted",completed);
+    const person=await prisma.person.create({data:{name:`Report fixture person ${randomUUID()}`,fte:1}});personIds.push(person.id);
+    await prisma.allocation.create({data:{personId:person.id,scopeId:single.id,fraction:1}});
+    await prisma.capacityReconciliation.create({data:{scopeId:single.id,status:"named_exact",completenessConfirmed:true,legacySource:"fixture",namedRawFte:1,namedEffectiveFte:1,provenance:{source:"fixture"},history:[]}});
+    const singleForecast=await computeForecast(single);
+    assert(singleForecast.forecastCoverage.canonicalForecast);assert.equal(singleForecast.basis.scopes.find(s=>s.scopeId===single.id)?.items.length,1);
+    assert.deepEqual(singleForecast.scenarios.map(option=>option.id),["capacity-plus-1","capacity-plus-2"]);
+    const pairModel=await buildScenarioDecisionBriefReadModel(single,{version:"scenario-report.v2",scenarioId:"single-work-report-proof",baseRealityRevision:0,excludedCapabilityIds:[singleDone.id]});
+    for(const brief of [pairModel.realityBrief,pairModel.brief]) {
+      assert.deepEqual(brief.movable.scenarioOptions.value.map(option=>option.id),["capacity-plus-1","capacity-plus-2"]);
+    }
+    assert.equal(await prisma.report.count(),reportCount,"read models do not rewrite historical reports");
     await prisma.capability.update({where:{id:open.id},data:{status:"outside"}});
     const allOutside=await readForecastCoverage(scope);assert.equal(allOutside.label,"NO REMAINING WORK SELECTED");
     assert.equal(allOutside.census.mappedAcceptedCapabilityCount,1);assert.equal(allOutside.census.outsideExecutionIssueCount,remaining.length);
@@ -63,6 +83,6 @@ async function main(){
       else {runPortfolioSimulation([spec],10);assert.equal(row.forecastCoverage.state,"unavailable");}
     }
     console.log("PASS actual DB→source→forecast→portfolio→Scenario→report: completed mappings retained, zero added effort, exact read preservation, absent link refusal, all-done/all-outside no invented release date, actual report builder rejects empty capability/item/zero-estimate Scenarios; confirmed zero named capacity stays zero with empty/nonempty work");
-  } finally {await prisma.scope.deleteMany({where:{id:{in:ids}}});await prisma.$disconnect();}
+  } finally {await prisma.scope.deleteMany({where:{id:{in:ids}}});await prisma.person.deleteMany({where:{id:{in:personIds}}});await prisma.$disconnect();}
 }
 main().catch(e=>{console.error(e);process.exitCode=1;});

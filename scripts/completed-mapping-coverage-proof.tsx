@@ -19,7 +19,9 @@ import { presentForecastDeliveryClaim } from "../lib/forecast/claims";
 import { deliveryNextAction } from "../lib/instrument/nextAction";
 import { readProjectField } from "../lib/control-room/field";
 import { readControlRoom } from "../lib/control-room/read";
-import { runPortfolioSimulation } from "../lib/forecast/portfolio";
+import { buildPortfolioScenarios, runPortfolioSimulation } from "../lib/forecast/portfolio";
+import { buildScenarioVariants, buildScenarios } from "../lib/forecast/scenarios";
+import type { ForecastInputs } from "../lib/forecast/build";
 import Inspector from "../components/control-room/Inspector";
 import { forecastReadingForTime, historicalForecastReading, liveForecastReading } from "../lib/timeline/forecastTruth";
 import type { ProjectPayload } from "../lib/instrument/useProject";
@@ -276,5 +278,39 @@ check("Portfolio rows and inspector withhold unavailable comparisons, including 
   assert(inspector.includes("No date comparison"));assert(!inspector.includes("forecast moved")&&!/\d+d earlier/.test(inspector));
   const restored=renderToStaticMarkup(<ScenarioInspector {...props} scope={{...props.scope,forecastCoverage:coverage()}}/>);
   assert(restored.includes("forecast moved"),"supported comparison explanation remains available");
+});
+check("Report acceleration levers never remove the last positive work or publish gate-only work", () => {
+  const positive={...item,low:4,likely:4,high:4};
+  const zero={...item,id:"ZERO",low:0,likely:0,high:0};
+  const gate={id:"WAIT",label:"Wait",low:3,likely:3,high:3};
+  for(const items of [[],[zero]]) {
+    assert.deepEqual(buildScenarioVariants({items,gates:[gate],teamCapacity:1}),[]);
+  }
+  for(const items of [[positive],[positive,zero]]) {
+    const variants=buildScenarioVariants({items,gates:[gate],teamCapacity:1});
+    assert.deepEqual(variants.map(v=>v.id),["resolve-decisions","capacity-plus-1","capacity-plus-2"]);
+    assert(variants.every(v=>v.items.some(i=>i.high>0)));
+    const standalone=buildScenarios({items,gates:[gate],teamCapacity:1} as unknown as ForecastInputs,new Date("2026-10-09"),new Date("2026-10-31"));
+    assert(standalone.scenarios.every(v=>!v.id.startsWith("descope-")));
+  }
+});
+check("Report levers preserve real partial cuts, uncertain tails and dependency-aware capacity effects", () => {
+  const startDate=new Date("2026-10-09"),targetDate=new Date("2026-10-31");
+  const work={...item,low:4,likely:4,high:4},second={...item,id:"SECOND",low:2,likely:2,high:2};
+  const root={scopeId:"root",items:[work,second],gates:[],teamCapacity:1,dependsOnScopeIds:[],startDate,targetDate};
+  const before=structuredClone(root);
+  const base=runPortfolioSimulation([root],100).get("root")!;
+  const options=buildPortfolioScenarios([root],"root",base,100);
+  assert.equal(options.find(v=>v.id===`descope-${work.id}`)?.deltaDays,-4);
+  assert.equal(options.find(v=>v.id==="descope-SECOND")?.deltaDays,-2);
+  const tail={...second,low:0,likely:0,high:1};
+  assert(buildScenarioVariants({...root,items:[work,tail]}).some(v=>v.id===`descope-${work.id}`),"positive uncertainty tail remains forecastable");
+  const dependent={...root,items:[work],dependsOnScopeIds:["upstream"]};
+  const upstream={...root,scopeId:"upstream",items:[{...second,low:12,likely:12,high:12}]};
+  const specs=[dependent,upstream],dependentBase=runPortfolioSimulation(specs,100).get("root")!;
+  const dependentOptions=buildPortfolioScenarios(specs,"root",dependentBase,100);
+  assert.equal(dependentOptions.length,2);assert(dependentOptions.every(v=>v.deltaDays===0));
+  assert(!dependentOptions.some(v=>v.id.startsWith("descope-")),"an upstream floor cannot legitimize cutting all own work");
+  assert.deepEqual(root,before);
 });
 console.log(JSON.stringify({passed:true,groups:checkNames.length,checks:checkNames},null,2));

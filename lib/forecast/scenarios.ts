@@ -70,7 +70,11 @@ function truncate(s: string, max = 60): string {
 export function buildScenarioVariants(
   inputs: { items: WorkItem[]; gates: DecisionGate[]; teamCapacity: number }
 ): ScenarioVariant[] {
-  if (inputs.items.length === 0 && inputs.gates.length === 0) return [];
+  // Standard levers are published as dated delivery comparisons in both
+  // Reality and Scenario reports. A gate, dependency or zero-sized ticket
+  // cannot stand in for remaining deliverable work.
+  const hasRemainingEffort = (items: WorkItem[]) => items.some((item) => item.high > 0);
+  if (!hasRemainingEffort(inputs.items)) return [];
 
   const variants: ScenarioVariant[] = [];
   if (inputs.gates.length > 0) {
@@ -100,12 +104,16 @@ export function buildScenarioVariants(
     });
   }
 
-  const topItems = [...inputs.items].sort((a, b) => b.likely - a.likely).slice(0, 3);
+  const topItems = inputs.items.filter((item) => item.high > 0).sort((a, b) => b.likely - a.likely).slice(0, 3);
   for (const item of topItems) {
+    const remaining = inputs.items.filter((i) => i.id !== item.id);
+    // Removing the last positive estimate is a boundary with no forecast,
+    // not an acceleration to the start date (or an upstream/gate-only date).
+    if (!hasRemainingEffort(remaining)) continue;
     variants.push({
       id: `descope-${item.id}`,
       label: `Move "${truncate(item.label)}" out of scope`,
-      items: inputs.items.filter((i) => i.id !== item.id),
+      items: remaining,
       gates: inputs.gates,
       teamCapacity: inputs.teamCapacity,
     });
