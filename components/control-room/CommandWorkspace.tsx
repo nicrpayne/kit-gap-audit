@@ -257,7 +257,7 @@ export default function CommandWorkspace({
             bTone={r.outcome.coverageState === "forecastable" ? outcomeHue : "var(--i-amber)"}
             series={r.outcome.confidenceHistory.find((s) => s.id === r.outcome.gatedByScopeId)?.points ?? null}
             reality={
-              scenarioActive && realityLikely
+              r.outcome.coverageState !== "unavailable" && scenarioActive && realityLikely
                 ? r.outcome.likely && deliveryDay(realityLikely) === deliveryDay(r.outcome.likely)
                   ? `${deliveryDay(realityLikely)} · unchanged`
                   : deliveryDay(realityLikely)

@@ -13,6 +13,7 @@ export type ForecastCoverageReasonCode =
   | "execution_source_unavailable"
   | "execution_source_stale"
   | "execution_source_empty"
+  | "no_remaining_execution_work"
   | "accepted_scope_unmapped"
   | "accepted_scope_mapping_missing_from_source"
   | "execution_work_unmapped"
@@ -66,7 +67,11 @@ import { isTerminalIssue } from "@/lib/linearIssueState";
 
 export interface ForecastCoverageInput {
   executionState: string;
+  /** Remaining executable leaves only; these are the classification census. */
   issueIds: string[];
+  /** Completed (not canceled) records from the same current owner read.
+   * Mapping evidence only: never counted or simulated as remaining work. */
+  completedIssueIds?: string[];
   capabilities: CoverageCapability[];
   openShapeDecisionCount: number;
 }
@@ -101,17 +106,23 @@ export function evaluateForecastCoverage(input: ForecastCoverageInput): Forecast
   const outside = input.capabilities.filter((capability) => capability.status !== "accepted");
   const hasGovernedShape = input.capabilities.length > 0;
   const issueIds = new Set(input.issueIds);
+  const completedIds = new Set(input.completedIssueIds ?? []);
+  const hasCurrentMapping = (capability: CoverageCapability) => {
+    const links = capability.workLinks.filter((link) => ACTIVE_LINK_STATES.has(link.state));
+    return links.some((link) => issueIds.has(link.externalId))
+      // An entirely finished mapping is valid only when every active link is
+      // accounted for. One done row must not conceal absent/canceled work.
+      || (links.length > 0 && links.every((link) => completedIds.has(link.externalId)));
+  };
   const mappedIssueIds = new Set(
     accepted.flatMap((capability) => capability.workLinks)
       .filter((link) => ACTIVE_LINK_STATES.has(link.state) && issueIds.has(link.externalId))
       .map((link) => link.externalId),
   );
-  const linked = accepted.filter((capability) =>
-    capability.workLinks.some((link) => ACTIVE_LINK_STATES.has(link.state) && issueIds.has(link.externalId))
-  );
+  const linked = accepted.filter(hasCurrentMapping);
   const activeButAbsent = accepted.filter((capability) =>
     capability.workLinks.some((link) => ACTIVE_LINK_STATES.has(link.state)) &&
-    !capability.workLinks.some((link) => ACTIVE_LINK_STATES.has(link.state) && issueIds.has(link.externalId))
+    !hasCurrentMapping(capability)
   );
   const withoutActiveLink = accepted.filter((capability) =>
     !capability.workLinks.some((link) => ACTIVE_LINK_STATES.has(link.state))
@@ -146,7 +157,9 @@ export function evaluateForecastCoverage(input: ForecastCoverageInput): Forecast
     reasons.push({ code: "execution_source_stale", label: "Execution mapping is stale", count: 1 });
   }
   if (input.issueIds.length === 0) {
-    reasons.push({ code: "execution_source_empty", label: "No current execution work was returned", count: 1 });
+    reasons.push(completedIds.size > 0
+      ? { code: "no_remaining_execution_work", label: "No remaining execution work to forecast; ticket completion is not release confirmation", count: 1 }
+      : { code: "execution_source_empty", label: "No current execution work was returned", count: 1 });
   }
   if (withoutActiveLink.length > 0) {
     reasons.push({
@@ -188,13 +201,19 @@ export function evaluateForecastCoverage(input: ForecastCoverageInput): Forecast
   if (reasons.length > 0) {
     const estimateReviewRequired = reasons.some((reason) => reason.code === "capability_estimate_review_required");
     return {
-      state: "modeled_subset",
+      // There is no remaining-work forecast to display. Keep the real
+      // source/mapping census, but suppress synthetic start-day/gate dates.
+      state: reasons.some((reason) => reason.code === "no_remaining_execution_work") ? "unavailable" : "modeled_subset",
       canonicalForecast: false,
-      label: estimateReviewRequired
+      label: reasons.length === 1 && reasons[0].code === "no_remaining_execution_work"
+        ? "NO REMAINING WORK TO FORECAST"
+        : estimateReviewRequired
         ? "FORECAST INCOMPLETE — ESTIMATE REVIEW REQUIRED"
         : "FORECAST INCOMPLETE — EXECUTION COVERAGE UNRESOLVED",
       reason: reasons.map((item) => item.label).join("; "),
-      caveat: estimateReviewRequired
+      caveat: reasons.some((reason) => reason.code === "no_remaining_execution_work")
+        ? "Completed ticket mappings are retained. No delivery date or release approval is inferred from ticket completion."
+        : estimateReviewRequired
         ? "An accepted estimate needs review. Reviewed v2 may appear only as qualified exploration; a legacy or malformed assertion is not applied, and remaining tickets are only a ticket-only subset pending review."
         : "Unmapped accepted scope or unclassified execution work is excluded.",
       reasons,

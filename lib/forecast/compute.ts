@@ -34,6 +34,7 @@ import {
 } from "@/lib/scope/knowledgeEstimates";
 import { createCapabilityEvidenceProjector, type CapabilityEvidenceReference } from "@/lib/scope/capabilityEvidence";
 import { loadCapabilityAuditEvidenceOrigins } from "@/lib/scope/capabilityEvidenceReadModel";
+import { isCompletedIssue } from "@/lib/linearIssueState";
 
 export interface ForecastFinding {
   id: string;
@@ -384,6 +385,7 @@ async function buildScopeSimInputs(
     // Historical rows and Linear grouping parents remain in source history,
     // but neither is a second delivery item that must be classified.
     issueIds: deliveryRelevantIssueIds(issues, scope.includeTriage),
+    completedIssueIds: issues.filter(isCompletedIssue).map((issue) => issue.identifier),
     capabilities: simulationCapabilities,
     openShapeDecisionCount,
   });
@@ -760,7 +762,7 @@ export async function buildPortfolioInputs(): Promise<PortfolioInputs> {
       forecastItems: bundle.inputs.items,
       executionItems: describeItems({ ...bundle, inputs: bundle.executionInputs }),
       completedWork: bundle.issues
-        .filter((i) => i.completedAt !== null)
+        .filter(isCompletedIssue)
         .map((i) => ({
           id: i.identifier,
           label: `${i.identifier} ${i.title}`,

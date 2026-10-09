@@ -53,6 +53,7 @@ export function scenarioForecastCoverage(scopes: ProjectScope[], scenario: Suite
     const coverage = evaluateForecastCoverage({
       executionState: scope.executionState,
       issueIds: [...ids],
+      completedIssueIds: (scope.completedWork ?? []).map(item => item.id),
       capabilities: [...capabilities, ...directWork],
       openShapeDecisionCount: decisionScenarioOpenCount(scope.scopeId, scope.openShapeQuestions, decisions, scenario.decisionPlans),
     });

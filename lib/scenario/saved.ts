@@ -82,6 +82,9 @@ export interface SavedScenarioBaselineSource {
       status?: string | null;
     }>;
     forecastItems: Array<{ id: string; low: number; likely: number; high: number }>;
+    /** Current completed-source membership can determine Scenario coverage
+     * even when remaining work and Reality's aggregate coverage do not move. */
+    completedWork?: Array<{ id: string }>;
     gates: Array<{ id: string; low: number; likely: number; high: number }>;
     teamCapacity: number;
     capacitySource: string;
@@ -659,6 +662,7 @@ export async function buildSavedScenarioBaseline(source: SavedScenarioBaselineSo
         id: identifier(item.id, `Scenario baseline forecast work for ${scopeId}`),
         ...range({ low: item.low, likely: item.likely, high: item.high }, `Scenario baseline forecast work ${item.id}`),
       })).sort((left, right) => left.id.localeCompare(right.id)),
+      completedIssueIds: [...new Set((scope.completedWork ?? []).map(item => identifier(item.id, `Scenario baseline completed work for ${scopeId}`)))].sort(),
       gates: scope.gates.map((gate) => ({
         id: identifier(gate.id, `Scenario baseline gate for ${scopeId}`),
         ...range({ low: gate.low, likely: gate.likely, high: gate.high }, `Scenario baseline gate ${gate.id}`),

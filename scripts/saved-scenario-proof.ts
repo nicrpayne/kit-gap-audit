@@ -225,6 +225,21 @@ const knowledgeDrift = structuredClone(baselineSource);
 knowledgeDrift.scopes[1].currentContextSnapshotId = "snapshot-a-2";
 assert.equal(compareSavedScenarioBaseline(baseline, await buildSavedScenarioBaseline(knowledgeDrift)).state, "stale");
 
+// Remaining X and Reality's aggregate coverage can be unchanged while a
+// Scenario excluding X relies on completed D. Removing D must invalidate it.
+const completedSource = structuredClone(baselineSource);
+completedSource.scopes[0].completedWork = [{ id: "DONE-D" }, { id: "DONE-E" }];
+const completedBaseline = await buildSavedScenarioBaseline(completedSource);
+const canceledSource = structuredClone(completedSource);
+canceledSource.scopes[0].completedWork = [{ id: "DONE-E" }];
+assert.equal(compareSavedScenarioBaseline(completedBaseline, await buildSavedScenarioBaseline(canceledSource)).state, "stale", "completed-to-canceled/absent transition changes Scenario coverage even with identical open work/revisions");
+const reorderedCompleted = structuredClone(completedSource);
+reorderedCompleted.scopes[0].completedWork!.reverse();
+assert.deepEqual(await buildSavedScenarioBaseline(reorderedCompleted), completedBaseline);
+const metadataOnly = structuredClone(completedSource);
+Object.assign(metadataOnly.scopes[0].completedWork![0], { label: "Renamed display title", completedAt: "2026-10-09" });
+assert.deepEqual(await buildSavedScenarioBaseline(metadataOnly), completedBaseline, "completed identity matters, incidental metadata does not");
+
 const revisionDrift = structuredClone(baselineSource);
 revisionDrift.scopes[1].realityState.realityRevision += 1;
 const revisionResult = compareSavedScenarioBaseline(baseline, await buildSavedScenarioBaseline(revisionDrift));

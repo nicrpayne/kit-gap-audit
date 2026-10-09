@@ -21,7 +21,7 @@ import Link from "@/components/instrument/SignalLink";
 import ToolWindow, { RailButton, Row } from "@/components/instrument/ToolWindow";
 import { DistributionDisplay, accentFor, materialOf } from "@/components/instrument/CapabilityTile";
 import { Prototype } from "@/components/instrument/Panel";
-import { expectedDays, ticketEstimateTuningAllowed, uncertaintyLabel, type Feature, type ThreePoint, type DraftFeature } from "@/lib/scope/features";
+import { expectedDays, linkedWorkDone, ticketEstimateTuningAllowed, uncertaintyLabel, type Feature, type ThreePoint, type DraftFeature } from "@/lib/scope/features";
 import type { ScopeWorkItem } from "@/lib/instrument/useProject";
 import type { ShapeCapability } from "@/lib/scope/productShape";
 import {
@@ -222,6 +222,7 @@ function ModuleHead({
   const material = materialOf(f);
   const accent = accentFor(material);
   const hasEstimate = hasModeledEstimate(f);
+  const done = linkedWorkDone(f);
   const hasRange = hasEstimate && f.range.high - f.range.low > 0;
   const requiredReview = f.acceptedKnowledgeReview?.status === "review_required" ? f.acceptedKnowledgeReview : null;
   const legacyEstimateReviewRequired = Boolean(requiredReview && !requiredReview.exploration);
@@ -260,7 +261,7 @@ function ModuleHead({
 
       {hasEstimate ? <div className="mt-2.5 h-[96px]">
         <DistributionDisplay range={f.range} hasItems maxSpread={maxSpread} accent={accent} ghost={realityRange} dim={f.bypassed} scale={2} />
-      </div> : <div className="mt-3 rounded-md px-3 py-4 text-center" style={{ border: "1px solid var(--i-border)", background: "var(--i-recess)" }}><div className="text-[10px] font-medium text-[var(--i-amber)]">Mapping needed</div><div className="mt-1 text-[8.5px] text-[var(--i-text-faint)]">No chart or effort value is fabricated for an empty capability.</div></div>}
+      </div> : <div className="mt-3 rounded-md px-3 py-4 text-center" style={{ border: "1px solid var(--i-border)", background: "var(--i-recess)" }}><div className={`text-[10px] font-medium ${done ? "text-[var(--i-mint)]" : "text-[var(--i-amber)]"}`}>{done ? "Linked work done" : "Mapping needed"}</div><div className="mt-1 text-[8.5px] text-[var(--i-text-faint)]">{done ? `${f.done.length} linked tickets complete. This is ticket status, not confirmation that the feature has shipped.` : "No chart or effort value is fabricated for an empty capability."}</div></div>}
       {hasRange ? (
         <div className="mt-1 flex items-baseline justify-between text-[8.5px] tabular-nums text-[var(--i-text-faint)]">
           <span>{f.range.low.toFixed(1)}d</span>
@@ -270,13 +271,13 @@ function ModuleHead({
           <span>{f.range.high.toFixed(1)}d</span>
         </div>
       ) : (
-        <div className="mt-1 text-center text-[8.5px] text-[var(--i-text-faint)]">no work mapped, so no range</div>
+        <div className="mt-1 text-center text-[8.5px] text-[var(--i-text-faint)]">{done ? "No remaining ticket range to simulate" : "no work mapped, so no range"}</div>
       )}
 
       <div className="mt-3 flex items-start gap-5">
         <HeadStat
           k={legacyEstimateReviewRequired ? "Ticket-only load" : f.capabilityForecast ? "Card schedule" : "Load"}
-          v={hasEstimate ? `${(f.capabilityForecast?.likelyScheduleDays ?? f.loadDays).toFixed(1)}d` : "—"}
+          v={hasEstimate ? `${(f.capabilityForecast?.likelyScheduleDays ?? f.loadDays).toFixed(1)}d` : done ? "0.0d" : "—"}
           n={legacyEstimateReviewRequired
             ? invalidAcceptedEstimate ? "stored estimate invalid · subset pending review" : "legacy estimate not applied · subset pending review"
             : f.capabilityForecast
@@ -287,7 +288,7 @@ function ModuleHead({
                 ? `${f.canonicalCapability?.signalScenarioEstimate ? "Scenario remaining effort" : "accepted remaining effort"} · ÷ ${capacity.toFixed(2)} FTE`
               : f.acceptedKnowledgeReview?.status === "review_required" && f.acceptedKnowledgeReview.exploration
                 ? `qualified prior range · review required`
-              : hasEstimate ? `÷ ${capacity.toFixed(2)} FTE` : "no mapped work"}
+              : hasEstimate ? `÷ ${capacity.toFixed(2)} FTE` : done ? "remaining in linked tickets" : "no mapped work"}
         />
         <HeadStat
           k="Share"
@@ -379,7 +380,7 @@ function Overview({ feature: f }: { feature: Feature }) {
         />
         <Row
           k="Effort"
-          v={hasModeledEstimate(f) ? `${expectedDays(f.range).toFixed(1)}d` : "—"}
+          v={hasModeledEstimate(f) ? `${expectedDays(f.range).toFixed(1)}d` : linkedWorkDone(f) ? "0.0d" : "—"}
           note={f.activeKnowledgeEstimate
             ? `provisional meeting range · ${f.range.low.toFixed(0)}–${f.range.high.toFixed(0)} developer-days`
             : f.acceptedKnowledgeReview?.status === "reviewed"
@@ -390,7 +391,7 @@ function Overview({ feature: f }: { feature: Feature }) {
               ? `${f.acceptedKnowledgeReview.invalidStoredAssertion ? "stored estimate invalid" : "legacy estimate not applied"} · ticket-only subset pending review · ${f.range.low.toFixed(0)}–${f.range.high.toFixed(0)}d tickets`
             : f.items.length > 0
               ? `expected, before capacity · ${f.range.low.toFixed(0)}–${f.range.high.toFixed(0)}d range`
-              : "no mapped work or staged estimate"}
+              : linkedWorkDone(f) ? "remaining in completed linked tickets · not release confirmation" : "no mapped work or staged estimate"}
         />
       </div>
 

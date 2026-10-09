@@ -838,6 +838,7 @@ export default function ScopeInstrument() {
                   effortRemoved={effortRemoved}
                   active={m.active}
                   canonicalForecast={displayedCoverage.canonicalForecast && scope.capacityContract.reconciles}
+                  unavailableLabel={displayedCoverage.state === "unavailable" ? displayedCoverage.label : null}
                   dominancePhrase={dom?.dominated ? dom.phrase : null}
                   previewRelief={
                     carryingSeated && dragging ? dragging.effortDays / (capacity > 0 ? capacity : 1) : null
@@ -1150,8 +1151,8 @@ export default function ScopeInstrument() {
         change={pending}
         scope={scope}
         feature={pending ? composition.features.find((item) => item.id === `capability:${pending.capability.id}`) : undefined}
-        baseDate={base.likelyDate}
-        previewDate={res.likelyDate}
+        baseDate={scope.forecastCoverage.state === "unavailable" ? null : base.likelyDate}
+        previewDate={displayedCoverage.state === "unavailable" ? null : res.likelyDate}
         writing={writing}
         error={writeError}
         onKeepScenario={() => { setPending(null); setWriteError(null); }}
@@ -1244,8 +1245,8 @@ function ScopeImpactPreview({
   change: PendingScopeChange | null;
   scope: ProjectScope;
   feature: Feature | undefined;
-  baseDate: Date;
-  previewDate: Date;
+  baseDate: Date | null;
+  previewDate: Date | null;
   previewPending: boolean;
   writing: boolean;
   error: string | null;
@@ -1258,7 +1259,7 @@ function ScopeImpactPreview({
     ? scope.executionItems.filter((item) => change.itemIds.includes(item.id))
     : change.kind === "link" ? [change.item] : [];
   const loadDelta = isMove ? change.loadDelta ?? capabilityReleaseLoadDelta(feature, change.status) : null;
-  const dateDelta = Math.round((previewDate.getTime() - baseDate.getTime()) / 86_400_000);
+  const dateDelta = baseDate && previewDate ? Math.round((previewDate.getTime() - baseDate.getTime()) / 86_400_000) : null;
   const title = change.kind === "link"
     ? `Link ${change.item.id} → ${change.capability.name}`
     : change.kind === "unlink"
@@ -1272,7 +1273,7 @@ function ScopeImpactPreview({
           <div className="rounded border border-[var(--i-border)] bg-[var(--i-recess)] px-3 py-2"><div className="i-label">Execution</div><div className="mt-1 i-readout text-[15px]">{change.kind === "unlink" ? "−1" : `${change.kind === "move" && change.status === "outside" ? "−" : "+"}${items.length}`}</div><div className="text-[8.5px] text-[var(--i-text-faint)]">mapped item{items.length === 1 ? "" : "s"}</div></div>
           <div className="rounded border border-[var(--i-border)] bg-[var(--i-recess)] px-3 py-2"><div className="i-label">Modeled load</div><div className="mt-1 i-readout text-[15px]">{loadDelta === null ? "Recheck after save" : `${loadDelta < 0 ? "−" : "+"}${Math.abs(loadDelta).toFixed(1)}d`}</div><div className="text-[8.5px] text-[var(--i-text-faint)]">{isMove ? "feature estimate at current staffing · not elapsed time" : "mapping changes may require estimate review"}</div></div>
         </div>
-        {isMove && <div className="mt-2 rounded border border-[var(--i-border)] px-3 py-2 text-[10px] text-[var(--i-text-soft)]">{previewPending ? "Recalculating Scenario window…" : <>Scenario window: {formatDateOnly(baseDate)} → {formatDateOnly(previewDate)} {dateDelta === 0 ? "(held)" : `(${deltaLabel(dateDelta)})`}</>}</div>}
+        {isMove && <div className="mt-2 rounded border border-[var(--i-border)] px-3 py-2 text-[10px] text-[var(--i-text-soft)]">{!baseDate || !previewDate || dateDelta === null ? "No date comparison available for this work boundary" : previewPending ? "Recalculating Scenario window…" : <>Scenario window: {formatDateOnly(baseDate)} → {formatDateOnly(previewDate)} {dateDelta === 0 ? "(held)" : `(${deltaLabel(dateDelta)})`}</>}</div>}
         <p className="mt-3 text-[10px] leading-relaxed text-[var(--i-text-faint)]">Commit writes canonical server Reality, increments the derived revision, recomputes Forecast coverage/readiness, and becomes visible to other devices. Keeping the preview leaves Reality unchanged.</p>
         {error && <div className="mt-2 text-[10px] text-[var(--i-red)]">{error}</div>}
         <div className="mt-4 flex gap-2"><button onClick={onKeepScenario} disabled={writing} className="flex-1 rounded-md border border-[var(--i-border-strong)] px-3 py-2 text-[11px] text-[var(--i-text-soft)]">{isMove ? "Keep hypothetical" : "Cancel"}</button><button onClick={onCommit} disabled={writing} className="flex-1 rounded-md border border-[var(--i-signal)] px-3 py-2 text-[11px] text-[var(--i-signal)]" data-shoot="commit-scope-reality">{writing ? "Committing…" : "Commit to Reality"}</button></div>
@@ -1374,6 +1375,7 @@ function MasterDisplay({
   effortRemoved,
   active,
   canonicalForecast,
+  unavailableLabel,
   dominancePhrase,
   previewRelief,
 }: {
@@ -1389,6 +1391,7 @@ function MasterDisplay({
   effortRemoved: number;
   active: boolean;
   canonicalForecast: boolean;
+  unavailableLabel: string | null;
   /** Set only when the date is held by something Scope cannot cut. */
   dominancePhrase: string | null;
   /** Live during a carry: what setting this module down would remove. */
@@ -1418,11 +1421,11 @@ function MasterDisplay({
             className="inline-block i-readout"
             style={{ color: canonicalForecast ? (moved ? "var(--i-violet)" : "var(--i-text)") : "var(--i-amber)" }}
           >
-            {pending ? "Recalculating…" : canonicalForecast ? date : "Forecast not ready"}
+            {unavailableLabel ?? (pending ? "Recalculating…" : canonicalForecast ? date : "Forecast not ready")}
           </motion.span>
         </div>
         <div className="mt-1.5 text-[9.5px] text-[var(--i-text-faint)]">
-          {pending ? "Waiting for this Scenario’s updated result" : canonicalForecast ? `P10 ${best} · P90 ${worst} · middle 80% of simulated outcomes` : `Modeled subset consequence ~${date} · not a delivery claim`}
+          {unavailableLabel ? "No delivery date or target confidence claimed" : pending ? "Waiting for this Scenario’s updated result" : canonicalForecast ? `P10 ${best} · P90 ${worst} · middle 80% of simulated outcomes` : `Modeled subset consequence ~${date} · not a delivery claim`}
         </div>
       </div>
 
@@ -1469,11 +1472,11 @@ function MasterDisplay({
             className="inline-block i-readout"
             style={{ color: impactTone }}
           >
-            {pending ? "Recalculating…" : moved ? deltaLabel(movedDays) : active ? "held" : "—"}
+            {unavailableLabel ? "—" : pending ? "Recalculating…" : moved ? deltaLabel(movedDays) : active ? "held" : "—"}
           </motion.span>
         </div>
         <div className="mt-1.5 text-[9.5px] leading-snug" style={{ color: previewRelief !== null ? "var(--i-violet)" : "var(--i-text-faint)" }}>
-          {pending ? "No new date yet" : previewRelief !== null ? (
+          {unavailableLabel ? "No date comparison available" : pending ? "No new date yet" : previewRelief !== null ? (
             `setting down removes ${previewRelief.toFixed(1)}d of load`
           ) : active ? (
             // The dominated case: the date did not move, and saying so is the

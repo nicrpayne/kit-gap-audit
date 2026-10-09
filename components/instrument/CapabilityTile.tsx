@@ -34,7 +34,7 @@
 // being touched.
 
 import { motion } from "motion/react";
-import { uncertaintyLabel, type Feature, type ThreePoint } from "@/lib/scope/features";
+import { linkedWorkDone, uncertaintyLabel, type Feature, type ThreePoint } from "@/lib/scope/features";
 import { formatDateOnly } from "@/lib/time/dateContract";
 import { isSignalEstimate } from "@/lib/scope/signalEstimates";
 
@@ -439,6 +439,7 @@ export default function CapabilityTile({
   const accent = accentFor(material);
   const hasEstimate = f.items.length > 0 || f.activeKnowledgeEstimate !== null || f.acceptedKnowledgeEstimate !== null;
   const hasRange = hasEstimate && f.range.high - f.range.low > 0;
+  const done = linkedWorkDone(f);
   const geom = tracePaths(f.range, f.items.length > 0, maxSpread, 200, 30);
   const mapped = f.items.length + f.done.length;
   const dotTotal = Math.min(6, mapped);
@@ -662,8 +663,8 @@ export default function CapabilityTile({
           </div>
         ) : (
           <div className={`relative ${compact ? "mt-1" : "mt-2"}`}>
-            <div className="text-[10px] font-medium text-[var(--i-amber)]">Mapping needed</div>
-            <div className="mt-0.5 text-[8.5px] text-[var(--i-text-faint)]">Declared shape · no executable work linked</div>
+            <div className={`text-[10px] font-medium ${done ? "text-[var(--i-mint)]" : "text-[var(--i-amber)]"}`}>{done ? "Linked work done" : "Mapping needed"}</div>
+            <div className="mt-0.5 text-[8.5px] text-[var(--i-text-faint)]">{done ? `${f.done.length} linked tickets complete · 0d remaining in those tickets` : "Declared shape · no executable work linked"}</div>
           </div>
         )}
 
@@ -688,6 +689,7 @@ export default function CapabilityTile({
                 ? f.capabilityForecast ? "ACCEPTED MEETING ESTIMATE + STAFFING" : "ACCEPTED MEETING ESTIMATE"
                 : f.capabilityForecast
                 ? "CAPABILITY FORECAST · SCENARIO"
+                : done ? "TICKET STATUS · NOT RELEASE CONFIRMATION"
                 : f.items.length === 0 && f.done.length === 0
                 ? f.source === "canonical" ? "NO EXECUTION WORK MAPPED" : "no work mapped"
                 : `uncertainty ${uncertaintyLabel(f.uncertainty).toLowerCase()}`}

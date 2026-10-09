@@ -500,20 +500,20 @@ export function readControlRoom(i: ControlRoomInput): ControlRoomReading {
   const outcome: OutcomeSummary = {
     coverageState,
     coverageScopeNames,
-    likely: likelyMs === -Infinity ? null : new Date(likelyMs),
+    likely: coverageState === "unavailable" || likelyMs === -Infinity ? null : new Date(likelyMs),
     gatedBy: gatingScope?.name ?? null,
     gatedByScopeId,
     confidence: coverageState === "forecastable" ? gatingSim?.confidenceAtTarget ?? null : null,
     target,
-    gapDays: gatingSim && target ? Math.round(days(gatingSim.likelyDate, target)) : null,
-    p10: gatingSim ? dayToDate(percentileDay(gatingSim.completionDaysSorted, 10)) : null,
-    p90: gatingSim ? dayToDate(percentileDay(gatingSim.completionDaysSorted, 90)) : null,
-    spreadDays: gatingSim
+    gapDays: coverageState !== "unavailable" && gatingSim && target ? Math.round(days(gatingSim.likelyDate, target)) : null,
+    p10: coverageState !== "unavailable" && gatingSim ? dayToDate(percentileDay(gatingSim.completionDaysSorted, 10)) : null,
+    p90: coverageState !== "unavailable" && gatingSim ? dayToDate(percentileDay(gatingSim.completionDaysSorted, 90)) : null,
+    spreadDays: coverageState !== "unavailable" && gatingSim
       ? Math.round(
           percentileDay(gatingSim.completionDaysSorted, 90) - percentileDay(gatingSim.completionDaysSorted, 10)
         )
       : null,
-    realityLikely: i.scenarioActive && gatingReality ? gatingReality.likelyDate : null,
+    realityLikely: coverageState !== "unavailable" && i.scenarioActive && gatingReality ? gatingReality.likelyDate : null,
     scopesPastTarget,
     confidenceHistory,
     confidenceTrendPts,

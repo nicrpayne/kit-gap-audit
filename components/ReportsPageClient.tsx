@@ -491,7 +491,7 @@ export default function ReportsPageClient() {
         {live?.state === "ready" && (() => {
           const freshness = sourceCurrentness(live.asOf, new Date());
           return <span className="report-no-print ml-auto text-[10px] uppercase tracking-wider" style={{ color: live.coverageState === "forecastable" && freshness.currentness !== "stale" ? "var(--i-mint)" : "var(--i-amber)" }}>
-            {live.coverageState === "forecastable" ? `Live owner · ${currentnessLabel(freshness)} · as of ${formatTimestampDate(live.asOf)} · likely ${formatDateOnly(live.likelyDate, { month: "short", day: "numeric", year: "numeric" })}` : `${live.coverageLabel} · modeled subset ~${formatDateOnly(live.likelyDate, { month: "short", day: "numeric", year: "numeric" })}`}
+            {live.coverageState === "unavailable" ? `${live.coverageLabel} · no delivery date claimed` : live.coverageState === "forecastable" ? `Live owner · ${currentnessLabel(freshness)} · as of ${formatTimestampDate(live.asOf)} · likely ${formatDateOnly(live.likelyDate, { month: "short", day: "numeric", year: "numeric" })}` : `${live.coverageLabel} · modeled subset ~${formatDateOnly(live.likelyDate, { month: "short", day: "numeric", year: "numeric" })}`}
           </span>;
         })()}
       </div>

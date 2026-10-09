@@ -138,6 +138,17 @@ export interface FeatureComposition {
   unmappedItems: number;
 }
 
+/** Known completed mappings, not a product/release completion assertion.
+ * A pending estimate review or any missing active link must stay visible. */
+export function linkedWorkDone(feature: Feature): boolean {
+  if (feature.items.length || !feature.done.length || feature.activeKnowledgeEstimate
+    || feature.acceptedKnowledgeReview || feature.stagedKnowledgeEstimateReviewRequired
+    || feature.stagedKnowledgeEstimateMissing) return false;
+  const completedIds = new Set(feature.done.map((item) => item.id));
+  const links = feature.canonicalCapability?.workLinks.filter((link) => link.state === "active" || link.state === "configured");
+  return !links || (links.length > 0 && links.every((link) => completedIds.has(link.externalId)));
+}
+
 const UNMAPPED_ID = "__unmapped__";
 
 // Walks an issue's parent chain to its root. Linear guarantees no cycles, but

@@ -237,9 +237,12 @@ export function readProjectField(i: FieldInput): ProjectField {
   );
 
   const lanes: FieldLane[] = scopes.map((s) => {
-    const sim = preview.get(s.scopeId) ?? null;
-    const real = baseline.get(s.scopeId) ?? null;
-    const floor = floorByScope?.get(s.scopeId) ?? null;
+    // Presentation only: retain targets, history, gates and structural
+    // dependencies, but no start-day/gate-only date for unavailable work.
+    const available = s.forecastCoverage.state !== "unavailable";
+    const sim = available ? preview.get(s.scopeId) ?? null : null;
+    const real = available ? baseline.get(s.scopeId) ?? null : null;
+    const floor = available ? floorByScope?.get(s.scopeId) ?? null : null;
     const target = s.targetDate ? toDays(new Date(s.targetDate)) : null;
     const ch = readChannel(workforce, s.scopeId, switchCostPct);
     const named = s.capacitySource === "allocations";
