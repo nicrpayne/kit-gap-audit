@@ -2,10 +2,23 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { secondaryActionsFor } from "../lib/audit/actions";
 import type { TruthFinding } from "../lib/audit/truth";
+import { groupAuditPassages } from "../lib/audit/evidenceDisplay";
 
 // Deterministic action/copy contracts. Browser checks separately verify
 // discoverability, focus, successful writes and failed-request recovery.
 const secondary = secondaryActionsFor({ laneId: "linear" } as TruthFinding);
+const passages = [
+  { id: "a", excerpt: "Exact statement.", sourceRef: "same-conversation", observedAt: "2026-09-01", kind: "evidence" },
+  { id: "b", excerpt: "Exact statement.", sourceRef: "same-conversation", observedAt: "2026-09-02", kind: "evidence" },
+  { id: "c", excerpt: "Exact statement.", sourceRef: "different-conversation", kind: "evidence" },
+  { id: "d", excerpt: "Exact statement.", kind: "evidence" },
+  { id: "e", excerpt: "Exact statement.", kind: "evidence" },
+];
+const originalPassages = JSON.stringify(passages);
+const groups = groupAuditPassages(passages);
+assert.equal(groups.length, 4);
+assert.deepEqual(groups[0].records.map(record => record.observedAt), ["2026-09-01", "2026-09-02"]);
+assert.equal(JSON.stringify(passages), originalPassages, "grouping never rewrites quotes, records, dates or source identity");
 assert.deepEqual(secondary.map(action => action.id), ["need_more_evidence", "reject"]);
 assert.equal(secondary[0].label, "Mark for this session");
 assert.match(secondary[0].doesNotWrite, /not saved/);
