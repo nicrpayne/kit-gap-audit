@@ -529,7 +529,7 @@ export default function ReportsPageClient() {
           <a className="text-[var(--i-mint)] underline font-semibold" href={`/reports/${encodeURIComponent(selected.id)}/share${comparison ? "?pair=1" : ""}`}>Share privately with named recipients →</a>
           <a className="text-[var(--i-signal)] underline" href={`/reports/${encodeURIComponent(selected.id)}/share-preview`} target="_blank" rel="noreferrer">Preview saved brief</a>
           {comparison && <a className="text-[var(--i-signal)] underline" href={`/reports/${encodeURIComponent(selected.id)}/share-preview?pair=1`} target="_blank" rel="noreferrer">Preview Reality + Scenario</a>}
-          <a className="text-[var(--i-signal)] underline" href={`/api/reports/${encodeURIComponent(selected.id)}/handoff${comparison ? "?pair=1" : ""}`}>Download Site handoff</a>
+          <a className="text-[var(--i-signal)] underline" href={`/api/reports/${encodeURIComponent(selected.id)}/handoff${comparison ? "?pair=1" : ""}`}>Download saved brief data (.json)</a>
           <ReportPdfDownload className="text-[var(--i-signal)] underline" url={`/api/reports/${encodeURIComponent(selected.id)}/pdf${comparison ? "?pair=1" : ""}`} />
         </div>
       </section>}

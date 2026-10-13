@@ -424,6 +424,7 @@ function DecisionBody({
   const [deciding, setDeciding] = useState(false);
   const [chosen, setChosen] = useState(decision.chosenOption ?? "");
   const [resolution, setResolution] = useState(decision.resolution ?? "");
+  const resolutionReady = resolution.trim().length > 0;
 
   useEffect(() => {
     setSaveError(null);
@@ -732,23 +733,36 @@ function DecisionBody({
                 ))}
               </select>
             )}
+            <label htmlFor="decision-resolution" className="block text-[11px] text-[var(--i-text-soft)]">
+              Resolution <span className="text-[var(--i-red)]">(required)</span>
+            </label>
             <textarea
+              id="decision-resolution"
               data-shoot="decide-resolution"
               value={resolution}
               onChange={(e) => setResolution(e.target.value)}
               rows={3}
+              required
+              aria-invalid={!resolutionReady}
+              aria-describedby="decision-resolution-requirement"
               placeholder="What was decided, and why?"
               className="w-full rounded px-2 py-1.5 text-[11px]"
               style={{ background: "var(--i-panel)", border: "1px solid var(--i-border-strong)", color: "var(--i-text)" }}
             />
+            <p id="decision-resolution-requirement" className="text-[10px] leading-relaxed text-[var(--i-text-faint)]">
+              {resolutionReady
+                ? "This answer will be recorded in Reality and retained with the decision history."
+                : "Record decision is unavailable until you enter what was decided."}
+            </p>
             <div className="flex gap-2">
               <button
                 data-shoot="decide-confirm"
-                disabled={busy}
+                disabled={busy || !resolutionReady}
+                aria-describedby="decision-resolution-requirement"
                 onClick={() => void save(() => onUpdate({
                     status: "decided",
                     chosenOption: chosen || null,
-                    resolution: resolution.trim() || null,
+                    resolution: resolution.trim(),
                   }), () => setDeciding(false))}
                 className="flex-1 rounded px-3 py-1.5 text-[11px] font-semibold disabled:opacity-40"
                 style={{ background: "var(--i-mint-soft)", color: "var(--i-mint)", border: "1px solid rgba(74,217,168,0.5)" }}

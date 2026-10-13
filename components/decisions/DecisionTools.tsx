@@ -275,13 +275,14 @@ export function ImportTool({
   defaultScopeId: string;
   busy: boolean;
   onClose: () => void;
-  onImport: (input: { scopeId: string; text: string; mode: "candidates" | "decisions" }) => Promise<string | null>;
+  onImport: (input: { scopeId: string; text: string; mode: "candidates" | "decisions" }) => Promise<{ ok: boolean; message: string }>;
 }) {
   const [scopeId, setScopeId] = useDefaultOnOpen(open, defaultScopeId);
   const [text, setText] = useState("");
   const [mode, setMode] = useState<"candidates" | "decisions">("candidates");
   const [result, setResult] = useState<string | null>(null);
   const [reading, setReading] = useState(false);
+  const [imported, setImported] = useState(false);
   const [pending, submitOnce] = useSubmitOnce();
 
   return (
@@ -289,10 +290,11 @@ export function ImportTool({
       open={open}
       onClose={() => {
         setResult(null);
+        setImported(false);
         onClose();
       }}
       title="Import"
-      subtitle="Paste notes, or drop a spreadsheet. Neither can create a gate."
+      subtitle="Paste notes, or choose a spreadsheet. Neither can create a gate."
       width={470}
       dataShoot="import-tool"
     >
@@ -335,6 +337,8 @@ export function ImportTool({
                   const file = e.target.files?.[0];
                   if (!file) return;
                   setReading(true);
+                  setResult(null);
+                  setImported(false);
                   try {
                     if (/\.(xlsx|xls)$/i.test(file.name)) {
                       // .xlsx is flattened by the parser this app already
@@ -343,10 +347,13 @@ export function ImportTool({
                       form.append("file", file);
                       const res = await fetch("/api/parse-spreadsheet", { method: "POST", body: form });
                       const body = (await res.json()) as { text?: string; sheets?: { text: string }[]; error?: string };
+                      if (!res.ok || body.error) throw new Error(body.error ?? "The spreadsheet could not be read. Your existing notes are retained.");
                       setText(body.text ?? (body.sheets ?? []).map((s) => s.text).join("\n") ?? "");
                     } else {
                       setText(await file.text());
                     }
+                  } catch (reason) {
+                    setResult(reason instanceof Error ? reason.message : "The file could not be read. Your existing notes are retained.");
                   } finally {
                     setReading(false);
                     e.target.value = "";
@@ -359,7 +366,7 @@ export function ImportTool({
             id="im-text"
             data-shoot="import-text"
             value={text}
-            onChange={(e) => setText(e.target.value)}
+            onChange={(e) => { setText(e.target.value); setImported(false); setResult(null); }}
             rows={7}
             placeholder={"One decision per line.\nAddress storage format | structured fields vs single string?"}
             className="mt-1.5 w-full rounded-md px-2.5 py-2 text-[12px] font-mono"
@@ -387,6 +394,7 @@ export function ImportTool({
         {result && (
           <div
             data-shoot="import-result"
+            role="status"
             className="rounded-md px-3 py-2 text-[11px]"
             style={{ background: "var(--i-recess)", color: "var(--i-text-soft)" }}
           >
@@ -398,13 +406,22 @@ export function ImportTool({
       <div className="px-5 py-3" style={{ borderTop: "1px solid var(--i-border)" }}>
         <button
           data-shoot="import-submit"
-          disabled={!text.trim() || busy || pending}
-          onClick={() => submitOnce(async () => setResult(await onImport({ scopeId, text, mode })))}
+          disabled={!text.trim() || !scopeId || reading || busy || pending}
+          onClick={() => submitOnce(async () => {
+            try {
+              const response = await onImport({ scopeId, text, mode });
+              setResult(response.message);
+              if (response.ok) { setText(""); setImported(true); }
+            } catch (reason) {
+              setResult(reason instanceof Error ? reason.message : "Import could not finish. Your text is retained; try again.");
+            }
+          })}
           className="w-full rounded-md px-3 py-2 text-[12px] font-semibold uppercase tracking-[0.1em] disabled:opacity-30"
           style={{ background: "var(--i-violet-soft)", color: "var(--i-violet)", border: "1px solid var(--i-violet)" }}
         >
-          {mode === "candidates" ? "Import as candidates" : "Import as open decisions"}
+          {pending ? "Importing…" : imported && !text.trim() ? "Imported — paste new notes to import more" : mode === "candidates" ? "Import as candidates" : "Import as open decisions"}
         </button>
+        {imported && <button type="button" className="mt-2 w-full rounded border border-[var(--i-border-strong)] px-3 py-2 text-[12px]" onClick={() => { setResult(null); setImported(false); onClose(); }}>Done — review on Decisions</button>}
       </div>
     </ToolWindow>
   );

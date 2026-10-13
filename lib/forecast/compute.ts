@@ -371,7 +371,17 @@ async function buildScopeSimInputs(
     capacitySource: resolved.source ?? undefined,
     acceptedIssueIds: modeledIssueIds,
   };
-  const sourceInputs = buildForecastInputs(modeledIssues, findings, resolved.capacity, buildOptions);
+  // Capacity belongs to the complete owner read, not to the subset accepted
+  // into governed Scope. Infer it once from the same delivery-relevant Linear
+  // leaves used by the legacy forecast, then carry that sourced basis into the
+  // narrowed model. Otherwise accepting one empty Capability changes a 10-FTE
+  // source read into buildForecastInputs' zero-assignee safety fallback of 1
+  // FTE even though no staffing fact changed.
+  const executionInputs = buildForecastInputs(issues, [], resolved.capacity, buildOptions);
+  const sourceInputs = buildForecastInputs(modeledIssues, findings, executionInputs.teamCapacity, {
+    ...buildOptions,
+    capacitySource: executionInputs.capacitySource,
+  });
   const acceptedSubstitutions = acceptedCapabilities.flatMap((capability) => {
     if (!capability.estimateReview) return [];
     const decision = reviewedEstimateSimulationDecision(capability, capability.estimateReview);
@@ -383,8 +393,6 @@ async function buildScopeSimInputs(
     items: acceptedItems,
     estimateQuality: estimateQualityForItems(acceptedItems),
   };
-  const executionInputs = buildForecastInputs(issues, [], resolved.capacity, buildOptions);
-
   const forecastCoverage = evaluateForecastCoverage({
     executionState: scope.executionState,
     // Coverage gates the exact executable leaf boundary the simulation uses.

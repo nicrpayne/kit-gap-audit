@@ -277,7 +277,11 @@ check("Portfolio rows and inspector withhold unavailable comparisons, including 
   assert(inspector.includes("Why no date")&&inspector.includes("Selected open work has no positive remaining effort"));
   assert(inspector.includes("No date comparison"));assert(!inspector.includes("forecast moved")&&!/\d+d earlier/.test(inspector));
   const restored=renderToStaticMarkup(<ScenarioInspector {...props} scope={{...props.scope,forecastCoverage:coverage()}}/>);
-  assert(restored.includes("forecast moved"),"supported comparison explanation remains available");
+  assert(restored.includes("modeled outcome moved"),"supported comparison explanation remains available");
+  const capacityChange=renderToStaticMarkup(<ScenarioInspector {...props} scenarioCapacity={2} scope={{...props.scope,forecastCoverage:coverage()}}/>);
+  assert(capacityChange.includes("effective capacity changed from 1.00 to 2.00 FTE"));
+  assert(capacityChange.includes("does not isolate the effect of capacity alone"));
+  assert(!capacityChange.includes("from a change elsewhere"),"own-capacity change is never attributed elsewhere");
 });
 check("Report acceleration levers never remove the last positive work or publish gate-only work", () => {
   const positive={...item,low:4,likely:4,high:4};

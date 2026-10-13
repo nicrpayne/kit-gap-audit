@@ -9,10 +9,10 @@ export function sharingFailure(error: unknown) {
 export function requireOrigin(req: NextRequest, expectedOrigin: string) {
   if (req.headers.get("origin") !== expectedOrigin || req.headers.get("sec-fetch-site") === "cross-site") throw new SharingError("This request must come from Signal.", 403);
 }
-export async function requireReportOwner(req: NextRequest, write = false) {
+export async function requireReportOwner(req: NextRequest, write = false, purpose = "managing private shares") {
   const password = process.env.APP_PASSWORD;
   // New publication management never inherits middleware's local fail-open.
-  if (!password) throw new SharingError("Operator authentication must be configured before managing private shares.", 503);
+  if (!password) throw new SharingError(`Operator authentication must be configured before ${purpose}.`, 503);
   const bearer = req.headers.get("authorization") ?? "";
   if (equalSecret(bearer, `Bearer ${password}`)) return;
   if (!equalSecret(req.cookies.get(SESSION_COOKIE)?.value ?? "", await sessionTokenFor(password))) throw new SharingError("Operator sign-in required.", 401);

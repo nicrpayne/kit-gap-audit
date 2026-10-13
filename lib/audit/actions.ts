@@ -114,22 +114,14 @@ export function primaryActionFor(f: TruthFinding): PrimaryAction {
 export function secondaryActionsFor(f: TruthFinding): PrimaryAction[] {
   return [
     {
-      id: "correct",
-      label: "Correct / edit",
-      writes: "Lets you restate the finding before acting on it.",
-      doesNotWrite: "Not yet implemented — see the Audit notes for the tranche this lands in.",
-      previewFirst: false,
-      requires: null,
-    },
-    {
       id: "need_more_evidence",
-      label: "Need more evidence",
+      label: "Mark for this session",
       // HONEST ABOUT ITS OWN LIMITS. The Finding model has no
       // "awaiting evidence" status, so this cannot persist one. It marks the
       // finding in THIS SESSION only, and the console says so on the button
       // rather than implying a durable state that does not exist.
       writes: "Marks it awaiting evidence for this session so you can move on.",
-      doesNotWrite: "Not saved. Finding.status has no awaiting-evidence value; this is lost on reload.",
+      doesNotWrite: "Needs more evidence. This reminder is not saved; leaving the review may clear it and reloading always clears it.",
       previewFirst: false,
       requires: null,
     },

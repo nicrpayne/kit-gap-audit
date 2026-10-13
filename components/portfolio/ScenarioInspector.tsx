@@ -128,15 +128,15 @@ export default function ScenarioInspector({
       : "No date comparison is available against accepted Reality."] : explainScope({
         scopeName: scope.name,
         deltaDays,
-        // The aggregate fader is not a named-person move; explainScope's
-        // person-shaped inputs stay empty and the capacity story is told by
-        // the section below instead.
+        // Describe effective capacity without inventing a hire/person move
+        // or attributing a combined Scenario's date delta to one lever.
         anonymousFteAdded: 0,
         namedFteChanged: false,
+        effectiveCapacity: dirty ? { reality: realityCapacity, scenario: scenarioCapacity } : undefined,
         dependsOn,
         dependents,
       }),
-    [scope.name, scope.forecastCoverage.state, scope.forecastCoverage.reason, comparable, deltaDays, dependsOn, dependents]
+    [scope.name, scope.forecastCoverage.state, scope.forecastCoverage.reason, comparable, deltaDays, dirty, realityCapacity, scenarioCapacity, dependsOn, dependents]
   );
 
   return (

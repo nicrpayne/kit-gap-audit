@@ -214,47 +214,50 @@ export default function AuditWorld({
       data-review-open={findingReviewId ? "true" : "false"}
     >
       <header
-        className="signal-shell__identity relative z-30 flex h-[46px] shrink-0 items-center gap-3 px-4"
+        className={`signal-shell__identity ${worldStyles.auditHeader}`}
         data-shoot="audit-world-header"
       >
-        <span className="shrink-0 text-[12px] font-semibold tracking-[0.18em] text-[var(--i-text)]">SIGNAL AUDIT</span>
-        <select
-          aria-label="Project"
-          value={scopeId}
-          onChange={(event) => changeScope(event.target.value)}
-          className="signal-meter min-h-8 max-w-[210px] rounded-md px-2.5 py-1.5 text-[11.5px] outline-none"
-        >
-          {(context?.scopes ?? []).map((scope) => <option key={scope.id} value={scope.id}>{scope.name}</option>)}
-        </select>
-        <select
-          aria-label="Audit context"
-          value={auditId}
-          onChange={(event) => changeAudit(event.target.value)}
-          className="signal-meter min-h-8 max-w-[300px] rounded-md px-2.5 py-1.5 text-[11.5px] outline-none"
-        >
-          <option value="">Current project world</option>
-          {(context?.audits ?? []).map((audit) => (
-            <option key={audit.id} value={audit.id}>
-              {audit.position === "current" ? "Current Audit" : audit.position === "prior" ? "Prior Audit" : "Earlier Audit"} · {dateLabel(audit.createdAt)} · {audit.title}
-            </option>
-          ))}
-        </select>
-        <span className="min-w-0 truncate text-[10.5px]" style={{ color: worldState === "ready" ? "var(--i-signal)" : "var(--i-text-faint)" }}>
-          {worldState === "loading" ? "Opening world…" : worldState === "updating" ? "World morphing…" : selectedAudit ? `${selectedAudit.findingCount} findings in this Audit` : notice ?? (fixture ? "Deterministic evidence fixture" : "Live canonical graph")}
-        </span>
-        <div className="flex-1" />
-        <SignalControl
-          type="button"
-          onClick={() => frameRef.current?.contentWindow?.postMessage({ type: "signal-audit-show-overview" }, window.location.origin)}
-          data-shoot="project-overview"
-          className="shrink-0 px-2.5 py-1.5 text-[11px]"
-        >
-          Project Overview
-        </SignalControl>
-        <Link href={`/audit/history${scopeId ? `?scope=${encodeURIComponent(scopeId)}` : ""}`} className="shrink-0 text-[11px]" style={{ color: "var(--i-text-faint)" }}>
-          History
-        </Link>
-        <AuditRefreshControl scopeId={scopeId} fixture={fixture} />
+        <div className={worldStyles.auditContextControls}>
+          <span className="shrink-0 text-[12px] font-semibold tracking-[0.18em] text-[var(--i-text)]">SIGNAL AUDIT</span>
+          <select
+            aria-label="Project"
+            value={scopeId}
+            onChange={(event) => changeScope(event.target.value)}
+            className={`${worldStyles.projectSelect} signal-meter min-h-8 rounded-md px-2.5 py-1.5 text-[11.5px] outline-none`}
+          >
+            {(context?.scopes ?? []).map((scope) => <option key={scope.id} value={scope.id}>{scope.name}</option>)}
+          </select>
+          <select
+            aria-label="Audit context"
+            value={auditId}
+            onChange={(event) => changeAudit(event.target.value)}
+            className={`${worldStyles.auditSelect} signal-meter min-h-8 rounded-md px-2.5 py-1.5 text-[11.5px] outline-none`}
+          >
+            <option value="">Current project world</option>
+            {(context?.audits ?? []).map((audit) => (
+              <option key={audit.id} value={audit.id}>
+                {audit.position === "current" ? "Current Audit" : audit.position === "prior" ? "Prior Audit" : "Earlier Audit"} · {dateLabel(audit.createdAt)} · {audit.title}
+              </option>
+            ))}
+          </select>
+          <span className={`${worldStyles.worldStatus} text-[10.5px]`} style={{ color: worldState === "ready" ? "var(--i-signal)" : "var(--i-text-faint)" }}>
+            {worldState === "loading" ? "Opening world…" : worldState === "updating" ? "World morphing…" : selectedAudit ? `${selectedAudit.findingCount} findings in this Audit` : notice ?? (fixture ? "Deterministic evidence fixture" : "Live canonical graph")}
+          </span>
+        </div>
+        <nav className={worldStyles.auditHeaderActions} aria-label="Audit controls">
+          <SignalControl
+            type="button"
+            onClick={() => frameRef.current?.contentWindow?.postMessage({ type: "signal-audit-show-overview" }, window.location.origin)}
+            data-shoot="project-overview"
+            className="shrink-0 px-2.5 py-1.5 text-[11px]"
+          >
+            Project Overview
+          </SignalControl>
+          <Link href={`/audit/history${scopeId ? `?scope=${encodeURIComponent(scopeId)}` : ""}`} className="shrink-0 text-[11px]" style={{ color: "var(--i-text-faint)" }}>
+            History
+          </Link>
+          <AuditRefreshControl scopeId={scopeId} fixture={fixture} />
+        </nav>
       </header>
 
       <div className="relative min-h-0 flex-1" data-shoot="audit-world-viewport">

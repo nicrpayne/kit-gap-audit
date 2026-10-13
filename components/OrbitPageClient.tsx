@@ -1,18 +1,8 @@
 "use client";
 
-// ORBIT — WIREFRAME.
-//
-// THIS IS NOT THE INSTRUMENT. It is the read model made visible so the
-// structure can be argued with before anyone designs it: are these the right
-// objects, are these the right relationships, and does the resting view stay
-// quiet on real data? Every shape here is a plain circle and a plain line on
-// purpose. Nothing in this file should survive the visual design pass except
-// the questions it answers.
-//
-// What it must be honest about, even as a wireframe:
-//
-//   IT WRITES NOTHING. There is no POST on this route. Looking at the
-//   project cannot change the project.
+// DEPENDENCIES (historical route name: Orbit).
+// Reviewing the graph does not change accepted Reality. Its explicit
+// what-if controls stage changes in the shared Scenario workspace.
 //
 //   IT KEEPS ONE SCENARIO. Assuming a decision answered goes through
 //   useProject's existing SuiteScenario.resolvedGateIds — the same field
@@ -154,8 +144,8 @@ export default function OrbitPageClient() {
 
   const strip = (
     <ScenarioStrip
-      title="Orbit"
-      owns="Where the ability to move is being spent, blocked or wasted"
+      title="Dependencies"
+      owns="What connects delivery, and what changes in a what-if"
       active={m.active}
       chips={chipsFor(m.scenario, new Map(scopes.map((scope) => [scope.scopeId, scope.name])), m.scenario.excludedItemIds.size, m.scenario.resolvedGateIds.size)}
       onDiscard={() => m.setScenario(EMPTY_SCENARIO)}
@@ -417,12 +407,13 @@ export default function OrbitPageClient() {
           data-shoot="orbit-inspector"
         >
           <div className="mb-3 rounded-md border border-[var(--i-border)] bg-[var(--i-recess)] p-2.5 text-[10.5px] leading-relaxed text-[var(--i-text-soft)]" data-shoot="orbit-semantics">
-            Solid dependency nodes come from <strong className="text-[var(--i-text)]">Scope.dependsOnScopeIds</strong>. Amber clamps are serial <strong className="text-[var(--i-text)]">DecisionGate</strong> effects whose canonical target is in this focused path.
+            Lines show declared project dependencies. A dependency can set a later finish date even when both teams work in parallel. Amber markers show decisions with a modeled blocking delay on this path.
+            <span className="mt-2 block text-[var(--i-violet)]">The what-if buttons below change your Scenario only. Accepted Reality stays unchanged.</span>
             {outsideGateCount > 0 && <span className="mt-1 block text-[var(--i-amber)]">{outsideGateCount} open serial {outsideGateCount === 1 ? "gate targets" : "gates target"} another delivery path and {outsideGateCount === 1 ? "is" : "are"} intentionally not drawn here.</span>}
           </div>
           {!node && (
             <div className="i-label" data-shoot="orbit-inspector-rest">
-              Touch anything to see what it does to the date.
+              Select a circle to inspect its evidence and try a what-if.
             </div>
           )}
           {node && (
@@ -475,7 +466,7 @@ export default function OrbitPageClient() {
                       })
                     }
                   >
-                    {node.assumedResolved ? "Assuming answered" : "Assume answered"}
+                    {node.assumedResolved ? "Undo assumed answer" : "Assume answered in Scenario"}
                   </button>
                   <Link href="/decisions" className="text-[11px]" style={{ color: "var(--i-signal)" }}>
                     Answer it for real in Decisions →
@@ -533,7 +524,7 @@ export default function OrbitPageClient() {
                       })
                     }
                   >
-                    Cut it from the release
+                    Try removing from Scenario
                   </button>
                   <Link href="/scope" className="text-[11px]" style={{ color: "var(--i-signal)" }}>
                     Compose the release in Scope →
@@ -592,9 +583,10 @@ export default function OrbitPageClient() {
                   ))}
               </div>
 
-              <div className="i-label pt-1" style={{ color: "var(--i-text-faint)" }} data-shoot="orbit-provenance">
-                {node.provenance.source} · {node.provenance.ref}
-              </div>
+              <details className="pt-1 text-[11px]" style={{ color: "var(--i-text-faint)" }} data-shoot="orbit-provenance">
+                <summary className="cursor-pointer">Technical reference</summary>
+                <div className="break-words pt-2">{node.provenance.source} · {node.provenance.ref}</div>
+              </details>
             </div>
           )}
         </div>

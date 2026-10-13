@@ -373,8 +373,8 @@ export function composeFeatures(
 
 /**
  * Seats governed, accepted Capability rows in the original composer while
- * retaining the existing Linear-parent grammar for execution work that has
- * not yet been linked to canonical product shape.
+ * retaining the existing Linear-parent grammar for active modeled work that
+ * has not yet been linked to canonical product shape.
  *
  * CapabilityWorkLinks claim only identifiers actually present in the live
  * owner read. An absent/stale link is therefore visible as no mapped work,
@@ -395,6 +395,11 @@ export function composeScopeFeatures(
   capabilityStaffingById: Record<string, CapabilityStaffingPlan> = {},
   startDate: Date | null = null,
   targetDate: Date | null = null,
+  /** Exact work ids in the active simulation basis. Canonical cards still
+      receive their full linked source rows so reviewed estimate boundaries
+      remain inspectable; this only prevents unclaimed legacy grammar from
+      drawing cards for work the read model has already excluded. */
+  modeledItemIds?: ReadonlySet<string>,
 ): FeatureComposition {
   const accepted = capabilities.filter((capability) => capability.status === "accepted");
   const itemById = new Map(items.map((item) => [item.id, item]));
@@ -526,7 +531,7 @@ export function composeScopeFeatures(
   });
 
   const legacy = composeFeatures(
-    items.filter((item) => !claimedItemIds.has(item.id)),
+    items.filter((item) => !claimedItemIds.has(item.id) && (!modeledItemIds || modeledItemIds.has(item.id))),
     completedWork.filter((item) => !claimedDoneIds.has(item.id)),
     capacity,
     bypassedFeatureIds,

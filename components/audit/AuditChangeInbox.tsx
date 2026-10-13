@@ -34,6 +34,9 @@ interface Proposal {
   canonicalObjectType: string | null;
   canonicalObjectId: string | null;
   acceptedAt: string | null;
+  canReview: boolean;
+  supersededByProposalId: string | null;
+  reviewReason: string | null;
 }
 
 interface InboxPayload {
@@ -80,12 +83,12 @@ function stageTone(status: string | undefined): string {
   return "var(--i-text-faint)";
 }
 
-function StateView({ value }: { value: Json }) {
+function StateView({ value, proposed = false }: { value: Json; proposed?: boolean }) {
   const entries = Object.entries(value).filter(([key]) => key !== "action" && key !== "options");
   return <dl className="space-y-1.5">{entries.map(([key, item]) => (
-    <div key={key} className="grid grid-cols-[110px_1fr] gap-2 text-[10.5px]">
-      <dt className="text-[var(--i-text-faint)]">{words(key)}</dt>
-      <dd className="text-[var(--i-text-soft)]">{typeof item === "string" ? item : JSON.stringify(item)}</dd>
+    <div key={key} className="grid grid-cols-[minmax(0,110px)_minmax(0,1fr)] gap-2 text-[10.5px]">
+      <dt className="text-[var(--i-text-faint)]">{key === "status" && proposed ? "Proposed object status" : words(key)}</dt>
+      <dd className="break-words text-[var(--i-text-soft)]">{typeof item === "string" ? item : JSON.stringify(item)}</dd>
     </div>
   ))}</dl>;
 }
@@ -133,7 +136,7 @@ export default function AuditChangeInbox({
     setPayload(null); setSelectedId(null); setNotice(null);
     setOpen(false); dismissedScopeRef.current = null;
     void load().catch((reason) => setError(reason instanceof Error ? reason.message : "Change Inbox could not be read."));
-    return () => { if (pollRef.current) window.clearTimeout(pollRef.current); };
+    return () => { if (pollRef.current) window.clearTimeout(pollRef.current); pollRef.current = null; };
   }, [load]);
 
   useEffect(() => {
@@ -148,8 +151,13 @@ export default function AuditChangeInbox({
   }, [load]);
 
   const selected = payload?.proposals.find((proposal) => proposal.id === selectedId) ?? null;
-  const pending = useMemo(() => payload?.proposals.filter((item) => ["pending", "needs_completion", "deferred"].includes(item.status)) ?? [], [payload]);
-  const processed = useMemo(() => payload?.proposals.filter((item) => ["accepted", "rejected", "information_only"].includes(item.status)).slice(0, 12) ?? [], [payload]);
+  const selectedCanReview = selected?.canReview === true;
+  const pending = useMemo(() => payload?.proposals.filter((item) => item.canReview) ?? [], [payload]);
+  const processed = useMemo(() => payload?.proposals.filter((item) => !item.canReview).slice(0, 12) ?? [], [payload]);
+
+  useEffect(() => {
+    setEdit(null); setCompletionOpen(false); setConfirmed(false); setCompletionFields({});
+  }, [selectedId, selectedCanReview]);
 
   useEffect(() => {
     if (focusEvidence) setOpen(false);
@@ -164,6 +172,8 @@ export default function AuditChangeInbox({
 
   async function requestRefresh() {
     if (!scopeId || busy) return;
+    if (pollRef.current) window.clearTimeout(pollRef.current);
+    pollRef.current = null;
     setBusy("refresh"); setError(null); setNotice(null);
     try {
       const response = await fetch("/api/audit/knowledge", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ scopeId }) });
@@ -178,9 +188,15 @@ export default function AuditChangeInbox({
       }
       setNotice(body.status === "already_running" ? "Refresh already in progress." : "Refresh requested. Signal will wait for a complete package.");
       const poll = async () => {
-        const next = await load();
-        if (next?.knowledge.code === "refreshing") pollRef.current = window.setTimeout(() => void poll(), 2_000);
-        else setBusy(null);
+        pollRef.current = null;
+        try {
+          const next = await load();
+          if (next?.knowledge.code === "refreshing") pollRef.current = window.setTimeout(() => void poll(), 2_000);
+          else setBusy(null);
+        } catch (reason) {
+          setError(reason instanceof Error ? reason.message : "Refresh status could not be read. Try again to check the running refresh.");
+          setBusy(null);
+        }
       };
       pollRef.current = window.setTimeout(() => void poll(), 1_500);
     } catch (reason) {
@@ -191,7 +207,7 @@ export default function AuditChangeInbox({
   }
 
   async function disposition(action: "defer" | "reject" | "information_only" | "reopen") {
-    if (!selected || busy) return;
+    if (!selected || !selectedCanReview || busy) return;
     setBusy(action); setError(null);
     try {
       const response = await fetch(`/api/audit/changes/${selected.id}/disposition`, {
@@ -206,7 +222,7 @@ export default function AuditChangeInbox({
   }
 
   async function saveEdit() {
-    if (!selected || !edit || busy) return;
+    if (!selected || !selectedCanReview || !edit || busy) return;
     setBusy("edit"); setError(null);
     try {
       const response = await fetch(`/api/audit/changes/${selected.id}`, {
@@ -221,7 +237,7 @@ export default function AuditChangeInbox({
   }
 
   async function accept(useCompletion = false) {
-    if (!selected || busy) return;
+    if (!selected || !selectedCanReview || busy) return;
     setBusy("accept"); setError(null);
     try {
       const response = await fetch(`/api/audit/changes/${selected.id}/accept`, {
@@ -291,10 +307,16 @@ export default function AuditChangeInbox({
             <div className="flex items-center gap-2"><span className="rounded bg-white/[0.05] px-2 py-1 text-[9px] uppercase tracking-wide text-[var(--i-text-faint)]">{words(selected.category)}</span><span className="text-[9px] text-[var(--i-text-faint)]">Owner · {words(selected.owner)}</span>{selected.relevanceClass !== "project_local" && <span className="rounded bg-[var(--i-amber)]/10 px-2 py-1 text-[8.5px] text-[var(--i-amber)]">{words(selected.relevanceClass)}</span>}<span className="ml-auto text-[9px] text-[var(--i-signal)]">{words(selected.currentness)}</span></div>
             <h3 className="mt-3 text-[17px] font-medium leading-tight text-[var(--i-text)]">{selected.title}</h3>
             <p className="mt-2 text-[11px] leading-relaxed text-[var(--i-text-soft)]">{selected.summary}</p>
+            <div className="mt-3 rounded border border-[var(--i-border)] bg-white/[0.025] px-3 py-2 text-[10.5px] text-[var(--i-text-soft)]" data-shoot="proposal-review-status">
+              <div>Review status: <strong>{words(selected.status)}</strong></div>
+              {(selected.reviewReason || selected.dispositionReason) && <p className="mt-1 leading-relaxed">{selected.reviewReason ?? selected.dispositionReason}</p>}
+              {!selectedCanReview && selected.status !== "accepted" && <p className="mt-1">This historical or information-only proposal is not an accepted Reality change.</p>}
+              {selected.supersededByProposalId && <button type="button" className="mt-2 underline text-[var(--i-signal)]" onClick={() => { setSelectedId(selected.supersededByProposalId); setNotice(null); }}>Review the newer proposal →</button>}
+            </div>
             {selected.status === "accepted" && <div className="mt-3 rounded border border-[var(--i-signal)]/30 bg-[var(--i-signal)]/[0.05] px-3 py-2 text-[10px] text-[var(--i-text-soft)]" data-shoot="accepted-change">Accepted by {words(selected.owner)}{selected.canonicalObjectType ? ` · ${words(selected.canonicalObjectType)}` : ""}{selected.acceptedAt ? ` · ${ago(selected.acceptedAt)}` : ""}</div>}
-            <section className="mt-4 grid grid-cols-2 gap-2">
-              <div className="rounded-md border border-[var(--i-border)] bg-black/10 p-3"><div className="i-label mb-2 text-[8.5px] text-[var(--i-text-faint)]">CURRENT ACCEPTED</div><StateView value={selected.currentState} /></div>
-              <div className="rounded-md border border-[var(--i-signal)]/25 bg-[var(--i-signal)]/[0.035] p-3"><div className="i-label mb-2 text-[8.5px] text-[var(--i-signal)]">PROPOSED</div><StateView value={edit ?? selected.proposedState} />{Array.isArray((edit ?? selected.proposedState).options) && <div className="mt-2 space-y-1">{((edit ?? selected.proposedState).options as { label?: string }[]).map((option, index) => <div key={index} className="rounded bg-black/15 px-2 py-1.5 text-[10px] text-[var(--i-text-soft)]">Direction {index === 0 ? "A" : "B"} · {option.label}</div>)}</div>}</div>
+            <section className="mt-4 grid grid-cols-1 gap-2 xl:grid-cols-2">
+              <div className="rounded-md border border-[var(--i-border)] bg-black/10 p-3"><div className="i-label mb-2 text-[8.5px] text-[var(--i-text-faint)]">REALITY AT COMPARISON</div><StateView value={selected.currentState} /></div>
+              <div className="rounded-md border border-[var(--i-signal)]/25 bg-[var(--i-signal)]/[0.035] p-3"><div className="i-label mb-2 text-[8.5px] text-[var(--i-signal)]">{selectedCanReview ? "PROPOSED CHANGE · NOT YET ACCEPTED" : selected.status === "accepted" ? "ACCEPTED PROPOSAL SNAPSHOT" : "HISTORICAL PROPOSAL · NOT APPLIED"}</div><StateView value={edit ?? selected.proposedState} proposed />{Array.isArray((edit ?? selected.proposedState).options) && <div className="mt-2 space-y-1">{((edit ?? selected.proposedState).options as { label?: string }[]).map((option, index) => <div key={index} className="rounded bg-black/15 px-2 py-1.5 text-[10px] text-[var(--i-text-soft)]">Direction {index === 0 ? "A" : "B"} · {option.label}</div>)}</div>}</div>
             </section>
             <section className="mt-4"><div className="i-label text-[8.5px] text-[var(--i-text-faint)]">WHY PROPOSED</div><p className="mt-1 text-[10.5px] leading-relaxed text-[var(--i-text-soft)]">{selected.whyProposed}</p><p className="mt-1.5 text-[9.5px] text-[var(--i-text-faint)]">Retrieval · {selected.retrievalConfidence} · {selected.retrievalBasis}</p></section>
             {selected.relevanceClass !== "project_local" && <section className="mt-3 rounded border border-[var(--i-amber)]/20 bg-[var(--i-amber)]/[0.025] px-3 py-2 text-[9.5px] text-[var(--i-text-soft)]">Project relevance · {words(selected.relevanceClass)} · {selected.relevanceReason}</section>}
@@ -303,11 +325,11 @@ export default function AuditChangeInbox({
             {edit && <div className="mt-4 rounded-md border border-[var(--i-border)] p-3"><div className="i-label mb-2 text-[8.5px] text-[var(--i-text-faint)]">EDIT PROPOSAL</div>{typeof edit.title === "string" && <input className="signal-meter mb-2 w-full rounded px-2 py-1.5 text-[10.5px]" value={edit.title} onChange={(event) => setEdit({ ...edit, title: event.target.value })} />}{typeof edit.description === "string" && <textarea className="signal-meter w-full rounded px-2 py-1.5 text-[10.5px]" value={edit.description} onChange={(event) => setEdit({ ...edit, description: event.target.value })} />}{typeof edit.rationale === "string" && <textarea className="signal-meter w-full rounded px-2 py-1.5 text-[10.5px]" value={edit.rationale} onChange={(event) => setEdit({ ...edit, rationale: event.target.value })} />}{typeof edit.date === "string" && <input aria-label="Milestone date" type="date" className="signal-meter w-full rounded px-2 py-1.5 text-[10.5px]" value={edit.date} onChange={(event) => setEdit({ ...edit, date: event.target.value })} />}<div className="mt-2 flex justify-end gap-2"><SignalControl type="button" onClick={() => setEdit(null)} className="px-2 py-1 text-[10px]">Cancel</SignalControl><SignalControl type="button" onClick={() => void saveEdit()} status="reality" className="px-2 py-1 text-[10px]">Save proposal</SignalControl></div></div>}
             {completionOpen && <div className="mt-4 rounded-md border border-[var(--i-amber)]/35 bg-[var(--i-amber)]/[0.035] p-3" data-shoot="completion-sheet"><div className="i-label text-[8.5px] text-[var(--i-amber)]">COMPLETE BEFORE ACCEPTING</div><ul className="mt-2 list-disc space-y-1 pl-4 text-[10px] text-[var(--i-text-soft)]">{selected.completionRequirements.map((item) => <li key={item}>{item}</li>)}</ul>{selected.proposedState.action === "create_dependency" && <div className="mt-2 grid grid-cols-2 gap-2"><input placeholder="Upstream project ID" className="signal-meter rounded px-2 py-1.5 text-[10px]" onChange={(event) => setCompletionFields({ ...completionFields, upstreamScopeId: event.target.value })} /><input placeholder="Downstream project ID" className="signal-meter rounded px-2 py-1.5 text-[10px]" onChange={(event) => setCompletionFields({ ...completionFields, downstreamScopeId: event.target.value })} /></div>}<label className="mt-3 flex items-start gap-2 text-[10px] text-[var(--i-text-soft)]"><input type="checkbox" checked={confirmed} onChange={(event) => setConfirmed(event.target.checked)} />I confirm this owner-specific completion.</label><SignalControl disabled={!confirmed || busy === "accept"} type="button" onClick={() => void accept(true)} status="reality" className="mt-3 px-3 py-1.5 text-[10.5px]">Confirm and accept</SignalControl></div>}
             <div className="mt-5 flex flex-wrap items-center gap-2 border-t border-[var(--i-border)] pt-3">
-              {!['source_health','capacity','information'].includes(selected.category) && selected.status !== "accepted" && <SignalControl type="button" disabled={Boolean(busy)} onClick={() => void accept()} status="reality" className="px-3 py-1.5 text-[10.5px]">Accept</SignalControl>}
-              {selected.status !== "accepted" && <SignalControl type="button" disabled={Boolean(busy)} onClick={() => setEdit({ ...selected.proposedState })} className="px-3 py-1.5 text-[10.5px]">Edit</SignalControl>}
-              {selected.status === "deferred" ? <SignalControl type="button" onClick={() => void disposition("reopen")} className="px-3 py-1.5 text-[10.5px]">Reopen</SignalControl> : ["pending", "needs_completion"].includes(selected.status) && <SignalControl type="button" onClick={() => void disposition("defer")} className="px-3 py-1.5 text-[10.5px]">Defer</SignalControl>}
-              {["pending", "needs_completion", "deferred"].includes(selected.status) && <SignalControl type="button" onClick={() => void disposition("reject")} className="px-3 py-1.5 text-[10.5px]">Reject</SignalControl>}
-              {["pending", "needs_completion", "deferred"].includes(selected.status) && <SignalControl type="button" onClick={() => void disposition("information_only")} className="px-3 py-1.5 text-[10.5px]">Information only</SignalControl>}
+              {selectedCanReview && !['source_health','capacity','information'].includes(selected.category) && <SignalControl type="button" disabled={Boolean(busy)} onClick={() => void accept()} status="reality" className="px-3 py-1.5 text-[10.5px]">Accept</SignalControl>}
+              {selectedCanReview && <SignalControl type="button" disabled={Boolean(busy)} onClick={() => setEdit({ ...selected.proposedState })} className="px-3 py-1.5 text-[10.5px]">Edit</SignalControl>}
+              {selectedCanReview && (selected.status === "deferred" ? <SignalControl type="button" disabled={Boolean(busy)} onClick={() => void disposition("reopen")} className="px-3 py-1.5 text-[10.5px]">Reopen</SignalControl> : <SignalControl type="button" disabled={Boolean(busy)} onClick={() => void disposition("defer")} className="px-3 py-1.5 text-[10.5px]">Defer</SignalControl>)}
+              {selectedCanReview && <SignalControl type="button" disabled={Boolean(busy)} onClick={() => void disposition("reject")} className="px-3 py-1.5 text-[10.5px]">Reject</SignalControl>}
+              {selectedCanReview && <SignalControl type="button" disabled={Boolean(busy)} onClick={() => void disposition("information_only")} className="px-3 py-1.5 text-[10.5px]">Information only</SignalControl>}
               {typeof selected.proposedState.findingId === "string" && <SignalControl type="button" onClick={() => { dismissedScopeRef.current = scopeId; setOpen(false); onTrace?.(selected.proposedState.findingId as string); }} className="px-3 py-1.5 text-[10.5px]">Trace in world</SignalControl>}
               {selected.targetHref && <Link href={selected.targetHref} data-attention={!busy && ["pending", "needs_completion"].includes(selected.status) ? "review" : undefined} className="ml-auto rounded px-3 py-2 text-[11px] text-[var(--i-signal)]">Review in {words(selected.owner)} →</Link>}
             </div>
@@ -351,7 +373,7 @@ export default function AuditChangeInbox({
 
         <section className="mt-3">
           <div className="i-label mb-2 text-[8.5px] text-[var(--i-text-faint)]">SOURCE CONNECTIONS</div>
-          <div className="grid grid-cols-2 gap-2">{payload?.sourceHealth && Object.entries(payload.sourceHealth).filter(([key]) => !key.endsWith("At") && key !== "linearDetail").map(([key, value]) => <div key={key} className="rounded-md border border-[var(--i-border)] bg-white/[0.02] p-3"><div className="i-label text-[8.5px] text-[var(--i-text-faint)]">{words(key)}</div><div className="mt-1 text-[12px] text-[var(--i-text)]">{words(String(value))}</div>{key === "linear" && <p className="mt-1 text-[9.5px] text-[var(--i-text-faint)]">{payload.sourceHealth.linearDetail}</p>}{["linear", "notion", "figma"].includes(key) && <Link href={`/scope?project=${encodeURIComponent(scopeId)}`} className="mt-2 inline-block text-[9.5px] text-[var(--i-signal)]">Open project setup ↗</Link>}</div>)}</div>
+          <div className="grid grid-cols-2 gap-2">{payload?.sourceHealth && Object.entries(payload.sourceHealth).filter(([key]) => !key.endsWith("At") && key !== "linearDetail").map(([key, value]) => <div key={key} className="rounded-md border border-[var(--i-border)] bg-white/[0.02] p-3"><div className="i-label text-[8.5px] text-[var(--i-text-faint)]">{words(key)}</div><div className="mt-1 text-[12px] text-[var(--i-text)]">{words(String(value))}</div>{key === "linear" && <><p className="mt-1 text-[9.5px] text-[var(--i-text-faint)]">{payload.sourceHealth.linearDetail}</p><Link href={`/scopes?project=${encodeURIComponent(scopeId)}`} className="mt-2 inline-block text-[9.5px] text-[var(--i-signal)]">Open project settings ↗</Link></>}{["notion", "figma"].includes(key) && <p className="mt-2 text-[9.5px] text-[var(--i-text-faint)]">Managed by the upstream wiki intake. Signal reads the compiled knowledge package.</p>}</div>)}</div>
         </section>
       </div>}
 

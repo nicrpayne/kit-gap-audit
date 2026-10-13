@@ -24,6 +24,8 @@ export interface ScopeExplanationInput {
   deltaDays: number; // this scope's own preview-vs-baseline delta, 0 if not dirty
   anonymousFteAdded: number; // scenario-added anonymous FTE on this scope specifically
   namedFteChanged: boolean; // true if a named real person's allocation to this scope changed
+  /** Effective pooled capacity, not a claim about named people or a hire. */
+  effectiveCapacity?: { reality: number; scenario: number };
   dependsOn: DependencyDelta[]; // scopes this one depends on, with THEIR own deltas
   dependents: DependentDelta[]; // scopes that depend on this one
 }
@@ -39,10 +41,13 @@ function moveWord(deltaDays: number): string {
 // say (no scenario active, no dependency movement) -- the caller shows a
 // quiet default rather than an empty section.
 export function explainScope(input: ScopeExplanationInput): string[] {
-  const { scopeName, deltaDays, anonymousFteAdded, namedFteChanged, dependsOn, dependents } = input;
+  const { scopeName, deltaDays, anonymousFteAdded, namedFteChanged, effectiveCapacity, dependsOn, dependents } = input;
   const lines: string[] = [];
 
-  const capacityChanged = anonymousFteAdded > 1e-6 || namedFteChanged;
+  const effectiveCapacityChanged = effectiveCapacity !== undefined
+    && Number.isFinite(effectiveCapacity.reality) && Number.isFinite(effectiveCapacity.scenario)
+    && Math.abs(effectiveCapacity.scenario - effectiveCapacity.reality) > 1e-6;
+  const capacityChanged = effectiveCapacityChanged || anonymousFteAdded > 1e-6 || namedFteChanged;
   const movedDependencies = dependsOn.filter((d): d is DependencyDelta & {deltaDays:number} => d.deltaDays !== null && d.deltaDays !== 0);
 
   if (!capacityChanged && movedDependencies.length === 0 && deltaDays === 0) {
@@ -51,19 +56,18 @@ export function explainScope(input: ScopeExplanationInput): string[] {
 
   if (capacityChanged) {
     const capacityPhrase =
-      anonymousFteAdded > 1e-6 && namedFteChanged
+      effectiveCapacityChanged
+        ? `${scopeName}'s effective capacity changed from ${effectiveCapacity!.reality.toFixed(2)} to ${effectiveCapacity!.scenario.toFixed(2)} FTE in this Scenario`
+        : anonymousFteAdded > 1e-6 && namedFteChanged
         ? `${scopeName}'s own capacity changed in this scenario (+${anonymousFteAdded.toFixed(1)} FTE added, plus a reallocated person)`
         : anonymousFteAdded > 1e-6
         ? `${scopeName} has +${anonymousFteAdded.toFixed(1)} FTE of scenario capacity added`
         : `${scopeName}'s allocated people changed in this scenario`;
 
-    if (deltaDays < 0) {
-      lines.push(`${capacityPhrase}, which shortened its own forecast by ${Math.abs(deltaDays)} days.`);
-    } else if (deltaDays === 0) {
-      lines.push(`${capacityPhrase}, but its own forecast didn't move — its remaining work, a serial gate, or a dependency finish floor still sets the later completion.`);
-    } else {
-      lines.push(`${capacityPhrase}. Its forecast still moved later — the added capacity wasn't enough to offset something else that changed.`);
-    }
+    // These are observations, not counterfactual attribution. Other levers
+    // may change alongside capacity; the delta alone cannot tell us why.
+    lines.push(`${capacityPhrase}. Its modeled outcome ${deltaDays === 0 ? "did not move" : `moved ${moveWord(deltaDays)}`}.`);
+    lines.push("The comparison includes all Scenario assumptions; it does not isolate the effect of capacity alone.");
   }
 
   for (const dep of movedDependencies) {
@@ -78,13 +82,13 @@ export function explainScope(input: ScopeExplanationInput): string[] {
     // Moved, but not for any reason visible in this scope's own inputs or
     // its direct dependencies -- honest about the limit of this
     // deterministic pass rather than guessing.
-    lines.push(`${scopeName}'s forecast moved ${moveWord(deltaDays)} this scenario, from a change elsewhere in the portfolio.`);
+    lines.push(`${scopeName}'s modeled outcome moved ${moveWord(deltaDays)} in this Scenario. This summary does not identify which changed assumption caused the movement.`);
   }
 
   const movedDependents = dependents.filter((d): d is DependentDelta & {deltaDays:number} => d.deltaDays !== null && d.deltaDays !== 0);
   if (movedDependents.length > 0) {
     lines.push(
-      `Effect on the rest of the portfolio: ${movedDependents
+      `Other dependent projects also changed: ${movedDependents
         .map((d) => `${d.name} ${moveWord(d.deltaDays)}`)
         .join(", ")}.`
     );

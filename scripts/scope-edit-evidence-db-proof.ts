@@ -7,7 +7,7 @@ import { loadCapabilityAuditEvidenceOrigins } from "../lib/scope/capabilityEvide
 import { buildPortfolioInputs } from "../lib/forecast/compute";
 
 const url = new URL(process.env.DATABASE_URL ?? "file:///missing");
-assert(process.env.SCOPE_SAVE_DB_PROOF === "1" && url.hostname === "127.0.0.1" && url.port === "55434" && url.username === "signal_t0_local" && url.pathname === "/signal_t0_test_1008", "Isolated evidence repair database required");
+assert(process.env.SCOPE_SAVE_DB_PROOF === "1" && url.hostname === "127.0.0.1" && url.port === "55434" && url.username === "signal_t0_local" && ["/signal_t0_test_1008", "/signal_t0_test_1012"].includes(url.pathname), "Isolated evidence repair database required");
 process.env.KIT_DEV_FIXTURES = "1";
 delete process.env.LINEAR_API_KEY;
 

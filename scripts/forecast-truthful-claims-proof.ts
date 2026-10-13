@@ -121,6 +121,20 @@ const dependencyExplanation = explainScope({
 assert.match(dependencyExplanation, /finish floor/i);
 assert(!/starts after|cannot start|moved with it/i.test(dependencyExplanation), "dependency copy must not invent start sequencing or attribution");
 
+for (const [reality, scenario, deltaDays] of [[1, 2, -3], [2, 1, 3], [1, 2, 0], [1, 2, 3]]) {
+  const explanation = explainScope({ scopeName: "Fixture", deltaDays, anonymousFteAdded: 0, namedFteChanged: false,
+    effectiveCapacity: { reality, scenario }, dependsOn: [], dependents: [] }).join(" ");
+  assert.match(explanation, new RegExp(`from ${reality.toFixed(2)} to ${scenario.toFixed(2)} FTE`));
+  assert.match(explanation, /does not isolate the effect of capacity alone/);
+  assert.doesNotMatch(explanation, /elsewhere|which shortened|added capacity wasn't|reallocated person/);
+}
+const unexplainedMovement = explainScope({ scopeName: "Fixture", deltaDays: -2, anonymousFteAdded: 0, namedFteChanged: false,
+  dependsOn: [], dependents: [] }).join(" ");
+assert.match(unexplainedMovement, /does not identify which changed assumption/);
+assert.doesNotMatch(unexplainedMovement, /elsewhere/);
+assert.deepEqual(explainScope({ scopeName: "Fixture", deltaDays: 0, anonymousFteAdded: 0, namedFteChanged: false,
+  effectiveCapacity: { reality: 1, scenario: 1 }, dependsOn: [], dependents: [] }), []);
+
 const assumptions = forecastAssumptionSnapshot();
 assert.equal(assumptions.version, "forecast-assumptions.v1");
 assert.deepEqual(assumptions.items.map((item) => item.id), [

@@ -3,6 +3,45 @@ import { prisma } from "@/lib/prisma";
 import { READINESS_ROLES } from "@/lib/decisions/sourceDisposition";
 import { invalidateDerivedReads, recomputeDerivedReads } from "@/lib/audit/derivedRefresh";
 
+type ResolutionPatch = {
+  status?: string;
+  resolution?: string | null;
+};
+
+type ResolutionValidation =
+  | { ok: true; resolutionForUpdate: string | null | undefined }
+  | { ok: false; error: string };
+
+/**
+ * Keep historical imported decisions editable without manufacturing a
+ * resolution, while making every new transition to decided explicit.
+ */
+function validateDecisionResolutionPatch(
+  existing: { status: string; resolution: string | null },
+  patch: ResolutionPatch,
+): ResolutionValidation {
+  const resolutionWasProvided = patch.resolution !== undefined;
+  const resolutionForUpdate = typeof patch.resolution === "string"
+    ? patch.resolution.trim() || null
+    : patch.resolution;
+  const transitionsToDecided = patch.status === "decided" && existing.status !== "decided";
+
+  if (transitionsToDecided && !resolutionForUpdate) {
+    return { ok: false, error: "Record what was decided before marking this decision decided." };
+  }
+
+  if (existing.status === "decided" && existing.resolution?.trim() && resolutionWasProvided && !resolutionForUpdate) {
+    return { ok: false, error: "A decided decision's resolution cannot be erased." };
+  }
+
+  const statusAfterUpdate = patch.status ?? existing.status;
+  if (statusAfterUpdate === "decided" && resolutionWasProvided && !resolutionForUpdate) {
+    return { ok: false, error: "A decided decision needs a resolution." };
+  }
+
+  return { ok: true, resolutionForUpdate };
+}
+
 // Update a Decision, including deciding and dismissing it.
 //
 // Deciding is a REALITY change: it records what was chosen and when, and
@@ -11,20 +50,28 @@ import { invalidateDerivedReads, recomputeDerivedReads } from "@/lib/audit/deriv
 // the record of what was once waiting survives.
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  let body: {
+  type DecisionPatchBody = {
     title?: string; status?: string; owner?: string | null; rationale?: string | null;
     neededBy?: string | null; options?: { id: string; label: string; note?: string }[];
-    chosenOption?: string | null; resolution?: string | null; dismissReason?: string | null;
+    chosenOption?: string | null; resolution?: unknown; dismissReason?: string | null;
     readinessRole?: string; expectedUpdatedAt?: string;
   };
+  let parsed: unknown;
   try {
-    body = await req.json();
+    parsed = await req.json();
   } catch {
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
   }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    return NextResponse.json({ error: "JSON body must be an object." }, { status: 400 });
+  }
+  const body = parsed as DecisionPatchBody;
 
-  if (body.status && !["open", "decided", "dismissed"].includes(body.status)) {
+  if (body.status !== undefined && (typeof body.status !== "string" || !["open", "decided", "dismissed"].includes(body.status))) {
     return NextResponse.json({ error: `status must be open, decided or dismissed` }, { status: 400 });
+  }
+  if (body.resolution !== undefined && body.resolution !== null && typeof body.resolution !== "string") {
+    return NextResponse.json({ error: "Resolution must be text." }, { status: 400 });
   }
   if (body.title !== undefined && (typeof body.title !== "string" || !body.title.trim())) {
     return NextResponse.json({ error: "A decision needs a title." }, { status: 400 });
@@ -41,6 +88,12 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     if (!existing) return null;
     if (body.expectedUpdatedAt && existing.updatedAt.toISOString() !== body.expectedUpdatedAt) return "stale" as const;
 
+    const resolutionValidation = validateDecisionResolutionPatch(existing, {
+      status: body.status,
+      resolution: body.resolution as string | null | undefined,
+    });
+    if (!resolutionValidation.ok) return { resolutionError: resolutionValidation.error } as const;
+
     const decidedNow = body.status === "decided" && existing.status !== "decided";
     const updated = await tx.decision.update({
       where: { id },
@@ -53,7 +106,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
         ...(body.neededBy !== undefined ? { neededBy: body.neededBy ? new Date(body.neededBy) : null } : {}),
         ...(body.options !== undefined ? { options: body.options } : {}),
         ...(body.chosenOption !== undefined ? { chosenOption: body.chosenOption } : {}),
-        ...(body.resolution !== undefined ? { resolution: body.resolution } : {}),
+        ...(body.resolution !== undefined ? { resolution: resolutionValidation.resolutionForUpdate } : {}),
         ...(body.dismissReason !== undefined ? { dismissReason: body.dismissReason } : {}),
         ...(decidedNow ? { decidedAt: new Date() } : {}),
         // Reopening clears the decided stamp rather than leaving a date that
@@ -76,6 +129,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   }, { maxWait: 5_000, timeout: 20_000 });
   if (decision === "stale") return NextResponse.json({ error: "This decision changed. Review the refreshed record before saving again." }, { status: 409 });
   if (!decision) return NextResponse.json({ error: "Decision not found" }, { status: 404 });
+  if ("resolutionError" in decision) return NextResponse.json({ error: decision.resolutionError }, { status: 400 });
   for (const scopeId of new Set([decision.scopeId, ...(decision.gate ? [decision.gate.targetScopeId] : [])])) await recomputeDerivedReads(scopeId);
   return NextResponse.json({ decision });
 }

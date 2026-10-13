@@ -395,31 +395,14 @@ function Overview({ feature: f }: { feature: Feature }) {
         />
       </div>
 
-      {/* Release assignment: designed, not modelled. Fenced off and inert. */}
+      {/* Do not dress unimplemented release selectors as usable controls. */}
       <div className="mt-4 rounded px-3 py-3" style={{ background: "var(--i-recess)" }}>
         <div className="flex items-center gap-2">
-          <Prototype note="The model has no release entity. Nothing here changes the forecast." />
-          <span className="i-label">Which release</span>
-        </div>
-        <div className="mt-2 flex gap-1.5">
-          {["Beta", "Production", "Later"].map((r, i) => (
-            <span
-              key={r}
-              className="rounded px-2.5 py-1 text-[10.5px]"
-              style={{
-                border: `1px solid ${i === 0 ? "var(--i-border-strong)" : "var(--i-border)"}`,
-                color: i === 0 ? "var(--i-text-soft)" : "var(--i-text-faint)",
-                background: i === 0 ? "var(--i-panel-raised)" : "transparent",
-              }}
-            >
-              {r}
-            </span>
-          ))}
+          <span className="i-label">Release planning</span>
         </div>
         <p className="mt-2 text-[10px] text-[var(--i-text-faint)] leading-snug">
-          &ldquo;Move this to Production&rdquo; is a Scope operation and it is coming — but a WorkItem cannot belong to
-          a release in the model yet, so these are inert. Taking a capability out of the Scenario is the honest version
-          of the question today.
+          This view models in or out of the current release, not separate Beta or Production releases.
+          Use the action below to try taking this capability out in a Scenario; accepted Reality stays unchanged.
         </p>
       </div>
 

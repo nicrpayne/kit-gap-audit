@@ -12,7 +12,7 @@ import { runPortfolioSimulation } from "../lib/forecast/portfolio";
 import { makeSignalEstimate } from "../lib/scope/signalEstimates";
 
 const url=new URL(process.env.DATABASE_URL??"file:///missing");
-assert(process.env.SCOPE_SAVE_DB_PROOF==="1"&&url.hostname==="127.0.0.1"&&url.port==="55434"&&url.username==="signal_t0_local"&&url.pathname==="/signal_t0_test_1008","Dedicated disposable proof DB only");
+assert(process.env.SCOPE_SAVE_DB_PROOF==="1"&&url.hostname==="127.0.0.1"&&url.port==="55434"&&url.username==="signal_t0_local"&&["/signal_t0_test_1008","/signal_t0_test_1012"].includes(url.pathname),"Dedicated disposable proof DB only");
 process.env.KIT_DEV_FIXTURES="1"; delete process.env.LINEAR_API_KEY;
 const ids:string[]=[];
 const personIds:string[]=[];

@@ -234,11 +234,13 @@ export function buildForecastInputs(
         (lib/forecast/compute.ts). Absent = this Scope has no gated
         Decisions, which is a perfectly ordinary state. */
     gates?: SuppliedGate[];
-    // Caller's classification of configuredCapacity when it's non-null --
-    // "allocations" if resolved from named-person Allocations, otherwise
-    // "explicit" (a Scope's own teamCapacity, today's only source).
+    // Caller's classification of configuredCapacity when it is already
+    // resolved. Most callers provide named Allocations or an explicit Scope
+    // figure. A caller narrowing a full execution read to a governed subset
+    // may also carry forward the full read's inferred basis; this preserves
+    // the sourced team without re-inferring it from the smaller work subset.
     // Irrelevant when configuredCapacity is null (falls to "inferred").
-    capacitySource?: "allocations" | "explicit";
+    capacitySource?: CapacitySource;
     /** Accepted Scope membership outranks an AI relevance opinion. */
     acceptedIssueIds?: ReadonlySet<string>;
   }
@@ -334,7 +336,7 @@ export function buildForecastInputs(
   }));
 
   let teamCapacity = configuredCapacity ?? 0;
-  let teamCapacityInferred = false;
+  let teamCapacityInferred = options?.capacitySource === "inferred";
   let capacitySource: CapacitySource = options?.capacitySource ?? "explicit";
   // A confirmed named team with nobody allocated is an explicit zero.
   // Legacy missing/unreconciled capacity may still use labeled inference.

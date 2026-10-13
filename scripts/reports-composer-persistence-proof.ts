@@ -9,7 +9,7 @@ import { healthyOwnerFixture } from "./lib/decision-brief-fixtures";
 
 if (process.env.REPORTS_DB_PROOF !== "1") throw new Error("Use only with a disposable proof database.");
 const database = new URL(process.env.DATABASE_URL ?? "http://invalid");
-assert(database.hostname === "127.0.0.1" && database.port === "55434" && (database.pathname === "/signal_t0_test_1004" || (database.pathname === "/signal_t0_test_1008" && database.username === "signal_t0_local")), "Disposable repair DB only");
+assert(database.hostname === "127.0.0.1" && database.port === "55434" && (database.pathname === "/signal_t0_test_1004" || (["/signal_t0_test_1008", "/signal_t0_test_1012"].includes(database.pathname) && database.username === "signal_t0_local")), "Disposable repair DB only");
 const prisma = new PrismaClient();
 
 async function main() {

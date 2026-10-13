@@ -278,6 +278,10 @@ export default function TimelineInspector({
               somewhere else does not correct any of this; the source keeps its
               record and Timeline keeps the placement. */}
           <Section title="Suggested">
+            <p className="mb-2 text-[10px] leading-relaxed text-[var(--i-text-faint)]">
+              Timing below comes from structured source fields, not an interpretation of the quote.
+              Check both before placing this event. Placement records your choice; it does not verify the source.
+            </p>
             <Well>
               <Row label="Project" value={laneName ?? "—"} />
               <Row
@@ -318,11 +322,12 @@ export default function TimelineInspector({
           {needsDate && (
             <Section title="Timing">
               <p className="text-[10px] leading-relaxed text-[var(--i-text-faint)] mb-2">
-                Nothing in the evidence says when this happened. Timeline will not infer a date
-                from the statement, so this cannot be seated until you supply one.
+                No structured date was supplied with this evidence. The quote may mention timing;
+                review it and supply a date before placing this event. Timeline does not infer a date from the words.
               </p>
               <input
                 type="date"
+                aria-label="Event date from your review"
                 value={dateDraft}
                 onChange={(e) => { setDateDraft(e.target.value); setErr(null); }}
                 data-shoot="candidate-date"

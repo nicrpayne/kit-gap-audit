@@ -14,6 +14,50 @@
   isolation: isolate;
 }
 
+.auditHeader {
+  position: relative;
+  z-index: 30;
+  display: flex;
+  height: 46px;
+  flex: none;
+  align-items: center;
+  gap: 12px;
+  padding: 0 16px;
+}
+
+.auditContextControls {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  align-items: center;
+  gap: 12px;
+}
+
+.projectSelect {
+  width: clamp(72px, 12vw, 210px);
+  min-width: 72px;
+}
+
+.auditSelect {
+  width: clamp(176px, 21vw, 300px);
+  min-width: 176px;
+}
+
+.worldStatus {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.auditHeaderActions {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 12px;
+}
+
 .worldWidget {
   background: var(--signal-widget-fill);
   border: 1px solid var(--signal-border-strong);
@@ -150,6 +194,40 @@
 }
 
 @media (max-width: 1180px) {
+  .auditHeader {
+    height: 82px;
+    flex-direction: column;
+    align-items: stretch;
+    justify-content: center;
+    gap: 6px;
+    padding: 5px 12px;
+  }
+
+  .auditContextControls {
+    flex: none;
+  }
+
+  .projectSelect {
+    width: clamp(72px, 15vw, 180px);
+  }
+
+  .auditSelect {
+    width: clamp(176px, 31vw, 300px);
+  }
+
+  .auditHeaderActions {
+    min-width: 0;
+    justify-content: flex-end;
+    gap: 10px;
+  }
+
+  .changeInboxSheet {
+    /* Keep the 292px world summary fully reachable beside the inbox at the
+       shell's supported 1024px boundary (932px after the navigation rail). */
+    width: min(760px, calc(100% - 320px));
+    min-width: 600px;
+  }
+
   .inspectorDock {
     width: 352px;
   }
@@ -172,7 +250,8 @@
 
 @media (prefers-reduced-motion: reduce) {
   .inspectorDock,
-  .reviewSheet {
+  .reviewSheet,
+  .changeInboxSheet {
     animation: none;
   }
 }

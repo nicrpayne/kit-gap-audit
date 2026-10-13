@@ -11,8 +11,8 @@ import type { ScenarioChip } from "@/components/instrument/ScenarioStrip";
 //
 // The truth-model warnings (aggregate -> explicit conversion, blocked named
 // transfers) are preserved verbatim in meaning from the pre-Instrument UI --
-// see docs/SCENARIO-MODEL.md. "Commit changes", not "Save scenario": this
-// still writes straight into Reality; there is no saved-scenario object yet.
+// see docs/SCENARIO-MODEL.md. "Commit changes" writes accepted Reality;
+// saving a named Scenario is a separate shared-workspace action.
 
 export interface ScenarioCapacityLine {
   scopeId: string;

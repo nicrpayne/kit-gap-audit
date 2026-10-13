@@ -5,6 +5,7 @@ import { contextCapabilityAdmissionReason } from "@/lib/bootstrap/capabilityAdmi
 import { timelineKeyForAuditProposal } from "@/lib/timeline/sourceIdentity";
 import { dateOnlyToUtcDate, toDateOnly } from "@/lib/time/dateContract";
 import { invalidateDerivedReads, recomputeDerivedReads } from "./derivedRefresh";
+import { assertCurrentAuditProposalHead } from "./changeInbox";
 
 export class ChangeCompletionRequiredError extends Error {
   constructor(message: string, readonly fields: string[]) { super(message); }
@@ -161,6 +162,7 @@ export async function acceptAuditChange(proposalId: string, input: { idempotency
         }
         const proposal = await tx.auditChangeProposal.findUniqueOrThrow({ where: { id: proposalId } });
         if (proposal.status === "accepted") return { proposal, created: false };
+        await assertCurrentAuditProposalHead(proposal, tx);
         if (["rejected", "information_only"].includes(proposal.status)) throw new Error("That proposal is closed. Reopen it before accepting.");
         if (proposal.sourceKind === "refresh") {
           const current = await currentContextSnapshot(proposal.scopeId, tx);
@@ -208,6 +210,7 @@ export async function dispositionAuditChange(
     if (existing) return tx.auditChangeProposal.findUniqueOrThrow({ where: { id: existing.proposalId } });
     const proposal = await tx.auditChangeProposal.findUniqueOrThrow({ where: { id: proposalId } });
     if (proposal.status === "accepted") throw new Error("Accepted Reality cannot be undone from Audit; open the owning instrument.");
+    if (input.action === "reopen") await assertCurrentAuditProposalHead(proposal, tx);
     const updated = await tx.auditChangeProposal.update({ where: { id: proposal.id }, data: { status: target, dispositionReason: input.reason?.trim() || null } });
     await tx.auditChangeEvent.create({ data: {
       proposalId, idempotencyKey: input.idempotencyKey, action: input.action,
@@ -223,6 +226,7 @@ export async function editAuditChange(proposalId: string, input: { proposedState
     if (existing) return tx.auditChangeProposal.findUniqueOrThrow({ where: { id: existing.proposalId } });
     const proposal = await tx.auditChangeProposal.findUniqueOrThrow({ where: { id: proposalId } });
     if (proposal.status === "accepted") throw new Error("Accepted Reality must be edited in the owning instrument.");
+    await assertCurrentAuditProposalHead(proposal, tx);
     const updated = await tx.auditChangeProposal.update({ where: { id: proposalId }, data: {
       proposedState: json(input.proposedState), status: "pending", dispositionReason: input.note?.trim() || null,
     } });

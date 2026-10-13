@@ -275,7 +275,7 @@ export default function AuditReviewConsole({
             {primary.doesNotWrite}
           </p>
 
-          <div className="mt-2.5 grid grid-cols-3 gap-1.5">
+          <div className="mt-2.5 grid grid-cols-2 gap-1.5">
             {secondaries.map((s) => (
               <button
                 key={s.id}
@@ -295,16 +295,15 @@ export default function AuditReviewConsole({
                         : "var(--i-text-soft)",
                 }}
               >
-                {s.id === "need_more_evidence" && awaitingEvidence ? "Awaiting evidence" : s.label}
+                {s.id === "need_more_evidence" && awaitingEvidence ? "Clear session reminder" : s.label}
               </button>
             ))}
           </div>
 
-          {awaitingEvidence && (
-            <p className="mt-1.5 text-[10px]" style={{ color: "var(--i-amber)" }}>
-              Session only — Finding.status has no awaiting-evidence value, so this is lost on reload.
-            </p>
-          )}
+          <p className="mt-1.5 text-[10px]" style={{ color: awaitingEvidence ? "var(--i-amber)" : "var(--i-text-faint)" }}>
+            {awaitingEvidence ? "Marked as needing more evidence. " : "Need more evidence? Mark a temporary reminder. "}
+            Not saved; leaving the review may clear it and reloading always clears it.
+          </p>
 
           {result && (
             <p

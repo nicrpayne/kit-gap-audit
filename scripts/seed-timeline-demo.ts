@@ -280,7 +280,7 @@ async function main() {
               sourceRef: "Aug 12 refinement call",
               kind: "note",
               excerpt:
-                "Marketing want their kickoff the week of the 16th and reckon it runs about a fortnight to the launch comms handover.",
+                `Fictional demo plan: marketing kickoff is planned for ${kickoffStart.toISOString().slice(0, 10)}, with the launch communications handover planned for ${kickoffEnd.toISOString().slice(0, 10)}.`,
               data: { eventDate: kickoffStart.toISOString(), endsOn: kickoffEnd.toISOString() },
             },
             {

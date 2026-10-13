@@ -22,6 +22,92 @@ import { completedKnowledgeChanged, deriveKnowledgeFreshness, type KnowledgeFres
 
 const TERMINAL_JOBS = new Set(["complete", "partial", "failed", "stale"]);
 export const AUDIT_FRESHNESS_TTL_MS = 15 * 60 * 1000;
+export const AUDIT_PROPOSAL_SUPERSEDED_REASON = "Superseded by a changed proposal from a newer completed Audit refresh.";
+const REVIEWABLE_PROPOSAL_STATUSES = new Set(["pending", "needs_completion", "deferred"]);
+
+type AuditProposalReviewRow = {
+  id: string;
+  scopeId: string;
+  sourceKind: string;
+  sourceKey: string | null;
+  contextSnapshotId: string | null;
+  status: string;
+  dispositionReason: string | null;
+};
+
+export interface AuditProposalReviewFields {
+  canReview: boolean;
+  supersededByProposalId: string | null;
+  latestProposalId: string;
+  latestProposalStatus: string;
+  reviewReason: string | null;
+}
+
+/** Additive UI contract: a historical row keeps its original states/evidence,
+ * while review controls follow the current source head. `latest` must be the
+ * newest row for this source key in the current ContextSnapshot, not merely
+ * the newest row by creation time; restoring an older package can therefore
+ * make its immutable proposal current again without rewriting history.
+ */
+export function auditProposalReviewFields(
+  proposal: AuditProposalReviewRow,
+  currentSnapshotId: string | null,
+  latest: Pick<AuditProposalReviewRow, "id" | "status"> | null,
+): AuditProposalReviewFields {
+  const supersededByProposalId = latest && latest.id !== proposal.id ? latest.id : null;
+  const historicalSource = proposal.sourceKind === "refresh" && proposal.contextSnapshotId !== currentSnapshotId;
+  const canReview = REVIEWABLE_PROPOSAL_STATUSES.has(proposal.status) && !historicalSource && !supersededByProposalId;
+  let reviewReason: string | null = null;
+  if (supersededByProposalId) {
+    reviewReason = proposal.status === "accepted"
+      ? "A newer Audit proposal is current. This proposal was accepted into Reality at the recorded time and remains immutable history; review the latest proposal for any new change."
+      : `${proposal.dispositionReason || AUDIT_PROPOSAL_SUPERSEDED_REASON} Review the latest proposal instead; this historical proposal was not applied.`;
+  } else if (historicalSource) {
+    reviewReason = proposal.dispositionReason || "Historical source proposal — not part of the current knowledge package. Its evidence is retained; it cannot be accepted as current Reality.";
+  } else if (!canReview) {
+    reviewReason = proposal.dispositionReason || (proposal.status === "accepted"
+      ? "Accepted Reality is retained as history and must be changed in the owning instrument."
+      : "This proposal is not currently open for Accept or Edit.");
+  }
+  return {
+    canReview,
+    supersededByProposalId,
+    latestProposalId: latest?.id ?? proposal.id,
+    latestProposalStatus: latest?.status ?? proposal.status,
+    reviewReason,
+  };
+}
+
+export function shouldReviveAutoSupersededProposal(input: {
+  inputSnapshotId: string;
+  currentSnapshotId: string | null;
+  newerSameSnapshotProposalId: string | null;
+}) {
+  return input.inputSnapshotId === input.currentSnapshotId && !input.newerSameSnapshotProposalId;
+}
+
+type AuditProposalReviewDb = Pick<
+  Prisma.TransactionClient,
+  "projectActivation" | "bootstrapPackage" | "contextSnapshot" | "auditChangeProposal"
+>;
+
+/** Transaction-safe mutation guard. Accepted/idempotent shortcuts belong
+ * before this call so an already completed write remains retryable.
+ */
+export async function assertCurrentAuditProposalHead(proposal: AuditProposalReviewRow, db: AuditProposalReviewDb) {
+  if (proposal.sourceKind !== "refresh") return;
+  const current = await currentContextSnapshot(proposal.scopeId, db);
+  const latest = current && proposal.sourceKey ? await db.auditChangeProposal.findFirst({
+    where: { scopeId: proposal.scopeId, sourceKind: "refresh", sourceKey: proposal.sourceKey, contextSnapshotId: current.id },
+    orderBy: [{ createdAt: "desc" }, { id: "desc" }], select: { id: true },
+  }) : null;
+  if (latest && latest.id !== proposal.id) {
+    throw new Error(`${AUDIT_PROPOSAL_SUPERSEDED_REASON} Review the latest proposal instead.`);
+  }
+  if (!current || current.id !== proposal.contextSnapshotId) {
+    throw new Error("Knowledge changed. Refresh Audit and review the current source before changing this proposal.");
+  }
+}
 
 function record(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
@@ -153,6 +239,7 @@ export async function syncRefreshChangeProposals(input: {
   if (!scope) return { created: 0, suppressed: 0 };
   const identities = allScopes.map((item) => ({ id: item.id, name: item.name, aliases: item.aliases.map((alias) => alias.alias) }));
   const project = identities.find((item) => item.id === scope.id)!;
+  const currentSnapshotId = (await currentContextSnapshot(input.scopeId).catch(() => null))?.id ?? null;
   let created = 0;
   let suppressed = 0;
   let actionable = 0;
@@ -198,8 +285,19 @@ export async function syncRefreshChangeProposals(input: {
       { fingerprint }, { fingerprint: legacyFingerprint, contextSnapshotId: input.snapshotId },
     ] } });
     if (exists) {
-      if (exists.status === "information_only" && exists.dispositionReason === "Superseded by a changed proposal from a newer completed Audit refresh.") {
-        await prisma.auditChangeProposal.update({ where: { id: exists.id }, data: { status: draft.initialStatus ?? "pending", dispositionReason: null } });
+      if (exists.status === "information_only" && exists.dispositionReason === AUDIT_PROPOSAL_SUPERSEDED_REASON) {
+        const newerSameSnapshot = await prisma.auditChangeProposal.findFirst({
+          where: { supersedesProposalId: exists.id, contextSnapshotId: input.snapshotId },
+          orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+          select: { id: true },
+        });
+        if (shouldReviveAutoSupersededProposal({
+          inputSnapshotId: input.snapshotId,
+          currentSnapshotId,
+          newerSameSnapshotProposalId: newerSameSnapshot?.id ?? null,
+        })) {
+          await prisma.auditChangeProposal.update({ where: { id: exists.id }, data: { status: draft.initialStatus ?? "pending", dispositionReason: null } });
+        }
       }
       continue;
     }
@@ -227,7 +325,7 @@ export async function syncRefreshChangeProposals(input: {
     if (prior && prior.status !== "accepted") {
       await prisma.auditChangeProposal.update({ where: { id: prior.id }, data: {
         status: "information_only",
-        dispositionReason: "Superseded by a changed proposal from a newer completed Audit refresh.",
+        dispositionReason: AUDIT_PROPOSAL_SUPERSEDED_REASON,
       } });
     }
     created += 1;
@@ -506,7 +604,7 @@ export async function getAuditChangeInbox(scopeId: string) {
     reportReadiness(scopeId),
     currentContextSnapshot(scopeId).catch(() => null),
   ]);
-  const proposals = storedProposals.map((proposal) => {
+  const presentedProposals = storedProposals.map((proposal) => {
     if (proposal.sourceKind !== "refresh" || ["accepted", "rejected"].includes(proposal.status)) return proposal;
     if (proposal.contextSnapshotId !== current?.id && ["pending", "needs_completion", "deferred"].includes(proposal.status)) {
       return { ...proposal, status: "information_only", currentness: "stale", dispositionReason: "Historical source proposal — not part of the current knowledge package. Its evidence is retained; it cannot be accepted as current Reality." };
@@ -517,7 +615,21 @@ export async function getAuditChangeInbox(scopeId: string) {
     // history, source quotes and every accepted Reality object remain intact.
     return reason ? { ...proposal, category: "information", owner: "audit", status: "information_only", recommendedAction: "information_only", proposedState: { action: "information_only" }, dispositionReason: reason, whyProposed: reason } : proposal;
   });
-  const active = proposals.filter((item) => ["pending", "needs_completion", "deferred"].includes(item.status));
+  const currentHeads = new Map<string, (typeof presentedProposals)[number]>();
+  for (const proposal of presentedProposals) {
+    if (proposal.sourceKind !== "refresh" || !proposal.sourceKey || proposal.contextSnapshotId !== current?.id) continue;
+    const previous = currentHeads.get(proposal.sourceKey);
+    if (!previous || proposal.createdAt > previous.createdAt || (proposal.createdAt.getTime() === previous.createdAt.getTime() && proposal.id > previous.id)) {
+      currentHeads.set(proposal.sourceKey, proposal);
+    }
+  }
+  const proposals = presentedProposals.map((proposal) => {
+    const latest = proposal.sourceKind === "refresh" && proposal.sourceKey
+      ? currentHeads.get(proposal.sourceKey) ?? null
+      : proposal;
+    return { ...proposal, ...auditProposalReviewFields(proposal, current?.id ?? null, latest) };
+  });
+  const active = proposals.filter((item) => item.canReview);
   const counts = active.reduce<Record<string, number>>((out, item) => {
     out[item.category] = (out[item.category] ?? 0) + 1;
     return out;

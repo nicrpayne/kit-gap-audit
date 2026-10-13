@@ -693,14 +693,14 @@ export default function DecisionsPageClient() {
           const res = await run(() =>
             write("/api/decisions/import", { method: "POST", body: JSON.stringify(input) })
           );
-          if (!res.ok) return String(res.body.error ?? "That import failed.");
+          if (!res.ok) return { ok: false, message: String(res.body.error ?? "That import failed.") };
           if (input.mode === "candidates") {
-            return `${res.body.imported} candidate(s) added, ${res.body.alreadyKnown} already known. No decisions and no gates were created.`;
+            return { ok: true, message: `${res.body.imported} candidate(s) added, ${res.body.alreadyKnown} already known. No decisions and no gates were created.` };
           }
           const dupes = (res.body.possibleDuplicates as unknown[] | undefined)?.length ?? 0;
-          return `${res.body.decisionsCreated} open decision(s) created${
+          return { ok: true, message: `${res.body.decisionsCreated} open decision(s) created${
             dupes > 0 ? `, ${dupes} skipped as possible duplicates` : ""
-          }. No gates were created.`;
+          }. No gates were created.` };
         }}
       />
 

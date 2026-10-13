@@ -8,7 +8,7 @@ export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 export async function GET(req: NextRequest, context: { params: Promise<{ id: string }> }) {
   try {
-    await requireReportOwner(req);
+    await requireReportOwner(req, false, "downloading private reports");
     const { id } = await context.params;
     let snapshot;
     try { snapshot = recipientSnapshot(await loadSavedHandoff(id, req.nextUrl.searchParams.get("pair") === "1")); }

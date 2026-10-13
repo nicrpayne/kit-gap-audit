@@ -9,7 +9,7 @@ import { sharingSetup, codeHash, keyedHash } from "../lib/reports/sharingPolicy"
 
 async function main() {
   const url = new URL(process.env.DATABASE_URL ?? "http://invalid");
-  assert(process.env.SIGNAL_REPAIR_DB_PROOF === "1" && url.hostname === "127.0.0.1" && url.port === "55434" && (url.pathname === "/signal_t0_test_1004" || (url.pathname === "/signal_t0_test_1008" && url.username === "signal_t0_local")), "Disposable repair DB only");
+  assert(process.env.SIGNAL_REPAIR_DB_PROOF === "1" && url.hostname === "127.0.0.1" && url.port === "55434" && (url.pathname === "/signal_t0_test_1004" || (["/signal_t0_test_1008", "/signal_t0_test_1012"].includes(url.pathname) && url.username === "signal_t0_local")), "Disposable repair DB only");
   const runtime = Module as unknown as { _load(request: string, parent: unknown, isMain: boolean): unknown };
   const original = runtime._load;
   runtime._load = function(request, parent, isMain) { return request === "server-only" ? {} : original.call(this, request, parent, isMain); };

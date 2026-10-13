@@ -70,6 +70,7 @@ import {
 import { composeScopeFeatures, type Feature, type ThreePoint } from "@/lib/scope/features";
 import { scenarioCapacityDisplay } from "@/lib/scenario/displayCapacity";
 import { scenarioDisplayShape } from "@/lib/scenario/displayShape";
+import { scenarioWorkItems } from "@/lib/scenario/workItems";
 import { readDominance } from "@/lib/scope/constraint";
 import { forecastDateAtDay } from "@/lib/forecast/simulate";
 import { formatCapacity } from "@/lib/capacity/limits";
@@ -99,6 +100,11 @@ type DraftCapabilityInput = {
   evidence: unknown[];
   workItemIds: string[];
   status: "accepted" | "outside" | "future";
+};
+type FirstCapabilityTransition = {
+  draft: DraftCapabilityInput;
+  /** A Scenario draft is removed only after the confirmed Reality save succeeds. */
+  scenarioDraftId: string | null;
 };
 // THE DECK LAYS OUT WHAT EXISTS. Cells are exactly: every capability this
 // release has — seated or vacated — plus one reserve bay. There is no
@@ -153,6 +159,7 @@ export default function ScopeInstrument() {
   const writeLock = useRef(false);
   const remainingEstimateRequest = useRef<{signature: string; key: string} | null>(null);
   const [writeSuccess, setWriteSuccess] = useState<string | null>(null);
+  const [firstCapabilityTransition, setFirstCapabilityTransition] = useState<FirstCapabilityTransition | null>(null);
   const [resolvingWork, setResolvingWork] = useState<ScopeWorkItem | null>(null);
   const [openWorkRequest, setOpenWorkRequest] = useState(0);
   const [openReviewRequest, setOpenReviewRequest] = useState(0);
@@ -213,6 +220,7 @@ export default function ScopeInstrument() {
   useEffect(() => {
     setProposal(null);
     setProposalCommitError(null);
+    setFirstCapabilityTransition(null);
     void refreshProposal();
   }, [refreshProposal]);
 
@@ -315,6 +323,7 @@ export default function ScopeInstrument() {
 
   const { capacity } = scenarioCapacityDisplay(m.data, m.scenario, scope.scopeId);
   const { proposalSelections, scenarioItems, scenarioCapabilities, proposalDrafts, proposalBypassed } = scenarioDisplayShape(scope, m.scenario);
+  const modeledScenarioItemIds = new Set(scenarioWorkItems(scope, m.scenario).map((item) => item.id));
   const scenarioProductShape = partitionProductShape(scenarioCapabilities);
   const displayedCoverage = m.coverageByScope.get(scope.scopeId) ?? scope.forecastCoverage;
   const composition = composeScopeFeatures(
@@ -330,8 +339,23 @@ export default function ScopeInstrument() {
     m.scenario.capabilityStaffingById,
     startDate,
     scope.targetDate ? new Date(scope.targetDate) : null,
+    modeledScenarioItemIds,
   );
-  const reality = composeScopeFeatures(scope.items, scope.completedWork, scope.capabilities, scope.teamCapacity, new Set(), {}, []);
+  const reality = composeScopeFeatures(
+    scope.items,
+    scope.completedWork,
+    scope.capabilities,
+    scope.teamCapacity,
+    new Set(),
+    {},
+    [],
+    new Set(),
+    {},
+    {},
+    startDate,
+    scope.targetDate ? new Date(scope.targetDate) : null,
+    new Set((scope.forecastItems ?? scope.items).map((item) => item.id)),
+  );
 
   const activelyLinkedIds = new Set(
     scope.capabilities.flatMap((capability) => capability.workLinks)
@@ -528,15 +552,51 @@ export default function ScopeInstrument() {
     }
   };
 
+  const requestNewCapabilitySave = (draft: DraftCapabilityInput) => {
+    setWriteError(null);
+    const transition = firstCapabilityTransitionRequest(scope.capabilities.length, draft);
+    if (transition) {
+      setFirstCapabilityTransition(transition);
+      return;
+    }
+    void saveNewCapability(draft);
+  };
+
+  const confirmFirstCapability = async () => {
+    if (!firstCapabilityTransition) return;
+    if (scope.capabilities.length > 0) {
+      setFirstCapabilityTransition(null);
+      setWriteError("Scope changed while this confirmation was open. Review the current cards before saving.");
+      return;
+    }
+    if (!(await saveNewCapability(firstCapabilityTransition.draft))) return;
+    if (firstCapabilityTransition.scenarioDraftId) {
+      const committedDraftId = firstCapabilityTransition.scenarioDraftId;
+      m.setScenario((prev) => ({
+        ...prev,
+        draftFeatures: prev.draftFeatures.filter((draft) => draft.id !== committedDraftId),
+      }));
+      setOpenFeatureId(null);
+    }
+    setFirstCapabilityTransition(null);
+  };
+
   const commitDraft = async (feature: Feature) => {
-    const saved = await saveNewCapability({
+    const draft: DraftCapabilityInput = {
       name: feature.name,
       description: feature.description ?? "",
       note: "Committed from a reviewed Scope Scenario.",
       evidence: [],
       workItemIds: feature.items.map((item) => item.id),
       status: "accepted",
-    });
+    };
+    const transition = firstCapabilityTransitionRequest(scope.capabilities.length, draft, feature.id);
+    if (transition) {
+      setWriteError(null);
+      setFirstCapabilityTransition(transition);
+      return;
+    }
+    const saved = await saveNewCapability(draft);
     if (!saved) return;
     m.setScenario((prev) => ({
       ...prev,
@@ -851,6 +911,7 @@ export default function ScopeInstrument() {
                 scopeId={scope.scopeId}
                 onReview={() => setOpenReviewRequest((v) => v + 1)}
                 accepted={m.active ? scenarioProductShape.accepted : productShape.accepted}
+                outsideCapabilityCount={(m.active ? scenarioProductShape : productShape).outsideRelease.length}
                 coverage={displayedCoverage}
                 executionSource={scope.executionSource}
                 capacityReconciles={scope.capacityContract.reconciles}
@@ -1128,12 +1189,24 @@ export default function ScopeInstrument() {
         capacity={capacity}
         saving={writing}
         error={writeError}
-        onSaveReality={saveNewCapability}
+        onSaveReality={requestNewCapabilitySave}
         onCreateScenario={(draft) => {
           m.setScenario((prev) => ({ ...prev, draftFeatures: [...prev.draftFeatures, draft] }));
           setAdding(false);
           setOpenFeatureId(draft.id);
         }}
+      />
+
+      <FirstCapabilityTransitionConfirmation
+        draft={firstCapabilityTransition?.draft ?? null}
+        executionItems={scope.executionItems}
+        currentLoadDays={reality.loadDays}
+        capacity={scope.teamCapacity}
+        capacitySource={scope.capacitySource}
+        saving={writing}
+        error={writeError}
+        onBack={() => { if (!writing) { setFirstCapabilityTransition(null); setWriteError(null); } }}
+        onConfirm={() => { void confirmFirstCapability(); }}
       />
 
       <CapabilityRealityEditor
@@ -1165,6 +1238,117 @@ export default function ScopeInstrument() {
 
 function nameOf(features: Feature[], id: string | number) {
   return features.find((f) => f.id === id)?.name ?? "capability";
+}
+
+export function firstCapabilityTransitionImpact(
+  executionItems: ScopeWorkItem[],
+  draft: Pick<DraftCapabilityInput, "workItemIds" | "status">,
+  capacity: number,
+) {
+  const selectedIds = new Set(draft.workItemIds);
+  const selected = executionItems.filter((item) => selectedIds.has(item.id));
+  const selectedEffortDays = selected.reduce((sum, item) => sum + (item.low + item.likely + item.high) / 3, 0);
+  const modeledLoadDays = draft.status !== "accepted" || selectedEffortDays === 0
+    ? 0
+    : capacity > 0
+      ? selectedEffortDays / capacity
+      : null;
+  return {
+    sourceTicketCount: executionItems.length,
+    selectedTicketCount: selected.length,
+    modeledTicketCount: draft.status === "accepted" ? selected.length : 0,
+    outsideTicketCount: draft.status === "accepted" ? 0 : selected.length,
+    unresolvedTicketCount: Math.max(0, executionItems.length - selected.length),
+    modeledLoadDays,
+  };
+}
+
+export function firstCapabilityTransitionRequest(
+  capabilityCount: number,
+  draft: DraftCapabilityInput,
+  scenarioDraftId: string | null = null,
+): FirstCapabilityTransition | null {
+  return capabilityCount === 0 ? { draft, scenarioDraftId } : null;
+}
+
+export function FirstCapabilityTransitionConfirmation({
+  draft,
+  executionItems,
+  currentLoadDays,
+  capacity,
+  capacitySource,
+  saving,
+  error,
+  onBack,
+  onConfirm,
+}: {
+  draft: DraftCapabilityInput | null;
+  executionItems: ScopeWorkItem[];
+  currentLoadDays: number;
+  capacity: number;
+  capacitySource: ProjectScope["capacitySource"];
+  saving: boolean;
+  error: string | null;
+  onBack: () => void;
+  onConfirm: () => void;
+}) {
+  if (!draft) return null;
+  const impact = firstCapabilityTransitionImpact(executionItems, draft, capacity);
+  const capacityBasis = capacitySource === "allocations" ? "named allocations" : capacitySource === "explicit" ? "the existing explicit basis" : "the existing Linear-assignee inference";
+  const classified = impact.modeledTicketCount + impact.outsideTicketCount;
+  return (
+    <ToolWindow open onClose={onBack} title="Start reviewing this project's Scope?" subtitle={`First saved capability · ${draft.name}`} width={500} dataShoot="first-capability-transition">
+      <div className="px-5 py-4">
+        <div className="i-label text-[var(--i-amber)]">Choose which tickets count toward this release</div>
+        <p className="mt-2 text-[11px] leading-relaxed text-[var(--i-text-soft)]">
+          {impact.sourceTicketCount === 0
+            ? `Linear currently returns no eligible tickets to classify. Saving “${draft.name}” records the first ${draft.status === "accepted" ? "in-release" : "out/later"} capability, but it does not change the modeled ticket set.`
+            : <>Signal currently includes all {impact.sourceTicketCount} eligible Linear ticket{impact.sourceTicketCount === 1 ? "" : "s"} automatically. After you save this first capability, only tickets you explicitly place in the release will count toward its forecast.</>}
+        </p>
+        <div className="mt-3 grid grid-cols-2 gap-2">
+          <div className="rounded border border-[var(--i-border)] bg-[var(--i-recess)] px-3 py-2">
+            <div className="i-label">Before · all eligible tickets</div>
+            <div className="mt-1 i-readout text-[15px]">{impact.sourceTicketCount} modeled tickets</div>
+            <div className="text-[8.5px] text-[var(--i-text-faint)]">
+              {impact.sourceTicketCount === 0
+                ? "No eligible work to forecast"
+                : capacity > 0
+                  ? `${currentLoadDays.toFixed(1)}d at ${formatCapacity(capacity)} FTE`
+                  : `Not forecastable at ${formatCapacity(capacity)} FTE`}
+            </div>
+          </div>
+          <div className="rounded border border-[var(--i-amber)]/50 bg-[var(--i-amber)]/[0.035] px-3 py-2">
+            <div className="i-label text-[var(--i-amber)]">After · your reviewed Scope</div>
+            <div className="mt-1 i-readout text-[15px]">{impact.modeledTicketCount} modeled · {impact.outsideTicketCount} out/later</div>
+            <div className="text-[8.5px] text-[var(--i-text-faint)]">
+              {impact.unresolvedTicketCount} unresolved · {impact.modeledLoadDays === null ? `not forecastable at ${formatCapacity(capacity)} FTE` : `${impact.modeledLoadDays.toFixed(1)}d modeled load`}
+            </div>
+          </div>
+        </div>
+        <div className="mt-3 rounded border border-[var(--i-border)] bg-[var(--i-recess)] px-3 py-2 text-[10px] leading-relaxed text-[var(--i-text-soft)]">
+          {impact.sourceTicketCount === 0
+            ? `There are no source tickets to select. “${draft.name}” will be an empty ${draft.status === "accepted" ? "in-release" : "out/later"} capability; no ticket is reclassified by this save.`
+            : classified === 0
+            ? `No tickets are selected. “${draft.name}” will be an empty ${draft.status === "accepted" ? "in-release" : "out/later"} capability and all ${impact.unresolvedTicketCount} source tickets will require review.`
+            : `${classified} selected ticket${classified === 1 ? "" : "s"} will be classified ${draft.status === "accepted" ? "in this release" : "out/later"}; the other ${impact.unresolvedTicketCount} will require review.`}
+          {impact.unresolvedTicketCount > 0 && " Forecast readiness remains blocked while those tickets are unresolved."}
+        </div>
+        <p className="mt-3 text-[10px] leading-relaxed text-[var(--i-text-faint)]">
+          No other ticket is auto-classified. Linear points, estimates, assignments, and status are unchanged. Capacity remains {formatCapacity(capacity)} FTE from {capacityBasis}; this save does not create or confirm staffing.
+        </p>
+        {error && <div role="alert" className="mt-2 text-[10px] text-[var(--i-red)]">{error}</div>}
+        <div className="mt-4 flex gap-2">
+          <button onClick={onBack} disabled={saving} className="flex-1 rounded-md border border-[var(--i-border-strong)] px-3 py-2 text-[11px] text-[var(--i-text-soft)]">Back to ticket selection</button>
+          <button onClick={onConfirm} disabled={saving} className="flex-1 rounded-md border border-[var(--i-amber)] px-3 py-2 text-[11px] text-[var(--i-amber)]" data-shoot="confirm-first-capability-transition">{saving ? "Saving Scope…" : "Confirm and save"}</button>
+        </div>
+      </div>
+    </ToolWindow>
+  );
+}
+
+export function scopeClassificationSummary(coverage: ForecastCoverageContract, outsideCapabilityCount: number): string {
+  const census = coverage.census;
+  return `${census.mappedAcceptedCapabilityCount}/${census.acceptedCapabilityCount} in-release capabilities mapped · ${census.modeledExecutionIssueCount} modeled ticket${census.modeledExecutionIssueCount === 1 ? "" : "s"} · ${census.outsideExecutionIssueCount} out/later ticket${census.outsideExecutionIssueCount === 1 ? "" : "s"} · ${census.unmappedExecutionIssueCount} unresolved ticket${census.unmappedExecutionIssueCount === 1 ? "" : "s"}${outsideCapabilityCount > 0 ? ` · ${outsideCapabilityCount} out/later ${outsideCapabilityCount === 1 ? "capability" : "capabilities"}` : ""}`;
 }
 
 function CapabilityRealityEditor({
@@ -1287,6 +1471,7 @@ function ProductShapeSummary({
   scopeId,
   onReview,
   accepted,
+  outsideCapabilityCount,
   coverage,
   executionSource,
   capacityReconciles,
@@ -1297,6 +1482,7 @@ function ProductShapeSummary({
   scopeId: string;
   onReview: () => void;
   accepted: ShapeCapability[];
+  outsideCapabilityCount: number;
   coverage: ForecastCoverageContract;
   executionSource: { asOf: string; availability: "available" | "empty" };
   capacityReconciles: boolean;
@@ -1320,7 +1506,7 @@ function ProductShapeSummary({
       </div>
       <div className="min-w-0 rounded-lg border border-[var(--i-border)] bg-[var(--i-recess)] px-3 py-2">
         <div className="i-label">{scenario ? "Scenario shape mapped" : "Accepted shape mapped"}</div>
-        <div className="mt-1 text-[9px] text-[var(--i-text-faint)]">{coverage.census.mappedAcceptedCapabilityCount}/{coverage.census.acceptedCapabilityCount} capabilities · {coverage.census.modeledExecutionIssueCount} modeled · {coverage.census.outsideExecutionIssueCount} out/later · {coverage.census.unmappedExecutionIssueCount} unresolved</div>
+        <div className="mt-1 text-[9px] text-[var(--i-text-faint)]">{scopeClassificationSummary(coverage, outsideCapabilityCount)}</div>
         {accepted.length === 0 && <div className="mt-0.5 truncate text-[8.5px] text-[var(--i-text-faint)]">No accepted Capability records; legacy execution grammar remains visible</div>}
       </div>
       <div className="min-w-0 rounded-lg border border-[var(--i-amber)]/20 bg-[var(--i-amber)]/[0.025] px-3 py-2">
