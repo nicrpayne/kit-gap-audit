@@ -16,8 +16,10 @@ export function deliveryNextAction(input: {
   };
   if (coverage.census.unmappedExecutionIssueCount > 0) return {
     title: "Tell Signal which features these tickets belong to",
-    detail: `${coverage.census.unmappedExecutionIssueCount} ticket${coverage.census.unmappedExecutionIssueCount === 1 ? " needs" : "s need"} an in-release or out/later assignment.`,
-    label: "Resolve tickets in Scope", href: href("scope"),
+    shortTitle: `${coverage.census.unmappedExecutionIssueCount} ticket${coverage.census.unmappedExecutionIssueCount === 1 ? " needs" : "s need"} release classification`,
+    detail: `${coverage.census.unmappedExecutionIssueCount} ticket${coverage.census.unmappedExecutionIssueCount === 1 ? " needs" : "s need"} an in-release or out/later assignment in Signal; ${coverage.census.unmappedExecutionIssueCount === 1 ? "it is" : "they are"} already connected to this project and do not need to be closed.`,
+    shortDetail: `${coverage.census.unmappedExecutionIssueCount} connected project ticket${coverage.census.unmappedExecutionIssueCount === 1 ? " needs" : "s need"} an in-release or out/later assignment in Signal; ${coverage.census.unmappedExecutionIssueCount === 1 ? "it does" : "they do"} not need to be closed.`,
+    label: "Classify tickets in Scope", href: href("scope"),
   };
   if (coverage.census.acceptedCapabilityCount > coverage.census.mappedAcceptedCapabilityCount) return {
     title: "Connect the remaining features to their work", detail: "Some accepted features do not have current ticket coverage. Review their mappings in Scope.",

@@ -509,6 +509,7 @@ export default function ControlRoomPageClient() {
           scenario={m.scenario}
           scenarioActive={m.active}
           realityLikely={r.outcome.realityLikely}
+          nextStep={nextStep}
         />
         </div>
         </div>

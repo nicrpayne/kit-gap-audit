@@ -39,6 +39,11 @@ export function controlRoomNextAction(scopes: ControlRoomReadinessScope[]) {
       detail: unclassified > 0 && openShape > 0
         ? `${action.detail} ${openShape} unreviewed product-shape ${openShape === 1 ? "decision" : "decisions"} also remain open.`
         : action.detail,
+      shortDetail: action.shortDetail
+        ? unclassified > 0 && openShape > 0
+          ? `${action.shortDetail} ${openShape} product-shape ${openShape === 1 ? "decision also needs" : "decisions also need"} review.`
+          : action.shortDetail
+        : undefined,
     };
   }
   return null;

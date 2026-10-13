@@ -35,6 +35,7 @@ import TimelinePageClient from "@/components/TimelinePageClient";
 import type { ControlRoomReading, Point, Series } from "@/lib/control-room/read";
 import type { FreshnessKind } from "@/lib/control-room/freshness";
 import type { ProjectPayload, SuiteScenario } from "@/lib/instrument/useProject";
+import type { NextAction } from "@/components/instrument/Attention";
 import { controlRoomComposition } from "@/lib/control-room/composition";
 import { formatDateOnly } from "@/lib/time/dateContract";
 
@@ -122,12 +123,14 @@ export default function CommandWorkspace({
   scenario,
   scenarioActive,
   realityLikely,
+  nextStep,
 }: {
   r: ControlRoomReading;
   data: ProjectPayload;
   scenario: SuiteScenario;
   scenarioActive: boolean;
   realityLikely: Date | null;
+  nextStep: NextAction | null;
 }) {
   const outcomeHue = scenarioActive ? "var(--i-violet)" : HUE.outcome;
 
@@ -229,7 +232,7 @@ export default function CommandWorkspace({
             label="Likely Outcome"
             question={
               r.outcome.coverageState !== "forecastable"
-                ? "Execution coverage unresolved"
+                ? nextStep?.shortTitle ?? nextStep?.title ?? "Execution coverage needs review"
                 : `Current read · inputs changed through ${dShort(r.time.executionInputsAsOf)}`
             }
             a={r.outcome.coverageState === "forecastable" ? (r.outcome.likely ? deliveryDay(r.outcome.likely) : "—") : "INCOMPLETE"}
@@ -238,7 +241,7 @@ export default function CommandWorkspace({
                 ? r.outcome.gatedBy
                   ? `${r.outcome.gatedBy} Lands Last`
                   : "Nothing Simulated"
-                : `${r.outcome.coverageScopeNames.join(", ")} Coverage`
+                : nextStep?.label ?? `${r.outcome.coverageScopeNames.join(", ")} Coverage`
             }
             aTone={r.outcome.coverageState === "forecastable" ? outcomeHue : "var(--i-amber)"}
             // Confidence is per project, against that project's own target.
@@ -263,7 +266,7 @@ export default function CommandWorkspace({
                   : deliveryDay(realityLikely)
                 : null
             }
-            href="/forecast"
+            href={r.outcome.coverageState !== "forecastable" ? nextStep?.href ?? "/forecast" : "/forecast"}
             shoot="cr-card-outcome"
           />
           <Tile
@@ -476,7 +479,19 @@ export default function CommandWorkspace({
                 the layout's line chart exactly: `Report.confidenceAtTarget`,
                 plotted at each report's own `generatedAt`. A project nobody
                 has reported on is ABSENT, never drawn flat at zero. */}
-            <Bottom title="Forecast Confidence" href="/forecast" shoot="cr-surf-forecast" hue={HUE.outcome}>
+            <Bottom
+              title="Forecast Confidence"
+              href={r.outcome.coverageState !== "forecastable" ? nextStep?.href ?? "/forecast" : "/forecast"}
+              action={
+                r.outcome.coverageState !== "forecastable" && nextStep
+                  ? nextStep.href.startsWith("/scope")
+                    ? "Fix in Scope"
+                    : "Review blocker"
+                  : undefined
+              }
+              shoot="cr-surf-forecast"
+              hue={HUE.outcome}
+            >
               {r.outcome.coverageState !== "forecastable" ? (
                 <div className="shrink-0">
                   <p
@@ -487,11 +502,11 @@ export default function CommandWorkspace({
                     INCOMPLETE
                   </p>
                   <p className="pt-[6px] text-[10.5px] leading-[13px]" style={{ color: "var(--i-text-soft)" }}>
-                    Execution coverage is unresolved for {r.outcome.coverageScopeNames.join(", ")}.
+                    {nextStep?.shortDetail ?? nextStep?.detail ?? `Execution coverage needs review for ${r.outcome.coverageScopeNames.join(", ")}.`}
                   </p>
                   <p className="pt-[2px] text-[10px] leading-[12px]" style={{ color: "var(--i-text-faint)" }}>
-                    {r.outcome.likely ? `Modeled subset lands around ${deliveryDay(r.outcome.likely)}. ` : ""}
-                    No full-project confidence is shown.
+                    {r.outcome.likely ? `~${deliveryDay(r.outcome.likely)} is subset-only. ` : ""}
+                    Full-project date and confidence wait for review.
                   </p>
                 </div>
               ) : r.outcome.confidence !== null ? (
@@ -1212,12 +1227,14 @@ function Door({ href, label, tone }: { href: string; label: string; tone: string
 function Bottom({
   title,
   href,
+  action,
   shoot,
   hue,
   children,
 }: {
   title: string;
   href: string;
+  action?: string;
   shoot: string;
   /** The domain this analysis surface belongs to. It tints the face and
       marks the heading, so the bottom row reads in the same colour language
@@ -1246,7 +1263,7 @@ function Bottom({
           className="shrink-0 text-[10px] transition-colors hover:text-[var(--i-text)]"
           style={{ color: "var(--i-text-faint)" }}
         >
-          Open →
+          {action ?? "Open"} →
         </Link>
       </header>
       {children}

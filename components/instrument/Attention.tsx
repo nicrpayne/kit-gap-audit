@@ -5,7 +5,9 @@ import Link from "@/components/instrument/SignalLink";
 
 export interface NextAction {
   title: string;
+  shortTitle?: string;
   detail: string;
+  shortDetail?: string;
   label: string;
   href: string;
 }
