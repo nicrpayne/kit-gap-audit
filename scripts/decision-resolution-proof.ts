@@ -147,6 +147,30 @@ async function main() {
     assert.equal(currentDecision().resolution, "Use the approved SSO provider.");
     console.log("PASS a recorded resolution cannot be erased, including while reopening, but unrelated edits preserve it");
 
+    reset("decided", "Recorded decision text");
+    const reopened = await PATCH(jsonRequest({ status: "open" }), params);
+    assert.equal(reopened.status, 200);
+    assert.equal(currentDecision().status, "open");
+    assert.equal(currentDecision().resolution, "Recorded decision text");
+    lastUpdate = null;
+    const erasedAfterReopen = await responseError(await PATCH(jsonRequest({ resolution: null }), params));
+    assert.equal(erasedAfterReopen.status, 400);
+    assert.match(erasedAfterReopen.error, /cannot be erased/);
+    assert.equal(lastUpdate, null);
+    assert.equal(currentDecision().resolution, "Recorded decision text");
+
+    reset("decided", "Recorded dismissed decision text");
+    const dismissed = await PATCH(jsonRequest({ status: "dismissed" }), params);
+    assert.equal(dismissed.status, 200);
+    assert.equal(currentDecision().status, "dismissed");
+    assert.equal(currentDecision().resolution, "Recorded dismissed decision text");
+    lastUpdate = null;
+    const erasedAfterDismissal = await responseError(await PATCH(jsonRequest({ resolution: "   " }), params));
+    assert.equal(erasedAfterDismissal.status, 400);
+    assert.match(erasedAfterDismissal.error, /cannot be erased/);
+    assert.equal(lastUpdate, null);
+    console.log("PASS decide -> reopen/dismiss -> clear cannot erase the recorded resolution across sequential requests");
+
     reset("decided", null);
     const historicalEdit = await PATCH(jsonRequest({
       title: "Historical agreement from the approved source",

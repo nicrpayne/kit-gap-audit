@@ -30,8 +30,11 @@ function validateDecisionResolutionPatch(
     return { ok: false, error: "Record what was decided before marking this decision decided." };
   }
 
-  if (existing.status === "decided" && existing.resolution?.trim() && resolutionWasProvided && !resolutionForUpdate) {
-    return { ok: false, error: "A decided decision's resolution cannot be erased." };
+  // Status can change in a separate request. Once a nonempty resolution is
+  // recorded, protect it independently of the row's current status so a
+  // decide -> reopen/dismiss -> clear sequence cannot erase the history.
+  if (existing.resolution?.trim() && resolutionWasProvided && !resolutionForUpdate) {
+    return { ok: false, error: "A recorded decision resolution cannot be erased." };
   }
 
   const statusAfterUpdate = patch.status ?? existing.status;

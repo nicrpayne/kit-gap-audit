@@ -1,11 +1,9 @@
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
-import { currentContextSnapshot } from "@/lib/context/currentSnapshot";
-import { contextCapabilityAdmissionReason } from "@/lib/bootstrap/capabilityAdmission";
 import { timelineKeyForAuditProposal } from "@/lib/timeline/sourceIdentity";
 import { dateOnlyToUtcDate, toDateOnly } from "@/lib/time/dateContract";
 import { invalidateDerivedReads, recomputeDerivedReads } from "./derivedRefresh";
-import { assertCurrentAuditProposalHead } from "./changeInbox";
+import { assertCurrentReviewableAuditProposal } from "./changeInbox";
 
 export class ChangeCompletionRequiredError extends Error {
   constructor(message: string, readonly fields: string[]) { super(message); }
@@ -162,15 +160,10 @@ export async function acceptAuditChange(proposalId: string, input: { idempotency
         }
         const proposal = await tx.auditChangeProposal.findUniqueOrThrow({ where: { id: proposalId } });
         if (proposal.status === "accepted") return { proposal, created: false };
-        await assertCurrentAuditProposalHead(proposal, tx);
-        if (["rejected", "information_only"].includes(proposal.status)) throw new Error("That proposal is closed. Reopen it before accepting.");
-        if (proposal.sourceKind === "refresh") {
-          const current = await currentContextSnapshot(proposal.scopeId, tx);
-          if (!current || current.id !== proposal.contextSnapshotId) throw new Error("Knowledge changed. Refresh Audit and review the current source before accepting.");
-          const reason = record(proposal.proposedState).action === "upsert_capability"
-            ? contextCapabilityAdmissionReason(proposal.sourceKey, current.package) : null;
-          if (reason) throw new ChangeCompletionRequiredError(reason, ["Create or edit an explicit capability in Scope if this is genuinely product work."]);
-        }
+        await assertCurrentReviewableAuditProposal(proposal, tx, (reason) => new ChangeCompletionRequiredError(
+          reason,
+          ["Create or edit an explicit capability in Scope if this is genuinely product work."],
+        ));
         const requirements = Array.isArray(proposal.completionRequirements) ? proposal.completionRequirements : [];
         if (requirements.length && completion.confirmed !== true) {
           throw new ChangeCompletionRequiredError("This owner needs a small completion step before accepting.", requirements.map(String));
@@ -210,7 +203,10 @@ export async function dispositionAuditChange(
     if (existing) return tx.auditChangeProposal.findUniqueOrThrow({ where: { id: existing.proposalId } });
     const proposal = await tx.auditChangeProposal.findUniqueOrThrow({ where: { id: proposalId } });
     if (proposal.status === "accepted") throw new Error("Accepted Reality cannot be undone from Audit; open the owning instrument.");
-    if (input.action === "reopen") await assertCurrentAuditProposalHead(proposal, tx);
+    await assertCurrentReviewableAuditProposal(proposal, tx);
+    if (input.action === "reopen" && proposal.status !== "deferred") {
+      throw new Error("Only a current deferred proposal can be reopened.");
+    }
     const updated = await tx.auditChangeProposal.update({ where: { id: proposal.id }, data: { status: target, dispositionReason: input.reason?.trim() || null } });
     await tx.auditChangeEvent.create({ data: {
       proposalId, idempotencyKey: input.idempotencyKey, action: input.action,
@@ -226,7 +222,7 @@ export async function editAuditChange(proposalId: string, input: { proposedState
     if (existing) return tx.auditChangeProposal.findUniqueOrThrow({ where: { id: existing.proposalId } });
     const proposal = await tx.auditChangeProposal.findUniqueOrThrow({ where: { id: proposalId } });
     if (proposal.status === "accepted") throw new Error("Accepted Reality must be edited in the owning instrument.");
-    await assertCurrentAuditProposalHead(proposal, tx);
+    await assertCurrentReviewableAuditProposal(proposal, tx);
     const updated = await tx.auditChangeProposal.update({ where: { id: proposalId }, data: {
       proposedState: json(input.proposedState), status: "pending", dispositionReason: input.note?.trim() || null,
     } });

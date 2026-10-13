@@ -23,6 +23,13 @@ const latest = {
   status: "pending",
   dispositionReason: null,
 };
+const currentRow = (id: string, status: string) => ({
+  ...latest,
+  id,
+  sourceKey: `refresh:${id}`,
+  status,
+  dispositionReason: status === "rejected" ? "Owner rejected it." : null,
+});
 
 const historical = auditProposalReviewFields(old, "snapshot-current", latest);
 assert.deepEqual(historical, {
@@ -54,11 +61,12 @@ type MockRow = {
   proposedState: Record<string, unknown>;
   completionRequirements: unknown[];
   owner: string;
+  category: string;
 };
 
 const rows: Record<string, MockRow> = {
-  [old.id]: { ...old, proposedState: { action: "upsert_capability", name: "Old proposal" }, completionRequirements: [], owner: "scope" },
-  [latest.id]: { ...latest, proposedState: { action: "upsert_capability", name: "Latest proposal" }, completionRequirements: [], owner: "scope" },
+  [old.id]: { ...old, proposedState: { action: "upsert_capability", name: "Old proposal" }, completionRequirements: [], owner: "scope", category: "scope" },
+  [latest.id]: { ...latest, proposedState: { action: "upsert_capability", name: "Latest proposal" }, completionRequirements: [], owner: "scope", category: "scope" },
   accepted: {
     ...old,
     id: "accepted",
@@ -66,7 +74,16 @@ const rows: Record<string, MockRow> = {
     proposedState: { action: "upsert_capability", name: "Accepted proposal" },
     completionRequirements: [],
     owner: "scope",
+    category: "scope",
   },
+  pending: { ...currentRow("pending", "pending"), proposedState: { action: "upsert_capability", name: "Pending proposal" }, completionRequirements: [], owner: "scope", category: "scope" },
+  needs: { ...currentRow("needs", "needs_completion"), proposedState: { action: "upsert_capability", name: "Needs completion" }, completionRequirements: [], owner: "scope", category: "scope" },
+  deferred: { ...currentRow("deferred", "deferred"), proposedState: { action: "upsert_capability", name: "Deferred proposal" }, completionRequirements: [], owner: "scope", category: "scope" },
+  information: { ...currentRow("information", "information_only"), proposedState: { action: "upsert_capability", name: "Already represented" }, completionRequirements: [], owner: "scope", category: "scope" },
+  rejected: { ...currentRow("rejected", "rejected"), proposedState: { action: "upsert_capability", name: "Rejected proposal" }, completionRequirements: [], owner: "scope", category: "scope" },
+  "policy-closed": { ...currentRow("policy-closed", "pending"), proposedState: { action: "upsert_capability", name: "Opportunity title only" }, completionRequirements: [], owner: "scope", category: "scope" },
+  "policy-closed-changed-action": { ...currentRow("policy-closed-changed-action", "pending"), proposedState: { action: "information_only" }, completionRequirements: [], owner: "scope", category: "scope" },
+  "policy-closed-nonscope": { ...currentRow("policy-closed-nonscope", "pending"), proposedState: { action: "upsert_capability", name: "Opportunity title only" }, completionRequirements: [], owner: "findings", category: "finding" },
 };
 
 type MutablePrisma = {
@@ -84,12 +101,19 @@ async function main() {
   const tx = {
     auditChangeEvent: {
       findUnique: async () => idempotentProposalId ? { proposalId: idempotentProposalId } : null,
-      create: async () => { mutationCalls += 1; throw new Error("unexpected event write"); },
+      create: async () => { mutationCalls += 1; return {}; },
     },
     auditChangeProposal: {
       findUniqueOrThrow: async ({ where }: { where: { id: string } }) => rows[where.id],
-      findFirst: async () => ({ id: latest.id }),
-      update: async () => { mutationCalls += 1; throw new Error("unexpected proposal write"); },
+      findFirst: async ({ where }: { where: { sourceKey?: string } }) => {
+        const head = Object.values(rows).find((row) => row.sourceKey === where.sourceKey && row.contextSnapshotId === "snapshot-current");
+        return head ? { id: head.id } : null;
+      },
+      update: async ({ where, data }: { where: { id: string }; data: Partial<MockRow> }) => {
+        mutationCalls += 1;
+        rows[where.id] = { ...rows[where.id], ...data };
+        return rows[where.id];
+      },
     },
     projectActivation: {
       findUnique: async () => {
@@ -101,28 +125,55 @@ async function main() {
       findUnique: async () => ({ package: { producer: "proof", packageId: "current" } }),
     },
     contextSnapshot: {
-      findFirst: async () => ({ id: "snapshot-current" }),
+      findFirst: async () => ({
+        id: "snapshot-current",
+        package: {
+          derivedClaims: ["policy-closed", "policy-closed-changed-action", "policy-closed-nonscope"].map((candidateKey) => ({ extra: { candidateKey, intelligenceRefs: ["opportunity-policy"] } })),
+          intelligenceObjects: [{ id: "opportunity-policy", type: "opportunity", status: "open", fields: { summary: "Suggestion only" } }],
+        },
+      }),
       findUnique: async () => null,
     },
   };
   mutablePrisma.$transaction = async (callback) => callback(tx);
   mutablePrisma.projectDerivedState.findUnique = async () => null;
   try {
-    await assert.rejects(
-      () => acceptAuditChange(old.id, { idempotencyKey: "proof-accept-stale" }),
-      new RegExp(AUDIT_PROPOSAL_SUPERSEDED_REASON),
-    );
-    await assert.rejects(
-      () => editAuditChange(old.id, { proposedState: { action: "upsert_capability", name: "Edited old proposal" }, idempotencyKey: "proof-edit-stale" }),
-      new RegExp(AUDIT_PROPOSAL_SUPERSEDED_REASON),
-    );
-    await assert.rejects(
-      () => dispositionAuditChange(old.id, { action: "reopen", idempotencyKey: "proof-reopen-stale" }),
-      new RegExp(AUDIT_PROPOSAL_SUPERSEDED_REASON),
-    );
+    let keySequence = 0;
+    const mutationAttempts = (proposalId: string) => [
+      ["Accept", () => acceptAuditChange(proposalId, { idempotencyKey: `proof-${proposalId}-accept-${keySequence++}` })],
+      ["Edit", () => editAuditChange(proposalId, { proposedState: { action: "upsert_capability", name: "Edited proposal" }, idempotencyKey: `proof-${proposalId}-edit-${keySequence++}` })],
+      ...(["defer", "reject", "information_only", "reopen"] as const).map((action) => [
+        action,
+        () => dispositionAuditChange(proposalId, { action, idempotencyKey: `proof-${proposalId}-${action}-${keySequence++}` }),
+      ] as const),
+    ] as const;
+
+    for (const [action, mutate] of mutationAttempts(old.id)) {
+      await assert.rejects(mutate, new RegExp(AUDIT_PROPOSAL_SUPERSEDED_REASON), `${action} must reject a stale source head`);
+    }
     assert.equal(mutationCalls, 0);
-    assert.equal(currentSourceReads, 3);
-    console.log("PASS stale superseded Accept, Edit and Reopen fail before any proposal, event or Reality write");
+    assert.equal(currentSourceReads, mutationAttempts(old.id).length);
+    console.log("PASS every stale-head mutation action fails before any proposal, event or Reality write");
+
+    currentSourceReads = 0;
+    for (const proposalId of ["information", "rejected"]) {
+      for (const [action, mutate] of mutationAttempts(proposalId)) {
+        await assert.rejects(mutate, /closed history/, `${action} must not revive or alter ${proposalId} history`);
+      }
+    }
+    assert.equal(mutationCalls, 0);
+    assert.equal(currentSourceReads, 12);
+    console.log("PASS information-only and rejected current heads cannot be accepted, edited, reopened or re-dispositioned");
+
+    currentSourceReads = 0;
+    for (const proposalId of ["policy-closed", "policy-closed-changed-action", "policy-closed-nonscope"]) {
+      for (const [action, mutate] of mutationAttempts(proposalId)) {
+        await assert.rejects(mutate, /not Scope|not a new Scope requirement/, `${action} must honor the same admission policy as the Inbox`);
+      }
+    }
+    assert.equal(mutationCalls, 0);
+    assert.equal(currentSourceReads, 18);
+    console.log("PASS legacy stored-pending opportunities closed by category or action stay closed on every server mutation path");
 
     currentSourceReads = 0;
     idempotentProposalId = "accepted";
@@ -137,6 +188,35 @@ async function main() {
     assert.equal(currentSourceReads, 0, "accepted Reality remains an idempotent no-op even after later source changes");
     assert.equal(mutationCalls, 0);
     console.log("PASS accepted Reality and idempotent retries are preserved without reapplying owner state");
+
+    for (const proposalId of ["pending", "needs", "deferred"]) {
+      const originalStatus = proposalId === "needs" ? "needs_completion" : proposalId;
+      rows[proposalId].status = originalStatus;
+      mutationCalls = 0;
+      const edited = await editAuditChange(proposalId, {
+        proposedState: { action: "upsert_capability", name: `Edited ${proposalId}` },
+        idempotencyKey: `proof-edit-current-${proposalId}`,
+      });
+      assert.equal(edited.status, "pending");
+      assert.equal(mutationCalls, 2, `current ${originalStatus} edit writes one proposal and one event`);
+    }
+
+    for (const proposalId of ["pending", "needs"]) {
+      rows[proposalId].status = proposalId === "needs" ? "needs_completion" : "pending";
+      mutationCalls = 0;
+      await assert.rejects(
+        () => dispositionAuditChange(proposalId, { action: "reopen", idempotencyKey: `proof-invalid-reopen-${proposalId}` }),
+        /current deferred proposal/,
+      );
+      assert.equal(mutationCalls, 0);
+    }
+
+    rows.deferred.status = "deferred";
+    mutationCalls = 0;
+    const reopened = await dispositionAuditChange("deferred", { action: "reopen", idempotencyKey: "proof-reopen-current-deferred" });
+    assert.equal(reopened.status, "pending");
+    assert.equal(mutationCalls, 2);
+    console.log("PASS current pending/needs-completion/deferred heads remain editable, while Reopen is limited to current deferred work");
   } finally {
     mutablePrisma.$transaction = originalTransaction;
     mutablePrisma.projectDerivedState.findUnique = originalDerivedFind;

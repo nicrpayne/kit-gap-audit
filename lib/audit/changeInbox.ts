@@ -33,6 +33,8 @@ type AuditProposalReviewRow = {
   contextSnapshotId: string | null;
   status: string;
   dispositionReason: string | null;
+  category?: string;
+  proposedState?: unknown;
 };
 
 export interface AuditProposalReviewFields {
@@ -95,7 +97,7 @@ type AuditProposalReviewDb = Pick<
  * before this call so an already completed write remains retryable.
  */
 export async function assertCurrentAuditProposalHead(proposal: AuditProposalReviewRow, db: AuditProposalReviewDb) {
-  if (proposal.sourceKind !== "refresh") return;
+  if (proposal.sourceKind !== "refresh") return null;
   const current = await currentContextSnapshot(proposal.scopeId, db);
   const latest = current && proposal.sourceKey ? await db.auditChangeProposal.findFirst({
     where: { scopeId: proposal.scopeId, sourceKind: "refresh", sourceKey: proposal.sourceKey, contextSnapshotId: current.id },
@@ -106,6 +108,29 @@ export async function assertCurrentAuditProposalHead(proposal: AuditProposalRevi
   }
   if (!current || current.id !== proposal.contextSnapshotId) {
     throw new Error("Knowledge changed. Refresh Audit and review the current source before changing this proposal.");
+  }
+  return current;
+}
+
+/** Server-side counterpart of `canReview`. UI controls are advisory; every
+ * mutation path must independently require the current reviewable head.
+ * Accepted/idempotent shortcuts intentionally run before this guard.
+ */
+export async function assertCurrentReviewableAuditProposal(
+  proposal: AuditProposalReviewRow,
+  db: AuditProposalReviewDb,
+  admissionError: (reason: string) => Error = (reason) => new Error(reason),
+) {
+  const current = await assertCurrentAuditProposalHead(proposal, db);
+  if (!REVIEWABLE_PROPOSAL_STATUSES.has(proposal.status)) {
+    throw new Error("This proposal is closed history and cannot be changed.");
+  }
+  if (
+    proposal.sourceKind === "refresh"
+    && (proposal.category === "scope" || record(proposal.proposedState).action === "upsert_capability")
+  ) {
+    const reason = contextCapabilityAdmissionReason(proposal.sourceKey, current?.package);
+    if (reason) throw admissionError(reason);
   }
 }
 
