@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "@/components/instrument/SignalLink";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { SignalControl } from "@/components/instrument/SignalPrimitives";
 import { groupAuditPassages } from "@/lib/audit/evidenceDisplay";
 import styles from "./AuditWorld.module.css";
@@ -122,7 +122,26 @@ export default function AuditChangeInbox({
   const [confirmed, setConfirmed] = useState(false);
   const [completionFields, setCompletionFields] = useState<Json>({});
   const pollRef = useRef<number | null>(null);
-  const dismissedScopeRef = useRef<string | null>(null);
+  const hiddenScopesRef = useRef(new Set<string>());
+  const reviewButtonRef = useRef<HTMLButtonElement | null>(null);
+  const inboxId = useId();
+  const visibilityKey = `signal:audit-inbox:hidden:${scopeId}`;
+
+  // Hiding is a per-project, per-tab display preference, never a disposition.
+  // Keep the in-memory fallback so closing still works if storage is denied.
+  const hideInbox = useCallback((returnFocus = true) => {
+    hiddenScopesRef.current.add(scopeId);
+    try { window.sessionStorage.setItem(visibilityKey, "1"); } catch { /* Display only. */ }
+    setOpen(false);
+    if (returnFocus) reviewButtonRef.current?.focus();
+  }, [scopeId, visibilityKey]);
+
+  const showInbox = useCallback((nextTab: "changes" | "sources" | "readiness") => {
+    hiddenScopesRef.current.delete(scopeId);
+    try { window.sessionStorage.removeItem(visibilityKey); } catch { /* Display only. */ }
+    setTab(nextTab);
+    setOpen(true);
+  }, [scopeId, visibilityKey]);
 
   const load = useCallback(async () => {
     if (!scopeId || fixture) return;
@@ -135,21 +154,35 @@ export default function AuditChangeInbox({
 
   useEffect(() => {
     setPayload(null); setSelectedId(null); setNotice(null);
-    setOpen(false); dismissedScopeRef.current = null;
+    setOpen(false);
     void load().catch((reason) => setError(reason instanceof Error ? reason.message : "Change Inbox could not be read."));
     return () => { if (pollRef.current) window.clearTimeout(pollRef.current); pollRef.current = null; };
   }, [load]);
 
   useEffect(() => {
     const refresh = () => void load().catch((reason) => setError(reason instanceof Error ? reason.message : "Change Inbox could not be read."));
-    const sources = () => { setTab("sources"); setOpen(true); };
+    const sources = () => showInbox("sources");
     window.addEventListener("signal-audit-refresh-complete", refresh);
     window.addEventListener("signal-audit-open-source-health", sources);
     return () => {
       window.removeEventListener("signal-audit-refresh-complete", refresh);
       window.removeEventListener("signal-audit-open-source-health", sources);
     };
-  }, [load]);
+  }, [load, showInbox]);
+
+  useEffect(() => {
+    if (!open) return;
+    const escape = (event: KeyboardEvent) => {
+      if (event.key !== "Escape" || event.defaultPrevented || event.isComposing) return;
+      // Let an actual modal (for example the command menu) own its Escape.
+      if ((event.target instanceof Element && event.target.closest('[role="dialog"]')) ||
+          document.querySelector('[role="dialog"][aria-modal="true"]')) return;
+      event.preventDefault();
+      hideInbox();
+    };
+    window.addEventListener("keydown", escape);
+    return () => window.removeEventListener("keydown", escape);
+  }, [hideInbox, open]);
 
   const selected = payload?.proposals.find((proposal) => proposal.id === selectedId) ?? null;
   const selectedCanReview = selected?.canReview === true;
@@ -165,11 +198,12 @@ export default function AuditChangeInbox({
   }, [focusEvidence]);
 
   useEffect(() => {
-    if (focusEvidence || !payload?.total || dismissedScopeRef.current === scopeId) return;
+    if (focusEvidence || open || !payload?.total || hiddenScopesRef.current.has(scopeId)) return;
+    try { if (window.sessionStorage.getItem(visibilityKey) === "1") return; } catch { /* Use in-memory state. */ }
     setTab("changes");
     setOpen(true);
     setSelectedId((current) => current ?? pending[0]?.id ?? null);
-  }, [focusEvidence, payload?.total, pending, scopeId]);
+  }, [focusEvidence, open, payload?.total, pending, scopeId, visibilityKey]);
 
   async function requestRefresh() {
     if (!scopeId || busy) return;
@@ -261,27 +295,27 @@ export default function AuditChangeInbox({
 
   return <>
     <div className={`${styles.worldWidget} ${styles.changeSummaryWidget}`} data-shoot="audit-change-summary">
-      <button type="button" data-attention={!open && payload && ["offline", "unavailable"].includes(payload.knowledge.code) ? "required" : undefined} className="flex w-full items-center gap-2 px-3 py-2 text-left" onClick={() => { setTab("sources"); setOpen(true); }}>
+      <button type="button" data-attention={!open && payload && ["offline", "unavailable"].includes(payload.knowledge.code) ? "required" : undefined} className="flex w-full items-center gap-2 px-3 py-2 text-left" onClick={() => showInbox("sources")} aria-controls={inboxId} aria-expanded={open && tab === "sources"}>
         <span className="h-1.5 w-1.5 rounded-full" style={{ background: knowledgeTone }} />
         <span className="min-w-0 flex-1 truncate text-[10.5px] font-medium text-[var(--i-text)]">{payload?.knowledge.label ?? "Checking knowledge…"}</span>
         <span className="text-[9.5px] text-[var(--i-text-faint)]">package {ago(payload?.knowledge.lastPackageAt ?? null)}</span>
       </button>
       <div className="grid grid-cols-2 border-t border-[var(--i-border)]">
-        <button type="button" data-attention={!open && pending.length > 0 && !["offline", "unavailable", "new_available"].includes(payload?.knowledge.code ?? "") ? "review" : undefined} className="px-3 py-2 text-left hover:bg-white/[0.03]" onClick={() => { setTab("changes"); setOpen(true); }}>
+        <button ref={reviewButtonRef} type="button" data-attention={!open && pending.length > 0 && !["offline", "unavailable", "new_available"].includes(payload?.knowledge.code ?? "") ? "review" : undefined} className="px-3 py-2 text-left hover:bg-white/[0.03]" onClick={() => showInbox("changes")} aria-controls={inboxId} aria-expanded={open && tab === "changes"}>
           <span className="block text-[16px] font-semibold text-[var(--i-text)]">{payload?.total ?? "—"}</span>
           <span className="text-[9.5px] text-[var(--i-text-soft)]">Review Audit changes →</span>
         </button>
-        <button type="button" data-attention={!open && payload && !payload.readiness.ready && pending.length === 0 && payload.knowledge.code === "current" ? "required" : undefined} className="border-l border-[var(--i-border)] px-3 py-2 text-left hover:bg-white/[0.03]" onClick={() => { setTab("readiness"); setOpen(true); }}>
+        <button type="button" data-attention={!open && payload && !payload.readiness.ready && pending.length === 0 && payload.knowledge.code === "current" ? "required" : undefined} className="border-l border-[var(--i-border)] px-3 py-2 text-left hover:bg-white/[0.03]" onClick={() => showInbox("readiness")} aria-controls={inboxId} aria-expanded={open && tab === "readiness"}>
           <span className="block truncate text-[9.5px] font-semibold" style={{ color: payload?.readiness.ready ? "var(--i-signal)" : "var(--i-amber)" }}>{payload?.readiness.ready ? "REPORT READY" : "REPORT NOT READY"}</span>
           <span className="text-[9.5px] text-[var(--i-text-soft)]">{payload?.readiness.blockers.length ?? "—"} blockers · Review →</span>
         </button>
       </div>
     </div>
 
-    {open && <aside className={`${styles.worldWidget} ${styles.changeInboxSheet}`} aria-label="Audit Change Inbox" data-shoot="audit-change-inbox">
+    {open && <aside id={inboxId} className={`${styles.worldWidget} ${styles.changeInboxSheet}`} aria-label="Audit Change Inbox" data-shoot="audit-change-inbox">
       <header className="flex items-start justify-between gap-3 border-b border-[var(--i-border)] px-4 py-3">
         <div><div className="i-label text-[9px] text-[var(--i-signal)]">AUDIT INBOX · {payload?.total ?? "—"} TO REVIEW</div><h2 className="mt-1 text-[16px] font-medium text-[var(--i-text)]">Review what changed</h2><p className="mt-1 text-[10.5px] text-[var(--i-text-faint)]">Compare fresh evidence with accepted Reality. Nothing changes until you accept it.</p></div>
-        <button type="button" onClick={() => { dismissedScopeRef.current = scopeId; setOpen(false); }} aria-label="Explore project world" className="shrink-0 rounded border border-[var(--i-border)] px-2.5 py-1.5 text-[10px] text-[var(--i-text-soft)]">Explore world</button>
+        <button type="button" onClick={() => hideInbox()} title="Hide inbox (Esc). All findings remain available to review." className="flex min-h-9 shrink-0 items-center gap-2 rounded border border-[var(--i-border)] px-3 py-2 text-[11px] text-[var(--i-text)] hover:bg-white/[0.05] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--i-signal)]"><span>Hide inbox</span><span aria-hidden="true" className="text-[18px] leading-none">×</span></button>
       </header>
       <div className="flex border-b border-[var(--i-border)] px-3 py-2">
         {(["changes", "sources", "readiness"] as const).map((item) => <button key={item} type="button" onClick={() => setTab(item)} className={`rounded px-3 py-1.5 text-[10.5px] ${tab === item ? "bg-[var(--i-panel-raised)] text-[var(--i-text)]" : "text-[var(--i-text-faint)]"}`}>{item === "sources" ? "Source health" : words(item)}</button>)}
@@ -331,7 +365,7 @@ export default function AuditChangeInbox({
               {selectedCanReview && (selected.status === "deferred" ? <SignalControl type="button" disabled={Boolean(busy)} onClick={() => void disposition("reopen")} className="px-3 py-1.5 text-[10.5px]">Reopen</SignalControl> : <SignalControl type="button" disabled={Boolean(busy)} onClick={() => void disposition("defer")} className="px-3 py-1.5 text-[10.5px]">Defer</SignalControl>)}
               {selectedCanReview && <SignalControl type="button" disabled={Boolean(busy)} onClick={() => void disposition("reject")} className="px-3 py-1.5 text-[10.5px]">Reject</SignalControl>}
               {selectedCanReview && <SignalControl type="button" disabled={Boolean(busy)} onClick={() => void disposition("information_only")} className="px-3 py-1.5 text-[10.5px]">Information only</SignalControl>}
-              {typeof selected.proposedState.findingId === "string" && <SignalControl type="button" onClick={() => { dismissedScopeRef.current = scopeId; setOpen(false); onTrace?.(selected.proposedState.findingId as string); }} className="px-3 py-1.5 text-[10.5px]">Trace in world</SignalControl>}
+              {typeof selected.proposedState.findingId === "string" && <SignalControl type="button" onClick={() => { hideInbox(false); onTrace?.(selected.proposedState.findingId as string); }} className="px-3 py-1.5 text-[10.5px]">Trace in world</SignalControl>}
               {selected.targetHref && <Link href={selected.targetHref} data-attention={!busy && ["pending", "needs_completion"].includes(selected.status) ? "review" : undefined} className="ml-auto rounded px-3 py-2 text-[11px] text-[var(--i-signal)]">Review in {words(selected.owner)} →</Link>}
             </div>
           </div>}
