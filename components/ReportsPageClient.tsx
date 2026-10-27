@@ -440,6 +440,11 @@ export default function ReportsPageClient() {
 
   return (
     <div>
+      {!forecastPending && forecastIncomplete && scopeId && <section className="mb-4 rounded-lg border border-[var(--i-violet)]/50 bg-[var(--i-panel)] p-4">
+        <h2 className="font-semibold text-[var(--i-text)]">Need a planning brief before everything is reviewed?</h2>
+        <p className="mt-1 text-sm text-[var(--i-text-soft)]">Try explicit release assumptions in Forecast and download a provisional brief. Your accepted data and reviewed delivery reports stay unchanged.</p>
+        <Link className="mt-3 inline-block rounded-md border border-[var(--i-violet)] px-3 py-2 text-sm text-[var(--i-violet)]" href={`/forecast?project=${encodeURIComponent(scopeId)}`}>Open provisional planning →</Link>
+      </section>}
       {!forecastPending && nextStep && <AttentionCallout {...nextStep} />}
       {!forecastPending && !nextStep && forecastIncomplete && <AttentionCallout title="Review the inputs blocking this report" detail={live?.state === "ready" ? live.coverageReason ?? live.coverageLabel : "Delivery inputs need review."} label="Review sources in Audit" href={`/audit?project=${encodeURIComponent(scopeId ?? "")}`} />}
       <div className="flex items-center gap-3 mb-6 flex-wrap">

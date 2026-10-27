@@ -35,6 +35,7 @@ import { currentnessLabel, sourceCurrentness } from "@/lib/truth/currentness";
 import { formatDateOnly } from "@/lib/time/dateContract";
 import { readDominance } from "@/lib/scope/constraint";
 import { decisionScenarioBasis, decisionScenarioGates } from "@/lib/scenario/decisionPlan";
+import ProvisionalForecast from "./ProvisionalForecast";
 
 type Tool =
   | null
@@ -140,6 +141,13 @@ export default function ForecastInstrument() {
   }
 
   const coverage = m.coverageByScope.get(scope.scopeId) ?? scope.forecastCoverage;
+  // Qualified planning is an explicit path, not a relabelled project claim.
+  // Source-unavailable and invalid/stale Scenario paths retain their guards.
+  if (coverage.state !== "unavailable" && (!coverage.canonicalForecast || (m.active && !scope.forecastCoverage.canonicalForecast))) {
+    return <InstrumentShell stateBar={strip} scopes={m.data.scopes.map((s) => ({ scopeId: s.scopeId, name: s.name }))} onSelectScope={setSelected}>
+      <div className="flex-1 overflow-auto p-5 md:p-8"><div className="mx-auto max-w-[1020px]"><ProvisionalForecast key={scope.scopeId} model={m} scope={scope} /></div></div>
+    </InstrumentShell>;
+  }
   if (coverage.state === "unavailable") {
     return <InstrumentShell stateBar={strip} scopes={m.data.scopes.map((s) => ({ scopeId: s.scopeId, name: s.name }))} onSelectScope={setSelected}>
       <div className="flex flex-1 items-center justify-center p-8" style={{ background: "var(--i-void)" }}>

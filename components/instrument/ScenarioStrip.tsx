@@ -105,6 +105,7 @@ export function chipsFor(
   gateCount: number
 ): ScenarioChip[] {
   const chips: ScenarioChip[] = [];
+  if (scenario.includedItemIds.size > 0) chips.push({ id: "assumed-work", label: `${scenario.includedItemIds.size} tickets assumed in`, href: "/forecast" });
   if (scenario.phasedCapacityPlan) chips.push({ id: "dated-staffing", label: `${scenario.phasedCapacityPlan.transfers.length} dated staffing move${scenario.phasedCapacityPlan.transfers.length === 1 ? "" : "s"}`, href: "/portfolio" });
   for (const [scopeId, fte] of Object.entries(scenario.capacityOverrideByScope)) {
     chips.push({
