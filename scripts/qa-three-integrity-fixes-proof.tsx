@@ -63,12 +63,12 @@ const incomplete = evaluateForecastCoverage({ executionState: "configured", issu
 const node = (coverage: typeof complete): CircuitNode => ({ id: "a", name: "JSA", likely: new Date("2026-11-25"), targetDate: null, gateCount: 0, claim: presentForecastDeliveryClaim({ scopeName: "JSA", coverage, likelyDate: "Nov 25" }) });
 const render = (origin: CircuitNode, downstream: CircuitNode[] = []) => renderToStaticMarkup(<DecisionCircuit startDate={new Date("2026-09-29")} origin={origin} downstream={downstream} gates={[]} assumedGateIds={new Set()} selectedId={null} onSelect={() => {}} onAssume={() => {}} />);
 const partialHtml = render(node(incomplete));
-assert.match(partialHtml, /FORECAST INCOMPLETE/);
-assert.match(partialHtml, /Modeled subset ~Nov 25/);
+assert.match(partialHtml, /PROVISIONAL FORECAST/);
+assert.match(partialHtml, /Provisional ~Nov 25/);
 assert.match(partialHtml, /not a full-project delivery forecast/i);
 assert.doesNotMatch(partialHtml, /Delivery path open/);
 assert.match(partialHtml, /No modeled delay gates/);
 const completeHtml = render(node(complete), [{ ...node(incomplete), id: "b" }]);
 assert.match(completeHtml, /Likely Nov 25/);
-assert.match(completeHtml, /Modeled subset ~Nov 25/, "downstream retains its own coverage qualification");
+assert.match(completeHtml, /Provisional ~Nov 25/, "downstream retains its own coverage qualification");
 console.log("PASS rendered Decisions circuit qualifies incomplete origin/downstream and retains complete outcomes");

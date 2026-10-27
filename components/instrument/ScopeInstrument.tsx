@@ -1608,11 +1608,11 @@ export function MasterDisplay({
             className="inline-block i-readout"
             style={{ color: canonicalForecast ? (moved ? "var(--i-violet)" : "var(--i-text)") : "var(--i-amber)" }}
           >
-            {unavailableLabel ?? (pending ? "Recalculating…" : canonicalForecast ? date : "Forecast not ready")}
+            {unavailableLabel ?? (pending ? "Recalculating…" : canonicalForecast ? date : "Provisional forecast")}
           </motion.span>
         </div>
         <div className="mt-1.5 text-[9.5px] text-[var(--i-text-faint)]">
-          {unavailableLabel ? "No delivery date or target confidence claimed" : pending ? "Waiting for this Scenario’s updated result" : canonicalForecast ? `P10 ${best} · P90 ${worst} · middle 80% of simulated outcomes` : `Modeled subset consequence ~${date} · not a delivery claim`}
+          {unavailableLabel ? "No delivery date or target confidence claimed" : pending ? "Waiting for this Scenario’s updated result" : canonicalForecast ? `P10 ${best} · P90 ${worst} · middle 80% of simulated outcomes` : `Selected work only ~${date} · review assumptions in Forecast`}
         </div>
       </div>
 

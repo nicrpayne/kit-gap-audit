@@ -235,9 +235,9 @@ const world = (over: Partial<OrbitInput> = {}): OrbitInput => ({
       })
     : null;
   check("A8. Orbit's shared presenter calls the outcome a modeled subset",
-    claim?.badge === "FORECAST INCOMPLETE" && claim.outcome === "Modeled subset ~May 23, 2026");
+    claim?.badge === "PROVISIONAL FORECAST" && claim.outcome === "Provisional ~May 23, 2026");
   check("A9. The accessible claim withholds canonical confidence",
-    claim?.targetConfidence === "Project target confidence unavailable — incomplete coverage"
+    claim?.targetConfidence === "Project target likelihood not stated — review remaining assumptions"
       && /not a full-project delivery forecast/i.test(claim.accessibleLabel));
   const orbitUi = readFileSync("components/OrbitPageClient.tsx", "utf8");
   check("A10. Orbit renders the shared qualified claim and its accessible equivalent",

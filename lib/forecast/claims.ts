@@ -1,5 +1,11 @@
 import type { ForecastCoverageContract } from "./coverage";
 
+/** Live UI vocabulary only. Stored coverage contracts and report eligibility
+ * remain unchanged; unavailable data must never be relabelled provisional. */
+export function forecastStatusLabel(state: ForecastCoverageContract["state"] | undefined): string {
+  return state === "forecastable" ? "Forecast ready" : state === "modeled_subset" ? "Provisional" : "Unavailable";
+}
+
 /**
  * Presentation-only forecast semantics. This module never changes simulation
  * inputs or outputs; it controls which claims those outputs are allowed to
@@ -114,13 +120,13 @@ export function presentForecastDeliveryClaim(input: ForecastDeliveryClaimInput):
   }
 
   if (coverage.state === "modeled_subset") {
-    const outcome = input.likelyDate ? `Modeled subset ~${input.likelyDate}` : "Modeled subset outcome unavailable";
-    const detail = coverage.reason ?? coverage.caveat;
+    const outcome = input.likelyDate ? `Provisional ~${input.likelyDate}` : "Provisional outcome not calculated";
+    const detail = [coverage.reason, coverage.caveat, "Selected work only. Review assumptions in Forecast; missing information can move the date beyond the displayed range."].filter(Boolean).join(" ");
     return {
       state: coverage.state,
-      badge: "FORECAST INCOMPLETE",
+      badge: "PROVISIONAL FORECAST",
       outcome,
-      targetConfidence: "Project target confidence unavailable — incomplete coverage",
+      targetConfidence: "Project target likelihood not stated — review remaining assumptions",
       detail,
       accessibleLabel: [input.scopeName, outcome, "not a full-project delivery forecast", detail].filter(Boolean).join(". "),
       exposesOutcome: Boolean(input.likelyDate),
@@ -164,8 +170,8 @@ export function presentPortfolioDeliveryClaim(input: {
     const allUnavailable = incomplete.every((scope) => scope.coverage.state === "unavailable");
     const headline = allUnavailable && incomplete.length === input.scopes.length
       ? "Portfolio forecast unavailable"
-      : "Portfolio forecast incomplete";
-    const detail = `${incompleteScopeNames.join(", ")} ${incomplete.length === 1 ? "does" : "do"} not have complete delivery coverage; no all-project landing date is claimed.`;
+      : "Provisional portfolio view";
+    const detail = `${incompleteScopeNames.join(", ")} ${incomplete.length === 1 ? "needs" : "need"} input review; no all-project landing date is claimed. Open Forecast for each available provisional result and its assumptions.`;
     return {
       state: allUnavailable && incomplete.length === input.scopes.length ? "unavailable" : "incomplete",
       headline,

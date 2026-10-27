@@ -1,4 +1,5 @@
 "use client";
+import { forecastStatusLabel } from "@/lib/forecast/claims";
 
 // TIMELINE — PLAY THE PROJECT.
 //
@@ -1175,7 +1176,7 @@ export default function TimelinePageClient({ embedded = false }: { embedded?: bo
                         data-shoot={`memory-likely-${lane.scopeId}`}
                         style={{ fontSize: dense ? 13.5 : 17, color: m.temporalRole === "live" && m.currentness === "stale" ? "var(--i-amber)" : m.temporalRole === "live" ? "var(--i-signal)" : "var(--i-violet)" }}
                       >
-                        {m.temporalRole === "live" && m.coverageState !== "forecastable" ? "INCOMPLETE" : fmtDay(new Date(m.likelyDate).getTime())}
+                        {m.temporalRole === "live" && m.coverageState !== "forecastable" ? forecastStatusLabel(m.coverageState) : fmtDay(new Date(m.likelyDate).getTime())}
                       </div>
                       {/* SECONDARY DISCLOSURE. The range, the confidence and
                           how long the belief has been held are all true and
@@ -1188,8 +1189,10 @@ export default function TimelinePageClient({ embedded = false }: { embedded?: bo
                         style={{ color: "var(--i-text-faint)", opacity: live ? 1 : 0 }}
                       >
                         {m.temporalRole === "live" && m.coverageState === "modeled_subset"
-                          ? `modeled subset ~${fmtDay(new Date(m.likelyDate).getTime())}`
-                          : `${fmtDay(new Date(m.earliestDate).getTime())} – ${fmtDay(new Date(m.latestDate).getTime())}`}
+                          ? `Selected work only ~${fmtDay(new Date(m.likelyDate).getTime())}`
+                          : m.temporalRole === "live" && m.coverageState === "unavailable"
+                            ? "Review missing inputs in Forecast"
+                            : `${fmtDay(new Date(m.earliestDate).getTime())} – ${fmtDay(new Date(m.latestDate).getTime())}`}
                         {m.coverageState === "forecastable" && m.confidenceAtTarget !== null && ` · ${m.confidenceAtTarget}%`}
                         {m.temporalRole === "live" ? ` · LIVE owner · ${m.currentness === "stale" ? `STALE ${m.ageDays}d` : "CURRENT"} · as of ${fmtDay(new Date(m.asOf).getTime())}` : ` · Report snapshot · as of ${fmtDay(new Date(m.asOf).getTime())}`}
                         {stale !== null && stale > 0 && ` · held ${stale}d`}

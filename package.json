@@ -27,6 +27,7 @@
     "proof:forecast-coverage-scope": "tsx scripts/forecast-coverage-scope-composer-proof.ts",
     "proof:scenario-forecast-coverage": "tsx scripts/scenario-forecast-coverage-proof.ts",
     "proof:provisional-forecast": "tsx scripts/provisional-forecast-proof.ts",
+    "proof:provisional-surfaces": "tsx scripts/provisional-planning-link-proof.tsx",
     "proof:provisional-forecast-browser": "tsx scripts/provisional-forecast-browser-proof.ts",
     "proof:forecast-truthful-claims": "tsx scripts/forecast-truthful-claims-proof.ts",
     "proof:refresh-estimation-status": "tsx scripts/refresh-estimation-status-proof.ts",

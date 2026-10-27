@@ -1,4 +1,5 @@
 "use client";
+import { forecastStatusLabel } from "@/lib/forecast/claims";
 
 // WHAT DOES THIS THING CAUSE?
 //
@@ -58,8 +59,8 @@ export default function Inspector({
     body = (
       <>
         <Line
-          label="Lands"
-          value={incomplete.length ? "INCOMPLETE" : gating?.p50 != null ? date(gating.p50) : "—"}
+          label={incomplete.length ? "Planning status" : "Lands"}
+          value={incomplete.length ? forecastStatusLabel(reading.outcome.coverageState) : gating?.p50 != null ? date(gating.p50) : "—"}
           note={incomplete.length ? `${incomplete.map((lane) => lane.name).join(", ")} execution coverage unresolved` : gating ? `${gating.name} is last` : "nothing simulated"}
           tone={incomplete.length ? "var(--i-amber)" : "var(--i-signal)"}
         />

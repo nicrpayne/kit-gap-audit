@@ -95,6 +95,9 @@ check("Local HTML is self-contained, escaped, qualified and frozen", () => {
   assert.match(html, /Fictional exact quote: three days remaining/);
   assert.match(html, /not an access-controlled published site/);
   assert.match(html, /default-src 'none'/);
+  assert.match(html, /Calendar.*calendar days/);
+  assert.match(html, /not a task-level resource scheduler/);
+  assert.equal(captured.brief.modelAssumptions.version, "forecast-assumptions.v1");
   fixture.scopes[0].forecastCoverage.census.unmappedExecutionIssueCount = 999;
   assert.equal(captured.brief.coverage.unmappedExecutionIssueCount, 2);
   assert.equal(captured.brief.inputs[0].coverage.census.unmappedExecutionIssueCount, 2);

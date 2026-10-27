@@ -30,7 +30,7 @@ import {
 } from "@/lib/instrument/useProject";
 import { DIRECTION_GLYPH, DIRECTION_LABEL, directionTone, trendPhrase } from "@/lib/momentum/trend";
 import { confidenceAtDay } from "@/lib/forecast/simulate";
-import { presentForecastDeliveryClaim, presentPortfolioDeliveryClaim } from "@/lib/forecast/claims";
+import { forecastStatusLabel, presentForecastDeliveryClaim, presentPortfolioDeliveryClaim } from "@/lib/forecast/claims";
 
 type Preset = "brief" | "field" | "risk";
 
@@ -121,9 +121,9 @@ export default function OverviewWorkspace() {
         out.push({
           id: `coverage-${s.scopeId}`,
           tone: "var(--i-amber)",
-          label: `${s.name} forecast ${s.forecastCoverage.state === "modeled_subset" ? "incomplete" : "unavailable"}`,
+          label: `${s.name}: ${forecastStatusLabel(s.forecastCoverage.state).toLowerCase()} forecast`,
           detail: s.forecastCoverage.reason ?? s.forecastCoverage.caveat ?? "Complete delivery coverage is unavailable.",
-          href: "/forecast",
+          href: `/forecast?project=${encodeURIComponent(s.scopeId)}`,
         });
         continue;
       }
@@ -333,7 +333,7 @@ export default function OverviewWorkspace() {
                 >
                   {s.forecastCoverage.canonicalForecast
                     ? conf === null ? "—" : `${conf}%`
-                    : s.forecastCoverage.state === "modeled_subset" ? "incomplete" : "unavailable"}
+                    : forecastStatusLabel(s.forecastCoverage.state).toLowerCase()}
                 </span>
               </li>
             );
@@ -450,7 +450,7 @@ export default function OverviewWorkspace() {
                 ? leastLikely
                   ? `${leastLikely.name} · simulated frequency by its target, not measured probability`
                   : "no targets set"
-                : `Unavailable — ${portfolioClaim.incompleteScopeNames.join(", ")} incomplete`}
+                : `Not stated — review ${portfolioClaim.incompleteScopeNames.join(", ")}`}
             />,
             anyTrend ? (
               <div key="c" className="min-w-0">

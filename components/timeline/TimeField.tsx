@@ -1,4 +1,5 @@
 "use client";
+import { forecastStatusLabel } from "@/lib/forecast/claims";
 
 // THE TIME FIELD — the hero object.
 //
@@ -1155,7 +1156,7 @@ export default function TimeField({
                   display already carries the em dash for these projects. */}
               {rail ? null : mem ? (
                 <span className="i-readout text-[13px] leading-none mt-1" style={{ color: mem.temporalRole === "live" && (mem.coverageState !== "forecastable" || mem.currentness === "stale") ? "var(--i-amber)" : mem.temporalRole === "live" ? "var(--i-signal)" : "var(--i-violet)" }}>
-                  {mem.temporalRole === "live" && mem.coverageState !== "forecastable" ? "INCOMPLETE" : fmtDay(new Date(mem.likelyDate).getTime())}
+                  {mem.temporalRole === "live" && mem.coverageState !== "forecastable" ? forecastStatusLabel(mem.coverageState) : fmtDay(new Date(mem.likelyDate).getTime())}
                 </span>
               ) : (
                 <span className="text-[9px] mt-1 text-[var(--i-text-faint)]">{atNow ? "No live forecast" : "No snapshot yet"}</span>

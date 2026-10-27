@@ -31,6 +31,13 @@ async function main() {
       if (url.pathname === "/api/scopes") return route.fulfill({ json: { scopes: data.scopes.map(row => ({ id: row.scopeId, name: row.name })) } });
       if (url.pathname === "/api/reports") return route.fulfill({ json: { reports: [] } });
       if (url.pathname === "/api/scenarios") return route.fulfill({ json: { scenarios: [] } });
+      if (url.pathname === "/api/decisions") return route.fulfill({ json: { decisions: [], candidates: [], scopes: data.scopes.map(row => ({ id: row.scopeId, name: row.name, targetDate: row.targetDate })) } });
+      if (url.pathname === "/api/audit/knowledge") return route.fulfill({ json: { knowledge: { lastPackageAt: null, evidenceObservedAt: { oldest: null, newest: null }, latestRun: null } } });
+      if (url.pathname === "/api/timeline") return route.fulfill({ json: {
+        lanes: data.scopes.map(({ scopeId, name, targetDate, dependsOnScopeIds }) => ({ scopeId, name, targetDate, dependsOnScopeIds })),
+        entries: [], snapshotsByScope: {}, candidates: [], now: data.startDate,
+        rangeStart: "2026-10-01T00:00:00Z", rangeEnd: "2026-12-31T00:00:00Z",
+      } });
       if (url.pathname === "/api/forecast") {
         const source = data.scopes.find(row => row.scopeId === url.searchParams.get("scopeId"))!;
         return route.fulfill({ json: { ...provisionalModel(data).baseline!.get(source.scopeId), forecastSource: source.forecastSource, forecastCoverage: source.forecastCoverage } });
@@ -47,6 +54,23 @@ async function main() {
       const realityDate = await dateReadout().innerText();
       assert.match(await counts().innerText(), /2 still unclassified/);
       checks.push("Reality view shows a qualified subset date and a useful next action");
+      await page.getByRole("link", { name: "Control Room", exact: true }).click();
+      const planningLink = page.locator('[data-shoot="provisional-planning-link"]');
+      await planningLink.filter({ hasText: "2 still unclassified" }).waitFor();
+      assert((await planningLink.innerText()).includes(realityDate));
+      assert.equal(await page.locator('[data-shoot="cr-card-outcome-primary"]').innerText(), "Provisional");
+      await page.screenshot({ path: resolve(out, `${engineName}-control-room-reality.png`), fullPage: true });
+      await page.getByRole("link", { name: "Timeline", exact: true }).first().click();
+      await page.locator(`[data-shoot="memory-likely-${sid}"]`).filter({ hasText: "Provisional" }).waitFor();
+      assert.match(await page.locator(`[data-shoot="memory-detail-${sid}"]`).innerText(), /Selected work only/);
+      await page.screenshot({ path: resolve(out, `${engineName}-timeline-reality.png`), fullPage: true });
+      await page.getByRole("link", { name: "Control Room", exact: true }).click();
+      await planningLink.filter({ hasText: "2 still unclassified" }).waitFor();
+      await planningLink.getByRole("link", { name: "Open provisional planning →" }).click();
+      await counts().waitFor();
+      assert.equal(await dateReadout().innerText(), realityDate);
+      checks.push("Control Room shows the same qualified date and counts with a direct Forecast handoff");
+      checks.push("Timeline keeps the live subset qualified without changing historical snapshots");
       await page.getByRole("button", { name: "Try including 2 unclassified tickets" }).click();
       const chooser = page.getByRole("region", { name: "Choose provisional work" });
       assert.equal(await chooser.getByRole("checkbox").count(), 2);
@@ -66,6 +90,19 @@ async function main() {
       assert.match(await page.locator('[data-shoot="scenario-strip"]').innerText(), /2 tickets assumed in/);
       assert.match(await counts().innerText(), /Accepted Reality: 2 unclassified/);
       checks.push("Inclusion changes the actual date and counts without reclassifying Reality");
+      await page.getByRole("link", { name: "Control Room", exact: true }).click();
+      await planningLink.filter({ hasText: "0 still unclassified" }).waitFor();
+      assert((await planningLink.innerText()).includes(scenarioDate));
+      assert.match(await planningLink.innerText(), /accepted Reality is unchanged/);
+      await page.getByText(/Accepted Reality still needs review:/).waitFor();
+      assert.equal(await page.locator('[data-shoot="cr-card-outcome-second"]').innerText(), "100%");
+      assert.match(await page.locator('[data-shoot="cr-card-outcome"]').innerText(), /Target frequency/);
+      await page.screenshot({ path: resolve(out, `${engineName}-control-room-scenario.png`), fullPage: true });
+      await planningLink.getByRole("link", { name: "Open provisional planning →" }).click();
+      await counts().waitFor();
+      await dateReadout().filter({ hasText: scenarioDate }).waitFor();
+      assert.equal(await dateReadout().innerText(), scenarioDate);
+      checks.push("Control Room follows Scenario changes and keeps the accepted-data distinction visible");
 
       const downloadJson = page.waitForEvent("download"); await page.getByRole("button", { name: "Download captured inputs (JSON)" }).click();
       const json = await downloadJson; const jsonPath = resolve(out, `${engineName}-planning.json`); await json.saveAs(jsonPath);
@@ -88,6 +125,9 @@ async function main() {
 
       await page.getByRole("link", { name: "Reviewed delivery reports →" }).click();
       await page.getByRole("link", { name: "Open provisional planning →" }).waitFor();
+      assert((await planningLink.innerText()).includes(scenarioDate));
+      assert.match(await planningLink.innerText(), /0 still unclassified/);
+      await page.getByText(/Scenario assumptions do not change report eligibility/).waitFor();
       assert.equal(await page.getByRole("button", { name: "Resolve coverage to report", exact: true }).isDisabled(), true);
       await page.getByRole("link", { name: "Open provisional planning →" }).click();
       await counts().waitFor(); assert.match(await counts().innerText(), /0 still unclassified/);

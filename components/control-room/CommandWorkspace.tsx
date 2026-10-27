@@ -1,4 +1,5 @@
 "use client";
+import { forecastStatusLabel } from "@/lib/forecast/claims";
 
 // THE COMMAND WORKSPACE — the approved Master Control Room layout,
 // implemented.
@@ -232,7 +233,7 @@ export default function CommandWorkspace({
                 ? "Execution coverage unresolved"
                 : `Current read · inputs changed through ${dShort(r.time.executionInputsAsOf)}`
             }
-            a={r.outcome.coverageState === "forecastable" ? (r.outcome.likely ? deliveryDay(r.outcome.likely) : "—") : "INCOMPLETE"}
+            a={r.outcome.coverageState === "forecastable" ? (r.outcome.likely ? deliveryDay(r.outcome.likely) : "—") : forecastStatusLabel(r.outcome.coverageState)}
             aLabel={
               r.outcome.coverageState === "forecastable"
                 ? r.outcome.gatedBy
@@ -246,14 +247,14 @@ export default function CommandWorkspace({
             // than borrowing another project's number.
             b={
               r.outcome.coverageState !== "forecastable"
-                ? r.outcome.likely
+                ? r.outcome.coverageState === "modeled_subset" && r.outcome.likely
                   ? `~${deliveryDay(r.outcome.likely)}`
                   : "—"
                 : r.outcome.confidence !== null
                   ? `${r.outcome.confidence}%`
                   : "No target"
             }
-            bLabel={r.outcome.coverageState !== "forecastable" ? "Modeled subset" : r.outcome.confidence !== null ? "Confidence" : "to measure against"}
+            bLabel={r.outcome.coverageState === "modeled_subset" ? "Selected work only" : r.outcome.coverageState === "unavailable" ? "Review inputs" : r.outcome.confidence !== null ? "Target frequency" : "to measure against"}
             bTone={r.outcome.coverageState === "forecastable" ? outcomeHue : "var(--i-amber)"}
             series={r.outcome.confidenceHistory.find((s) => s.id === r.outcome.gatedByScopeId)?.points ?? null}
             reality={
@@ -476,7 +477,7 @@ export default function CommandWorkspace({
                 the layout's line chart exactly: `Report.confidenceAtTarget`,
                 plotted at each report's own `generatedAt`. A project nobody
                 has reported on is ABSENT, never drawn flat at zero. */}
-            <Bottom title="Forecast Confidence" href="/forecast" shoot="cr-surf-forecast" hue={HUE.outcome}>
+            <Bottom title="Simulated Target Frequency" href="/forecast" shoot="cr-surf-forecast" hue={HUE.outcome}>
               {r.outcome.coverageState !== "forecastable" ? (
                 <div className="shrink-0">
                   <p
@@ -484,13 +485,13 @@ export default function CommandWorkspace({
                     className="i-readout leading-none"
                     style={{ fontSize: 27, letterSpacing: "-0.015em", color: "var(--i-amber)" }}
                   >
-                    INCOMPLETE
+                    {forecastStatusLabel(r.outcome.coverageState)}
                   </p>
                   <p className="pt-[6px] text-[10.5px] leading-[13px]" style={{ color: "var(--i-text-soft)" }}>
                     Execution coverage is unresolved for {r.outcome.coverageScopeNames.join(", ")}.
                   </p>
                   <p className="pt-[2px] text-[10px] leading-[12px]" style={{ color: "var(--i-text-faint)" }}>
-                    {r.outcome.likely ? `Modeled subset lands around ${deliveryDay(r.outcome.likely)}. ` : ""}
+                    {r.outcome.coverageState === "modeled_subset" && r.outcome.likely ? `Selected work only: ~${deliveryDay(r.outcome.likely)}. ` : ""}
                     No full-project confidence is shown.
                   </p>
                 </div>

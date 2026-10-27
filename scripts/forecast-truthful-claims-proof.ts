@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import {
   FORECAST_PERCENTILE_COPY,
+  forecastStatusLabel,
   forecastAssumptionSnapshot,
   presentForecastDeliveryClaim,
   presentPortfolioDeliveryClaim,
@@ -66,8 +67,13 @@ const partial = presentForecastDeliveryClaim({
   targetDate: "Oct 31, 2026",
   confidenceAtTarget: 0,
 });
-assert.equal(partial.outcome, "Modeled subset ~Nov 23, 2026");
-assert.equal(partial.targetConfidence, "Project target confidence unavailable — incomplete coverage");
+assert.equal(partial.outcome, "Provisional ~Nov 23, 2026");
+assert.equal(partial.badge, "PROVISIONAL FORECAST");
+assert.equal(partial.targetConfidence, "Project target likelihood not stated — review remaining assumptions");
+assert.match(partial.detail!, /Selected work only/);
+assert.equal(forecastStatusLabel("modeled_subset"), "Provisional");
+assert.equal(forecastStatusLabel("unavailable"), "Unavailable");
+assert.equal(forecastStatusLabel(undefined), "Unavailable");
 assert(!partial.accessibleLabel.includes("0%"), "a subset must not announce raw project confidence");
 assert.match(partial.accessibleLabel, /4 open product-shape Decisions/);
 
@@ -89,7 +95,7 @@ const incompletePortfolio = presentPortfolioDeliveryClaim({
     { name: "iTrack", coverage: subset },
   ],
 });
-assert.equal(incompletePortfolio.headline, "Portfolio forecast incomplete");
+assert.equal(incompletePortfolio.headline, "Provisional portfolio view");
 assert.match(incompletePortfolio.detail, /iTrack/);
 assert(!incompletePortfolio.accessibleLabel.includes("Portfolio lands"));
 

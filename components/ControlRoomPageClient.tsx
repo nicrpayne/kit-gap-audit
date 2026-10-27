@@ -1,4 +1,6 @@
 "use client";
+import { forecastStatusLabel } from "@/lib/forecast/claims";
+import ProvisionalPlanningLink from "@/components/instrument/ProvisionalPlanningLink";
 
 // THE MASTER CONTROL ROOM.
 //
@@ -496,10 +498,14 @@ export default function ControlRoomPageClient() {
   // uses the flexible layout below, which honours whatever surfaces are
   // switched on. That is the whole customization contract: the default is
   // designed, and the moment you change it, it is yours.
-  const nextStep = controlRoomNextAction(m.data?.scopes ?? []);
+  const realityNextStep = controlRoomNextAction(m.data?.scopes ?? []);
+  const nextStep = realityNextStep && m.active
+    ? { ...realityNextStep, detail: `Accepted Reality still needs review: ${realityNextStep.detail} Scenario assumptions do not change this checklist.` }
+    : realityNextStep;
   if (workspace.lens === "command" && m.data) {
     return (
       <InstrumentShell stateBar={strip}>
+        <ProvisionalPlanningLink model={m} />
         {nextStep && <AttentionCallout {...nextStep} />}
         <div className="min-h-0 flex-1 overflow-y-auto" data-shoot="command-workspace-scroll">
         <div className="flex h-full min-h-[820px] flex-col">
@@ -532,6 +538,7 @@ export default function ControlRoomPageClient() {
 
   return (
     <InstrumentShell stateBar={strip}>
+      <ProvisionalPlanningLink model={m} />
       {nextStep && <AttentionCallout {...nextStep} />}
       <div className="flex min-h-0 flex-1 flex-col overflow-hidden" style={{ background: "var(--i-void)" }}>
         <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-hidden px-3 pb-2 pt-2">
@@ -629,11 +636,11 @@ export default function ControlRoomPageClient() {
                   domain="outcome"
                   label="Likely outcome"
                   question="What we believe will happen"
-                  value={r.outcome.coverageState === "forecastable" ? (r.outcome.likely ? deliveryDay(r.outcome.likely) : "—") : "INCOMPLETE"}
+                  value={r.outcome.coverageState === "forecastable" ? (r.outcome.likely ? deliveryDay(r.outcome.likely) : "—") : forecastStatusLabel(r.outcome.coverageState)}
                   unit={r.outcome.coverageState === "forecastable" ? (r.outcome.gatedBy ? `${r.outcome.gatedBy} lands last` : "Nothing simulated") : `${r.outcome.coverageScopeNames.join(", ")} execution coverage`}
                   valueTone={forecastTone}
-                  second={r.outcome.coverageState === "modeled_subset" && r.outcome.likely ? `~${deliveryDay(r.outcome.likely)}` : r.outcome.confidence !== null ? `${r.outcome.confidence}%` : "No target"}
-                  secondLabel={r.outcome.coverageState === "modeled_subset" ? "Modeled subset" : r.outcome.confidence !== null ? "Confidence" : "to measure against"}
+                  second={r.outcome.coverageState === "unavailable" ? "—" : r.outcome.coverageState === "modeled_subset" && r.outcome.likely ? `~${deliveryDay(r.outcome.likely)}` : r.outcome.confidence !== null ? `${r.outcome.confidence}%` : "No target"}
+                  secondLabel={r.outcome.coverageState === "modeled_subset" ? "Selected work only" : r.outcome.coverageState === "unavailable" ? "Review inputs" : r.outcome.confidence !== null ? "Target frequency" : "to measure against"}
                   series={gatingConfidence?.points ?? null}
                   // REALITY IS ALWAYS VISIBLE UNDER A SCENARIO. When the
                   // hypothetical did not move the project's date, the chip
@@ -945,7 +952,7 @@ export default function ControlRoomPageClient() {
             >
               {on("forecast-stability") && (
                 <Panel
-                  title="Forecast confidence"
+                  title="Simulated target frequency"
                   href="/forecast"
                   action="Forecast"
                   shoot="cr-surf-forecast"
@@ -965,7 +972,7 @@ export default function ControlRoomPageClient() {
                           className="i-readout text-[22px] leading-none"
                           style={{ color: r.outcome.confidence === null ? "var(--i-text-faint)" : forecastTone }}
                         >
-                          {r.outcome.coverageState !== "forecastable" ? "INCOMPLETE" : r.outcome.confidence !== null ? `${r.outcome.confidence}%` : "No target"}
+                          {r.outcome.coverageState !== "forecastable" ? forecastStatusLabel(r.outcome.coverageState) : r.outcome.confidence !== null ? `${r.outcome.confidence}%` : "No target"}
                         </span>
                         <span className="min-w-0 truncate text-[9.5px]" style={{ color: "var(--i-text-faint)" }}>
                           {r.outcome.coverageState !== "forecastable"

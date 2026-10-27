@@ -6,6 +6,7 @@ import { confidenceAtDay } from "@/lib/forecast/simulate";
 import { applyScenarioInputDelta, type ScenarioInputScope } from "@/lib/scenario/inputDelta";
 import { buildCapacityPlanBaseline, resolveCapacityPlan } from "@/lib/scenario/capacityPlan";
 import { compilePhasedCapacityPlan } from "@/lib/scenario/phasedCapacity";
+import { forecastAssumptionSnapshot } from "@/lib/forecast/claims";
 
 export const PLANNING_BRIEF_NOTICE = "Provisional planning brief — not an approved delivery report or commitment. Omitted work and unresolved choices can move the date beyond this range. Ticket coverage is not forecast accuracy.";
 export const planningEstimateBasisLabel = (basis: string) => ({
@@ -113,7 +114,7 @@ export function buildPlanningBrief(model: ProjectModel, scopeId: string, generat
         baselineLikelyDate: model.active && baseline && scope.forecastCoverage.state !== "unavailable" && scope.forecastItems.some(item => item.high > 0) ? baseline.likelyDate.toISOString() : null },
       coverage: { ...coverage.census, realityUnclassifiedCount: scope.forecastCoverage.census.unmappedExecutionIssueCount },
       estimateQuality: { placeholderCount: placeholders },
-      warnings, inputs,
+      warnings, inputs, modelAssumptions: forecastAssumptionSnapshot(),
       scenario: model.active ? encodeSavedScenario(model.scenario) : null,
     };
     // Detach from the live store so later edits cannot mutate the snapshot.
@@ -134,6 +135,7 @@ export function renderPlanningBrief(brief: PlanningBrief): string {
   <p>Planning target: ${escape(outcome.targetDate ? day(outcome.targetDate) : "Not set")}. ${outcome.targetFrequency === null ? "No project target likelihood is claimed while required inputs remain unresolved." : `${outcome.targetFrequency}% of ${outcome.trials} simulations finish by the target under these assumptions — not a calibrated real-world probability.`}</p></header>
   <section><h2>What is included?</h2><p>${brief.coverage.modeledExecutionIssueCount} modeled tickets · ${brief.coverage.outsideExecutionIssueCount} out/later · ${brief.coverage.unmappedExecutionIssueCount} still unclassified in this view. Accepted Reality has ${brief.coverage.realityUnclassifiedCount} unclassified tickets.</p><p>These are ticket counts, not an accuracy percentage. An aggregate estimate can represent several tickets.</p></section>
   <section><h2>Assumptions and limits</h2><ul>${brief.warnings.map(warning => `<li>${escape(warning)}</li>`).join("")}</ul></section>
+  <section><details><summary>How the model uses time, capacity and estimates</summary><ul>${brief.modelAssumptions.items.map(item => `<li><strong>${escape(item.label)}:</strong> ${escape(item.detail)}</li>`).join("")}</ul></details></section>
   ${brief.inputs.map(input => `<section><h2>${escape(input.name)} — captured model inputs</h2><p>Reality r${input.realityRevision} · source records as of ${escape(input.executionSource.asOf)} · baseline capacity ${input.baselineCapacity} FTE (${escape(input.capacitySource)}). Any Scenario staffing changes are captured below.</p><p>Explicitly assumed in: ${escape(input.assumedIncludedTickets.map(item => item.label).join("; ") || "None")}</p><details><summary>Work, estimate basis and source quotes</summary><div class="scroll"><table><thead><tr><th>Work</th><th>Low / likely / high effort days</th><th>Basis</th></tr></thead><tbody>${input.items.map(item => `<tr><td>${escape(item.label)}<br>${escape(item.id)}${item.quote ? `<blockquote>${escape(item.quote)}</blockquote>` : ""}</td><td>${item.low} / ${item.likely} / ${item.high}</td><td>${escape(planningEstimateBasisLabel(item.estimateBasis))}</td></tr>`).join("")}</tbody></table></div></details><details><summary>Evidence, gates, coverage and dependency records</summary><pre>${escape(JSON.stringify(input, null, 2))}</pre></details></section>`).join("")}
   <section><details><summary>Exact Scenario assumptions</summary><pre>${escape(JSON.stringify(brief.scenario, null, 2))}</pre></details><p>No accepted data or saved delivery reports were changed. This file has no live connection and no recipient access controls.</p></section></main></body></html>`;
 }
