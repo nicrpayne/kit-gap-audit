@@ -3,7 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { bootstrapHash } from "./hash";
 import type { ProjectBootstrapPackageV1 } from "./contracts";
 import { persistCompiledPackage } from "./scan";
-import { auditActivatedBootstrapRefresh } from "./refresh";
+import { auditActivatedBootstrapRefresh, toContextPackage } from "./refresh";
 
 export type PackageIngestResult = {
   ok: true; scanId: string; packageId: string; reused: boolean; refreshAudit: unknown;
@@ -15,7 +15,8 @@ export async function ingestBootstrapPackage(
   options: { scanRunId?: string } = {},
 ): Promise<{ status: number; body: PackageIngestResult } | { status: number; body: { error: string } }> {
   const bootstrap = await prisma.projectBootstrap.findUnique({
-    where: { id: bootstrapId }, select: { id: true, activePackageId: true, activation: { select: { id: true } } },
+    where: { id: bootstrapId },
+    select: { id: true, activePackageId: true, activation: { select: { id: true, scopeId: true } } },
   });
   if (!bootstrap) return { status: 404, body: { error: "Project bootstrap not found" } };
   const hash = bootstrapHash(pkg);
@@ -62,6 +63,28 @@ export async function ingestBootstrapPackage(
       metrics: {} as Prisma.InputJsonValue, warnings: pkg.warnings as unknown as Prisma.InputJsonValue,
     } });
     scanId = scan.id;
+  }
+  // DERIVE AND VALIDATE BEFORE THE POINTER MOVES.
+  //
+  // `persistCompiledPackage` commits `activePackageId` in its own transaction.
+  // `auditActivatedBootstrapRefresh` then derives the ProjectContextPackage --
+  // and `toContextPackage` ends in `validateProjectContextPackage`, which
+  // throws on a package the context contract rejects. Run in that order, a
+  // rejected package leaves the pointer referencing a bootstrap package with
+  // no usable snapshot, and every `currentContextSnapshot` consumer fails:
+  // envelope, forecast, reports, scope proposal, audit truth.
+  //
+  // This is a PRE-CHECK, not a compensating rollback. Nothing is reset, no
+  // revision is rewound, and no concurrent review is overwritten -- the
+  // pointer simply never moves. `toContextPackage` is pure, so the only cost
+  // is deriving the context twice on the activated path.
+  //
+  // It does not cover a failure INSIDE the snapshot transaction (a database
+  // error, say). That residual case wants snapshot creation and the pointer
+  // move in one transaction; this change removes the deterministic class
+  // without reaching for that.
+  if (bootstrap.activation) {
+    toContextPackage(bootstrap.activation.scopeId, pkg);
   }
   await persistCompiledPackage(scanId, pkg);
   const refreshAudit = bootstrap.activation
