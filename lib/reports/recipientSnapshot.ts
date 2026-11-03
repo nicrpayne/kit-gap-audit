@@ -40,7 +40,9 @@ export function recipientSnapshot(bundle: SavedReportHandoff) {
       }),
       sources: b.identity.sourceSnapshots.map(s => ({ owner: s.owner, asOf: s.asOf, currentness: s.currentness, note: s.note ?? null })),
       caveats: b.caveats.value.map(c => ({ code: c.code, message: c.message })),
-      sourceWarnings: [...new Set([...b.evidence.warnings.value, ...b.changes.currentness.value.warnings])],
+      sourceWarnings: [...new Set([
+        ...(b.forecast?.coverage?.workPolicy ? ["Planning forecast under captured assumptions. Ungrouped current work counts; unknown future work is not included. Target frequency is not a delivery commitment."] : []),
+        ...b.evidence.warnings.value, ...b.changes.currentness.value.warnings])],
     })),
   };
 }

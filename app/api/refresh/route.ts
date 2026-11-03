@@ -4,7 +4,7 @@ import { runAudit, VALID_AUDIT_KINDS } from "@/lib/audit/run";
 import { runEstimationForScope } from "@/lib/estimate/runForScope";
 import { estimateRunReceipt, type EstimateRunReceipt } from "@/lib/estimate/status";
 import { computeForecast } from "@/lib/forecast/compute";
-import { ForecastCoverageIncompleteError } from "@/lib/forecast/coverage";
+import { canUsePlanningForecast, ForecastCoverageIncompleteError } from "@/lib/forecast/coverage";
 import { generateReport } from "@/lib/reports/generate";
 import {
   persistContextSnapshot,
@@ -281,7 +281,7 @@ export async function POST(req: NextRequest) {
           estimate: estimateReceipt,
           forecast: {
             likelyDate: forecastResult.likelyDate,
-            confidenceAtTarget: forecastResult.forecastCoverage.canonicalForecast ? forecastResult.confidenceAtTarget : null,
+            confidenceAtTarget: canUsePlanningForecast(forecastResult.forecastCoverage) ? forecastResult.confidenceAtTarget : null,
             forecastCoverage: forecastResult.forecastCoverage,
           },
         },
@@ -312,7 +312,7 @@ export async function POST(req: NextRequest) {
       likelyDate: forecastResult.likelyDate,
       earliestDate: forecastResult.earliestDate,
       latestDate: forecastResult.latestDate,
-      confidenceAtTarget: forecastResult.forecastCoverage.canonicalForecast ? forecastResult.confidenceAtTarget : null,
+      confidenceAtTarget: canUsePlanningForecast(forecastResult.forecastCoverage) ? forecastResult.confidenceAtTarget : null,
       forecastCoverage: forecastResult.forecastCoverage,
       canonicalDeliveryForecast: forecastResult.forecastCoverage.canonicalForecast
         ? {

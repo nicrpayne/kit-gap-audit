@@ -125,7 +125,7 @@ check("Malformed estimate ranges cannot escape in a planning brief", () => {
   assert.equal(buildPlanningBrief(model, sid).ready, false);
 });
 check("Canonical server report gates remain intact", () => {
-  assert.match(readFileSync("lib/reports/readModel.ts", "utf8"), /if \(!forecast.forecastCoverage.canonicalForecast\)/);
-  assert.match(readFileSync("lib/reports/scenario.ts", "utf8"), /if \(!target.forecastCoverage.canonicalForecast\)/);
+  assert.match(readFileSync("lib/reports/readModel.ts", "utf8"), /if \(!canUsePlanningForecast\(forecast.forecastCoverage\)\)/);
+  assert.match(readFileSync("lib/reports/scenario.ts", "utf8"), /if \(!canUsePlanningForecast\(target.forecastCoverage\)\)/);
 });
 console.log(JSON.stringify({ passed: true, groups: checks.length, checks }, null, 2));

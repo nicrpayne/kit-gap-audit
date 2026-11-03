@@ -27,7 +27,7 @@ import { readChannel } from "@/lib/capacity/workforce";
 import { readDominance } from "@/lib/scope/constraint";
 import type { ProjectPayload, SuiteScenario } from "@/lib/instrument/useProject";
 import type { DecisionRow } from "@/lib/decisions/model";
-import type { ForecastCoverageState } from "@/lib/forecast/coverage";
+import { canUsePlanningForecast, type ForecastCoverageState } from "@/lib/forecast/coverage";
 import { scenarioForecastCoverage } from "@/lib/scenario/forecastCoverage";
 
 const DAY = 86400000;
@@ -283,8 +283,8 @@ export function readProjectField(i: FieldInput): ProjectField {
       p90: sim ? percentileDay(sim.completionDaysSorted, 90) : null,
       realityP50: i.scenarioActive && real ? toDays(real.likelyDate) : null,
       targetDays: target,
-      gapDays: coverage.canonicalForecast && sim && target !== null ? toDays(sim.likelyDate) - target : null,
-      confidence: coverage.canonicalForecast ? sim?.confidenceAtTarget ?? null : null,
+      gapDays: canUsePlanningForecast(coverage) && sim && target !== null ? toDays(sim.likelyDate) - target : null,
+      confidence: canUsePlanningForecast(coverage) ? sim?.confidenceAtTarget ?? null : null,
       coverageState: coverage.state,
       floorDays: dom ? dom.floorDays : null,
       headroomDays: dom ? dom.headroomDays : null,

@@ -26,10 +26,17 @@ export function scenarioWorkItems(scope: ProjectScope, scenario: SuiteScenario) 
   // Legacy test/read-model callers may lack forecastItems. Production sends
   // it explicitly, including [] when no work is selected.
   const modeled = remainingEstimateItems({...scope, forecastItems: scope.forecastItems ?? scope.items}, scenario.remainingEstimateByCapabilityId);
+  // A covered source ticket is already represented by its aggregate. Mapping
+  // it during a Scenario must not re-add the raw ticket beside that estimate.
+  const coveredIds = new Set(scope.items.filter(item => !(scope.forecastItems ?? scope.items).some(base => base.id === item.id)).map(item => item.id));
+  for (const draft of Object.values(scenario.remainingEstimateByCapabilityId ?? {})) {
+    for (const id of draft.input.coveredOpenItemIds) coveredIds.add(id);
+  }
+  const modeledIds = new Set(modeled.map(item => item.id));
   return [
     ...modeled,
     ...scope.executionItems.filter(item => (scenario.includedItemIds.has(item.id) || proposalIncludedIds.has(item.id))
-      && !(scope.forecastItems ?? scope.items).some(base => base.id === item.id)),
+      && !modeledIds.has(item.id) && !coveredIds.has(item.id)),
   ].filter(item => !scenario.excludedItemIds.has(item.id) && !proposalExcludedIds.has(item.id) && !bypassedIds.has(item.id))
     .map(item => scenario.estimateOverrideByItemId[item.id] ? {...item, ...scenario.estimateOverrideByItemId[item.id]} : item);
 }

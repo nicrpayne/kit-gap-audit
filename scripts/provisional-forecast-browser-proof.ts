@@ -2,19 +2,20 @@ import assert from "node:assert/strict";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { chromium, webkit } from "playwright";
-import { provisionalFixture, provisionalModel } from "./lib/provisional-fixture";
+import { currentWorkFixture, provisionalFixture, provisionalModel } from "./lib/provisional-fixture";
 
 const base = process.env.SIGNAL_PROOF_URL ?? "http://127.0.0.1:4397";
 assert(["localhost", "127.0.0.1"].includes(new URL(base).hostname), "Only a disposable local test server is allowed");
 const out = resolve(process.argv[2] ?? "../outputs/provisional-forecast-2026-10-27/browser");
 mkdirSync(out, { recursive: true });
 const results: unknown[] = [];
+const currentWork = process.env.SIGNAL_PROOF_CURRENT_WORK === "1";
 
 async function main() {
   for (const [engineName, engine] of [["chromium", chromium], ["webkit", webkit]] as const) {
     const browser = await engine.launch({ headless: true });
     const context = await browser.newContext({ viewport: { width: 1440, height: 1000 }, acceptDownloads: true });
-    const data = provisionalFixture(), scope = data.scopes[0];
+    const data = currentWork ? currentWorkFixture() : provisionalFixture(), scope = data.scopes[0];
     const sid = scope.scopeId;
     // This password is only for the explicitly isolated local process.
     const login = await context.request.post(`${base}/api/login`, { data: { password: "local-provisional-proof" } });
@@ -25,8 +26,10 @@ async function main() {
       const request = route.request(), url = new URL(request.url());
       if (url.origin !== new URL(base).origin) return route.abort();
       if (!url.pathname.startsWith("/api/")) return route.continue();
+      if (currentWork && request.method() === "POST" && /\/api\/scopes\/[^/]+\/proposal$/.test(url.pathname)) return route.fulfill({ json: { proposal: null } }); // Explicitly intercepted composition request; never reaches a DB.
       if (request.method() !== "GET") { unexpected.push(`${request.method()} ${url.pathname}`); return route.fulfill({ status: 405, json: { error: "No persistent writes allowed in this fixture" } }); }
       if (url.pathname === "/api/instrument/project") return route.fulfill({ json: data });
+      if (currentWork && url.pathname === "/api/portfolio/inputs") return route.fulfill({ json: { ...data, reconciliations: [] } });
       if (url.pathname === "/api/version") return route.fulfill({ json: { shortCommit: "local-provisional-proof" } });
       if (url.pathname === "/api/scopes") return route.fulfill({ json: { scopes: data.scopes.map(row => ({ id: row.scopeId, name: row.name })) } });
       if (url.pathname === "/api/reports") return route.fulfill({ json: { reports: [] } });
@@ -49,6 +52,113 @@ async function main() {
     const dateReadout = () => page.locator('[data-shoot="modeled-subset-outcome"] .i-readout');
     const counts = () => page.locator('[data-shoot="provisional-coverage-counts"]');
     try {
+      if (currentWork) {
+        await page.goto(`${base}/forecast?project=${sid}`);
+        await counts().filter({ hasText: "2 ungrouped tickets included by assumption" }).waitFor();
+        await page.waitForFunction(() => document.querySelector('[data-shoot="modeled-subset-outcome"] .i-readout')?.textContent !== "—");
+        const realityDate = await dateReadout().innerText();
+        assert.match(await counts().innerText(), /3 tickets modeled/);
+        assert.match(await counts().innerText(), /1 classified out\/later/);
+        assert.match(await page.locator('[data-shoot="modeled-subset-outcome"]').innerText(), /% of simulations meet it under these assumptions/);
+        const ungrouped = page.locator('[data-shoot="ungrouped-planning-work"]');
+        assert.equal(await ungrouped.getByRole("button").count(), 2);
+        assert.doesNotMatch(await ungrouped.innerText(), /Later analytics/);
+        assert.equal(await page.getByRole("button", { name: /Try including/ }).count(), 0);
+        checks.push("A date and conditional target percentage appear immediately; both ungrouped tickets count and explicit out/later does not");
+        await page.screenshot({ path: resolve(out, `${engineName}-current-work-1440.png`), fullPage: true });
+        await ungrouped.getByRole("button", { name: "Try deferring Upload reuse integration" }).focus();
+        await page.keyboard.press("Enter");
+        await counts().filter({ hasText: "1 ungrouped tickets included by assumption" }).waitFor();
+        await page.waitForFunction(() => !(Array.from(document.querySelectorAll("button")).find(button => button.textContent === "Download provisional brief") as HTMLButtonElement)?.disabled);
+        const scenarioDate = await dateReadout().innerText();
+        assert.notEqual(scenarioDate, realityDate);
+        assert.match(await counts().innerText(), /2 tickets modeled/);
+        assert.match(await counts().innerText(), /Accepted Reality: 2 unclassified/);
+        checks.push("Keyboard deferral changes the Scenario date and counts without reclassifying accepted Reality");
+
+        await page.getByRole("link", { name: "Control Room", exact: true }).click();
+        const planningLink = page.locator('[data-shoot="provisional-planning-link"]');
+        await planningLink.filter({ hasText: "1 ungrouped, included by assumption" }).waitFor();
+        assert((await planningLink.innerText()).includes(scenarioDate));
+        assert.doesNotMatch(await page.locator('[data-shoot="cr-card-outcome"]').innerText(), /INCOMPLETE/);
+        assert.match(await page.locator('[data-shoot="cr-card-outcome"]').innerText(), /%/);
+        await page.screenshot({ path: resolve(out, `${engineName}-control-room-current-work.png`), fullPage: true });
+        await planningLink.getByRole("link", { name: "Open provisional planning →" }).click();
+        await counts().waitFor(); await page.reload();
+        await dateReadout().filter({ hasText: scenarioDate }).waitFor();
+        checks.push("Control Room uses the same Scenario date and percentage; navigation and reload retain the exact deferral");
+
+        await page.getByRole("link", { name: "Portfolio", exact: true }).click();
+        const channel = page.locator(`[data-shoot="channel-${sid}"]`);
+        await channel.waitFor();
+        await channel.locator('[data-shoot="channel-date"]').filter({ hasText: /\d/ }).waitFor();
+        assert.equal(await channel.getAttribute("data-forecast-coverage"), "forecastable");
+        assert.match(await channel.innerText(), /assumptions/);
+        assert.doesNotMatch(await channel.innerText(), /unavailable/i);
+        const inspector = page.getByRole("complementary", { name: new RegExp(`${scope.name} detail`) });
+        assert.match(await inspector.innerText(), /100% by Nov 15/);
+        assert.doesNotMatch(await inspector.innerText(), /Target confidence unavailable/);
+        assert.match(await page.locator("body").innerText(), /Portfolio planning date/i);
+        await page.screenshot({ path: resolve(out, `${engineName}-portfolio.png`), fullPage: true });
+        await page.goto(`${base}/scope?project=${sid}`);
+        await page.locator('[data-shoot="scope-coverage-state"]').waitFor();
+        assert.match(await page.locator('[data-shoot="scope-coverage-state"]').innerText(), /Planning forecast/i);
+        assert.match(await page.locator('[data-shoot="master"]').innerText(), /planning date/i);
+        await page.locator('[data-shoot="master"]').filter({ hasText: /Nov 3/i }).waitFor();
+        assert.doesNotMatch(await page.locator('[data-shoot="master"]').innerText(), /Recalculating/i);
+        await page.screenshot({ path: resolve(out, `${engineName}-scope.png`), fullPage: true });
+        await page.getByRole("link", { name: "Timeline", exact: true }).first().click();
+        await page.locator(`[data-shoot="memory-likely-${sid}"]`).waitFor();
+        assert.doesNotMatch(await page.locator(`[data-shoot="memory-likely-${sid}"]`).innerText(), /Incomplete|Provisional/i);
+        await page.getByRole("link", { name: "Decisions", exact: true }).click();
+        await page.locator('[data-shoot="decision-status-strip"]').waitFor();
+        assert.doesNotMatch(await page.locator('[data-shoot="decision-status-strip"]').innerText(), /not a full-project|incomplete/i);
+        await page.getByRole("link", { name: "Forecast", exact: true }).click();
+        await dateReadout().filter({ hasText: scenarioDate }).waitFor();
+        checks.push("Portfolio, Scope, Timeline and Decisions retain usable planning dates and assumption labels, not an incomplete wall");
+
+        const downloadJson = page.waitForEvent("download"); await page.getByRole("button", { name: "Download captured inputs (JSON)" }).click();
+        const json = await downloadJson; const jsonPath = resolve(out, `${engineName}-planning.json`); await json.saveAs(jsonPath);
+        const brief = JSON.parse(readFileSync(jsonPath, "utf8"));
+        assert.equal(brief.inputs[0].items.length, 2);
+        assert.deepEqual(brief.scenario.excludedItemIds, ["DEMO-2"]);
+        assert.equal(brief.inputs[0].coverage.workPolicy, "eligible-current-work.v1");
+        assert.deepEqual(brief.inputs[0].coverage.assumedIncludedIssueIds, ["DEMO-3"]);
+        const downloadHtml = page.waitForEvent("download"); await page.getByRole("button", { name: "Download provisional brief", exact: true }).click();
+        const html = await downloadHtml; const htmlPath = resolve(out, `${engineName}-planning.html`); await html.saveAs(htmlPath);
+        const reportPage = await context.newPage(); await reportPage.setContent(readFileSync(htmlPath, "utf8"));
+        assert.match(await reportPage.locator("body").innerText(), /current eligible work/i);
+        await reportPage.getByText("Work, estimate basis and source quotes", { exact: true }).click();
+        await reportPage.screenshot({ path: resolve(out, `${engineName}-export.png`), fullPage: true });
+        await reportPage.close();
+        checks.push("Downloaded HTML and JSON freeze the exact current-work policy, included IDs, estimates and Scenario assumptions");
+
+        await page.setViewportSize({ width: 1024, height: 768 });
+        assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth), false);
+        await page.screenshot({ path: resolve(out, `${engineName}-current-work-1024.png`), fullPage: true });
+        checks.push("Controls remain reachable at 1440 and 1024 widths without horizontal overflow");
+        await page.getByRole("link", { name: "Reviewed delivery reports →" }).click();
+        await page.getByRole("button", { name: "Generate report", exact: true }).waitFor();
+        assert.equal(await page.getByRole("button", { name: "Generate report", exact: true }).isDisabled(), false);
+        assert.equal(await page.getByRole("button", { name: "Resolve coverage to report", exact: true }).count(), 0);
+        checks.push("Reports no longer blocks generation solely because current tickets are ungrouped; no report is saved by this intercepted browser fixture");
+        await page.getByRole("link", { name: "Forecast", exact: true }).click();
+        await page.getByRole("button", { name: "Restore Upload reuse integration" }).click();
+        await counts().filter({ hasText: "2 ungrouped tickets included by assumption" }).waitFor();
+        await dateReadout().filter({ hasText: realityDate }).waitFor();
+        assert.equal(await dateReadout().innerText(), realityDate);
+        checks.push("Restore reproduces the original current-work date without duplicate effort");
+        await page.getByRole("button", { name: "Try deferring Upload reuse integration" }).click();
+        await counts().filter({ hasText: "1 ungrouped tickets included by assumption" }).waitFor();
+        scope.executionItems[1].high = 20;
+        scope.realityState.realityRevision = 2; scope.realityState.computedRevision = 2;
+        await page.reload(); await page.getByText("SCENARIO PREVIEW REFUSED", { exact: true }).waitFor();
+        assert.equal(await page.getByRole("button", { name: "Download provisional brief", exact: true }).count(), 0);
+        checks.push("New source/revision inputs refuse a stale Scenario and stale export");
+        assert.deepEqual(errors, []); assert.deepEqual(unexpected, []);
+        checks.push("No browser errors, live API reads or persistent writes escaped the fictional test boundary");
+        results.push({ engine: engineName, policy: "eligible-current-work.v1", passed: true, checks, realityDate, scenarioDate });
+      } else {
       await page.goto(`${base}/forecast?project=${sid}`);
       await page.getByRole("button", { name: "Try including 2 unclassified tickets" }).waitFor();
       const realityDate = await dateReadout().innerText();
@@ -160,6 +270,7 @@ async function main() {
       assert.deepEqual(errors, []); assert.deepEqual(unexpected, []);
       checks.push("No browser errors and no persistent writes escaped the fixture");
       results.push({ engine: engineName, passed: true, checks, realityDate, scenarioDate });
+      }
     } catch (error) {
       await page.screenshot({ path: resolve(out, `${engineName}-failure.png`), fullPage: true });
       writeFileSync(resolve(out, "failure.json"), JSON.stringify({ engineName, checks, error: String(error), errors, unexpected, text: await page.locator("body").innerText() }, null, 2));

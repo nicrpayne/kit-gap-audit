@@ -15,16 +15,17 @@ export function deliveryNextAction(input: {
     label: "Review sources in Audit", href: href("audit"),
   };
   if (coverage.census.unmappedExecutionIssueCount > 0) return {
-    title: "Tell Signal which features these tickets belong to",
-    detail: `${coverage.census.unmappedExecutionIssueCount} ticket${coverage.census.unmappedExecutionIssueCount === 1 ? " needs" : "s need"} an in-release or out/later assignment.`,
-    label: "Resolve tickets in Scope", href: href("scope"),
+    title: coverage.workPolicy ? "Review the ungrouped work already in your forecast" : "Tell Signal which features these tickets belong to",
+    detail: coverage.workPolicy ? `${coverage.census.unmappedExecutionIssueCount} ungrouped tickets already count as work. Group them for clarity, or mark out/later if they do not belong in this release. Mapping alone will not add effort.`
+      : `${coverage.census.unmappedExecutionIssueCount} ticket${coverage.census.unmappedExecutionIssueCount === 1 ? " needs" : "s need"} an in-release or out/later assignment.`,
+    label: coverage.workPolicy ? "Review ungrouped work" : "Resolve tickets in Scope", href: href("scope"),
   };
   if (coverage.census.acceptedCapabilityCount > coverage.census.mappedAcceptedCapabilityCount) return {
     title: "Connect the remaining features to their work", detail: "Some accepted features do not have current ticket coverage. Review their mappings in Scope.",
     label: "Review feature mappings", href: href("scope"),
   };
   if (coverage.census.openShapeDecisionCount > 0) return {
-    title: "Review the choices holding up the forecast", detail: `${coverage.census.openShapeDecisionCount} product-scope decision${coverage.census.openShapeDecisionCount === 1 ? " is" : "s are"} still open. Review the evidence before deciding.`,
+    title: coverage.workPolicy ? "Review choices that could change the plan" : "Review the choices holding up the forecast", detail: `${coverage.census.openShapeDecisionCount} product-scope decision${coverage.census.openShapeDecisionCount === 1 ? " is" : "s are"} still open. Review the evidence before deciding.`,
     label: "Review open Decisions", href: href("decisions"),
   };
   if (coverage.reasons.some((reason) => reason.code === "no_remaining_estimated_effort")) return {
@@ -48,7 +49,7 @@ export function deliveryNextAction(input: {
     label: "Review team capacity", href: href("portfolio"),
   };
   if (!coverage.canonicalForecast) return {
-    title: "Review what is blocking this forecast", detail: coverage.reason ?? "Signal needs reviewed delivery inputs before it can support a project forecast.",
+    title: coverage.state === "forecastable" ? "Review this plan’s assumptions" : "Review what is blocking this forecast", detail: coverage.reason ?? "Signal needs reviewed delivery inputs before it can support a project forecast.",
     label: "Review Scope coverage", href: href("scope"),
   };
   return null;

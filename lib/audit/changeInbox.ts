@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { decisionSourceDisposition } from "@/lib/decisions/sourceDisposition";
 import { currentContextSnapshot } from "@/lib/context/currentSnapshot";
 import { readForecastCoverage } from "@/lib/forecast/compute";
+import { canUsePlanningForecast } from "@/lib/forecast/coverage";
 import type { BootstrapProposal, ProjectBootstrapPackageV1 } from "@/lib/bootstrap/contracts";
 import { bootstrapCapabilityAdmissionReason, contextCapabilityAdmissionReason } from "@/lib/bootstrap/capabilityAdmission";
 import { createCompanionScan, COMPANION_ONLINE_MS } from "@/lib/bootstrap/jobs";
@@ -603,7 +604,7 @@ async function reportReadiness(scopeId: string) {
   if (scope?.executionState === "configured") {
     try {
       const coverage = await readForecastCoverage(scope);
-      if (!coverage.canonicalForecast) blockers.push({ code: "forecast_coverage", label: coverage.label, targetHref: `/scope?project=${scopeId}` });
+      if (!canUsePlanningForecast(coverage)) blockers.push({ code: "forecast_coverage", label: coverage.label, targetHref: `/scope?project=${scopeId}` });
     } catch {
       blockers.push({ code: "forecast_coverage", label: "Forecast coverage could not be verified", targetHref: `/scope?project=${scopeId}` });
     }

@@ -270,7 +270,7 @@ export default function InstrumentBay({
         </Meter>
 
         <Meter label="Simulated frequency" width={182}>
-          {!forecastCoverage.canonicalForecast ? (
+          {forecastCoverage.state !== "forecastable" ? (
             <div className="w-full">
               <div className="i-readout text-[14px] leading-tight text-[var(--i-amber)]">Unavailable</div>
               <div className="mt-1.5 text-[9.5px] text-[var(--i-text-faint)] leading-tight">

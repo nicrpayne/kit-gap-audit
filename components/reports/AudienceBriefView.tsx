@@ -30,12 +30,12 @@ function SnapshotStamp({ brief, source }: { brief: DecisionBriefV1; source: Sour
 function ForecastAssumptions({ brief }: { brief: DecisionBriefV1 }) {
   const assumptions = brief.forecast?.assumptions;
   if (!assumptions) return <div className={styles.warning} style={{ marginTop: 10 }}>Forecast assumptions unavailable in this legacy snapshot; they are not backfilled from the current model.</div>;
-  return <details style={{ marginTop: 10 }} open>
+  return <><div className={styles.warning}>{brief.forecast?.coverage?.workPolicy ? "Planning forecast under captured assumptions. Ungrouped current work counts; unknown future work is not included. Target frequency is not a delivery commitment." : "Forecast under the captured assumptions, not a delivery commitment."}</div><details style={{ marginTop: 10 }} open>
     <summary className={styles.label}>Forecast assumptions · {assumptions.version}</summary>
     <ul className={styles.list} style={{ marginTop: 7 }}>
       {assumptions.items.map((item) => <li className={styles.listItem} key={item.id}><strong>{item.label}</strong><span className={styles.muted}>{item.detail}</span></li>)}
     </ul>
-  </details>;
+  </details></>;
 }
 
 function CapabilityEstimateBasis({ brief }: { brief: DecisionBriefV1 }) {

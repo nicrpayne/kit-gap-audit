@@ -17,7 +17,8 @@ import { estimateContentHash, findingContentHash } from "@/lib/estimate/run";
 import { buildReleaseContext } from "@/lib/estimate/context";
 import { resolveCapacity, type AllocationLike, type CapacityContributor, type PersonLike } from "@/lib/capacity/resolve";
 import { capacityForecastContract, type CapacityForecastContract } from "@/lib/capacity/contract";
-import { deliveryRelevantIssueIds, evaluateForecastCoverage, inheritDependencyCoverage, type ForecastCoverageContract } from "@/lib/forecast/coverage";
+import { canUsePlanningForecast, deliveryRelevantIssueIds, evaluateForecastCoverage, inheritDependencyCoverage, type ForecastCoverageContract } from "@/lib/forecast/coverage";
+import { CURRENT_WORK_POLICY, currentWorkBoundary } from "@/lib/forecast/workBoundary";
 import type { ProjectContextPackage } from "@/lib/context/package";
 import { freezeCapabilityEstimate, freezeForecastBasis, type FrozenCapabilityEstimate, type FrozenForecastBasisV1 } from "@/lib/reports/forecastBasis";
 import { CANONICAL_REPORT_MODE_WHERE, CANONICAL_REPORT_ORDER_DESC } from "@/lib/reports/history";
@@ -155,11 +156,11 @@ interface CapacityComputationInputs {
 
 interface ScopeSimBundle {
   inputs: ForecastInputs;
-  /** The linked-ticket modeled subset before accepted capability estimates
+  /** Current eligible tickets (including ungrouped work), before capability estimates
       replace their rollups. Used by Scope to keep showing the execution
       underneath the canonical top-down estimate. */
   sourceInputs: ForecastInputs;
-  /** Every current Linear item, before accepted Scope chooses the modeled subset. */
+  /** Every eligible current Linear leaf, including explicit out/later work. */
   executionInputs: ForecastInputs;
   capacityContributors: CapacityContributor[];
   capacityInputs: CapacityComputationInputs;
@@ -324,11 +325,9 @@ async function buildScopeSimInputs(
     high: g.high,
   }));
 
-  // Once accepted product shape exists, explicit CapabilityWorkLink rows are
-  // the bridge into the canonical modeled subset. Linear remains the owner of
-  // execution facts, but an unreviewed ticket is not silently promoted into
-  // accepted Scope. Legacy projects with no Capability rows retain their
-  // historical all-Linear behavior until they adopt the bridge.
+  // Mapping organizes work; it does not decide whether incoming effort exists.
+  // Count eligible current leaves unless explicitly deferred, without writing
+  // accepted Scope. Reviewed aggregates still replace only covered tickets.
   const currentKnowledgeEstimates = capabilityKnowledgeEstimates(
     latestKnowledgeSnapshot?.package as unknown as ProjectContextPackage | undefined,
     latestKnowledgeSnapshot?.id,
@@ -352,14 +351,9 @@ async function buildScopeSimInputs(
     estimateReviewRequired: capability.status === "accepted" && capability.estimateReview?.status === "review_required",
   }));
   const acceptedCapabilities = simulationCapabilities.filter((capability) => capability.status === "accepted");
-  const modeledIssueIds = new Set(
-    acceptedCapabilities.flatMap((capability) => capability.workLinks)
-      .filter((link) => link.state === "active" || link.state === "configured")
-      .map((link) => link.externalId),
-  );
-  const modeledIssues = capabilities.length === 0
-    ? issues
-    : issues.filter((issue) => modeledIssueIds.has(issue.identifier));
+  const boundary = currentWorkBoundary([...currentOpenIssueIds], simulationCapabilities);
+  const modeledIssueIds = new Set(boundary.includedIds);
+  const modeledIssues = issues.filter(issue => modeledIssueIds.has(issue.identifier));
 
   const buildOptions: NonNullable<Parameters<typeof buildForecastInputs>[3]> = {
     gates,
@@ -377,7 +371,9 @@ async function buildScopeSimInputs(
   // narrowed model. Otherwise accepting one empty Capability changes a 10-FTE
   // source read into buildForecastInputs' zero-assignee safety fallback of 1
   // FTE even though no staffing fact changed.
-  const executionInputs = buildForecastInputs(issues, [], resolved.capacity, buildOptions);
+  const executionInputs = buildForecastInputs(issues, [], resolved.capacity, {
+    ...buildOptions, acceptedIssueIds: currentOpenIssueIds,
+  });
   const sourceInputs = buildForecastInputs(modeledIssues, findings, executionInputs.teamCapacity, {
     ...buildOptions,
     capacitySource: executionInputs.capacitySource,
@@ -385,7 +381,7 @@ async function buildScopeSimInputs(
   const acceptedSubstitutions = acceptedCapabilities.flatMap((capability) => {
     if (!capability.estimateReview) return [];
     const decision = reviewedEstimateSimulationDecision(capability, capability.estimateReview);
-    return decision.substitution ? [decision.substitution] : [];
+    return decision.substitution && decision.substitution.replacedItemIds.every(id => modeledIssueIds.has(id)) ? [decision.substitution] : [];
   });
   const acceptedItems = substituteCapabilityKnowledgeEstimates(sourceInputs.items, acceptedSubstitutions);
   const inputs: ForecastInputs = {
@@ -394,6 +390,7 @@ async function buildScopeSimInputs(
     estimateQuality: estimateQualityForItems(acceptedItems),
   };
   const forecastCoverage = evaluateForecastCoverage({
+    workPolicy: CURRENT_WORK_POLICY,
     executionState: scope.executionState,
     // Coverage gates the exact executable leaf boundary the simulation uses.
     // Historical rows and Linear grouping parents remain in source history,
@@ -999,7 +996,7 @@ export async function computeForecast(scope: Scope): Promise<ForecastResult> {
       const dependency = scopeById.get(scopeId)!;
       const coverage = dependencyCoverage.find((entry) => entry.scopeId === scopeId)?.coverage;
       const result = results.get(scopeId);
-      const available = coverage?.canonicalForecast === true && !!result;
+      const available = !!coverage && canUsePlanningForecast(coverage) && !!result;
       return {
         scopeId,
         name: dependency.name,

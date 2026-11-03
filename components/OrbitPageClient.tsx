@@ -62,7 +62,7 @@ function quantityOf(n: OrbitNode): string {
     case "dependency":
       return n.forecastCoverage.state === "unavailable"
         ? "outcome unavailable"
-        : `${n.forecastCoverage.canonicalForecast ? "P50" : "Modeled subset P50"} +${Math.round(n.p50)}d`;
+        : `${n.forecastCoverage.state === "forecastable" ? "P50" : "Modeled subset P50"} +${Math.round(n.p50)}d`;
     default:
       return "";
   }
@@ -327,12 +327,12 @@ export default function OrbitPageClient() {
                       >
                         {centre.forecastCoverage.state === "unavailable"
                           ? "—"
-                          : `${centre.forecastCoverage.canonicalForecast ? "" : "~"}${dateOf(start, centre.p50)}`}
+                          : `${centre.forecastCoverage.state === "forecastable" ? "" : "~"}${dateOf(start, centre.p50)}`}
                       </text>
                       <text x={p.x} y={p.y + 8} textAnchor="middle" fill="var(--i-text-faint)" fontSize={9}>
                         {centre.forecastCoverage.state === "unavailable"
                           ? "delivery outcome unavailable"
-                          : `${centre.forecastCoverage.canonicalForecast ? "" : "modeled subset · ~"}${dateOf(start, centre.p10)} → ${centre.forecastCoverage.canonicalForecast ? "" : "~"}${dateOf(start, centre.p90)}`}
+                          : `${centre.forecastCoverage.state === "forecastable" ? "" : "modeled subset · ~"}${dateOf(start, centre.p10)} → ${centre.forecastCoverage.state === "forecastable" ? "" : "~"}${dateOf(start, centre.p90)}`}
                       </text>
                       <text
                         x={p.x}
@@ -342,7 +342,7 @@ export default function OrbitPageClient() {
                         fontSize={10}
                         data-shoot="orbit-centre-confidence"
                       >
-                        {!centre.forecastCoverage.canonicalForecast
+                        {centre.forecastCoverage.state !== "forecastable"
                           ? "target confidence unavailable"
                           : centre.confidenceAtTarget === null
                           ? "no target set"
@@ -536,7 +536,7 @@ export default function OrbitPageClient() {
                 <div className="text-[11px] text-[var(--i-text-soft)]">
                   {node.forecastCoverage.state === "unavailable"
                     ? "Upstream delivery outcome unavailable. This declared dependency remains a completion floor, but no reliable upstream date is claimed."
-                    : `${node.forecastCoverage.canonicalForecast ? "P50" : "Modeled subset P50"} ${node.forecastCoverage.canonicalForecast ? "" : "~"}${dateOf(start, node.p50)}. ${node.forecastCoverage.canonicalForecast ? "" : "This is not a full-project delivery forecast. "}Own work may proceed concurrently; each run finishes at the later of own and upstream completion.`}
+                    : `${node.forecastCoverage.state === "forecastable" ? "P50" : "Modeled subset P50"} ${node.forecastCoverage.state === "forecastable" ? "" : "~"}${dateOf(start, node.p50)}. ${node.forecastCoverage.state === "forecastable" ? "" : "This is not a full-project delivery forecast. "}Own work may proceed concurrently; each run finishes at the later of own and upstream completion.`}
                 </div>
               )}
 
@@ -546,7 +546,7 @@ export default function OrbitPageClient() {
                   style={{ background: "var(--i-recess)" }}
                   data-shoot="orbit-forecast-claim"
                 >
-                  <strong className="block" style={{ color: node.forecastCoverage.canonicalForecast ? "var(--i-signal)" : "var(--i-amber)" }}>
+                  <strong className="block" style={{ color: node.forecastCoverage.state === "forecastable" ? "var(--i-signal)" : "var(--i-amber)" }}>
                     {centreClaim?.badge}
                   </strong>
                   <span className="block">{centreClaim?.outcome}</span>

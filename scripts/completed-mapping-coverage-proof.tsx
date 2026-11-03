@@ -273,12 +273,12 @@ check("Portfolio rows and inspector withhold unavailable comparisons, including 
   const field=renderToStaticMarkup(<ForecastField scopes={[fieldScope]} baseline={baseline} preview={preview} axis={{minDay:0,maxDay:40,ticks:[]}} startDate={now} dirty selectedScopeId={scope.scopeId} onSelectScope={()=>{}} onScrubTarget={()=>{}} pendingTargets={new Map()} onSaveTarget={()=>{}} portfolioLikely={now} portfolioDeltaDays={-4} portfolioGatedBy={scope.name}/>);
   assert(!/\d+d (earlier|later)/.test(field));assert(!field.includes("100%"));
   const props={scope:{...fieldScope,capacitySource:"explicit" as const},baseline:baseline.get(scope.scopeId),preview:preview.get(scope.scopeId),dirty:true,realityCoverage:coverage(),changedScopeNames:[],dependsOn:[],dependents:[{scopeId:"next",name:"Next",deltaDays:null}],trend:null,realityCapacity:1,scenarioCapacity:1,capacityBasis:{kind:"explicit" as const,value:1},capacityContract:capacityForecastContract(scope.scopeId,[],[],0,1,"explicit"),onManagePeople:()=>{},switchCostPct:0,switchCostScopes:[],focus:null,onCollapse:()=>{}};
-  const inspector=renderToStaticMarkup(<ScenarioInspector {...props}/>);
+  const inspector=renderToStaticMarkup(<ScenarioInspector {...props} targetFrequency={100}/>);
   assert(inspector.includes("Why no date")&&inspector.includes("Selected open work has no positive remaining effort"));
   assert(inspector.includes("No date comparison"));assert(!inspector.includes("forecast moved")&&!/\d+d earlier/.test(inspector));
-  const restored=renderToStaticMarkup(<ScenarioInspector {...props} scope={{...props.scope,forecastCoverage:coverage()}}/>);
+  const restored=renderToStaticMarkup(<ScenarioInspector {...props} targetFrequency={100} scope={{...props.scope,forecastCoverage:coverage()}}/>);
   assert(restored.includes("modeled outcome moved"),"supported comparison explanation remains available");
-  const capacityChange=renderToStaticMarkup(<ScenarioInspector {...props} scenarioCapacity={2} scope={{...props.scope,forecastCoverage:coverage()}}/>);
+  const capacityChange=renderToStaticMarkup(<ScenarioInspector {...props} targetFrequency={100} scenarioCapacity={2} scope={{...props.scope,forecastCoverage:coverage()}}/>);
   assert(capacityChange.includes("effective capacity changed from 1.00 to 2.00 FTE"));
   assert(capacityChange.includes("does not isolate the effect of capacity alone"));
   assert(!capacityChange.includes("from a change elsewhere"),"own-capacity change is never attributed elsewhere");

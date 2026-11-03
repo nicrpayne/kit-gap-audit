@@ -126,6 +126,7 @@ export interface DecisionBriefOwnerInputs {
     warnings: string[];
   };
   forecast: {
+    coverage?: import("@/lib/forecast/coverage").ForecastCoverageContract;
     basis?: FrozenForecastBasisV1;
     assumptions?: ReturnType<typeof forecastAssumptionSnapshot>;
     simulationItemCount?: number;
@@ -196,6 +197,7 @@ export interface DecisionBriefV1 {
   version: typeof DECISION_BRIEF_VERSION;
   /** Additive snapshot; legacy reports lack this and must not be backfilled. */
   forecast?: {
+    coverage?: import("@/lib/forecast/coverage").ForecastCoverageContract;
     basis?: FrozenForecastBasisV1;
     assumptions?: ReturnType<typeof forecastAssumptionSnapshot>;
   };
@@ -472,6 +474,7 @@ export function assembleDecisionBrief(input: DecisionBriefOwnerInputs): Decision
   return {
     version: DECISION_BRIEF_VERSION,
     ...(input.forecast.basis || input.forecast.assumptions ? { forecast: {
+      coverage: input.forecast.coverage ? JSON.parse(JSON.stringify(input.forecast.coverage)) : undefined,
       basis: input.forecast.basis ? JSON.parse(JSON.stringify(input.forecast.basis)) : undefined,
       assumptions: input.forecast.assumptions ? JSON.parse(JSON.stringify(input.forecast.assumptions)) : undefined,
     } } : {}),

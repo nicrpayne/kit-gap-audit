@@ -3,6 +3,7 @@ import { evaluateForecastCoverage } from "../../lib/forecast/coverage";
 import { scenarioForecastCoverage } from "../../lib/scenario/forecastCoverage";
 import { scenarioWorkItems } from "../../lib/scenario/workItems";
 import { runPortfolioSimulation } from "../../lib/forecast/portfolio";
+import { CURRENT_WORK_POLICY, currentWorkBoundary } from "../../lib/forecast/workBoundary";
 
 /** Entirely fictional, deterministic fixture. No project snapshots or DB. */
 export function provisionalFixture(): ProjectPayload {
@@ -31,4 +32,22 @@ export function provisionalModel(data = provisionalFixture(), scenario: SuiteSce
   const run = (useScenario: boolean) => runPortfolioSimulation(data.scopes.map(scope => ({ scopeId: scope.scopeId, items: useScenario ? scenarioWorkItems(scope, scenario) : scope.forecastItems, gates: scope.gates, dependsOnScopeIds: scope.dependsOnScopeIds, teamCapacity: useScenario ? scenario.capacityOverrideByScope[scope.scopeId] ?? scope.teamCapacity : scope.teamCapacity, startDate, targetDate: scope.targetDate ? new Date(scope.targetDate) : null })));
   return { data, loading: false, error: null, reload() {}, startDate, simulationError: null, scenarioPreviewRefusal: null, capacityPlanError: null, baseline: run(false), preview: run(active), previewPending: false,
     coverageByScope: scenarioForecastCoverage(data.scopes, scenario, active, data.decisions), scenario, setScenario() {}, active, momentumByScope: new Map(), portfolioLikely: { date: null, gatedBy: null, deltaDays: 0 }, floorByScope: null };
+}
+
+export function currentWorkFixture(): ProjectPayload {
+  const data = provisionalFixture();
+  data.people = data.scopes.map(scope => ({ id: `person-${scope.scopeId}`, name: `${scope.name} developer`, fte: 1, active: true, externalCommitmentFte: 0 }));
+  data.allocations = data.scopes.map(scope => ({ id: `allocation-${scope.scopeId}`, personId: `person-${scope.scopeId}`, scopeId: scope.scopeId, fraction: 1 }));
+  for (const scope of data.scopes) {
+    scope.capacitySource = "allocations";
+    scope.capacityBasis = { kind: "allocations", contributors: [] };
+    const boundary = currentWorkBoundary(scope.executionItems.map(item => item.id), scope.capabilities);
+    scope.items = scope.executionItems.filter(item => boundary.includedIds.includes(item.id));
+    scope.forecastItems = scope.items;
+    scope.forecastCoverage = evaluateForecastCoverage({ workPolicy: CURRENT_WORK_POLICY, executionState: scope.executionState,
+      issueIds: scope.executionItems.map(item => item.id), capabilities: scope.capabilities,
+      hasModeledRemainingEffort: scope.items.some(item => item.high > 0), openShapeDecisionCount: 0 });
+    scope.forecastReadiness = { state: "ready", reason: scope.forecastCoverage.reason };
+  }
+  return data;
 }

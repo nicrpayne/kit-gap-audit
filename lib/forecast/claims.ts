@@ -1,9 +1,9 @@
-import type { ForecastCoverageContract } from "./coverage";
+import { canUsePlanningForecast, type ForecastCoverageContract } from "./coverage";
 
 /** Live UI vocabulary only. Stored coverage contracts and report eligibility
  * remain unchanged; unavailable data must never be relabelled provisional. */
 export function forecastStatusLabel(state: ForecastCoverageContract["state"] | undefined): string {
-  return state === "forecastable" ? "Forecast ready" : state === "modeled_subset" ? "Provisional" : "Unavailable";
+  return state === "forecastable" ? "Planning forecast" : state === "modeled_subset" ? "Provisional" : "Unavailable";
 }
 
 /**
@@ -77,10 +77,14 @@ const FORECAST_ASSUMPTION_ITEMS: readonly ForecastAssumptionItem[] = [
 ];
 
 /** Return a copy suitable for freezing into an immutable report payload. */
-export function forecastAssumptionSnapshot(): ForecastAssumptionSnapshot {
+export function forecastAssumptionSnapshot(coverage?: ForecastCoverageContract): ForecastAssumptionSnapshot {
   return {
     version: "forecast-assumptions.v1",
-    items: FORECAST_ASSUMPTION_ITEMS.map((item) => ({ ...item })),
+    items: FORECAST_ASSUMPTION_ITEMS.map((item) => ({ ...item,
+      ...(item.id === "remaining_work" && coverage?.workPolicy ? {
+        detail: `${item.detail} Current eligible tickets are assumed in unless explicitly out/later. This is planning membership, not accepted Scope. Ungrouped assumed-in IDs: ${coverage.assumedIncludedIssueIds?.join(", ") || "none"}. ${coverage.reason ?? ""} Unknown future work and unestimated unticketed features are not included. Grouping alone does not change effort.`,
+      } : {}),
+    })),
   };
 }
 
@@ -145,8 +149,8 @@ export function presentForecastDeliveryClaim(input: ForecastDeliveryClaimInput):
     badge: coverage.label,
     outcome,
     targetConfidence,
-    detail: null,
-    accessibleLabel: [input.scopeName, "canonical delivery forecast", outcome, targetConfidence].join(". "),
+    detail: coverage.canonicalForecast ? null : [coverage.reason, coverage.caveat].filter(Boolean).join(" "),
+    accessibleLabel: [input.scopeName, coverage.canonicalForecast ? "canonical delivery forecast" : "planning forecast under assumptions", outcome, targetConfidence, coverage.reason].filter(Boolean).join(". "),
     exposesOutcome: Boolean(input.likelyDate),
     exposesProjectConfidence: input.confidenceAtTarget !== null && input.confidenceAtTarget !== undefined,
   };
@@ -164,7 +168,7 @@ export function presentPortfolioDeliveryClaim(input: {
   likelyDate: string | null;
   scopes: { name: string; coverage: ForecastCoverageContract }[];
 }): PortfolioDeliveryClaim {
-  const incomplete = input.scopes.filter((scope) => !scope.coverage.canonicalForecast);
+  const incomplete = input.scopes.filter((scope) => !canUsePlanningForecast(scope.coverage));
   const incompleteScopeNames = incomplete.map((scope) => scope.name);
   if (incomplete.length > 0) {
     const allUnavailable = incomplete.every((scope) => scope.coverage.state === "unavailable");
@@ -181,9 +185,10 @@ export function presentPortfolioDeliveryClaim(input: {
     };
   }
 
-  const headline = input.likelyDate ? `Portfolio lands ${input.likelyDate}` : "Portfolio forecast unavailable";
+  const assumed = input.scopes.some(scope => !scope.coverage.canonicalForecast);
+  const headline = input.likelyDate ? `${assumed ? "Portfolio planning date" : "Portfolio lands"} ${input.likelyDate}` : "Portfolio forecast unavailable";
   const detail = input.likelyDate
-    ? "Latest P50 date across projects with complete delivery coverage."
+    ? assumed ? "Latest project P50 under current work and staffing assumptions; not a joint portfolio confidence percentile or a commitment." : "Latest P50 date across projects with complete delivery coverage."
     : "No modeled delivery outcome is available.";
   return {
     state: input.likelyDate ? "forecastable" : "unavailable",

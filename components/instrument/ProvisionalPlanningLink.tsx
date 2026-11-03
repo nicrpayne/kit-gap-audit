@@ -21,7 +21,7 @@ export default function ProvisionalPlanningLink({ model, scopeId }: { model: Pro
       <div className="min-w-0 flex-1">
         <h2 className="font-semibold text-[var(--i-text)]">{scope.name}: {date ? `provisional planning ~${date}` : "review provisional planning"}</h2>
         <p className="mt-1 text-sm text-[var(--i-text-soft)]">{projection.ready
-          ? `${coverage.census.modeledExecutionIssueCount} ticket${coverage.census.modeledExecutionIssueCount === 1 ? "" : "s"} modeled · ${coverage.census.unmappedExecutionIssueCount} still unclassified in this view. ${model.active ? "Scenario assumptions; accepted Reality is unchanged." : "Selected work only, not a delivery commitment."}`
+          ? `${coverage.census.modeledExecutionIssueCount} ticket${coverage.census.modeledExecutionIssueCount === 1 ? "" : "s"} modeled · ${coverage.census.unmappedExecutionIssueCount} ${coverage.workPolicy ? "ungrouped, included by assumption" : "still unclassified in this view"}. ${model.active ? "Scenario assumptions; accepted Reality is unchanged." : coverage.workPolicy ? "Current eligible work, not a delivery commitment." : "Selected work only, not a delivery commitment."}`
           : projection.reason}</p>
         {projection.ready && <p className="mt-1 text-xs text-[var(--i-text-faint)]">Review the ranges and missing inputs before relying on this date. A provisional brief is separate from a reviewed delivery report.</p>}
       </div>

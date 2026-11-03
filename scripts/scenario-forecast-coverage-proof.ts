@@ -112,7 +112,7 @@ check('A fully mapped hypothetical does not rewrite accepted Reality or report e
   assert.equal(project(itrack, state).canonicalForecast, true);
   assert.equal(itrack.forecastCoverage.canonicalForecast, false);
   const server = readFileSync('lib/reports/scenario.ts', 'utf8');
-  assert.match(server, /if \(!target\.forecastCoverage\.canonicalForecast\)/);
+  assert.match(server, /if \(!canUsePlanningForecast\(target\.forecastCoverage\)\)/);
   assert.match(server, /throw new ForecastCoverageIncompleteError\(target\.forecastCoverage\)/);
 });
 console.log(JSON.stringify({ passed: true, groups: checks.length, checks }, null, 2));

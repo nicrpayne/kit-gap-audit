@@ -236,7 +236,7 @@ export default function ForecastField({
       >
         <div>
           <span className="sr-only">{portfolioClaim.accessibleLabel}</span>
-          <div className="i-label">{portfolioClaim.state === "forecastable" ? "Portfolio lands" : "Portfolio coverage"}</div>
+          <div className="i-label">{portfolioClaim.state === "forecastable" ? scopes.some(scope => !scope.forecastCoverage.canonicalForecast) ? "Portfolio planning date" : "Portfolio lands" : "Portfolio coverage"}</div>
           <div className="flex items-baseline gap-2.5 mt-1.5">
             <span
               className={`i-readout leading-none ${portfolioClaim.state === "forecastable" ? "text-[27px]" : "text-[19px]"}`}
@@ -263,7 +263,7 @@ export default function ForecastField({
               set by {portfolioGatedBy}, the last scope to land
             </div>
           )}
-          {portfolioClaim.state !== "forecastable" && (
+          {(portfolioClaim.state !== "forecastable" || scopes.some(scope => !scope.forecastCoverage.canonicalForecast)) && (
             <div className="mt-1.5 max-w-[560px] text-[10px] leading-relaxed text-[var(--i-amber)]">
               {portfolioClaim.detail}
             </div>
@@ -445,7 +445,7 @@ export default function ForecastField({
                       style={{ background: "rgba(224,176,74,0.1)", color: "var(--i-amber)" }}
                       title={claim.detail ?? claim.badge}
                     >
-                      {s.forecastCoverage.state === "modeled_subset" ? "subset" : "unavailable"}
+                      {s.forecastCoverage.state === "forecastable" ? "assumptions" : s.forecastCoverage.state === "modeled_subset" ? "subset" : "unavailable"}
                     </span>
                   )}
                 </div>
@@ -492,7 +492,7 @@ export default function ForecastField({
                     reality={moved ? b : undefined}
                     axis={axis}
                     moved={moved}
-                    targetPct={s.forecastCoverage.canonicalForecast && targetDay !== null ? pct(targetDay) : null}
+                    targetPct={s.forecastCoverage.state === "forecastable" && targetDay !== null ? pct(targetDay) : null}
                   />
                 ) : (
                   <div className="absolute inset-0 flex items-center justify-center px-5 text-center text-[10px] text-[var(--i-text-faint)]">
@@ -527,7 +527,7 @@ export default function ForecastField({
                     role="slider"
                     tabIndex={0}
                     aria-label={`${s.name} target date`}
-                    aria-valuetext={s.forecastCoverage.canonicalForecast
+                    aria-valuetext={s.forecastCoverage.state === "forecastable"
                       ? `${fmtLong(new Date(targetIso!))}, ${confAtTarget ?? 0} percent of simulated runs finish by then under these assumptions; this is not a measured real-world probability`
                       : `${fmtLong(new Date(targetIso!))}, project target confidence unavailable because delivery coverage is incomplete`}
                     aria-valuenow={calendarDaysBetween(startDate, new Date(targetIso!))}

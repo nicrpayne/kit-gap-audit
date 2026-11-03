@@ -544,7 +544,7 @@ export default function ForecastView({ scopeId }: { scopeId: string }) {
             {claim.badge} · {claim.detail ?? claim.targetConfidence}
           </div>
         )}
-        {data.forecastCoverage.canonicalForecast && data.confidenceAtTarget !== null && (
+        {data.forecastCoverage.state === "forecastable" && data.confidenceAtTarget !== null && (
           <div className="inline-flex items-center rounded-full bg-[var(--color-accent-soft)] text-[var(--color-accent-dark)] px-3 py-1 text-xs font-medium mb-5">
             {data.confidenceAtTarget}% of simulated runs finish by the target under these assumptions · not measured probability
           </div>
@@ -576,7 +576,7 @@ export default function ForecastView({ scopeId }: { scopeId: string }) {
       {data.scenarios.length > 0 && (
         <details open className="border border-[var(--color-line)] rounded-xl bg-[var(--color-card)] mb-6">
           <summary className="px-5 py-3 text-sm cursor-pointer select-none font-medium hover:text-[var(--color-accent-dark)]">
-            {data.forecastCoverage.canonicalForecast ? "Paths to a sooner date" : "Modeled-subset scenario outcomes"}
+            {data.forecastCoverage.state === "forecastable" ? "Paths to a sooner date" : "Modeled-subset scenario outcomes"}
           </summary>
           <div className="px-5 pb-5 pt-1">
             <p className="text-xs text-[var(--color-ink-soft)] mb-4">
@@ -600,7 +600,7 @@ export default function ForecastView({ scopeId }: { scopeId: string }) {
                   >
                     {s.deltaDays < 0 ? `${s.deltaDays} days` : s.deltaDays === 0 ? "no change" : `+${s.deltaDays} days`}
                   </span>
-                  {data.forecastCoverage.canonicalForecast && s.confidenceAtTarget !== null && (
+                  {data.forecastCoverage.state === "forecastable" && s.confidenceAtTarget !== null && (
                     <span
                       className="text-xs font-medium w-24 text-right whitespace-nowrap"
                       style={{ color: confidenceColor(s.confidenceAtTarget) }}

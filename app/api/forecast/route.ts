@@ -5,6 +5,7 @@ import { computeChangesSince } from "@/lib/reports/changes";
 import { computeMomentum } from "@/lib/momentum/compute";
 import { attributionSentence } from "@/lib/momentum/attribution";
 import { toDateOnly } from "@/lib/time/dateContract";
+import { canUsePlanningForecast } from "@/lib/forecast/coverage";
 import { CANONICAL_REPORT_MODE_WHERE, CANONICAL_REPORT_ORDER_ASC, CANONICAL_REPORT_ORDER_DESC } from "@/lib/reports/history";
 
 // How many most-recent Reports feed the sparkline -- small on purpose,
@@ -115,7 +116,11 @@ export async function GET(req: NextRequest) {
     // Backward-compatible date fields remain the modeled result. Confidence
     // fails closed because an older client must not present subset confidence
     // as confidence in the whole project.
-    confidenceAtTarget: result.forecastCoverage.canonicalForecast ? result.confidenceAtTarget : null,
+    confidenceAtTarget: canUsePlanningForecast(result.forecastCoverage) ? result.confidenceAtTarget : null,
+    planningForecast: canUsePlanningForecast(result.forecastCoverage) ? {
+      likelyDate: toDateOnly(result.likelyDate), earliestDate: toDateOnly(result.earliestDate), latestDate: toDateOnly(result.latestDate),
+      confidenceAtTarget: result.confidenceAtTarget, qualification: result.forecastCoverage.caveat,
+    } : null,
     canonicalDeliveryForecast: result.forecastCoverage.canonicalForecast ? {
       likelyDate: toDateOnly(result.likelyDate),
       earliestDate: toDateOnly(result.earliestDate),

@@ -7,6 +7,7 @@ import { applyScenarioInputDelta, type ScenarioInputScope } from "@/lib/scenario
 import { buildCapacityPlanBaseline, resolveCapacityPlan } from "@/lib/scenario/capacityPlan";
 import { compilePhasedCapacityPlan } from "@/lib/scenario/phasedCapacity";
 import { forecastAssumptionSnapshot } from "@/lib/forecast/claims";
+import { canUsePlanningForecast } from "@/lib/forecast/coverage";
 
 export const PLANNING_BRIEF_NOTICE = "Provisional planning brief — not an approved delivery report or commitment. Omitted work and unresolved choices can move the date beyond this range. Ticket coverage is not forecast accuracy.";
 export const planningEstimateBasisLabel = (basis: string) => ({
@@ -75,7 +76,7 @@ export function buildPlanningBrief(model: ProjectModel, scopeId: string, generat
             sourceUrl: original?.externalUrl ?? null, quote: original?.quote ?? null };
         }),
         gates: spec.gates,
-        assumedIncludedTickets: model.active ? row.executionItems.filter(item => model.scenario.includedItemIds.has(item.id)).map(item => ({ id: item.id, label: item.label })) : [],
+        assumedIncludedTickets: row.executionItems.filter(item => rowCoverage.assumedIncludedIssueIds?.includes(item.id) || (model.active && model.scenario.includedItemIds.has(item.id))).map(item => ({ id: item.id, label: item.label })),
         explicitlyExcludedTicketIds: model.active ? [...model.scenario.excludedItemIds].filter(id => sourceIds.has(id)) : [],
         capabilityEstimateEvidence: row.capabilities.filter(card => card.acceptedEstimate || model.scenario.remainingEstimateByCapabilityId?.[card.id]).map(card => ({
           id: card.id, name: card.name, revision: card.revision, acceptedEstimate: card.acceptedEstimate,
@@ -98,10 +99,12 @@ export function buildPlanningBrief(model: ProjectModel, scopeId: string, generat
       "This export contains internal project data. It is a local file, not an access-controlled published site.",
     ])];
     const target = scope.targetDate ? new Date(scope.targetDate) : null;
-    // Only assess the target when the hypothetical boundary itself is complete.
-    // Otherwise a subset's success frequency would look like release confidence.
+    // Legacy subsets with missing work stay unqualified. The current-work
+    // policy includes ungrouped work, so its frequency can be shown explicitly
+    // conditional on that assumption, not as measured delivery confidence.
     const completeBoundary = coverage.canonicalForecast && inputs.every(input => input.coverage.canonicalForecast);
-    const targetFrequency = completeBoundary && !capacityUnresolved && target && Number.isFinite(target.getTime())
+    const conditionalModel = canUsePlanningForecast(coverage) && inputs.every(input => canUsePlanningForecast(input.coverage));
+    const targetFrequency = (completeBoundary && !capacityUnresolved || conditionalModel && coverage.workPolicy) && target && Number.isFinite(target.getTime())
       ? confidenceAtDay(result.completionDaysSorted, (target.getTime() - model.startDate.getTime()) / 86_400_000) : null;
     const baseline = model.baseline?.get(scopeId);
     const brief = {
@@ -110,11 +113,12 @@ export function buildPlanningBrief(model: ProjectModel, scopeId: string, generat
       startDate: model.startDate.toISOString(),
       outcome: { likelyDate: result.likelyDate.toISOString(), earliestDate: result.earliestDate.toISOString(), latestDate: result.latestDate.toISOString(),
         targetDate: scope.targetDate, targetFrequency, trials: result.completionDaysSorted.length,
-        basis: completeBoundary ? "All classified work under these assumptions" : "Selected work only — missing scope is not included",
+        basis: coverage.workPolicy ? "Current eligible work, including ungrouped tickets; explicit out/later excluded. Unknown future work is not included."
+          : completeBoundary ? "All classified work under these assumptions" : "Selected work only — missing scope is not included",
         baselineLikelyDate: model.active && baseline && scope.forecastCoverage.state !== "unavailable" && scope.forecastItems.some(item => item.high > 0) ? baseline.likelyDate.toISOString() : null },
       coverage: { ...coverage.census, realityUnclassifiedCount: scope.forecastCoverage.census.unmappedExecutionIssueCount },
       estimateQuality: { placeholderCount: placeholders },
-      warnings, inputs, modelAssumptions: forecastAssumptionSnapshot(),
+      warnings, inputs, modelAssumptions: forecastAssumptionSnapshot(coverage),
       scenario: model.active ? encodeSavedScenario(model.scenario) : null,
     };
     // Detach from the live store so later edits cannot mutate the snapshot.
@@ -128,14 +132,15 @@ const day = (value: string) => value.slice(0, 10);
 
 export function renderPlanningBrief(brief: PlanningBrief): string {
   const outcome = brief.outcome;
+  const currentWork = brief.inputs.find(input => input.scopeId === brief.scopeId)?.coverage.workPolicy;
   return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; img-src 'none'; base-uri 'none'; form-action 'none'"><title>${escape(brief.name)} — provisional planning brief</title><style>body{font:16px/1.6 system-ui,sans-serif;margin:0;background:#f3f6fa;color:#182335}main{max-width:960px;margin:auto;padding:32px 24px}header,section{background:white;border:1px solid #ced8e3;border-radius:12px;padding:24px;margin:20px 0}.notice{border-left:6px solid #a86500;background:#fff6e6;padding:16px}h1{margin:8px 0}h2{font-size:21px}summary{cursor:pointer;font-weight:650}table{border-collapse:collapse;width:100%;font-size:14px}td,th{border-bottom:1px solid #dce3eb;padding:9px;text-align:left;overflow-wrap:anywhere}pre{white-space:pre-wrap;overflow-wrap:anywhere;font-size:12px}strong.date{font-size:34px}.scroll{overflow:auto}@media print{details>*{display:block!important}summary{display:block}body{background:white}section{break-inside:avoid}}</style></head><body><main>
   <div class="notice"><strong>PROVISIONAL · ${escape(brief.mode)}</strong><p>${escape(brief.notice)}</p></div>
   <header><h1>${escape(brief.name)}</h1><p>Frozen planning snapshot · generated ${escape(brief.generatedAt)} · model starts ${escape(day(brief.startDate))}</p><strong class="date">${escape(day(outcome.likelyDate))}</strong><p>${escape(outcome.basis)}<br>P10–P90: ${escape(day(outcome.earliestDate))} to ${escape(day(outcome.latestDate))}</p>
   ${outcome.baselineLikelyDate ? `<p>Reality-input comparison: ${escape(day(outcome.baselineLikelyDate))}. The two work boundaries may differ; this is not measured progress.</p>` : ""}
   <p>Planning target: ${escape(outcome.targetDate ? day(outcome.targetDate) : "Not set")}. ${outcome.targetFrequency === null ? "No project target likelihood is claimed while required inputs remain unresolved." : `${outcome.targetFrequency}% of ${outcome.trials} simulations finish by the target under these assumptions — not a calibrated real-world probability.`}</p></header>
-  <section><h2>What is included?</h2><p>${brief.coverage.modeledExecutionIssueCount} modeled tickets · ${brief.coverage.outsideExecutionIssueCount} out/later · ${brief.coverage.unmappedExecutionIssueCount} still unclassified in this view. Accepted Reality has ${brief.coverage.realityUnclassifiedCount} unclassified tickets.</p><p>These are ticket counts, not an accuracy percentage. An aggregate estimate can represent several tickets.</p></section>
+  <section><h2>What is included?</h2><p>${brief.coverage.modeledExecutionIssueCount} modeled tickets · ${brief.coverage.outsideExecutionIssueCount} out/later · ${brief.coverage.unmappedExecutionIssueCount} ${currentWork ? "ungrouped, included by assumption" : "still unclassified in this view"}. Accepted Reality has ${brief.coverage.realityUnclassifiedCount} unclassified tickets.</p><p>These are ticket counts, not an accuracy percentage. An aggregate estimate can represent several tickets.</p></section>
   <section><h2>Assumptions and limits</h2><ul>${brief.warnings.map(warning => `<li>${escape(warning)}</li>`).join("")}</ul></section>
   <section><details><summary>How the model uses time, capacity and estimates</summary><ul>${brief.modelAssumptions.items.map(item => `<li><strong>${escape(item.label)}:</strong> ${escape(item.detail)}</li>`).join("")}</ul></details></section>
-  ${brief.inputs.map(input => `<section><h2>${escape(input.name)} — captured model inputs</h2><p>Reality r${input.realityRevision} · source records as of ${escape(input.executionSource.asOf)} · baseline capacity ${input.baselineCapacity} FTE (${escape(input.capacitySource)}). Any Scenario staffing changes are captured below.</p><p>Explicitly assumed in: ${escape(input.assumedIncludedTickets.map(item => item.label).join("; ") || "None")}</p><details><summary>Work, estimate basis and source quotes</summary><div class="scroll"><table><thead><tr><th>Work</th><th>Low / likely / high effort days</th><th>Basis</th></tr></thead><tbody>${input.items.map(item => `<tr><td>${escape(item.label)}<br>${escape(item.id)}${item.quote ? `<blockquote>${escape(item.quote)}</blockquote>` : ""}</td><td>${item.low} / ${item.likely} / ${item.high}</td><td>${escape(planningEstimateBasisLabel(item.estimateBasis))}</td></tr>`).join("")}</tbody></table></div></details><details><summary>Evidence, gates, coverage and dependency records</summary><pre>${escape(JSON.stringify(input, null, 2))}</pre></details></section>`).join("")}
+  ${brief.inputs.map(input => `<section><h2>${escape(input.name)} — captured model inputs</h2><p>Reality r${input.realityRevision} · source records as of ${escape(input.executionSource.asOf)} · baseline capacity ${input.baselineCapacity} FTE (${escape(input.capacitySource)}). Any Scenario staffing changes are captured below.</p><p>Assumed in under this planning policy or Scenario: ${escape(input.assumedIncludedTickets.map(item => item.label).join("; ") || "None")}</p><details><summary>Work, estimate basis and source quotes</summary><div class="scroll"><table><thead><tr><th>Work</th><th>Low / likely / high effort days</th><th>Basis</th></tr></thead><tbody>${input.items.map(item => `<tr><td>${escape(item.label)}<br>${escape(item.id)}${item.quote ? `<blockquote>${escape(item.quote)}</blockquote>` : ""}</td><td>${item.low} / ${item.likely} / ${item.high}</td><td>${escape(planningEstimateBasisLabel(item.estimateBasis))}</td></tr>`).join("")}</tbody></table></div></details><details><summary>Evidence, gates, coverage and dependency records</summary><pre>${escape(JSON.stringify(input, null, 2))}</pre></details></section>`).join("")}
   <section><details><summary>Exact Scenario assumptions</summary><pre>${escape(JSON.stringify(brief.scenario, null, 2))}</pre></details><p>No accepted data or saved delivery reports were changed. This file has no live connection and no recipient access controls.</p></section></main></body></html>`;
 }

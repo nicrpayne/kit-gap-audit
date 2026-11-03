@@ -58,7 +58,7 @@ assert.equal(countScenarioReportLevers({
 const serverSource = readFileSync(new URL("../lib/reports/scenario.ts", import.meta.url), "utf8");
 assert.match(serverSource, /const leverConflicts = findScenarioLeverConflicts/);
 assert.match(serverSource, /Scenario levers conflict:/);
-assert.match(serverSource, /!target\.forecastCoverage\.canonicalForecast[\s\S]*ForecastCoverageIncompleteError/,
+assert.match(serverSource, /!canUsePlanningForecast\(target\.forecastCoverage\)[\s\S]*ForecastCoverageIncompleteError/,
   "Scenario report publication must fail before using a review-required forecast basis");
 assert.match(serverSource, /reviewedEstimateSimulationDecision/,
   "Scenario consumers must use the normalized reviewed boundary rather than raw accepted-estimate fields");

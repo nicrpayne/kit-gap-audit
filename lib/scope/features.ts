@@ -288,7 +288,7 @@ export function composeFeatures(
     }
     const root = rootParentOf(item, byIdentifier);
     if (!root) {
-      put(UNMAPPED_ID, "No capability yet", "unmapped", item);
+      put(UNMAPPED_ID, "Ungrouped work", "unmapped", item);
       continue;
     }
     put(root.id, root.title, "linear", item);

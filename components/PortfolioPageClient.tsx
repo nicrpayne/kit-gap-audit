@@ -1321,12 +1321,13 @@ export default function PortfolioPageClient() {
               scope={{
                 scopeId: selectedScope.scopeId,
                 name: selectedScope.name,
-                targetDate: selectedScope.targetDate,
+                targetDate: selectedTargetIso,
                 capacitySource: selectedScope.capacitySource,
                 forecastCoverage: displayedCoverageByScope.get(selectedScope.scopeId) ?? selectedScope.forecastCoverage,
               }}
               baseline={selectedBaseline}
               preview={selectedPreview}
+              targetFrequency={selectedConfidence}
               dirty={dirty}
               realityCoverage={selectedScope.forecastCoverage}
               changedScopeNames={changedScopeNames}

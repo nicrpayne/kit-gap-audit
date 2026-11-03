@@ -8,6 +8,76 @@ findings and surfaces the gaps.
 See `BUILDPACK.md` for the full spec this was built against, and
 `ROADMAP.md` for what's next.
 
+## Signal forecasting when knowledge is incomplete
+
+Signal forecasts **current eligible work, not just neatly classified work**.
+Feature mapping is an organizational/review task, not permission to count a
+ticket. This implementation's policy is versioned as `eligible-current-work.v1`. It does
+not accept Scope, close Decisions, change Linear, or rewrite historical reports.
+
+| Input | Forecast treatment |
+| --- | --- |
+| Open ticket in the configured project, mapped to an accepted feature | Included once, using its remaining-work range. |
+| Eligible open ticket with no feature mapping | Included automatically as **Ungrouped work**, visibly assumed in. |
+| Ticket explicitly linked to out/later or removed scope | Excluded. Mapping conflicts require review; deferral wins until resolved. |
+| Done or canceled ticket | No remaining effort. Completion is not deployment/release approval. |
+| Grouping parent with an eligible open child | Excluded as a second work item. Leaf selection happens against the full source read, before Scope filtering. A dangling parent still counts. |
+| Triage | Uses the project's existing `includeTriage` setting. Not silently included. |
+| Feature/meeting remaining-work estimate | Replaces only its explicitly reviewed covered ticket IDs. Additional and ungrouped tickets remain separate. |
+| Missing effort estimate | Clearly labeled provisional **1 / 3 / 7 effort days**, not zero. Linear story points are not converted into days. |
+| Already-built or reusable work | Record the remaining integration/testing effort in a reviewed Signal estimate; no automatic reuse or in-progress discount. Preserve the source quote when provided. |
+| Unknown future work / unestimated unticketed feature | Not invented. Disclosed as a limitation; no arbitrary scope-growth buffer or accuracy penalty is applied. |
+
+### Dates, percentages and readiness are different things
+
+- The date is the model's P50; P10–P90 contains the middle 80% of simulated
+  outcomes under the stated work, estimate, staffing and dependency assumptions.
+- The target percentage is **the fraction of simulations finishing by the
+  chosen target**, not a measured probability of real-world delivery and not
+  an accuracy score. Missing information can move the result outside the range.
+- Ungrouped work and open product choices are visible assumptions, not an
+  automatic `Incomplete` wall. Reviewing/mapping a ticket alone must leave
+  effort and the date unchanged. Deferring it or changing its estimate can
+  legitimately change the date.
+- `coverage.state = forecastable` means the conditional model is usable.
+  `canonicalForecast = true` additionally means its coverage checks are reviewed;
+  it is not approval to ship. `workPolicy`, assumed-in IDs, counts and reasons
+  distinguish new conditional forecasts from historical subset forecasts.
+- Missing/stale execution inputs, conflicting mappings, invalid/stale estimate
+  boundaries, empty/all-deferred work and zero remaining effort retain refusal
+  or qualified-subset behavior. Invalid ranges or no funded capacity cannot
+  produce a useful date. An empty model must never look like 100% success.
+
+### Playing with the plan and reporting it
+
+Forecast shows **Ungrouped work — already counted**. Use **Try deferring** to
+test removing a ticket in the shared Scenario; **Restore** brings it back.
+Review Scope to make an actual release choice. A Scenario never changes
+accepted Reality automatically. Saved Scenarios retain explicit ticket IDs and
+their existing baseline/currentness checks; new source work must be refreshed.
+
+Forecast, Scope, Control Room and report generation use the same work boundary.
+Reports may be saved with ungrouped work included when their other source,
+estimate, coherent-revision and staffing checks pass. Saved Reality/Scenario
+reports freeze the exact modeled inputs, coverage policy, assumed-in IDs and
+model assumptions. Their renderers and recipient views carry the qualification;
+old snapshots are never backfilled with today's rules. A downloadable planning
+brief is still a local file, not an access-controlled published report site.
+Recipient sharing/authentication rules are unchanged.
+
+Core implementation: `lib/forecast/workBoundary.ts`, `coverage.ts`, `compute.ts`,
+`lib/scenario/workItems.ts`, `lib/reports/scenarioCoverage.ts`, and the report
+assumption snapshots. Tests: `npm run proof:current-work`, plus the existing
+forecast, Scenario, report and browser regression suites. Passing local proofs
+does not mean staging/production was deployed or real business inputs accepted.
+
+The local browser proof supports both policies: run
+`SIGNAL_PROOF_CURRENT_WORK=1 npm run proof:provisional-forecast-browser -- <output-directory>`
+against an isolated loopback server to test automatic inclusion; omit that flag
+to verify legacy subset behavior. The browser proof intercepts source reads with
+fictional fixtures and refuses persistent writes. `proof:report-comparison-db`
+separately exercises real persistence, guarded to a disposable local database.
+
 ## Stack
 
 Next.js 15 (App Router, TypeScript) · Postgres via Prisma · Anthropic

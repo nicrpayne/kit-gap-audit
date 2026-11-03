@@ -184,8 +184,8 @@ assert(!/Earliest \{|Latest \{|bettingOddsPhrase/.test(legacyForecastViewSource)
 const fieldSource = readFileSync("components/portfolio/ForecastField.tsx", "utf8");
 assert.match(
   fieldSource,
-  /targetPct=\{s\.forecastCoverage\.canonicalForecast && targetDay !== null/,
-  "an incomplete scope must not shade a full-project target-miss probability",
+  /targetPct=\{s\.forecastCoverage\.state === "forecastable" && targetDay !== null/,
+  "only a usable conditional model may shade its target-miss frequency",
 );
 const mixerSource = readFileSync("components/portfolio/MixerChannel.tsx", "utf8");
 assert.match(mixerSource, /view\.forecastCoverage\.state !== "unavailable" && \(\s*<Trace/, "an unavailable scope must not render an outcome distribution trace");
@@ -196,8 +196,8 @@ const baySource = readFileSync("components/portfolio/InstrumentBay.tsx", "utf8")
 assert.match(baySource, /Meter label="Simulated frequency"/, "portfolio meter must not present simulated frequency as unqualified confidence");
 const overviewSource = readFileSync("components/instrument/OverviewWorkspace.tsx", "utf8");
 assert.match(overviewSource, /presentPortfolioDeliveryClaim/, "overview headline must use the aggregate coverage presenter");
-assert.match(overviewSource, /if \(!s\.forecastCoverage\.canonicalForecast\) \{/, "overview rankings must branch before calculating incomplete project confidence");
-assert.match(overviewSource, /s\.forecastCoverage\.canonicalForecast && r && m\.startDate/, "upcoming rows must withhold incomplete project confidence");
+assert.match(overviewSource, /if \(s\.forecastCoverage\.state !== "forecastable"\) \{/, "overview rankings must branch before calculating unsupported project confidence");
+assert.match(overviewSource, /s\.forecastCoverage\.state === "forecastable" && r && m\.startDate/, "upcoming rows require a usable conditional model");
 assert.match(overviewSource, /Lowest project target frequency/, "overview must identify its minimum as a per-project simulated frequency");
 assert(!overviewSource.includes('label="Portfolio target confidence"'), "overview must not present a minimum per-project frequency as portfolio confidence");
 

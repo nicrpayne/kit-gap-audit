@@ -70,6 +70,7 @@ function moduleMarkdown(id: BriefModuleId, density: ModuleDensity, brief: Decisi
   switch (id) {
     case "delivery-outlook":
       heading("Delivery outlook");
+      if (brief.forecast?.coverage?.workPolicy) out.push("Planning forecast under captured assumptions. Ungrouped current work counts; unknown future work is not included. Not a delivery commitment.", "");
       out.push(`**P50 ${date(window.likely)} · P10–P90 interval ${date(window.earliest)}–${date(window.latest)} (middle 80% of simulated outcomes)**`);
       out.push(`${FORECAST_PERCENTILE_COPY.p10}. ${FORECAST_PERCENTILE_COPY.p50}. ${FORECAST_PERCENTILE_COPY.p90}.`);
       out.push(`Target ${date(brief.headline.targetDate.value)} · simulated frequency ${brief.headline.confidenceAtTarget.value === null ? "UNAVAILABLE" : `${brief.headline.confidenceAtTarget.value}% of simulated runs under the frozen assumptions; not a measured real-world probability`} · ${brief.identity.mode.toUpperCase()}`);

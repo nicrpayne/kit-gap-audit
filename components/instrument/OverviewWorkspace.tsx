@@ -72,7 +72,7 @@ export default function OverviewWorkspace() {
   );
 
   const portfolioConfidenceAvailable = (m.data?.scopes.length ?? 0) > 0
-    && (m.data?.scopes ?? []).every((scope) => scope.forecastCoverage.canonicalForecast);
+    && (m.data?.scopes ?? []).every((scope) => scope.forecastCoverage.state === "forecastable");
 
   const leastLikely = useMemo(() => {
     if (!m.data || !m.startDate || !portfolioConfidenceAvailable) return null;
@@ -117,7 +117,7 @@ export default function OverviewWorkspace() {
     if (!m.data) return [];
     const out: { id: string; tone: string; label: string; detail: string; href: string }[] = [];
     for (const s of m.data.scopes) {
-      if (!s.forecastCoverage.canonicalForecast) {
+      if (s.forecastCoverage.state !== "forecastable") {
         out.push({
           id: `coverage-${s.scopeId}`,
           tone: "var(--i-amber)",
@@ -304,7 +304,7 @@ export default function OverviewWorkspace() {
           .map((s) => {
             const r = m.preview?.get(s.scopeId) ?? m.baseline?.get(s.scopeId);
             const conf =
-              s.forecastCoverage.canonicalForecast && r && m.startDate
+              s.forecastCoverage.state === "forecastable" && r && m.startDate
                 ? confidenceAtDay(
                     r.completionDaysSorted,
                     (new Date(s.targetDate!).getTime() - m.startDate.getTime()) / 86400000
@@ -326,12 +326,12 @@ export default function OverviewWorkspace() {
                   </span>
                 </span>
                 <span
-                  className={`shrink-0 ${s.forecastCoverage.canonicalForecast ? "i-readout text-[13px]" : "text-[9px] uppercase tracking-wider"}`}
-                  style={{ color: s.forecastCoverage.canonicalForecast ? confidenceTone(conf) : "var(--i-amber)" }}
+                  className={`shrink-0 ${s.forecastCoverage.state === "forecastable" ? "i-readout text-[13px]" : "text-[9px] uppercase tracking-wider"}`}
+                  style={{ color: s.forecastCoverage.state === "forecastable" ? confidenceTone(conf) : "var(--i-amber)" }}
                   aria-label={claim.accessibleLabel}
                   title={claim.detail ?? claim.targetConfidence}
                 >
-                  {s.forecastCoverage.canonicalForecast
+                  {s.forecastCoverage.state === "forecastable"
                     ? conf === null ? "—" : `${conf}%`
                     : forecastStatusLabel(s.forecastCoverage.state).toLowerCase()}
                 </span>

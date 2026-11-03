@@ -125,7 +125,7 @@ export async function proveReportWorkflowInBrowser(scopeId: string, fixture: { r
     const scenarioFte = Number(await fader.getAttribute("aria-valuenow"));
     assert(scenarioFte > 0 && scenarioFte < 1);
     await page.screenshot({ path: `${output}/01-capacity-scenario.png`, fullPage: true });
-    // Use the actual rail links: full page reload would deliberately reset the private Scenario.
+    // Use the actual rail links; reload recovery is tested separately below.
     await page.locator('a[href^="/scope"]').first().click();
     await page.waitForURL(/\/scope/);
     await page.getByText("Scope composer", { exact: false }).first().waitFor();
@@ -193,7 +193,8 @@ export async function proveReportWorkflowInBrowser(scopeId: string, fixture: { r
     assert.equal(saved.scenario.brief.movable.capacity.value.availability, "available");
     assert.equal(saved.scenario.brief.movable.capacity.value.namedRawFte, scenarioFte);
     assert.equal(saved.scenario.brief.movable.capacity.value.namedEffectiveFte, scenarioFte);
-    assert.equal(saved.scenario.brief.movable.scope.value.executableItemCount, 10);
+    assert.equal(saved.scenario.brief.movable.scope.value.executableItemCount, 9);
+    assert.equal(saved.scenario.brief.forecast.coverage.census.executionIssueCount, 10);
     assert.equal(saved.scenario.brief.movable.scope.value.simulationItemCount, 9);
     const scenarioDate = Date.parse(`${saved.scenario.brief.headline.likelyWindow.value.likely}T00:00:00.000Z`);
     for (const option of saved.scenario.brief.movable.scenarioOptions.value) {
@@ -201,7 +202,7 @@ export async function proveReportWorkflowInBrowser(scopeId: string, fixture: { r
     }
     assert.notDeepEqual(saved.scenario.brief.movable.scenarioOptions.value, saved.reality.brief.movable.scenarioOptions.value);
     assert.match(saved.scenario.report.summaryMarkdown, /9 simulated estimate-basis items/);
-    assert.match(saved.scenario.report.summaryMarkdown, /10 tracked source tickets/);
+    assert.match(saved.scenario.report.summaryMarkdown, /9 tracked source tickets/);
     assert.match(saved.scenario.report.summaryMarkdown, /0\.5 effective Forecast FTE/);
     assert.doesNotMatch(saved.scenario.report.summaryMarkdown, /Named Capacity unavailable/i);
     assert.equal(saved.reality.brief.identity.comparisonId, saved.scenario.brief.identity.comparisonId);
@@ -259,7 +260,10 @@ export async function proveReportWorkflowInBrowser(scopeId: string, fixture: { r
     assert.equal(Number(await fader.getAttribute("aria-valuenow")), scenarioFte, "capacity survived Scope, Forecast, Reports and back");
     await page.reload();
     await fader.waitFor();
-    assert.equal(Number(await fader.getAttribute("aria-valuenow")), 1, "reload returns accepted Reality");
+    assert.equal(Number(await fader.getAttribute("aria-valuenow")), scenarioFte, "reload retains the same recoverable Scenario draft");
+    await page.locator('[data-shoot="discard"]').click();
+    await page.waitForFunction((id) => Number(document.querySelector(`[data-shoot="fader-${id}"]`)?.getAttribute("aria-valuenow")) === 1, scopeId);
+    assert.equal(Number(await fader.getAttribute("aria-valuenow")), 1, "explicit Discard returns to accepted Reality");
     const quoteHref = saved.reality.brief.forecast.basis.capabilityEstimates.find((entry: { auditHref?: string }) => entry.auditHref)?.auditHref;
     assert(quoteHref, "saved report retains its actual quote drill-down");
     await proveRepairInteractions(context, base, output, quoteHref);

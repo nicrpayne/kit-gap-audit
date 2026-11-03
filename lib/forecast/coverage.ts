@@ -30,6 +30,9 @@ export interface ForecastCoverageReason {
 }
 
 export interface ForecastCoverageContract {
+  /** Absent on historical snapshots: never reinterpret an old subset report. */
+  workPolicy?: "eligible-current-work.v1";
+  assumedIncludedIssueIds?: string[];
   state: ForecastCoverageState;
   canonicalForecast: boolean;
   label: string;
@@ -66,8 +69,15 @@ interface CoverageCapability {
 }
 
 import { isTerminalIssue } from "@/lib/linearIssueState";
+import { CURRENT_WORK_POLICY, currentWorkBoundary } from "./workBoundary";
+
+/** Usable conditional model, not a declaration that Scope has been approved. */
+export function canUsePlanningForecast(coverage: ForecastCoverageContract): boolean {
+  return coverage.state === "forecastable" && (coverage.canonicalForecast || coverage.workPolicy === CURRENT_WORK_POLICY);
+}
 
 export interface ForecastCoverageInput {
+  workPolicy?: typeof CURRENT_WORK_POLICY;
   executionState: string;
   /** Remaining executable leaves only; these are the classification census. */
   issueIds: string[];
@@ -106,6 +116,8 @@ export function deliveryRelevantIssueIds(
  * source. No percentage is invented and no Finding is promoted to Scope.
  */
 export function evaluateForecastCoverage(input: ForecastCoverageInput): ForecastCoverageContract {
+  const currentWork = input.workPolicy === CURRENT_WORK_POLICY;
+  const boundary = currentWorkBoundary(input.issueIds, input.capabilities);
   const accepted = input.capabilities.filter((capability) => capability.status === "accepted");
   const outside = input.capabilities.filter((capability) => capability.status !== "accepted");
   const hasGovernedShape = input.capabilities.length > 0;
@@ -140,9 +152,9 @@ export function evaluateForecastCoverage(input: ForecastCoverageInput): Forecast
 
   const census = {
     executionIssueCount: input.issueIds.length,
-    modeledExecutionIssueCount: hasGovernedShape ? mappedIssueIds.size : input.issueIds.length,
+    modeledExecutionIssueCount: currentWork ? boundary.includedIds.length : hasGovernedShape ? mappedIssueIds.size : input.issueIds.length,
     outsideExecutionIssueCount: hasGovernedShape ? outsideIssueIds.size : 0,
-    unmappedExecutionIssueCount: hasGovernedShape ? input.issueIds.length - classifiedIssueIds.size : 0,
+    unmappedExecutionIssueCount: currentWork ? boundary.ungroupedIds.length : hasGovernedShape ? input.issueIds.length - classifiedIssueIds.size : 0,
     acceptedCapabilityCount: accepted.length,
     mappedAcceptedCapabilityCount: linked.length,
     openShapeDecisionCount: input.openShapeDecisionCount,
@@ -154,6 +166,9 @@ export function evaluateForecastCoverage(input: ForecastCoverageInput): Forecast
   }
   if (input.executionState === "unavailable") {
     return unavailable("execution_source_unavailable", "Execution source is unavailable", census);
+  }
+  if (currentWork && !["configured", "available", "current", "stale"].includes(input.executionState)) {
+    return unavailable("execution_source_unavailable", "Execution source state is unrecognized", census);
   }
 
   const reasons: ForecastCoverageReason[] = [];
@@ -185,10 +200,12 @@ export function evaluateForecastCoverage(input: ForecastCoverageInput): Forecast
       count: activeButAbsent.length,
     });
   }
-  if (hasGovernedShape && classifiedIssueIds.size < input.issueIds.length) {
+  if ((currentWork || hasGovernedShape) && classifiedIssueIds.size < input.issueIds.length) {
     reasons.push({
       code: "execution_work_unmapped",
-      label: `${input.issueIds.length - classifiedIssueIds.size} current execution ${input.issueIds.length - classifiedIssueIds.size === 1 ? "item is" : "items are"} not classified as in or out of this release`,
+      label: currentWork
+        ? `${boundary.ungroupedIds.length} ungrouped tickets are included as a planning assumption; not yet accepted into Scope`
+        : `${input.issueIds.length - classifiedIssueIds.size} current execution ${input.issueIds.length - classifiedIssueIds.size === 1 ? "item is" : "items are"} not classified as in or out of this release`,
       count: input.issueIds.length - classifiedIssueIds.size,
     });
   }
@@ -208,6 +225,26 @@ export function evaluateForecastCoverage(input: ForecastCoverageInput): Forecast
     });
   }
 
+  if (currentWork && boundary.conflictingIds.length) {
+    reasons.push({ code: "accepted_scope_mapping_missing_from_source", count: boundary.conflictingIds.length,
+      label: `Conflicting in-release and out/later links: ${boundary.conflictingIds.join(", ")}. Deferred work is excluded until reviewed.` });
+  }
+
+  // Imperfect classification is normal, not a failed model. This policy
+  // qualifies the date without accepting a feature, resolving a Decision,
+  // or inventing effort for unknown/future work. Hard input failures retain
+  // their existing refusal paths.
+  if (currentWork && reasons.every(reason => ["execution_work_unmapped", "shape_decisions_open", "accepted_scope_unmapped"].includes(reason.code))) {
+    return {
+      workPolicy: CURRENT_WORK_POLICY, assumedIncludedIssueIds: boundary.ungroupedIds,
+      state: "forecastable", canonicalForecast: reasons.length === 0,
+      label: reasons.length ? "PLANNING FORECAST · ASSUMPTIONS TO REVIEW" : "PLANNING FORECAST",
+      reason: reasons.length ? reasons.map(reason => reason.label).join("; ") : null,
+      caveat: "All eligible current tickets are modeled unless explicitly out/later. Ungrouped work is assumed in, not accepted Scope. Unknown future work and unestimated unticketed features are not included. Percentages are conditional simulation frequencies, not measured accuracy.",
+      reasons, census,
+    };
+  }
+
   if (reasons.length > 0) {
     const estimateReviewRequired = reasons.some((reason) => reason.code === "capability_estimate_review_required");
     const noRemainingExecution = reasons.some((reason) => reason.code === "no_remaining_execution_work");
@@ -216,7 +253,8 @@ export function evaluateForecastCoverage(input: ForecastCoverageInput): Forecast
     return {
       // There is no remaining-work forecast to display. Keep the real
       // source/mapping census, but suppress synthetic start-day/gate dates.
-      state: noRemainingExecution || noRemainingRelease || noRemainingEffort ? "unavailable" : "modeled_subset",
+      ...(currentWork ? { workPolicy: CURRENT_WORK_POLICY, assumedIncludedIssueIds: boundary.ungroupedIds } : {}),
+      state: noRemainingExecution || noRemainingRelease || noRemainingEffort || (currentWork && input.issueIds.length === 0) ? "unavailable" : "modeled_subset",
       canonicalForecast: false,
       label: reasons.length === 1 && (noRemainingExecution || noRemainingRelease)
         ? noRemainingRelease ? "NO REMAINING WORK SELECTED" : "NO REMAINING WORK TO FORECAST"
@@ -233,6 +271,7 @@ export function evaluateForecastCoverage(input: ForecastCoverageInput): Forecast
         ? "Completed ticket mappings are retained. No delivery date or release approval is inferred from ticket completion."
         : estimateReviewRequired
         ? "An accepted estimate needs review. Reviewed v2 may appear only as qualified exploration; a legacy or malformed assertion is not applied, and remaining tickets are only a ticket-only subset pending review."
+        : currentWork ? "Eligible current tickets are included unless explicitly out/later. The input issue above prevents a full planning claim; ungrouped work is not omitted."
         : "Unmapped accepted scope or unclassified execution work is excluded.",
       reasons,
       census,
@@ -266,6 +305,12 @@ export function inheritDependencyCoverage(
     count: incomplete.length,
   };
   const reasons = [...own.reasons, dependencyReason];
+  if (own.workPolicy === CURRENT_WORK_POLICY && canUsePlanningForecast(own) && dependencies.every(dependency => canUsePlanningForecast(dependency.coverage))) {
+    return { ...own, canonicalForecast: false, state: "forecastable",
+      label: "PLANNING FORECAST · ASSUMPTIONS TO REVIEW",
+      reason: reasons.map(reason => reason.label).join("; "), reasons,
+      census: { ...own.census, incompleteDependencyCount: incomplete.length } };
+  }
   const state: ForecastCoverageState = own.state === "unavailable" || unavailableDependency ? "unavailable" : "modeled_subset";
 
   return {
@@ -276,6 +321,7 @@ export function inheritDependencyCoverage(
     reason: reasons.map((reason) => reason.label).join("; "),
     caveat: state === "unavailable"
       ? "Signal has no reliable execution input for the full dependency closure."
+      : own.workPolicy === CURRENT_WORK_POLICY ? "Current eligible work is included, but a dependency has unresolved source or estimate inputs. Review that dependency before relying on the combined plan."
       : "Unmapped accepted scope or unresolved execution work is excluded.",
     reasons,
     census: { ...own.census, incompleteDependencyCount: incomplete.length },

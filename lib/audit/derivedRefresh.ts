@@ -2,7 +2,7 @@ import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { computeForecast } from "@/lib/forecast/compute";
 import { toDateOnly } from "@/lib/time/dateContract";
-import type { ForecastCoverageContract } from "@/lib/forecast/coverage";
+import { canUsePlanningForecast, type ForecastCoverageContract } from "@/lib/forecast/coverage";
 
 function json(value: unknown): Prisma.InputJsonValue {
   return value as Prisma.InputJsonValue;
@@ -39,7 +39,7 @@ async function readinessWithoutDerived(scopeId: string, forecastCoverage?: Forec
   ]);
   const blockers: string[] = [];
   if (!scope || scope.executionState !== "configured") blockers.push("Execution truth unavailable.");
-  if (forecastCoverage && !forecastCoverage.canonicalForecast) blockers.push(forecastCoverage.label);
+  if (forecastCoverage && !canUsePlanningForecast(forecastCoverage)) blockers.push(forecastCoverage.label);
   if (openTestGates) blockers.push("A synthetic/test Decision gate is still active.");
   if (pendingScope) blockers.push(`${pendingScope} Scope proposal${pendingScope === 1 ? " is" : "s are"} unreconciled.`);
   if (sourceHealth) blockers.push(`${sourceHealth} source-health issue${sourceHealth === 1 ? " is" : "s are"} open.`);
@@ -62,7 +62,7 @@ export async function recomputeDerivedReads(scopeId: string) {
     return await prisma.projectDerivedState.update({ where: { scopeId }, data: {
       computedRevision: state.realityRevision, status: "current", recomputedAt: new Date(), error: null,
       consumers: json({
-        forecast: forecast.forecastCoverage.canonicalForecast
+        forecast: canUsePlanningForecast(forecast.forecastCoverage)
           ? { status: "current", likelyDate: toDateOnly(forecast.likelyDate), confidenceAtTarget: forecast.confidenceAtTarget, coverage: forecast.forecastCoverage }
           : { status: "modeled_subset", likelyDate: toDateOnly(forecast.likelyDate), confidenceAtTarget: null, coverage: forecast.forecastCoverage },
         timeline: { status: "invalidated", behavior: "dynamic projection reads current owner rows" },

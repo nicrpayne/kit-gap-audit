@@ -385,6 +385,31 @@ async function main() {
   });
   applicationPrismaForCleanup = applicationPrisma;
 
+  // The same real report path must count current ungrouped work automatically,
+  // freeze the assumed-in boundary, and retain that snapshot after later mapping.
+  const ungroupedLink = await db.capabilityWorkLink.findFirstOrThrow({ where: { capabilityId: rollupCapabilityId }, orderBy: { externalId: "asc" } });
+  await db.capabilityWorkLink.delete({ where: { id: ungroupedLink.id } });
+  const conditional = await generateReport(scope);
+  assert.equal(conditional.brief.forecast?.coverage?.workPolicy, "eligible-current-work.v1");
+  assert.equal(conditional.brief.forecast?.coverage?.state, "forecastable");
+  assert.equal(conditional.brief.forecast?.coverage?.canonicalForecast, false);
+  assert.deepEqual(conditional.brief.forecast?.coverage?.assumedIncludedIssueIds, [ungroupedLink.externalId]);
+  assert(basisOf(conditional.brief).scopes.find(owner => owner.scopeId === scopeId)?.items.some(item => item.id === ungroupedLink.externalId));
+  const conditionalPair = await generateReportComparison(scope, { ...scenarioSnapshot(`ungrouped-${fixtureKey}`, ungroupedLink.externalId), capacityPlan: null, capacityOverrideByScope: {} });
+  assert.deepEqual(conditionalPair.reality.brief.forecast?.coverage?.assumedIncludedIssueIds, [ungroupedLink.externalId]);
+  assert.deepEqual(conditionalPair.scenario.brief.forecast?.coverage?.assumedIncludedIssueIds, []);
+  assert(!basisOf(conditionalPair.scenario.brief).scopes.find(owner => owner.scopeId === scopeId)?.items.some(item => item.id === ungroupedLink.externalId));
+  await db.capabilityWorkLink.create({ data: { ...ungroupedLink, provenance: ungroupedLink.provenance === null ? Prisma.JsonNull : ungroupedLink.provenance as Prisma.InputJsonValue } });
+  const regrouped = await generateReport(scope);
+  assert.equal(regrouped.brief.headline.likelyWindow.value.likely, conditional.brief.headline.likelyWindow.value.likely);
+  const planningBasis = (brief: DecisionBriefV1) => basisOf(brief).scopes.map(({ startDate, ...inputs }) => { void startDate; return inputs; });
+  assert.deepEqual(planningBasis(regrouped.brief), planningBasis(conditional.brief), "mapping is not extra work or a changed estimate; independently generated snapshots have different start instants");
+  const frozenConditional = (await db.report.findUniqueOrThrow({ where: { id: conditional.report.id } })).briefSnapshot;
+  assert(isDecisionBriefV1(frozenConditional));
+  assert.deepEqual(frozenConditional.forecast?.coverage?.assumedIncludedIssueIds, [ungroupedLink.externalId]);
+  await db.report.deleteMany({ where: { id: { in: [conditional.report.id, regrouped.report.id, conditionalPair.reality.report.id, conditionalPair.scenario.report.id] } } });
+  console.log("PASS persisted current-work reports include ungrouped work, freeze membership, defer in Scenario, and remain unchanged by later mapping");
+
   // D01: standalone reports must have the same coherent owner boundary as
   // comparisons. A caller holding an older Scope must not freeze its old target.
   const freshTarget = new Date("2027-02-03T00:00:00.000Z");
@@ -523,8 +548,9 @@ async function main() {
   const scenarioItems = basisOf(pair.scenario.brief).scopes.find((item) => item.scopeId === scopeId)?.items ?? [];
   assert(realityItems.some((item) => item.id === excludedItemId));
   assert(!scenarioItems.some((item) => item.id === excludedItemId), "Scenario exclusion survives into the frozen simulated input");
-  assert.equal(pair.reality.brief.movable.scope.value.executableItemCount, 10, "tracked source-ticket count remains a Reality census");
-  assert.equal(pair.scenario.brief.movable.scope.value.executableItemCount, 10, "Scenario does not rewrite the tracked source-ticket census");
+  assert.equal(pair.reality.brief.movable.scope.value.executableItemCount, 10, "Reality basis represents ten source tickets");
+  assert.equal(pair.scenario.brief.movable.scope.value.executableItemCount, 9, "Scenario basis represents nine source tickets after deferral, not ten; aggregates count their covered source tickets");
+  assert.equal(pair.scenario.brief.forecast?.coverage?.census.executionIssueCount, 10, "the full source census is retained separately from modeled membership");
   assert.equal(pair.reality.brief.movable.scope.value.simulationItemCount, 10);
   assert.equal(pair.scenario.brief.movable.scope.value.simulationItemCount, 9, "Scenario reports the active modeled input count after exclusion");
   const scenarioLikelyTime = Date.parse(`${pair.scenario.brief.headline.likelyWindow.value.likely}T00:00:00.000Z`);
@@ -535,7 +561,7 @@ async function main() {
   assert.notDeepEqual(pair.scenario.brief.movable.scenarioOptions.value, pair.reality.brief.movable.scenarioOptions.value, "Scenario acceleration levers are recomputed from the hypothetical basis");
   assert.match(pair.scenario.brief.movable.scenarioOptions.value.find((option) => option.id === "capacity-plus-1")?.label ?? "", /capacity 2\.5/);
   assert.match(pair.scenario.report.summaryMarkdown, /9 simulated estimate-basis items/);
-  assert.match(pair.scenario.report.summaryMarkdown, /10 tracked source tickets/);
+  assert.match(pair.scenario.report.summaryMarkdown, /9 tracked source tickets/);
   assert.match(pair.scenario.report.summaryMarkdown, /1\.5 effective Forecast FTE/);
   assert.doesNotMatch(pair.scenario.report.summaryMarkdown, /Named Capacity unavailable/i);
   assert.equal(frozenQuote(pair.reality.brief), originalQuote);

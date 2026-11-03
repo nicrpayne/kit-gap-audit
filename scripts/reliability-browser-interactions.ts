@@ -11,7 +11,11 @@ export async function proveRepairInteractions(context: BrowserContext, base: str
   const dependencyFixture = database.port === "55436" && ["/signal_t0_test_10071255", "/signal_t0_test_10071841"].includes(database.pathname)
     && database.username === "signal_t0_local" && process.env.REPORTS_DB_PROOF === "1"
     && process.env.SIGNAL_REPORT_BROWSER_PROOF === "1";
-  assert(database.hostname === "127.0.0.1" && (originalFixture || dependencyFixture), "Only the explicitly isolated local QA databases are writable");
+  const currentWorkFixture = database.port === "55447" && database.pathname === "/signal_t0_test_20261103"
+    && database.username === "signal_t0_local" && process.env.REPORTS_DB_PROOF === "1"
+    && process.env.SIGNAL_REPORT_BROWSER_PROOF === "1" && process.env.KIT_DEV_FIXTURES === "1"
+    && !process.env.LINEAR_API_KEY;
+  assert(database.hostname === "127.0.0.1" && (originalFixture || dependencyFixture || currentWorkFixture), "Only the explicitly isolated local QA databases are writable");
   const key = randomUUID();
   const scopes = [0, 1].map((n) => `repair-ux-${key}-${n}`);
   const people = [0, 1].map((n) => `repair-person-${key}-${n}`);
@@ -47,6 +51,9 @@ export async function proveRepairInteractions(context: BrowserContext, base: str
     assert.doesNotMatch(await inspector.innerText(), /An open question/i);
     assert.match(await inspector.innerText(), /closed|decided|resolved/i);
     await page.screenshot({ path: `${output}/07-closed-decision.png` });
+    // A recovered staffing Scenario now survives full navigation. Return
+    // explicitly before this next independent fixture changes the baseline.
+    await page.getByRole("button", { name: "Back to Reality", exact: true }).first().click();
 
     // A dedicated disposable card exercises real browser acceptance, reload,
     // and clearing without editing the report fixture's accepted baseline.
@@ -107,10 +114,14 @@ export async function proveRepairInteractions(context: BrowserContext, base: str
     assert.equal(await page.locator('[data-shoot="audit-change-inbox"]').count(), 0,
       "loading a pending inbox must not obscure an explicit evidence deep link");
     const frame = page.frameLocator("iframe").first();
-    await frame.getByRole("button", { name: "View here", exact: true }).click();
-    const viewer = frame.locator("#brain-viewer");
+    // Frozen report links now open the original snapshot directly in a native
+    // dialog; current graph selections retain the older View here interaction.
+    const frozenPassage = new URL(auditHref, base).searchParams.get("select")?.startsWith("passage:");
+    if (!frozenPassage) await frame.getByRole("button", { name: "View here", exact: true }).click();
+    const viewer = frozenPassage ? page.getByRole("dialog", { name: "Original source passage", exact: true }) : frame.locator("#brain-viewer");
     await viewer.waitFor({ state: "visible" });
     assert.match(await viewer.innerText(), /four to eight developer days/);
+    if (frozenPassage) assert.match(await viewer.innerText(), /Historical snapshot · read-only/);
     let visibleAboveInspector = false;
     for (let attempt = 0; attempt < 30 && !visibleAboveInspector; attempt += 1) {
       visibleAboveInspector = await viewer.evaluate((element) => {

@@ -8,7 +8,7 @@ import { computeForecast } from "@/lib/forecast/compute";
 import { computeChangesSince } from "@/lib/reports/changes";
 import { capacityForecastContract, CapacityReconciliationIncompleteError } from "@/lib/capacity/contract";
 import { toDateOnly } from "@/lib/time/dateContract";
-import { ForecastCoverageIncompleteError } from "@/lib/forecast/coverage";
+import { canUsePlanningForecast, ForecastCoverageIncompleteError } from "@/lib/forecast/coverage";
 import { forecastAssumptionSnapshot } from "@/lib/forecast/claims";
 import { readKnowledgeStatus } from "@/lib/audit/changeInbox";
 import { CANONICAL_REPORT_MODE_WHERE, CANONICAL_REPORT_ORDER_DESC } from "./history";
@@ -131,7 +131,7 @@ export async function loadDecisionBriefOwnerInputs(
 ): Promise<DecisionBriefOwnerInputs> {
   const generatedAt = new Date().toISOString();
   const forecast = await computeForecast(scope);
-  if (!forecast.forecastCoverage.canonicalForecast) {
+  if (!canUsePlanningForecast(forecast.forecastCoverage)) {
     throw new ForecastCoverageIncompleteError(forecast.forecastCoverage);
   }
   const [previousReport, audit, decisions, dependencyScopes, people, allocations, settings, reconciliation, timelineEvents, contextSnapshot, derivedState, refreshStatus, scopeEvidence] = await Promise.all([
@@ -224,11 +224,12 @@ export async function loadDecisionBriefOwnerInputs(
       asOf: contextSnapshot?.createdAt.toISOString() ?? null,
       currentness: contextCurrentness,
       missingSources,
-      warnings: [...forecast.contextIssues, ...audit.providerChanges],
+      warnings: [...forecast.contextIssues, ...audit.providerChanges, ...(!forecast.forecastCoverage.canonicalForecast ? [forecast.forecastCoverage.label, forecast.forecastCoverage.reason ?? "", forecast.forecastCoverage.caveat ?? ""].filter(Boolean) : [])],
     },
     forecast: {
       basis: forecast.basis,
-      assumptions: forecastAssumptionSnapshot(),
+      assumptions: forecastAssumptionSnapshot(forecast.forecastCoverage),
+      coverage: forecast.forecastCoverage,
       simulationItemCount: forecast.basis.scopes.find((item) => item.scopeId === scope.id)?.items.length ?? 0,
       sourceId: `forecast:${scope.id}:${generatedAt}`,
       asOf: forecast.forecastSource.asOf.toISOString(),

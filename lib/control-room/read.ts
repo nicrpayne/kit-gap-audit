@@ -25,7 +25,7 @@ import type { ProjectPayload, SuiteScenario } from "@/lib/instrument/useProject"
 import type { DecisionRow } from "@/lib/decisions/model";
 import type { TimelineEntry, TimelineCandidate, TimelineLane } from "@/lib/timeline/entries";
 import { formatDateOnly } from "@/lib/time/dateContract";
-import type { ForecastCoverageState } from "@/lib/forecast/coverage";
+import { canUsePlanningForecast, type ForecastCoverageState } from "@/lib/forecast/coverage";
 import { scenarioForecastCoverage } from "@/lib/scenario/forecastCoverage";
 import {
   readControlRoomFreshness,
@@ -463,7 +463,7 @@ export function readControlRoom(i: ControlRoomInput): ControlRoomReading {
       likelyMs = r.likelyDate.getTime();
       gatedByScopeId = s.scopeId;
     }
-    if (s.forecastCoverage.canonicalForecast && s.targetDate && r.likelyDate > new Date(s.targetDate)) scopesPastTarget += 1;
+    if (canUsePlanningForecast(s.forecastCoverage) && s.targetDate && r.likelyDate > new Date(s.targetDate)) scopesPastTarget += 1;
   }
   const gatingScope = data.scopes.find((s) => s.scopeId === gatedByScopeId) ?? null;
   const gatingSim = gatedByScopeId ? preview.get(gatedByScopeId) ?? null : null;
@@ -607,7 +607,7 @@ export function readControlRoom(i: ControlRoomInput): ControlRoomReading {
         // pushing something past its target, or has taken the date away
         // from the backlog, gets the sentence explaining it.
         detail:
-          !scope?.forecastCoverage.canonicalForecast || !upstreamScope?.forecastCoverage.canonicalForecast
+          !scope || !upstreamScope || !canUsePlanningForecast(scope.forecastCoverage) || !canUsePlanningForecast(upstreamScope.forecastCoverage)
             ? "Execution coverage is unresolved; the modeled dependency date is not a canonical delivery forecast."
             : overrun !== null && overrun > 0
             ? `${upName} is not expected until ${formatDateOnly(upSim.likelyDate, { month: "short", day: "numeric" })} — after ${lane.name}'s own target.`
@@ -615,7 +615,7 @@ export function readControlRoom(i: ControlRoomInput): ControlRoomReading {
               ? `${lane.name}'s backlog has stopped deciding its P50; a declared completion floor sets the later outcome.`
               : "",
         quantity:
-          !scope?.forecastCoverage.canonicalForecast || !upstreamScope?.forecastCoverage.canonicalForecast
+          !scope || !upstreamScope || !canUsePlanningForecast(scope.forecastCoverage) || !canUsePlanningForecast(upstreamScope.forecastCoverage)
             ? "coverage unresolved"
             : overrun !== null && overrun > 0
             ? `${overrun}d past ${lane.name}'s target`
@@ -776,7 +776,7 @@ export function readControlRoom(i: ControlRoomInput): ControlRoomReading {
 
     // A modeled subset cannot support a delivery-overrun claim. Its target
     // remains visible elsewhere, but it does not become a canonical risk.
-    if (!s.forecastCoverage.canonicalForecast) continue;
+    if (!canUsePlanningForecast(s.forecastCoverage)) continue;
 
     constraints.push({
       id: `late:${s.scopeId}`,

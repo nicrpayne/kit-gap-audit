@@ -29,12 +29,14 @@ import { knowledgeEstimateItemId, substituteCapabilityKnowledgeEstimates } from 
 import { reviewedEstimateSimulationDecision } from "@/lib/forecast/reviewedEstimate";
 import { remainingEstimateItems, remainingEstimateCapabilities, remainingEstimateConflict } from "@/lib/scenario/remainingEstimates";
 import { isSignalEstimate } from "@/lib/scope/signalEstimates";
-import { ForecastCoverageIncompleteError } from "@/lib/forecast/coverage";
+import { canUsePlanningForecast, ForecastCoverageIncompleteError } from "@/lib/forecast/coverage";
 import { forecastCapability } from "@/lib/scope/capabilityForecast";
 import { freezeCapabilityEstimate, freezeForecastBasis, type ForecastCapacityBasisInput } from "./forecastBasis";
 import { findScenarioLeverConflicts, scenarioLeverConflictMessage } from "./scenarioConflicts";
 import { ambiguousScenarioItemLeverMessage, findAmbiguousScenarioItemLevers } from "@/lib/scenario/itemLeverScope";
 import { countModeledSourceWork, scenarioWorkExplanation } from "./scenarioWorkExplanation";
+import { reportScenarioCoverage } from "./scenarioCoverage";
+import { forecastAssumptionSnapshot } from "@/lib/forecast/claims";
 
 export * from "./scenarioSnapshot";
 import {
@@ -83,12 +85,12 @@ export async function buildScenarioDecisionBriefReadModel(
   const relevantScopes = new Set<string>();
   const collect = (id: string) => { if (relevantScopes.has(id)) return; relevantScopes.add(id); portfolio.scopes.find(row => row.scopeId === id)?.dependsOnScopeIds.forEach(collect); };
   collect(scope.id);
-  if (portfolio.decisions.some(decision => relevantScopes.has(decision.scopeId) && decision.readinessRole !== "reference" && decision.gate && scenario.decisionPlans?.[decision.id]?.state === "open")) {
+  if (portfolio.scopes.some(owner => relevantScopes.has(owner.scopeId) && !owner.forecastCoverage.workPolicy) && portfolio.decisions.some(decision => relevantScopes.has(decision.scopeId) && decision.readinessRole !== "reference" && decision.gate && scenario.decisionPlans?.[decision.id]?.state === "open")) {
     throw new ScenarioReportValidationError("This Scenario removes a delay but leaves its release choice unresolved. Review that choice before publishing a delivery report.");
   }
   const target = portfolio.scopes.find((candidate) => candidate.scopeId === scope.id);
   if (!target) throw new ScenarioReportValidationError("Scenario project is no longer in the active portfolio.");
-  if (!target.forecastCoverage.canonicalForecast) {
+  if (!canUsePlanningForecast(target.forecastCoverage)) {
     throw new ForecastCoverageIncompleteError(target.forecastCoverage);
   }
   if (
@@ -323,6 +325,8 @@ export async function buildScenarioDecisionBriefReadModel(
   if (!scenarioScopes.find((candidate) => candidate.scopeId === scope.id)?.items.some((item) => item.high > 0)) {
     throw new ScenarioReportValidationError("No remaining work is selected for this Scenario. Review the release boundary in Scope; removing all work is not a completed-project or delivery-date claim.");
   }
+  const scenarioCoverage = reportScenarioCoverage(scenarioOwners, scenarioScopes, scenario, portfolio.decisions).get(scope.id)!;
+  if (!canUsePlanningForecast(scenarioCoverage)) throw new ForecastCoverageIncompleteError(scenarioCoverage);
   const frozenCapabilityEstimates = scenarioOwners.flatMap((candidate) => candidate.capabilities.flatMap((capability) => {
     if (excludedCapabilities.has(capability.id)) return [];
     const sourceItemIds = new Set(candidate.items.map((item) => item.id));
@@ -568,6 +572,8 @@ export async function buildScenarioDecisionBriefReadModel(
   }
   input.forecast = {
     ...input.forecast,
+    coverage: scenarioCoverage,
+    assumptions: forecastAssumptionSnapshot(scenarioCoverage),
     ...countModeledSourceWork({
       scopeId: scope.id,
       modeledItemIds: scenarioSpecs.find(candidate => candidate.scopeId === scope.id)?.items.map(item => item.id) ?? [],
@@ -586,7 +592,7 @@ export async function buildScenarioDecisionBriefReadModel(
     decisionDelayDays: scenarioResult.decisionDelayDays,
     scenarios: scenarioOptions,
   };
-  input.context.warnings = [...input.context.warnings, `Scenario ${scenario.scenarioId} is hypothetical and based on Reality r${realityRevision}.`, ...causalExplanation];
+  input.context.warnings = [...input.context.warnings.map(warning => `Reality baseline: ${warning}`), `Scenario ${scenario.scenarioId} is hypothetical and based on Reality r${realityRevision}.`, ...[scenarioCoverage.reason, scenarioCoverage.caveat].filter((warning): warning is string => Boolean(warning)), ...causalExplanation];
   // A new hypothetical gate may originate in another project. Include its
   // actual owner/evidence metadata in the target's brief, not only its days.
   const additionalDecisionIds = Object.entries(scenario.decisionPlans ?? {})

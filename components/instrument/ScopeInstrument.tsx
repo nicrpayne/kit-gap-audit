@@ -898,7 +898,7 @@ export default function ScopeInstrument() {
                   movedDays={movedDays}
                   effortRemoved={effortRemoved}
                   active={m.active}
-                  canonicalForecast={displayedCoverage.canonicalForecast && scope.capacityContract.reconciles}
+                  canonicalForecast={displayedCoverage.state === "forecastable" && scope.capacityContract.reconciles}
                   unavailableLabel={displayedCoverage.state === "unavailable" ? displayedCoverage.label : null}
                   dominancePhrase={dom?.dominated ? dom.phrase : null}
                   previewRelief={
@@ -985,7 +985,7 @@ export default function ScopeInstrument() {
                   onOpenOutside={setEditing}
                 />
 
-                <ConstraintStrip gates={openGates} openQuestions={scope.openShapeQuestions} scopeId={scope.scopeId} dominance={dom} startDate={startDate} truthReady={displayedCoverage.canonicalForecast && scope.capacityContract.reconciles} />
+                <ConstraintStrip gates={openGates} openQuestions={scope.openShapeQuestions} scopeId={scope.scopeId} dominance={dom} startDate={startDate} truthReady={displayedCoverage.state === "forecastable" && scope.capacityContract.reconciles} />
 
                 <SignalStrip
                   pending={m.previewPending}
@@ -1497,9 +1497,9 @@ function ProductShapeSummary({
     <div className="mx-5 mb-3 grid shrink-0 grid-cols-3 gap-2" data-shoot="scope-product-shape-summary">
       <div className="min-w-0 rounded-lg border bg-[var(--i-panel)] px-3 py-2" style={{ borderColor: `color-mix(in srgb, ${tone} 35%, var(--i-border))` }} data-shoot="scope-coverage-state" data-attention={unresolvedRealityCount > 0 || next ? "required" : undefined}>
         {(unresolvedRealityCount > 0 || next) && <div className="signal-next-step__eyebrow">NEXT STEP</div>}
-        <div className="i-label" style={{ color: tone }}>{scenario ? ready ? "SCENARIO COVERAGE COMPLETE" : "SCENARIO READINESS BLOCKED" : ready ? "DELIVERY CLAIM READY" : "FORECAST READINESS BLOCKED"}</div>
+        <div className="i-label" style={{ color: tone }}>{coverage.workPolicy && ready ? "PLANNING FORECAST · REVIEW ASSUMPTIONS" : scenario ? ready ? "SCENARIO COVERAGE COMPLETE" : "SCENARIO READINESS BLOCKED" : ready ? "DELIVERY CLAIM READY" : "FORECAST READINESS BLOCKED"}</div>
         <div className="mt-1 truncate text-[9px] text-[var(--i-text-soft)]">{!capacityReconciles ? "Named capacity has not been reconciled to forecast capacity" : coverage.reason ?? "Canonical delivery forecast is supported"}</div>
-        {unresolvedRealityCount > 0 && <button onClick={onResolveWork} className="mt-2 rounded border border-[var(--i-amber)]/50 px-3 py-1.5 text-[11px] text-[var(--i-amber)]" data-shoot="resolve-unmapped-work">Resolve {unresolvedRealityCount} unresolved ticket{unresolvedRealityCount === 1 ? "" : "s"}{scenario ? " in Reality" : ""} →</button>}
+        {unresolvedRealityCount > 0 && <button onClick={onResolveWork} className="mt-2 rounded border border-[var(--i-amber)]/50 px-3 py-1.5 text-[11px] text-[var(--i-amber)]" data-shoot="resolve-unmapped-work">{coverage.workPolicy ? "Review" : "Resolve"} {unresolvedRealityCount} {coverage.workPolicy ? "ungrouped" : "unresolved"} ticket{unresolvedRealityCount === 1 ? "" : "s"}{scenario ? " in Reality" : ""} →</button>}
         {unresolvedRealityCount === 0 && next && (next.href.startsWith("/scope?")
           ? <button className="signal-next-step__action mt-2" onClick={onReview}>{next.label} →</button>
           : <Link className="signal-next-step__action mt-2" href={next.href}>{next.label} →</Link>)}
@@ -1598,7 +1598,7 @@ export function MasterDisplay({
     >
       {/* LANDING is dominant only when coverage and named capacity reconcile. */}
       <div className="px-6 py-3 min-w-[225px]">
-        <div className="i-label">{canonicalForecast ? `${scopeName} lands` : "Forecast boundary"}</div>
+        <div className="i-label">{canonicalForecast ? `${scopeName} planning date` : "Forecast boundary"}</div>
         <div className="mt-1.5 leading-none" style={{ fontSize: canonicalForecast ? 30 : 17 }}>
           <motion.span
             key={`${date}-${canonicalForecast}`}

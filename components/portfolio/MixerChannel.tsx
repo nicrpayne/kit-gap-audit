@@ -158,7 +158,7 @@ export default function MixerChannel({
           <span className="text-[10.5px] uppercase tracking-[0.06em] truncate text-[var(--i-text)]">{view.name}</span>
           {!view.forecastCoverage.canonicalForecast && (
             <span className="shrink-0 text-[7.5px] uppercase tracking-[0.08em] text-[var(--i-amber)]" title={claim.detail ?? claim.badge}>
-              {view.forecastCoverage.state === "modeled_subset" ? "subset" : "unavailable"}
+              {view.forecastCoverage.state === "forecastable" ? "assumptions" : view.forecastCoverage.state === "modeled_subset" ? "subset" : "unavailable"}
             </span>
           )}
         </div>

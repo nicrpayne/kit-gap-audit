@@ -41,7 +41,7 @@ export function scenarioForecastCoverage(scopes: ProjectScope[], scenario: Suite
     }));
     // Legacy projects already model all current work. Excluding one ticket
     // must not make every untouched ticket "unmapped".
-    const implicitIds = scope.capabilities.length === 0
+    const implicitIds = !scope.forecastCoverage.workPolicy && scope.capabilities.length === 0
       ? [...ids].filter(id => !excluded.has(id) && !capabilities.some(capability => capability.workLinks.some(link => link.externalId === id)))
       : [];
     const directIds = [...new Set([...included, ...implicitIds])];
@@ -56,6 +56,7 @@ export function scenarioForecastCoverage(scopes: ProjectScope[], scenario: Suite
     let hasModeledRemainingEffort: boolean | undefined;
     try { hasModeledRemainingEffort = scenarioWorkItems(scope, scenario).some(item => item.high > 0); } catch { /* Preview refuses the invalid draft. */ }
     const coverage = evaluateForecastCoverage({
+      workPolicy: scope.forecastCoverage.workPolicy,
       executionState: scope.executionState,
       issueIds: [...ids],
       completedIssueIds: (scope.completedWork ?? []).map(item => item.id),

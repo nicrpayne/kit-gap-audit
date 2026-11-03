@@ -53,6 +53,7 @@ interface ScenarioInspectorProps {
   scope: InspectorScope;
   baseline: SimulationResult | undefined;
   preview: SimulationResult | undefined;
+  targetFrequency: number | null;
   dirty: boolean;
   realityCoverage?: ForecastCoverageContract;
   /** Scopes carrying a scenario change -- NOT the same as the selected one. */
@@ -82,6 +83,7 @@ export default function ScenarioInspector({
   scope,
   baseline,
   preview,
+  targetFrequency,
   dirty,
   realityCoverage,
   changedScopeNames,
@@ -120,6 +122,7 @@ export default function ScenarioInspector({
     coverage: scope.forecastCoverage,
     likelyDate: active ? formatDate(active.likelyDate) : null,
     targetDate: scope.targetDate ? formatDate(new Date(scope.targetDate)) : null,
+    confidenceAtTarget: targetFrequency,
   });
 
   const explanation = useMemo(
@@ -192,7 +195,7 @@ export default function ScenarioInspector({
         {dirty && (
           <div className="mt-2 text-[10px] leading-relaxed text-[var(--i-text-faint)]" data-shoot="portfolio-scenario-coverage-basis">
             Coverage above describes this Scenario. Accepted Reality is unchanged.
-            {realityCoverage && !realityCoverage.canonicalForecast && " Accepted Reality remains incomplete; review it before publishing a delivery report."}
+            {realityCoverage && !realityCoverage.canonicalForecast && (realityCoverage.workPolicy ? " Reports preserve these planning assumptions; accepted scope is not changed." : " Accepted Reality remains incomplete; review it before publishing a delivery report.")}
           </div>
         )}
 

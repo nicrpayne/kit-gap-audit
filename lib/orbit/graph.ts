@@ -322,7 +322,7 @@ export function buildOrbitGraph(input: OrbitInput): OrbitGraph {
     // TARGET IS EVALUATION, NOT INPUT. Confidence is recomputed by counting
     // the SAME trials against a different day — the distribution is never
     // re-run because a target moved.
-    confidenceAtTarget: focus.forecastCoverage.canonicalForecast && targetDay !== null
+    confidenceAtTarget: focus.forecastCoverage.state === "forecastable" && targetDay !== null
       ? confidenceAtDay(focus.sim.completionDaysSorted, targetDay)
       : null,
     realityCompletionDaysSorted: focus.realitySim?.completionDaysSorted ?? null,
@@ -395,7 +395,7 @@ export function buildOrbitGraph(input: OrbitInput): OrbitGraph {
         : { value: percentileDay(dep.sim.completionDaysSorted, 50), unit: "days" },
       meaning: dep.forecastCoverage.state === "unavailable"
         ? "This declared dependency remains a completion floor, but its execution coverage is unavailable, so no reliable upstream date is claimed."
-        : dep.forecastCoverage.canonicalForecast
+        : dep.forecastCoverage.state === "forecastable"
           ? "This declared dependency sets a completion floor. Own work may proceed concurrently; every trial takes the later of own and upstream completion."
           : "This declared dependency sets a modeled-subset completion-floor consequence, not a full-project delivery forecast. Own work may proceed concurrently; every trial takes the later of own and upstream completion.",
       provenance: { source: "lib/forecast/portfolio.ts:runPortfolioTrials", ref: `${focus.scopeId}<-${depId}` },
