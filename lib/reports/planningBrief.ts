@@ -69,6 +69,7 @@ export function buildPlanningBrief(model: ProjectModel, scopeId: string, generat
         dependsOnScopeIds: [...row.dependsOnScopeIds],
         baselineCapacity: row.teamCapacity, capacitySource: row.capacitySource, capacityReconciles: row.capacityContract.reconciles,
         modeledCapacity: spec.teamCapacity, capacityPhases: spec.capacityPhases ?? null,
+        unfilledCapacityRequest: model.active ? scenario.capacityPlan?.requiredByScope[row.scopeId] ?? 0 : 0,
         items: items.map(item => {
           const original = row.executionItems.find(source => source.id === item.id);
           return { id: item.id, label: item.label, low: item.low, likely: item.likely, high: item.high,
@@ -94,6 +95,7 @@ export function buildPlanningBrief(model: ProjectModel, scopeId: string, generat
       ...inputs.flatMap(row => row.coverage.reasons.map(reason => `${row.name}: ${reason.label}`)),
       ...(placeholders ? [`${placeholders} modeled inputs use placeholder ranges, not reviewed developer estimates.`] : []),
       ...(capacityUnresolved ? ["Staffing is not fully reconciled. The date uses the modeled capacity assumptions, not a confirmed staffing commitment."] : []),
+      ...inputs.filter(row => row.unfilledCapacityRequest > 0).map(row => `${row.name}: ${row.unfilledCapacityRequest} FTE requested but unstaffed — not included in the forecast. Transfer capacity or explicitly model a hypothetical hire to include it.`),
       "The range is P10–P90 of simulated outcomes under the listed inputs, not an error bound for missing information.",
       "Source timestamps describe the source records, not a guarantee they were freshly checked. No source, estimate, or decision was approved by creating this brief.",
       "This export contains internal project data. It is a local file, not an access-controlled published site.",

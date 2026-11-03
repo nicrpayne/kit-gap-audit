@@ -128,7 +128,7 @@ export function chipsFor(
       if (fte <= 0) continue;
       chips.push({
         id: `capacity-shortfall-${scopeId}`,
-        label: `${scopeNameById.get(scopeId) ?? scopeId} requires ${fte.toFixed(1)} FTE unstaffed`,
+        label: `${scopeNameById.get(scopeId) ?? scopeId} requires ${fte.toFixed(1)} FTE unstaffed · not modeled`,
         href: "/portfolio",
       });
     }

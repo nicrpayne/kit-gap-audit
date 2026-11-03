@@ -20,8 +20,10 @@
 //
 // So the value the hand asks for is the value the fader holds, whether or
 // not the portfolio contains the people to satisfy it. A request beyond
-// the pool is a Scenario worth seeing, not an input to be rejected — the
-// tension rail reports the shortfall, and Reality commit is what refuses.
+// the pool remains visible as an unfilled request, not modeled capacity.
+// The tension rail offers a donor transfer or explicit hypothetical hire;
+// only those supplied people can change the forecast. Reality commit refuses
+// any remaining shortfall.
 //
 // Geometry rules, learned from the failure above:
 //   - the hit area IS the drawn slot, one element, no rotation
@@ -225,7 +227,7 @@ export default function ChannelFader({
         aria-valuenow={parseFloat(value.toFixed(2))}
         aria-valuemin={0}
         aria-valuemax={max}
-        aria-valuetext={`${value.toFixed(1)} FTE`}
+        aria-valuetext={`${value.toFixed(1)} FTE requested; ${(value - required).toFixed(1)} staffed${required > 1e-6 ? `; ${required.toFixed(1)} unstaffed, not modeled` : ""}`}
         aria-orientation="vertical"
         aria-disabled={disabled || undefined}
         data-shoot={`fader-${scopeId}`}

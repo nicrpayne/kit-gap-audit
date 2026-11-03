@@ -43,7 +43,7 @@ export interface WorkforceState {
 
 export interface ChannelReading {
   scopeId: string;
-  /** Physical human allocation: SUM(fte x fraction). What the fader sets. */
+  /** Physical human allocation: SUM(fte x fraction). Excludes unfilled requests. */
   raw: number;
   /** Delivery capacity after context-switch friction. What the forecast gets. */
   effective: number;
@@ -70,10 +70,10 @@ export interface MasterReading {
   free: number;
   /** Delivery capacity after context-switch friction, across every channel. */
   effective: number;
-  /** Allocation requested beyond the workforce. Non-zero means the scenario
-      is auditioning people who do not exist, and Reality cannot accept it. */
+  /** Unfilled requests. Not simulated; transfer capacity or explicitly add a
+      hypothetical hire before this request can affect a forecast. */
   required: number;
-  /** Signed headroom: positive = spare, negative = deficit. */
+  /** Signed headroom after unfilled requests: positive = spare, negative = deficit. */
   overUnder: number;
 }
 
@@ -146,10 +146,9 @@ export function readChannel(
     }
   }
 
-  // Capacity the scenario asked for and could not find. Modelled as a
-  // dedicated person, so it carries no switch penalty -- a new hire put on
-  // one project is not split.
-  return { scopeId, raw: raw + required, effective: effective + required, splitRaw, splitPeople, people, required };
+  // A request is not a person. Keep it visible, but never count it as staffed
+  // or effective capacity. Explicit hypothetical hires are already in people.
+  return { scopeId, raw, effective, splitRaw, splitPeople, people, required };
 }
 
 export function readMaster(
@@ -174,7 +173,7 @@ export function readMaster(
     free: freeFte(state),
     effective,
     required,
-    overUnder: workforce - allocated - external,
+    overUnder: workforce - allocated - external - required,
   };
 }
 

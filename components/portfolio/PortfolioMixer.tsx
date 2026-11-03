@@ -240,7 +240,7 @@ export default function PortfolioMixer({
           </span>
           <span className="text-[9px] text-[var(--i-text-soft)]">
             {deficit
-              ? `on ${scopeNameById.get(deficitScopeId!) ?? deficitScopeId} — Reality can't be committed until this resolves`
+              ? `on ${scopeNameById.get(deficitScopeId!) ?? deficitScopeId} — not modeled. Transfer someone or try a hypothetical hire below.`
               : "portfolio balanced — every allocation is staffed by someone who exists"}
           </span>
         </div>
@@ -295,7 +295,7 @@ export default function PortfolioMixer({
             className="rounded px-2 py-1 text-[9.5px] font-medium hover:brightness-110"
             style={{ background: "var(--i-violet)", color: "var(--i-void)" }}
           >
-            Increase workforce +{Math.max(1, Math.ceil(deficitFte)).toFixed(1)}
+            Try hypothetical hire +{Math.max(1, Math.ceil(deficitFte)).toFixed(1)}
           </button>
         </div>
       </div>

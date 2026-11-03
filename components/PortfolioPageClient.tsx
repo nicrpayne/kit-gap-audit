@@ -388,8 +388,8 @@ export default function PortfolioPageClient() {
   const unallocated = useMemo(() => unallocatedCapacity(allPeople, currentAllocations), [allPeople, currentAllocations]);
 
   // Capacity the scenario asked for that the portfolio does not contain.
-  // Simulated as a dedicated person so Nic can see what the extra body
-  // would buy -- and refused at commit, because it is not a person.
+  // Not simulated: a transfer or explicit hypothetical hire must fill it.
+  // Reality commit is refused while the request remains unstaffed.
   const requiredRecord = useMemo(() => Object.fromEntries(requiredByScope), [requiredByScope]);
   const totalRequired = useMemo(() => [...requiredByScope.values()].reduce((t, v) => t + v, 0), [requiredByScope]);
 
@@ -561,7 +561,8 @@ export default function PortfolioPageClient() {
         scopeId: s.scopeId,
         scopeName: s.name,
         realityFte: realityRawByScope.get(s.scopeId) ?? 0,
-        scenarioFte: readChannel(workforceState, s.scopeId, switchCostPct).raw + (requiredByScope.get(s.scopeId) ?? 0),
+        scenarioFte: readChannel(workforceState, s.scopeId, switchCostPct).raw,
+        requiredFte: requiredByScope.get(s.scopeId) ?? 0,
       }));
   }, [data, changedScopeIds, realityRawByScope, workforceState, switchCostPct, requiredByScope]);
 
@@ -646,13 +647,9 @@ export default function PortfolioPageClient() {
   // transactions on the same finite workforce -- see
   // lib/capacity/workforce.ts.
   //
-  // The fader holds the REQUESTED value, not the achieved one. readChannel()
-  // already carries an unmet request as a phantom dedicated person, so the
-  // request survives in the model; what hid it was the fader's ceiling
-  // (faderMax, below), which used to sit at HALF the workforce. Past it the
-  // cap stopped moving while the underlying value kept climbing -- the
-  // control looked stuck at exactly the moment it was being asked for most.
-  // The control obeys; the model explains; Reality commit is what refuses.
+  // The fader retains the REQUESTED value (staffed + shortfall), while the
+  // forecast uses only staffed capacity after switching. An explicit hire or
+  // donor transfer fills the shortfall; requesting capacity cannot invent it.
   const onFader = useCallback(
     (scopeId: string, requestedRaw: number) => {
       const result = setChannelRaw(workforceState, scopeId, requestedRaw, switchCostPct);

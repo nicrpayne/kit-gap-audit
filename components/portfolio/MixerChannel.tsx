@@ -8,10 +8,8 @@
 // happens to be in it -- and because a fader you have learned the throw of
 // must not change size when a project is added.
 //
-// A channel sets RAW physical allocation. The two readouts beneath say what
-// that is worth after the portfolio's switching assumption. Both are always
-// shown: the gap between them IS the friction, and a reading that only
-// appears once it has gone wrong is a reading nobody trusts.
+// A channel requests physical allocation. Always distinguish the request,
+// staffed capacity, and capacity after switching that the forecast uses.
 //
 // There is no context-switch knob here. Switching cost is one assumption
 // about how humans work, and it lives once, on the Master.
@@ -105,12 +103,8 @@ export default function MixerChannel({
   const { raw, effective, splitRaw, splitPeople, required, changed, accent } = view;
   const friction = raw - effective;
   const alive = hovered || selected;
-  // What the hand asked for. readChannel() already folds `required` into
-  // `raw` -- an unstaffable request is carried as a dedicated phantom person
-  // -- so `raw` IS the requested value and must not have `required` added to
-  // it again. What the fader was missing was never the request; it was a
-  // ceiling low enough to hide it (see faderMax in PortfolioPageClient).
-  const requested = raw;
+  // Retain the hand's request without passing an unfilled request to simulation.
+  const requested = raw + required;
   const claim = presentForecastDeliveryClaim({
     scopeName: view.name,
     coverage: view.forecastCoverage,
@@ -189,29 +183,20 @@ export default function MixerChannel({
         )}
       </div>
 
-      {/* RAW over EFFECTIVE -- stacked, so the strip stays narrow.
-          RAW is the fader's target, so the control and the readout always
-          agree. When the portfolio cannot staff that target the gap is
-          stated inline, on the row that already exists -- a shortfall must
-          never add or remove a line, or the strip would resize under a
-          drag. EFF stays derived from what is actually staffed, because
-          effectiveness is a fact about real people. */}
+      {/* All rows always exist: a shortfall must not resize the strip mid-drag. */}
       <div className="px-2.5 pt-1.5 pb-2" style={{ borderBottom: "1px solid var(--i-border)" }}>
         <div className="flex items-baseline justify-between">
-          <span className="text-[8px] uppercase tracking-[0.1em] text-[var(--i-text-faint)]">raw</span>
-          <span className="flex items-baseline gap-1">
-            {required > 1e-6 && (
-              <span className="text-[8.5px] tabular-nums leading-none" style={{ color: "var(--i-red)" }} data-shoot="channel-short">
-                −{required.toFixed(1)}
-              </span>
-            )}
-            <span className="i-readout text-[13px] leading-none" data-shoot="channel-raw">
-              {requested.toFixed(1)}
-            </span>
+          <span className="text-[8px] uppercase tracking-[0.06em] text-[var(--i-text-faint)]">Requested</span>
+          <span className="i-readout text-[13px] leading-none" data-shoot="channel-requested">
+            {requested.toFixed(1)}
           </span>
         </div>
         <div className="mt-1 flex items-baseline justify-between">
-          <span className="text-[8px] uppercase tracking-[0.1em] text-[var(--i-text-faint)]">eff</span>
+          <span className="text-[8px] uppercase tracking-[0.06em] text-[var(--i-text-faint)]">Staffed</span>
+          <span className="i-readout text-[13px] leading-none" data-shoot="channel-raw">{raw.toFixed(1)}</span>
+        </div>
+        <div className="mt-1 flex items-baseline justify-between">
+          <span className="text-[8px] uppercase tracking-[0.02em] text-[var(--i-text-faint)]">Used by forecast</span>
           <span
             className="i-readout text-[13px] leading-none"
             data-shoot="channel-effective"
@@ -219,6 +204,9 @@ export default function MixerChannel({
           >
             {effective.toFixed(2)}
           </span>
+        </div>
+        <div className="mt-1 h-[13px] text-[8px] whitespace-nowrap text-[var(--i-amber)]" data-shoot="channel-short">
+          {required > 1e-6 ? `${required.toFixed(1)} unstaffed · not modeled` : "FTE · after switching costs"}
         </div>
       </div>
 

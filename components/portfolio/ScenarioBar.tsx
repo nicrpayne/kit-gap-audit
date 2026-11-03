@@ -19,6 +19,7 @@ export interface ScenarioCapacityLine {
   scopeName: string;
   realityFte: number;
   scenarioFte: number;
+  requiredFte?: number;
 }
 
 export interface BlockedCapacityScope {
@@ -118,7 +119,8 @@ export default function ScenarioBar({
               className="rounded-full px-2.5 py-1 text-[11px] tabular-nums"
               style={{ background: "var(--i-violet-soft)", color: "var(--i-violet)" }}
             >
-              {l.scopeName} {l.realityFte.toFixed(1)} → {l.scenarioFte.toFixed(1)} FTE
+              {l.scopeName} {l.realityFte.toFixed(1)} → {l.scenarioFte.toFixed(1)} FTE staffed
+              {(l.requiredFte ?? 0) > 1e-6 && ` · ${l.requiredFte!.toFixed(1)} unstaffed, not modeled`}
             </span>
           ))}
         {dirty && namedTransferCount > 0 && (

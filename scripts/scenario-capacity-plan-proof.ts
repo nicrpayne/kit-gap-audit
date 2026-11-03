@@ -70,7 +70,7 @@ assert.equal(shortfallLedger.scenario.externalCommitmentFte, 0.5);
 assert.equal(shortfallLedger.scenario.workforceFte, 2);
 assert.equal(
   chipsFor({ ...EMPTY_SCENARIO, capacityPlan: shortfallPlan }, new Map([["jsa", "JSA"]]), 0, 0)
-    .some((chip) => chip.label === "JSA requires 0.5 FTE unstaffed"),
+    .some((chip) => chip.label === "JSA requires 0.5 FTE unstaffed · not modeled"),
   true,
   "the shared Scenario strip must disclose requested-but-unstaffed capacity",
 );

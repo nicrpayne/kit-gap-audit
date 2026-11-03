@@ -211,7 +211,7 @@ export default function MasterBus({
           />
         )}
         <Meter
-          label="Effective"
+          label="Used by forecast"
           value={reading.effective.toFixed(2)}
           suffix="FTE"
           fraction={reading.workforce > 0 ? reading.effective / reading.workforce : 0}
@@ -234,7 +234,7 @@ export default function MasterBus({
           }}
         >
           <div className="text-[8px] uppercase tracking-[0.14em]" style={{ color: alarm ? "var(--i-red)" : "var(--i-text-faint)" }}>
-            {deficit ? "Required" : shortfall ? "Rebalance" : "Over / under"}
+            {deficit ? "Unstaffed · not modeled" : shortfall ? "Rebalance" : "Over / under"}
           </div>
           <div
             className="mt-0.5 i-readout text-[14px] leading-none"

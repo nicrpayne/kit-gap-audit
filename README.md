@@ -78,6 +78,26 @@ to verify legacy subset behavior. The browser proof intercepts source reads with
 fictional fixtures and refuses persistent writes. `proof:report-comparison-db`
 separately exercises real persistence, guarded to a disposable local database.
 
+### Requested staffing versus forecast capacity
+
+In Portfolio, the fader is a **request**, not a way to create people. Each
+channel distinguishes **Requested**, **Staffed**, and **Used by forecast** FTE.
+The last value is staffed capacity after the shared context-switching assumption.
+
+- Raising a fader uses free capacity first. If you request 6.0 FTE but only
+  5.5 can be assigned, the remaining 0.5 stays visibly **unstaffed, not modeled**.
+  The forecast uses 5.5 (less any switching costs), never an invented sixth person.
+- Use **Take from** to transfer a real allocation from another project, or
+  **Try hypothetical hire** to explicitly model extra people. Both stay in the
+  shared Scenario until deliberately committed; a request alone is not a hire.
+- Navigation, Scenario restoration, and planning exports retain the same
+  allocations, explicit hires, switching assumptions, and unfilled requests.
+  Planning briefs disclose shortfalls; accepted report/Reality write safeguards
+  still reject unresolved staffing. Existing saved reports are not rewritten.
+
+Regression checks: `npx tsx scripts/mixer-model-proof.ts`,
+`npx tsx scripts/capacity-display-proof.tsx`, and `npm run proof:scenario-capacity-plan`.
+
 ## Stack
 
 Next.js 15 (App Router, TypeScript) · Postgres via Prisma · Anthropic

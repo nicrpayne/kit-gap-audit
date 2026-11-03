@@ -78,7 +78,10 @@ console.log("\n── B. DEFICIT ───────────────�
 
   const m = readMaster(after, SCOPES, 0, { platform: r.required });
   check("The Master reports +1.0 FTE REQUIRED", near(m.required, 1), `required ${f(m.required)}`);
-  check("The scenario may still be auditioned at 6", near(readChannel(after, "platform", 0, r.required).raw, 6), `${f(readChannel(after, "platform", 0, r.required).raw)} FTE previewed`);
+  const channel = readChannel(after, "platform", 0, r.required);
+  check("The request stays at 6 without inventing staffed capacity", near(channel.raw + channel.required, 6) && near(channel.raw, 5));
+  check("Only staffed capacity is used by the forecast", near(channel.effective, 5));
+  check("Master totals exclude unstaffed requests but retain the deficit", near(m.allocated, 10) && near(m.effective, 10) && near(m.overUnder, -1));
 
   const donors = suggestDonors(after, "platform", 1, SCOPES);
   check("Donors are real channels that actually hold capacity", donors.length === 2 && donors.every((d) => d.availableFte > 0), donors.map((d) => `${d.scopeId} ${f(d.availableFte)}`).join(", "));
