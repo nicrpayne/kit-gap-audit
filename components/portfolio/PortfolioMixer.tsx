@@ -258,11 +258,14 @@ export default function PortfolioMixer({
         {/* The ways out. Present at the same height when balanced, inert --
             reserving the row is what keeps the rail one fixed object. */}
         <div
-          className="mt-2 flex items-center gap-2 overflow-x-auto whitespace-nowrap shrink-0 [&>button]:shrink-0"
+          className="mt-2 flex items-center gap-2 whitespace-nowrap shrink-0 [&>button]:shrink-0"
           style={{ opacity: deficit ? 1 : 0.28, pointerEvents: deficit ? "auto" : "none" }}
           aria-hidden={!deficit}
         >
-          <span className="text-[8px] uppercase tracking-[0.14em] text-[var(--i-text-faint)]">Take from</span>
+          <span className="shrink-0 text-[8px] uppercase tracking-[0.14em] text-[var(--i-text-faint)]">Take from</span>
+          {/* Only the donor list scrolls. Keep the explicit hire action visible
+              even when project names are long or the inspector is open. */}
+          <div className="flex min-w-0 flex-1 items-center gap-2 overflow-x-auto [&>button]:shrink-0" data-testid="capacity-donor-options">
           {(deficit ? donors.slice(0, 3) : []).map((d) => (
             <button
               key={d.scopeId}
@@ -278,6 +281,7 @@ export default function PortfolioMixer({
             </button>
           ))}
           {!deficit && <span className="text-[9.5px] text-[var(--i-text-faint)]">—</span>}
+          </div>
           <span className="mx-1 text-[var(--i-border-strong)]">|</span>
           <button
             onClick={onSplitSomeone}
