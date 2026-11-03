@@ -1159,7 +1159,7 @@ export default function PortfolioPageClient() {
 
   return shell(
     <>
-      <div className="flex-1 min-w-0 flex flex-col">
+      <div className="flex-1 min-w-0 min-h-0 flex flex-col">
         <ScenarioBar
           sharedChips={chipsFor(project.scenario, scopeNameById, project.scenario.excludedItemIds.size, project.scenario.resolvedGateIds.size).filter((chip) => chip.href !== "/portfolio")}
           dirty={dirty}
@@ -1213,7 +1213,9 @@ export default function PortfolioPageClient() {
           label="Review team and allocations" onAction={() => setAllocationsOpen(true)} />}
 
         <div className="flex-1 min-h-0 flex">
-          <div className="flex-1 min-w-0 flex flex-col" style={{ background: "var(--i-bg)" }}>
+          {/* Short windows scroll the instrument instead of crushing the
+              forecast field to zero and painting it over the staffing controls. */}
+          <div data-testid="portfolio-instrument-scroll" className="flex-1 min-w-0 min-h-0 overflow-y-auto flex flex-col" style={{ background: "var(--i-bg)" }}>
             {scenarioForecastPending && (
               <div
                 role="status"

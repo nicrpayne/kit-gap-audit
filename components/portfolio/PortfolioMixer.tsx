@@ -223,7 +223,7 @@ export default function PortfolioMixer({
           transition: "background 220ms ease, border-color 220ms ease",
         }}
       >
-        <div className="flex items-baseline gap-2">
+        <div className="flex items-baseline gap-2 overflow-x-auto whitespace-nowrap shrink-0">
           <span
             className="text-[8px] uppercase tracking-[0.16em]"
             style={{ color: deficit ? "var(--i-red)" : "var(--i-text-faint)" }}
@@ -258,7 +258,7 @@ export default function PortfolioMixer({
         {/* The ways out. Present at the same height when balanced, inert --
             reserving the row is what keeps the rail one fixed object. */}
         <div
-          className="mt-2 flex items-center gap-2 flex-wrap"
+          className="mt-2 flex items-center gap-2 overflow-x-auto whitespace-nowrap shrink-0 [&>button]:shrink-0"
           style={{ opacity: deficit ? 1 : 0.28, pointerEvents: deficit ? "auto" : "none" }}
           aria-hidden={!deficit}
         >

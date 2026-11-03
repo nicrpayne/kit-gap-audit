@@ -226,12 +226,12 @@ export default function ForecastField({
   const assumptions = useMemo(() => forecastAssumptionSnapshot(), []);
 
   return (
-    <div ref={trackRef} className="relative flex-1 min-h-0 flex flex-col">
+    <div ref={trackRef} data-testid="portfolio-forecast-field" className="relative flex-1 min-h-[360px] flex flex-col">
       {/* Portfolio headline: the whole point of this page in one line -- the
           last date anything lands on, which is what "when does this all
           ship" actually means across scopes. */}
       <div
-        className="shrink-0 flex items-end gap-4 px-4 pt-3 pb-2.5"
+        className="shrink-0 flex flex-wrap items-end gap-4 px-4 pt-3 pb-2.5"
         style={{ borderBottom: "1px solid var(--i-border)" }}
       >
         <div>
@@ -342,7 +342,7 @@ export default function ForecastField({
         </div>
       </div>
 
-      <div className="relative flex-1 min-h-0 flex flex-col justify-center overflow-y-auto">
+      <div className="relative flex-1 min-h-0 flex flex-col overflow-y-auto">
         {/* One shared coordinate system behind every row. */}
         <div className="absolute inset-0 pointer-events-none" style={{ left: NAME_COL }} aria-hidden>
           {axis?.ticks.map((t) => (
