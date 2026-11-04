@@ -20,6 +20,7 @@ export default function SavedScenarios({ triggerLabel }: { triggerLabel?: string
   const [rows, setRows] = useState<SavedScenarioSummary[]>([]);
   const [name, setName] = useState("");
   const [busy, setBusy] = useState(false);
+  const [listing, setListing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [reviewed, setReviewed] = useState(false);
@@ -61,8 +62,10 @@ export default function SavedScenarios({ triggerLabel }: { triggerLabel?: string
     if (!open) return;
     setName(workspace.savedScenario?.name ?? ""); setReviewed(false); setError(null); setReplaceDraft(null); setArchiveRow(null);
     let cancelled = false;
-    setBusy(true);
-    request<SavedScenarioListEnvelope>("/api/scenarios?status=all").then(body => { if (!cancelled) { setRows(body.scenarios); setNotice(body.freshnessWarning); } }).catch(cause => { if (!cancelled) setError(cause.message); }).finally(() => { if (!cancelled) setBusy(false); });
+    // Listing is read-only. A slow response must not trap the operator here
+    // or prevent reopening a paused copy already verified in this tab.
+    setListing(true);
+    request<SavedScenarioListEnvelope>("/api/scenarios?status=all").then(body => { if (!cancelled) { setRows(body.scenarios); setNotice(body.freshnessWarning); } }).catch(cause => { if (!cancelled) setError(cause.message); }).finally(() => { if (!cancelled) setListing(false); });
     return () => { cancelled = true; };
     // Opening captures the working name, not each background revalidation.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -152,7 +155,8 @@ export default function SavedScenarios({ triggerLabel }: { triggerLabel?: string
           {active && <p className="mt-3 text-xs text-[var(--i-amber)]">Pause the current Scenario first so reopening another does not replace your edits.</p>}
         </section>}
         <h3 className="font-semibold">Scenario library</h3>
-        {!busy && !rows.length && <p className="mt-3 text-sm">No named Scenarios yet.</p>}
+        {!busy && !listing && !rows.length && <p className="mt-3 text-sm">No named Scenarios yet.</p>}
+        {listing && <p role="status" className="mt-3 text-sm">Loading named Scenarios… You can close this window or reopen a paused draft without waiting.</p>}
         <div className="mt-3 space-y-2">{rows.map(row => <article key={row.id} className="rounded-lg border border-[var(--i-border)] p-3"><div className="flex items-start justify-between gap-3"><div><h4 className="font-semibold">{row.name}</h4><p className="mt-1 text-xs text-[var(--i-text-soft)]">Revision {row.revision} · {row.levers.total} assumptions · {row.status === "archived" ? "archived" : row.freshness.state === "current" ? "inputs match" : row.freshness.state === "stale" ? "inputs changed · review before use" : "current inputs could not be checked"}</p></div><div className="flex flex-wrap gap-2">{row.status === "active" && <button className={button} disabled={busy} onClick={() => { if (active && workspace.scenarioDirty) setReplaceDraft(row); else void loadRow(row); }}>Open</button>}<button className={button} disabled={busy} onClick={() => row.status === "archived" ? void archive(row) : setArchiveRow(row)}>{row.status === "archived" ? "Restore" : "Archive"}</button></div></div>{archiveRow?.id === row.id && <div className="mt-3 text-sm">Archive this named Scenario? It remains recoverable here.<div className="mt-2 flex gap-2"><button className={button} disabled={busy} onClick={() => void archive(row)}>Confirm archive</button><button className={button} disabled={busy} onClick={() => setArchiveRow(null)}>Cancel</button></div></div>}</article>)}</div>
         {busy && <p role="status" className="mt-3 text-sm">Working… Your draft remains available.</p>}
       </div>
