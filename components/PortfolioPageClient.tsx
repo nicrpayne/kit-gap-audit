@@ -1094,7 +1094,6 @@ export default function PortfolioPageClient() {
       <ScenarioPreviewRefusal
         refusal={project.scenarioPreviewRefusal}
         surface="Portfolio"
-        onBackToReality={discard}
       />
       </div>
     );

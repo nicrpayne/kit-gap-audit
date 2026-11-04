@@ -37,7 +37,7 @@
     "proof:stable-risk-streams": "tsx scripts/qa-stable-risk-streams-proof.ts",
     "proof:scenario-capacity-plan": "tsx scripts/scenario-capacity-plan-proof.ts",
     "proof:saved-scenarios": "tsx scripts/saved-scenario-proof.ts",
-    "proof:scenario-workspace-lifecycle": "tsx scripts/scenario-workspace-lifecycle-proof.ts",
+    "proof:scenario-workspace-lifecycle": "tsx scripts/scenario-workspace-lifecycle-proof.ts && tsx scripts/scenario-pause-store-proof.tsx",
     "proof:scenario-preview-lifecycle": "tsx scripts/scenario-preview-lifecycle-proof.ts",
     "proof:saved-scenarios-db": "tsx scripts/saved-scenario-db-proof.ts",
     "proof:saved-scenarios-api": "tsx scripts/saved-scenario-api-proof.ts",

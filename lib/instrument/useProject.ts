@@ -43,6 +43,10 @@ import {
   encodeWorkspaceDraft,
   savedScenarioReplyDisposition,
   SCENARIO_DRAFT_STORAGE_KEY,
+  SCENARIO_PARKED_DRAFTS_KEY,
+  decodeParkedWorkspaceDrafts,
+  parkWorkspaceDraft,
+  type ParkedWorkspaceDraft,
 } from "@/lib/scenario/workspaceRecovery";
 
 // The provenance the Scope instrument reads. Produced by describeItems in
@@ -349,9 +353,10 @@ interface ProjectStore {
   recoveryNotice: string | null;
   inputVerificationError: string | null;
   draftGeneration: number;
+  parkedDrafts: ParkedWorkspaceDraft[];
 }
 
-let store: ProjectStore = { data: null, loading: true, error: null, scenario: EMPTY_SCENARIO, currentBaseline: null, scenarioBaseline: null, savedScenario: null, scenarioDirty: false, recoveryNotice: null, inputVerificationError: null, draftGeneration: 0 };
+let store: ProjectStore = { data: null, loading: true, error: null, scenario: EMPTY_SCENARIO, currentBaseline: null, scenarioBaseline: null, savedScenario: null, scenarioDirty: false, recoveryNotice: null, inputVerificationError: null, draftGeneration: 0, parkedDrafts: [] };
 let recoveryAttempted = false;
 
 function persistDraft() {
@@ -373,6 +378,11 @@ function persistDraft() {
 function recoverDraft() {
   if (recoveryAttempted || typeof window === "undefined") return;
   recoveryAttempted = true;
+  try {
+    store = { ...store, parkedDrafts: decodeParkedWorkspaceDrafts(window.sessionStorage.getItem(SCENARIO_PARKED_DRAFTS_KEY)) };
+  } catch {
+    store = { ...store, recoveryNotice: "Paused drafts could not be read. Their stored copies were not changed." };
+  }
   try {
     const raw = window.sessionStorage.getItem(SCENARIO_DRAFT_STORAGE_KEY);
     if (!raw) return;
@@ -469,7 +479,16 @@ function load(force: boolean): Promise<void> {
 
 /** Lightweight access for the global Scenario library; does not run simulations. */
 export function useScenarioWorkspace() {
-  return useSyncExternalStore(subscribe, () => store, () => store);
+  const snapshot = useSyncExternalStore(subscribe, () => store, () => store);
+  useEffect(() => {
+    // Reading-only surfaces also need the paused-draft recovery bar after a
+    // full reload; they do not have to start the forecast fetch/simulation.
+    if (!recoveryAttempted) {
+      recoverDraft();
+      for (const listener of listeners) listener();
+    }
+  }, []);
+  return snapshot;
 }
 
 export function openSavedScenario(detail: SavedScenarioDetail) {
@@ -478,6 +497,9 @@ export function openSavedScenario(detail: SavedScenarioDetail) {
 }
 
 export function recordScenarioSaved(detail: SavedScenarioDetail, savedPayloadSignature: string, draftGeneration: number) {
+  // Pause/reset may have left no active levers while this reply was in flight.
+  // Ignore the old generation before trying to encode an empty Scenario.
+  if (draftGeneration !== store.draftGeneration) return;
   const disposition = savedScenarioReplyDisposition({
     requestGeneration: draftGeneration,
     currentGeneration: store.draftGeneration,
@@ -507,6 +529,32 @@ export function reviewScenarioAgainstCurrentReality() {
 
 export function resetScenarioWorkspace() {
   publish({ scenario: EMPTY_SCENARIO, scenarioBaseline: null, savedScenario: null, scenarioDirty: false, recoveryNotice: null, draftGeneration: store.draftGeneration + 1 });
+}
+
+/** Non-destructive exit from a refused preview. Stale inputs remain stale;
+ * only the active viewing mode changes, after a verified local backup. */
+export function pauseScenarioWorkspace() {
+  if (!scenarioIsActive(store.scenario)) return;
+  if (typeof window === "undefined" || !store.scenarioBaseline) throw new Error("This draft cannot be paused safely yet. Keep it open and retry after the project finishes loading.");
+  let parkedDrafts: ParkedWorkspaceDraft[];
+  try {
+    parkedDrafts = parkWorkspaceDraft(window.sessionStorage, {
+      version: 1, payload: encodeSavedScenario(store.scenario), baseline: store.scenarioBaseline,
+      saved: store.savedScenario, dirty: store.scenarioDirty, inputVerificationError: store.inputVerificationError,
+    }, { id: crypto.randomUUID(), parkedAt: new Date().toISOString() });
+  } catch {
+    throw new Error("This browser could not safely keep a paused copy. Your active Scenario is unchanged. Keep this tab open; no edits were discarded.");
+  }
+  publish({ parkedDrafts, scenario: EMPTY_SCENARIO, scenarioBaseline: null, savedScenario: null, scenarioDirty: false, recoveryNotice: "Scenario paused in this tab. You are viewing current Reality; reopen the draft from Paused Scenarios.", draftGeneration: store.draftGeneration + 1 });
+}
+
+export function restorePausedScenario(id: string) {
+  if (scenarioIsActive(store.scenario)) throw new Error("Pause or save and leave the current Scenario before reopening another draft.");
+  const row = store.parkedDrafts.find(draft => draft.id === id);
+  if (!row) throw new Error("This paused Scenario is no longer available in this tab.");
+  const draft = row.draft;
+  publish({ scenario: decodeSavedScenario(draft.payload), scenarioBaseline: draft.baseline, savedScenario: draft.saved, scenarioDirty: draft.dirty, draftGeneration: store.draftGeneration + 1, inputVerificationError: "Checking this paused Scenario against current project inputs…", recoveryNotice: "Reopened a paused draft. Its original assumptions and baseline are retained; review changed inputs before applying it." });
+  void load(true);
 }
 
 // A persisted Reality mutation anywhere in the app revalidates the snapshot

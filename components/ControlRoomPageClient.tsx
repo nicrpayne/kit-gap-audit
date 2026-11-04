@@ -427,7 +427,6 @@ export default function ControlRoomPageClient() {
         <ScenarioPreviewRefusal
           refusal={m.scenarioPreviewRefusal}
           surface="Control Room"
-          onBackToReality={() => m.setScenario(EMPTY_SCENARIO)}
         />
         {dialog}
       </InstrumentShell>

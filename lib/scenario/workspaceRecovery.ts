@@ -7,6 +7,7 @@ import {
 
 export const SCENARIO_DRAFT_STORAGE_KEY = "signal.scenario-tab-draft.v1";
 export const SCENARIO_PENDING_MUTATION_KEY = "signal.scenario-save-attempt.v1";
+export const SCENARIO_PARKED_DRAFTS_KEY = "signal.scenario-paused-drafts.v1";
 
 export const RECOVERED_DRAFT_VERIFICATION_ERROR =
   "Checking this recovered Scenario against current project inputs…";
@@ -29,6 +30,41 @@ export interface WorkspaceDraftV1 {
 export interface PendingScenarioMutation {
   signature: string;
   id: string;
+}
+
+export interface ParkedWorkspaceDraft {
+  id: string;
+  parkedAt: string;
+  draft: WorkspaceDraftV1;
+}
+
+/** Pausing is local recovery, not a named save or an approval of stale inputs.
+ * Never evict an older draft to make room: storage failure must retain the
+ * active draft instead of silently losing either one. */
+export function decodeParkedWorkspaceDrafts(raw: string | null): ParkedWorkspaceDraft[] {
+  if (raw === null) return [];
+  const envelope = record(JSON.parse(raw), "Paused Scenarios");
+  if (envelope.version !== 1 || !Array.isArray(envelope.drafts)) throw new Error("Paused Scenarios could not be read.");
+  const ids = new Set<string>();
+  return envelope.drafts.map(value => {
+    const row = record(value, "Paused Scenario");
+    if (typeof row.id !== "string" || !row.id || ids.has(row.id) || typeof row.parkedAt !== "string" || !Number.isFinite(Date.parse(row.parkedAt))) throw new Error("Paused Scenario metadata is invalid.");
+    ids.add(row.id);
+    return { id: row.id, parkedAt: row.parkedAt, draft: decodeWorkspaceDraft(JSON.stringify(row.draft)) };
+  });
+}
+
+export function parkWorkspaceDraft(storage: Pick<Storage, "getItem" | "setItem" | "removeItem">, draft: WorkspaceDraftV1, metadata: { id: string; parkedAt: string }): ParkedWorkspaceDraft[] {
+  const previous = decodeParkedWorkspaceDrafts(storage.getItem(SCENARIO_PARKED_DRAFTS_KEY));
+  const drafts = [{ ...metadata, draft }, ...previous];
+  const encoded = JSON.stringify({ version: 1, drafts });
+  // Validate before writing, then verify the backup before clearing recovery.
+  decodeParkedWorkspaceDrafts(encoded);
+  storage.setItem(SCENARIO_PARKED_DRAFTS_KEY, encoded);
+  if (storage.getItem(SCENARIO_PARKED_DRAFTS_KEY) !== encoded) throw new Error("The paused draft could not be verified. Your active Scenario was not cleared.");
+  storage.removeItem(SCENARIO_DRAFT_STORAGE_KEY);
+  if (storage.getItem(SCENARIO_DRAFT_STORAGE_KEY) !== null) throw new Error("The active recovery copy could not be cleared. Your Scenario remains active and backed up.");
+  return drafts;
 }
 
 type SavedReplyDisposition = "ignore" | "attach-clean" | "attach-dirty" | "detach-archived";

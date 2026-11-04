@@ -12,6 +12,7 @@ import InstrumentRail from "@/components/instrument/InstrumentRail";
 import CommandMenu, { type CommandScope } from "@/components/instrument/CommandMenu";
 import { destinationFor } from "@/lib/shell/mode";
 import AddProjectSheet from "@/components/bootstrap/AddProjectSheet";
+import PausedScenarioRecovery from "@/components/instrument/PausedScenarioRecovery";
 
 /** Below this, a dense control surface cannot show its controls without
     clipping them — QA found the Timeline still losing playback, snap and
@@ -123,6 +124,7 @@ export default function InstrumentShell({
             {dest && <span className="text-[11px] text-[var(--i-text-faint)] truncate">{dest.owns}</span>}
           </div>
         )}
+            <PausedScenarioRecovery />
             {children}
           </>
         )}

@@ -419,7 +419,7 @@ export default function DecisionsPageClient() {
           {/* ── THE INSTRUMENT ────────────────────────────────────────── */}
           <div className="min-h-0 flex-1 overflow-y-auto">
             {project.scenarioPreviewRefusal ? (
-              <ScenarioPreviewRefusal refusal={project.scenarioPreviewRefusal} surface="Decisions" onBackToReality={() => project.setScenario(EMPTY_SCENARIO)} />
+              <ScenarioPreviewRefusal refusal={project.scenarioPreviewRefusal} surface="Decisions" />
             ) : loading && !data ? (
               <div className="px-5 py-6 text-[12px] text-[var(--i-text-faint)]">Reading decisions…</div>
             ) : error ? (

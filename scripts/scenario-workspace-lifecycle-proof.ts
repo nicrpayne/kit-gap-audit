@@ -9,6 +9,10 @@ import {
   resolvePendingScenarioMutation,
   savedScenarioReplyDisposition,
   upsertScenarioMutationResult,
+  decodeParkedWorkspaceDrafts,
+  parkWorkspaceDraft,
+  SCENARIO_DRAFT_STORAGE_KEY,
+  SCENARIO_PARKED_DRAFTS_KEY,
 } from "../lib/scenario/workspaceRecovery";
 import {
   SAVED_SCENARIO_BASELINE_VERSION,
@@ -137,6 +141,36 @@ assert.deepEqual(reconciled, [
   { id: "saved-2", status: "active" },
 ], "the mutation receipt must update status before any optional list refresh");
 
+// A stale draft can leave the active workspace only after a verified backup.
+const originalRecovery = encodeWorkspaceDraft({ payload, baseline, saved: { id: "saved-1", name: "Launch option", revision: 3 }, dirty: true, inputVerificationError: priorFailure });
+const values = new Map<string, string>([[SCENARIO_DRAFT_STORAGE_KEY, originalRecovery]]);
+const storage = { getItem: (key: string) => values.get(key) ?? null, setItem: (key: string, value: string) => { values.set(key, value); }, removeItem: (key: string) => { values.delete(key); } };
+const draft = decodeWorkspaceDraft(originalRecovery);
+const parked = parkWorkspaceDraft(storage, draft, { id: "paused-1", parkedAt: "2026-11-04T15:00:00Z" });
+assert.equal(storage.getItem(SCENARIO_DRAFT_STORAGE_KEY), null);
+const afterPauseReload = decodeParkedWorkspaceDrafts(storage.getItem(SCENARIO_PARKED_DRAFTS_KEY));
+assert.deepEqual(afterPauseReload, parked);
+assert.deepEqual(afterPauseReload[0].draft.payload, payload);
+assert.deepEqual(afterPauseReload[0].draft.baseline, baseline, "pausing must not rebase or approve changed inputs");
+assert.equal(afterPauseReload[0].draft.saved?.revision, 3);
+assert.equal(afterPauseReload[0].draft.dirty, true);
+storage.setItem(SCENARIO_DRAFT_STORAGE_KEY, originalRecovery);
+const twice = parkWorkspaceDraft(storage, draft, { id: "paused-2", parkedAt: "2026-11-04T15:01:00Z" });
+assert.equal(twice.length, 2, "new pauses must not silently overwrite older drafts");
+assert.equal(twice[1].id, "paused-1");
+storage.setItem(SCENARIO_DRAFT_STORAGE_KEY, originalRecovery);
+assert.throws(() => parkWorkspaceDraft({ ...storage, setItem: () => { throw new Error("quota"); } }, draft, { id: "quota", parkedAt: "2026-11-04T15:02:00Z" }), /quota/);
+assert.equal(storage.getItem(SCENARIO_DRAFT_STORAGE_KEY), originalRecovery, "storage failure retains active recovery");
+assert.throws(() => parkWorkspaceDraft({ ...storage, setItem: () => {} }, draft, { id: "silent", parkedAt: "2026-11-04T15:03:00Z" }), /could not be verified/);
+assert.equal(storage.getItem(SCENARIO_DRAFT_STORAGE_KEY), originalRecovery);
+assert.throws(() => parkWorkspaceDraft({ ...storage, removeItem: () => {} }, draft, { id: "remove", parkedAt: "2026-11-04T15:04:00Z" }), /could not be cleared/);
+assert.equal(storage.getItem(SCENARIO_DRAFT_STORAGE_KEY), originalRecovery);
+const beforeCorrupt = storage.getItem(SCENARIO_DRAFT_STORAGE_KEY);
+storage.setItem(SCENARIO_PARKED_DRAFTS_KEY, "unreadable existing backups");
+assert.throws(() => parkWorkspaceDraft(storage, draft, { id: "corrupt", parkedAt: "2026-11-04T15:05:00Z" }));
+assert.equal(storage.getItem(SCENARIO_DRAFT_STORAGE_KEY), beforeCorrupt);
+assert.equal(storage.getItem(SCENARIO_PARKED_DRAFTS_KEY), "unreadable existing backups", "corrupt prior backups are never overwritten");
+
 // Bind the pure decisions to their production call sites. These guards are
 // intentionally structural; this remains Node evidence, not browser evidence.
 const repoRoot = fileURLToPath(new URL("..", import.meta.url));
@@ -146,6 +180,10 @@ assert.match(useProjectSource, /decodeWorkspaceDraft\(raw\)/);
 assert.match(useProjectSource, /"inputVerificationError" in patch/);
 assert.match(useProjectSource, /savedScenarioReplyDisposition\(/);
 assert.match(useProjectSource, /responseStatus: detail\.status/);
+assert.match(useProjectSource, /parkWorkspaceDraft\(window\.sessionStorage/);
+assert.match(useProjectSource, /scenarioBaseline: draft\.baseline/);
+assert.match(useProjectSource, /if \(scenarioIsActive\(store\.scenario\)\) throw new Error/);
+assert.match(savedScenariosSource, /restorePausedScenario\(row\.id\)/);
 assert.match(savedScenariosSource, /resolvePendingScenarioMutation\(/);
 assert.match(savedScenariosSource, /upsertScenarioMutationResult\(current, detail\)/);
 assert.match(savedScenariosSource, /disabled=\{!reviewed \|\| busy \|\| !!workspace\.inputVerificationError\}/);

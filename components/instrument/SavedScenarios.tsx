@@ -2,7 +2,7 @@
 
 import React, { useEffect, useRef, useState } from "react";
 import { useModalFocus } from "@/lib/instrument/useModalFocus";
-import { detachArchivedScenario, openSavedScenario, recordScenarioSaved, resetScenarioWorkspace, reviewScenarioAgainstCurrentReality, scenarioIsActive, useScenarioWorkspace } from "@/lib/instrument/useProject";
+import { detachArchivedScenario, openSavedScenario, pauseScenarioWorkspace, restorePausedScenario, recordScenarioSaved, resetScenarioWorkspace, reviewScenarioAgainstCurrentReality, scenarioIsActive, useScenarioWorkspace } from "@/lib/instrument/useProject";
 import { compareSavedScenarioBaseline, encodeSavedScenario, type SavedScenarioDetailEnvelope, type SavedScenarioListEnvelope, type SavedScenarioSummary } from "@/lib/scenario/saved";
 import {
   encodePendingScenarioMutation,
@@ -14,7 +14,7 @@ import {
 
 const button = "rounded-md border border-[var(--i-border-strong)] px-3 py-2 text-[12px] hover:brightness-125 disabled:opacity-40";
 
-export default function SavedScenarios() {
+export default function SavedScenarios({ triggerLabel }: { triggerLabel?: string } = {}) {
   const workspace = useScenarioWorkspace();
   const [open, setOpen] = useState(false);
   const [rows, setRows] = useState<SavedScenarioSummary[]>([]);
@@ -114,7 +114,7 @@ export default function SavedScenarios() {
 
   return <>
     <button type="button" className={button} onClick={() => setOpen(true)} data-attention={needsReview ? "required" : undefined} data-shoot="saved-scenarios-open" style={{ color: "var(--i-violet)" }}>
-      {needsReview ? "Review saved Scenario" : workspace.savedScenario ? `${workspace.savedScenario.name}${workspace.scenarioDirty ? " · unsaved" : " · saved"}` : "Saved Scenarios"}
+      {triggerLabel ?? (needsReview ? "Review Scenario" : workspace.savedScenario ? `${workspace.savedScenario.name}${workspace.scenarioDirty ? " · unsaved" : " · saved"}` : "Saved Scenarios")}
     </button>
     {open && <div className="fixed inset-0 z-[150] flex items-center justify-center bg-black/65 p-4">
       <div ref={modal} role="dialog" aria-modal="true" aria-labelledby="scenario-library-title" tabIndex={-1} className="w-full max-w-[760px] max-h-[90vh] overflow-y-auto rounded-xl border border-[var(--i-violet)] bg-[var(--i-panel)] p-5 text-[var(--i-text)] shadow-2xl">
@@ -122,6 +122,7 @@ export default function SavedScenarios() {
         <p className="mt-2 text-sm text-[var(--i-text-soft)]">Keep a what-if, reopen it later, and compare it with current Reality. Saving never accepts a business decision or changes the actual team.</p>
         <p className="mt-2 text-xs text-[var(--i-text-faint)]">Named saves live in Signal’s shared workspace—not a private executive report. This tab also keeps a reload recovery copy.</p>
         {workspace.recoveryNotice && <p className="mt-3 text-sm">{workspace.recoveryNotice}</p>}
+        {active && <button className={`${button} mt-3`} onClick={() => { try { pauseScenarioWorkspace(); setOpen(false); } catch (cause) { setError(cause instanceof Error ? cause.message : "Could not pause safely. Your draft is unchanged."); } }}>Pause Scenario · view Reality</button>}
         {workspace.inputVerificationError && <section className="mt-4 rounded-lg border border-[var(--i-amber)] p-4" role="alert">
           <h3 className="font-semibold text-[var(--i-amber)]">Current project inputs are not verified</h3>
           <p className="mt-2 text-sm">{workspace.inputVerificationError}</p>
@@ -141,6 +142,15 @@ export default function SavedScenarios() {
           {active ? <><label className="mt-3 block text-sm">Scenario name<input value={name} maxLength={120} onChange={event => setName(event.target.value)} className="mt-2 block w-full rounded border border-[var(--i-border-strong)] bg-[var(--i-void)] p-2" placeholder="A name you will recognize on the next call" /></label><div className="mt-3 flex flex-wrap gap-2"><button className={button} disabled={busy || needsReview || !!workspace.inputVerificationError || !name.trim()} onClick={() => void save(false)}>{workspace.savedScenario ? "Update saved version" : "Save Scenario"}</button>{workspace.savedScenario && <button className={button} disabled={busy || needsReview || !!workspace.inputVerificationError || !name.trim()} onClick={() => void save(true)}>Save as a new Scenario</button>}<button className={button} disabled={busy} onClick={() => { setReplaceDraft({ id: "reality", name: "Reality" } as SavedScenarioSummary); }}>Return to Reality</button></div></> : <p className="mt-2 text-sm text-[var(--i-text-soft)]">Try a scope, estimate, Decision, or staffing change first—or open a saved Scenario below.</p>}
         </section>
         {replaceDraft && <section className="mb-4 rounded border border-[var(--i-amber)] p-3"><p className="text-sm">{replaceDraft.id === "reality" ? "Return to accepted Reality?" : `Replace this tab’s current draft with ${replaceDraft.name}?`} {workspace.scenarioDirty ? "Unsaved edits will be lost." : "There are no unsaved Scenario edits."} Named saved versions remain available.</p><div className="mt-2 flex gap-2"><button className={button} disabled={busy} onClick={() => { if (replaceDraft.id === "reality") { resetScenarioWorkspace(); setReplaceDraft(null); } else void loadRow(replaceDraft); }}>{replaceDraft.id === "reality" ? "Confirm return to Reality" : "Replace draft"}</button><button className={button} onClick={() => setReplaceDraft(null)}>Keep editing</button></div></section>}
+        {!!workspace.parkedDrafts.length && <section className="mb-5 rounded-lg border border-[var(--i-border)] p-4" aria-label="Paused Scenarios">
+          <h3 className="font-semibold">Paused in this tab</h3>
+          <p className="mt-2 text-xs text-[var(--i-text-soft)]">Your original drafts, including unsaved edits. These survive reloads in this tab—not closing the tab or switching devices. Reopening still checks current inputs; it does not accept changes or update a named save.</p>
+          <div className="mt-3 space-y-3">{workspace.parkedDrafts.map(row => <article key={row.id} className="flex flex-wrap items-center justify-between gap-3 rounded border border-[var(--i-border)] p-3">
+            <div><h4 className="text-sm font-medium">{row.draft.saved?.name ?? "Unsaved Scenario"}</h4><p className="mt-1 text-xs text-[var(--i-text-faint)]">Paused {new Date(row.parkedAt).toLocaleString()} · {row.draft.dirty ? "includes unsaved edits" : "saved version retained"}</p></div>
+            <button className={button} disabled={busy || active} onClick={() => { try { restorePausedScenario(row.id); setOpen(false); } catch (cause) { setError(cause instanceof Error ? cause.message : "Could not reopen this draft."); } }}>Reopen draft</button>
+          </article>)}</div>
+          {active && <p className="mt-3 text-xs text-[var(--i-amber)]">Pause the current Scenario first so reopening another does not replace your edits.</p>}
+        </section>}
         <h3 className="font-semibold">Scenario library</h3>
         {!busy && !rows.length && <p className="mt-3 text-sm">No named Scenarios yet.</p>}
         <div className="mt-3 space-y-2">{rows.map(row => <article key={row.id} className="rounded-lg border border-[var(--i-border)] p-3"><div className="flex items-start justify-between gap-3"><div><h4 className="font-semibold">{row.name}</h4><p className="mt-1 text-xs text-[var(--i-text-soft)]">Revision {row.revision} · {row.levers.total} assumptions · {row.status === "archived" ? "archived" : row.freshness.state === "current" ? "inputs match" : row.freshness.state === "stale" ? "inputs changed · review before use" : "current inputs could not be checked"}</p></div><div className="flex flex-wrap gap-2">{row.status === "active" && <button className={button} disabled={busy} onClick={() => { if (active && workspace.scenarioDirty) setReplaceDraft(row); else void loadRow(row); }}>Open</button>}<button className={button} disabled={busy} onClick={() => row.status === "archived" ? void archive(row) : setArchiveRow(row)}>{row.status === "archived" ? "Restore" : "Archive"}</button></div></div>{archiveRow?.id === row.id && <div className="mt-3 text-sm">Archive this named Scenario? It remains recoverable here.<div className="mt-2 flex gap-2"><button className={button} disabled={busy} onClick={() => void archive(row)}>Confirm archive</button><button className={button} disabled={busy} onClick={() => setArchiveRow(null)}>Cancel</button></div></div>}</article>)}</div>

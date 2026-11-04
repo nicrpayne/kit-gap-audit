@@ -36,13 +36,13 @@ const refusal = scenarioPreviewRefusal({
   estimateOverrideIds: [],
 })!;
 const html = renderToStaticMarkup(
-  <ScenarioPreviewRefusal refusal={refusal} surface="Scope" onBackToReality={() => {}} />,
+  <ScenarioPreviewRefusal refusal={refusal} surface="Scope" />,
 );
-assert.match(html, /SCENARIO PREVIEW REFUSED/);
+assert.match(html, /YOUR SCENARIO NEEDS REVIEW/);
 assert.match(html, /Preview blocked · Reality baseline retained/i);
 assert.match(html, /Your staged Scenario remains intact/);
 assert.match(html, /No staged Scope, estimate, Capacity, delivery date, or confidence overlay is shown as applied/);
-assert.match(html, /Back to Reality/);
+assert.match(html, /Pause Scenario · view Reality/);
 assert.match(html, /role="alert"/);
 
 const seams = [

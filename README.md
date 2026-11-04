@@ -98,6 +98,33 @@ The last value is staffed capacity after the shared context-switching assumption
 Regression checks: `npx tsx scripts/mixer-model-proof.ts`,
 `npx tsx scripts/capacity-display-proof.tsx`, and `npm run proof:scenario-capacity-plan`.
 
+### Recovering when a Scenario needs review
+
+The Scenario is shared across instrument pages within a tab. If its baseline
+changes (including the forecast start day), Signal withholds that Scenario's
+preview rather than mixing old assumptions with current inputs. This does not
+mean the live project or its data has been lost.
+
+Use **Pause Scenario · view Reality** to keep working without approving or
+discarding the draft. Signal writes and verifies a local paused copy before
+leaving Scenario mode. **Paused Scenarios** remains visible across the instrument
+pages; reopening restores the exact payload, original baseline, named-save
+identity/revision and unsaved status, then checks current inputs again. It never
+automatically rebases staffing, estimates or decisions. Previous paused copies
+are retained rather than overwritten. Storage errors leave the active draft in
+place and explain that pausing did not succeed.
+
+Paused copies are **tab-local recovery**, not server saves: they survive reload
+in that tab, but are not promised after closing it or on another device. Use a
+named Scenario after reviewing inputs for durable/shared storage. The existing
+explicit discard/replace actions remain distinct from pause. No accepted
+Reality, named Scenario or report is written by pausing or reopening.
+
+Regression checks: `npm run proof:scenario-workspace-lifecycle`,
+`npm run proof:saved-scenarios`, `npm run proof:scenario-preview-refusal`, and
+`npx tsx scripts/control-room-scenario-recovery-proof.ts`, plus browser checks
+for pause, navigation, reload, reopening and stale-preview refusal.
+
 ## Stack
 
 Next.js 15 (App Router, TypeScript) · Postgres via Prisma · Anthropic

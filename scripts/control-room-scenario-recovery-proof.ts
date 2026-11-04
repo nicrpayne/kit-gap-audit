@@ -17,17 +17,15 @@ assert.match(page.slice(ordinary), /href="\/scopes"[\s\S]*Fix project dependenci
 
 // Render the actual shared recovery component: opening the library is a user
 // action, the refusal stays visible, and merely rendering never resets a draft.
-let resets=0;
 const refusal={code:'stale_scenario_baseline' as const,message:'Inputs changed; retained draft requires review.',action:'Open Saved Scenarios for explicit review.',itemIds:[]};
 const before=JSON.stringify(refusal);
-const markup=renderToStaticMarkup(React.createElement(ScenarioPreviewRefusal,{refusal,surface:'Control Room',onBackToReality:()=>resets++}));
+const markup=renderToStaticMarkup(React.createElement(ScenarioPreviewRefusal,{refusal,surface:'Control Room'}));
 assert.match(markup,/role="alert"/);
-assert.match(markup,/Control Room is not applying this Scenario/);
+assert.match(markup,/Keep working in Control Room/);
 assert.match(markup,/saved-scenarios-open/);
 assert.match(markup,/Your staged Scenario remains intact/);
-assert.match(markup,/Back to Reality/);
+assert.match(markup,/Pause Scenario · view Reality/);
 assert.doesNotMatch(markup,/Fix project dependencies|role="dialog"/);
-assert.equal(resets,0);
 assert.equal(JSON.stringify(refusal),before);
 for (const code of ['invalid_capacity_plan','stale_decision_plan','ambiguous_item_ownership'] as const) {
   const next={...refusal,code,action:`Specific recovery for ${code}`};
