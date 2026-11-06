@@ -203,7 +203,7 @@ export default function OrbitPageClient() {
         scopeName: centre.label,
         coverage: centre.forecastCoverage,
         likelyDate: centre.forecastCoverage.state === "unavailable" ? null : dateOf(start, centre.p50),
-        targetDate: centre.targetDay === null ? null : dateOf(start, centre.targetDay),
+        targetDate: centre.targetDate === null ? null : formatDateOnly(centre.targetDate, { month: "short", day: "numeric", year: "numeric" }),
         confidenceAtTarget: centre.confidenceAtTarget,
       })
     : null;

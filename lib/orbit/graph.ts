@@ -27,6 +27,7 @@
 
 import type { SimulationResult } from "@/lib/forecast/simulate";
 import { percentileDay, confidenceAtDay } from "@/lib/forecast/simulate";
+import { toDateOnly, type DateOnly } from "@/lib/time/dateContract";
 import type { ForecastCoverageContract } from "@/lib/forecast/coverage";
 import type { Feature, FeatureComposition } from "@/lib/scope/features";
 import type { ChannelReading } from "@/lib/capacity/workforce";
@@ -136,6 +137,8 @@ export interface OrbitForecastNode extends OrbitNodeBase {
   p90: number;
   /** Days from startDate to the target, or null when none is set. */
   targetDay: number | null;
+  /** Calendar label from the owner; never reconstruct it from rounded offsets. */
+  targetDate: DateOnly | null;
   confidenceAtTarget: number | null;
   /** Reality's own array while a Scenario is active — the ghost. */
   realityCompletionDaysSorted: number[] | null;
@@ -276,7 +279,7 @@ function significantCapabilities(engaged: Feature[]): { shown: Feature[]; omitte
 }
 
 const dayOf = (startDate: Date, d: Date | null): number | null =>
-  d === null ? null : Math.round((d.getTime() - startDate.getTime()) / 86400000);
+  d === null ? null : (d.getTime() - startDate.getTime()) / 86400000;
 
 /**
  * Reality (and the Scenario over it) as one graph.
@@ -319,6 +322,7 @@ export function buildOrbitGraph(input: OrbitInput): OrbitGraph {
     p50: percentileDay(focus.sim.completionDaysSorted, 50),
     p90: percentileDay(focus.sim.completionDaysSorted, 90),
     targetDay,
+    targetDate: focus.targetDate === null ? null : toDateOnly(focus.targetDate),
     // TARGET IS EVALUATION, NOT INPUT. Confidence is recomputed by counting
     // the SAME trials against a different day — the distribution is never
     // re-run because a target moved.
