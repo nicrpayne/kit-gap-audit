@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { LinearBoundaryValidationError, validateLinearBoundary } from "@/lib/linear";
+import { readJsonObject, validationResponse } from "@/lib/http/json";
+import { parseScopeInput } from "@/lib/scopes/input";
 
 export async function GET() {
   const scopes = await prisma.scope.findMany({ orderBy: { createdAt: "asc" } });
@@ -8,22 +10,19 @@ export async function GET() {
 }
 
 export async function POST(req: NextRequest) {
-  const body = (await req.json()) as {
-    name?: string;
-    teamKey?: string;
-    projectNames?: string[];
-    labelFilter?: string | null;
-  };
-
-  if (!body.name || !body.teamKey) {
-    return NextResponse.json({ error: "name and teamKey are required" }, { status: 400 });
+  let body;
+  try {
+    body = parseScopeInput(await readJsonObject(req));
+  } catch (error) {
+    return validationResponse(error);
   }
 
   let boundary;
   try {
     boundary = await validateLinearBoundary(body.teamKey, body.projectNames);
   } catch (error) {
-    if (error instanceof LinearBoundaryValidationError) return NextResponse.json({ error: error.message }, { status: error.status });
+    if (error instanceof LinearBoundaryValidationError)
+      return NextResponse.json({ error: error.message }, { status: error.status });
     throw error;
   }
 
@@ -36,7 +35,7 @@ export async function POST(req: NextRequest) {
   if (existing.some((s) => s.name.trim().toLowerCase() === body.name!.trim().toLowerCase())) {
     return NextResponse.json(
       { error: `A Scope named "${body.name}" already exists -- pick a distinct name.` },
-      { status: 400 }
+      { status: 400 },
     );
   }
 

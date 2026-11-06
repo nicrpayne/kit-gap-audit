@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { readJsonObject, requiredString, validationResponse } from "@/lib/http/json";
+import { parsePersonInput, validateExternalCommitment } from "@/lib/people/input";
 
 export async function GET() {
   const people = await prisma.person.findMany({ orderBy: { name: "asc" } });
@@ -7,21 +9,13 @@ export async function GET() {
 }
 
 export async function POST(req: NextRequest) {
-  let body: { name?: string; fte?: number; externalCommitmentFte?: number; active?: boolean };
+  let body;
   try {
-    body = await req.json();
-  } catch {
-    return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
-  }
-
-  if (!body.name?.trim()) {
-    return NextResponse.json({ error: "name is required" }, { status: 400 });
-  }
-  if (body.fte !== undefined && (typeof body.fte !== "number" || body.fte <= 0 || body.fte > 1)) {
-    return NextResponse.json({ error: "fte must be a number between 0 (exclusive) and 1" }, { status: 400 });
-  }
-  if (body.externalCommitmentFte !== undefined && (typeof body.externalCommitmentFte !== "number" || body.externalCommitmentFte < 0 || body.externalCommitmentFte > (body.fte ?? 1))) {
-    return NextResponse.json({ error: "externalCommitmentFte must be between 0 and the person's available FTE" }, { status: 400 });
+    const input = parsePersonInput(await readJsonObject(req));
+    body = { ...input, name: requiredString(input.name, "name") };
+    validateExternalCommitment(body.fte ?? 1, body.externalCommitmentFte ?? 0);
+  } catch (error) {
+    return validationResponse(error);
   }
 
   const person = await prisma.person.create({

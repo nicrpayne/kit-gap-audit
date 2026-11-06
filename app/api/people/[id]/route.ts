@@ -1,41 +1,41 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { Prisma } from "@prisma/client";
+import { readJsonObject, RequestValidationError, validationResponse } from "@/lib/http/json";
+import { parsePersonInput, validateExternalCommitment } from "@/lib/people/input";
 
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  let body: { name?: string; fte?: number; externalCommitmentFte?: number; active?: boolean };
+  let body;
   try {
-    body = await req.json();
-  } catch {
-    return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
-  }
-
-  if (body.name !== undefined && !body.name.trim()) {
-    return NextResponse.json({ error: "name cannot be empty" }, { status: 400 });
-  }
-  if (body.fte !== undefined && (typeof body.fte !== "number" || body.fte <= 0 || body.fte > 1)) {
-    return NextResponse.json({ error: "fte must be a number between 0 (exclusive) and 1" }, { status: 400 });
+    body = parsePersonInput(await readJsonObject(req));
+  } catch (error) {
+    return validationResponse(error);
   }
   try {
     const current = await prisma.person.findUnique({ where: { id } });
     if (!current) return NextResponse.json({ error: "Person not found" }, { status: 404 });
     const resultingFte = body.fte ?? current.fte;
     const resultingExternal = body.externalCommitmentFte ?? current.externalCommitmentFte;
-    if (typeof resultingExternal !== "number" || resultingExternal < 0 || resultingExternal > resultingFte) {
-      return NextResponse.json({ error: "externalCommitmentFte must be between 0 and the person's available FTE" }, { status: 400 });
-    }
+    validateExternalCommitment(resultingFte, resultingExternal);
     const person = await prisma.person.update({
       where: { id },
       data: {
         ...(body.name !== undefined ? { name: body.name.trim() } : {}),
         ...(body.fte !== undefined ? { fte: body.fte } : {}),
-        ...(body.externalCommitmentFte !== undefined ? { externalCommitmentFte: body.externalCommitmentFte } : {}),
+        ...(body.externalCommitmentFte !== undefined
+          ? { externalCommitmentFte: body.externalCommitmentFte }
+          : {}),
         ...(body.active !== undefined ? { active: body.active } : {}),
       },
     });
     return NextResponse.json({ person });
-  } catch {
-    return NextResponse.json({ error: "Person not found" }, { status: 404 });
+  } catch (error) {
+    if (error instanceof RequestValidationError) return validationResponse(error);
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2025") {
+      return NextResponse.json({ error: "Person not found" }, { status: 404 });
+    }
+    throw error;
   }
 }
 

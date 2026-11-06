@@ -14,7 +14,10 @@ export async function middleware(req: NextRequest) {
 
   // These routes have their own fail-closed recipient authentication. Reader
   // cookies are never accepted by the operator app or any other API route.
-  if (/^\/shared\/reports\/[^/]+\/?$/.test(pathname) || /^\/api\/report-access\/[^/]+\/(request|verify|logout|pdf)\/?$/.test(pathname)) {
+  if (
+    /^\/shared\/reports\/[^/]+\/?$/.test(pathname) ||
+    /^\/api\/report-access\/[^/]+\/(request|verify|logout|pdf)\/?$/.test(pathname)
+  ) {
     const response = NextResponse.next();
     response.headers.set("Cache-Control", "private, no-store, max-age=0");
     response.headers.set("X-Robots-Tag", "noindex, nofollow, noarchive");
@@ -29,9 +32,15 @@ export async function middleware(req: NextRequest) {
 
   const appPassword = process.env.APP_PASSWORD;
   if (!appPassword) {
-    // No password configured: fail open in local/dev so setup isn't blocked,
-    // but this should always be set before deploying.
-    return NextResponse.next();
+    // Only explicit development/test runtimes may run without authentication.
+    // A missing deployment secret must never expose the operator APIs.
+    if (process.env.NODE_ENV === "development" || process.env.NODE_ENV === "test") {
+      return NextResponse.next();
+    }
+    return NextResponse.json(
+      { error: "Operator authentication is not configured. Contact the administrator." },
+      { status: 503, headers: { "Cache-Control": "private, no-store" } },
+    );
   }
 
   const cookie = req.cookies.get(SESSION_COOKIE)?.value;
@@ -63,7 +72,5 @@ export async function middleware(req: NextRequest) {
 }
 
 export const config = {
-  matcher: [
-    "/((?!_next/static|_next/image|favicon.ico).*)",
-  ],
+  matcher: ["/((?!_next/static|_next/image|favicon.ico).*)"],
 };
