@@ -1,4 +1,4 @@
-import type { ProjectPayload, SuiteScenario } from "@/lib/instrument/useProject";
+import type { ProjectPayload, SuiteScenario } from "@/lib/project/contracts";
 import { resolveCapacity } from "@/lib/capacity/resolve";
 import { clampSimulatedCapacity } from "@/lib/capacity/limits";
 import { readChannel } from "@/lib/capacity/workforce";

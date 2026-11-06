@@ -1,5 +1,5 @@
 import type { DecisionRow } from "@/lib/decisions/model";
-import type { ProjectPayload, ProjectScope } from "@/lib/instrument/useProject";
+import type { ProjectPayload, ProjectScope } from "@/lib/project/contracts";
 import type { ForecastSnapshot, TimelineLane } from "@/lib/timeline/entries";
 
 /** The permanent adversarial world for live-owner/currentness/coverage

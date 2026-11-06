@@ -1,4 +1,4 @@
-import type { SuiteScenario } from "@/lib/instrument/useProject";
+import type { SuiteScenario } from "@/lib/project/contracts";
 import { parseCapacityScenarioPlan, type CapacityScenarioPlanV1 } from "@/lib/scenario/capacityPlan";
 import { parseDecisionPlans, type DecisionPlans } from "@/lib/scenario/decisionPlan";
 import { parsePhasedCapacityPlan, type PhasedCapacityPlanV1 } from "@/lib/scenario/phasedCapacity";

@@ -1,4 +1,4 @@
-import type { ProjectScope, SuiteScenario } from "@/lib/instrument/useProject";
+import type { ProjectScope, SuiteScenario } from "@/lib/project/contracts";
 import { acceptedEstimateIdentity, knowledgeEstimateItemId } from "@/lib/scope/knowledgeEstimates";
 import { remainingEstimateItems } from "./remainingEstimates";
 

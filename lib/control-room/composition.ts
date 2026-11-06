@@ -1,4 +1,4 @@
-import type { ProjectPayload, SuiteScenario } from "@/lib/instrument/useProject";
+import type { ProjectPayload, SuiteScenario } from "@/lib/project/contracts";
 import { composeScopeFeatures } from "@/lib/scope/features";
 import { scenarioDisplayShape } from "@/lib/scenario/displayShape";
 import { scenarioCapacityDisplay } from "@/lib/scenario/displayCapacity";

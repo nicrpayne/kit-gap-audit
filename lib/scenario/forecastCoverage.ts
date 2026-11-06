@@ -1,4 +1,4 @@
-import type { ProjectScope, SuiteScenario } from '@/lib/instrument/useProject';
+import type { ProjectScope, SuiteScenario } from '@/lib/project/contracts';
 import { evaluateForecastCoverage, inheritDependencyCoverage, type ForecastCoverageContract } from '@/lib/forecast/coverage';
 import { scenarioDisplayShape } from './displayShape';
 import { reviewedCapabilityEstimate } from '@/lib/scope/knowledgeEstimates';

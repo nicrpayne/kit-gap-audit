@@ -1,4 +1,4 @@
-import type { SuiteScenario } from "@/lib/instrument/useProject";
+import type { SuiteScenario } from "@/lib/project/contracts";
 
 /** Explicit recovery for a Capacity plan that produces no simulated change.
     Keep every independent Scenario lever staged; only remove the inert plan

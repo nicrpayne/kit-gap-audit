@@ -1,4 +1,4 @@
-import type { ProjectScope, SuiteScenario } from "@/lib/instrument/useProject";
+import type { ProjectScope, SuiteScenario } from "@/lib/project/contracts";
 import { scenarioDisplayShape } from "@/lib/scenario/displayShape";
 import { reviewedEstimateSimulationDecision } from "./reviewedEstimate";
 

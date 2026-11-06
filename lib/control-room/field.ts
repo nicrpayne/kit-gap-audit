@@ -25,7 +25,7 @@ import { percentileDay } from "@/lib/forecast/simulate";
 import type { SimulationResult, DecisionGate } from "@/lib/forecast/simulate";
 import { readChannel } from "@/lib/capacity/workforce";
 import { readDominance } from "@/lib/scope/constraint";
-import type { ProjectPayload, SuiteScenario } from "@/lib/instrument/useProject";
+import type { ProjectPayload, SuiteScenario } from "@/lib/project/contracts";
 import type { DecisionRow } from "@/lib/decisions/model";
 import { canUsePlanningForecast, type ForecastCoverageState } from "@/lib/forecast/coverage";
 import { scenarioForecastCoverage } from "@/lib/scenario/forecastCoverage";

@@ -22,7 +22,7 @@
 // real coverage gap, and it gets its own visibly-unmapped module rather than
 // being swept into an invented bucket.
 
-import type { ScopeWorkItem } from "@/lib/instrument/useProject";
+import type { ScopeWorkItem } from "@/lib/project/contracts";
 import type { CompletedWork } from "@/lib/forecast/compute";
 import type { ShapeCapability } from "@/lib/scope/productShape";
 import {

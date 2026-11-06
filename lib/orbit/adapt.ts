@@ -21,7 +21,7 @@ import { scenarioCapacityDisplay } from "@/lib/scenario/displayCapacity";
 import { scenarioDisplayShape } from "@/lib/scenario/displayShape";
 import { scenarioForecastCoverage } from "@/lib/scenario/forecastCoverage";
 import type { SimulationResult } from "@/lib/forecast/simulate";
-import type { ProjectPayload, SuiteScenario } from "@/lib/instrument/useProject";
+import type { ProjectPayload, SuiteScenario } from "@/lib/project/contracts";
 import type { DecisionRow } from "@/lib/decisions/model";
 import type { OrbitInput, OrbitScopeInput, OrbitGateInput } from "./graph";
 

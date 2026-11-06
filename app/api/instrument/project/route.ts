@@ -23,11 +23,8 @@ import { CANONICAL_REPORT_MODE_WHERE, CANONICAL_REPORT_ORDER_DESC } from "@/lib/
 // instant it was produced.
 //
 // This declares that on the SERVER: never prerendered, never served from a
-// Next data cache, re-run per request. It does not set a response header --
-// Next emits no Cache-Control here -- so the browser side of the same
-// promise is the caller's `cache: "no-store"` in lib/instrument/useProject.
-// Both halves are needed and neither was the staleness bug, which was a
-// client module store that stopped issuing requests entirely.
+// Next data cache, re-run per request. The response also carries private,
+// no-store headers; the client requests no-store reads when revalidating.
 export const dynamic = "force-dynamic";
 
 export async function GET() {

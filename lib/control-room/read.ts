@@ -21,7 +21,7 @@ import type { SimulationResult } from "@/lib/forecast/simulate";
 import { readMaster, readChannel } from "@/lib/capacity/workforce";
 import { readDominance } from "@/lib/scope/constraint";
 import { composeFeatures } from "@/lib/scope/features";
-import type { ProjectPayload, SuiteScenario } from "@/lib/instrument/useProject";
+import type { ProjectPayload, SuiteScenario } from "@/lib/project/contracts";
 import type { DecisionRow } from "@/lib/decisions/model";
 import type { TimelineEntry, TimelineCandidate, TimelineLane } from "@/lib/timeline/entries";
 import { formatDateOnly } from "@/lib/time/dateContract";

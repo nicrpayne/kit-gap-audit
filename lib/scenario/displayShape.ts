@@ -1,4 +1,4 @@
-import type { ProjectPayload, SuiteScenario } from "@/lib/instrument/useProject";
+import type { ProjectPayload, SuiteScenario } from "@/lib/project/contracts";
 import { remainingEstimateCapabilities, remainingEstimateConflict } from "./remainingEstimates";
 
 /** Scope and Orbit must render the same staged shape, including link moves. */
