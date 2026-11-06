@@ -16,7 +16,7 @@ function trackProposalRequests(context: BrowserContext, requests: string[]) {
 
 async function login(context: BrowserContext) {
   assert.ok(password, "APP_PASSWORD is required");
-  const response = await context.request.post(`${baseURL}/api/login`, { data: { password } });
+  const response = await context.request.post(`${baseURL}/api/login`, { headers: { origin: new URL(baseURL).origin }, data: { password } });
   assert.equal(response.status(), 200, "staging login should succeed");
 }
 

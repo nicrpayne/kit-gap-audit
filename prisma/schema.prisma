@@ -7,6 +7,24 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+// Operator sessions are deliberately separate from executive report readers.
+// Raw browser tokens and the shared password are never stored in the database.
+model OperatorSession {
+  tokenHash         String    @id
+  credentialVersion String
+  createdAt         DateTime  @default(now())
+  expiresAt         DateTime
+  revokedAt         DateTime?
+
+  @@index([expiresAt])
+}
+
+model OperatorLoginRateLimit {
+  key      String   @id
+  count    Int
+  resetsAt DateTime
+}
+
 model Scope {
   id                      String                   @id @default(cuid())
   name                    String // e.g. "JSA", "iTrack", "Precon"

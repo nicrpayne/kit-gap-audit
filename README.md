@@ -134,8 +134,11 @@ for pause, navigation, reload, reopening and stale-preview refusal.
 ## Stack
 
 Next.js 15 (App Router, TypeScript) · Postgres via Prisma · Anthropic
-(`claude-sonnet-4-6` by default) · `@linear/sdk` · single-password auth via
-an httpOnly cookie in `middleware.ts`.
+(`claude-sonnet-4-6` by default) · `@linear/sdk` · shared operator password with
+random, expiring server sessions and Node middleware. See
+[operator authentication](docs/OPERATOR-AUTH.md) for origin checks, throttling,
+session transition, and rollout/rollback requirements. This remains a shared
+operator account, not individual-user identity or role-based access control.
 
 ## Local development
 
@@ -273,6 +276,13 @@ transcript and get findings back as JSON, without touching the browser.
 **Auth**: either the browser's cookie session, or, for programmatic callers,
 an `Authorization: Bearer <APP_PASSWORD>` header. Same shared secret as the
 UI login for now — no separate API keys yet.
+
+Cookie-authenticated writes require an exact same-origin `Origin` header.
+Ordinary browser requests supply it automatically. Explicit bearer clients may
+omit it; if supplied, it must match. Bridge transports retain their separate
+scoped bearer token and do not accept the operator password bearer. Browser
+session tokens must come from login; deriving a cookie from the password is no
+longer supported outside an explicitly configured, short migration window.
 
 ```
 POST /api/audit

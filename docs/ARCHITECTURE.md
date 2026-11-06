@@ -34,6 +34,7 @@ for remaining work and release gates.
 | What date does a view display? | `lib/time/dateContract.ts`, `lib/forecast/simulate.ts`, `lib/orbit/graph.ts` |
 | What was preserved in a report? | `lib/reports/forecastBasis.ts`, `scopeEvidence.ts`, `decisionBrief.ts` |
 | Who can read a report? | `lib/reports/sharingHttp.ts` and report-access routes; not the operator session alone |
+| Who can operate the app? | `middleware.ts`, `lib/auth/operatorSessions.ts`, `operatorPolicy.ts`, `requestPolicy.ts`; see [auth rollout](OPERATOR-AUTH.md) |
 | Where do malformed requests stop? | `lib/http/json.ts` plus feature parsers; migration across all routes is not yet complete |
 
 ## Dependency direction

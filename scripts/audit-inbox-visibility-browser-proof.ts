@@ -5,7 +5,8 @@ import { chromium, webkit } from "playwright";
 import { provisionalFixture } from "./lib/provisional-fixture";
 
 // Real application UI, fictional intercepted data. No production host, source
-// refresh, proposal disposition, or database writes are permitted.
+// refresh, proposal disposition, or business-data writes are permitted.
+// Login writes only to the test server's isolated authentication store.
 const base = process.env.SIGNAL_PROOF_URL ?? "http://127.0.0.1:4397";
 assert(["localhost", "127.0.0.1"].includes(new URL(base).hostname));
 const out = resolve(process.argv[2] ?? "../outputs/audit-inbox-visibility-2026-10-27/browser");
@@ -34,7 +35,7 @@ async function main() {
   for (const [name, engine] of [["chromium", chromium], ["webkit", webkit]] as const) {
     const browser = await engine.launch();
     const context = await browser.newContext({ viewport: { width: 1440, height: 1000 } });
-    const login = await context.request.post(`${base}/api/login`, { data: { password: "local-provisional-proof" } });
+    const login = await context.request.post(`${base}/api/login`, { headers: { origin: new URL(base).origin }, data: { password: "local-provisional-proof" } });
     assert.equal(login.status(), 200);
     if (name === "webkit") await context.addCookies((await context.cookies()).map(cookie => ({ ...cookie, secure: false })));
     const checks: string[] = [], writes: string[] = [], unknown: string[] = [], errors: string[] = [];

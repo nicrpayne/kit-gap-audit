@@ -29,7 +29,7 @@ const clear = { state: 'forecastable', canonicalForecast: true, label: 'CANONICA
 for (const [name, engine] of [['chromium', chromium], ['webkit', webkit]]) {
   const dir = `${out}/${name}`; mkdirSync(dir, { recursive: true });
   const browser = await engine.launch(); const context = await browser.newContext({ viewport: { width: 1440, height: 900 } });
-  const auth = await context.request.post(base + '/api/login', { data: { password } }); assert.equal(auth.status(), 200);
+  const auth = await context.request.post(base + '/api/login', { headers: { origin: new URL(base).origin }, data: { password } }); assert.equal(auth.status(), 200);
   if (local) { const cookie = auth.headers()['set-cookie'].split(';')[0], i = cookie.indexOf('='); await context.addCookies([{ name: cookie.slice(0, i), value: cookie.slice(i+1), url: base, httpOnly: true, secure: false, sameSite: 'Lax' }]); }
   const runtime = await (await context.request.get(base + '/api/version')).json();
   if (process.env.CANDIDATE_COMMIT) assert.equal(runtime.commit, process.env.CANDIDATE_COMMIT);

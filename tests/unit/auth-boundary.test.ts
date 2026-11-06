@@ -36,12 +36,14 @@ test("Missing operator credentials fail closed in deployed/unknown runtimes", as
   }
 });
 
-test("Existing operator sessions and scoped bridge credentials retain their boundaries", async () => {
+test("Bounded legacy sessions and scoped bridge credentials retain their boundaries", async () => {
   const original = { ...process.env };
   try {
     Object.assign(process.env, {
       NODE_ENV: "production",
       APP_PASSWORD: "fictional-local-test-password",
+      OPERATOR_LEGACY_SESSION_FROM: new Date(Date.now() - 1000).toISOString(),
+      OPERATOR_LEGACY_SESSION_UNTIL: new Date(Date.now() + 60_000).toISOString(),
     });
     const token = await sessionTokenFor(process.env.APP_PASSWORD!);
     assert.equal(
@@ -87,6 +89,13 @@ test("Existing operator sessions and scoped bridge credentials retain their boun
       shared.headers.get("x-middleware-next"),
       "1",
       "recipient routes still authenticate independently",
+    );
+    delete process.env.OPERATOR_LEGACY_SESSION_FROM;
+    delete process.env.OPERATOR_LEGACY_SESSION_UNTIL;
+    assert.equal(
+      (await middleware(request("/api/scopes", { cookie: `${SESSION_COOKIE}=${token}` }))).status,
+      401,
+      "legacy cookies are refused by default, never an indefinite fallback",
     );
   } finally {
     process.env = original;

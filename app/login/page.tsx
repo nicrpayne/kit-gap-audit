@@ -2,6 +2,7 @@
 
 import { useState, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import { safeReturnPath } from "@/lib/auth/returnPath";
 
 function LoginForm() {
   const router = useRouter();
@@ -24,7 +25,7 @@ function LoginForm() {
         const body = await res.json().catch(() => ({}));
         throw new Error(body.error ?? "Incorrect password.");
       }
-      router.push(params.get("next") ?? "/");
+      router.push(safeReturnPath(params.get("next")));
       router.refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong.");

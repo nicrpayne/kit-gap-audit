@@ -22,7 +22,7 @@ Scenario save, report generation, or report publication is in flight.
 | Tranche | Work | Acceptance gate | Current state |
 | --- | --- | --- | --- |
 | 1. Safety and repeatable checks | Fail closed on missing deployment password; bounded input validation for people, scopes, allocations and login; identical Orbit/Forecast target date and frequency; dependency patch; lint errors; core checks/CI; type extraction and contributor docs. | Behavioral regressions, typecheck, lint, core proofs, dependency checks, build; then isolated browser/DB acceptance. | Implemented locally; validation results recorded below. Not deployed. |
-| 2. Authentication and API integrity | Replace password-derived sessions with expiring/revocable server sessions, rate-limit login, test CSRF/origin controls across owner writes, complete API runtime schemas and safe errors, make duplicate scope creation concurrency-safe. | Disposable DB fault/concurrency tests, operator and recipient auth matrix, bridge compatibility, documented session transition and rollback. | Pending. Missing-password fix is not a complete auth redesign. |
+| 2. Authentication and API integrity | Replace password-derived sessions with expiring/revocable server sessions, rate-limit login, test CSRF/origin controls across owner writes, complete API runtime schemas and safe errors, make duplicate scope creation concurrency-safe. | Disposable DB fault/concurrency tests, operator and recipient auth matrix, bridge compatibility, documented session transition and rollback. | Authentication implemented and tested locally. API schema migration and duplicate-scope concurrency remain pending; staging transition/rollback not yet verified. |
 | 3. Structure and readability | Extract focused Scope/Audit/Timeline views and hooks, isolate Scenario lifecycle from model projection, remove remaining lint warnings, establish a formatting gate per migrated feature. | Each extraction preserves interaction, keyboard/accessibility, Scenario persistence/refusal/recovery, and exact report content. Small independent changes. | Started: neutral contracts and report JSX formatting. Major component extraction pending. |
 | 4. Shareable repository | Inventory private business evidence in current files and history; move operational evidence to private storage through a reviewed, recoverable plan; replace required fixtures with fictional data; scan clean export and history. | Reviewer-approved sanitized export/clone. No names, quotes, credentials, private URLs or actual project IDs in distributable artifacts. | Pending. Do not publish this repository yet. Nothing deleted or history rewritten. |
 | 5. Acceptance and documentation | Automate a fresh Audit → review → Scope → estimates/staffing → Scenario → report → recipient site journey; cover failure/retry, Safari/Chromium, reduced motion, narrow screens, and no-write guarantees. Update architecture and operating docs. | Clean isolated end-to-end run plus owner-approved staging rehearsal; distinguish synthetic acceptance from real-project report signoff. | Pending. Unit/core passes do not substitute for this gate. |
@@ -62,6 +62,60 @@ structures first, migrate and verify separately, remove obsolete fields only
 after old readers are retired. Never rely on a code rollback to undo a destructive
 database migration. Railway currently runs migrations at startup—review that
 implication before adding any migration to a release.
+
+## Second batch: operator authentication
+
+See [authentication behavior and rollout](OPERATOR-AUTH.md). This supersedes the
+first batch's compatibility statement only for this new local candidate: legacy
+cookies now require an explicit absolute migration window of at most seven days.
+New logins create random, expiring, individually revocable server sessions.
+
+- Added two authentication tables through an additive migration. No project,
+  evidence, Scenario, report or executive-recipient schema changed.
+- Added durable atomic login throttling, exact-origin checks on browser writes,
+  safe login return paths, and a sign-out action that preserves tab storage.
+- Middleware now uses Next 15.5's Node runtime for Prisma session checks. The
+  report-owner guard and sharing page recognize the same session. Scoped bridge
+  transport and separate report-reader permissions remain intact.
+- The deployment origin, session transition, and rollback sign-in implications
+  require explicit staging verification before promotion. No credentials,
+  deployment settings, production data or active user session were changed.
+- Remaining tranche-two work: complete all API runtime validation/safe error
+  responses and duplicate-scope concurrency. This batch does not claim to finish
+  the entire quality plan or convert the shared account to individual identity.
+
+### Second-batch validation (November 6, 2026)
+
+- Node 22.22.2: typecheck, lint (zero errors, unchanged 37 warnings), 12 unit
+  groups, existing core proofs and production build passed.
+- Fresh isolated PostgreSQL 18: all 34 migrations applied. Actual session/hash
+  persistence, independent revocation, copied-cookie replay rejection, expiry,
+  password/epoch rotation, 50 concurrent limiter reservations and exact reset
+  boundary passed. Project and saved-report sentinels were unchanged.
+- Built-app HTTP suite passed origin enforcement, secure cookie attributes,
+  separate report-owner checks, bridge credential scope, existing-session
+  continuity during login throttling, legacy transition, missing-table outage
+  refusal and recovery without losing a valid cookie.
+- Chromium and WebKit passed UI sign-in, protected navigation, canceled sign-out,
+  actual sign-out, server-side revocation and preserved tab storage. WebKit's
+  loopback-only test adaptation is described in the auth guide; this is not a
+  deployed HTTPS acceptance claim.
+- The existing private-report HTTP suite passed anonymous/approved-recipient
+  boundaries, mock email delivery, wrong-origin/code/replay, read-only snapshot,
+  recipient removal/regrant/logout, config refusal and revocation. No real email
+  was sent and no production report/site was published.
+- The eligible-current-work browser journey still passed in Chromium/WebKit:
+  conditional dates, Scope deferral, navigation/reload, cross-screen Scenario
+  consistency, downloads, readiness, restoration and stale-preview refusal.
+  Business APIs in that journey were fictional/intercepted; only the isolated
+  authentication store was used for login.
+- Legacy-subset planning and Audit inbox hide/reopen/deep-link/focus/refresh
+  regressions also passed in both browsers, including 1024-pixel layouts.
+  Existing proof login calls now send the required Origin header. Historical
+  scripts that synthesize password-hash cookies are not covered by this batch;
+  migrate them to real disposable sessions before relying on those scripts.
+- All of this is local. Staging HTTPS/proxy, live bridge delivery, production
+  promotion and rollback rehearsal remain separate owner-coordinated gates.
 
 ## Validation ledger
 

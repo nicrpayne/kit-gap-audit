@@ -28,11 +28,18 @@ Reality, source evidence, saved Scenarios, and frozen reports—not just compile
 | `npm run proof:dependencies` | Compatibility probes and live advisory checks; unavailable advisory service is not a pass. |
 | `npm run build` | Production compilation, not a live acceptance claim. |
 | `npm run check` | Typecheck, lint, unit tests, core proofs and production build. |
+| `npm run proof:operator-auth-db` | Guarded disposable PostgreSQL session/concurrency proof; requires the [auth test setup](docs/OPERATOR-AUTH.md). |
+| `npm run proof:operator-auth-http` | Built-app HTTP + Chromium/WebKit auth proof; owns local port 4397 and uses only the guarded disposable DB. |
 
 Database and browser scripts have separate setup and safety requirements. Read a
 script's guard before running it; do not run every `scripts/*` file indiscriminately.
 Some historical tools are maintenance commands that write data. Do not disable
 their guards to obtain a green result. CI contains no deployment step.
+
+Browser/HTTP proofs that log in need a real disposable database after the
+session migration. Non-browser login requests must send `Origin`. Do not run
+`next build` against a checkout while its `next start` process is serving browser
+tests: both use `.next`. Stop the test server before rebuilding.
 
 ## Organization and readable code
 

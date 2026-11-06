@@ -8,8 +8,8 @@ import {
 } from "@/lib/scenario/savedStore";
 
 // This route inherits the app-wide middleware policy: APP_PASSWORD protects
-// it when configured; when APP_PASSWORD is absent, that middleware passes the
-// request through (there is no separate production-mode guard here). There is
+// it with revocable sessions or an explicit bearer. Missing credentials refuse
+// deployed access; only explicit development/test may run without them. There is
 // no per-user Scenario identity. The request also cannot select a namespace or
 // workspace; all callers share Signal's one workspace.
 export const dynamic = "force-dynamic";

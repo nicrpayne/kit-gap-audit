@@ -240,7 +240,7 @@ type ProofAuthentication = "not_required" | "server_cookie" | "loopback_http_coo
 
 async function authenticate(context: BrowserContext): Promise<ProofAuthentication> {
   if (!proofPassword) return "not_required";
-  const response = await context.request.post(`${baseURL}/api/login`, { data: { password: proofPassword } });
+  const response = await context.request.post(`${baseURL}/api/login`, { headers: { origin: new URL(baseURL).origin }, data: { password: proofPassword } });
   assert.equal(response.status(), 200, "local proof authentication must succeed");
 
   const target = new URL(baseURL);

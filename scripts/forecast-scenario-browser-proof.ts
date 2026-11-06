@@ -55,7 +55,7 @@ for(const [name,engine] of [['chromium',chromium],['webkit',webkit]] as const){
     scopes:payload.scopes.map(s=>({...portfolioOriginal.scopes.find((p:{scopeId:string})=>p.scopeId===s.scopeId),...s,
       capacityBasis:{kind:'explicit',value:s.teamCapacity},reportHistory:[],lastReport:null}))};
   const browser=await engine.launch({headless:true});const context=await browser.newContext({viewport:{width:1440,height:900}});
-  if(process.env.SIGNAL_PROOF_PASSWORD)assert.equal((await context.request.post(base+'/api/login',{data:{password:process.env.SIGNAL_PROOF_PASSWORD}})).status(),200);
+  if(process.env.SIGNAL_PROOF_PASSWORD)assert.equal((await context.request.post(base+'/api/login',{headers:{origin:new URL(base).origin},data:{password:process.env.SIGNAL_PROOF_PASSWORD}})).status(),200);
   // WebKit's secure cookie policy excludes HTTP loopback. Relax only this
   // isolated test cookie, never the app's real HTTPS session settings.
   if(name==='webkit')await context.addCookies((await context.cookies()).map(cookie=>({...cookie,secure:false})));

@@ -17,7 +17,7 @@ async function main() {
   const requests: string[] = [];
   page.on("request", (request) => requests.push(`${request.method()} ${new URL(request.url()).pathname}`));
 
-  const login = await page.request.post(`${baseURL}/api/login`, { data: { password } });
+  const login = await page.request.post(`${baseURL}/api/login`, { headers: { origin: new URL(baseURL).origin }, data: { password } });
   assert.equal(login.status(), 200, "staging login should succeed");
 
   await page.goto(`${baseURL}/scope`, { waitUntil: "networkidle" });

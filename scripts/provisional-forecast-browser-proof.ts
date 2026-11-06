@@ -18,7 +18,7 @@ async function main() {
     const data = currentWork ? currentWorkFixture() : provisionalFixture(), scope = data.scopes[0];
     const sid = scope.scopeId;
     // This password is only for the explicitly isolated local process.
-    const login = await context.request.post(`${base}/api/login`, { data: { password: "local-provisional-proof" } });
+    const login = await context.request.post(`${base}/api/login`, { headers: { origin: new URL(base).origin }, data: { password: "local-provisional-proof" } });
     assert.equal(login.status(), 200);
     if (engineName === "webkit") await context.addCookies((await context.cookies()).map(cookie => ({ ...cookie, secure: false })));
     const errors: string[] = [], unexpected: string[] = [], checks: string[] = [];

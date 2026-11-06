@@ -7,10 +7,10 @@ import { healthyOwnerFixture } from "./lib/decision-brief-fixtures";
 import { assembleDecisionBrief } from "../lib/reports/decisionBrief";
 import { buildBriefRecipe } from "../lib/reports/composer";
 import { REQUEST_MESSAGE } from "../lib/reports/sharingPolicy";
+import { assertDisposableDatabaseProofEnvironment } from "./lib/disposable-db-proof-guard";
 
 async function main() {
-  const db = new URL(process.env.DATABASE_URL ?? "http://invalid");
-  assert(process.env.SIGNAL_REPAIR_DB_PROOF === "1" && db.hostname === "127.0.0.1" && db.port === "55434" && (db.pathname === "/signal_t0_test_1004" || (["/signal_t0_test_1008", "/signal_t0_test_1012"].includes(db.pathname) && db.username === "signal_t0_local")), "Disposable repair DB only");
+  assertDisposableDatabaseProofEnvironment(process.env, "SIGNAL_REPAIR_DB_PROOF");
   const origin = "https://signal.example", local = "http://127.0.0.1:4277", password = randomUUID(), secret = randomUUID() + randomUUID();
   const mails: { body: { text: string; to: string[] }; key: string }[] = [];
   const rateKeys = (await prisma.reportShareRateLimit.findMany({ select: { key: true } })).map(r => r.key);
@@ -18,7 +18,7 @@ async function main() {
   let child: ChildProcess | null = null, output = "";
   const scope = await prisma.scope.create({ data: { name: `CONFIDENTIAL HTTP proof ${randomUUID()}`, teamKey: "PRF", executionState: "not_configured" } });
   async function start(configured: boolean) {
-    const env: NodeJS.ProcessEnv = { ...process.env, NODE_ENV: "production", NEXT_TELEMETRY_DISABLED: "1", APP_PASSWORD: password, REPORT_PUBLIC_ORIGIN: origin, REPORT_SHARING_SECRET: secret,
+    const env: NodeJS.ProcessEnv = { ...process.env, NODE_ENV: "production", NEXT_TELEMETRY_DISABLED: "1", APP_PASSWORD: password, OPERATOR_APP_ORIGIN: origin, REPORT_PUBLIC_ORIGIN: origin, REPORT_SHARING_SECRET: secret,
       REPORT_EMAIL_FROM: "reports@example.com", RESEND_API_KEY: configured ? "mock-only-key" : "", LINEAR_API_KEY: "", ANTHROPIC_API_KEY: "" };
     child = spawn(process.execPath, ["--require", "./scripts/lib/report-mail-mock.cjs", "./node_modules/next/dist/bin/next", "start", "--hostname", "127.0.0.1", "--port", "4277"], { env, stdio: ["ignore", "pipe", "pipe", "ipc"] });
     child.stdout!.on("data", data => { output += data; }); child.stderr!.on("data", data => { output += data; });

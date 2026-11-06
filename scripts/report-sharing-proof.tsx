@@ -87,11 +87,16 @@ async function main() {
   assert.throws(() => requireOrigin(request({ origin: "https://evil.example" }), config.origin));
   assert.throws(() => requireOrigin(request({ origin: config.origin, "sec-fetch-site": "cross-site" }), config.origin));
   requireOrigin(request({ origin: config.origin }), config.origin);
-  const prior = process.env.APP_PASSWORD;
+  const prior = { ...process.env };
   try {
     delete process.env.APP_PASSWORD;
     await assert.rejects(requireReportOwner(request()), /must be configured/);
     process.env.APP_PASSWORD = "fixture-operator-password";
+    // This connection-free proof covers only the explicitly bounded migration
+    // path. The operator DB/HTTP suite exercises newly issued server sessions.
+    process.env.OPERATOR_LEGACY_SESSION_FROM = new Date(Date.now() - 1000).toISOString();
+    process.env.OPERATOR_LEGACY_SESSION_UNTIL = new Date(Date.now() + 60_000).toISOString();
+    process.env.OPERATOR_APP_ORIGIN = config.origin;
     await assert.rejects(requireReportOwner(request({ cookie: `${READER_COOKIE}=${newSession()}` })), /Operator sign-in/);
     await requireReportOwner(request({ authorization: "Bearer fixture-operator-password" }), true);
     const cookie = `kit_session=${await sessionTokenFor(process.env.APP_PASSWORD)}`;
@@ -106,7 +111,7 @@ async function main() {
     assert.match(publicPage.headers.get("cache-control")!, /no-store/);
     const returnLink = await middleware(new NextRequest(`${config.origin}/reports/one/share?pair=1`));
     assert.equal(new URL(returnLink.headers.get("location")!).searchParams.get("next"), "/reports/one/share?pair=1");
-  } finally { if (prior === undefined) delete process.env.APP_PASSWORD; else process.env.APP_PASSWORD = prior; }
+  } finally { process.env = prior; }
   assert.match(privateJson({ ok: true }).headers.get("cache-control")!, /no-store/);
   console.log("PASS report sharing policy, projection, inert rendering, mail contract, bounded bodies, origin checks, fail-closed owner auth and reader/operator separation (no real email sent)");
 }

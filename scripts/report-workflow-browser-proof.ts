@@ -43,7 +43,7 @@ export async function proveReportWorkflowInBrowser(scopeId: string, fixture: { r
     }
     assert(ready, "local server became ready");
     const context = await browser.newContext({ viewport: { width: 1440, height: 1000 } });
-    assert.equal((await context.request.post(`${base}/api/login`, { data: { password: "signal-local-only" } })).status(), 200);
+    assert.equal((await context.request.post(`${base}/api/login`, { headers: { origin: new URL(base).origin }, data: { password: "signal-local-only" } })).status(), 200);
     if (browserEngine === "webkit") {
       // WebKit does not treat loopback HTTP as a secure-cookie exception.
       // This changes only the isolated test browser's issued cookie, not auth

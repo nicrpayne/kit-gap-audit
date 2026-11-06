@@ -15,7 +15,7 @@ const request = (body: string, method = "POST") =>
   new NextRequest("http://localhost/api/test", {
     method,
     body,
-    headers: { "content-type": "application/json" },
+    headers: { "content-type": "application/json", origin: "http://localhost" },
   });
 
 test("JSON reader rejects null, primitives, arrays and malformed JSON", async () => {
