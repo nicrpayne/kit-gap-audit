@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
+import type { Prisma } from "@prisma/client";
 import { prisma } from "../lib/prisma";
 import { createCanonicalCapability, updateCanonicalCapability, capabilityWriteReceipt, SCOPE_WRITE_TRANSACTION } from "../lib/scope/reality";
 import { scopeRealityError } from "../lib/scope/http";
@@ -10,6 +11,8 @@ process.env.KIT_DEV_FIXTURES = "1";
 delete process.env.LINEAR_API_KEY;
 const key = () => randomUUID();
 const work = (id: string) => ({ externalId: id, title: id, externalUrl: null, state: "In Progress", updatedAt: null });
+type TransactionBody = (tx: Prisma.TransactionClient) => Promise<unknown>;
+type TransactionOptions = { maxWait?: number; timeout?: number; isolationLevel?: Prisma.TransactionIsolationLevel };
 
 async function main() {
   const scope = await prisma.scope.create({ data: { name: "Scope save fault proof", teamKey: "JSA", projectNames: ["KIT JSA"], teamCapacity: 2, executionState: "configured" } });
@@ -23,7 +26,7 @@ async function main() {
     const id = created.capability.id;
     const delayedKey = key();
     // Faults are local wrappers only, never a production test switch.
-    prisma.$transaction = ((fn: any, options: any) => transaction(async (tx) => { await tx.$executeRaw`SELECT pg_sleep(6)`; return fn(tx); }, options)) as typeof prisma.$transaction;
+    prisma.$transaction = ((fn: TransactionBody, options?: TransactionOptions) => transaction(async (tx) => { await tx.$executeRaw`SELECT pg_sleep(6)`; return fn(tx); }, options)) as typeof prisma.$transaction;
     const delayed = await updateCanonicalCapability(id, { expectedRevision: 1, work: [work("SOF-101"), work("SOF-102"), work("SOF-103")], idempotencyKey: delayedKey });
     assert.equal(delayed.capability.revision, 2); assert.equal(delayed.capability.workLinks.length, 3);
     prisma.$transaction = transaction as typeof prisma.$transaction;
@@ -35,13 +38,13 @@ async function main() {
     assert.equal(await capabilityWriteReceipt(delayedKey, "different-scope"), null);
     checks.push("exact intent replay once, changed intent refused, receipt scope-isolated");
     const committedKey = key();
-    prisma.$transaction = (async (fn: any, options: any) => { await transaction(fn, options); throw new Error("Injected lost commit acknowledgement"); }) as typeof prisma.$transaction;
+    prisma.$transaction = (async (fn: TransactionBody, options?: TransactionOptions) => { await transaction(fn, options); throw new Error("Injected lost commit acknowledgement"); }) as unknown as typeof prisma.$transaction;
     const recovered = await updateCanonicalCapability(id, { expectedRevision: 2, description: "Confirmed despite lost reply", idempotencyKey: committedKey });
     assert.equal(recovered.capability.revision, 3); assert((await capabilityWriteReceipt(committedKey, scope.id))?.committed);
     prisma.$transaction = transaction as typeof prisma.$transaction;
     checks.push("post-commit error recovered from matching durable event");
     const rollbackKey = key();
-    prisma.$transaction = ((fn: any, options: any) => transaction(async (tx) => { await fn(tx); throw new Error("Injected rollback"); }, options)) as typeof prisma.$transaction;
+    prisma.$transaction = ((fn: TransactionBody, options?: TransactionOptions) => transaction(async (tx) => { await fn(tx); throw new Error("Injected rollback"); }, options)) as unknown as typeof prisma.$transaction;
     await assert.rejects(updateCanonicalCapability(id, { expectedRevision: 3, work: [work("SOF-104")], idempotencyKey: rollbackKey }), /rollback/);
     prisma.$transaction = transaction as typeof prisma.$transaction;
     assert.equal(await capabilityWriteReceipt(rollbackKey), null);

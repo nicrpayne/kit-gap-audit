@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { readFileSync } from "node:fs";
+import { createRequire } from "node:module";
 import { isCompletedIssue } from "../lib/linearIssueState";
 import { deliveryRelevantIssueIds, evaluateForecastCoverage, inheritDependencyCoverage } from "../lib/forecast/coverage";
 import { composeScopeFeatures, linkedWorkDone } from "../lib/scope/features";
@@ -28,6 +29,7 @@ import type { ProjectPayload } from "../lib/instrument/useProject";
 // tsx's classic JSX transform for imported Next client components.
 (globalThis as unknown as {React:typeof React}).React=React;
 // InstrumentRail has module-level JSX under tsx's classic transform.
+const require = createRequire(import.meta.url);
 const { SignalStrip, MasterDisplay } = require("../components/instrument/ScopeInstrument") as typeof import("../components/instrument/ScopeInstrument");
 
 const checkNames: string[] = [];

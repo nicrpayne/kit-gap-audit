@@ -12,10 +12,17 @@ const compat = new FlatCompat({
 const eslintConfig = [
   ...compat.extends("next/core-web-vitals", "next/typescript"),
   {
+    // This preload is deliberately CommonJS: Node loads it with `-r` before
+    // the application so HTTP tests never send real report invitation mail.
+    files: ["scripts/lib/report-mail-mock.cjs"],
+    rules: { "@typescript-eslint/no-require-imports": "off" },
+  },
+  {
     ignores: [
       ".next/**",
       "out/**",
       "build/**",
+      "coverage/**",
       "lab/rubric-reference/**",
       "next-env.d.ts",
     ],

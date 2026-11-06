@@ -28,7 +28,7 @@ async function main() {
     assert.equal(saved.capability.workLinks.length,1);
     assert.deepEqual(saved.capability.provenance,provenance,"the exact editor request preserves original IDs and quote");
     const event = await prisma.capabilityEvent.findUniqueOrThrow({where:{idempotencyKey}});
-    const after = event.afterState as Record<string,any>;
+    const after = event.afterState as { provenance: unknown; operatorEdit: { note: string; source: string } };
     assert.deepEqual(after.provenance,provenance);
     assert.equal(after.operatorEdit.note,input.note,"edit note is retained separately from the source receipt");
     assert.equal(after.operatorEdit.source,"manual");

@@ -8,6 +8,12 @@ findings and surfaces the gaps.
 See `BUILDPACK.md` for the full spec this was built against, and
 `ROADMAP.md` for what's next.
 
+For development and review, start with [CONTRIBUTING.md](CONTRIBUTING.md) and
+the [engineering quality repair plan](docs/ENGINEERING-QUALITY.md). Repairs are
+being tested independently of the live app; a local pass is not a deployment.
+The repository contains private historical evidence and is **not cleared for
+public sharing**.
+
 ## Signal forecasting when knowledge is incomplete
 
 Signal forecasts **current eligible work, not just neatly classified work**.
@@ -134,8 +140,8 @@ an httpOnly cookie in `middleware.ts`.
 ## Local development
 
 ```bash
-npm install
-cp .env.example .env   # fill in real values
+npm ci
+cp .env.example .env   # use local development values, never production credentials
 npx prisma migrate dev
 npx prisma db seed     # seeds one Scope (JSA)
 npm run dev
@@ -404,6 +410,12 @@ body.
 - `lib/audit/prompts/audit-v1.ts` — the extraction prompt as a versioned
   template
 - `lib/audit/normalize.ts` — defensive parsing/validation of raw findings
-- `prisma/schema.prisma` — `Scope`, `Source`, `Finding`, `AuditRun`
-- Nav ships with Forecast / Timeline / Reports as placeholders — see
-  `ROADMAP.md` for what they'll become.
+- `prisma/schema.prisma` — persisted project, evidence, Scenario and report records
+- `lib/project/contracts.ts` — framework-neutral project and Scenario types
+- `lib/instrument/useProject.ts` — client project loading, shared preview and recovery
+- `lib/forecast/` and `lib/scenario/` — shared simulation and what-if rules
+- `lib/reports/` — frozen report snapshots, presentation and recipient access
+- `components/instrument/`, `components/timeline/`, `components/reports/` — live
+  Forecast, Scope, Timeline and Reports views (not placeholders)
+- `tests/unit/` — isolated behavioral regressions; `scripts/*proof*` contains
+  additional domain, database and browser checks with differing safety requirements

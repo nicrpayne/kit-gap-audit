@@ -152,7 +152,7 @@ async function main() {
         await counts().filter({ hasText: "1 ungrouped tickets included by assumption" }).waitFor();
         scope.executionItems[1].high = 20;
         scope.realityState.realityRevision = 2; scope.realityState.computedRevision = 2;
-        await page.reload(); await page.getByText("SCENARIO PREVIEW REFUSED", { exact: true }).waitFor();
+        await page.reload(); await page.locator('[data-shoot="scenario-preview-refused"]').waitFor();
         assert.equal(await page.getByRole("button", { name: "Download provisional brief", exact: true }).count(), 0);
         checks.push("New source/revision inputs refuse a stale Scenario and stale export");
         assert.deepEqual(errors, []); assert.deepEqual(unexpected, []);
@@ -264,7 +264,7 @@ async function main() {
       scope.executionItems[1].high = 20;
       scope.realityState.realityRevision = 2; scope.realityState.computedRevision = 2;
       await page.reload();
-      await page.getByText("SCENARIO PREVIEW REFUSED", { exact: true }).waitFor();
+      await page.locator('[data-shoot="scenario-preview-refused"]').waitFor();
       assert.equal(await page.getByRole("button", { name: "Download provisional brief", exact: true }).count(), 0);
       checks.push("Changed source inputs after reload refuse the stale Scenario instead of exporting old results");
       assert.deepEqual(errors, []); assert.deepEqual(unexpected, []);
