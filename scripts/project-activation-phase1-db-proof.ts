@@ -3,6 +3,7 @@ import { prisma } from "../lib/prisma";
 import { compileBootstrapPackage, executeBootstrapScan, persistCompiledPackage } from "../lib/bootstrap/scan";
 import { readBootstrap } from "../lib/bootstrap/read";
 import { richHistoricalCorpus, sparseCorpus } from "../lib/bootstrap/fixtures";
+import { editBootstrap } from "../lib/bootstrap/identity";
 
 async function protectedCounts() {
   const [scope, contextSnapshot, decision, decisionGate, timelineEvent, person, allocation, report, sourceRegistration, finding, workEstimate] = await Promise.all([
@@ -48,6 +49,7 @@ try {
   assert.equal(reloaded?.boundary.forecastEffect, 0);
 
   const identity = { canonicalName: "Harbor Relay", aliases: ["HR", "Relay"], sourceHints: [] };
+  await editBootstrap(bootstrap.id, identity);
   const richScan = await prisma.bootstrapScanRun.create({ data: { bootstrapId: bootstrap.id, sequence: 3, providerCoverage: [], metrics: {}, warnings: [] } });
   await persistCompiledPackage(richScan.id, compileBootstrapPackage(bootstrap.id, identity, richHistoricalCorpus, new Date("2026-09-06T18:00:00.000Z")));
   const richRead = await readBootstrap(bootstrap.id);

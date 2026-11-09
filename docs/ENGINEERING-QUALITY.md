@@ -12,6 +12,10 @@ pushes to deploying branches, or deployments are part of this initial batch.
 This protects the current workflow; it is not a claim that existing production
 bugs are fixed or that any system can guarantee uninterrupted availability.
 
+November 8 update: the owner has authorized production updates along the way.
+That removes the initial deployment-approval hold, not the staging, active-use,
+session-transition or rollback gates below. No deployment has occurred yet.
+
 Before any promotion, coordinate a quiet window with the owner, verify the
 running production build and configuration, rehearse in staging, and record an
 exact rollback build. Do not promote while a refresh, acceptance operation,
@@ -22,8 +26,8 @@ Scenario save, report generation, or report publication is in flight.
 | Tranche | Work | Acceptance gate | Current state |
 | --- | --- | --- | --- |
 | 1. Safety and repeatable checks | Fail closed on missing deployment password; bounded input validation for people, scopes, allocations and login; identical Orbit/Forecast target date and frequency; dependency patch; lint errors; core checks/CI; type extraction and contributor docs. | Behavioral regressions, typecheck, lint, core proofs, dependency checks, build; then isolated browser/DB acceptance. | Implemented locally; validation results recorded below. Not deployed. |
-| 2. Authentication and API integrity | Replace password-derived sessions with expiring/revocable server sessions, rate-limit login, test CSRF/origin controls across owner writes, complete API runtime schemas and safe errors, make duplicate scope creation concurrency-safe. | Disposable DB fault/concurrency tests, operator and recipient auth matrix, bridge compatibility, documented session transition and rollback. | Authentication and canonical project-write integrity implemented/tested locally. Broader API schema migration and staging transition/rollback remain pending. |
-| 3. Structure and readability | Extract focused Scope/Audit/Timeline views and hooks, isolate Scenario lifecycle from model projection, remove remaining lint warnings, establish a formatting gate per migrated feature. | Each extraction preserves interaction, keyboard/accessibility, Scenario persistence/refusal/recovery, and exact report content. Small independent changes. | Started: neutral contracts and report JSX formatting. Major component extraction pending. |
+| 2. Authentication and API integrity | Replace password-derived sessions with expiring/revocable server sessions, rate-limit login, test CSRF/origin controls across owner writes, complete API runtime schemas and safe errors, make duplicate scope creation concurrency-safe. | Disposable DB fault/concurrency tests, operator and recipient auth matrix, bridge compatibility, documented session transition and rollback. | Authentication, canonical writes and draft setup/review integrity implemented/tested locally. Broader API schema migration and staging transition/rollback remain pending. |
+| 3. Structure and readability | Extract focused Scope/Audit/Timeline views and hooks, isolate Scenario lifecycle from model projection, remove remaining lint warnings, establish a formatting gate per migrated feature. | Each extraction preserves interaction, keyboard/accessibility, Scenario persistence/refusal/recovery, and exact report content. Small independent changes. | Started: neutral contracts, report JSX formatting and setup package persistence separated from compilation. Major component extraction pending. |
 | 4. Shareable repository | Inventory private business evidence in current files and history; move operational evidence to private storage through a reviewed, recoverable plan; replace required fixtures with fictional data; scan clean export and history. | Reviewer-approved sanitized export/clone. No names, quotes, credentials, private URLs or actual project IDs in distributable artifacts. | Pending. Do not publish this repository yet. Nothing deleted or history rewritten. |
 | 5. Acceptance and documentation | Automate a fresh Audit → review → Scope → estimates/staffing → Scenario → report → recipient site journey; cover failure/retry, Safari/Chromium, reduced motion, narrow screens, and no-write guarantees. Update architecture and operating docs. | Clean isolated end-to-end run plus owner-approved staging rehearsal; distinguish synthetic acceptance from real-project report signoff. | Pending. Unit/core passes do not substitute for this gate. |
 
@@ -118,6 +122,40 @@ New logins create random, expiring, individually revocable server sessions.
   promotion and rollback rehearsal remain separate owner-coordinated gates.
 
 ## Validation ledger
+
+### Fourth batch: draft setup and review integrity (November 8, 2026)
+
+See [setup write integrity](BOOTSTRAP-WRITE-INTEGRITY.md). No schema changes or
+business-data backfill. The compiler/persistence split preserves its compatibility
+export while giving identity validation, transactions and storage clear owners.
+
+- Node 22.22.2: `npm run check` passed with 19 unit tests, typecheck, zero lint
+  errors (37 pre-existing warnings), selected core proofs and production build.
+  The 501-candidate / 1,002-link synthetic persistence proof is now a core gate.
+- Real PostgreSQL/HTTP checks passed setup create/rename races, no-op saves,
+  late and queued scan refusal, rename-back, publication-versus-identity-edit,
+  review isolation and unchanged immutable source quotes. The earlier canonical
+  Scope/activation/dependency suite and frozen-report sentinel checks also passed.
+- Chromium and WebKit passed failed review validation with draft retained,
+  corrected retry, reload and persisted disposition, alongside Scope form tests.
+  Four screenshots and the result receipt are in
+  `../outputs/bootstrap-integrity-2026-11-08/`; all four images inspected.
+  An independent repeat run passed in `../outputs/bootstrap-integrity-repeat-2026-11-08/`.
+- The phase-one DB regression passed disappearing/reappearing accepted proposals
+  and unchanged counts for all eleven protected Reality/report owner families.
+  Dependency compatibility and both advisory scans passed with zero known
+  production or development advisories at this check.
+- Stress testing found PostgreSQL row-lock conflicts exposed as Prisma P2010,
+  not P2034. Retry now recognizes only confirmed-abort SQLSTATEs. Tests prove
+  connection failures and uncertain transaction outcomes are not retried.
+- Read-only Railway inspection: production remains `0c0acb2`, deployment
+  `bdb2dfd5-c497-472e-96a5-7e7d7c4ffec7`; staging remains deployment
+  `849da325-b2db-4979-92dc-2b44dd92c375`. Neither is this quality candidate.
+- The in-app staging browser attempt was blocked by `net::ERR_BLOCKED_BY_CLIENT`.
+  No alternate access was used to bypass that refusal. Staging HTTPS/session
+  transition, rollback and full private report journey remain unverified.
+- No push, deployment, production refresh, secret change or user-data edit.
+  This is another bounded local repair, not completion of the whole quality plan.
 
 ### Third batch: canonical project writes (November 8, 2026)
 

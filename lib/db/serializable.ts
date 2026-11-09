@@ -7,6 +7,15 @@ export class ConcurrentWriteError extends Error {
   }
 }
 
+function transactionWasAborted(error: unknown): boolean {
+  if (!(error instanceof Prisma.PrismaClientKnownRequestError)) return false;
+  if (error.code === "P2034") return true;
+  // Prisma preserves PostgreSQL SQLSTATE on raw row-lock queries instead of
+  // translating it to P2034. Both states guarantee the transaction aborted;
+  // timeouts, disconnects and other uncertain outcomes must never be retried.
+  return error.code === "P2010" && ["40001", "40P01"].includes(String(error.meta?.code));
+}
+
 /** Retry the entire read/check/write unit, never just its last write. */
 export async function serializableWrite<T>(
   write: (tx: Prisma.TransactionClient) => Promise<T>,
@@ -17,8 +26,7 @@ export async function serializableWrite<T>(
         isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
       });
     } catch (error) {
-      if (!(error instanceof Prisma.PrismaClientKnownRequestError) || error.code !== "P2034")
-        throw error;
+      if (!transactionWasAborted(error)) throw error;
       if (attempt === 2) throw new ConcurrentWriteError();
     }
   }

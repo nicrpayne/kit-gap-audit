@@ -141,49 +141,66 @@ export default function BootstrapWorkspace({ bootstrapId }: { bootstrapId: strin
   }
 
   async function updateCandidate(candidate: Candidate, payload: Record<string, unknown>) {
-    setBusy(candidate.id); setError(null);
+    setBusy(candidate.id);
+    setError(null);
     try {
       const response = await fetch(`/api/project-bootstraps/${bootstrapId}/candidates/${candidate.id}`, {
-        method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify(payload),
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(payload),
       });
       const body = await response.json();
       if (!response.ok) throw new Error(body.error ?? "Could not save review action");
       await load();
-    } catch (cause) { setError(cause instanceof Error ? cause.message : "Could not save review action"); }
-    finally { setBusy(null); }
+      return true;
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Could not save review action");
+      return false;
+    } finally {
+      setBusy(null);
+    }
   }
 
   async function edit(candidate: Candidate) {
+    setError(null);
     const current = candidate.reviewedProposal ?? ((candidate.originalProposal as BootstrapProposal).payload ?? {});
     setEditor({ mode: "edit", candidate, title: String(current.title ?? current.name ?? current.question ?? candidate.title) });
   }
 
   async function reject(candidate: Candidate) {
+    setError(null);
     setEditor({ mode: "reject", candidate, reason: candidate.dispositionReason ?? "Wrong project" });
   }
 
   async function addManual() {
+    setError(null);
     const defaultKind = section.kinds[0] === "missing_information" ? "unknown" : section.kinds[0];
     setEditor({ mode: "manual", kind: defaultKind, title: "" });
   }
 
   async function submitEditor() {
-    if (!editor) return;
+    if (!editor || busy) return;
     if (editor.mode === "edit") {
       if (!editor.title.trim()) return;
       const current = editor.candidate.reviewedProposal ?? ((editor.candidate.originalProposal as BootstrapProposal).payload ?? {});
-      setEditor(null);
-      await updateCandidate(editor.candidate, { reviewedProposal: { ...current, title: editor.title.trim(), operatorEdited: true } });
+      const saved = await updateCandidate(editor.candidate, {
+        reviewedProposal: { ...current, title: editor.title.trim(), operatorEdited: true },
+      });
+      if (saved) setEditor(null);
       return;
     }
     if (editor.mode === "reject") {
       if (!editor.reason.trim()) return;
-      setEditor(null);
-      await updateCandidate(editor.candidate, { status: "rejected", reason: editor.reason.trim() });
+      const saved = await updateCandidate(editor.candidate, {
+        status: "rejected",
+        reason: editor.reason.trim(),
+      });
+      if (saved) setEditor(null);
       return;
     }
     if (!editor.title.trim()) return;
     setBusy("manual");
+    setError(null);
     try {
       const response = await fetch(`/api/project-bootstraps/${bootstrapId}/candidates`, {
         method: "POST", headers: { "content-type": "application/json" },
@@ -290,7 +307,7 @@ export default function BootstrapWorkspace({ bootstrapId }: { bootstrapId: strin
           : surface === "review" ? <ReviewPanel data={data} pkg={pkg} section={section} visible={visible} selected={selected} setSection={setSectionId} setSelected={setSelectedId} busy={busy} update={updateCandidate} edit={edit} reject={reject} addManual={addManual} onRescan={rescan} />
           : surface === "activate" ? <ManifestPanel manifest={manifest} acknowledged={acknowledged} setAcknowledged={setAcknowledged} activate={activate} busy={busy === "activate"} alreadyActivated={Boolean(data.bootstrap.activation)} teams={linearTeams} projects={linearProjects} loading={linearLoading} teamKey={activationTeamKey} projectName={activationProjectName} setTeamKey={setActivationTeamKey} setProjectName={setActivationProjectName} />
           : <FirstAuditPanel result={activationResult} activation={data.bootstrap.activation} />}
-        {editor && <CandidateEditorDialog editor={editor} setEditor={setEditor} submit={submitEditor} busy={Boolean(busy)} />}
+        {editor && <CandidateEditorDialog editor={editor} setEditor={setEditor} submit={submitEditor} busy={Boolean(busy)} error={error} />}
       </div>
     </InstrumentShell>
   );
@@ -453,7 +470,7 @@ function State({ state }: { state: string }) {
 function ReviewPanel({ data, pkg, section, visible, selected, setSection, setSelected, busy, update, edit, reject, addManual, onRescan }: {
   data: BootstrapRead; pkg: ProjectBootstrapPackageV1 | null; section: typeof SECTIONS[number]; visible: Candidate[]; selected: Candidate | null;
   setSection: (id: string) => void; setSelected: (id: string) => void; busy: string | null;
-  update: (candidate: Candidate, payload: Record<string, unknown>) => Promise<void>; edit: (candidate: Candidate) => Promise<void>; reject: (candidate: Candidate) => Promise<void>; addManual: () => Promise<void>; onRescan: () => void;
+  update: (candidate: Candidate, payload: Record<string, unknown>) => Promise<boolean>; edit: (candidate: Candidate) => Promise<void>; reject: (candidate: Candidate) => Promise<void>; addManual: () => Promise<void>; onRescan: () => void;
 }) {
   return <main className="grid min-h-0 flex-1 grid-cols-[218px_minmax(430px,1fr)_340px] overflow-hidden" data-shoot="bootstrap-review">
     <aside className="overflow-y-auto border-r p-3" style={{ background: "var(--i-void)", borderColor: "var(--i-border)" }}>
@@ -477,7 +494,7 @@ function ReviewPanel({ data, pkg, section, visible, selected, setSection, setSel
   </main>;
 }
 
-function CandidateCard({ candidate, selected, busy, onSelect, update, edit, reject }: { candidate: Candidate; selected: boolean; busy: boolean; onSelect: () => void; update: (candidate: Candidate, payload: Record<string, unknown>) => Promise<void>; edit: (candidate: Candidate) => Promise<void>; reject: (candidate: Candidate) => Promise<void> }) {
+function CandidateCard({ candidate, selected, busy, onSelect, update, edit, reject }: { candidate: Candidate; selected: boolean; busy: boolean; onSelect: () => void; update: (candidate: Candidate, payload: Record<string, unknown>) => Promise<boolean>; edit: (candidate: Candidate) => Promise<void>; reject: (candidate: Candidate) => Promise<void> }) {
   const proposal = candidate.originalProposal as BootstrapProposal;
   const grounding = proposal.grounding;
   return <article onClick={onSelect} className="cursor-pointer rounded-lg border p-3" style={{ background: selected ? "var(--i-panel-raised)" : "var(--i-panel)", borderColor: selected ? "var(--signal-border-selected)" : "var(--i-border)" }} data-candidate={candidate.kind}>
@@ -494,7 +511,7 @@ function CandidateCard({ candidate, selected, busy, onSelect, update, edit, reje
   </article>;
 }
 
-function Inspector({ candidate, pkg, update, busy }: { candidate: Candidate | null; pkg: ProjectBootstrapPackageV1 | null; update: (candidate: Candidate, payload: Record<string, unknown>) => Promise<void>; busy: boolean }) {
+function Inspector({ candidate, pkg, update, busy }: { candidate: Candidate | null; pkg: ProjectBootstrapPackageV1 | null; update: (candidate: Candidate, payload: Record<string, unknown>) => Promise<boolean>; busy: boolean }) {
   if (!candidate || !pkg) return <aside className="border-l p-4 text-[11px] text-[var(--i-text-faint)]" style={{ background: "var(--i-void)", borderColor: "var(--i-border)" }}>Select a candidate to inspect provenance.</aside>;
   const proposal = candidate.originalProposal as BootstrapProposal;
   const heads = proposal.intelligenceRefs.map((id) => pkg.intelligenceHeads.find((h) => h.intelligenceId === id)).filter((v): v is BootstrapIntelligenceHead => Boolean(v));
@@ -530,7 +547,7 @@ function describeLocator(locator: Record<string, unknown>): string {
   return fields.length ? fields.map(([label, value]) => `${label}: ${value}`).join(" · ") : "Stable source locator recorded; no human-readable page location was supplied.";
 }
 
-function CandidateEditorDialog({ editor, setEditor, submit, busy }: { editor: Exclude<CandidateEditor, null>; setEditor: (value: CandidateEditor) => void; submit: () => Promise<void>; busy: boolean }) {
+function CandidateEditorDialog({ editor, setEditor, submit, busy, error }: { editor: Exclude<CandidateEditor, null>; setEditor: (value: CandidateEditor) => void; submit: () => Promise<void>; busy: boolean; error: string | null }) {
   const modalRef = useModalFocus(true, () => { if (!busy) setEditor(null); });
   const value = editor.mode === "reject" ? editor.reason : editor.title;
   const label = editor.mode === "reject" ? "Rejection reason" : editor.mode === "manual" ? "Candidate title" : "Reviewed title";
@@ -540,10 +557,11 @@ function CandidateEditorDialog({ editor, setEditor, submit, busy }: { editor: Ex
       <h2 id="candidate-editor-title" className="mt-2 text-[17px] font-semibold text-[var(--i-text)]">{editor.mode === "manual" ? "Add an operator-authored candidate" : editor.mode === "reject" ? "Reject candidate" : "Edit candidate"}</h2>
       <label className="mt-4 block text-[10px] uppercase tracking-[0.1em] text-[var(--i-text-faint)]">{label}
         {editor.mode === "reject"
-          ? <textarea autoFocus rows={4} value={value} onChange={(event) => setEditor({ ...editor, reason: event.target.value })} className="mt-2 block w-full rounded border px-3 py-2 text-[12px] normal-case tracking-normal text-[var(--i-text)]" style={{ background: "var(--i-recess)", borderColor: "var(--i-border)" }} />
-          : <input autoFocus value={value} onChange={(event) => setEditor({ ...editor, title: event.target.value })} onKeyDown={(event) => { if (event.key === "Enter") void submit(); }} className="mt-2 block w-full rounded border px-3 py-2 text-[12px] normal-case tracking-normal text-[var(--i-text)]" style={{ background: "var(--i-recess)", borderColor: "var(--i-border)" }} />}
+          ? <textarea autoFocus disabled={busy} rows={4} value={value} onChange={(event) => setEditor({ ...editor, reason: event.target.value })} className="mt-2 block w-full rounded border px-3 py-2 text-[12px] normal-case tracking-normal text-[var(--i-text)]" style={{ background: "var(--i-recess)", borderColor: "var(--i-border)" }} />
+          : <input autoFocus disabled={busy} value={value} onChange={(event) => setEditor({ ...editor, title: event.target.value })} onKeyDown={(event) => { if (event.key === "Enter") void submit(); }} className="mt-2 block w-full rounded border px-3 py-2 text-[12px] normal-case tracking-normal text-[var(--i-text)]" style={{ background: "var(--i-recess)", borderColor: "var(--i-border)" }} />}
       </label>
       {editor.mode === "manual" && <p className="mt-2 text-[9.5px] text-[var(--i-amber)]">Recorded as an operator assertion. It is not external evidence and becomes Reality only through activation.</p>}
+      {error && <p role="alert" className="mt-3 text-[12px] text-[var(--i-red)]">{error} Your draft is still here.</p>}
       <div className="mt-5 flex justify-end gap-2"><button type="button" onClick={() => setEditor(null)} disabled={busy} className="signal-control rounded px-4 py-2 text-[10px]">CANCEL</button><button type="button" onClick={() => void submit()} disabled={busy || !value.trim()} className="signal-control rounded px-4 py-2 text-[10px] font-semibold disabled:opacity-35">{busy ? "SAVING…" : "SAVE"}</button></div>
     </div>
   </div>;

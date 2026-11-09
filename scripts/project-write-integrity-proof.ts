@@ -11,6 +11,7 @@ import { prisma } from "../lib/prisma";
 import { normalizeSearchText } from "../lib/audit/searchText";
 import type { ProjectBootstrapPackageV1 } from "../lib/bootstrap/contracts";
 import { assertDisposableDatabaseProofEnvironment } from "./lib/disposable-db-proof-guard";
+import { runBootstrapIdentityProof } from "./lib/bootstrap-identity-proof";
 
 const base = "http://127.0.0.1:4398",
   password = "fictional-project-proof-only";
@@ -302,13 +303,25 @@ async function main() {
 
     const one = await newScope("Fictional dependency one"),
       two = await newScope("Fictional dependency two");
-    expectStatuses(
-      await Promise.all([
-        patch(one.id, { dependsOnScopeIds: [two.id] }),
-        patch(two.id, { dependsOnScopeIds: [one.id] }),
-      ]),
-      [200, 400],
+    const dependencyEdits = [
+      { id: one.id, target: two.id },
+      { id: two.id, target: one.id },
+    ];
+    const dependencyResults = await Promise.all(
+      dependencyEdits.map(({ id, target }) => patch(id, { dependsOnScopeIds: [target] })),
     );
+    assert.equal(dependencyResults.filter((response) => response.status === 200).length, 1);
+    const refusedIndex = dependencyResults.findIndex((response) => response.status !== 200);
+    // Bounded Serializable retries may exhaust before the winning save commits.
+    // Both refusals are safe; a deliberate retry must then detect the actual cycle.
+    assert([400, 409].includes(dependencyResults[refusedIndex].status));
+    const refused = dependencyEdits[refusedIndex];
+    assert.equal((await patch(refused.id, { dependsOnScopeIds: [refused.target] })).status, 400);
+    const persistedEdges = await prisma.scope.findMany({
+      where: { id: { in: [one.id, two.id] } },
+      select: { dependsOnScopeIds: true },
+    });
+    assert.equal(persistedEdges.filter((scope) => scope.dependsOnScopeIds.length === 1).length, 1);
     const createdWithDependency = await create("Fictional atomic dependencies", {
       dependsOnScopeIds: [one.id],
     });
@@ -409,6 +422,8 @@ async function main() {
     assert.equal(historyRows.length, 2);
     console.log("PASS bounded HTTP validation, revisions and preservation of historical data");
 
+    const bootstrapBrowserFixture = await runBootstrapIdentityProof(request);
+
     for (const engine of [chromium, webkit]) {
       const browser = await engine.launch({ headless: true });
       try {
@@ -469,8 +484,37 @@ async function main() {
         );
         await edit.getByRole("button", { name: "Save", exact: true }).click();
         assert.equal((await edited).status(), 200);
+        // Let Next's sidebar prefetch finish before forcing a full document
+        // replacement. WebKit reports canceled RSC fetches as page errors.
+        await page.waitForLoadState("networkidle");
         await page.reload();
         await expect(page.getByRole("row").filter({ hasText: `${name} renamed` })).toBeVisible();
+        await page.waitForLoadState("networkidle");
+        await page.goto(
+          `${base}/projects/bootstrap/${bootstrapBrowserFixture.bootstrapId}?view=review&section=scope`,
+        );
+        await page.getByRole("button", { name: "REJECT", exact: true }).click();
+        const dialog = page.getByRole("dialog", { name: "Reject candidate" });
+        await dialog.getByLabel("Rejection reason").fill("x".repeat(501));
+        await dialog.getByRole("button", { name: "SAVE", exact: true }).click();
+        await expect(dialog.getByRole("alert")).toContainText("at most 500");
+        await expect(dialog.getByLabel("Rejection reason")).toHaveValue("x".repeat(501));
+        await dialog.screenshot({
+          path: resolve(outputDir, `${engine.name()}-review-draft-retained.png`),
+        });
+        await dialog
+          .getByLabel("Rejection reason")
+          .fill(`Fictional ${engine.name()} review reason`);
+        await dialog.getByRole("button", { name: "SAVE", exact: true }).click();
+        await expect(dialog).toHaveCount(0);
+        await page.waitForLoadState("networkidle");
+        await page.reload();
+        await page.waitForLoadState("networkidle");
+        const persisted = await prisma.bootstrapCandidate.findUniqueOrThrow({
+          where: { id: bootstrapBrowserFixture.candidateId },
+        });
+        assert.equal(persisted.status, "rejected");
+        assert.equal(persisted.dispositionReason, `Fictional ${engine.name()} review reason`);
         assert.deepEqual(errors, []);
         await context.close();
         console.log(
@@ -505,10 +549,17 @@ async function main() {
         "historical duplicates preserved",
         "browser error recovery and persisted reload",
         "frozen report and existing project unchanged",
+        "setup identity concurrency and stale-scan publication",
+        "exact quote and review history preservation",
+        "browser review validation keeps draft and retry persists",
       ],
       productionAccess: false,
       externalProviderCalls: false,
     };
+  } catch (error) {
+    writeFileSync(resolve(outputDir, "server-failure.log"), output);
+    console.error(output.slice(-4000));
+    throw error;
   } finally {
     if (child && child.exitCode === null) {
       const exited = once(child, "exit");

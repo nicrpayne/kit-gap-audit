@@ -48,6 +48,22 @@ test("Serializable writes retry only serialization failures, and only three time
       { code: "P2028" },
     );
     assert.equal(attempts, 1, "Timeouts and unknown outcomes must not be blindly retried");
+    for (const sqlState of ["40001", "40P01", "08006"]) {
+      attempts = 0;
+      prisma.$transaction = (async () => {
+        attempts++;
+        throw new Prisma.PrismaClientKnownRequestError("raw query error", {
+          code: "P2010",
+          clientVersion: Prisma.prismaVersion.client,
+          meta: { code: sqlState },
+        });
+      }) as typeof prisma.$transaction;
+      await assert.rejects(
+        serializableWrite(async () => "never"),
+        sqlState === "08006" ? { code: "P2010" } : ConcurrentWriteError,
+      );
+      assert.equal(attempts, sqlState === "08006" ? 1 : 3);
+    }
   } finally {
     prisma.$transaction = original;
   }

@@ -58,8 +58,9 @@ bounded by `lib/http/json.ts` to 64 KiB of actual streamed bytes.
 
 Unknown fields are ignored, matching the existing partial-update contract.
 This is not a claim that every API has been migrated to runtime schemas. Draft
-bootstrap editing, other resource families, GET/error paths, and older
-maintenance scripts still require the wider API review.
+bootstrap editing is covered by the subsequent [setup integrity batch](BOOTSTRAP-WRITE-INTEGRITY.md).
+Other resource families, GET/error paths, and older maintenance scripts still
+require the wider API review.
 
 ## Code ownership
 
@@ -95,7 +96,7 @@ PostgreSQL and Chromium/WebKit. Requirements:
 3. Run `npm run build` with no server using this checkout, then the proof. It
    starts/stops its own server on loopback port 4398. Do not rebuild during it.
 4. The proof requires empty owner/auth tables at startup, removes its fictional
-   rows afterward, and emits `result.json` plus two browser screenshots. It does
+   rows afterward, and emits `result.json` plus four browser screenshots. It does
    not drop the database. Never run it on a database containing user data.
 
 Cases include 50 simultaneous duplicate-create requests in five rounds,

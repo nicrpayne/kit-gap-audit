@@ -4,6 +4,7 @@ import { bootstrapHash } from "./hash";
 import type { ProjectBootstrapPackageV1 } from "./contracts";
 import { persistCompiledPackage } from "./scan";
 import { auditActivatedBootstrapRefresh, toContextPackage } from "./refresh";
+import { RequestValidationError } from "@/lib/http/json";
 
 export type PackageIngestResult = {
   ok: true; scanId: string; packageId: string; reused: boolean; refreshAudit: unknown;
@@ -86,7 +87,12 @@ export async function ingestBootstrapPackage(
   if (bootstrap.activation) {
     toContextPackage(bootstrap.activation.scopeId, pkg);
   }
-  await persistCompiledPackage(scanId, pkg);
+  try {
+    await persistCompiledPackage(scanId, pkg);
+  } catch (error) {
+    if (error instanceof RequestValidationError) return { status: error.status, body: { error: error.message } };
+    throw error;
+  }
   const refreshAudit = bootstrap.activation
     ? await auditActivatedBootstrapRefresh(bootstrapId, { receiptScanRunId: scanId })
     : null;

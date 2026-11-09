@@ -1,5 +1,4 @@
 import MiniSearch from "minisearch";
-import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { fuzzinessFor, prefixFor } from "@/lib/audit/searchIndex";
 import { normalizeSearchText } from "@/lib/audit/searchText";
@@ -20,7 +19,10 @@ import {
   type ProviderCoverage,
 } from "./contracts";
 import { bootstrapHash, stableId } from "./hash";
-import { resolveRefreshDisposition } from "./rescan";
+import { persistCompiledPackage } from "./packageStore";
+import { lockBootstrap } from "./identity";
+import { RequestValidationError } from "@/lib/http/json";
+export { persistCompiledPackage } from "./packageStore";
 import { explicitCapabilityName, bootstrapCapabilityAdmissionReason } from "./capabilityAdmission";
 
 export interface CorpusArtifact {
@@ -709,22 +711,26 @@ export function compileBootstrapPackage(
   return result;
 }
 
-function emptyJson(value: unknown): Prisma.InputJsonValue {
-  return value as Prisma.InputJsonValue;
-}
 
 export async function executeBootstrapScan(scanRunId: string): Promise<void> {
-  const scan = await prisma.bootstrapScanRun.findUnique({ where: { id: scanRunId }, include: { bootstrap: true } });
+  const scan = await prisma.$transaction(async (tx) => {
+    const owner = await tx.bootstrapScanRun.findUnique({ where: { id: scanRunId }, select: { bootstrapId: true } });
+    if (!owner) return null;
+    await lockBootstrap(tx, owner.bootstrapId);
+    const current = await tx.bootstrapScanRun.findUnique({ where: { id: scanRunId }, include: { bootstrap: true } });
+    if (!current || current.status === "stale" || current.bootstrap.status === "archived") return null;
+    await tx.bootstrapScanRun.update({
+      where: { id: current.id }, data: { status: "running", stage: "identity", startedAt: current.startedAt ?? new Date(), error: null },
+    });
+    if (current.bootstrap.status !== "activated") {
+      await tx.projectBootstrap.update({ where: { id: current.bootstrapId }, data: { status: "scanning" } });
+    }
+    return current;
+  });
   if (!scan) return;
   try {
-    await prisma.bootstrapScanRun.update({
-      where: { id: scan.id }, data: { status: "running", stage: "identity", startedAt: scan.startedAt ?? new Date(), error: null },
-    });
-    if (scan.bootstrap.status !== "activated") {
-      await prisma.projectBootstrap.update({ where: { id: scan.bootstrapId }, data: { status: "scanning" } });
-    }
     const corpus = await loadBootstrapCorpus();
-    await prisma.bootstrapScanRun.update({ where: { id: scan.id }, data: { stage: "lexical_retrieval" } });
+    await prisma.bootstrapScanRun.updateMany({ where: { id: scan.id, status: "running" }, data: { stage: "lexical_retrieval" } });
     const identity: ProjectIdentityQuery = {
       canonicalName: scan.bootstrap.canonicalName, aliases: scan.bootstrap.aliases,
       ...(scan.bootstrap.ownerHint ? { ownerHint: scan.bootstrap.ownerHint } : {}),
@@ -733,108 +739,17 @@ export async function executeBootstrapScan(scanRunId: string): Promise<void> {
     const compiled = scan.bootstrap.searchExistingKnowledge
       ? compileBootstrapPackage(scan.bootstrapId, identity, corpus)
       : compileBootstrapPackage(scan.bootstrapId, identity, { ...corpus, artifacts: [], evidence: [], intelligence: [], relations: [], derivedClaims: [], snapshotCount: 0 });
-    await prisma.bootstrapScanRun.update({ where: { id: scan.id }, data: { stage: "proposal_compilation" } });
+    await prisma.bootstrapScanRun.updateMany({ where: { id: scan.id, status: "running" }, data: { stage: "proposal_compilation" } });
     await persistCompiledPackage(scan.id, compiled);
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Bootstrap scan failed";
-    await prisma.$transaction([
-      prisma.bootstrapScanRun.update({ where: { id: scanRunId }, data: { status: "failed", stage: "failed", error: message, completedAt: new Date() } }),
-      ...(scan.bootstrap.status === "activated" ? [] : [prisma.projectBootstrap.update({ where: { id: scan.bootstrapId }, data: { status: "scan_failed" } })]),
-    ]);
-  }
-}
-
-export async function persistCompiledPackage(scanRunId: string, compiled: ProjectBootstrapPackageV1): Promise<void> {
-  const fullHash = bootstrapHash(compiled);
-  const existing = await prisma.bootstrapPackage.findUnique({
-    where: { producer_packageId: { producer: compiled.producer, packageId: compiled.packageId } },
-  });
-  if (existing) {
-    const current = await prisma.projectBootstrap.findUnique({ where: { id: compiled.bootstrapId }, select: { activePackageId: true, status: true } });
-    const switchingPackage = current?.activePackageId !== existing.id;
-    await prisma.$transaction([
-      ...(switchingPackage ? [
-        prisma.bootstrapCandidate.updateMany({ where: { bootstrapId: compiled.bootstrapId, packageId: { not: null } }, data: { active: false } }),
-        prisma.bootstrapCandidate.updateMany({ where: { packageId: existing.id }, data: { active: true } }),
-      ] : []),
-      prisma.projectBootstrap.update({ where: { id: compiled.bootstrapId }, data: {
-        activePackageId: existing.id, status: current?.status === "activated" ? "activated" : "reviewing", ...(switchingPackage ? { reviewRevision: { increment: 1 } } : {}),
-      } }),
-      prisma.bootstrapScanRun.update({
-        where: { id: scanRunId }, data: {
-          status: "complete", stage: "complete", resultPackageId: existing.id, completedAt: new Date(),
-          providerCoverage: emptyJson(compiled.coverage),
-          metrics: emptyJson({ providersChecked: compiled.coverage.length, artifactsFound: compiled.artifacts.length, intelligenceHeads: compiled.intelligenceHeads.length, evidencePassages: compiled.evidence.length, proposals: compiled.proposals.length }),
-          warnings: emptyJson(compiled.warnings),
-        },
-      }),
-    ]);
-    return;
-  }
-
-  const [previous, bootstrapState] = await Promise.all([
-    prisma.bootstrapPackage.findFirst({ where: { bootstrapId: compiled.bootstrapId }, orderBy: { createdAt: "desc" } }),
-    prisma.projectBootstrap.findUnique({ where: { id: compiled.bootstrapId }, select: { status: true } }),
-  ]);
-  const candidateHistory = await prisma.bootstrapCandidate.findMany({
-    where: { bootstrapId: compiled.bootstrapId, packageId: { not: null } }, orderBy: { createdAt: "desc" }, include: { evidenceLinks: true },
-  });
-  const historyByKey = new Map<string, typeof candidateHistory>();
-  for (const candidate of candidateHistory) historyByKey.set(candidate.candidateKey, [...(historyByKey.get(candidate.candidateKey) ?? []), candidate]);
-
-  await prisma.$transaction(async (tx) => {
-    await tx.bootstrapCandidate.updateMany({ where: { bootstrapId: compiled.bootstrapId, packageId: { not: null } }, data: { active: false } });
-    const packageRow = await tx.bootstrapPackage.create({ data: {
-      bootstrapId: compiled.bootstrapId, scanRunId, packageId: compiled.packageId,
-      packageVersion: compiled.version, producer: compiled.producer, compilerVersion: compiled.compilerVersion,
-      packageHash: fullHash, package: emptyJson(compiled), generatedAt: new Date(compiled.generatedAt), supersedesPackageId: previous?.id,
-    } });
-    // Preserve the same review-overlay semantics, but avoid one database round
-    // trip per evidence link. Quote-complete packages contain thousands of
-    // links and previously expired the interactive transaction mid-import.
-    const candidateRows: Prisma.BootstrapCandidateCreateManyInput[] = [];
-    const evidenceRows: Prisma.BootstrapEvidenceLinkCreateManyInput[] = [];
-    for (const item of compiled.proposals) {
-      const history = historyByKey.get(item.candidateKey) ?? [];
-      const prior = history.find((candidate) => candidate.sourceFingerprint === item.fingerprint) ?? history[0];
-      const refresh = resolveRefreshDisposition(prior, item.fingerprint);
-      const candidateId = stableId("bootstrap-candidate", [packageRow.id, item.candidateKey], 40);
-      candidateRows.push({
-        id: candidateId,
-        bootstrapId: compiled.bootstrapId, packageId: packageRow.id, candidateKey: item.candidateKey,
-        kind: item.kind, title: item.title, summary: item.statement, whyProposed: item.whyProposed,
-        matchBasis: item.matchBasis, currentness: item.currentness, relevance: item.relevance,
-        sourceFingerprint: item.fingerprint, originalProposal: emptyJson(item),
-        reviewedProposal: refresh.reviewedProposal ? (refresh.reviewedProposal as Prisma.InputJsonValue) : undefined,
-        status: refresh.status, dispositionReason: refresh.dispositionReason,
-        changedSincePrior: refresh.changedSincePrior, carriedFromCandidateId: prior?.id,
-      });
-      for (const evidenceId of item.evidenceRefs) {
-        const previousLink = !refresh.changedSincePrior ? prior?.evidenceLinks.find((l) => l.evidenceId === evidenceId) : undefined;
-        evidenceRows.push({
-          candidateId, evidenceId, linkState: previousLink?.linkState ?? "attached",
-          attachedBy: previousLink?.attachedBy ?? "compiler", reason: previousLink?.reason,
-        });
-      }
-    }
-    // Bound batch size below PostgreSQL's parameter limit, including the
-    // contract's largest accepted package. Everything remains atomic.
-    for (let offset = 0; offset < candidateRows.length; offset += 250) {
-      await tx.bootstrapCandidate.createMany({ data: candidateRows.slice(offset, offset + 250) });
-    }
-    for (let offset = 0; offset < evidenceRows.length; offset += 1000) {
-      await tx.bootstrapEvidenceLink.createMany({ data: evidenceRows.slice(offset, offset + 1000) });
-    }
-    await tx.projectBootstrap.update({
-      where: { id: compiled.bootstrapId }, data: { activePackageId: packageRow.id, status: bootstrapState?.status === "activated" ? "activated" : "reviewing", reviewRevision: { increment: 1 } },
+    console.error("Project setup scan failed", error);
+    const message = error instanceof RequestValidationError ? error.message : "Could not finish the project scan. Please retry.";
+    await prisma.$transaction(async (tx) => {
+      await lockBootstrap(tx, scan.bootstrapId);
+      const current = await tx.bootstrapScanRun.findUnique({ where: { id: scanRunId }, include: { bootstrap: true } });
+      if (!current || current.status === "stale" || current.bootstrap.status === "archived") return;
+      await tx.bootstrapScanRun.update({ where: { id: scanRunId }, data: { status: "failed", stage: "failed", error: message, completedAt: new Date() } });
+      if (current.bootstrap.status !== "activated") await tx.projectBootstrap.update({ where: { id: scan.bootstrapId }, data: { status: "scan_failed" } });
     });
-    await tx.bootstrapScanRun.update({
-      where: { id: scanRunId }, data: {
-        status: "complete", stage: "complete", resultPackageId: packageRow.id, completedAt: new Date(),
-        providerCoverage: emptyJson(compiled.coverage),
-        metrics: emptyJson({ providersChecked: compiled.coverage.length, artifactsFound: compiled.artifacts.length, intelligenceHeads: compiled.intelligenceHeads.length, evidencePassages: compiled.evidence.length, proposals: compiled.proposals.length }),
-        warnings: emptyJson(compiled.warnings),
-      },
-    });
-  }, { timeout: 30_000 });
+  }
 }

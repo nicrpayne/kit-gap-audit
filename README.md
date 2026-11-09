@@ -167,6 +167,12 @@ See [project write integrity](docs/PROJECT-WRITE-INTEGRITY.md) for validation,
 normalization, tests and rollout limits. This describes the local repair branch,
 not a claim that a deployment has occurred.
 
+Project setup has a separate draft identity. Editing that identity retires old
+proposals and requires a fresh scan, without erasing their quotes or review
+history. Late scan results cannot quietly restore the old proposals. Failed
+review saves keep the entered draft visible for correction and retry. See
+[project setup and review integrity](docs/BOOTSTRAP-WRITE-INTEGRITY.md).
+
 ## Deploying to Railway
 
 1. **New project.** In Railway, create a new project. Keep it separate from
