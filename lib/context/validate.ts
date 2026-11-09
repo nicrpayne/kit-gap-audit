@@ -16,7 +16,6 @@
 // don't guess.
 
 import {
-  PROJECT_CONTEXT_PACKAGE_VERSION,
   SUPPORTED_PACKAGE_VERSIONS,
   type ProjectContextPackageVersion,
   type ProjectContextPackage,

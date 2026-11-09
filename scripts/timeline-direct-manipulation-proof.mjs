@@ -44,7 +44,6 @@ const open = async () => {
   await p.waitForSelector('[data-shoot="time-field"]', { timeout: 30000 });
   await p.waitForTimeout(2600);
 };
-const park = async () => { await p.mouse.move(1674, 1044); await p.waitForTimeout(300); };
 /** The pixels-per-millisecond the field is actually drawn at, read off the
     spans' own stored dates rather than assumed. */
 const readAxis = () =>
@@ -59,11 +58,10 @@ const readAxis = () =>
 const emptyBedY = async (scopeId) => {
   const bed = await p.locator(`[data-shoot="plan-bed-${scopeId}"]`).boundingBox();
   const taken = await p.evaluate(
-    (sid) =>
+    () =>
       [...document.querySelectorAll(`[data-shoot^="plan-"][data-plan-role]`)]
         .filter((e) => e.closest("g"))
-        .map((e) => { const r = e.getBoundingClientRect(); return [r.top, r.bottom]; }),
-    scopeId
+        .map((e) => { const r = e.getBoundingClientRect(); return [r.top, r.bottom]; })
   );
   for (let f = 0.92; f > 0.05; f -= 0.06) {
     const y = bed.y + bed.height * f;

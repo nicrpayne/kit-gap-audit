@@ -120,7 +120,6 @@ const startTruth = JSON.stringify(
 }
 
 // ── B–D. OBSERVATION WRITES NOTHING ────────────────────────────────
-let playedState = null;
 {
   writes = []; sims = [];
   await p.locator('[data-shoot="to-beginning"]').click();
@@ -134,9 +133,11 @@ let playedState = null;
   writes = []; sims = [];
   await p.locator('[data-shoot="play"]').click();
   await settle(4200);
-  playedState = await snapshotState();
+  const playedState = await snapshotState();
   check("C1. Playing writes nothing", writes.length === 0, writes.join(", ") || "none");
   check("C2. …and reruns no forecast while it plays", sims.length === 0, sims.join(", ") || "none");
+  check("C3. Playback stays labelled as remembered, not current Reality",
+    /as remembered/i.test(playedState.mode), playedState.mode);
   await p.locator('[data-shoot="play"]').click();
   await settle(600);
 
@@ -330,7 +331,6 @@ let playedState = null;
   const mid = a + (bT - a) / 2;
 
   await open();
-  const f = await box('[data-shoot="time-field"]');
   const view = await p.evaluate(() => {
     const el = document.querySelector('[data-shoot="time-field"] svg');
     return { w: el?.getBoundingClientRect().width ?? 0 };

@@ -485,7 +485,6 @@ for (const renderer of RENDERERS) {
     const canvasProbe = window.__signalCanvas;
     return {
       domNodes: el ? el.querySelectorAll("*").length : 0,
-      // eslint-disable-next-line
       heapMb: performance.memory ? performance.memory.usedJSHeapSize / 1048576 : null,
       paint: canvasProbe?.stats ?? null,
       repaints: canvasProbe?.repaints ?? null,

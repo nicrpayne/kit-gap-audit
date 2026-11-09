@@ -123,6 +123,61 @@ New logins create random, expiring, individually revocable server sessions.
 
 ## Validation ledger
 
+### Fifth batch: active-code lint gate and Timeline regressions (November 9, 2026)
+
+Removed dead Portfolio calculations/imports and unused proof scaffolding. No
+forecast algorithm, accepted record, source quote, or database schema changed.
+See [contributor checks](../CONTRIBUTING.md) for the two explicit lint gates.
+
+- Node 22.22.2: full `npm run check` passed: typecheck, both lint gates,
+  **22 unit tests**, selected core proofs and production build. The warning
+  count is down from 37 to nine. Active code has a zero-warning gate; the nine
+  remaining warnings are visible and capped in two frozen Audit scripts.
+- The protected Audit files remain byte-for-byte unchanged. The 33-file
+  integrity proof and its negative mutation/addition self-test passed. No
+  fingerprint, reference artifact or exception list was modified to clear lint.
+- Three new isolated Timeline tests exercise the production memory projection:
+  no report before the first saved snapshot, exact snapshot identity at the
+  millisecond boundary, and no mutation of frozen history. Historical proof
+  assertions now also check the first report boundary, the first playback
+  geometry sample and the remembered-state label.
+- Current-work browser regression passed in **Chromium and WebKit** on the
+  local production build: Scenario date changes, exact reload, Portfolio,
+  Scope, Timeline, Decisions, qualified HTML/JSON exports, restoration and
+  stale-preview refusal. Audit inbox regression passed in both engines:
+  hide/reopen, focus, refresh, reload, project switching, evidence deep links,
+  modal precedence and denied browser storage. Both cover 1440px and 1024px.
+  Business APIs were intercepted with fictional data; the graph was stubbed
+  in the inbox test. This is not full graph or live-business acceptance.
+- Browser receipts/screenshots are in the private sibling directory
+  `../outputs/lint-quality-2026-11-09/`. Four representative screenshots were
+  inspected (Portfolio, narrow Forecast, hidden inbox and staging Reports).
+  The disposable DB retained zero Scope, setup and report rows; four test
+  login sessions were created. Local server and DB are stopped.
+- Coverage collection passed: 7.01% line/statement coverage (7,130 of 101,686
+  lines) over the application denominator. This is **unit-suite coverage**,
+  not combined core-proof, browser or end-to-end coverage. Dependency
+  compatibility and both live advisory scans passed with zero known advisories.
+- Historical DB-backed Timeline proof was attempted without `DATABASE_URL`
+  and stopped at initialization, before any write. It was not rerun against
+  real data. Historical graph/model suites were not executed; modified `.mjs`
+  scripts passed syntax checks but their old browser journeys were not rerun.
+- Staging browser access is now verified after the user configured access and
+  supplied the existing password. Authenticated build **b301803** opened
+  Control Room, Audit, Forecast and Reports; the inbox closed successfully.
+  Semantic keyboard navigation worked. Pointer actions with the temporary
+  viewport override did not reliably hit the intended control; do not treat
+  that as verified pointer acceptance. The override was reset afterward.
+- Staging still contains historical QA projects, duplicate ticket ownership,
+  placeholder estimates and an unconnected seed project's knowledge source.
+  Those are observed acceptance limitations, not evidence about production.
+  No refresh, finding acceptance, Scenario save, report generation/publication
+  or business-record cleanup was performed there. Merely opening a page may
+  exercise the app's normal provider read/cache behavior.
+- **No push or deployment.** Staging is the older build, not this local quality
+  candidate. Its HTTPS session migration/rollback test and a full persistent
+  report-to-recipient journey still gate promotion. Production is unchanged.
+
 ### Fourth batch: draft setup and review integrity (November 8, 2026)
 
 See [setup write integrity](BOOTSTRAP-WRITE-INTEGRITY.md). No schema changes or

@@ -134,9 +134,10 @@ async function main() {
 
     const atA = forecastMemoryAt(series, new Date(aT));
     const atMid = forecastMemoryAt(series, mid);
-    const justBeforeB = forecastMemoryAt(series, new Date(bT - 1000));
+    const justBeforeB = forecastMemoryAt(series, new Date(bT - 1));
     const atB = forecastMemoryAt(series, new Date(bT));
 
+    check("G at Report A the memory is EXACTLY Report A", atA?.reportId === a.reportId);
     check("G between two Reports the memory is EXACTLY Report A", atMid?.reportId === a.reportId, `mid → ${atMid?.reportId === a.reportId ? "A" : "not A"}`);
     check("G …and does not drift toward B", atMid?.likelyDate === a.likelyDate, `${atMid?.likelyDate.slice(0, 10)} vs A ${a.likelyDate.slice(0, 10)}`);
     check("G one millisecond before B it is still A", justBeforeB?.reportId === a.reportId);

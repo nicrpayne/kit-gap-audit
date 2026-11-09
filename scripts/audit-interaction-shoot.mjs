@@ -64,13 +64,6 @@ const shot = async (n) => {
   await p.screenshot({ path: `${out}/${n}.png` });
   console.log(`      shot ${n}`);
 };
-const camera = () =>
-  p.evaluate(() => {
-    const t = document.querySelector('[data-shoot="graph-viewport"] svg')?.getAttribute("viewBox");
-    if (!t) return null;
-    const [x, y, w, h] = t.split(/\s+/).map(Number);
-    return { x: x + w / 2, y: y + h / 2, w, h };
-  });
 const zoomPct = () =>
   p.evaluate(() => {
     const el = [...document.querySelectorAll("span")].find((s) => /^\w+ · \d+%$/.test(s.textContent ?? ""));
@@ -123,7 +116,6 @@ await shot("01b-opened");
 
 // ── THE CAMERA AT FIT ───────────────────────────────────────────────
 const fitZoom = await zoomPct();
-const fitCam = await camera();
 
 // ── 1-3. SELECTION REVEALS A USEFUL LOCAL WORLD ─────────────────────
 // A real external Risk with evidence, from the QA list.
@@ -158,7 +150,6 @@ check("04 woken edges say WHY", verbs.length > 0, verbs.length ? `${verbs.length
 check("05 direction is drawn where the verb is not symmetric", arrows > 0, `${arrows} heads`);
 // ── 7. THE CAMERA DID NOT MOVE ──────────────────────────────────────
 const afterSelectZoom = await zoomPct();
-const afterSelectCam = await camera();
 // Focus may claim screen territory when the local world is too small to
 // read — bounded at double, and at 180% absolute. That bound is the
 // guarantee, not stillness.

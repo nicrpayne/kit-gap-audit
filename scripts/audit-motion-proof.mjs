@@ -44,9 +44,6 @@ const settle = (ms = 500) => p.waitForTimeout(ms);
 const park = async () => { await p.mouse.move(1560, 960); await settle(250); };
 const fit = async () => { await p.locator('[data-shoot="camera-fit"]').click(); await settle(700); };
 const zoomLevel = () => p.getAttribute('[data-shoot="signal-graph"]', "data-zoom");
-/** Two camera readings that differ only by float noise. */
-const cameraSettledEnough = (a, c) =>
-  Math.abs(a.x - c.x) < 0.01 && Math.abs(a.y - c.y) < 0.01 && Math.abs(a.k - c.k) < 0.0001;
 
 const cam = () => p.evaluate(() => {
   const v = document.querySelector('[data-shoot="signal-graph"]').viewBox.baseVal;

@@ -703,7 +703,12 @@ async function main() {
       // No member belongs to two groups: a mark can only be inside one shell.
       const seen = new Set<string>();
       let doubled = 0;
-      for (const agg of aggs) for (const m of agg.members) (seen.has(m) ? doubled++ : seen.add(m));
+      for (const agg of aggs) {
+        for (const member of agg.members) {
+          if (seen.has(member)) doubled++;
+          else seen.add(member);
+        }
+      }
       check(`K4 ${name}: no node is inside two constellations`, doubled === 0, `${doubled} double-counted`);
     }
   }

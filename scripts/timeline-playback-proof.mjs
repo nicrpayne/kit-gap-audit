@@ -142,7 +142,9 @@ check("The step states the movement between two stored likely dates",
   sawDelta > 0, `${sawDelta} delta readout(s)`);
 {
   const drift = (k) => {
-    const vals = geomDuring.map((g) => g[k]).filter(Boolean);
+    // Include the resting layout so the first playback frame cannot jump
+    // and then appear stable in every subsequent sample.
+    const vals = [geomBefore, ...geomDuring].map((g) => g[k]).filter(Boolean);
     if (vals.length === 0) return 0;
     return Math.max(...[0, 1, 2, 3].map((i) => Math.max(...vals.map((v) => v[i])) - Math.min(...vals.map((v) => v[i]))));
   };
@@ -304,7 +306,6 @@ check("Reality restored — the proof landmark is gone",
   await p.waitForTimeout(600);
   await p.keyboard.press("Escape");
   await p.waitForTimeout(400);
-  const before = await geometry();
   const rep = finalProj.entries.find((e) => e.kind === "report");
   const ctxE = finalProj.entries.find((e) => e.kind === "context_observed");
   for (const e of [rep, ctxE].filter(Boolean)) {

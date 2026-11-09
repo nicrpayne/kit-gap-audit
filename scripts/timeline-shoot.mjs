@@ -73,15 +73,6 @@ if (reports[0]) { await sel(reports[0].id); await shot("05-report-snapshot-selec
 // Steps to whatever each stored Report actually said — later or earlier.
 const laneWithSeries = laneIds.find((id) => (proj.snapshotsByScope[id] ?? []).length >= 3);
 if (laneWithSeries) {
-  const series = proj.snapshotsByScope[laneWithSeries];
-  const scrubTo = async (iso) => {
-    const box = await p.locator('[data-shoot="time-field"] > div:last-child').boundingBox();
-    const view = await p.evaluate(() => ({ }));
-    // scrub by clicking the field at the right x is fragile across zoom;
-    // use the transport's next-event stepping instead, which is exact.
-    return { box, view };
-  };
-  void scrubTo;
   // Step forward through events; capture at each Report boundary.
   await p.locator('[data-shoot="to-beginning"]').click();
   await settle(900);

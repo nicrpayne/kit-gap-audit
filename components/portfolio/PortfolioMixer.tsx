@@ -12,7 +12,7 @@
 // sit under the channels, where a tension appears and is resolved.
 
 import { useMemo } from "react";
-import MixerChannel, { DormantChannel, CHANNEL_W, RACK_H, type ChannelView } from "./MixerChannel";
+import MixerChannel, { DormantChannel, RACK_H, type ChannelView } from "./MixerChannel";
 import MasterBus from "./MasterBus";
 import type { MasterReading, DonorSuggestion, SplitPersonView } from "@/lib/capacity/workforce";
 

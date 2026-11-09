@@ -21,7 +21,9 @@ Reality, source evidence, saved Scenarios, and frozen reports—not just compile
 | Command | Scope |
 | --- | --- |
 | `npm run typecheck` | TypeScript contracts across application and proof scripts. |
-| `npm run lint` | Repository lint; currently ratchets the existing 37 warnings, with zero errors allowed. |
+| `npm run lint` | Both lint gates below; zero errors everywhere. No warning rules are disabled. |
+| `npm run lint:active` | Zero warnings outside the two frozen Audit reference scripts. |
+| `npm run lint:legacy-audit` | The two frozen Audit scripts retain nine visible warnings; additional warnings fail. |
 | `npm test` | Behavioral unit/handler regressions, no real database or network calls. |
 | `npm run test:core` | Selected deterministic work, forecast, Scenario, staffing and report proofs. |
 | `npm run test:coverage` | Unit-suite coverage over app/components/lib/middleware, including unexecuted files. Not end-to-end coverage. |
@@ -36,6 +38,13 @@ Database and browser scripts have separate setup and safety requirements. Read a
 script's guard before running it; do not run every `scripts/*` file indiscriminately.
 Some historical tools are maintenance commands that write data. Do not disable
 their guards to obtain a green result. CI contains no deployment step.
+
+The lint split preserves Audit parity, not an exemption from lint. The imported
+`public/audit-rubric-phase1/_core.js` and `_flows2.js` are protected byte-for-byte
+by the Audit integrity/parity proofs. Both still run through ESLint. Do not edit
+their fingerprints or expand the exception list just to clear a warning. A
+deliberate Audit-engine migration needs its own visual/behavioral review. The
+remaining code cannot consume that nine-warning allowance.
 
 Browser/HTTP proofs that log in need a real disposable database after the
 session migration. Non-browser login requests must send `Origin`. Do not run

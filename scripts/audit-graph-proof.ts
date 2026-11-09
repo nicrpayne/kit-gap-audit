@@ -54,14 +54,14 @@ import {
   type NodeKind,
   type AuditEdgeAttributes,
 } from "../lib/audit/graph";
-import { layoutGraph, layoutExtent, FIELD, RECORD_EXTENT, CLUSTER_ORDER, BANDS } from "../lib/audit/graphLayout";
+import { layoutGraph, FIELD, CLUSTER_ORDER, BANDS } from "../lib/audit/graphLayout";
 import { identityOf, latentRadius, LATENT, MEMBERSHIP_RELS } from "@/components/audit/graphTokens";
 import { projectRequirements, REQUIREMENT_SOURCE_ROLE } from "../lib/audit/requirements";
 import { projectPeople } from "../lib/audit/capacity";
 import { resolveCapacity, switchFactorFor } from "../lib/capacity/resolve";
 import { sourceKindFor, declaredArtifacts, SOURCE_KINDS } from "../lib/audit/sources";
 import { projectIntelligence, relClassOf, laneForIntelligenceType } from "../lib/audit/intelligence";
-import { readRelationField, type IntelligenceRelationItem } from "../lib/context/package";
+import type { IntelligenceRelationItem } from "../lib/context/package";
 import { validateProjectContextPackage, PACKAGE_LIMITS } from "../lib/context/validate";
 import { hashProjectContextPackage } from "../lib/context/hash";
 import { EXTERNAL_INTELLIGENCE_TRUST } from "../lib/context/package";
@@ -1738,8 +1738,6 @@ async function main() {
     const scopeId = accepted.scopeId;
     const snap = { id: "snap-real", scopeId, package: accepted };
     const projected = projectIntelligence([snap], scopeId);
-    const rawRel = (r: IntelligenceRelationItem | Record<string, unknown>, f: "from" | "rel" | "to" | "relClass") =>
-      readRelationField(r as Record<string, unknown>, f);
 
     // ── V1. IT VALIDATES, AND ITS OWN COUNT BLOCK AGREES ───────────────
     {

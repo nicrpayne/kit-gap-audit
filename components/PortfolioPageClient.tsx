@@ -6,7 +6,6 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
   resolveCapacity,
   validateAllocations,
-  unallocatedCapacity,
   type PersonLike,
   type AllocationLike,
   type CapacityContributor,
@@ -149,9 +148,6 @@ interface PortfolioInputsResponse {
   }[];
 }
 
-function pairKey(personId: string, scopeId: string): string {
-  return `${personId}::${scopeId}`;
-}
 function addDays(date: Date, days: number): Date {
   const d = new Date(date);
   d.setUTCDate(d.getUTCDate() + Math.round(days));
@@ -385,7 +381,6 @@ export default function PortfolioPageClient() {
   );
 
   const overAllocated = useMemo(() => validateAllocations(allPeople, currentAllocations), [allPeople, currentAllocations]);
-  const unallocated = useMemo(() => unallocatedCapacity(allPeople, currentAllocations), [allPeople, currentAllocations]);
 
   // Capacity the scenario asked for that the portfolio does not contain.
   // Not simulated: a transfer or explicit hypothetical hire must fill it.
@@ -588,12 +583,6 @@ export default function PortfolioPageClient() {
       };
     });
   }, [data, currentAllocations]);
-
-  const splitPeopleCount = useMemo(
-    () => new Set(switchCostScopes.flatMap((s) => s.splitPeople)).size,
-    [switchCostScopes]
-  );
-  const trackedScopeCount = switchCostScopes.filter((s) => s.source === "allocations").length;
 
   const stageCapacityPlan = useCallback((next: {
     allocations: AllocationLike[];
@@ -1113,36 +1102,6 @@ export default function PortfolioPageClient() {
     selectedActive && selectedTargetIso && startDateObj
       ? confidenceAtDay(selectedActive.completionDaysSorted, dayOffset(startDateObj, new Date(selectedTargetIso)))
       : null;
-  const spreadDays = selectedActive
-    ? Math.round(selectedActive.percentiles.p90 - selectedActive.percentiles.p10)
-    : null;
-  const fmtDay = (d: Date) => formatDateOnly(d, { month: "short", day: "numeric" });
-  const spreadRange =
-    selectedActive && startDateObj
-      ? {
-          earliest: fmtDay(addDays(startDateObj, selectedActive.percentiles.p10)),
-          latest: fmtDay(addDays(startDateObj, selectedActive.percentiles.p90)),
-        }
-      : null;
-  const sinceLabel = selectedScope?.lastReport ? fmtDay(new Date(selectedScope.lastReport.generatedAt)) : null;
-
-  const trendSeries: number[] = selectedScope
-    ? (() => {
-        const pts = selectedScope.reportHistory.map((r) => new Date(r.likelyDate).getTime());
-        const b = baseline?.get(selectedScope.scopeId);
-        if (b) pts.push(b.likelyDate.getTime());
-        return pts;
-      })()
-    : [];
-
-  // Setting a first target: default it to the current P50, the one date the
-  // model can actually justify as a starting point, then let the flag be
-  // dragged from there.
-  function setInitialTarget() {
-    if (!selectedScope || !selectedActive || !startDateObj) return;
-    scrubTarget(selectedScope.scopeId, addDays(startDateObj, selectedActive.percentiles.p50).toISOString().slice(0, 10));
-  }
-
   const basisPayload = selectedScope?.capacityBasis;
   const capacityBasis: CapacityBasisView =
     basisPayload?.kind === "allocations"
