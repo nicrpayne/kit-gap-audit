@@ -155,9 +155,17 @@ Open http://localhost:3000 — you'll be asked for `APP_PASSWORD`.
 ### Scopes
 
 There's no hardcoded Linear team. Each audit runs against a **Scope**
-(Linear team key + optional project name + optional label), managed at
+(one validated Linear team/project boundary + optional label), managed at
 `/scopes`. Adding a new KIT module (iTrack, Precon, ...) is a new Scope
 row, not a redeploy.
+
+Creation, renaming and reviewed activation share a concurrency-safe name/alias
+check. Creation and selected dependencies save together; conflicting requests
+return a recoverable message without leaving a partial project. Existing
+projects and reports are never merged or rewritten to resolve a collision.
+See [project write integrity](docs/PROJECT-WRITE-INTEGRITY.md) for validation,
+normalization, tests and rollout limits. This describes the local repair branch,
+not a claim that a deployment has occurred.
 
 ## Deploying to Railway
 

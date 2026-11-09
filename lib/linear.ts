@@ -282,8 +282,9 @@ export async function validateLinearBoundary(
   try {
     projects = await listTeamProjects(teamKey);
   } catch (error) {
+    console.error("Linear boundary validation failed", error);
     throw new LinearBoundaryValidationError(
-      `Signal could not validate Linear team ${teamKey}: ${error instanceof Error ? error.message : "provider unavailable"}. Retry when Linear is available.`
+      `Signal could not validate Linear team ${teamKey}. Retry when Linear is available.`
     );
   }
   return resolveLinearBoundary(teamKey, projectNames, projects);

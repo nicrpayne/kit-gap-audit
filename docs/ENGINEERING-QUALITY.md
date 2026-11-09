@@ -22,7 +22,7 @@ Scenario save, report generation, or report publication is in flight.
 | Tranche | Work | Acceptance gate | Current state |
 | --- | --- | --- | --- |
 | 1. Safety and repeatable checks | Fail closed on missing deployment password; bounded input validation for people, scopes, allocations and login; identical Orbit/Forecast target date and frequency; dependency patch; lint errors; core checks/CI; type extraction and contributor docs. | Behavioral regressions, typecheck, lint, core proofs, dependency checks, build; then isolated browser/DB acceptance. | Implemented locally; validation results recorded below. Not deployed. |
-| 2. Authentication and API integrity | Replace password-derived sessions with expiring/revocable server sessions, rate-limit login, test CSRF/origin controls across owner writes, complete API runtime schemas and safe errors, make duplicate scope creation concurrency-safe. | Disposable DB fault/concurrency tests, operator and recipient auth matrix, bridge compatibility, documented session transition and rollback. | Authentication implemented and tested locally. API schema migration and duplicate-scope concurrency remain pending; staging transition/rollback not yet verified. |
+| 2. Authentication and API integrity | Replace password-derived sessions with expiring/revocable server sessions, rate-limit login, test CSRF/origin controls across owner writes, complete API runtime schemas and safe errors, make duplicate scope creation concurrency-safe. | Disposable DB fault/concurrency tests, operator and recipient auth matrix, bridge compatibility, documented session transition and rollback. | Authentication and canonical project-write integrity implemented/tested locally. Broader API schema migration and staging transition/rollback remain pending. |
 | 3. Structure and readability | Extract focused Scope/Audit/Timeline views and hooks, isolate Scenario lifecycle from model projection, remove remaining lint warnings, establish a formatting gate per migrated feature. | Each extraction preserves interaction, keyboard/accessibility, Scenario persistence/refusal/recovery, and exact report content. Small independent changes. | Started: neutral contracts and report JSX formatting. Major component extraction pending. |
 | 4. Shareable repository | Inventory private business evidence in current files and history; move operational evidence to private storage through a reviewed, recoverable plan; replace required fixtures with fictional data; scan clean export and history. | Reviewer-approved sanitized export/clone. No names, quotes, credentials, private URLs or actual project IDs in distributable artifacts. | Pending. Do not publish this repository yet. Nothing deleted or history rewritten. |
 | 5. Acceptance and documentation | Automate a fresh Audit → review → Scope → estimates/staffing → Scenario → report → recipient site journey; cover failure/retry, Safari/Chromium, reduced motion, narrow screens, and no-write guarantees. Update architecture and operating docs. | Clean isolated end-to-end run plus owner-approved staging rehearsal; distinguish synthetic acceptance from real-project report signoff. | Pending. Unit/core passes do not substitute for this gate. |
@@ -118,6 +118,38 @@ New logins create random, expiring, individually revocable server sessions.
   promotion and rollback rehearsal remain separate owner-coordinated gates.
 
 ## Validation ledger
+
+### Third batch: canonical project writes (November 8, 2026)
+
+See [project write integrity](PROJECT-WRITE-INTEGRITY.md). This completes the
+previously outstanding canonical Scope duplicate-name race across create,
+rename and activation, without a schema change, destructive cleanup or merge.
+Dependency validation now shares its save transaction; creation saves selected
+dependencies atomically. Settings/activation payloads are bounded and validated;
+unexpected errors in these write handlers no longer expose raw server details.
+
+- Built-app PostgreSQL/HTTP proof passed duplicate-create races (50 requests),
+  create/rename, rename/rename, activation alias collisions, activation retry
+  convergence, full rollback, dependency cycle races, revision guards, and
+  preservation of existing project/report sentinels and historical duplicates.
+- Chromium and WebKit passed real create/rename forms, conflict feedback with
+  entered draft retained, persisted reload and no browser page errors.
+- Node 22.22.2: full `npm run check` passed (typecheck, zero lint errors with the
+  unchanged 37-warning baseline, 16 unit tests, core proofs, production build).
+  Both additional activation contract proofs passed, as did dependency
+  compatibility and production/development advisory checks (zero advisories).
+- The expanded built-app proof passed valid settings round trips and clearing,
+  names/aliases across all canonical writers, and all cases above. Its receipt
+  and two browser screenshots are in the sibling private output directory
+  `../outputs/project-write-integrity-2026-11-08/`. Screenshots were inspected.
+- No production or staging access, deployments or business-data edits. These
+  tests use only an empty local DB and fictional provider responses.
+- Remaining API work includes draft-bootstrap editing, other resource families,
+  GET/error paths and old maintenance scripts. The canonical identity guard is
+  not a database unique constraint; direct SQL/old writers can bypass it. Do not
+  advertise the whole API tranche or the whole product as complete.
+
+### First-batch ledger
 
 - `npm run check`: passed on Node 24.16.0 and the deployment-pinned Node 22.22.2.
   Includes 8 behavioral test groups and 11 scripts in the selected core proofs,

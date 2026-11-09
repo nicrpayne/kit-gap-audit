@@ -15,6 +15,7 @@
     "proof:dependencies": "tsx scripts/dependency-compatibility-proof.ts && node scripts/dependency-audit-proof.mjs",
     "proof:operator-auth-db": "tsx scripts/operator-auth-db-proof.ts",
     "proof:operator-auth-http": "tsx scripts/operator-auth-http-proof.ts",
+    "proof:project-writes": "tsx scripts/project-write-integrity-proof.ts",
     "postinstall": "prisma generate",
     "db:seed": "tsx prisma/seed.ts",
     "proof:visual-system": "node scripts/signal-visual-system-token-proof.mjs && npx tsx scripts/signal-primitives-proof.tsx && node scripts/signal-visual-system-proof.mjs",

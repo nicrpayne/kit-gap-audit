@@ -1,5 +1,7 @@
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
+import { assertScopeIdentityAvailable } from "@/lib/scopes/identity";
+import { RequestValidationError } from "@/lib/http/json";
 import { decisionSourceDisposition } from "@/lib/decisions/sourceDisposition";
 import { normalizeSearchText } from "@/lib/audit/searchText";
 import { hashProjectContextPackage } from "@/lib/context/hash";
@@ -454,13 +456,7 @@ async function runActivationTransaction(bootstrapId: string, request: Activation
     const unacknowledged = manifest.blockers.filter((blocker) => !blocker.acknowledged);
     if (unacknowledged.length) throw new ActivationValidationError("Activation has unacknowledged hard blockers.", unacknowledged);
 
-    const normalizedNames = [bootstrap.canonicalName, ...bootstrap.aliases].map(normalizeSearchText);
-    const [scopeCollision, aliasCollision] = await Promise.all([
-      tx.scope.findMany({ select: { id: true, name: true } }),
-      tx.scopeAlias.findMany({ where: { normalizedAlias: { in: normalizedNames } }, select: { scopeId: true, alias: true } }),
-    ]);
-    const conflictingScope = scopeCollision.find((scope) => normalizedNames.includes(normalizeSearchText(scope.name)));
-    if (conflictingScope || aliasCollision[0]) throw new ActivationConflictError(`Project identity collides with active project ${conflictingScope?.name ?? aliasCollision[0].alias}.`);
+    await assertScopeIdentityAvailable(tx, [bootstrap.canonicalName, ...bootstrap.aliases]);
 
     for (const milestone of manifest.willBecomeCanonical.milestones) {
       if (!acceptedDate(milestone)) throw new ActivationValidationError(`Accepted milestone “${milestone.title}” needs an explicit valid date.`);
@@ -657,10 +653,17 @@ export async function activateProjectBootstrap(bootstrapId: string, request: Act
     try {
       return await runActivationTransaction(bootstrapId, request);
     } catch (error) {
+      if (error instanceof RequestValidationError) {
+        if (error.status === 409) throw new ActivationConflictError(error.message);
+        throw new ActivationValidationError(error.message);
+      }
       if (error instanceof Prisma.PrismaClientKnownRequestError && (error.code === "P2002" || error.code === "P2034")) {
         const completed = await readCompletedActivation(bootstrapId, request.expectedRevision);
         if (completed) return completed;
-        if (error.code === "P2034" && attempt < 2) continue;
+        if (error.code === "P2034") {
+          if (attempt < 2) continue;
+          throw new ActivationConflictError("Another save changed the project during activation. Reload and retry.");
+        }
       }
       throw error;
     }

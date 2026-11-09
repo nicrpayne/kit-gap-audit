@@ -381,17 +381,9 @@ export default function ScopesManager({ initialScopes }: { initialScopes: ScopeR
       });
       const body = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(body.error ?? "Failed to create scope.");
-      let scope: ScopeRow = { ...body.scope, realityRevision: 0 };
-      if (form.dependsOnScopeIds.length > 0) {
-        const patchRes = await fetch(`/api/scopes/${scope.id}`, {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ dependsOnScopeIds: form.dependsOnScopeIds }),
-        });
-        const patchBody = await patchRes.json().catch(() => ({}));
-        if (!patchRes.ok) throw new Error(patchBody.error ?? "Scope created, but couldn't set its dependencies.");
-        scope = { ...patchBody.scope, realityRevision: patchBody.derived?.realityRevision ?? 0 };
-      }
+      // Identity and dependencies now commit together. A failed dependency
+      // check must not leave a half-created project behind on a retry.
+      const scope: ScopeRow = { ...body.scope, realityRevision: 0 };
       setScopes((prev) => [...prev, scope]);
       setForm(EMPTY_FORM);
       router.refresh();

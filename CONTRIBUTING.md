@@ -30,6 +30,7 @@ Reality, source evidence, saved Scenarios, and frozen reports—not just compile
 | `npm run check` | Typecheck, lint, unit tests, core proofs and production build. |
 | `npm run proof:operator-auth-db` | Guarded disposable PostgreSQL session/concurrency proof; requires the [auth test setup](docs/OPERATOR-AUTH.md). |
 | `npm run proof:operator-auth-http` | Built-app HTTP + Chromium/WebKit auth proof; owns local port 4397 and uses only the guarded disposable DB. |
+| `npm run proof:project-writes` | Actual project CRUD/activation concurrency, rollback and Chromium/WebKit forms; requires an empty guarded DB and owns local port 4398. See [setup and limits](docs/PROJECT-WRITE-INTEGRITY.md). |
 
 Database and browser scripts have separate setup and safety requirements. Read a
 script's guard before running it; do not run every `scripts/*` file indiscriminately.

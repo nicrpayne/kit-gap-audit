@@ -36,6 +36,7 @@ for remaining work and release gates.
 | Who can read a report? | `lib/reports/sharingHttp.ts` and report-access routes; not the operator session alone |
 | Who can operate the app? | `middleware.ts`, `lib/auth/operatorSessions.ts`, `operatorPolicy.ts`, `requestPolicy.ts`; see [auth rollout](OPERATOR-AUTH.md) |
 | Where do malformed requests stop? | `lib/http/json.ts` plus feature parsers; migration across all routes is not yet complete |
+| What protects project identity during simultaneous saves? | `lib/scopes/identity.ts`, `lib/db/serializable.ts`, `lib/bootstrap/activation.ts`; [write integrity contract](PROJECT-WRITE-INTEGRITY.md) |
 
 ## Dependency direction
 

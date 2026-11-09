@@ -3,6 +3,10 @@ import { prisma } from "@/lib/prisma";
 import { LinearBoundaryValidationError, validateLinearBoundary } from "@/lib/linear";
 import { readJsonObject, validationResponse } from "@/lib/http/json";
 import { parseScopeInput } from "@/lib/scopes/input";
+import { assertScopeIdentityAvailable } from "@/lib/scopes/identity";
+import { assertScopeDependenciesValid } from "@/lib/scopes/dependencies";
+import { serializableWrite } from "@/lib/db/serializable";
+import { writeErrorResponse } from "@/lib/http/writeErrors";
 
 export async function GET() {
   const scopes = await prisma.scope.findMany({ orderBy: { createdAt: "asc" } });
@@ -23,32 +27,28 @@ export async function POST(req: NextRequest) {
   } catch (error) {
     if (error instanceof LinearBoundaryValidationError)
       return NextResponse.json({ error: error.message }, { status: error.status });
-    throw error;
+    return writeErrorResponse(error, "Could not validate the project connection. Please retry.");
   }
 
-  // Nothing else stopped two Scopes from sharing a name -- the portfolio
-  // view renders Scopes keyed by id but LABELED by name, so a duplicate
-  // silently produces two indistinguishable rows and nonsensical
-  // insights ("X finishes N days before X"). Case-insensitive since
-  // "JSA" and "jsa" would be exactly as confusing.
-  const existing = await prisma.scope.findMany({ select: { name: true } });
-  if (existing.some((s) => s.name.trim().toLowerCase() === body.name!.trim().toLowerCase())) {
-    return NextResponse.json(
-      { error: `A Scope named "${body.name}" already exists -- pick a distinct name.` },
-      { status: 400 },
-    );
+  try {
+    const scope = await serializableWrite(async (tx) => {
+      await assertScopeIdentityAvailable(tx, [body.name]);
+      if (body.dependsOnScopeIds?.length)
+        await assertScopeDependenciesValid(tx, "", body.dependsOnScopeIds);
+      return tx.scope.create({
+        data: {
+          name: body.name,
+          teamKey: boundary.teamKey,
+          projectNames: boundary.projectNames,
+          labelFilter: body.labelFilter || null,
+          executionState: "configured",
+          executionDetail: boundary.detail,
+          dependsOnScopeIds: body.dependsOnScopeIds ?? [],
+        },
+      });
+    });
+    return NextResponse.json({ scope }, { status: 201 });
+  } catch (error) {
+    return writeErrorResponse(error, "Could not create the project. Please retry.");
   }
-
-  const scope = await prisma.scope.create({
-    data: {
-      name: body.name,
-      teamKey: boundary.teamKey,
-      projectNames: boundary.projectNames,
-      labelFilter: body.labelFilter || null,
-      executionState: "configured",
-      executionDetail: boundary.detail,
-    },
-  });
-
-  return NextResponse.json({ scope }, { status: 201 });
 }
