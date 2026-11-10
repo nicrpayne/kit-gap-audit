@@ -3,6 +3,7 @@ import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { chromium, webkit } from "playwright";
 import { currentWorkFixture, provisionalFixture, provisionalModel } from "./lib/provisional-fixture";
+import { summarizeSavedScenarioLevers, type SavedScenarioDetail } from "../lib/scenario/saved";
 
 const base = process.env.SIGNAL_PROOF_URL ?? "http://127.0.0.1:4397";
 assert(["localhost", "127.0.0.1"].includes(new URL(base).hostname), "Only a disposable local test server is allowed");
@@ -22,10 +23,22 @@ async function main() {
     assert.equal(login.status(), 200);
     if (engineName === "webkit") await context.addCookies((await context.cookies()).map(cookie => ({ ...cookie, secure: false })));
     const errors: string[] = [], unexpected: string[] = [], checks: string[] = [];
+    // Persistence is deliberately in-memory in this UI proof. Real DB retries
+    // are covered separately; no save may fall through to a live service.
+    let savedScenario: SavedScenarioDetail | null = null;
     await context.route("**/*", route => {
       const request = route.request(), url = new URL(request.url());
       if (url.origin !== new URL(base).origin) return route.abort();
       if (!url.pathname.startsWith("/api/")) return route.continue();
+      if (url.pathname === "/api/scenarios" && request.method() === "POST") {
+        const body = request.postDataJSON();
+        savedScenario = { id: "fictional-saved-scenario", name: body.name, payload: body.payload, baseline: body.baseline,
+          revision: 1, status: "active", freshness: { state: "current", stale: false, differences: [] },
+          levers: summarizeSavedScenarioLevers(body.payload), createdAt: data.startDate, updatedAt: data.startDate,
+          archivedAt: null, archiveReason: null };
+        return route.fulfill({ json: { scenario: savedScenario } });
+      }
+      if (url.pathname === "/api/scenarios/fictional-saved-scenario" && request.method() === "GET") return route.fulfill({ json: { scenario: savedScenario } });
       if (currentWork && request.method() === "POST" && /\/api\/scopes\/[^/]+\/proposal$/.test(url.pathname)) return route.fulfill({ json: { proposal: null } }); // Explicitly intercepted composition request; never reaches a DB.
       if (request.method() !== "GET") { unexpected.push(`${request.method()} ${url.pathname}`); return route.fulfill({ status: 405, json: { error: "No persistent writes allowed in this fixture" } }); }
       if (url.pathname === "/api/instrument/project") return route.fulfill({ json: data });
@@ -33,7 +46,7 @@ async function main() {
       if (url.pathname === "/api/version") return route.fulfill({ json: { shortCommit: "local-provisional-proof" } });
       if (url.pathname === "/api/scopes") return route.fulfill({ json: { scopes: data.scopes.map(row => ({ id: row.scopeId, name: row.name })) } });
       if (url.pathname === "/api/reports") return route.fulfill({ json: { reports: [] } });
-      if (url.pathname === "/api/scenarios") return route.fulfill({ json: { scenarios: [] } });
+      if (url.pathname === "/api/scenarios") return route.fulfill({ json: { scenarios: savedScenario ? [savedScenario] : [], freshnessWarning: null } });
       if (url.pathname === "/api/decisions") return route.fulfill({ json: { decisions: [], candidates: [], scopes: data.scopes.map(row => ({ id: row.scopeId, name: row.name, targetDate: row.targetDate })) } });
       if (url.pathname === "/api/audit/knowledge") return route.fulfill({ json: { knowledge: { lastPackageAt: null, evidenceObservedAt: { oldest: null, newest: null }, latestRun: null } } });
       if (url.pathname === "/api/timeline") return route.fulfill({ json: {
@@ -99,7 +112,40 @@ async function main() {
         assert.match(await inspector.innerText(), /100% by Nov 15/);
         assert.doesNotMatch(await inspector.innerText(), /Target confidence unavailable/);
         assert.match(await page.locator("body").innerText(), /Portfolio planning date/i);
+        const bar = page.locator('[data-shoot="scenario-bar"]');
+        await bar.getByText("Scenario · unsaved", { exact: true }).waitFor();
+        await page.locator('[data-shoot="saved-scenarios-open"]').click();
+        const library = page.getByRole("dialog", { name: "Saved Scenarios", exact: true });
+        await library.getByLabel("Scenario name", { exact: true }).fill("Fictional saved label check");
+        await library.getByRole("button", { name: "Save Scenario", exact: true }).click();
+        await library.getByText(/Saved “Fictional saved label check”/).waitFor();
+        await library.getByRole("button", { name: "Close Saved Scenarios" }).click();
+        await bar.getByText("Scenario · saved", { exact: true }).waitFor();
+        await page.reload();
+        await bar.getByText("Scenario · saved", { exact: true }).waitFor();
+        await page.locator('[data-shoot="saved-scenarios-open"]').filter({ hasText: " · saved" }).waitFor();
+        await page.locator('[data-shoot="saved-scenarios-open"]').click();
+        await library.getByRole("button", { name: "Pause Scenario · view Reality", exact: true }).click();
+        await bar.getByText("Reality", { exact: true }).waitFor();
+        await page.locator('[data-shoot="saved-scenarios-open"]').click();
+        await library.getByRole("button", { name: "Open", exact: true }).click();
+        await bar.getByText("Scenario · saved", { exact: true }).waitFor();
+        await channel.locator('[data-shoot="channel-date"]').filter({ hasText: /\d/ }).waitFor();
+        assert.doesNotMatch(await page.locator("body").innerText(), /Recalculating Scenario forecast/);
+        checks.push("Portfolio and named library agree: new draft unsaved, saved/reloaded/reopened version saved, paused view Reality");
         await page.screenshot({ path: resolve(out, `${engineName}-portfolio.png`), fullPage: true });
+        await page.getByRole("link", { name: "Forecast", exact: true }).click();
+        await ungrouped.getByRole("button", { name: /^Try deferring/ }).click();
+        await page.getByRole("link", { name: "Portfolio", exact: true }).click();
+        await bar.getByText("Scenario · unsaved", { exact: true }).waitFor();
+        await page.locator('[data-shoot="saved-scenarios-open"]').filter({ hasText: " · unsaved" }).waitFor();
+        await page.reload();
+        await bar.getByText("Scenario · unsaved", { exact: true }).waitFor();
+        checks.push("Editing an active named Scenario marks both labels unsaved, including after reload");
+        await page.locator('[data-shoot="saved-scenarios-open"]').click();
+        await library.getByRole("button", { name: "Open", exact: true }).click();
+        await library.getByRole("button", { name: "Replace draft", exact: true }).click();
+        await bar.getByText("Scenario · saved", { exact: true }).waitFor();
         await page.goto(`${base}/scope?project=${sid}`);
         await page.locator('[data-shoot="scope-coverage-state"]').waitFor();
         assert.match(await page.locator('[data-shoot="scope-coverage-state"]').innerText(), /Planning forecast/i);

@@ -56,6 +56,18 @@ not accept Scope, close Decisions, change Linear, or rewrite historical reports.
 
 ### Playing with the plan and reporting it
 
+**Scenario saved** means the named what-if has been stored. **Scenario unsaved**
+means this draft has not been saved, or has edits since its named save. Neither
+changes accepted Reality or creates a forecast report. Portfolio uses the shared
+workspace's save state, so its label agrees with Saved Scenarios after saving,
+reopening and reloading. Pausing a Scenario returns the view to Reality while
+retaining the draft. Hermes answers use saved forecast reports, not a named
+Scenario merely because it has been saved.
+
+For saved report PDFs, use **Download PDF**. If the embedded browser does not
+start the download, choose **Use browser download** beneath it. Both paths
+require the same access checks; see [PDF download and recovery](docs/NATIVE-REPORT-PDF.md).
+
 Forecast shows **Ungrouped work — already counted**. Use **Try deferring** to
 test removing a ticket in the shared Scenario; **Restore** brings it back.
 Review Scope to make an actual release choice. A Scenario never changes

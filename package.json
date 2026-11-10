@@ -60,6 +60,7 @@
     "proof:report-sharing-http": "tsx scripts/report-sharing-http-proof.ts",
     "proof:report-plain-text": "tsx scripts/report-plain-text-proof.ts",
     "proof:report-pdf": "tsx scripts/report-pdf-proof.ts",
+    "proof:report-download-browser": "tsx scripts/report-download-browser-proof.ts",
     "proof:report-client-lifecycle": "tsx scripts/report-client-lifecycle-proof.ts",
     "proof:report-comparison": "tsx scripts/report-comparison-proof.ts",
     "proof:report-comparison-db": "tsx scripts/report-comparison-db-proof.ts",

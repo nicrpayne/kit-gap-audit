@@ -1,4 +1,5 @@
 "use client";
+import React from "react";
 import Link from "@/components/instrument/SignalLink";
 import type { ScenarioChip } from "@/components/instrument/ScenarioStrip";
 
@@ -46,6 +47,9 @@ export interface BlockedMoveLine {
 interface ScenarioBarProps {
   sharedChips?: ScenarioChip[];
   dirty: boolean;
+  /** A Scenario differs from Reality even when its named version is saved.
+      This flag comes from the shared workspace, not the staffing delta. */
+  saved: boolean;
   /** Target dates scrubbed but not saved. Deliberately NOT part of `dirty`:
       moving a target is an evaluation, not a scenario change, and must not
       make the state pill claim you're holding an unsaved scenario. It does
@@ -69,6 +73,7 @@ interface ScenarioBarProps {
 
 export default function ScenarioBar({
   dirty,
+  saved,
   sharedChips = [],
   hasPendingTargets,
   saving,
@@ -103,7 +108,7 @@ export default function ScenarioBar({
             className="h-1.5 w-1.5 rounded-full"
             style={{ background: dirty ? "var(--i-violet)" : "var(--i-text-faint)" }}
           />
-          {dirty ? "Scenario · unsaved" : "Reality"}
+          {dirty ? `Scenario · ${saved ? "saved" : "unsaved"}` : "Reality"}
         </span>
 
         {sharedChips.map((chip) => <Link key={chip.id} href={chip.href ?? "/forecast"} className="rounded-full px-2.5 py-1 text-[11px] text-[var(--i-violet)] bg-[var(--i-violet-soft)]">{chip.label}</Link>)}

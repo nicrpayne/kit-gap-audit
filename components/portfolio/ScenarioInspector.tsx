@@ -382,7 +382,7 @@ export default function ScenarioInspector({
       <section className="px-4 py-3.5">
         <div className="i-label mb-2">Ask Hermes</div>
         <p className="text-[10.5px] text-[var(--i-text-faint)] mb-2 leading-relaxed">
-          Answers about {scope.name}&rsquo;s saved forecast — Hermes doesn&rsquo;t see this unsaved scenario yet.
+          Answers use {scope.name}&rsquo;s saved forecast report, not the active what-if. Saving a Scenario does not generate a forecast report.
         </p>
         <div className="instrument-ask">
           <AskChips scopeId={scope.scopeId} hasTargetDate={!!scope.targetDate} />

@@ -61,7 +61,7 @@ for (const plan of [shortfall, moved, hire, parseCapacityScenarioPlan(JSON.parse
 const master = readMaster(state, data.scopes.map(s => s.scopeId), 0, { [sid]: 0.5 });
 assert.equal(master.allocated, 2); assert.equal(master.effective, 2); assert.equal(master.required, 0.5); assert.equal(master.overUnder, -0.5);
 assert.equal(readChannel(state, sid, 0, 0.5).raw, 1);
-const bar = renderToStaticMarkup(<ScenarioBar dirty hasPendingTargets={false} saving={false} canCommit={false} overAllocated={false} capacityLines={[{scopeId: sid, scopeName: receiver.name, realityFte: 1, scenarioFte: 1, requiredFte: 0.5}]} namedTransferCount={0} switchCostChanged={false} aggregateConversions={[]} blockedCapacityScopes={[]} blockedMoves={[]} onCommit={noop} onDiscard={noop} onOpenAllocations={noop} saveError={null} saveSummary={null} />);
+const bar = renderToStaticMarkup(<ScenarioBar dirty saved={false} hasPendingTargets={false} saving={false} canCommit={false} overAllocated={false} capacityLines={[{scopeId: sid, scopeName: receiver.name, realityFte: 1, scenarioFte: 1, requiredFte: 0.5}]} namedTransferCount={0} switchCostChanged={false} aggregateConversions={[]} blockedCapacityScopes={[]} blockedMoves={[]} onCommit={noop} onDiscard={noop} onOpenAllocations={noop} saveError={null} saveSummary={null} />);
 assert.match(bar, /1.0 → 1.0 FTE staffed/); assert.match(bar, /0.5 unstaffed, not modeled/);
 assert.deepEqual(data, original, "display, preview, and export must not change Reality");
 console.log("PASS capacity display: requested/staffed/modeled separation; finite pool; donor split cost; explicit hire; restored plan; rendered controls; planning HTML/JSON; Reality preserved");

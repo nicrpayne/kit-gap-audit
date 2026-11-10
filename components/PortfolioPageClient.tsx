@@ -59,7 +59,7 @@ import { useProjectParam } from "@/lib/shell/useProjectParam";
 import type { CapacityForecastContract } from "@/lib/capacity/contract";
 import { formatDateOnly } from "@/lib/time/dateContract";
 import ActualTeamDrawer from "@/components/portfolio/ActualTeamDrawer";
-import { EMPTY_SCENARIO, useProject } from "@/lib/instrument/useProject";
+import { EMPTY_SCENARIO, useProject, useScenarioWorkspace } from "@/lib/instrument/useProject";
 import ScenarioPreviewRefusal from "@/components/instrument/ScenarioPreviewRefusal";
 import type { ForecastCoverageContract } from "@/lib/forecast/coverage";
 import { decisionScenarioGates } from "@/lib/scenario/decisionPlan";
@@ -224,6 +224,7 @@ function axisTicks(startDate: Date, minDay: number, maxDay: number): { day: numb
 
 export default function PortfolioPageClient() {
   const project = useProject();
+  const workspace = useScenarioWorkspace();
   const setScenario = project.setScenario;
   const pathname = usePathname()!; // Mounted only in the App Router, where navigation is available.
   const router = useRouter();
@@ -1121,6 +1122,7 @@ export default function PortfolioPageClient() {
         <ScenarioBar
           sharedChips={chipsFor(project.scenario, scopeNameById, project.scenario.excludedItemIds.size, project.scenario.resolvedGateIds.size).filter((chip) => chip.href !== "/portfolio")}
           dirty={dirty}
+          saved={!!workspace.savedScenario && !workspace.scenarioDirty}
           hasPendingTargets={pendingTargets.size > 0}
           saving={saving}
           canCommit={staffingDirty && canCommit}

@@ -16,6 +16,14 @@ November 8 update: the owner has authorized production updates along the way.
 That removes the initial deployment-approval hold, not the staging, active-use,
 session-transition or rollback gates below. No deployment has occurred yet.
 
+November 9 update: candidate `ecc6e15` is now deployed to **staging only**.
+Authenticated browser checks verified exact build, an unchanged existing saved
+report export, named Scenario save/reopen, unchanged actual staffing, original
+quote navigation and inbox dismissal. This is bounded acceptance, not completion
+of the full journey. The historical QA project reads live tickets and is not a
+deterministic fixture; new report generation and configured real-recipient
+publication remain separate gates. Production has not been promoted.
+
 Before any promotion, coordinate a quiet window with the owner, verify the
 running production build and configuration, rehearse in staging, and record an
 exact rollback build. Do not promote while a refresh, acceptance operation,
@@ -122,6 +130,40 @@ New logins create random, expiring, individually revocable server sessions.
   promotion and rollback rehearsal remain separate owner-coordinated gates.
 
 ## Validation ledger
+
+### Sixth batch: Scenario labels and PDF recovery (November 9, 2026)
+
+These follow-up changes are local, beyond the deployed `ecc6e15` candidate.
+No schema, forecast algorithm, accepted record or frozen snapshot is changed.
+
+- Portfolio now distinguishes active what-if changes from unsaved changes to a
+  named Scenario. Its status comes from the same workspace as Saved Scenarios.
+  Hermes guidance distinguishes a saved Scenario from a saved forecast report.
+- PDF controls retain inline error/retry handling and add a normal browser
+  download link to the same authenticated endpoint. They confirm preparation,
+  not an unverifiable successful file save. Permissions and reader checks are
+  unchanged; there is no public URL or access bypass.
+- Added two unit regressions and a guarded, built-app PDF browser proof with
+  real disposable PostgreSQL/auth, fictional saved data and mock email. This
+  avoids mutating the old staging QA project or reusing its live ticket inputs.
+- Full `npm run check` passed on Node 22.22.2: typecheck, zero-warning active
+  lint (nine unchanged legacy-Audit warnings), all 24 unit tests, selected core
+  proofs and production build. The legacy subset browser path also still passes
+  in Chromium and WebKit; this is not a claim of whole-application coverage.
+- Local Chromium/WebKit checks passed Scenario save/reload/pause/reopen/edit
+  labels, cross-screen dates, stale-input refusal, and captured planning
+  HTML/JSON. Scenario persistence is intercepted in this UI test; the earlier
+  real persistence checks remain a distinct proof.
+- The real PDF/auth browser proof passed both download paths, error/retry,
+  approved-reader downloads, separation from operator access, revocation and
+  unchanged report/project sentinels in both engines. Ten PDFs downloaded.
+  One representative three-page PDF and both reader/operator screenshots were
+  visually inspected. No real mailbox, external provider or deployed download
+  is claimed. Existing staging data and production remain unchanged.
+- Staging still needs the exact new build and a real embedded-browser fallback
+  check. Private executive publishing also needs protected service configuration
+  and an owner-approved test mailbox; local mock-email proof does not close that
+  gate. A full fresh Audit-to-report journey is not signed off by this batch.
 
 ### Fifth batch: active-code lint gate and Timeline regressions (November 9, 2026)
 
